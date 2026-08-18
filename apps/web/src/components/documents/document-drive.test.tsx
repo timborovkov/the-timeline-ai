@@ -13,16 +13,22 @@ const fakes = vi.hoisted(() => ({
   deleteFolderAction: vi.fn(),
   finalizeDocumentVersionAction: vi.fn(),
   requestDocumentUploadAction: vi.fn(),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
   useQueryClient: vi.fn(),
   useDocumentListQuery: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('sonner', () => ({
-  toast: { error: fakes.toastError, success: fakes.toastSuccess, loading: vi.fn(() => 'toast-1') },
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentListQuery: fakes.useDocumentListQuery,
@@ -271,15 +277,15 @@ describe('DocumentDrive', () => {
     );
 
     await waitFor(() => {
-      expect(fakes.toastError).toHaveBeenCalledWith(
-        'Unable to reach document storage. Check your connection, then try again.',
-        { id: 'toast-1' },
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t upload document',
+        }),
       );
     });
-    expect(fakes.toastError).not.toHaveBeenCalledWith(
-      expect.stringContaining('S3_PUBLIC_ENDPOINT'),
-    );
-    expect(fakes.toastError).not.toHaveBeenCalledWith(expect.stringContaining('RustFS'));
+    expect(await screen.findByText(/Unable to reach document storage/)).toBeTruthy();
+    expect(screen.queryByText(/S3_PUBLIC_ENDPOINT/)).toBeNull();
+    expect(screen.queryByText(/RustFS/)).toBeNull();
   });
 
   it('opens document provenance with the full timeline event id', async () => {

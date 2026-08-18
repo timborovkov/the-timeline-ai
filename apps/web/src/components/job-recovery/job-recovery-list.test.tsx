@@ -262,7 +262,10 @@ describe('JobRecoveryList', () => {
       });
     });
     expect(screen.getByText('Retry queued.')).toBeTruthy();
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Retry queued.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith(
+      'Job queued',
+      expect.objectContaining({ id: 'job-recovery:retry:job-1' }),
+    );
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
 
     await chooseRowAction(user, 'Transcribe customer call', 'Dismiss');
@@ -275,7 +278,10 @@ describe('JobRecoveryList', () => {
     });
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
     expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith(
+      'Job dismissed',
+      expect.objectContaining({ id: 'job-recovery:dismiss:job-1' }),
+    );
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -356,9 +362,10 @@ describe('JobRecoveryList', () => {
         { id: 'job-2', detectedAt: '2026-07-02T11:00:00.000Z' },
       ],
     });
-    expect(fakes.toastWarning).toHaveBeenCalledWith(
-      'Retried 1 failed jobs; 1 could not be queued.',
-      { id: 'toast-1' },
+    expect(screen.queryByText('Retried 1 failed jobs; 1 could not be queued.')).toBeNull();
+    expect(fakes.toastError).toHaveBeenCalledWith(
+      '1 of 2 jobs couldn’t be queued.',
+      expect.objectContaining({ id: 'job-recovery:retry-failed' }),
     );
     expect(screen.getByText('Retry queued.')).toBeTruthy();
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
@@ -416,7 +423,10 @@ describe('JobRecoveryList', () => {
     });
     expect(screen.queryByText('Sync Sentry issues')).toBeNull();
     expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 1 job.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 1 job.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
@@ -457,7 +467,10 @@ describe('JobRecoveryList', () => {
       });
     });
     expect(requests[0]?.body).toEqual({ window: 'older' });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 12 older jobs.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 12 older jobs.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
     expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
@@ -492,8 +505,12 @@ describe('JobRecoveryList', () => {
     });
     expect(fakes.toastLoading).toHaveBeenCalledWith('Dismissed 500 of 512 older jobs…', {
       id: 'toast-1',
+      duration: Infinity,
     });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 512 older jobs.', { id: 'toast-1' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 512 older jobs.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
     expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
   });
 

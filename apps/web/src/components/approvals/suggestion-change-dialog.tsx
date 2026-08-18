@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { toastMutation } from '@/lib/mutation-toast';
+import { notifyAction } from '@/lib/notify';
 
 export function SuggestionChangeDialog({
   itemId,
@@ -62,18 +62,18 @@ export function SuggestionChangeDialog({
     }
     setError(null);
     startTransition(async () => {
-      const result = await toastMutation(
-        reviseSuggestionItemAction({ itemId, feedback: trimmed }),
-        {
-          loading: 'Updating proposal',
-          success: 'Proposal updated',
-        },
-      );
+      const result = await notifyAction({
+        id: `approval:${itemId}:change`,
+        loading: 'Updating proposal…',
+        success: 'Proposal updated',
+        error: 'Couldn’t update proposal',
+        run: () => reviseSuggestionItemAction({ itemId, feedback: trimmed }),
+      });
       if (result.error) {
         setError(result.error);
         return;
       }
-      if (result.revisedItem) onRevised?.(result.revisedItem);
+      if ('revisedItem' in result && result.revisedItem) onRevised?.(result.revisedItem);
       setOpen(false);
       setFeedback('');
       setError(null);

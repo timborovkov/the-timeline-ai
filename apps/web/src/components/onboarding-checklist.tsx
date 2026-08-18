@@ -8,6 +8,7 @@ import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { notifyError } from '@/lib/notify';
 import { useHydrated } from '@/lib/use-hydrated';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
 import { cn } from '@/lib/utils';
@@ -76,6 +77,11 @@ export function OnboardingChecklist({
     if (window.location.hash !== `#${TEAM_SETUP_CHECKLIST_PANEL_ID}`) return;
     document.getElementById(TEAM_SETUP_CHECKLIST_PANEL_ID)?.scrollIntoView({ block: 'start' });
   }, [data]);
+
+  useEffect(() => {
+    if (!checklistMutationFailed) return;
+    notifyError('onboarding:checklist', 'Couldn’t update the team setup checklist');
+  }, [checklistMutationFailed]);
 
   const updateStatus = (
     <output aria-live="polite" aria-atomic="true" className="sr-only">
@@ -334,9 +340,6 @@ function ChecklistMutationFailure({
 
   return (
     <div className="mt-3 flex flex-wrap items-center gap-3">
-      <p role="alert" className="text-xs text-danger">
-        Unable to update the team setup checklist. Your previous state was restored.
-      </p>
       <Button
         ref={retryButtonRef}
         type="button"

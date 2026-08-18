@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
-import { toastMutation } from '@/lib/mutation-toast';
+import { notifyAction } from '@/lib/notify';
 
 interface KeyRow {
   id: string;
@@ -21,10 +21,6 @@ interface KeyRow {
   prefix: string;
   lastUsedAt: string | null;
   createdAt: string;
-}
-
-function copyToClipboard(text: string): void {
-  void navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
 function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey): string {
@@ -121,16 +117,7 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
         <code className="flex-1 break-all rounded-sm border border-border bg-surface-2 px-2 py-1.5 font-mono text-xs">
           {mcpUrl || 'Loading…'}
         </code>
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!mcpUrl}
-          onClick={() => {
-            copyToClipboard(mcpUrl);
-          }}
-        >
-          Copy
-        </Button>
+        {mcpUrl ? <CopyButton value={mcpUrl} /> : null}
       </div>
       <p className="text-xs text-fg-dim">
         Timeline currently advertises MCP protocol <code className="font-mono">2024-11-05</code>{' '}
@@ -267,9 +254,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
   const keyNameRef = useRef<HTMLInputElement>(null);
   const focusNameOnError = useRef(false);
   const busyKeyIds = useRef<Set<string> | null>(null);
-  const [keyMutations, setKeyMutations] = useState<
-    Record<string, { busy: boolean; error: string | null }>
-  >({});
+  const [keyMutations, setKeyMutations] = useState<Record<string, { busy: boolean }>>({});
 
   function activeBusyKeyIds(): Set<string> {
     busyKeyIds.current ??= new Set();
@@ -311,38 +296,29 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
 
   async function create() {
     patchState({ busy: true });
-    try {
-      const result = await toastMutation<{
-        ok?: boolean;
-        error?: string;
-        data?: { name: string; plaintext: string };
-      }>(
-        (async () => {
-          const res = await fetch('/api/team/mcp-keys', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name }),
-          });
-          if (!res.ok) return { ok: false, error: await res.text() };
-          const data = (await res.json()) as { name: string; plaintext: string };
-          return { ok: true, data };
-        })(),
-        {
-          loading: `Creating ${name.trim() || 'key'}`,
-          success: `Created ${name.trim() || 'key'}`,
-          error: 'Could not create key',
-        },
-      );
-      if (!result.ok || !result.data) return;
-      patchState({
-        mintedKey: { name: result.data.name, plaintext: result.data.plaintext },
-        name: '',
-        showCreate: false,
-      });
-      router.refresh();
-    } finally {
-      patchState({ busy: false });
-    }
+    const result = await notifyAction({
+      id: 'mcp:create-key',
+      loading: 'Creating key…',
+      success: 'Key created',
+      error: 'Couldn’t create key',
+      run: async () => {
+        const res = await fetch('/api/team/mcp-keys', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!res.ok) return { error: 'failed' };
+        const data = (await res.json()) as { name: string; plaintext: string };
+        patchState({
+          mintedKey: { name: data.name, plaintext: data.plaintext },
+          name: '',
+          showCreate: false,
+        });
+        return { ok: true };
+      },
+    });
+    patchState({ busy: false });
+    if (!result.error) router.refresh();
   }
 
   async function revoke(id: string, label: string) {
@@ -356,46 +332,29 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
     if (!confirmed) return;
     if (activeBusyKeyIds().has(id)) return;
     activeBusyKeyIds().add(id);
-    setKeyMutations((current) => ({ ...current, [id]: { busy: true, error: null } }));
-    try {
-      const result = await toastMutation(
-        (async () => {
+    setKeyMutations((current) => ({ ...current, [id]: { busy: true } }));
+    const result = await notifyAction({
+      id: `mcp-key:${id}:revoke`,
+      loading: 'Revoking key…',
+      success: 'Key revoked',
+      error: 'Couldn’t revoke key',
+      run: async () => {
+        try {
           const response = await fetch(`/api/team/mcp-keys/${id}`, { method: 'DELETE' });
           if (!response.ok) {
             return {
-              ok: false,
               error: await readPublicApiError(response, 'The key could not be revoked. Try again.'),
             };
           }
           return { ok: true };
-        })(),
-        {
-          loading: `Revoking ${label}`,
-          success: `Revoked ${label}`,
-          error: 'Could not revoke key',
-        },
-      );
-      if (!result.ok) {
-        setKeyMutations((current) => ({
-          ...current,
-          [id]: { busy: false, error: result.error },
-        }));
-        return;
-      }
-      router.refresh();
-    } catch {
-      const error = networkActionError('revoke this key');
-      setKeyMutations((current) => ({
-        ...current,
-        [id]: { busy: false, error },
-      }));
-    } finally {
-      activeBusyKeyIds().delete(id);
-      setKeyMutations((current) => ({
-        ...current,
-        [id]: { busy: false, error: current[id]?.error ?? null },
-      }));
-    }
+        } catch {
+          return { error: networkActionError('revoke this key') };
+        }
+      },
+    });
+    activeBusyKeyIds().delete(id);
+    setKeyMutations((current) => ({ ...current, [id]: { busy: false } }));
+    if (!result.error) router.refresh();
   }
 
   return (
@@ -420,14 +379,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
             <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
               {mintedKey.plaintext}
             </code>
-            <Button
-              size="sm"
-              onClick={() => {
-                copyToClipboard(mintedKey.plaintext);
-              }}
-            >
-              Copy
-            </Button>
+            <CopyButton value={mintedKey.plaintext} />
           </div>
           <Button
             size="sm"
@@ -497,7 +449,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       ) : (
         <ul className="divide-y divide-border border-y border-border">
           {keys.map((k) => {
-            const mutation = keyMutations[k.id] ?? { busy: false, error: null };
+            const mutation = keyMutations[k.id] ?? { busy: false };
             return (
               <li key={k.id}>
                 <CollectionRow>
@@ -507,13 +459,6 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
                       ? ` · last used ${new Date(k.lastUsedAt).toLocaleString()}`
                       : ' · never used'
                   }`}</CollectionRow.Context>
-                  <CollectionRow.Metadata>
-                    {mutation.error ? (
-                      <p className="text-xs text-destructive" role="alert">
-                        {mutation.error}
-                      </p>
-                    ) : null}
-                  </CollectionRow.Metadata>
                   <CollectionRow.Actions>
                     <ItemActionGroup label={`Actions for ${k.name}`}>
                       <Button

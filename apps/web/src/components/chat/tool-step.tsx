@@ -11,6 +11,7 @@ import { DueDateDisplay } from '@/components/due-date-display';
 import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 
 interface Props {
@@ -354,7 +355,6 @@ function suggestionFromOutput(output: unknown): SuggestionBundle | null {
 function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
   const [localStatuses, setLocalStatuses] = useState<Record<string, string>>({});
   const [localItems, setLocalItems] = useState<Record<string, Partial<SuggestionItem>>>({});
 
@@ -363,11 +363,17 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
     resolvedStatus: string,
     action: () => Promise<{ ok?: boolean; error?: string }>,
   ) {
-    setError(null);
     startTransition(async () => {
-      const result = await action();
-      if (result.error) setError(result.error);
-      else if (result.ok) setLocalStatuses((current) => ({ ...current, [itemId]: resolvedStatus }));
+      const result = await notifyAction({
+        id: `approval:${itemId}`,
+        loading: 'Updating approval…',
+        success: 'Approval updated',
+        error: 'Couldn’t update approval',
+        run: action,
+      });
+      if (!result.error && 'ok' in result && result.ok) {
+        setLocalStatuses((current) => ({ ...current, [itemId]: resolvedStatus }));
+      }
       router.refresh();
     });
   }
@@ -398,11 +404,6 @@ function InlineApprovalCard({ suggestion }: { suggestion: SuggestionBundle }) {
             </div>
           ))}
         </div>
-      ) : null}
-      {error ? (
-        <p role="alert" className="mt-2 text-xs text-danger">
-          {error}
-        </p>
       ) : null}
       <ul className="mt-2 space-y-2">
         {suggestion.items.map((item) => {

@@ -625,6 +625,32 @@ export async function loadTaskPrimaryProjectsAction(input: unknown): Promise<{
   });
 }
 
+export async function unarchiveObjectAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('unarchive_object', async () => {
+    const parsed = z.object({ id: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid id' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const object = await r.scope.objects.unarchiveObject(parsed.data.id, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      await reconcileCanonicalChangeBestEffort('reconcile_object_update_after_unarchive', () =>
+        reconcileObjectUpdate(r.scope.suggestions, {
+          id: parsed.data.id,
+          type: object.type,
+          changedFields: ['archivedAt'],
+        }),
+      );
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to unarchive') };
+    }
+  });
+}
+
 export async function archiveObjectAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('archive_object', async () => {
     const parsed = z.object({ id: uuidSchema }).safeParse(input);

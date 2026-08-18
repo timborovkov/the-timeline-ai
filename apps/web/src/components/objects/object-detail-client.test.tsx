@@ -39,9 +39,19 @@ vi.mock('@/app/actions/objects', () => ({
   rejectObjectChangeAction: vi.fn(),
   removeRelationshipAction: vi.fn(),
   repairObjectMemoryAction: vi.fn(),
+  unarchiveObjectAction: vi.fn(),
   updateNoteAction: vi.fn(),
   updateObjectAction: vi.fn(),
   unpinObjectAction: vi.fn(),
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
 }));
 vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: vi.fn(),

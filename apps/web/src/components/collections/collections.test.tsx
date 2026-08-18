@@ -185,7 +185,7 @@ describe('collection primitives', () => {
     const trigger = screen.getByRole('button', { name: 'Priority for Launch plan' });
     expect(trigger.className).toContain('min-h-10');
     expect(trigger.getAttribute('aria-describedby')).toBe('priority-for-launch-plan-error');
-    expect(screen.getByRole('alert').textContent).toBe('Save failed');
+    expect(screen.getByText('Save failed').className).toContain('sr-only');
 
     await user.click(trigger);
     expect(screen.getByRole('combobox', { name: 'Priority' })).toBeTruthy();

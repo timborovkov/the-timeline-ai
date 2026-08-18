@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
-import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { toastMutation } from '@/lib/mutation-toast';
+import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
+import { notifyAction } from '@/lib/notify';
 
 interface CatalogEntryProps {
   id: string;
@@ -31,6 +31,7 @@ interface CatalogCardState {
   headerName: string;
   headerValue: string;
   busy: boolean;
+  fieldError: string | null;
 }
 
 const INITIAL_CARD_STATE: CatalogCardState = {
@@ -39,6 +40,7 @@ const INITIAL_CARD_STATE: CatalogCardState = {
   headerName: '',
   headerValue: '',
   busy: false,
+  fieldError: null,
 };
 
 function patchCardState(
@@ -168,7 +170,6 @@ function CatalogCard({
   localConnectionsEnabled: boolean;
 }) {
   const router = useRouter();
-  const dialog = useAppDialog();
   const isConnectable =
     (entry.status === 'mcp_available' ||
       (entry.status === 'mcp_local' && localConnectionsEnabled)) &&
@@ -181,49 +182,57 @@ function CatalogCard({
         : entry.ingestStatus === 'coming_soon'
           ? 'MCP now'
           : 'Available';
-  const [{ open, bearer, headerName, headerValue, busy }, setCardState] = useReducer(
+  const [{ open, bearer, headerName, headerValue, busy, fieldError }, setCardState] = useReducer(
     patchCardState,
     INITIAL_CARD_STATE,
   );
 
   async function connect(body: Record<string, unknown>) {
-    setCardState({ busy: true });
-    try {
-      const result = await toastMutation(
-        (async () => {
-          const res = await fetch('/api/team/mcp-servers', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ catalogId: entry.id, ...body }),
-          });
-          if (!res.ok) return { ok: false, error: await res.text() };
-          const data = (await res.json()) as { id: string; needsOauth?: boolean };
-          if (data.needsOauth && data.id) {
+    setCardState({ busy: true, fieldError: null });
+    const outcome = { success: 'Server connected' };
+    const result = await notifyAction({
+      id: `mcp-catalog:${entry.id}:connect`,
+      loading: 'Connecting…',
+      get success() {
+        return outcome.success;
+      },
+      error: 'Couldn’t connect server',
+      run: async () => {
+        const res = await fetch('/api/team/mcp-servers', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ catalogId: entry.id, ...body }),
+        });
+        if (!res.ok)
+          return {
+            error: await readPublicApiError(res, networkActionError('connect this server')),
+          };
+        const data = (await res.json()) as { id: string; needsOauth?: boolean };
+        if (data.needsOauth && data.id) {
+          try {
             const oauth = await fetch('/api/mcp/oauth/start', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
               body: JSON.stringify({ mcpServerId: data.id }),
             });
-            if (!oauth.ok) return { ok: false, error: await oauth.text() };
-            const oauthData = (await oauth.json()) as { url?: string; error?: string };
-            if (oauthData.url) {
+            const oauthData = oauth.ok
+              ? ((await oauth.json().catch(() => null)) as { url?: string } | null)
+              : null;
+            if (oauthData?.url) {
               window.location.href = oauthData.url;
-              return { ok: true, redirected: true };
+              return { ok: true };
             }
-            return { ok: false, error: oauthData.error ?? 'unknown' };
+          } catch {
+            // The server was created, so OAuth failure is recoverable from its Connect action.
           }
-          return { ok: true };
-        })(),
-        {
-          loading: `Connecting ${entry.label}`,
-          success: `Connected ${entry.label}`,
-          error: `Could not connect ${entry.label}`,
-        },
-      );
-      if (result.ok && !('redirected' in result && result.redirected)) router.refresh();
-    } finally {
-      setCardState({ busy: false });
-    }
+          outcome.success = 'Server added. Connect it again to finish authorization.';
+        }
+        return { ok: true };
+      },
+    });
+    setCardState({ busy: false, open: result.error ? open : false, fieldError: null });
+    if (result.error) return;
+    router.refresh();
   }
 
   async function onClickConnect() {
@@ -232,27 +241,23 @@ function CatalogCard({
       await connect({});
       return;
     }
-    setCardState({ open: !open });
+    setCardState({ open: !open, fieldError: null });
   }
 
   async function submitToken() {
     if (entry.authType === 'bearer') {
       if (!bearer) {
-        await dialog.alert({ title: 'Token required', description: 'Enter a bearer token.' });
+        setCardState({ fieldError: 'Enter a bearer token.' });
         return;
       }
       await connect({ bearerToken: bearer });
     } else if (entry.authType === 'header') {
       if (!headerName || !headerValue) {
-        await dialog.alert({
-          title: 'Header required',
-          description: 'Enter both a header name and value.',
-        });
+        setCardState({ fieldError: 'Enter both a header name and value.' });
         return;
       }
       await connect({ header: { name: headerName, value: headerValue } });
     }
-    setCardState({ open: false });
   }
 
   return (
@@ -294,7 +299,7 @@ function CatalogCard({
                 size="sm"
                 variant="ghost"
                 onClick={() => {
-                  setCardState({ open: false });
+                  setCardState({ open: false, fieldError: null });
                 }}
               >
                 Cancel
@@ -334,10 +339,17 @@ function CatalogCard({
             id={`bearer-${entry.id}`}
             type="password"
             value={bearer}
+            aria-invalid={Boolean(fieldError)}
+            aria-describedby={fieldError ? `bearer-error-${entry.id}` : undefined}
             onChange={(e) => {
-              setCardState({ bearer: e.target.value });
+              setCardState({ bearer: e.target.value, fieldError: null });
             }}
           />
+          {fieldError ? (
+            <p id={`bearer-error-${entry.id}`} role="alert" className="text-xs text-danger">
+              {fieldError}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {open && entry.authType === 'header' ? (
@@ -348,7 +360,7 @@ function CatalogCard({
               id={`hn-${entry.id}`}
               value={headerName}
               onChange={(e) => {
-                setCardState({ headerName: e.target.value });
+                setCardState({ headerName: e.target.value, fieldError: null });
               }}
             />
           </div>
@@ -358,14 +370,20 @@ function CatalogCard({
               id={`hv-${entry.id}`}
               type="password"
               value={headerValue}
+              aria-invalid={Boolean(fieldError)}
+              aria-describedby={fieldError ? `header-error-${entry.id}` : undefined}
               onChange={(e) => {
-                setCardState({ headerValue: e.target.value });
+                setCardState({ headerValue: e.target.value, fieldError: null });
               }}
             />
           </div>
+          {fieldError ? (
+            <p id={`header-error-${entry.id}`} role="alert" className="text-xs text-danger">
+              {fieldError}
+            </p>
+          ) : null}
         </div>
       ) : null}
-      {dialog.node}
     </div>
   );
 }

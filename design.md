@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.10 · Floating Ask (2026-08-17). Replaces v3.9 Digest date header, footer window, and activity strip.
+**Version:** v3.11 · Action toasts, collection density, and floating Ask (2026-08-18). Replaces v3.10 Floating Ask.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -202,8 +202,8 @@ table.
   target. Pass the displayed value and editor through `EditableMetadata.Value`
   and `EditableMetadata.Editor` children. Select-like changes save immediately
   and optimistically. Text and date changes commit with Apply or Enter and
-  cancel with Escape. Failed saves roll back, return focus, show an inline row
-  error, and keep the existing toast feedback.
+  cancel with Escape. Failed saves roll back, return focus, and report through
+  the shared action toast. Do not add a second inline row error.
 - `SelectionBar` appears only after selection. Desktop checkboxes may fade in
   on row hover or focus and remain visible while selection is active. Touch
   layouts expose selection explicitly and keep its checkboxes visible.
@@ -276,15 +276,17 @@ embedding, and evidence payloads retain their raw ISO values.
 ### Feedback
 
 Authenticated mutations use one quiet toast stack (`sonner` via `Toaster` in
-the root layout). Toasts are viewport-sticky, bottom-right, and limited to
-three visible at a time. They use the popover surface, hairline border, and
-the existing success / danger / muted tokens. Do not enable rich color
-toasts. Honor reduced motion.
+the root layout). Toasts are viewport-sticky, bottom-right on desktop and
+bottom-center on small screens, and limited to three visible at a time. They
+use the popover surface, hairline border, and the existing success / danger /
+muted tokens. Do not enable rich color toasts. Honor reduced motion.
 
-Use `toastMutation()` for async work:
+Use the shared `notifyAction` lifecycle in [Action toasts](#action-toasts) for
+async work:
 
-1. Show a loading toast with a spinner and a short gerund (“Accepting
-   proposal”, “Saving event”, “Uploading file”).
+1. Apply the change locally immediately. After 150ms, if the request is still
+   in flight, show one processing toast with a spinner and a short gerund
+   (“Accepting proposal…”, “Saving event…”, “Uploading file…”).
 2. Replace that same toast with success or error copy when the promise
    settles. Do not leave a loading toast up after the work finishes.
 3. On success, prefer a concrete object title (“Accepted Review planning
@@ -295,11 +297,12 @@ Use `toastMutation()` for async work:
 5. Optimistic lists may hide the row immediately (Linear-style). If the
    mutation fails, restore the row and show the error toast. Do not also
    mount a page-top banner for the same failure.
-6. Forms with an explicit Save control may keep inline field errors and a
-   local save state. They still toast the terminal success or failure so a
-   scrolled-away user sees the outcome.
+6. Forms with an explicit Save control may keep inline field errors. They
+   still toast the terminal success or failure so a scrolled-away user sees
+   the outcome.
 7. Durable route failures (load error, missing permission, empty required
-   evidence) stay on the page. Toasts do not replace `ErrorState`.
+   evidence) stay on the page. Toasts do not replace `ErrorState` or
+   `InlineError`.
 
 Loading skeletons must mirror the live chrome: collection headers use the
 collection `PageHeaderSkeleton`, indexes use `CollectionRowsSkeleton`, and
@@ -490,9 +493,9 @@ page gutters around the rows. Kanban/List view controls sit on the CollectionToo
 row with search and filters, not on a second strip. Loading placeholders match the
 requested view and default to list. Kanban cards stay compact: a clamped title plus
 one metadata row, with no redundant type label. Team settings render one URL-selected
-section at a time. Save state stays local to the edited form and still toasts the
-terminal result. Member, object, source, and artifact labels never fall back to
-UUIDs.
+section at a time. Field validation stays on the edited form; pending, success,
+and server failures use the shared action toast. Member, object, source,
+and artifact labels never fall back to UUIDs.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and actions, not a padded card list. Other settings sections stay
@@ -539,7 +542,9 @@ when one exists. Jobs older than 7 days are hidden from attention; admins can
 dismiss them in bulk, and the action keeps going with a loading toast until the
 hidden count is cleared. The visible 7-day list pages through the current
 snapshot with the shared infinite-scroll sentinel. Retry and dismiss
-use a loading toast that becomes success, warning, or error. Unprocessed
+use the shared action-toast lifecycle (`notifyAction`), including mapped
+sentence-like partial errors. Bulk older-job dismiss uses `notifyProgress` so
+one loading toast can update in place. Unprocessed
 backlog counts (events still waiting for extraction or embedding) and the
 conversation-suggestion backfill stay inside closed Advanced tools and never
 use “needs attention” language. That fold lists backlog counts as dense rows,
@@ -572,7 +577,8 @@ Detail pages use a visible Pin/Unpin button with `aria-pressed`. Dense rows,
 cards, calendar entries, timeline moments, and global-search results keep the
 same action inside their overflow menu, whose accessible label includes the
 target title. Controls update optimistically, retain focus, and restore the
-prior state with a concise error when a mutation fails.
+prior state when a mutation fails. The shared action toast is the busy,
+success, and error signal.
 
 Item-owned actions stay inside the row, card, inspector evidence block, or
 detail region for the item they affect. Use the shared row placement for dense
@@ -777,6 +783,47 @@ recovery Advanced tools uses the same quiet disclosure: unprocessed backlog as
 count rows, conversation suggestions as a heading with actions, and finished
 jobs as status/label/time rows with queue names in the hover title.
 
+## Action toasts
+
+Actions, edits, and other mutations use one toast lifecycle. Page and query
+loads keep skeletons. Field validation stays on the field. Route and query
+failures keep `InlineError` with a specific retry.
+
+1. Apply the change locally immediately.
+2. After 150ms, if the request is still in flight, show one processing toast
+   with a spinner (`Updating status…`).
+3. The same toast morphs to success or error. Do not spawn a second toast.
+4. On error, roll back the optimistic state and restore focus to the control.
+5. Success lasts 2s. Error lasts 6s and is dismissible.
+
+Rapid edits on the same entity share one toast id and replace in place. Two
+entities may show two toasts. The stack caps at three.
+
+Copy is sentence case and names the thing: `Updating status…`, `Status updated`,
+`Couldn’t update status`. Do not toast raw server strings, UUIDs, or
+`Update failed`. A mapped, sentence-like action error may replace the generic
+fallback. Undo is a compensating second request after the original write
+lands. The first request is not cancelled. Show Undo when the client can invert
+the mutation (previous field value, pin toggle, archive/unarchive, or a server
+undo token). Hard deletes and canonical approval decisions have no Undo.
+
+Toasts use the popover surface, a hairline border, 6px radius, and an overlay
+shadow. Color lives on the icon only. Undo is a same-surface control with a
+hairline border, not an inverted fill. In light mode the button stays light;
+in dark mode it stays dark. Position is bottom-right on desktop and
+bottom-center on small screens, above a `SelectionBar`. Reduced motion replaces
+the spinner with a static glyph. Feature code calls `notifyAction`,
+`notifyError`, `notifySuccess`, or `notifyProgress` rather than `toast` from
+`sonner`. Long-running admin batches may update one loading toast in place
+through `notifyProgress`. Completed redirect results (OAuth callback, export
+download, queued reconciliation) use that same toast channel instead of a page
+banner.
+
+Copyable values use the shared `CopyButton`. The control shows a copy icon plus
+label, then a check and `Copied`. Dense technical rows use the icon appearance
+with the same swap. Copy success stays on the control. Copy failure stays on
+the control with recovery copy. Do not invent a second clipboard helper.
+
 ## States and responsive behavior
 
 - Loading skeletons mirror the live page structure and announce busy state.
@@ -865,11 +912,14 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Action toasts and shared copy controls | Replaces inline Saving/Saved/error chips for mutations with one optimistic toast lifecycle, compensating Undo, and a single CopyButton for clipboard fields. |
+| 2026-08-18 | Shared progress toasts and redirect notices | Folds job-recovery batch progress into `notifyProgress` and sends reconciliation queue results through the toast channel. |
+| 2026-08-18 | Unify mutation toasts on notifyAction | Folds #359 `toastMutation` call sites onto the shared `notifyAction` lifecycle after merging collection density and floating Ask. |
 | 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |
 | 2026-08-17 | Digest status, window range, and linked lists | Replaces Product status with Status, shows the covering time range, lists tasks/objects/calendar with existing Home and email type, and omits empty groups including source inventories. |
 | 2026-08-17 | Digest date header, footer window, and activity strip | Puts the digest date in the header, moves the covering range to footer metadata, and turns web activity into a Home-style mono lime count strip. |
 | 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
-| 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared mutation-toast path. |
+| 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared `notifyAction` path. |
 | 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
 | 2026-08-17 | Job recovery row overflow | Renames the page Job recovery, moves per-row retry/dismiss into the overflow menu, and keeps IDs plus raw errors in the row hover title. |
 | 2026-08-17 | Quiet reconciliation dashboard | Drops the How it works primer, release-gate banner, and stat cards, and puts coverage actions on a hinted toolbar above recent rows. |

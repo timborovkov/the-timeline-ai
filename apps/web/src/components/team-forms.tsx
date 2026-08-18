@@ -22,6 +22,8 @@ import {
   type InviteState,
   type RenameTeamState,
 } from '@/app/actions/teams';
+import { FormActionToast } from '@/components/form-action-toast';
+import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,25 +63,21 @@ function FormFeedback({
   error,
   success,
   errorId,
+  toastId,
+  fieldError = false,
 }: {
   error?: string;
   success?: string;
   errorId?: string;
+  toastId: string;
+  fieldError?: boolean;
 }) {
   const { pending } = useFormStatus();
-  const status = pending ? 'Saving changes…' : error ? undefined : success;
-  const failure = pending ? undefined : error;
+  const failure = fieldError && !pending ? error : undefined;
 
   return (
     <>
-      <p
-        aria-atomic="true"
-        aria-live="polite"
-        className="text-sm text-muted-foreground"
-        role={status ? 'status' : undefined}
-      >
-        {status ?? ''}
-      </p>
+      <FormActionToast id={toastId} error={error} success={success} fieldError={fieldError} />
       <p
         id={errorId}
         aria-atomic="true"
@@ -171,7 +169,12 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
       </div>
       <Submit label="Create" />
       <div className="self-center">
-        <FormFeedback error={state.error} errorId={errorId} />
+        <FormFeedback
+          toastId="create-team"
+          error={state.error}
+          errorId={errorId}
+          fieldError={Boolean(nameError)}
+        />
       </div>
     </form>
   );
@@ -211,9 +214,11 @@ export function TeamTimezoneForm({ timezone }: { timezone: string }) {
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Save timezone" />
         <FormFeedback
+          toastId="team-timezone"
           error={state.error}
-          success={state.ok ? 'Timezone updated.' : undefined}
+          success={state.ok ? 'Timezone updated' : undefined}
           errorId="team-timezone-error"
+          fieldError={Boolean(timezoneError)}
         />
       </div>
     </form>
@@ -247,9 +252,11 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
         <Submit label="Rename" />
       </div>
       <FormFeedback
+        toastId="rename-team"
         error={state.error}
-        success={state.ok ? 'Team name updated.' : undefined}
+        success={state.ok ? 'Team name updated' : undefined}
         errorId="team-name-error"
+        fieldError={Boolean(nameError)}
       />
     </form>
   );
@@ -309,9 +316,11 @@ export function InboundEmailWhitelistForm({
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Save email settings" />
         <FormFeedback
+          toastId="inbound-email"
           error={state.error}
-          success={state.ok ? 'Email settings updated.' : undefined}
+          success={state.ok ? 'Email settings updated' : undefined}
           errorId="inbound-email-senders-error"
+          fieldError={Boolean(sendersError)}
         />
       </div>
     </form>
@@ -343,8 +352,9 @@ export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
       <div className="flex flex-wrap items-center gap-3">
         <Submit label="Save digest setting" />
         <FormFeedback
+          toastId="digest-preference"
           error={state.error}
-          success={state.ok ? 'Digest setting updated.' : undefined}
+          success={state.ok ? 'Digest setting updated' : undefined}
         />
       </div>
     </form>
@@ -397,11 +407,19 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
           className="w-full sm:w-auto"
         />
       </div>
-      {state.error ? (
-        <p id="invite-error" role="alert" className="text-sm text-destructive">
-          {state.error}
-        </p>
-      ) : null}
+      <FormFeedback
+        toastId="invite-member"
+        error={state.error}
+        success={
+          state.inviteUrl
+            ? state.sendStatus === 'sent'
+              ? 'Invite created and email sent'
+              : 'Invite created'
+            : undefined
+        }
+        errorId="invite-error"
+        fieldError={Boolean(emailError)}
+      />
       {state.inviteUrl ? (
         <div className="rounded-md border bg-muted p-3 text-xs">
           <p className="mb-1 font-medium">Invite link (copy and share):</p>
@@ -461,11 +479,7 @@ export function TeamExportPanel({
   const downloadErrorMessage = teamExportDownloadErrorMessage(downloadError);
   return (
     <div className="space-y-4">
-      {downloadErrorMessage ? (
-        <p role="alert" className="text-sm text-destructive">
-          {downloadErrorMessage}
-        </p>
-      ) : null}
+      <RedirectActionToast id="team-export:download" error={downloadErrorMessage} />
       <form
         action={action}
         className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
@@ -474,7 +488,11 @@ export function TeamExportPanel({
           <p className="text-sm text-muted-foreground">
             Builds a 24-hour archive of team data you are already allowed to see.
           </p>
-          <FormFeedback error={state.error} success={state.ok ? 'Export queued.' : undefined} />
+          <FormFeedback
+            toastId="team-export"
+            error={state.error}
+            success={state.ok ? 'Export queued' : undefined}
+          />
         </div>
         <Submit label="Start export" />
       </form>

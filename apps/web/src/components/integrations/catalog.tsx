@@ -8,6 +8,7 @@ import type * as integrationsLib from '@timeline/shared/integrations';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
+import { notifyAction } from '@/lib/notify';
 import { connectionErrorMessage } from '@/lib/ux-errors';
 
 type CatalogEntry = ReturnType<typeof integrationsLib.listAvailableProviders>[number];
@@ -19,26 +20,32 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
   async function startConnect(id: string) {
     setPending(id);
     setError(null);
-    try {
-      const res = await fetch(`/api/integrations/${id}/start`, { method: 'POST' });
-      if (!res.ok) {
-        const text = await res.text();
-        setError({ id, message: connectionErrorMessage(text, res.status), details: text });
-        return;
-      }
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        setError({
-          id,
-          message: connectionErrorMessage(data.error, res.status),
-          details: data.error ?? 'unknown',
-        });
-      }
-    } finally {
-      setPending(null);
+    let details = '';
+    const result = await notifyAction({
+      id: `integration:connect:${id}`,
+      loading: 'Opening sign-in…',
+      success: 'Opening sign-in',
+      error: 'Couldn’t start connection',
+      run: async () => {
+        const res = await fetch(`/api/integrations/${id}/start`, { method: 'POST' });
+        if (!res.ok) {
+          const text = await res.text();
+          details = text;
+          return { error: connectionErrorMessage(text, res.status) };
+        }
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (data.url) {
+          window.location.href = data.url;
+          return { ok: true };
+        }
+        details = data.error ?? 'unknown';
+        return { error: connectionErrorMessage(data.error, res.status) };
+      },
+    });
+    if (result.error) {
+      setError({ id, message: result.error, details: details || result.error });
     }
+    setPending(null);
   }
 
   const available = catalog.filter((provider) => provider.available);

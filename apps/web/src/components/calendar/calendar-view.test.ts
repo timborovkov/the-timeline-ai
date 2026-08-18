@@ -26,6 +26,15 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
   useSearchParams: () => new URLSearchParams(fakes.searchParams),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/app/actions/calendar', () => ({
   createCalendarEventAction: fakes.createCalendarEventAction,
   updateCalendarEventAction: fakes.updateCalendarEventAction,
@@ -536,9 +545,8 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
     await waitFor(() => {
-      expect(screen.getAllByText('Calendar write denied')).toHaveLength(2);
+      expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     });
-    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Title').value).toBe('Denied customer sync');
     expect(screen.queryByRole('button', { name: /Denied customer sync/ })).toBeNull();
     expect(fakes.refresh).toHaveBeenCalled();

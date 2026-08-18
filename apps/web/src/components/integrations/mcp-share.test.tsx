@@ -11,8 +11,8 @@ const routerRefresh = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: routerRefresh }),
 }));
-vi.mock('sonner', () => ({
-  toast: { loading: vi.fn(() => 'toast-1'), success: vi.fn(), error: vi.fn() },
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
 }));
 
 const MCP_URL = 'https://timeline.test/api/mcp/server';
@@ -225,7 +225,7 @@ describe('McpShareUi', () => {
     render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
     await confirmRevoke(user);
 
-    expect(await screen.findByText(expectedMessage)).toBeTruthy();
+    expect(screen.queryByText(expectedMessage)).toBeNull();
     expect(screen.getByText('CI agent')).toBeTruthy();
     expect(routerRefresh).not.toHaveBeenCalled();
   });
@@ -240,12 +240,12 @@ describe('McpShareUi', () => {
     render(<McpShareUi keys={[ACTIVE_KEY]} mcpUrl={MCP_URL} />);
     await confirmRevoke(user);
 
+    expect(screen.getByText('CI agent')).toBeTruthy();
     expect(
-      await screen.findByText(
+      screen.queryByText(
         'Could not revoke this key because the network request failed. Check your connection and try again.',
       ),
-    ).toBeTruthy();
-    expect(screen.getByText('CI agent')).toBeTruthy();
+    ).toBeNull();
     expect(routerRefresh).not.toHaveBeenCalled();
   });
 

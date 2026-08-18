@@ -18,6 +18,10 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: fakes.refresh }),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  notifyError: vi.fn(),
+}));
 vi.mock('@/app/actions/pins', () => ({
   movePinAction: fakes.movePinAction,
   pinTargetAction: fakes.pinTargetAction,

@@ -16,7 +16,6 @@ import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
-import { InlineError } from '@/components/inline-error';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,7 +32,7 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { formatCollectionCount } from '@/lib/collection-count';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
-import { toastMutation } from '@/lib/mutation-toast';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 
 interface CapturedFileItem {
@@ -256,14 +255,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           }),
         );
       } catch {
-        const message =
-          'Could not load older captured files. The files already shown remain available. Check your connection, then try again.';
-        setLoadMoreError(message);
-        await toastMutation(Promise.resolve({ error: 'Could not load older captured files' }), {
-          loading: 'Loading captured files',
-          success: 'Loaded captured files',
-          error: 'Could not load older captured files',
-        });
+        setLoadMoreError(
+          'Could not load older captured files. The files already shown remain available. Check your connection, then try again.',
+        );
       }
     });
   }
@@ -650,45 +644,39 @@ function PromoteDialog({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, dispatchForm] = useReducer(promoteDialogReducer, file, promoteDialogInitialState);
-  const [promotionError, setPromotionError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   function submit(): void {
     if (!form.name.trim()) {
-      setPromotionError(null);
       setTitleError('Enter a title before promoting this file.');
       titleInputRef.current?.focus();
       return;
     }
 
     setTitleError(null);
-    setPromotionError(null);
     startTransition(async () => {
-      try {
-        const result = await toastMutation(
-          promoteCapturedFileAction({
+      const result = await notifyAction({
+        id: `captured-file:${file.id}:promote`,
+        loading: 'Promoting captured file…',
+        success: 'Promoted to documents',
+        error: 'Couldn’t promote captured file',
+        run: async () => {
+          const promoted = await promoteCapturedFileAction({
             id: file.id,
             name: form.name,
             folderId: form.folderId || null,
             visibility: form.visibility,
             visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
-          }),
-          {
-            loading: `Promoting ${form.name}`,
-            success: `Promoted ${form.name} to documents`,
-            error: 'Could not promote captured file',
-          },
-        );
-        if (!result.ok || !result.documentId) {
-          setPromotionError(result.error ?? 'Promotion failed');
-          return;
-        }
-        router.push(`/app/documents/${result.documentId}`);
-      } catch (error) {
-        const details = error instanceof Error ? error.message : undefined;
-        setPromotionError(details ?? 'Promotion failed');
-      }
+          });
+          if (!promoted.ok || !promoted.documentId) {
+            return { error: promoted.error ?? 'Couldn’t promote captured file' };
+          }
+          return { documentId: promoted.documentId };
+        },
+      });
+      if (result.error || !('documentId' in result) || !result.documentId) return;
+      router.push(`/app/documents/${result.documentId}`);
     });
   }
 
@@ -793,15 +781,6 @@ function PromoteDialog({
               </label>
             ))}
           </fieldset>
-        ) : null}
-        {promotionError ? (
-          <InlineError
-            message="Could not promote this captured file. It remains unchanged. Check your connection, then try again."
-            details={promotionError}
-            onRetry={submit}
-            retrying={pending}
-            retryLabel="Promote again"
-          />
         ) : null}
         <DialogFooter className="mt-5">
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>

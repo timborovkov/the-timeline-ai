@@ -19,16 +19,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  Fragment,
-  startTransition,
-  useActionState,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { toast } from 'sonner';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
@@ -58,6 +49,7 @@ import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions'
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 import {
   buildTimelineMoments,
@@ -1064,23 +1056,10 @@ function EvidenceRemovalAction({
   event: TimelineEvent;
   targetLabel: string;
 }) {
-  const [state, action, pending] = useActionState(removeConversationalEventAction, {});
+  const [pending, setPending] = useState(false);
   const dialog = useAppDialog();
   const inspector = useInspector();
   const router = useRouter();
-
-  useEffect(() => {
-    if (!state.ok) return;
-    inspector.hide();
-    router.refresh();
-    toast.success('Evidence removed from Timeline');
-    window.setTimeout(() => {
-      const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || active === document.body || !active.isConnected) {
-        document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
-      }
-    }, 0);
-  }, [inspector, router, state.ok]);
 
   const requestRemoval = () => {
     void dialog
@@ -1096,8 +1075,28 @@ function EvidenceRemovalAction({
         if (!confirmed) return;
         const formData = new FormData();
         formData.set('id', event.id);
-        startTransition(() => {
-          action(formData);
+        setPending(true);
+        void notifyAction({
+          id: `timeline:evidence:${event.id}`,
+          loading: 'Removing evidence…',
+          success: 'Evidence removed',
+          error: 'Couldn’t remove evidence',
+          run: () => removeConversationalEventAction({}, formData),
+        }).then((result) => {
+          setPending(false);
+          if (result.error) return;
+          inspector.hide();
+          router.refresh();
+          window.setTimeout(() => {
+            const active = document.activeElement;
+            if (
+              !(active instanceof HTMLElement) ||
+              active === document.body ||
+              !active.isConnected
+            ) {
+              document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
+            }
+          }, 0);
         });
       });
   };
@@ -1114,11 +1113,6 @@ function EvidenceRemovalAction({
           {pending ? 'Removing evidence…' : 'Remove evidence'}
         </DropdownMenuItem>
       </ItemOverflowMenu>
-      {state.error ? (
-        <p role="alert" className="w-full basis-full text-xs text-destructive">
-          {state.error} Open actions and try again.
-        </p>
-      ) : null}
       {dialog.node}
     </>
   );

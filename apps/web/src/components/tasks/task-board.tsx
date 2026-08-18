@@ -65,11 +65,12 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { chatViewLabel } from '@/lib/chat-view';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
 import { taskDisplayStatus } from '@/lib/task-statuses';
-import { cn, errorMessage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface TaskMemberOption {
   id: string;
@@ -100,6 +101,35 @@ type TaskPatch = Partial<
   Pick<objects.ObjectRow, 'status' | 'assigneeUserId' | 'dueAt' | 'priority'>
 >;
 type TaskPatchKey = keyof TaskPatch;
+
+function taskPatchLabel(patch: TaskPatch): string {
+  if (patch.status !== undefined) return 'status';
+  if (patch.assigneeUserId !== undefined) return 'assignee';
+  if (patch.dueAt !== undefined) return 'due date';
+  if (patch.priority !== undefined) return 'priority';
+  return 'task';
+}
+
+function capitalizeLabel(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function previousTaskPatch(row: objects.ObjectRow, patch: TaskPatch): TaskPatch {
+  const previous: TaskPatch = {};
+  if (patch.status !== undefined) previous.status = row.status;
+  if (patch.assigneeUserId !== undefined) previous.assigneeUserId = row.assigneeUserId;
+  if (patch.dueAt !== undefined) previous.dueAt = row.dueAt;
+  if (patch.priority !== undefined) previous.priority = row.priority;
+  return previous;
+}
+
+function serializeTaskPatch(patch: TaskPatch): Record<string, string | number | null | undefined> {
+  const { dueAt, ...rest } = patch;
+  return {
+    ...rest,
+    ...(dueAt !== undefined ? { dueAt: dueAt?.toISOString() ?? null } : {}),
+  };
+}
 type TaskPatchValue = TaskPatch[TaskPatchKey];
 type TaskPatchPendingValues = Partial<Record<TaskPatchKey, TaskPatchValue[]>>;
 interface TaskPatchOverlay {
@@ -643,7 +673,6 @@ function useTaskBoardController({
     list.push(row);
     byStatus.set(displayStatus, list);
   }
-  const moveErrors = Object.values(moveUi.cardErrors);
   const selectedVisibleIds = useMemo(() => {
     const visibleIds = new Set(visibleRows.map((row) => row.id));
     return new Set([...selectedIds].filter((id) => visibleIds.has(id)));
@@ -690,8 +719,32 @@ function useTaskBoardController({
         savingCardIds: new Set(activeSavingCardIds()),
       });
       try {
-        const result = await updateObjectAction({ id, status });
-        if ('error' in result && result.error) {
+        const previousStatus = row.status;
+        const result = await notifyAction({
+          id: `object:${id}`,
+          loading: 'Updating status…',
+          success: 'Status updated',
+          error: 'Couldn’t update status',
+          run: () => updateObjectAction({ id, status }),
+          undo: {
+            run: async () => {
+              setRowPatches((current) =>
+                previousStatusPatch === undefined
+                  ? removePatchKeys(current, id, ['status'])
+                  : patchTaskRow(
+                      current,
+                      id,
+                      { status: previousStatusPatch },
+                      { status: previousStatusBaseline },
+                    ),
+              );
+              const undoResult = await updateObjectAction({ id, status: previousStatus });
+              if (!undoResult.error) router.refresh();
+              return undoResult;
+            },
+          },
+        });
+        if (result.error) {
           batchHadFailureRef.current = true;
           setRowPatches((current) =>
             previousStatusPatch === undefined
@@ -703,9 +756,8 @@ function useTaskBoardController({
                   { status: previousStatusBaseline },
                 ),
           );
-          dispatchMoveUi({ type: 'move-fail', id, message: result.error });
         }
-      } catch (err) {
+      } catch {
         batchHadFailureRef.current = true;
         setRowPatches((current) =>
           previousStatusPatch === undefined
@@ -717,7 +769,6 @@ function useTaskBoardController({
                 { status: previousStatusBaseline },
               ),
         );
-        dispatchMoveUi({ type: 'move-fail', id, message: errorMessage(err, 'Move failed') });
       } finally {
         savingCountRef.current = Math.max(0, savingCountRef.current - 1);
         activeSavingCardIds().delete(id);
@@ -740,31 +791,50 @@ function useTaskBoardController({
   async function updateTask(
     id: string,
     patch: TaskPatch,
+    options: { silent?: boolean } = {},
   ): Promise<{ ok?: boolean; error?: string }> {
     const previousPatch = rowPatches[id];
     const row = effectiveRows.find((candidate) => candidate.id === id);
     setRowPatches((current) =>
       row ? patchTaskRow(current, id, patch, taskPatchBaseline(row, patch)) : current,
     );
-    const dueAt = patch.dueAt === undefined ? undefined : (patch.dueAt?.toISOString() ?? null);
-    const result = await updateObjectAction({
-      id,
-      ...patch,
-      ...(dueAt !== undefined ? { dueAt } : {}),
-    });
-    if ('error' in result && result.error) {
+    const rollback = () => {
       setRowPatches((current) => {
         if (previousPatch) return { ...current, [id]: previousPatch };
         const { [id]: _removed, ...rest } = current;
         return rest;
       });
-    }
+    };
+    const run = () => updateObjectAction({ id, ...serializeTaskPatch(patch) });
+    const previous = row ? previousTaskPatch(row, patch) : {};
+    const label = taskPatchLabel(patch);
+    const result = options.silent
+      ? await run()
+      : await notifyAction({
+          id: `object:${id}`,
+          loading: `Updating ${label}…`,
+          success: `${capitalizeLabel(label)} updated`,
+          error: `Couldn’t update ${label}`,
+          run,
+          undo: {
+            run: async () => {
+              rollback();
+              const undoResult = await updateObjectAction({
+                id,
+                ...serializeTaskPatch(previous),
+              });
+              if (!undoResult.error) router.refresh();
+              return undoResult;
+            },
+          },
+        });
+    if (result.error) rollback();
     router.refresh();
     return result;
   }
 
   async function updateTasks(ids: string[], patch: TaskPatch): Promise<{ failed: number }> {
-    const results = await runBulkActions(ids, (id) => updateTask(id, patch));
+    const results = await runBulkActions(ids, (id) => updateTask(id, patch, { silent: true }));
     return {
       failed: results.filter(
         (result) =>
@@ -793,14 +863,13 @@ function useTaskBoardController({
 
   function loadMoreTasks(): void {
     if (!cursor || loadingMore) return;
-    dispatchBoard({ type: 'load-error', message: null, filterKey });
     startLoadMore(async () => {
       const page = await loadTaskRowsAction({
         cursor,
         ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
       });
       if (page.error) {
-        dispatchBoard({ type: 'load-error', message: page.error, filterKey });
+        notifyError('tasks:load-more', 'Couldn’t load older tasks');
         return;
       }
       dispatchBoard({
@@ -821,7 +890,6 @@ function useTaskBoardController({
     loadError,
     loadingMore,
     loadMoreTasks,
-    moveErrors,
     moveUi,
     onDragEnd,
     selectedTask,
@@ -855,7 +923,6 @@ function TaskBoardView({
   loadMoreTasks,
   members,
   projects = EMPTY_PROJECT_OPTIONS,
-  moveErrors,
   moveUi,
   onDragEnd,
   selectedTask,
@@ -908,23 +975,6 @@ function TaskBoardView({
         onDragEnd={handleDragEnd}
       >
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          {moveUi.saveState !== 'idle' ? (
-            <output className="shrink-0 px-2 py-1.5 text-xs text-fg-dim sm:px-3" aria-live="polite">
-              {moveUi.saveState === 'saving'
-                ? `Saving${moveUi.savingCount > 1 ? ` ${moveUi.savingCount} moves` : ''}...`
-                : 'Saved'}
-            </output>
-          ) : null}
-          {moveErrors.length > 0 ? (
-            <p
-              className="mx-2 mb-3 shrink-0 rounded-sm border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger sm:mx-3"
-              role="alert"
-            >
-              {moveErrors.length === 1
-                ? moveErrors[0]
-                : `${moveErrors.length} task moves failed. Clear the filter to inspect affected cards.`}
-            </p>
-          ) : null}
           {view === 'kanban' ? (
             <section
               aria-label="Task status columns"
@@ -1246,23 +1296,15 @@ function TaskListRow({
   pinned: boolean;
 }) {
   const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(row);
 
   function save(field: string, patch: TaskPatch): void {
     setSaving(field);
-    setError(null);
     startTransition(async () => {
-      try {
-        const result = await onUpdateTask(row.id, patch);
-        if ('error' in result && result.error) setError(result.error);
-      } catch (err) {
-        setError(errorMessage(err, 'Save failed'));
-      } finally {
-        setSaving(null);
-      }
+      await onUpdateTask(row.id, patch);
+      setSaving(null);
     });
   }
 
@@ -1293,17 +1335,6 @@ function TaskListRow({
             {displayText(title)}
           </Link>
         </CollectionRow.Title>
-        {error || saving ? (
-          <CollectionRow.Context>
-            {error ? (
-              <span className="text-danger" role="alert">
-                {error}
-              </span>
-            ) : (
-              <span>Saving {saving}…</span>
-            )}
-          </CollectionRow.Context>
-        ) : null}
         <CollectionRow.Metadata>
           <>
             <EditableMetadata
@@ -1525,22 +1556,23 @@ function TaskBulkToolbar({
     }
     const patch = currentPatch();
     startTransition(async () => {
-      const result =
-        bulk.field === 'category'
-          ? await onUpdateTaskCategories(ids, bulk.category)
-          : await onUpdateTasks(ids, patch);
-      if (result.failed > 0) {
-        dispatchBulk({
-          type: 'message',
-          message: `${result.failed} of ${ids.length} updates failed.`,
-        });
-        return;
-      }
-      setSelectedIds(new Set());
-      dispatchBulk({
-        type: 'message',
-        message: `Updated ${ids.length} ${ids.length === 1 ? 'task' : 'tasks'}.`,
+      const result = await notifyAction({
+        id: 'tasks:bulk',
+        loading: 'Updating tasks…',
+        success: `Updated ${ids.length} ${ids.length === 1 ? 'task' : 'tasks'}`,
+        error: 'Couldn’t update tasks',
+        run: async () => {
+          const outcome =
+            bulk.field === 'category'
+              ? await onUpdateTaskCategories(ids, bulk.category)
+              : await onUpdateTasks(ids, patch);
+          return outcome.failed > 0
+            ? { error: `${outcome.failed} of ${ids.length} updates failed.` }
+            : { ok: true };
+        },
       });
+      if (result.error) return;
+      setSelectedIds(new Set());
     });
   }
 
@@ -1662,11 +1694,6 @@ function TaskBulkToolbar({
           </>
         }
       />
-      {bulk.message ? (
-        <p className="px-3 py-1.5 text-xs text-fg-dim" role="status">
-          {bulk.message}
-        </p>
-      ) : null}
     </>
   );
 }
@@ -1696,7 +1723,7 @@ function TaskColumn({
   rows,
   selectedTaskId,
   savingCardIds,
-  cardErrors,
+  cardErrors: _cardErrors,
   members,
   projects,
   primaryProjects,
@@ -1763,7 +1790,6 @@ function TaskColumn({
               href={taskHref(row.id)}
               selected={row.id === selectedTaskId}
               saving={savingCardIds.has(row.id)}
-              error={cardErrors[row.id]}
               members={members}
               projects={projects}
               primaryProject={primaryProjects.find((project) => project.taskId === row.id) ?? null}
@@ -1796,7 +1822,6 @@ function TaskCard({
   href,
   selected,
   saving,
-  error,
   members,
   projects,
   primaryProject,
@@ -1811,7 +1836,6 @@ function TaskCard({
   href: string;
   selected: boolean;
   saving: boolean;
-  error?: string;
   members: TaskMemberOption[];
   projects: TaskMemberOption[];
   primaryProject: objects.TaskPrimaryProjectRow | null;
@@ -1831,20 +1855,11 @@ function TaskCard({
     : undefined;
   const title = displayObjectTitle(row);
   const [metadataSaving, setMetadataSaving] = useState(false);
-  const [metadataError, setMetadataError] = useState<string | null>(null);
   const saveMetadata = (patch: TaskPatch) => {
     setMetadataSaving(true);
-    setMetadataError(null);
-    void onUpdateTask(row.id, patch)
-      .then((result) => {
-        if (result.error) setMetadataError(result.error);
-      })
-      .catch((cause: unknown) => {
-        setMetadataError(errorMessage(cause, 'Save failed'));
-      })
-      .finally(() => {
-        setMetadataSaving(false);
-      });
+    void onUpdateTask(row.id, patch).finally(() => {
+      setMetadataSaving(false);
+    });
   };
   return (
     <article
@@ -1855,7 +1870,6 @@ function TaskCard({
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         isDragging && 'opacity-50',
         saving && 'opacity-80',
-        error && 'border-danger/50',
       )}
     >
       <div className="flex min-w-0 items-start gap-0.5">
@@ -1987,12 +2001,6 @@ function TaskCard({
           </EditableMetadata.Editor>
         </EditableMetadata>
       </div>
-      {metadataError ? (
-        <p className="mt-1 text-xs text-danger" role="alert">
-          {metadataError}
-        </p>
-      ) : null}
-      {error ? <p className="mt-2 text-xs text-danger">{error}</p> : null}
     </article>
   );
 }
@@ -2029,24 +2037,11 @@ function TaskDetailPanel({
   onProjectChangeCommitted: () => void;
   onProjectChangeReverted: () => void;
 }) {
-  const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const timezone = useWorkspaceTimezone();
   const title = displayObjectTitle(task);
 
-  function save(field: string, patch: TaskPatch): void {
-    setSaving(field);
-    setError(null);
-    void onUpdate(task.id, patch)
-      .then((result) => {
-        if ('error' in result && result.error) setError(result.error);
-      })
-      .catch((err: unknown) => {
-        setError(errorMessage(err, 'Save failed'));
-      })
-      .finally(() => {
-        setSaving(null);
-      });
+  function save(_field: string, patch: TaskPatch): void {
+    void onUpdate(task.id, patch);
   }
 
   return (
@@ -2176,12 +2171,6 @@ function TaskDetailPanel({
         <Detail label="Current priority" value={task.priority ? `P${task.priority}` : '-'} />
         <Detail label="Updated" value={dateLabel(task.updatedAt)} />
       </div>
-      {saving || error ? (
-        <div className="border-b border-border px-4 py-3 text-xs">
-          {saving ? <span className="text-fg-dim">Saving {saving}…</span> : null}
-          {error ? <span className="text-danger">{error}</span> : null}
-        </div>
-      ) : null}
       <ObjectRelatedContext connectedWork={connectedWork} compact />
       <div className="flex flex-wrap gap-2 p-4">
         <Link

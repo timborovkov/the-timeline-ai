@@ -17,9 +17,7 @@ const fakes = vi.hoisted(() => ({
   reviseTaskSuggestionItemAction: vi.fn(),
   searchObjectsAction: vi.fn(),
   getApprovalTargetSnapshotAction: vi.fn(),
-  toastLoading: vi.fn(() => 'toast-1'),
-  toastSuccess: vi.fn(),
-  toastError: vi.fn(),
+  notifyAction: vi.fn(async (options: { run: () => Promise<{ error?: string }> }) => options.run()),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
@@ -36,12 +34,8 @@ vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjec
 vi.mock('@/app/actions/approval-preview', () => ({
   getApprovalTargetSnapshotAction: fakes.getApprovalTargetSnapshotAction,
 }));
-vi.mock('sonner', () => ({
-  toast: {
-    loading: fakes.toastLoading,
-    success: fakes.toastSuccess,
-    error: fakes.toastError,
-  },
+vi.mock('@/lib/notify', () => ({
+  notifyAction: fakes.notifyAction,
 }));
 vi.mock('@/app/actions/collection-pages', () => ({
   loadSuggestionsPageAction: vi.fn(() => Promise.resolve({ suggestions: [], nextCursor: null })),
@@ -88,7 +82,9 @@ beforeEach(() => {
     snapshot: { kind: 'none' },
     members: {},
   });
-  fakes.toastLoading.mockReturnValue('toast-1');
+  fakes.notifyAction.mockImplementation(
+    async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  );
 });
 
 afterEach(() => {
@@ -2637,6 +2633,14 @@ describe('ApprovalsClient', () => {
       expect(getByRole('status').textContent).toContain('Updating approvals');
     });
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'approval:item-1:accept',
+        loading: 'Accepting proposal…',
+        success: 'Accepted Customer follow-up',
+        error: 'Couldn’t finish this action',
+      }),
+    );
   });
 
   it('restores failed optimistic actions with row-level retry feedback', async () => {

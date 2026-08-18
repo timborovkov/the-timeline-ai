@@ -15,6 +15,15 @@ vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }
 vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: fakes.updateObjectAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 
 const { WorkQueueRow } = await import('./work-queue-row.js');
 
@@ -123,10 +132,9 @@ describe('WorkQueueRow', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('Connection lost');
+      expect(screen.getByRole('button', { name: /Priority for/ }).textContent).toContain(
+        'No priority',
+      );
     });
-    expect(screen.getByRole('button', { name: /Priority for/ }).textContent).toContain(
-      'No priority',
-    );
   });
 });

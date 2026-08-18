@@ -26,7 +26,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { toastMutation } from '@/lib/mutation-toast';
+import { notifyAction, notifyError } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 
 interface VersionItem {
@@ -134,25 +134,41 @@ export function DocumentDetail({
     const trimmedName = name?.trim();
     if (!trimmedName || trimmedName === currentDocument.name) return;
     const previousRename = optimisticRename;
+    const previousName = currentDocument.name;
     setOptimisticRename({
       id: currentDocument.id,
       name: trimmedName,
       updatedAt: new Date().toISOString(),
     });
     startTransition(async () => {
-      const res = await toastMutation(
-        renameDocumentAction({ id: currentDocument.id, name: trimmedName }),
-        {
-          loading: 'Renaming document',
-          success: `Renamed ${trimmedName}`,
-          error: 'Rename failed',
+      const result = await notifyAction({
+        id: `document:${currentDocument.id}`,
+        loading: 'Renaming document…',
+        success: 'Document renamed',
+        error: 'Couldn’t rename document',
+        run: async () => {
+          const res = await renameDocumentAction({ id: currentDocument.id, name: trimmedName });
+          return res.ok ? {} : { error: res.error ?? 'Couldn’t rename document' };
         },
-      );
-      if (!res.ok) {
-        setOptimisticRename(previousRename);
-      } else {
-        router.refresh();
-      }
+        undo: {
+          run: async () => {
+            setOptimisticRename({
+              id: currentDocument.id,
+              name: previousName,
+              updatedAt: new Date().toISOString(),
+            });
+            const res = await renameDocumentAction({
+              id: currentDocument.id,
+              name: previousName,
+            });
+            if (res.ok) router.refresh();
+            return res.ok ? {} : { error: res.error ?? 'Couldn’t undo' };
+          },
+          success: 'Document renamed',
+        },
+      });
+      if (result.error) setOptimisticRename(previousRename);
+      else router.refresh();
     });
   }
 
@@ -165,30 +181,31 @@ export function DocumentDetail({
     });
     if (!confirmed) return;
     startTransition(async () => {
-      const res = await toastMutation(deleteDocumentAction(currentDocument.id), {
-        loading: 'Deleting document',
+      const result = await notifyAction({
+        id: `document:${currentDocument.id}:delete`,
+        loading: 'Deleting document…',
         success: 'Document deleted',
-        error: 'Delete failed',
+        error: 'Couldn’t delete document',
+        run: async () => {
+          const res = await deleteDocumentAction(currentDocument.id);
+          return res.ok ? {} : { error: res.error ?? 'Couldn’t delete document' };
+        },
       });
-      if (res.ok) {
-        router.push(
-          currentDocument.folderId
-            ? `/app/documents?folder=${currentDocument.folderId}`
-            : '/app/documents',
-        );
-      }
+      if (result.error) return;
+      router.push(
+        currentDocument.folderId
+          ? `/app/documents?folder=${currentDocument.folderId}`
+          : '/app/documents',
+      );
     });
   }
 
   async function onDownload(versionId: string): Promise<void> {
     setDownloading((prev) => (prev.includes(versionId) ? prev : [...prev, versionId]));
     try {
-      const res = await toastMutation(getDocumentDownloadUrlAction({ versionId }), {
-        loading: 'Preparing download',
-        success: 'Download ready',
-        error: 'Failed to fetch download URL',
-      });
+      const res = await getDocumentDownloadUrlAction({ versionId });
       if (!res.ok || !res.url) {
+        notifyError('document:download', 'Couldn’t download document');
         return;
       }
       window.open(res.url, '_blank', 'noopener,noreferrer');

@@ -15,6 +15,15 @@ vi.mock('@/app/actions/objects', () => ({
   markNotificationReadAction: fakes.markRead,
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 
 const { MarkAllReadButton } = await import('./mark-all-read-button.js');
 const { NotificationRow } = await import('./notification-row.js');
@@ -47,7 +56,7 @@ describe('NotificationRow', () => {
     expect(screen.queryByText('agent suggestion')).toBeNull();
   });
 
-  it('keeps unread status explicit and reports a failed read action', async () => {
+  it('keeps unread status explicit and rolls back a failed read action', async () => {
     const user = userEvent.setup();
     fakes.markRead.mockResolvedValue({ error: 'Database unavailable' });
 
@@ -68,12 +77,12 @@ describe('NotificationRow', () => {
     expect(screen.getByText('Unread')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Mark Review the launch plan as read' }));
 
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Unable to mark this notification as read. Try again.',
-    );
+    expect(await screen.findByText('Unread')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(fakes.refresh).not.toHaveBeenCalled();
   });
 
-  it('clears a failed individual read error when Mark all read succeeds', async () => {
+  it('applies a successful Mark all read after an individual read rolls back', async () => {
     const user = userEvent.setup();
     fakes.markRead.mockResolvedValue({ error: 'Database unavailable' });
     fakes.markAllRead.mockResolvedValue({ ok: true });
@@ -96,17 +105,17 @@ describe('NotificationRow', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Mark Review the launch plan as read' }));
-    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(await screen.findByText('Unread')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Mark all read' }));
 
     await waitFor(() => {
       expect(fakes.refresh).toHaveBeenCalledTimes(1);
     });
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Unread')).toBeNull();
   });
 
-  it('clears a failed individual read error when refreshed props confirm it is read', async () => {
+  it('marks the row read when refreshed props confirm it is read', async () => {
     const user = userEvent.setup();
     fakes.markRead.mockResolvedValue({ error: 'Database unavailable' });
     const props = {
@@ -125,7 +134,7 @@ describe('NotificationRow', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Mark Review the launch plan as read' }));
-    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(await screen.findByText('Unread')).toBeTruthy();
 
     view.rerender(
       <ul>
@@ -133,6 +142,6 @@ describe('NotificationRow', () => {
       </ul>,
     );
 
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Unread')).toBeNull();
   });
 });

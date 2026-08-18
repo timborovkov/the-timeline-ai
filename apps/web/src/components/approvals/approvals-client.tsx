@@ -28,7 +28,7 @@ import { ItemActionGroup, ItemIconButton } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { evidenceSourceContextLabel, evidenceSourceLabel } from '@/lib/evidence-source-label';
-import { toastMutation } from '@/lib/mutation-toast';
+import { notifyAction } from '@/lib/notify';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 function stableJson(value: unknown): string {
@@ -113,7 +113,7 @@ interface SuggestionBundle {
 type ApprovalAction = (
   action: () => Promise<{ ok?: boolean; error?: string; failedItemIds?: string[] }>,
   optimisticItemIds: string[],
-  messages: { loading: string; success: string },
+  messages: { id: string; loading: string; success: string; error?: string },
 ) => void;
 
 interface ApprovalsQueueState {
@@ -729,7 +729,7 @@ export function ApprovalsClient({
   function run(
     action: () => Promise<{ ok?: boolean; error?: string; failedItemIds?: string[] }>,
     optimisticItemIds: string[],
-    messages: { loading: string; success: string },
+    messages: { id: string; loading: string; success: string; error?: string },
   ) {
     const inFlightItemIds = inFlightItemIdsRef.current;
     if (!inFlightItemIds) return;
@@ -742,10 +742,18 @@ export function ApprovalsClient({
     });
     startTransition(async () => {
       try {
-        const result = await toastMutation(action(), messages);
+        const result = await notifyAction({
+          id: messages.id,
+          loading: messages.loading.endsWith('…') ? messages.loading : `${messages.loading}…`,
+          success: messages.success,
+          error: messages.error ?? 'Couldn’t finish this action',
+          run: action,
+        });
         if (result.error) {
           const failedItemIds =
-            result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [];
+            'failedItemIds' in result
+              ? (result.failedItemIds ?? []).filter((id) => optimisticItemIds.includes(id))
+              : [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
           restoreItems(restoreItemIds);
           markActionFailures(restoreItemIds);
@@ -854,14 +862,14 @@ export function ApprovalsClient({
             run(
               () => acceptSuggestionItemAction({ itemId: previewItem.item.id }),
               [previewItem.item.id],
-              decisionMessages('accept', 1, previewItem.item.title),
+              decisionMessages('accept', 1, previewItem.item.title, previewItem.item.id),
             );
           }}
           onReject={() => {
             run(
               () => rejectSuggestionItemAction({ itemId: previewItem.item.id }),
               [previewItem.item.id],
-              decisionMessages('reject', 1, previewItem.item.title),
+              decisionMessages('reject', 1, previewItem.item.title, previewItem.item.id),
             );
           }}
         />
@@ -893,16 +901,18 @@ function decisionMessages(
   kind: 'accept' | 'reject',
   count: number,
   title?: string,
-): { loading: string; success: string } {
+  itemId?: string,
+): { id: string; loading: string; success: string } {
+  const id = count === 1 && itemId ? `approval:${itemId}:${kind}` : `approval:bulk-${kind}`;
   if (count === 1) {
     const label = displayText(title ?? 'proposal');
     return kind === 'accept'
-      ? { loading: 'Accepting proposal', success: `Accepted ${label}` }
-      : { loading: 'Rejecting proposal', success: `Rejected ${label}` };
+      ? { id, loading: 'Accepting proposal', success: `Accepted ${label}` }
+      : { id, loading: 'Rejecting proposal', success: `Rejected ${label}` };
   }
   return kind === 'accept'
-    ? { loading: `Accepting ${count} proposals`, success: `Accepted ${count} proposals` }
-    : { loading: `Rejecting ${count} proposals`, success: `Rejected ${count} proposals` };
+    ? { id, loading: `Accepting ${count} proposals`, success: `Accepted ${count} proposals` }
+    : { id, loading: `Rejecting ${count} proposals`, success: `Rejected ${count} proposals` };
 }
 
 function ApprovalListBody({
@@ -1390,7 +1400,7 @@ function ApprovalItemActions({
               run(
                 () => acceptSuggestionItemAction({ itemId: item.id }),
                 [item.id],
-                decisionMessages('accept', 1, item.title),
+                decisionMessages('accept', 1, item.title, item.id),
               );
             }}
           >
@@ -1415,7 +1425,7 @@ function ApprovalItemActions({
           run(
             () => rejectSuggestionItemAction({ itemId: item.id }),
             [item.id],
-            decisionMessages('reject', 1, item.title),
+            decisionMessages('reject', 1, item.title, item.id),
           );
         }}
       >

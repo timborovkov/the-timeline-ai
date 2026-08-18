@@ -65,10 +65,10 @@ describe('ReconciliationDashboardPage', () => {
       }),
     );
 
-    expect(html).toContain('Queued cluster replay.');
     expect(html).toContain(
       'Groups related captures into the same work, then proposes updates for review.',
     );
+    expect(html).not.toContain('border-signal/30 bg-signal-soft');
     expect(html).not.toContain('How it works');
     expect(html).not.toContain('Evidence ready');
     expect(html).not.toContain('Release gate');

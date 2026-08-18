@@ -11,19 +11,15 @@ import type { PinnedItem } from '@timeline/shared/pins';
 const fakes = vi.hoisted(() => ({
   pinTargetAction: vi.fn(),
   unpinTargetAction: vi.fn(),
-  toastError: vi.fn(),
+  notifyAction: vi.fn(async (options: { run: () => Promise<{ error?: string }> }) => options.run()),
 }));
 
 vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pinTargetAction,
   unpinTargetAction: fakes.unpinTargetAction,
 }));
-vi.mock('sonner', () => ({
-  toast: {
-    error: fakes.toastError,
-    loading: vi.fn(() => 'toast-1'),
-    success: vi.fn(),
-  },
+vi.mock('@/lib/notify', () => ({
+  notifyAction: fakes.notifyAction,
 }));
 
 const { PinButton } = await import('@/components/pins/pin-button');
@@ -44,6 +40,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   fakes.pinTargetAction.mockResolvedValue({ ok: true });
   fakes.unpinTargetAction.mockResolvedValue({ ok: true });
+  fakes.notifyAction.mockImplementation(
+    async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  );
 });
 
 afterEach(cleanup);
@@ -77,7 +82,9 @@ describe('shared pin controls', () => {
       expect(screen.getByRole('button', { name: 'Pin' }).getAttribute('aria-pressed')).toBe(
         'false',
       );
-      expect(screen.getByRole('alert').textContent).toBe('That item is not available to pin.');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({ error: 'Couldn’t pin item' }),
+      );
     });
   });
 
@@ -115,9 +122,9 @@ describe('shared pin controls', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Launch plan')).toBeTruthy();
-      expect(fakes.toastError).toHaveBeenCalledWith('Could not unpin that item.', {
-        id: 'toast-1',
-      });
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({ error: 'Couldn’t unpin item' }),
+      );
     });
   });
 });

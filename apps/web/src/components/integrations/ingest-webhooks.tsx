@@ -9,12 +9,14 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
+import { CopyButton } from '@/components/copy-button';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
+import { notifyAction } from '@/lib/notify';
 
 interface CredentialRow {
   id: string;
@@ -37,6 +39,23 @@ export interface IngestWebhookRow {
 interface MintedCredential {
   webhookName: string;
   plaintext: string;
+}
+
+async function webhookActionError(response: Response, fallback: string): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  const code = typeof payload?.error === 'string' ? payload.error : null;
+  switch (code) {
+    case 'forbidden':
+      return 'You do not have permission to make this change.';
+    case 'not_found':
+      return 'This webhook no longer exists. Refresh the page and try again.';
+    case 'unauthorized':
+      return 'Sign in again to manage ingest webhooks.';
+    case 'no_team':
+      return 'Choose a team before managing ingest webhooks.';
+    default:
+      return fallback;
+  }
 }
 
 interface State {
@@ -90,10 +109,6 @@ function reducer(state: State, action: Action): State {
         showCreate: false,
       };
   }
-}
-
-function copyToClipboard(text: string): void {
-  void navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
 function parseEventClass(value: string): TimelineEventClass | null {
@@ -171,54 +186,59 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
     return `${origin || 'https://thetimeline.cc'}/api/webhooks/ingest/${plaintext}`;
   }
 
-  async function alertFailure(title: string, res: Response): Promise<void> {
-    await dialog.alert({ title, description: await res.text() });
-  }
-
   async function create() {
     dispatch({ type: 'busy', busy: true });
-    try {
-      const res = await fetch('/api/team/ingest-webhooks', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, visibilityDefault, eventClass, proposalGenerationEnabled }),
-      });
-      if (!res.ok) {
-        await alertFailure('Create failed', res);
-        return;
-      }
-      const data = (await res.json()) as { name: string; credential: { plaintext: string } };
-      dispatch({
-        type: 'created',
-        minted: { webhookName: data.name, plaintext: data.credential.plaintext },
-      });
-      router.refresh();
-    } finally {
-      dispatch({ type: 'busy', busy: false });
-    }
+    const result = await notifyAction({
+      id: 'ingest-webhook:create',
+      loading: 'Creating webhook…',
+      success: 'Webhook created',
+      error: 'Couldn’t create webhook',
+      run: async () => {
+        const res = await fetch('/api/team/ingest-webhooks', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, visibilityDefault, eventClass, proposalGenerationEnabled }),
+        });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t create webhook') };
+        const data = (await res.json()) as { name: string; credential: { plaintext: string } };
+        dispatch({
+          type: 'created',
+          minted: { webhookName: data.name, plaintext: data.credential.plaintext },
+        });
+        return { ok: true };
+      },
+    });
+    dispatch({ type: 'busy', busy: false });
+    if (!result.error) router.refresh();
   }
 
   async function patch(id: string, body: Record<string, unknown>) {
-    const res = await fetch(`/api/team/ingest-webhooks/${id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+    const result = await notifyAction({
+      id: `ingest-webhook:${id}:update`,
+      loading: 'Updating webhook…',
+      success: 'Webhook updated',
+      error: 'Couldn’t update webhook',
+      run: async () => {
+        const res = await fetch(`/api/team/ingest-webhooks/${id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t update webhook') };
+        const data = (await res.json()) as {
+          name?: string;
+          credential?: { plaintext: string };
+        };
+        if (data.credential?.plaintext && data.name) {
+          dispatch({
+            type: 'minted',
+            minted: { webhookName: data.name, plaintext: data.credential.plaintext },
+          });
+        }
+        return { ok: true };
+      },
     });
-    if (!res.ok) {
-      await alertFailure('Update failed', res);
-      return;
-    }
-    const data = (await res.json()) as {
-      name?: string;
-      credential?: { plaintext: string };
-    };
-    if (data.credential?.plaintext && data.name) {
-      dispatch({
-        type: 'minted',
-        minted: { webhookName: data.name, plaintext: data.credential.plaintext },
-      });
-    }
-    router.refresh();
+    if (!result.error) router.refresh();
   }
 
   async function rotate(id: string, label: string) {
@@ -228,14 +248,20 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       confirmLabel: 'Rotate',
     });
     if (!confirmed) return;
-    const res = await fetch(`/api/team/ingest-webhooks/${id}/credentials`, { method: 'POST' });
-    if (!res.ok) {
-      await alertFailure('Rotate failed', res);
-      return;
-    }
-    const data = (await res.json()) as { plaintext: string };
-    dispatch({ type: 'minted', minted: { webhookName: label, plaintext: data.plaintext } });
-    router.refresh();
+    const result = await notifyAction({
+      id: `ingest-webhook:${id}:rotate`,
+      loading: 'Rotating credential…',
+      success: 'Credential rotated',
+      error: 'Couldn’t rotate credential',
+      run: async () => {
+        const res = await fetch(`/api/team/ingest-webhooks/${id}/credentials`, { method: 'POST' });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t rotate credential') };
+        const data = (await res.json()) as { plaintext: string };
+        dispatch({ type: 'minted', minted: { webhookName: label, plaintext: data.plaintext } });
+        return { ok: true };
+      },
+    });
+    if (!result.error) router.refresh();
   }
 
   async function disable(id: string, label: string) {
@@ -246,12 +272,18 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       destructive: true,
     });
     if (!confirmed) return;
-    const res = await fetch(`/api/team/ingest-webhooks/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      await alertFailure('Disable failed', res);
-      return;
-    }
-    router.refresh();
+    const result = await notifyAction({
+      id: `ingest-webhook:${id}:disable`,
+      loading: 'Disabling webhook…',
+      success: 'Webhook disabled',
+      error: 'Couldn’t disable webhook',
+      run: async () => {
+        const res = await fetch(`/api/team/ingest-webhooks/${id}`, { method: 'DELETE' });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t disable webhook') };
+        return { ok: true };
+      },
+    });
+    if (!result.error) router.refresh();
   }
 
   return (
@@ -281,14 +313,7 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
             <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
               {endpointFor(minted.plaintext)}
             </code>
-            <Button
-              size="sm"
-              onClick={() => {
-                copyToClipboard(endpointFor(minted.plaintext));
-              }}
-            >
-              Copy
-            </Button>
+            <CopyButton value={endpointFor(minted.plaintext)} />
           </div>
           <Button
             size="sm"

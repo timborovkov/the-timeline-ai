@@ -15,6 +15,9 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: fakes.push }) }));
 vi.mock('@/app/actions/objects', () => ({ createObjectAction: fakes.createObjectAction }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; id?: string }> }) => run(),
+}));
 vi.mock('@/hooks/use-project-search', () => ({
   useProjectSearch: () => ({
     query: fakes.query,

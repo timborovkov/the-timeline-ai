@@ -111,11 +111,7 @@ export function EditableMetadata({
         </PopoverContent>
       </Popover>
       {error ? (
-        <span
-          id={errorId}
-          role="alert"
-          className="absolute left-2 top-full z-10 whitespace-nowrap text-[10px] text-danger"
-        >
+        <span id={errorId} className="sr-only">
           {error}
         </span>
       ) : null}
