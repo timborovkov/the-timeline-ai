@@ -63,7 +63,8 @@ pnpm --filter @timeline/shared test
 ## Where it fits
 
 - DB layer: [packages/db/README.md](../db/README.md).
-- Evidence-pack product contract and rollout gates:
+- Operating memory engine: [docs/relational-memory.md](../../docs/relational-memory.md).
+- Evidence-pack rollout gates:
   [docs/cross-source-evidence.md](../../docs/cross-source-evidence.md).
 - Documents helpers: `@timeline/shared/documents` exports the document module
   surface, and `@timeline/shared/documents/presentation` exports display-title

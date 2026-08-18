@@ -148,7 +148,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
           {boardModules.length === 0 ? (
             <EmptyPanel label="No boards yet" body="Create a board to give team work a surface." />
           ) : (
-            <div className="border-x border-border">
+            <div>
               {boardModules.map((board) => (
                 <CollectionRow key={board.id}>
                   <CollectionRow.Title>
@@ -186,7 +186,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
             />
           ) : (
             <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-              <div className="border-x border-border">
+              <div>
                 {queue.map((item) => (
                   <WorkQueueRow
                     key={item.id}

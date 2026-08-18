@@ -1252,6 +1252,15 @@ function summaryRefToArtifactRef(ref: objects.ObjectSummarySourceRef): ArtifactR
   if (ref.kind === 'fact') return { kind: 'fact', id: ref.id };
   if (ref.kind === 'relationship') return { kind: 'relationship', id: ref.id };
   if (ref.kind === 'object_change') return { kind: 'object_change', id: ref.id };
+  if (ref.kind === 'document_chunk') {
+    return {
+      kind: 'document_chunk',
+      id: ref.id,
+      documentId: ref.documentId,
+      version: ref.version,
+      chunkId: ref.id,
+    };
+  }
   return null;
 }
 
@@ -1259,6 +1268,7 @@ function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
   if (ref.kind === 'timeline_event') return 'event';
   if (ref.kind === 'object_note') return 'note';
   if (ref.kind === 'object_change') return 'change';
+  if (ref.kind === 'document_chunk') return 'document';
   return ref.kind;
 }
 
@@ -1369,8 +1379,8 @@ function timelinePreview(contentText: string | null): string {
   const cleaned = displayText(contentText ?? 'Timeline event')
     .replace(/\s+/g, ' ')
     .trim();
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
+  if (cleaned.length <= 320) return cleaned;
+  return `${cleaned.slice(0, 317)}...`;
 }
 
 function ProvenanceEntryList({
@@ -1390,7 +1400,7 @@ function ProvenanceEntryList({
             muted && 'border-border bg-bg text-fg-muted',
           )}
         >
-          <p className="line-clamp-2 break-words font-medium leading-5 text-fg">
+          <p className="line-clamp-4 break-words font-medium leading-5 text-fg">
             {timelinePreview(entry.title)}
           </p>
           {entry.reason ? (
@@ -1446,6 +1456,11 @@ function ProvenanceSourceLink({
       className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
     >
       {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
+      {source.contentText || source.quote ? (
+        <span className="mt-0.5 block line-clamp-4 break-words text-fg-muted no-underline">
+          {timelinePreview(source.contentText ?? source.quote)}
+        </span>
+      ) : null}
     </Link>
   );
 }

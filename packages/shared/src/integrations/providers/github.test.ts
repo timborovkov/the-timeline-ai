@@ -467,6 +467,7 @@ describe('githubProvider.handleWebhook', () => {
     expect(pullRequestEvents[0]).toMatchObject({
       dedupKey: 'github:pr:7:open',
       eventType: 'pr.updated',
+      signalClass: 'captured_work',
       objectMap: { type: 'task', externalId: 'acme/app#7' },
     });
     expect(issueEvents[0]).toMatchObject({
@@ -485,6 +486,7 @@ describe('githubProvider.handleWebhook', () => {
     expect(workflowEvents[0]).toMatchObject({
       dedupKey: 'github:workflow_run:11:success:1',
       eventType: 'workflow_run.success',
+      signalClass: 'pulse',
     });
     expect(pushEvents[0]).toMatchObject({
       dedupKey: 'github:commit:sha-abc',

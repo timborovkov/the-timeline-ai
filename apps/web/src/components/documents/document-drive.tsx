@@ -888,7 +888,7 @@ function FolderList({
   if (folders.length === 0) return null;
   return (
     <CollectionGroup title="Folders" count={folders.length}>
-      <ul className="border-x border-border">
+      <ul>
         {folders.map((f) => (
           <li key={f.id}>
             <CollectionRow>
@@ -946,7 +946,7 @@ function DocumentList({
   if (documents.length === 0) return null;
   return (
     <CollectionGroup title="Documents" count={documents.length}>
-      <div className="border-x border-border">
+      <div>
         <VirtualList
           items={documents}
           getItemKey={(document) => document.id}

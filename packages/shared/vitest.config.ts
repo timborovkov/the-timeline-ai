@@ -26,6 +26,7 @@ const pgliteTests = [
   'src/extract/resolve.test.ts',
   'src/ingest-webhooks/keys.test.ts',
   'src/integrations/event-writer.test.ts',
+  'src/integrations/github-task-proposals.test.ts',
   'src/integrations/continuation-handoffs.test.ts',
   'src/integrations/provider-budget.test.ts',
   'src/integrations/scope.test.ts',

@@ -1048,7 +1048,7 @@ function CalendarEventListPages({
 
   return (
     <>
-      <div className="border-x border-border bg-bg">
+      <div>
         {loadedEvents.length > 0 ? (
           <VirtualList
             items={loadedEvents}

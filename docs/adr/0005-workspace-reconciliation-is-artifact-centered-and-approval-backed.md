@@ -1,5 +1,9 @@
 # Workspace reconciliation is artifact-centered and approval-backed
 
+Canonical engine narrative:
+[`docs/relational-memory.md`](../relational-memory.md). This ADR records the
+decision, not the living workflow.
+
 Workspace Reconciliation keeps approvals, workspace objects, tasks, calendar
 events, and other impact context mutually consistent as newer timeline evidence
 arrives. Reconciliation records inferred Artifact Clusters alongside suggestion

@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.11 · Action toasts, collection density, and floating Ask (2026-08-18). Replaces v3.10 Floating Ask.
+**Version:** v3.13 · Approvals select-all (2026-08-18). Replaces v3.12 Linear collection rows.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -24,9 +24,28 @@ by exposing database implementation details in ordinary product views.
 - **Digests** are recurring summaries of change and attention.
 - **Handoffs** are evidence-backed context packs for a teammate or stakeholder.
 - **Operational memory** is durable, queryable work state derived from history.
+- **Signal classes** (internal) split events into communication, captured
+  work, and pulses so the product can relate evidence without treating every
+  source event as a model prompt. Intentional captures stay communication.
+  Curated documents are reference knowledge, not a fourth class. Timeline
+  **event class** is the presentation family (communication, work record,
+  pulse, incident, artifact, schedule), not signal class: a Drive
+  file-changed ping can be a pulse for ingest and an artifact for the
+  inspector. Do not put either label in ordinary chrome.
+- **Work hubs** (internal) are the tasks, projects, people, and artifact
+  clusters that events from different surfaces attach to. Ordinary chrome
+  still names the task or project, not "hub." Proposal chrome should show the
+  attached client or project when one was qualified; it should not invent a
+  "hub" label. Channel and board names that uniquely name a client are qualify
+  evidence, not chrome.
+- **Memory grade** (internal) is the hub's role: goal, work, finding, or
+  mention. Ordinary chrome still names the task or company. Do not add a
+  second importance slider; `priority` 1–4 stays urgency on goals and work.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
+  How events become that state is
+  [`docs/relational-memory.md`](docs/relational-memory.md).
 
 Count chrome: Moments mode and digest headlines count **moments**; All events,
 source filters, and technical disclosures count **source events**. Moment rows
@@ -141,7 +160,7 @@ Ask, Work, Documents, Meetings, Connections, and Team.
 - Inspector: hidden until content exists. Desktop uses a reading pane up to
   `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
-  Calendar, Approvals.
+  Calendar, Digests, Approvals.
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
   Visibility, Email, Exports, and admin-only Advanced.
 
@@ -173,7 +192,10 @@ table.
   popover on desktop and a bottom dialog on mobile. Active filters appear in a
   removable chip row only while active. Pass chrome through named children
   (`CollectionToolbar.Search`, `.Count`, `.Filters`, `.View`, `.Actions`,
-  `.ClearAll`) rather than JSX props.
+  `.ClearAll`) rather than JSX props. Inventory counts belong next to search
+  (`24 of 847` filtered, `847` unfiltered). Filter-only toolbars such as Work →
+  Pinned and Approvals have no inventory chip; labeled totals stay in page
+  metadata or group headers.
 - `CollectionGroup` uses a 40px header with glyph, readable status label,
   count, and optional action. Groups start open; collapse state lasts only for
   the mounted session and is never saved as a preference.
@@ -182,8 +204,10 @@ table.
   two lines: title plus context, then wrapping metadata. Domain content uses
   named children (`CollectionRow.Leading`, `.Title`, `.Context`, `.Metadata`,
   `.Actions`) rather than JSX props. Pass a native `title` on `.Title` and
-  `.Context` when hover should show IDs, timestamps, or raw errors.
-  Non-board collections must never force
+  `.Context` when hover should show IDs, timestamps, or raw errors. Every row
+  keeps a Linear hairline bottom border, including the last row. Do not wrap
+  collection lists in left/right borders or partial boxes. Non-board collections
+  must never force
   horizontal viewport scrolling. Row actions use the shared `ItemActionGroup`,
   `ItemIconButton`, and `ItemOverflowMenu` primitives so item-owned controls
   stay labeled, wrap without scrolling, and remain visible without hover.
@@ -222,8 +246,8 @@ opacity, and transform. They honor reduced motion. No collection introduces a
 new global keyboard shortcut; existing inspectors, drag handles, infinite
 scroll with virtualization, evidence links, and URL state remain the interaction
 contract. Collection inventories use `24 of 847` when a filter is on and `847`
-when it is not. Timeline has no inventory chip; Moments versus All events is
-the page mode.
+when it is not, and only when search or labeled page metadata gives that number
+a unit. Timeline, Work → Pinned, and Approvals have no toolbar inventory chip.
 
 ### SectionHeading
 
@@ -569,9 +593,10 @@ menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
 back link; Reconcile and View workspace item sit in the header.
 
 Work → Pinned is the complete pin-management surface. It is a single
-side-to-side list with infinite scroll, virtualization, and All, Objects, Boards, Documents,
-Meetings, Calendar, and Timeline filters. Reordering is available only under
-All so filtered adjacency never changes the mixed global order implicitly.
+side-to-side Linear list with infinite scroll, virtualization, and no inventory
+chip. Filters are All, Objects, Boards, Documents, Meetings, Calendar, and
+Timeline. Reordering is available only under All so filtered adjacency never
+changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
 bottom; keyboard moves announce their result through a polite live region.
 
@@ -937,4 +962,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Floating Ask context names | Names the float from the selected timeline, calendar, task, search, or folder item, and makes the mobile sheet modal while desktop stays non-modal. |
 | 2026-08-17 | Quiet floating Ask header | Keeps the shortcut on the launcher and drops the header shortcut plus earlier-count line. |
 | 2026-08-18 | Collection chrome named children | Passes CollectionRow, CollectionToolbar, EditableMetadata, and PageHeader chrome through named children; Title/Context `title` carries hover IDs and errors. |
+| 2026-08-17 | Linear collection rows | Collection rows use a full-width bottom hairline only. Pinned and Approvals drop unlabeled toolbar counts. |
 | 2026-08-18 | Approvals select-all | Restores bulk review without a persistent Accept-all bar: a visible Select-all checkbox for loaded proposals, plus the same control on multi-item bundle headers. |

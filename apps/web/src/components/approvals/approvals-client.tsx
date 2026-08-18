@@ -1048,7 +1048,7 @@ function ApprovalListBody({
         />
       ) : null}
       {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
-      <div className="border-x border-border">
+      <div>
         {selectable && actionableIds.length > 0 ? (
           <div className="flex min-h-10 items-center border-b border-border bg-surface/70 px-1 sm:px-2">
             <ApprovalSelectAllControl

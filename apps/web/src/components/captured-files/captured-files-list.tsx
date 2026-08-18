@@ -401,7 +401,7 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           if (!open) dispatchUi({ type: 'promote', file: null });
         }}
       >
-        <div className="overflow-hidden border-x border-border bg-surface">
+        <div>
           <VirtualList
             items={visibleFiles}
             getItemKey={(file) => file.id}

@@ -1253,6 +1253,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Proposal meeting');
     expect(html).toContain('Select all visible proposals');
     expect(html).not.toContain('Accept all visible');
+    expect(html).not.toContain('border-x border-border');
   });
 
   it('accepts every visible actionable proposal after select all', async () => {

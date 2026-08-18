@@ -1,5 +1,6 @@
 import {
   type Db,
+  agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
   artifactClusterMembers,
@@ -10,6 +11,7 @@ import {
   calendarEventEntities,
   calendarEvents,
   documents,
+  documentChunks,
   documentVersions,
   chatMessages,
   chatSessions,
@@ -2650,7 +2652,8 @@ describe('object scope — notes and suggestions', () => {
       expect(entry.title).toHaveLength(160);
       expect(entry.title.endsWith('...')).toBe(true);
       expect(entry.evidence).toHaveLength(1);
-      expect(entry.evidence[0]?.contentText).toBeNull();
+      expect(entry.evidence[0]?.contentText).toHaveLength(320);
+      expect(entry.evidence[0]?.contentText?.endsWith('...')).toBe(true);
       expect(typeof entry.evidence[0]?.rawEventId).toBe('string');
     }
   });
@@ -4409,6 +4412,63 @@ describe('object scope — merge cleanup', () => {
     expect(detail?.summary?.cannotGenerateReason).toBe('not_enough_object_memory');
   });
 
+  it('can generate a summary from one accepted create-evidence event', async () => {
+    const workspace = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await workspace.objects.createObject({
+      type: 'task',
+      canonicalName: 'Fix M-14 effectOnTotalAssets sign',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'integration',
+        contentText:
+          'Cursor Bugbot flagged a Medium-severity defect in timborovkov/audit-ai#88: M-14 effectOnTotalAssets sign.',
+        occurredAt: new Date('2026-05-11T12:10:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [suggestion] = await db
+      .insert(agentSuggestions)
+      .values({
+        teamId: TEAM_A,
+        source: 'background',
+        title: 'Create Bugbot task',
+        dedupeKey: 'create-bugbot-task',
+        visibility: 'team',
+      })
+      .returning({ id: agentSuggestions.id });
+    if (!suggestion) throw new Error('failed to insert suggestion');
+    await db.insert(agentSuggestionItems).values({
+      suggestionId: suggestion.id,
+      teamId: TEAM_A,
+      status: 'accepted',
+      operation: 'create',
+      targetKind: 'task',
+      targetId: object.id,
+      resultId: object.id,
+      title: 'Fix M-14 effectOnTotalAssets sign',
+      dedupeKey: 'create-bugbot-task:item',
+      proposedPayload: { canonicalName: 'Fix M-14 effectOnTotalAssets sign' },
+    });
+    await db.insert(agentSuggestionEvidence).values({
+      suggestionId: suggestion.id,
+      teamId: TEAM_A,
+      rawEventId: event.id,
+      quote: 'Cursor Bugbot flagged a Medium-severity defect in timborovkov/audit-ai#88.',
+    });
+
+    const detail = await workspace.objects.getObject(object.id);
+    expect(detail?.summary?.canGenerate).toBe(true);
+    await expect(
+      workspace.objects.enqueueObjectSummaryRefresh(object.id, { trigger: 'manual' }),
+    ).resolves.toMatchObject({ canGenerate: true, enqueued: true });
+  });
+
   it('does not count legacy object-change source_event_id rows as summary change sources', async () => {
     const workspace = withTeam(db, TEAM_A, USER_OWNER);
     const object = await workspace.objects.createObject({
@@ -5164,6 +5224,143 @@ describe('object scope — merge cleanup', () => {
       .where(eq(objectSummaries.entityId, object.id));
     expect(summary?.sourceRefs).toEqual([{ kind: 'timeline_event', id: event.id }]);
     expect(summary?.sourceCounts).toMatchObject({ events: 1, facts: 0 });
+  });
+
+  it('includes related curated document chunks in the object summary packet', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER);
+    const object = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Acme Labs',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const [event] = await db
+      .insert(rawEvents)
+      .values({
+        teamId: TEAM_A,
+        authorUserId: USER_OWNER,
+        source: 'web',
+        contentText: 'Acme Labs is the pilot customer.',
+        occurredAt: new Date('2026-06-02T10:00:00.000Z'),
+        visibility: 'team',
+      })
+      .returning({ id: rawEvents.id });
+    if (!event) throw new Error('failed to insert event');
+    const [fact] = await db
+      .insert(facts)
+      .values({
+        teamId: TEAM_A,
+        rawEventId: event.id,
+        statement: 'Acme Labs is the pilot customer.',
+        confidence: 1,
+        modelVersion: 'test',
+      })
+      .returning({ id: facts.id });
+    if (!fact) throw new Error('failed to insert fact');
+    await db.insert(factEntities).values({
+      factId: fact.id,
+      entityId: object.id,
+      role: 'subject',
+    });
+    const [document] = await db
+      .insert(documents)
+      .values({
+        teamId: TEAM_A,
+        ownerUserId: USER_OWNER,
+        name: 'Acme MSA.pdf',
+        visibility: 'team',
+      })
+      .returning({ id: documents.id });
+    if (!document) throw new Error('failed to insert document');
+    const [version] = await db
+      .insert(documentVersions)
+      .values({
+        teamId: TEAM_A,
+        documentId: document.id,
+        version: 1,
+        objectKey: 'team/acme-msa.pdf',
+        contentType: 'application/pdf',
+      })
+      .returning({ id: documentVersions.id });
+    if (!version) throw new Error('failed to insert version');
+    const [chunk] = await db
+      .insert(documentChunks)
+      .values({
+        teamId: TEAM_A,
+        documentId: document.id,
+        documentVersionId: version.id,
+        chunkIndex: 0,
+        text: 'Payment terms for Acme Labs are net 30.',
+        tokenCount: 12,
+      })
+      .returning({ id: documentChunks.id });
+    if (!chunk) throw new Error('failed to insert chunk');
+    let prompt = '';
+
+    await expect(
+      generateAndStoreObjectSummary(
+        db,
+        scope,
+        object.id,
+        { trigger: 'manual' },
+        {
+          chatStructured: <TSchema extends z.ZodType>(
+            input: ChatStructuredInput<TSchema>,
+          ): Promise<ChatStructuredResult<TSchema>> => {
+            prompt = input.prompt;
+            return Promise.resolve({
+              model: 'test-summary-model',
+              object: input.schema.parse({
+                overview: 'Acme Labs is the pilot customer on net-30 payment terms.',
+                overviewSourceRefs: [
+                  { kind: 'fact', id: fact.id },
+                  {
+                    kind: 'document_chunk',
+                    id: chunk.id,
+                    documentId: document.id,
+                    version: 1,
+                  },
+                ],
+                currentState: [
+                  {
+                    label: 'Payment terms',
+                    text: 'The MSA sets net 30.',
+                    sourceRefs: [
+                      {
+                        kind: 'document_chunk',
+                        id: chunk.id,
+                        documentId: document.id,
+                        version: 1,
+                      },
+                    ],
+                  },
+                ],
+                openQuestions: [],
+                conflicts: [],
+              }),
+            });
+          },
+          enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toEqual({ status: 'ready' });
+
+    expect(prompt).toContain('Acme MSA.pdf');
+    expect(prompt).toContain('Payment terms for Acme Labs are net 30.');
+    const [summary] = await db
+      .select()
+      .from(objectSummaries)
+      .where(eq(objectSummaries.entityId, object.id));
+    expect(summary?.sourceRefs).toEqual(
+      expect.arrayContaining([
+        { kind: 'fact', id: fact.id },
+        {
+          kind: 'document_chunk',
+          id: chunk.id,
+          documentId: document.id,
+          version: 1,
+        },
+      ]),
+    );
   });
 
   it('does not store a generated summary when the object changed during generation', async () => {
