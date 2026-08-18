@@ -178,10 +178,10 @@ LINEAR_WEBHOOK_SECRET=...</code></pre>
         titles stay human-facing while provider IDs, issue keys, numbers, and URLs stay in
         integration metadata, aliases, or evidence. Envelope <code>signalClass</code> decides
         extract vs parse: merged PRs and closed issues are captured work and skip the models;
-        workflow runs are pulses; review comments are findings. Timeline
-        <code>event_class</code> is the inspector family and does not decide that skip. Merged PRs
-        and closed issues enqueue a coalesced, approval-backed Timeline task update keyed by
-        <code>repo#number</code>, not by nearby unrelated events.
+        workflow runs are pulses; review comments are findings. Timeline <code>event_class</code> is
+        the inspector family and does not decide that skip. Merged PRs and closed issues enqueue a
+        coalesced, approval-backed Timeline task update keyed by <code>repo#number</code>, not by
+        nearby unrelated events.
       </p>
       <ol>
         <li>
