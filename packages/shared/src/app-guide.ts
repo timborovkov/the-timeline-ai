@@ -85,7 +85,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     minRole: 'member',
     intents: ['objects', 'people', 'companies', 'projects', 'deals', 'topics', 'object cleanup'],
     guide:
-      'Use Objects to browse durable records resolved from team activity. Object pages collect facts, notes, relationships, tasks, and recent changes.',
+      'Use Objects to browse durable records resolved from team activity. Object pages collect facts, discussion comments, relationships, tasks, and recent changes.',
     relatedRouteIds: ['work', 'tasks', 'boards', 'help/objects'],
   },
   {
@@ -455,9 +455,9 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     href: '/help/objects',
     group: 'help',
     minRole: 'member',
-    intents: ['how objects work', 'object notes', 'relationships', 'duplicates', 'cleanup'],
+    intents: ['how objects work', 'object discussion', 'object comments', 'relationships', 'duplicates', 'cleanup'],
     guide:
-      'Objects are durable records resolved from activity. Use notes, relationships, cleanup suggestions, and object pages to keep the operational record accurate.',
+      'Objects are durable records resolved from activity. Use discussion comments, relationships, cleanup suggestions, and object pages to keep the operational record accurate.',
     relatedRouteIds: ['work', 'objects', 'tasks'],
   },
   {

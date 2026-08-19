@@ -85,7 +85,7 @@ export const HELP_PAGES: HelpPage[] = [
           'Home opens the team setup checklist under Ask for new teams; after Hide it stays as a quiet Team setup checklist toggle. Other app pages keep a quiet header chip back to that panel until setup is done or hidden.',
           'Home lists open tasks and one open-objects count (people, companies, projects, deals, and follow-ups) when those counts are not zero.',
           'Tasks and boards show owners, status, blockers, due dates, and source evidence.',
-          'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history.',
+          'Object pages keep people, companies, projects, deals, documents, and tasks tied to the event history, with discussion comments and @mentions.',
           'Updates, digests, and handoffs are generated from the current work state with citations.',
           'On dashboard pages other than Home, floating Ask (⌘J / Ctrl+J) asks about the current view and keeps one thread until New. Home still opens the full Ask page.',
           'Work → Digests lists every stored daily briefing as collapsed rows so a teammate can open a specific day.',
@@ -203,7 +203,7 @@ export const HELP_PAGES: HelpPage[] = [
     sections: [
       {
         title: 'What objects are',
-        body: 'Objects are the durable records Timeline resolves from raw activity. They collect facts, notes, relationships, open tasks, and recent changes in one place.',
+        body: 'Objects are the durable records Timeline resolves from raw activity. They collect facts, discussion comments, relationships, open tasks, and recent changes in one place.',
         items: [
           'People, companies, projects, deals, and tasks share one object system.',
           'Object pages show cited timeline activity and extracted facts.',

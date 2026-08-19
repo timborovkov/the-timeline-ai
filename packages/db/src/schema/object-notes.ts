@@ -4,10 +4,11 @@ import { entities } from '#src/schema/entities.js';
 import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
-// Manual, mutable notes attached to a workspace object. Unlike raw_events
-// (append-only), notes can be edited and soft-deleted by their author.
+// Team discussion comments on a workspace object. Unlike raw_events
+// (append-only), authors can edit and soft-delete their own comments.
 // Every create/edit/delete also writes an immutable `raw_events` row +
-// `object_changes` row so the history is reconstructable.
+// `object_changes` row so the history is reconstructable. Mentions live on
+// `object_note_mentions`.
 export const objectNotes = pgTable(
   'object_notes',
   {

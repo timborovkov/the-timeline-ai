@@ -151,11 +151,24 @@
           <tr>
             <td><code>object_notes</code></td>
             <td>
-              Mutable notes attached to an object. Human-authored notes remain author-owned;
-              accepted agent suggestions can create or update Q&amp;A notes as visible object
-              memory.
+              Team discussion comments on an object (Linear-style activity + comments). Authors can
+              edit or soft-delete their own comments. Accepted agent Q&amp;A still lands here as
+              comments. Existing rows stay comments — there is no parallel comments table.
             </td>
             <td><code>author_user_id</code>, <code>body</code>, soft <code>deleted_at</code></td>
+          </tr>
+          <tr>
+            <td><code>object_note_mentions</code></td>
+            <td>
+              Resolved <code>@mentions</code> on a comment. User mentions fan out to
+              <code>kind = 'mention'</code> inbox rows (self-mentions are stored, not notified).
+              One agent mention per comment (<code>@timeline</code> / <code>@bot</code> /
+              <code>@agent</code>) can enqueue an in-thread Timeline reply.
+            </td>
+            <td>
+              <code>kind</code> (user/agent), <code>mentioned_user_id</code>,
+              <code>start_offset</code>, <code>end_offset</code>
+            </td>
           </tr>
           <tr>
             <td><code>object_views</code></td>
@@ -400,8 +413,11 @@
       <p>
         Inside <code>updateObject</code>, after the entity + audit writes commit, the helper inserts
         <code>object_changed</code> notifications for the owner and assignee (deduped, and skipping
-        the actor themselves). Fan-out is in-process for v1; if volume grows, the same helper can
-        switch to a <code>notify</code> BullMQ queue without changing callers.
+        the actor themselves). Comment <code>@mentions</code> insert <code>mention</code> rows with
+        <code>payload.note_id</code> so Inbox and Work unread pings deep-link to
+        <code>?comment=</code> + <code>#comment-</code> on the object page. Fan-out is in-process
+        for v1; if volume grows, the same helper can switch to a <code>notify</code> BullMQ queue
+        without changing callers.
       </p>
       <p>
         The inbox view (<code>/app/inbox</code>) and header preview sort newest first by
