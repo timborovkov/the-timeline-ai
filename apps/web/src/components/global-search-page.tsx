@@ -20,6 +20,7 @@ import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { EmptyState } from '@/components/empty-state';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
@@ -666,16 +667,16 @@ function SearchResultsPanel({
       ) : loading && results.length === 0 ? (
         <SearchResultsLoading />
       ) : results.length === 0 && !loading ? (
-        <div className="px-3 py-8">
-          <p className="text-sm font-medium text-fg">
-            {hasSearchCriteria ? 'No matches found' : 'Start with a search'}
-          </p>
-          <p className="mt-1 text-sm text-fg-muted">
-            {hasSearchCriteria
+        <EmptyState
+          icon={Search}
+          size="inset"
+          title={hasSearchCriteria ? 'No matches found' : 'Start with a search'}
+          body={
+            hasSearchCriteria
               ? 'Try different words or adjust the filters.'
-              : 'Enter words, then narrow results by type, source, or date.'}
-          </p>
-        </div>
+              : 'Enter words, then narrow results by type, source, or date.'
+          }
+        />
       ) : (
         <ul>
           {results.map((result) => (

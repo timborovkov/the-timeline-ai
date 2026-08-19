@@ -398,10 +398,12 @@ describe('WorkPage', () => {
     const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(html).toContain('Work queue clear');
+    expect(html).toContain('Work queue is clear');
     expect(html).toContain('Open boards');
     expect(html).toContain('Boards');
     expect(html).toContain('No boards yet');
+    expect(html).toContain('Create a board so the team has a place to run work');
+    expect(html).toContain('Create board');
     expect(html).not.toContain('Pinned and team boards');
     expect(html.indexOf('Boards')).toBeLessThan(html.indexOf('Work queue'));
     expect(html).not.toContain('Work surfaces');

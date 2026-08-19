@@ -146,4 +146,17 @@ describe('PinnedWorkspaceManager', () => {
     expect(screen.queryByText('1')).toBeNull();
     expect(document.querySelector('output')).toBeNull();
   });
+
+  it('uses the shared empty state when there are no pins', () => {
+    render(
+      <PinnedWorkspaceManager initialPage={{ items: [], nextCursor: null }} filter="all" />,
+    );
+
+    expect(screen.getByText('No pins yet')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Pin an item from its detail page or overflow menu to keep it close on Home and Work.',
+      ),
+    ).toBeTruthy();
+  });
 });

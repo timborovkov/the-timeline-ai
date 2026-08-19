@@ -1,10 +1,11 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { ExternalLink } from 'lucide-react';
+import { Captions, ExternalLink } from 'lucide-react';
 import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
+import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
@@ -148,11 +149,20 @@ export default async function MeetingDetailPage({ params }: Props) {
       <section className="space-y-2">
         <SectionHeading>Transcript</SectionHeading>
         {chunks.length === 0 ? (
-          <p className="text-sm text-fg-muted">
-            {meeting.status === 'pending' || meeting.status === 'joining'
-              ? 'Waiting for the notetaker to join…'
-              : 'No transcript chunks captured.'}
-          </p>
+          <EmptyState
+            icon={Captions}
+            size="inset"
+            title={
+              meeting.status === 'pending' || meeting.status === 'joining'
+                ? 'Waiting for the notetaker to join'
+                : 'No transcript chunks captured'
+            }
+            body={
+              meeting.status === 'pending' || meeting.status === 'joining'
+                ? 'Transcript lines will appear here after the notetaker joins the call.'
+                : 'This meeting has no captured transcript yet.'
+            }
+          />
         ) : (
           <ol className="space-y-2 border-y border-border py-3 text-sm">
             {chunks.map((c) => (

@@ -1,11 +1,13 @@
 'use client';
 
+import { Plug } from 'lucide-react';
 import Image from 'next/image';
 import { useState } from 'react';
 
 import type * as integrationsLib from '@timeline/shared/integrations';
 
 import { CollectionRow } from '@/components/collections/collection-row';
+import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
 import { notifyAction } from '@/lib/notify';
@@ -54,12 +56,12 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
 
   if (catalog.length === 0) {
     return (
-      <div className="border-y border-border py-6">
-        <p className="text-sm font-medium text-fg">No providers are available.</p>
-        <p className="mt-1 text-sm text-fg-muted">
-          There are no providers ready to connect right now.
-        </p>
-      </div>
+      <EmptyState
+        icon={Plug}
+        size="inset"
+        title="No providers are available"
+        body="There are no providers ready to connect right now."
+      />
     );
   }
 

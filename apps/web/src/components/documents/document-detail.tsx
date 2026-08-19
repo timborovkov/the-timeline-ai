@@ -4,7 +4,7 @@ import {
   documentPresentation,
   truncateFilenameMiddle,
 } from '@timeline/shared/documents/presentation';
-import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
+import { Download, EyeOff, FileText, History, Link2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
@@ -19,6 +19,7 @@ import {
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DocumentPreview } from '@/components/documents/document-preview';
+import { EmptyState } from '@/components/empty-state';
 import { EvidenceLink } from '@/components/evidence-link';
 import { PinButton } from '@/components/pins/pin-button';
 import { SectionHeading } from '@/components/section-heading';
@@ -295,73 +296,81 @@ export function DocumentDetail({
 
       <section className="space-y-3 border-y border-border py-4">
         <SectionHeading>Version history</SectionHeading>
-        <ul className="divide-y divide-border">
-          {versions.map((v) => {
-            const highlight = requestedVersion === v.version;
-            const isCurrent = v.id === currentDocument.currentVersionId;
-            return (
-              <li
-                key={v.id}
-                className={
-                  'flex items-center justify-between gap-3 py-3 max-sm:flex-col max-sm:items-stretch ' +
-                  (highlight || activeVersion?.id === v.id ? 'rounded bg-surface-2 px-2 -mx-2' : '')
-                }
-              >
-                <div className="min-w-0 flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-sm font-semibold">v{String(v.version)}</span>
-                    {isCurrent && (
-                      <Badge variant="outline" className="text-[10px]">
-                        current
-                      </Badge>
-                    )}
-                    <StatusBadge status={v.processingStatus} />
+        {versions.length === 0 ? (
+          <EmptyState
+            icon={History}
+            size="inset"
+            title="No versions yet"
+            body="New uploads of this document will appear here as version history."
+          />
+        ) : (
+          <ul className="divide-y divide-border">
+            {versions.map((v) => {
+              const highlight = requestedVersion === v.version;
+              const isCurrent = v.id === currentDocument.currentVersionId;
+              return (
+                <li
+                  key={v.id}
+                  className={
+                    'flex items-center justify-between gap-3 py-3 max-sm:flex-col max-sm:items-stretch ' +
+                    (highlight || activeVersion?.id === v.id
+                      ? 'rounded bg-surface-2 px-2 -mx-2'
+                      : '')
+                  }
+                >
+                  <div className="min-w-0 flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold">v{String(v.version)}</span>
+                      {isCurrent && (
+                        <Badge variant="outline" className="text-[10px]">
+                          current
+                        </Badge>
+                      )}
+                      <StatusBadge status={v.processingStatus} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {formatBytes(v.byteSize)} · {v.contentType ?? 'unknown'} ·{' '}
+                      {new Date(v.createdAt).toLocaleString()}
+                    </p>
+                    {v.processingError ? (
+                      <TechnicalDetails
+                        items={[
+                          {
+                            label: 'Processing error',
+                            value: v.processingError,
+                            copyValue: v.processingError,
+                          },
+                        ]}
+                      />
+                    ) : null}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    {formatBytes(v.byteSize)} · {v.contentType ?? 'unknown'} ·{' '}
-                    {new Date(v.createdAt).toLocaleString()}
-                  </p>
-                  {v.processingError ? (
-                    <TechnicalDetails
-                      items={[
-                        {
-                          label: 'Processing error',
-                          value: v.processingError,
-                          copyValue: v.processingError,
-                        },
-                      ]}
-                    />
-                  ) : null}
-                </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant={activeVersion?.id === v.id ? 'default' : 'outline'}
-                    asChild
-                  >
-                    <Link href={`/app/documents/${document.id}?version=${String(v.version)}`}>
-                      Preview
-                    </Link>
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      void onDownload(v.id);
-                    }}
-                    disabled={downloading.includes(v.id)}
-                  >
-                    <Download className="mr-1 size-3.5" />
-                    {downloading.includes(v.id) ? 'Opening…' : 'Download'}
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-          {versions.length === 0 && (
-            <li className="py-6 text-center text-sm text-muted-foreground">No versions yet</li>
-          )}
-        </ul>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant={activeVersion?.id === v.id ? 'default' : 'outline'}
+                      asChild
+                    >
+                      <Link href={`/app/documents/${document.id}?version=${String(v.version)}`}>
+                        Preview
+                      </Link>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        void onDownload(v.id);
+                      }}
+                      disabled={downloading.includes(v.id)}
+                    >
+                      <Download className="mr-1 size-3.5" />
+                      {downloading.includes(v.id) ? 'Opening…' : 'Download'}
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </section>
       {dialog.node}
     </div>

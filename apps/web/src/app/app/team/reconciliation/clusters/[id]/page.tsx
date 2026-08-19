@@ -1,5 +1,5 @@
 import { withTeam } from '@timeline/shared/team-scope';
-import { Play } from 'lucide-react';
+import { FileOutput, Files, Play } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
@@ -13,6 +13,7 @@ import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { ClusterOutputRow } from '@/components/reconciliation/cluster-output-row';
 import { ReconciliationForbiddenView } from '@/components/reconciliation/forbidden-view';
@@ -142,7 +143,12 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
     <section className="space-y-3">
       <SectionHeading>Evidence</SectionHeading>
       {rows.length === 0 ? (
-        <p className="px-1 py-4 text-sm text-fg-muted">No visible evidence for this cluster.</p>
+        <EmptyState
+          icon={Files}
+          size="inset"
+          title="No visible evidence"
+          body="Evidence for this cluster will appear here when sources attach."
+        />
       ) : (
         <ul className="border-y border-border">
           {rows.map((row, index) => {
@@ -191,9 +197,12 @@ function OutputList({
     <section className="space-y-3">
       <SectionHeading>Outputs</SectionHeading>
       {rows.length === 0 ? (
-        <p className="px-1 py-4 text-sm text-fg-muted">
-          No visible reconciliation outputs for this cluster.
-        </p>
+        <EmptyState
+          icon={FileOutput}
+          size="inset"
+          title="No visible outputs"
+          body="Reconciliation outputs for this cluster will appear here after a run."
+        />
       ) : (
         <ul className="border-y border-border">
           {rows.map((row) => {

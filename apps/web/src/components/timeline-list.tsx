@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileText,
   GitPullRequest,
+  History,
   Mail,
   MessageSquareText,
   Mic,
@@ -29,7 +30,7 @@ import { CitationCopyChip } from '@/components/artifact-reference-chip';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { EventVisibilityForm, type SavedEventVisibility } from '@/components/event-visibility-form';
 import { useInspector } from '@/components/inspector-context';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
@@ -1504,21 +1505,17 @@ export function TimelineList({
   ]);
 
   if (visibleMoments.length === 0) {
-    if (emptyAction) {
-      return (
-        <EmptyAction
-          title={emptyLabel}
-          body={emptyAction.body}
-          href={emptyAction.href}
-          action={emptyAction.label}
-        />
-      );
-    }
-
     return (
-      <div className="border-y border-border py-10 text-center">
-        <p className="text-sm text-fg-dim">{emptyLabel}</p>
-      </div>
+      <EmptyState
+        icon={History}
+        title={emptyLabel}
+        body={
+          emptyAction?.body ??
+          'Moments will appear here as the timeline collects work from capture and connected sources.'
+        }
+        href={emptyAction?.href}
+        action={emptyAction?.label}
+      />
     );
   }
 

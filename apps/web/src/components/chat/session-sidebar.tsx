@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { MessageSquare, Plus, Search, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useMemo, useRef, useState, useSyncExternalStore, useTransition } from 'react';
@@ -9,6 +9,7 @@ import { archiveChatSessionAction } from '@/app/actions/chat';
 import { loadChatSessionsPageAction } from '@/app/actions/collection-pages';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
+import { EmptyState } from '@/components/empty-state';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -261,11 +262,19 @@ function SessionSidebarContent({
       <SessionSearch id="desktop-chat-search" query={query} onQueryChange={setQuery} />
       <div data-visual-dynamic="chat-sessions" className="min-h-0 flex-1">
         {list.sessions.length === 0 ? (
-          <p className="px-1 text-xs text-fg-muted">
-            No chats yet. Start a new chat to ask about your timeline.
-          </p>
+          <EmptyState
+            icon={MessageSquare}
+            size="compact"
+            title="No chats yet"
+            body="Start a new chat to ask about this team's timeline."
+          />
         ) : visibleSessions.length === 0 && list.cursor === null ? (
-          <p className="px-1 text-xs text-fg-muted">No chats match that search.</p>
+          <EmptyState
+            icon={Search}
+            size="compact"
+            title="No chats match that search"
+            body="Try a different title, or clear the search to see recent chats."
+          />
         ) : (
           <div ref={scrollParentRef} className="h-full overflow-y-auto">
             <VirtualList
@@ -401,11 +410,19 @@ function MobileSessionNavContent({
           <NewChatButton onClick={newChat} className="w-full" />
           <SessionSearch id="mobile-chat-search" query={query} onQueryChange={setQuery} />
           {list.sessions.length === 0 ? (
-            <p className="px-1 py-2 text-xs text-fg-muted">
-              No chats yet. Start a new chat to ask about your timeline.
-            </p>
+            <EmptyState
+              icon={MessageSquare}
+              size="compact"
+              title="No chats yet"
+              body="Start a new chat to ask about this team's timeline."
+            />
           ) : visibleSessions.length === 0 && list.cursor === null ? (
-            <p className="px-1 py-2 text-xs text-fg-muted">No chats match that search.</p>
+            <EmptyState
+              icon={Search}
+              size="compact"
+              title="No chats match that search"
+              body="Try a different title, or clear the search to see recent chats."
+            />
           ) : (
             <div data-visual-dynamic="mobile-chat-sessions">
               <VirtualList
