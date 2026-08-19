@@ -202,8 +202,13 @@ function assignCalendarBound(
   }
   const bound = calendarInstantOrDate(payload[instantKey]);
   if (bound.date) {
-    if (!Object.hasOwn(payload, dateKey)) payload[dateKey] = bound.date;
-    delete payload[instantKey];
+    if (dateKey === 'startDate' && !Object.hasOwn(payload, 'startDate')) {
+      payload.startDate = bound.date;
+    } else if (dateKey === 'endDate' && !Object.hasOwn(payload, 'endDate')) {
+      payload.endDate = bound.date;
+    }
+    if (instantKey === 'startAt') delete payload.startAt;
+    else delete payload.endAt;
     return;
   }
   if (bound.instant) payload[instantKey] = bound.instant;
