@@ -17,7 +17,9 @@ const fakes = vi.hoisted(() => ({
   notifyError: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: fakes.refresh }),
+}));
 vi.mock('@/components/ui/app-dialog', () => ({
   useAppDialog: () => ({ confirm: fakes.confirm }),
 }));

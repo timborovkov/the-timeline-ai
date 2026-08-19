@@ -1,5 +1,7 @@
+import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
+import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import type { SuggestionBundle } from '@timeline/shared/suggestions';
@@ -7,11 +9,11 @@ import type { Metadata } from 'next';
 
 import { suggestionTargetsObject } from '@/app/app/objects/[id]/suggestion-targets';
 import { HistoryBackLink } from '@/components/history-back-link';
-import { ObjectBoardContext } from '@/components/objects/object-board-context';
 import { ObjectDetailClient } from '@/components/objects/object-detail-client';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { displayMemberLabel } from '@/lib/display-labels';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
@@ -101,7 +103,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   }
 
   await scope.objects.markVisited(detail.id);
-  const [boardContext, pendingBundles, projects, primaryProjects, initialPinned] =
+  const [boardContext, pendingBundles, projects, primaryProjects, initialPinned, members] =
     await Promise.all([
       scope.boards.listObjectBoardContext(detail.id),
       scope.suggestions.listPendingSuggestions(),
@@ -112,7 +114,24 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         ? scope.objects.listPrimaryProjectsForTasks([detail.id])
         : Promise.resolve([]),
       scope.pins.isPinned({ kind: 'object', key: detail.id }),
+      detail.type === 'task' ? scope.timeline.listMembers() : Promise.resolve([]),
     ]);
+  const memberIds = members.map((member) => member.userId);
+  const memberRows =
+    memberIds.length > 0
+      ? await db
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(inArray(users.id, memberIds))
+      : [];
+  const memberMap = new Map(memberRows.map((member) => [member.id, member] as const));
+  const memberOptions = members.map((member) => {
+    const user = memberMap.get(member.userId);
+    return {
+      id: member.userId,
+      label: displayMemberLabel(user),
+    };
+  });
   const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {
     const items = objectPageSuggestionItems(bundle, detail.id, boardItemIds);
@@ -120,20 +139,21 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <HistoryBackLink
         fallbackHref={safeSameOriginPath(firstParam(query.returnTo), '/app/objects')}
         label="Back"
       />
-      <ObjectBoardContext rows={boardContext} />
       <ObjectDetailClient
         detail={detail}
         userId={session.user.id}
         initialPinned={initialPinned}
         suggestions={suggestions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+        members={memberOptions}
         primaryProject={primaryProjects[0] ?? null}
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
+        boardContext={boardContext}
       />
     </div>
   );

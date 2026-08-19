@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.16 · Board kanban toast-only metadata (2026-08-19). Replaces v3.15 Collection chrome with timeline search.
+**Version:** v3.17 · Object and task detail rails (2026-08-19). Replaces v3.16 Board kanban toast-only metadata.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -124,7 +124,7 @@ Both families are self-hosted with `next/font/local`.
 
 | Role | Font and size |
 | --- | --- |
-| Page title | Switzer 600, 24px default / 18px collection variant |
+| Page title | Switzer 600, 24px default / 18px object, task detail, and collection variant |
 | Auth and help marketing hero | Switzer 600, 32px mobile / 48px tablet / 60px desktop |
 | Public acquisition display | Switzer 600, 64px mobile / fluid up to 150px desktop |
 | Section heading | Switzer 600, 16px |
@@ -626,7 +626,7 @@ changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
 bottom; keyboard moves announce their result through a polite live region.
 
-Detail pages use a visible Pin/Unpin button with `aria-pressed`. Dense rows,
+Detail pages use a visible icon-only Pin/Unpin control with `aria-pressed`. Dense rows,
 cards, calendar entries, timeline moments, and global-search results keep the
 same action inside their overflow menu, whose accessible label includes the
 target title. Controls update optimistically, retain focus, and restore the
@@ -658,8 +658,49 @@ use readable text, never color alone. Project is a distinct named relation.
 Task list rows show it once, as the editable project control, not also as a
 static context string. Kanban cards keep that same editable control in the
 compact metadata row rather than a colored tag or a second project label.
-Detail panels keep the labeled Project field. Archived tasks replace project and
-category controls with a short instruction to unarchive the task first.
+Task peeks and object pages reuse the same `EditableMetadata` triggers as the
+list rows. Archived tasks replace project and category controls with a short
+instruction to unarchive the task first.
+
+### Object and task detail
+
+Task list selection opens a right-hand peek on the same route (`?task=`). Object
+rows and the peek’s “Open object” link go to `/app/objects/[id]` with `returnTo`
+so Back restores the originating list. In-list selection links use
+`scroll={false}` so opening a peek does not jump the page.
+
+The peek is a dense inspector on the shared detail rail, not a form card:
+14px title, ghost icon Pin/Close, then the same status / priority / assignee /
+due / project / category triggers used in the list. Project and category pickers on this
+surface are borderless. Do not duplicate those values in a second “current”
+grid. Do not label the peek “side panel.” If accepted creation evidence exists,
+lead with that “why this exists” excerpt. Notes and related links follow as
+unboxed rows. Empty memory, empty related context, and empty notes stay out of
+the peek.
+
+The full object page is a Linear-style issue view, not a work-index. It has no
+`WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
+editable title. Board placement is a muted header line, not a standalone
+section, and those same boards are not repeated under Connected work. Pin is a ghost icon; Ask uses the
+shared floating binder. Repair memory and Add task live in the overflow
+menu. The main column uses an 8px section stack and 14px body at 1.35
+line-height: why this exists, a generated summary only when it has content or
+an actionable generate/retry state, then only the provenance / connected-work /
+evidence / facts groups that have items. Empty “Not enough object memory,” “No
+connected work,” and “Nothing here yet” cards are prohibited. Notes keep a
+borderless composer. The right column is one Properties rail: a 6px-radius
+`--surface` panel with a hairline `--border`, not raw page canvas. Properties,
+Related, recent changes, and Archive share that one panel and divide with
+hairlines. Do not nest a card per field. The task peek uses the same rail so
+it lifts off the list in light and dark. An empty summary is a single
+Generate summary control, not a “ready to generate” block. Evidence uses a
+quiet text control, not a signal chip. Section labels, supporting copy, and
+timestamps use 12px `--fg-dim`. Body and links use 14px `--fg` at regular
+weight. Quiet actions use 12px `--fg-muted`. `--signal` is reserved for
+alerts and Accept. Object ID lives in a compact 12px Technical details
+disclosure. Relationship and change metadata stay sentence case. Content is
+grouped by typography and spacing. Nested bordered boxes are not a layout
+system on these surfaces.
 
 Approval rows use the same collection density as Tasks. One row per review
 item: selection checkbox, human title once, a short context line (`Create
@@ -968,6 +1009,10 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Linear-density object and task detail | Replaces boxed field grids and empty memory cards with list-row metadata, why-this-exists lead copy, ghost icon actions, and list-preserving peek navigation. |
+| 2026-08-17 | Compact object and task detail rhythm | Tightens the object-page section stack to 16px, uses 20px titles, 32px property rows, 1.35 body leading, and keeps peek/page chrome on `--fg` / `--fg-muted` / `--fg-dim` / `--danger` without uppercase metadata. |
+| 2026-08-17 | Tighter object and task detail rhythm | Compresses the object-page section stack to 8px, uses 18px titles, folds board placement into the header, and keeps body, labels, and quiet actions on one `--fg` / `--fg-muted` / `--fg-dim` set. |
+| 2026-08-17 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel so they lift off `--bg` in light and dark without nested field cards. |
 | 2026-08-17 | Board kanban lane control | Stops repeating the current lane name on kanban and grouped list cards, keeps a quiet Move trigger, and leaves lane names on table and card-detail. |
 | 2026-08-17 | Board canvas and compact cards | Makes list and table boards full-bleed like Tasks, puts next step under the kanban title, removes the on-card Move row, and leaves lane names on table and card-detail. |
 | 2026-08-17 | Board next step and row alignment | Treats next step as a title subtitle instead of a table column, and vertically centers board checkboxes. |
@@ -1001,3 +1046,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
+| 2026-08-19 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel after merging collection chrome, floating Ask, and `notifyAction`. |

@@ -249,6 +249,8 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
             columns={[...TASK_STATUS_COLUMNS]}
             selectedTaskId={selectedVisibleTaskId}
             selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
+            selectedTaskProvenance={selectedTaskDetail?.provenance ?? null}
+            selectedTaskNotes={selectedTaskDetail?.notes ?? []}
             selectedTaskPinned={selectedTaskPinned}
             view={view}
             members={memberOptions}

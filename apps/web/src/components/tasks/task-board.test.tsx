@@ -683,9 +683,45 @@ describe('TaskBoard', () => {
     expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
   });
 
-  it('surfaces selected task related context in the side panel', () => {
-    renderBoard('task-1', [task()], 'kanban', {}, connectedWork());
+  it('surfaces selected task origin and related context in the side panel', () => {
+    render(
+      <TaskBoard
+        rows={[task()]}
+        columns={['backlog', 'open', 'doing', 'blocked', 'done', 'cancelled']}
+        selectedTaskId="task-1"
+        selectedTaskContext={connectedWork()}
+        selectedTaskProvenance={{
+          whyThisExists: [
+            {
+              id: 'origin-1',
+              title: 'Fix M-14 effectOnTotalAssets sign',
+              reason:
+                'Cursor Bugbot flagged a Medium-severity defect: M-14’s effectOnTotalAssets is +2_100 but should be -2_100.',
+              operation: 'create',
+              targetKind: 'task',
+              createdAt: new Date('2026-08-10T10:00:00.000Z'),
+              evidence: [
+                {
+                  rawEventId: 'event-origin',
+                  source: 'github',
+                  contentText: 'Bugbot comment',
+                  quote: null,
+                  occurredAt: new Date('2026-08-10T09:00:00.000Z'),
+                },
+              ],
+            },
+          ],
+          whatChangedIt: [],
+          relatedEvidence: [],
+        }}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={1}
+        nextCursor={null}
+      />,
+    );
 
+    expect(screen.getByText(/Cursor Bugbot flagged a Medium-severity defect/)).toBeTruthy();
     expect(screen.getByText('Related context')).toBeTruthy();
     expect(screen.getByRole('link', { name: /example.com\/pilot/ })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Pilot brief.pdf' })).toBeTruthy();
@@ -739,7 +775,12 @@ describe('TaskBoard', () => {
   it('renders the selected task panel with an object link that can return to the panel', () => {
     renderBoard('task-1');
 
-    expect(screen.getByRole('complementary', { name: 'Task detail' })).toBeTruthy();
+    expect(screen.getByRole('complementary', { name: 'Task detail' }).className).toContain(
+      'bg-surface',
+    );
+    expect(screen.getByRole('complementary', { name: 'Task detail' }).className).toContain(
+      'border-border',
+    );
     expect(screen.getByRole('link', { name: 'Close' }).getAttribute('href')).toBe('/app/tasks');
     expect(screen.getByRole('link', { name: 'Open object' }).getAttribute('href')).toBe(
       '/app/objects/task-1?returnTo=%2Fapp%2Ftasks%3Ftask%3Dtask-1',
@@ -750,7 +791,8 @@ describe('TaskBoard', () => {
     const user = userEvent.setup();
     renderBoard('task-1');
 
-    await user.selectOptions(screen.getByLabelText('Task assignee'), 'user-2');
+    await user.click(screen.getByRole('button', { name: 'Task assignee' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Task assignee' }), 'user-2');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
@@ -758,7 +800,8 @@ describe('TaskBoard', () => {
       });
     });
 
-    await user.selectOptions(screen.getByLabelText('Task priority'), '3');
+    await user.click(screen.getByRole('button', { name: 'Task priority' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Task priority' }), '3');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
@@ -766,7 +809,9 @@ describe('TaskBoard', () => {
       });
     });
 
-    await user.clear(screen.getByLabelText('Task due date'));
+    await user.click(screen.getByRole('button', { name: 'Task due date' }));
+    await user.clear(screen.getByLabelText('Due date'));
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',
@@ -774,7 +819,8 @@ describe('TaskBoard', () => {
       });
     });
 
-    await user.selectOptions(screen.getByDisplayValue('Open'), 'doing');
+    await user.click(screen.getByRole('button', { name: 'Task status' }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Status' }), 'doing');
     await waitFor(() => {
       expect(fakes.updateObjectAction).toHaveBeenCalledWith({
         id: 'task-1',

@@ -160,13 +160,15 @@ describe('ObjectDetailClient', () => {
 
     expect(html).toContain('Send proposal');
     expect(html).toContain('Notes');
-    expect(html).toContain('Connected work');
     expect(html).toContain('Related');
     expect(html).toContain('Search objects');
     expect(html).not.toContain('Object id');
     expect(html).not.toContain('value="linked"');
-    expect(html).toContain('Recent changes');
+    expect(html).not.toContain('Connected work');
+    expect(html).not.toContain('Recent changes');
     expect(html).toContain('Archive object');
+    expect(html).toContain('bg-surface');
+    expect(html).toContain('border-border');
   });
 
   it('formats string-backed due-date changes in the workspace timezone', () => {
@@ -334,7 +336,6 @@ describe('ObjectDetailClient', () => {
     );
 
     expect(screen.getByRole('heading', { level: 1, name: 'Untitled object' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Objects' }).getAttribute('aria-current')).toBe('page');
     expect(document.body.textContent).not.toContain(internalId);
   });
 
@@ -563,6 +564,49 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('/app/calendar?event=calendar-1&amp;date=2026-06-17&amp;view=day');
   });
 
+  it('shows board placement in the header and does not repeat it in connected work', () => {
+    const html = renderObjectDetail({
+      detail: {
+        ...detail,
+        connectedWork: {
+          ...detail.connectedWork,
+          boards: [
+            {
+              boardId: 'board-1',
+              boardName: 'Pilot pipeline',
+              itemId: 'item-1',
+              laneName: 'Proposal',
+              dueAt: null,
+              priority: null,
+              nextStep: 'Agree pilot scope',
+            },
+          ],
+        },
+      },
+      userId: 'user-1',
+      suggestions: [],
+      boardContext: [
+        {
+          boardId: 'board-1',
+          boardName: 'Pilot pipeline',
+          templateKind: 'custom',
+          purpose: 'work',
+          itemId: 'item-1',
+          laneId: 'lane-1',
+          laneName: 'Proposal',
+          responsibleUserId: null,
+          dueAt: null,
+          priority: null,
+        },
+      ],
+    });
+
+    expect(html).toContain('Pilot pipeline');
+    expect(html).toContain('Proposal');
+    expect(html).not.toContain('Connected work');
+    expect(html).not.toContain('Agree pilot scope');
+  });
+
   it('shows connected open tasks once on the object detail page', () => {
     const taskTitle = 'Send message to DFK with proposed meeting times';
     const html = renderObjectDetail({
@@ -678,12 +722,11 @@ describe('ObjectDetailClient', () => {
       suggestions: [],
     });
 
-    expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Provenance'));
-    expect(html.indexOf('Provenance')).toBeLessThan(html.indexOf('Connected work'));
     expect(html.indexOf('Summary')).toBeLessThan(html.indexOf('Evidence'));
     expect(html).toContain('DFK has a confirmed June 30 pilot discussion.');
     expect(html).toContain('Timing');
     expect(html).not.toContain('Generate summary');
+    expect(html).not.toContain('Not enough object memory yet.');
   });
 
   it('renders accepted source provenance for generated tasks', () => {
@@ -720,12 +763,11 @@ describe('ObjectDetailClient', () => {
       suggestions: [],
     });
 
-    expect(html).toContain('Provenance');
     expect(html).toContain('Why this exists');
     expect(html).toContain('Mikael asked for this from the Telegram discussion.');
+    expect(html).not.toContain('No accepted update evidence yet.');
     expect(html).toContain('telegram');
     expect(html).toContain(`/app/timeline?event=${sourceEventId}#ev-${sourceEventId}`);
-    expect(html).toContain('Research the founding process and use the screenshots.');
   });
 
   it('keeps large provenance bundles compact while preserving source access', async () => {
@@ -783,9 +825,6 @@ describe('ObjectDetailClient', () => {
       }),
     );
 
-    expect(screen.getAllByText('2 sources')).toHaveLength(1);
-    expect(screen.getAllByText('6 sources')).toHaveLength(1);
-    expect(screen.getAllByText('8 sources')).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /^creation ·/ })).toHaveLength(2);
 
     const changesDisclosure = screen.getByText('Review 4 more change sources');
@@ -807,7 +846,7 @@ describe('ObjectDetailClient', () => {
     expect(screen.getAllByText(/GitHub evidence multi-kilobyte payload/).length).toBeGreaterThan(0);
     expect(
       screen.getAllByText(/GitHub evidence multi-kilobyte payload/)[0]?.textContent.length,
-    ).toBe(320);
+    ).toBe(160);
   });
 
   it('shows manual generation for missing summaries with enough source material', () => {
@@ -842,8 +881,8 @@ describe('ObjectDetailClient', () => {
       }),
     );
 
-    expect(screen.getByText('Summary is ready to generate.')).toBeTruthy();
-    expect(screen.getByText('Ready to generate')).toBeTruthy();
+    expect(screen.queryByText('Summary is ready to generate.')).toBeNull();
+    expect(screen.queryByText('Ready to generate')).toBeNull();
     expect(screen.getByRole('button', { name: 'Generate summary' })).toBeTruthy();
   });
 
@@ -926,7 +965,8 @@ describe('ObjectDetailClient', () => {
     const user = userEvent.setup();
     render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
 
-    await user.click(screen.getByRole('button', { name: 'Repair memory' }));
+    await user.click(screen.getByRole('button', { name: 'Actions for Send proposal' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Repair memory' }));
 
     await waitFor(() => {
       expect(objectActions.repairObjectMemoryAction).toHaveBeenCalledWith({ id: detail.id });
@@ -947,8 +987,9 @@ describe('ObjectDetailClient', () => {
       }),
     );
 
-    const repairButton = screen.getByRole('button', { name: 'Repair unavailable' });
-    expect(repairButton).toHaveProperty('disabled', true);
+    await user.click(screen.getByRole('button', { name: 'Actions for Send proposal' }));
+    const repairButton = screen.getByRole('menuitem', { name: 'Repair unavailable' });
+    expect(repairButton.getAttribute('aria-disabled')).toBe('true');
     await user.click(repairButton);
 
     expect(objectActions.repairObjectMemoryAction).not.toHaveBeenCalled();

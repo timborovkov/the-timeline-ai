@@ -212,6 +212,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       (no Saving/Saved chips). Board kanban and grouped list virtualize
       against their inner scrollers; the board table stays a semantic table
       with `content-visibility` row containment.
+- [x] U8c — Object and task detail density: Linear-style object page and
+      task peek on one `DetailRail` surface panel, 8px section stack, why-this-exists
+      lead copy, ghost pin, floating Ask binder, overflow Repair/Add task, list
+      `returnTo` + `scroll={false}`, and no empty memory theater cards.
 - [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
       float on every authenticated page except Home and full Ask. Close keeps
       the thread; New resets it. The agent sees the current view first and a

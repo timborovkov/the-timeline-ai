@@ -245,6 +245,7 @@ export default async function ObjectsIndexPage({
             pinned: objectPinState[`object:${row.id}`] ?? false,
           }))}
           typeLabels={OBJECT_TYPE_LABELS}
+          returnTo={objectsIndexReturnTo(params)}
           nextCursor={hasTypeFilter ? objectWindow.nextCursor : null}
           filterParams={hasTypeFilter ? filterParams : undefined}
           sectionMoreHrefs={objectWindow.sectionMoreHrefs}
@@ -319,6 +320,21 @@ async function loadObjectSectionPreviews(
     }
   }
   return { rows, hasNextPage: false, nextCursor: null, totalCount, sectionMoreHrefs };
+}
+
+function objectsIndexReturnTo(params: Record<string, string | string[] | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (item) query.append(key, item);
+      }
+    } else if (value) {
+      query.set(key, value);
+    }
+  }
+  const qs = query.toString();
+  return qs ? `/app/objects?${qs}` : '/app/objects';
 }
 
 function objectsPageHref(params: { filters?: Record<string, string> }): string {

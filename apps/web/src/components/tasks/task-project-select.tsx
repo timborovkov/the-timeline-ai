@@ -16,6 +16,7 @@ export function TaskProjectSelect({
   onProjectChange,
   onProjectChangeCommitted,
   onProjectChangeReverted,
+  quiet = false,
 }: {
   taskId: string;
   projectId: string | null;
@@ -25,6 +26,7 @@ export function TaskProjectSelect({
   onProjectChange?: (project: { id: string; label: string } | null) => void;
   onProjectChangeCommitted?: () => void;
   onProjectChangeReverted?: () => void;
+  quiet?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -53,6 +55,11 @@ export function TaskProjectSelect({
         projects={projects}
         disabled={pending}
         triggerRef={selectorRef}
+        className={
+          quiet
+            ? 'h-8 border-0 bg-transparent px-1.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg'
+            : undefined
+        }
         onValueChange={(nextProject) => {
           const nextProjectId = nextProject?.id ?? null;
           onProjectChange?.(nextProject);

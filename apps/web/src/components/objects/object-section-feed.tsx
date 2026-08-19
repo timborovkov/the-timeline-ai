@@ -21,21 +21,20 @@ interface Props {
 export function ObjectSectionFeed({ objectId, section, title, showTitle = true }: Props) {
   const query = useObjectSectionQuery(objectId, section);
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  if (!query.isPending && items.length === 0) return null;
   return (
     <section>
-      {showTitle ? <h2 className="mb-3 text-sm font-medium tracking-tight">{title}</h2> : null}
+      {showTitle ? <h2 className="mb-1 text-xs font-normal text-fg-dim">{title}</h2> : null}
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing here yet.</p>
+        <p className="text-sm font-normal text-fg-dim">Loading…</p>
       ) : (
         <VirtualList
           items={items}
           getItemKey={(item, index) => sectionItemKey(item, index)}
-          estimateSize={72}
-          gap={8}
+          estimateSize={48}
+          gap={4}
           renderItem={(item) => (
-            <div className="rounded-sm border border-border bg-surface px-4 py-3">
+            <div className="text-sm font-normal text-fg">
               <ObjectSectionItem section={section} item={item} />
             </div>
           )}
@@ -61,17 +60,17 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   if (section === 'tasks') {
     return (
       <div className="flex items-center justify-between">
-        <a href={`/app/objects/${String(row.id)}`} className="font-medium hover:underline">
+        <a href={`/app/objects/${String(row.id)}`} className="text-fg hover:underline">
           {text(row.canonicalName, 'Task')}
         </a>
-        <span className="text-xs text-muted-foreground">{text(row.status)}</span>
+        <span className="text-xs text-fg-dim">{text(row.status)}</span>
       </div>
     );
   }
   if (section === 'relationships') {
     return (
       <div className="flex items-center justify-between">
-        <a href={`/app/objects/${String(row.otherId)}`} className="font-medium hover:underline">
+        <a href={`/app/objects/${String(row.otherId)}`} className="text-fg hover:underline">
           {text(row.otherName, 'Object')}
         </a>
         <span className="text-xs text-fg-dim">
@@ -89,12 +88,12 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
       : 'unknown time';
     const sourceLabel = source ? ` · ${source}` : '';
     return (
-      <div className="space-y-2">
+      <div className="space-y-1">
         <div className="flex flex-wrap items-start gap-2">
-          <p className="min-w-0 flex-1">{text(row.statement)}</p>
+          <p className="min-w-0 flex-1 leading-5 text-fg">{text(row.statement)}</p>
           {sharedObjects.length > 0 ? <SharedFactObjects objects={sharedObjects} /> : null}
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-xs text-fg-dim">
           Observed {observedAt}
           {sourceLabel} · confidence {text(row.confidence)}
         </p>
@@ -108,9 +107,9 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const occurredAt = rawText(row.occurredAt);
     const source = text(row.source);
     return (
-      <div className="grid gap-3">
-        <div className="flex min-w-0 items-start gap-4">
-          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-6">
+      <div className="grid gap-1">
+        <div className="flex min-w-0 items-start gap-2">
+          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-5 text-fg">
             {contentText}
           </p>
           {eventId ? (
@@ -119,14 +118,14 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
               previewText={previewText}
               source={source}
               occurredAt={occurredAt}
-              className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-sm border border-border px-3 text-[11px] text-muted-foreground transition-[border-color,color,background-color,scale] duration-150 ease-out hover:border-border-strong hover:bg-background hover:text-foreground active:scale-[0.96]"
+              className="inline-flex shrink-0 items-center gap-1 border-0 bg-transparent px-0 py-0 font-sans text-xs font-normal text-fg-muted no-underline hover:bg-transparent hover:text-fg hover:underline"
             >
               <ExternalLink className="size-3" />
               View evidence
             </EvidenceLink>
           ) : null}
         </div>
-        <p className="text-[11px] text-fg-dim">
+        <p className="text-xs text-fg-dim">
           {formatDisplayDateTime(occurredAt, { timezone })} · {source}
         </p>
       </div>
@@ -135,12 +134,12 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0 break-words font-medium">{changeFieldLabel(text(row.field))}</span>
-        <span className="shrink-0 text-[11px] text-fg-dim">
+        <span className="min-w-0 break-words text-fg">{changeFieldLabel(text(row.field))}</span>
+        <span className="shrink-0 text-xs text-fg-dim">
           {text(row.actorKind)} · {text(row.status)}
         </span>
       </div>
-      <p className="mt-1 break-words text-xs text-muted-foreground">
+      <p className="mt-1 break-words text-xs text-fg-dim">
         {formatChangeValue(text(row.field), row.previousValue, timezone)} →{' '}
         {formatChangeValue(text(row.field), row.newValue, timezone)}
       </p>
@@ -253,15 +252,15 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
   const objectNoun = `object${objects.length === 1 ? '' : 's'}`;
   return (
     <details className="group relative inline-flex shrink-0">
-      <summary className="cursor-pointer list-none rounded-sm border border-signal/30 bg-signal-soft px-2 py-0.5 text-xs text-signal transition hover:border-signal/60 hover:bg-signal/20 marker:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg">
+      <summary className="cursor-pointer list-none text-xs font-normal text-fg-muted marker:hidden hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50">
         {label}
         <span className="sr-only">
           Show {objects.length} other {objectNoun} sharing this fact
         </span>
       </summary>
       <div className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-open:block">
-        <div className="rounded-sm border border-border bg-background p-2 shadow-lg">
-          <p className="px-2 pb-1 text-[11px] text-fg-dim">Objects sharing this fact</p>
+        <div className="rounded-sm border border-border bg-bg p-2 shadow-lg">
+          <p className="px-2 pb-1 text-xs text-fg-dim">Objects sharing this fact</p>
           <ul className="max-h-56 overflow-y-auto">
             {objects.map((object) => (
               <li key={`${object.id}:${object.role}`}>
@@ -269,10 +268,10 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
                   href={`/app/objects/${object.id}`}
                   className="block rounded-sm px-2 py-1.5 hover:bg-surface focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-inset"
                 >
-                  <span className="block truncate font-medium">
+                  <span className="block truncate text-sm text-fg">
                     {displayText(object.canonicalName)}
                   </span>
-                  <span className="block text-[11px] text-fg-dim">
+                  <span className="block text-xs text-fg-dim">
                     {displayText(object.type)} · {displayText(object.role)}
                   </span>
                 </a>

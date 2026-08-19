@@ -34,6 +34,7 @@ import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { dateInputValue, toDateOrNull } from '@/lib/iso-timestamp';
 import { notifyAction } from '@/lib/notify';
+import { objectDetailHref } from '@/lib/object-links';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
@@ -54,6 +55,7 @@ interface Props {
   nextCursor?: string | null;
   filterParams?: Record<string, string>;
   sectionMoreHrefs?: Record<string, string>;
+  returnTo?: string;
 }
 
 interface CleanupListState {
@@ -126,6 +128,7 @@ export function ObjectCleanupList({
   nextCursor = null,
   filterParams = EMPTY_FILTER_PARAMS,
   sectionMoreHrefs,
+  returnTo = '/app/objects',
 }: Props) {
   const timezone = useWorkspaceTimezone();
   const router = useRouter();
@@ -344,6 +347,7 @@ export function ObjectCleanupList({
                           object={object}
                           typeLabel={typeLabels[object.type] ?? object.type}
                           timezone={timezone}
+                          returnTo={returnTo}
                           selecting={selecting}
                           selected={isSelected}
                           onToggle={() => {
@@ -401,6 +405,7 @@ function ObjectCollectionItem({
   object,
   typeLabel,
   timezone,
+  returnTo,
   selecting,
   selected,
   onToggle,
@@ -408,6 +413,7 @@ function ObjectCollectionItem({
   object: PinnableObjectRow;
   typeLabel: string;
   timezone: string;
+  returnTo: string;
   selecting: boolean;
   selected: boolean;
   onToggle: () => void;
@@ -500,7 +506,11 @@ function ObjectCollectionItem({
           ) : null}
         </CollectionRow.Leading>
         <CollectionRow.Title>
-          <Link href={`/app/objects/${object.id}`} className="block truncate hover:underline">
+          <Link
+            href={objectDetailHref(object.id, returnTo)}
+            scroll={false}
+            className="block truncate hover:underline"
+          >
             {displayText(object.canonicalName)}
           </Link>
         </CollectionRow.Title>
