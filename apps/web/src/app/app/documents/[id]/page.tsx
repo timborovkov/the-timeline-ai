@@ -4,7 +4,6 @@ import { notFound, redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { DocumentDetail } from '@/components/documents/document-detail';
-import { PinButton } from '@/components/pins/pin-button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -65,46 +64,42 @@ export default async function DocumentDetailPage({ params, searchParams }: Props
     : [];
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
-        <PinButton target={{ kind: 'document', key: document.id }} initialPinned={initialPinned} />
-      </div>
-      <DocumentDetail
-        document={{
-          id: document.id,
-          fileKind: document.fileKind,
-          name: document.name,
-          metadata: document.metadata,
-          folderId: document.folderId,
-          folderPath,
-          visibility: document.visibility,
-          ownerUserId: document.ownerUserId,
-          currentVersionId: document.currentVersionId,
-          sourceRawEventId: document.sourceRawEventId,
-          createdAt: document.createdAt.toISOString(),
-          updatedAt: document.updatedAt.toISOString(),
-          provenance,
-        }}
-        versions={versions.map((v) => ({
-          id: v.id,
-          version: v.version,
-          byteSize: v.byteSize,
-          contentType: v.contentType,
-          processingStatus: v.processingStatus,
-          processingError: v.processingError,
-          createdAt: v.createdAt.toISOString(),
-          uploadedByUserId: v.uploadedByUserId,
-        }))}
-        requestedVersion={requestedVersion}
-        activeVersionId={activeVersion?.id ?? null}
-        activeVersionChunks={activeVersionChunks.map((chunk) => ({
-          id: chunk.id,
-          representationKind: chunk.representationKind,
-          text: chunk.text,
-          summary: chunk.summary,
-          pageNumber: chunk.pageNumber,
-        }))}
-      />
-    </div>
+    <DocumentDetail
+      document={{
+        id: document.id,
+        fileKind: document.fileKind,
+        name: document.name,
+        metadata: document.metadata,
+        folderId: document.folderId,
+        folderPath,
+        visibility: document.visibility,
+        ownerUserId: document.ownerUserId,
+        currentVersionId: document.currentVersionId,
+        sourceRawEventId: document.sourceRawEventId,
+        createdAt: document.createdAt.toISOString(),
+        updatedAt: document.updatedAt.toISOString(),
+        provenance,
+      }}
+      versions={versions.map((v) => ({
+        id: v.id,
+        version: v.version,
+        byteSize: v.byteSize,
+        contentType: v.contentType,
+        processingStatus: v.processingStatus,
+        processingError: v.processingError,
+        createdAt: v.createdAt.toISOString(),
+        uploadedByUserId: v.uploadedByUserId,
+      }))}
+      requestedVersion={requestedVersion}
+      activeVersionId={activeVersion?.id ?? null}
+      activeVersionChunks={activeVersionChunks.map((chunk) => ({
+        id: chunk.id,
+        representationKind: chunk.representationKind,
+        text: chunk.text,
+        summary: chunk.summary,
+        pageNumber: chunk.pageNumber,
+      }))}
+      initialPinned={initialPinned}
+    />
   );
 }

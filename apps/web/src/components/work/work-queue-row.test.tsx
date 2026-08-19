@@ -24,6 +24,13 @@ vi.mock('@/lib/notify', () => ({
     }
   },
 }));
+vi.mock('@/components/pins/pin-overflow-menu', () => ({
+  PinOverflowMenu: ({ title, initialPinned }: { title: string; initialPinned: boolean }) => (
+    <button type="button">
+      {initialPinned ? `Unpin from Home ${title}` : `Pin to Home ${title}`}
+    </button>
+  ),
+}));
 
 const { WorkQueueRow } = await import('./work-queue-row.js');
 
@@ -115,6 +122,55 @@ describe('WorkQueueRow', () => {
 
     expect(screen.queryByRole('button', { name: /Status for/ })).toBeNull();
     expect(screen.getByText('Approvals')).toBeTruthy();
+  });
+
+  it('lets object-backed rows pin to Home and marks already pinned items', () => {
+    render(
+      <WorkQueueRow item={item()} members={[{ id: 'user-1', label: 'Ada' }]} timezone="UTC" />,
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'Pin to Home Technically run an audit end-to-end by mid-July',
+      }),
+    ).toBeTruthy();
+
+    cleanup();
+    render(
+      <WorkQueueRow
+        item={item()}
+        members={[{ id: 'user-1', label: 'Ada' }]}
+        timezone="UTC"
+        pinned
+      />,
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'Unpin from Home Technically run an audit end-to-end by mid-July',
+      }),
+    ).toBeTruthy();
+  });
+
+  it('does not expose pin actions on approval rows', () => {
+    render(
+      <WorkQueueRow
+        item={item({
+          id: 'approvals',
+          entityId: undefined,
+          href: '/app/approvals?status=pending',
+          title: '3 pending approvals',
+          subtitle: 'Agent proposals waiting for review',
+          source: 'approval',
+          sourceLabel: 'Approvals',
+          objectType: undefined,
+          status: undefined,
+          reasons: ['pending_approval'],
+        })}
+        members={[]}
+        timezone="UTC"
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /Pin to Home/ })).toBeNull();
   });
 
   it('rolls a failed inline edit back onto the row', async () => {

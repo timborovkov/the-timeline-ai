@@ -79,7 +79,8 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'What Work is',
         body: 'Work is the operating surface Timeline keeps current from captured evidence. It brings tasks, boards, objects, comments, updates, digests, and handoffs together without asking teammates to maintain a separate tracker.',
         items: [
-          'Overview leads with pinned and team boards, then the work queue for due and assigned items.',
+          'Overview leads with mixed pinned work, then team boards, then the work queue for due and assigned items.',
+          'Pin objects, boards, documents, meetings, and calendar events to Home; Work → Pinned is the manager. Ask bindings say About {name}, not Pin.',
           'Queue rows keep the object type off the metadata chips; status, assignee, due date, and priority change inline.',
           'Home opens the team setup checklist under Ask for new teams; after Hide it stays as a quiet Team setup checklist toggle. Other app pages keep a quiet header chip back to that panel until setup is done or hidden.',
           'Home lists open tasks and one open-objects count (people, companies, projects, deals, and follow-ups) when those counts are not zero.',
@@ -153,7 +154,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'Drag board items between lanes when workflow state changes.',
           'Open card details for board notes, next steps, evidence, and object links.',
-          'Use pinned boards for repeated team workflows.',
+          'Pin a board to Home when you return to it often.',
         ],
       },
     ],

@@ -350,12 +350,12 @@ function PinnedEntityBanner({
         href={`/app/objects/${pinnedEntityId}`}
         className="text-signal underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
-        Pinned · {label}
+        About {label}
       </Link>
       {sessionId && (
         <button
           type="button"
-          aria-label={`Unpin ${label}`}
+          aria-label={`Remove ${label}`}
           onClick={() => {
             void unpinChatSessionAction({ sessionId }).then(onUnpinned);
           }}

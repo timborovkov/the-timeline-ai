@@ -18,11 +18,15 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pinTargetAction,
   unpinTargetAction: fakes.unpinTargetAction,
 }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 vi.mock('@/lib/notify', () => ({
   notifyAction: fakes.notifyAction,
 }));
 
 const { PinButton } = await import('@/components/pins/pin-button');
+const { PinOverflowMenu } = await import('@/components/pins/pin-overflow-menu');
 const { PinnedWorkspacePreview } = await import('@/components/pins/pinned-workspace-preview');
 
 const pinnedItem: PinnedItem = {
@@ -58,16 +62,16 @@ describe('shared pin controls', () => {
     const user = userEvent.setup();
     render(<PinButton target={pinnedItem.target} initialPinned={false} />);
 
-    const pin = screen.getByRole('button', { name: 'Pin' });
+    const pin = screen.getByRole('button', { name: 'Pin to Home' });
     expect(pin.getAttribute('aria-pressed')).toBe('false');
     pin.focus();
     await user.keyboard('{Enter}');
 
     await waitFor(() => {
       expect(fakes.pinTargetAction).toHaveBeenCalledWith(pinnedItem.target);
-      expect(screen.getByRole('button', { name: 'Unpin' }).getAttribute('aria-pressed')).toBe(
-        'true',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Unpin from Home' }).getAttribute('aria-pressed'),
+      ).toBe('true');
     });
   });
 
@@ -76,10 +80,10 @@ describe('shared pin controls', () => {
     fakes.pinTargetAction.mockResolvedValue({ error: 'That item is not available to pin.' });
     render(<PinButton target={pinnedItem.target} initialPinned={false} />);
 
-    await user.click(screen.getByRole('button', { name: 'Pin' }));
+    await user.click(screen.getByRole('button', { name: 'Pin to Home' }));
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Pin' }).getAttribute('aria-pressed')).toBe(
+      expect(screen.getByRole('button', { name: 'Pin to Home' }).getAttribute('aria-pressed')).toBe(
         'false',
       );
       expect(fakes.notifyAction).toHaveBeenCalledWith(
@@ -99,7 +103,7 @@ describe('shared pin controls', () => {
     render(<PinnedWorkspacePreview initialItems={[pinnedItem]} />);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Launch plan' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Unpin Launch plan' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Unpin from Home Launch plan' }));
 
     expect(screen.getByText('Launch plan')).toBeTruthy();
     const pendingUnpin = screen.getByRole('menuitem', { name: 'Saving unpin… Launch plan' });
@@ -112,13 +116,52 @@ describe('shared pin controls', () => {
     });
   });
 
+  it('shows the pinned glyph immediately while overflow pin is in flight', async () => {
+    const user = userEvent.setup();
+    let resolvePin: ((value: { ok: true }) => void) | undefined;
+    fakes.pinTargetAction.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePin = resolve;
+      }),
+    );
+    const { container } = render(
+      <PinOverflowMenu target={pinnedItem.target} title="Launch plan" initialPinned={false} />,
+    );
+
+    expect(container.querySelector('span.size-8')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Actions for Launch plan' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Pin to Home Launch plan' }));
+    expect(container.querySelector('span.size-8')).toBeTruthy();
+    resolvePin?.({ ok: true });
+  });
+
+  it('replaces the Home preview when the server pin set changes', () => {
+    const nextItem: PinnedItem = {
+      ...pinnedItem,
+      pinId: '22222222-2222-4222-8222-222222222222',
+      title: 'Atlas Launch',
+      target: { kind: 'board', key: 'board-1' },
+      href: '/app/boards/board-1',
+      iconKind: 'board',
+    };
+    const { rerender } = render(<PinnedWorkspacePreview initialItems={[]} />);
+    expect(screen.queryByLabelText('Pinned work')).toBeNull();
+
+    rerender(<PinnedWorkspacePreview initialItems={[nextItem]} />);
+    expect(screen.getByText('Atlas Launch')).toBeTruthy();
+
+    rerender(<PinnedWorkspacePreview initialItems={[pinnedItem, nextItem]} />);
+    expect(screen.getByText('Launch plan')).toBeTruthy();
+    expect(screen.getByText('Atlas Launch')).toBeTruthy();
+  });
+
   it('keeps a Home preview item when its unpin action fails', async () => {
     const user = userEvent.setup();
     fakes.unpinTargetAction.mockResolvedValue({ error: 'Could not unpin that item.' });
     render(<PinnedWorkspacePreview initialItems={[pinnedItem]} />);
 
     await user.click(screen.getByRole('button', { name: 'Actions for Launch plan' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Unpin Launch plan' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Unpin from Home Launch plan' }));
 
     await waitFor(() => {
       expect(screen.getByText('Launch plan')).toBeTruthy();

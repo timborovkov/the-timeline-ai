@@ -1,35 +1,61 @@
 'use client';
 
-import { Pin, PinOff } from 'lucide-react';
+import { Pin } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
+import { pinControlLabel, pinNotifyCopy } from '@/components/pins/pin-copy';
+import { mutatePin } from '@/components/pins/pin-mutate';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { notifyAction } from '@/lib/notify';
-
-async function mutatePin(target: PinTargetRef, pinned: boolean) {
-  const { pinTargetAction, unpinTargetAction } = await import('@/app/actions/pins');
-  return pinned ? pinTargetAction(target) : unpinTargetAction(target);
-}
+import { cn } from '@/lib/utils';
 
 export function PinMenuItem({
   target,
   title,
   initialPinned,
   onPinnedChange,
+  onOptimisticPinnedChange,
 }: {
   target: PinTargetRef;
   title: string;
   initialPinned: boolean;
   onPinnedChange?: (pinned: boolean) => void;
+  onOptimisticPinnedChange?: (pinned: boolean) => void;
+}) {
+  return (
+    <PinMenuItemControl
+      key={`${target.kind}:${target.key}:${String(initialPinned)}`}
+      target={target}
+      title={title}
+      initialPinned={initialPinned}
+      onPinnedChange={onPinnedChange}
+      onOptimisticPinnedChange={onOptimisticPinnedChange}
+    />
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- keyed inner control remounts when the server pin state changes
+function PinMenuItemControl({
+  target,
+  title,
+  initialPinned,
+  onPinnedChange,
+  onOptimisticPinnedChange,
+}: {
+  target: PinTargetRef;
+  title: string;
+  initialPinned: boolean;
+  onPinnedChange?: (pinned: boolean) => void;
+  onOptimisticPinnedChange?: (pinned: boolean) => void;
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'pin' | 'unpin' | null>(null);
-  const Icon = pinned ? PinOff : Pin;
-  const action = pinned ? 'Unpin' : 'Pin';
-  const pendingLabel = `Saving ${pendingAction ?? action.toLowerCase()}…`;
+  const router = useRouter();
+  const action = pinControlLabel(pinned);
+  const pendingLabel = pinControlLabel(pinned, true);
   return (
     <DropdownMenuItem
       disabled={pending}
@@ -39,42 +65,48 @@ export function PinMenuItem({
         event.preventDefault();
         const next = !pinned;
         const previous = pinned;
+        const copy = pinNotifyCopy(next);
         setPinned(next);
+        onOptimisticPinnedChange?.(next);
         setPending(true);
-        setPendingAction(next ? 'pin' : 'unpin');
         void notifyAction({
           id: `pin:${target.kind}:${target.key}`,
-          loading: next ? 'Pinning…' : 'Unpinning…',
-          success: next ? 'Pinned' : 'Unpinned',
-          error: next ? 'Couldn’t pin item' : 'Couldn’t unpin item',
+          loading: copy.loading,
+          success: copy.success,
+          error: copy.error,
           run: () => mutatePin(target, next),
           undo: {
             run: async () => {
               setPinned(previous);
+              onOptimisticPinnedChange?.(previous);
               onPinnedChange?.(previous);
-              return mutatePin(target, previous);
+              const result = await mutatePin(target, previous);
+              if (!result.error) router.refresh();
+              return result;
             },
-            success: previous ? 'Pinned' : 'Unpinned',
+            success: pinNotifyCopy(previous).success,
           },
         })
           .then((result) => {
             if (result.error) {
               setPinned(previous);
+              onOptimisticPinnedChange?.(previous);
             } else {
               onPinnedChange?.(next);
+              router.refresh();
             }
           })
           .catch(() => {
             setPinned(previous);
+            onOptimisticPinnedChange?.(previous);
           })
           .finally(() => {
             setPending(false);
-            setPendingAction(null);
           });
       }}
     >
-      <Icon aria-hidden="true" className="size-4" />
-      {pending ? pendingLabel : `${action} item`}
+      <Pin aria-hidden="true" className={cn('size-4', pinned && 'fill-current text-signal')} />
+      {pending ? pendingLabel : action}
     </DropdownMenuItem>
   );
 }
