@@ -1,9 +1,11 @@
 import { entities, type Db } from '@timeline/db';
+import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { type UIMessage } from 'ai';
 import { and, eq, inArray } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
 
+import type { ChatContextRef } from '@timeline/shared/chat-context';
 import type { Metadata } from 'next';
 
 import { AskHeader } from '@/components/chat/ask-header';
@@ -13,6 +15,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { hydrateChatSessionMessages } from '@/lib/chat-session';
 import { chatSessionLabel } from '@/lib/chat-session-list';
+import { CHAT_SESSIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { displayObjectLabel } from '@/lib/display-labels';
 
@@ -53,7 +56,14 @@ export default async function ChatPage({
   const [team, params] = await Promise.all([scope.timeline.team(), searchParams]);
   const requestedSessionId = params.session ?? null;
 
-  const sessions = await scope.objects.listChatSessions({ limit: 50 });
+  const sessionRows = await scope.objects.listChatSessions({
+    limit: CHAT_SESSIONS_PAGE_SIZE + 1,
+  });
+  const sessionPage = pageWindow(sessionRows, CHAT_SESSIONS_PAGE_SIZE, (row) => ({
+    at: row.updatedAt.toISOString(),
+    id: row.id,
+  }));
+  const sessions = sessionPage.items;
   const pinnedIds = sessions.map((s) => s.pinnedEntityId).filter((v): v is string => v !== null);
   const pinnedNames = await loadPinnedEntity(db, active.teamId, pinnedIds);
 
@@ -68,6 +78,7 @@ export default async function ChatPage({
   let pinnedEntityId: string | null = null;
   let pinnedEntityName: string | null = null;
   let loadedTitle: string | null = null;
+  let contextTrail: ChatContextRef[] = [];
   if (requestedSessionId) {
     const loaded = await scope.objects.getChatSession(requestedSessionId);
     if (loaded) {
@@ -75,6 +86,7 @@ export default async function ChatPage({
       initialMessages = hydrateChatSessionMessages(loaded);
       loadedTitle = loaded.session.title;
       pinnedEntityId = loaded.session.pinnedEntityId;
+      contextTrail = loaded.session.contextTrail;
       // Deep-linked or older sessions can fall outside the top-50 sidebar
       // window, so their pinnedEntityId isn't in `pinnedNames`. Fetch the
       // active session's pinned name on demand so the chip shows the
@@ -116,11 +128,16 @@ export default async function ChatPage({
       data-app-layout="full-bleed"
       className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] md:-mx-8 md:-my-8"
     >
-      <SessionSidebar activeSessionId={activeSessionId} sessions={sessionEntries} />
+      <SessionSidebar
+        activeSessionId={activeSessionId}
+        nextCursor={sessionPage.nextCursor}
+        sessions={sessionEntries}
+      />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col px-4 py-5 md:px-8 md:py-6">
         <MobileSessionNav
           activeSessionId={activeSessionId}
           activeTitle={activeTitle}
+          nextCursor={sessionPage.nextCursor}
           sessions={sessionEntries}
         />
         <AskHeader activeTitle={activeTitle} teamName={team?.name ?? active.teamName} />
@@ -139,6 +156,7 @@ export default async function ChatPage({
             initialMessages={initialMessages}
             pinnedEntityId={pinnedEntityId}
             pinnedEntityName={pinnedEntityName}
+            contextTrail={contextTrail}
           />
         </div>
       </div>

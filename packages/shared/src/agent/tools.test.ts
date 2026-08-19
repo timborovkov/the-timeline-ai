@@ -1801,7 +1801,7 @@ describe('buildAgentTools — team isolation', () => {
       evidence_count: 2,
       raw_event_ids: [eventB, eventA],
     });
-    expect(result.moment.title).toContain('Telegram conversation in AuditAI');
+    expect(result.moment.title).toContain('oon italiassa 9.8.-14.8.');
     expect(result.moment.title).toMatch(
       /^<external_content source="timeline_moment" event_id="tm-moment_3Atelegram_3Achat-a/,
     );

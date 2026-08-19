@@ -15,11 +15,11 @@ import type { Metadata } from 'next';
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
+import { SettingsSection } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { GenerateGroupTokenForm, GeneratePersonalTokenForm } from '@/components/telegram-forms';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -121,179 +121,150 @@ export default async function TelegramSettingsPage() {
       />
 
       {!webhookConfigured ? (
-        <Card>
-          <CardContent className="py-4 text-sm text-muted-foreground">
-            <p>
-              Telegram is not configured in this environment. Set{' '}
-              <code className="font-mono">TELEGRAM_BOT_TOKEN</code> and{' '}
-              <code className="font-mono">TELEGRAM_WEBHOOK_SECRET</code> and register the webhook
-              (see <code className="font-mono">docs/setup/telegram.md</code>). Link tokens still
-              generate, but Telegram will not deliver messages until the webhook is live.
-            </p>
-          </CardContent>
-        </Card>
+        <p className="text-sm text-fg-muted">
+          Telegram is not configured in this environment. Set{' '}
+          <code className="font-mono">TELEGRAM_BOT_TOKEN</code> and{' '}
+          <code className="font-mono">TELEGRAM_WEBHOOK_SECRET</code> and register the webhook (see{' '}
+          <code className="font-mono">docs/setup/telegram.md</code>). Link tokens still generate,
+          but Telegram will not deliver messages until the webhook is live.
+        </p>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Link a personal DM</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Generate a single-use token, then DM the bot{' '}
-            <code className="font-mono">/link &lt;token&gt;</code>. 15-minute TTL.
-          </p>
-          <GeneratePersonalTokenForm botUsername={botUsername} />
-        </CardContent>
-      </Card>
+      <SettingsSection title="Link a personal DM">
+        <p className="text-sm text-muted-foreground">
+          Generate a single-use token, then DM the bot{' '}
+          <code className="font-mono">/link &lt;token&gt;</code>. 15-minute TTL.
+        </p>
+        <GeneratePersonalTokenForm botUsername={botUsername} />
+      </SettingsSection>
 
       {isAdmin ? (
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Bind a group chat</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Add the bot to the group with the deep-link, or have an admin run{' '}
-              <code className="font-mono">/link &lt;token&gt;</code> inside the group. Group binding
-              lets everyone in the group capture messages and use /ask against team-visible history.
-            </p>
-            <GenerateGroupTokenForm botUsername={botUsername} />
-          </CardContent>
-        </Card>
+        <SettingsSection title="Bind a group chat">
+          <p className="text-sm text-muted-foreground">
+            Add the bot to the group with the deep-link, or have an admin run{' '}
+            <code className="font-mono">/link &lt;token&gt;</code> inside the group. Group binding
+            lets everyone in the group capture messages and use /ask against team-visible history.
+          </p>
+          <GenerateGroupTokenForm botUsername={botUsername} />
+        </SettingsSection>
       ) : null}
 
       {activeTokens.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle as="h2">Pending tokens</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Token values are only shown once, when you generate them. Lost a token? Revoke it and
-              generate a new one.
-            </p>
-            <ul className="divide-y">
-              {activeTokens.map((t) => (
-                <li
-                  key={t.id}
-                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="flex flex-col">
-                    <span className="text-sm">
-                      {t.scope === 'group' ? 'Group binding' : 'Personal link'}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Expires {formatDisplayDateTime(t.expiresAt, { timezone })}
-                      {isAdmin && t.issuedByUserId !== session.user.id
-                        ? ` · issued by another teammate`
-                        : ''}
-                    </span>
-                  </div>
-                  {isAdmin ? (
-                    <ItemActionGroup
-                      label={`Actions for ${t.scope === 'group' ? 'group binding' : 'personal link'} token`}
-                    >
-                      <form action={revokeLinkTokenAction}>
-                        <input type="hidden" name="id" value={t.id} />
-                        <Button type="submit" variant="ghost" size="sm">
-                          Revoke
-                        </Button>
-                      </form>
-                    </ItemActionGroup>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <SettingsSection title="Pending tokens">
+          <p className="text-xs text-muted-foreground">
+            Token values are only shown once, when you generate them. Lost a token? Revoke it and
+            generate a new one.
+          </p>
+          <ul className="divide-y">
+            {activeTokens.map((t) => (
+              <li
+                key={t.id}
+                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex flex-col">
+                  <span className="text-sm">
+                    {t.scope === 'group' ? 'Group binding' : 'Personal link'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Expires {formatDisplayDateTime(t.expiresAt, { timezone })}
+                    {isAdmin && t.issuedByUserId !== session.user.id
+                      ? ` · issued by another teammate`
+                      : ''}
+                  </span>
+                </div>
+                {isAdmin ? (
+                  <ItemActionGroup
+                    label={`Actions for ${t.scope === 'group' ? 'group binding' : 'personal link'} token`}
+                  >
+                    <form action={revokeLinkTokenAction}>
+                      <input type="hidden" name="id" value={t.id} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        Revoke
+                      </Button>
+                    </form>
+                  </ItemActionGroup>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </SettingsSection>
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Bound group chats</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {bindings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No groups bound yet.</p>
-          ) : (
-            <ul className="divide-y">
-              {bindings.map((b) => (
-                <li
-                  key={b.id}
-                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <span className="text-sm font-medium">{b.title ?? 'Unnamed chat'}</span>
-                    <span className="text-xs text-muted-foreground">
-                      Bound {formatDisplayDateTime(b.createdAt, { timezone })}
-                    </span>
-                    <TechnicalDetails
-                      items={[
-                        {
-                          label: 'Telegram chat ID',
-                          value: String(b.tgChatId),
-                          copyValue: String(b.tgChatId),
-                        },
-                        {
-                          label: 'Bound at',
-                          value: b.createdAt.toISOString(),
-                          copyValue: b.createdAt.toISOString(),
-                        },
-                      ]}
-                    />
-                  </div>
-                  {isAdmin ? (
-                    <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed chat'}`}>
-                      <form action={unbindChatAction}>
-                        <input type="hidden" name="id" value={b.id} />
-                        <Button type="submit" variant="ghost" size="sm">
-                          Unbind
-                        </Button>
-                      </form>
-                    </ItemActionGroup>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <SettingsSection title="Bound group chats">
+        {bindings.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No groups bound yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {bindings.map((b) => (
+              <li
+                key={b.id}
+                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 flex-1 space-y-2">
+                  <span className="text-sm font-medium">{b.title ?? 'Unnamed chat'}</span>
+                  <span className="text-xs text-muted-foreground">
+                    Bound {formatDisplayDateTime(b.createdAt, { timezone })}
+                  </span>
+                  <TechnicalDetails
+                    items={[
+                      {
+                        label: 'Telegram chat ID',
+                        value: String(b.tgChatId),
+                        copyValue: String(b.tgChatId),
+                      },
+                      {
+                        label: 'Bound at',
+                        value: b.createdAt.toISOString(),
+                        copyValue: b.createdAt.toISOString(),
+                      },
+                    ]}
+                  />
+                </div>
+                {isAdmin ? (
+                  <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed chat'}`}>
+                    <form action={unbindChatAction}>
+                      <input type="hidden" name="id" value={b.id} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        Unbind
+                      </Button>
+                    </form>
+                  </ItemActionGroup>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle as="h2">Linked Telegram users</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {linkedTgUsers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No Telegram users linked yet.</p>
-          ) : (
-            <ul className="divide-y">
-              {linkedTgUsers.map((u) => {
-                const appUser = u.userId ? userMap.get(u.userId) : undefined;
-                const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ');
-                const tgName = u.username ?? (fullName || 'Telegram member');
-                return (
-                  <li
-                    key={`${u.id}-${u.userId ?? 'unverified'}`}
-                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <span className="text-sm font-medium">
-                        {appUser?.name ?? appUser?.email ?? 'Unverified Telegram user'}
-                      </span>
-                      <span className="block break-words text-xs text-muted-foreground">
-                        tg:{tgName} · {appUser?.email ?? 'no app account'}
-                      </span>
-                    </div>
-                    {u.isActive ? <Badge variant="outline">active DM</Badge> : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+      <SettingsSection title="Linked Telegram users">
+        {linkedTgUsers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No Telegram users linked yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {linkedTgUsers.map((u) => {
+              const appUser = u.userId ? userMap.get(u.userId) : undefined;
+              const fullName = [u.firstName, u.lastName].filter(Boolean).join(' ');
+              const tgName = u.username ?? (fullName || 'Telegram member');
+              return (
+                <li
+                  key={`${u.id}-${u.userId ?? 'unverified'}`}
+                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">
+                      {appUser?.name ?? appUser?.email ?? 'Unverified Telegram user'}
+                    </span>
+                    <span className="block break-words text-xs text-muted-foreground">
+                      tg:{tgName} · {appUser?.email ?? 'no app account'}
+                    </span>
+                  </div>
+                  {u.isActive ? <Badge variant="outline">active DM</Badge> : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </SettingsSection>
     </div>
   );
 }

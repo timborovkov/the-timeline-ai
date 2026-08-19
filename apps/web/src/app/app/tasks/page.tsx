@@ -72,17 +72,26 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
         )
       : null;
   const taskFilter = taskObjectFilterFromWorkFilters(filters, filterTime);
-  const [projects, taskPage, counts, pendingSuggestions, members] = await Promise.all([
-    loadProjectFilterRows({
-      listObjects: (filter) => scope.objects.listObjects(filter),
-      selected: filters.project,
-      includeArchivedSelected: true,
-    }),
-    loadTaskRowsPage(scope.objects, null, taskFilter),
-    countTaskRows(scope.objects, now, taskFilter, calendarSettings.defaultTimezone),
-    scope.suggestions.listPendingSuggestions(),
-    scope.timeline.listMembers(),
-  ]);
+  const activeFilters = hasActiveWorkFilters(filters);
+  const unfilteredTaskFilter = taskObjectFilterFromWorkFilters(
+    parseWorkFilters({}, { taskCategoriesEnabled }),
+    filterTime,
+  );
+  const [projects, taskPage, counts, inventoryCounts, pendingSuggestions, members] =
+    await Promise.all([
+      loadProjectFilterRows({
+        listObjects: (filter) => scope.objects.listObjects(filter),
+        selected: filters.project,
+        includeArchivedSelected: true,
+      }),
+      loadTaskRowsPage(scope.objects, null, taskFilter),
+      countTaskRows(scope.objects, now, taskFilter, calendarSettings.defaultTimezone),
+      activeFilters
+        ? countTaskRows(scope.objects, now, unfilteredTaskFilter, calendarSettings.defaultTimezone)
+        : Promise.resolve(null),
+      scope.suggestions.listPendingSuggestions(),
+      scope.timeline.listMembers(),
+    ]);
   let rows = taskPage.rows;
   let selectedVisibleTaskId = rows.some((row) => row.id === selectedTaskId) ? selectedTaskId : null;
   if (selectedTaskId && !selectedVisibleTaskId) {
@@ -132,7 +141,6 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
   });
   const pendingTaskItems = taskSuggestions.reduce((sum, bundle) => sum + bundle.items.length, 0);
   const view = viewParam(query.view);
-  const activeFilters = hasActiveWorkFilters(filters);
   const hiddenFilterParams = workFilterHiddenParams(query, ['view']);
   const taskLoadFilterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
 
@@ -189,8 +197,8 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
         basePath="/app/tasks"
         filters={filters}
         active={activeFilters}
-        resultCount={rows.length}
-        totalCount={counts.total}
+        resultCount={counts.total}
+        totalCount={inventoryCounts?.total ?? counts.total}
         hiddenParams={hiddenFilterParams}
         members={memberOptions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}

@@ -14,6 +14,13 @@ const fakes = vi.hoisted(() => ({
   removeBoardItemAction: vi.fn(),
   push: vi.fn(),
   refresh: vi.fn(),
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  }),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -23,6 +30,9 @@ vi.mock('@/components/ui/app-dialog', () => ({
   useAppDialog: () => ({ confirm: fakes.confirm, node: null }),
 }));
 vi.mock('@/app/actions/boards', () => ({ removeBoardItemAction: fakes.removeBoardItemAction }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: fakes.notifyAction,
+}));
 vi.mock('@/app/actions/objects', () => ({
   resetTaskCategoryAction: vi.fn(),
   retryTaskCategoryAction: vi.fn(),
@@ -206,7 +216,13 @@ describe('BoardCardDetail', () => {
         id: 'item-1',
         boardId: 'board-1',
       });
-      expect(screen.getByRole('alert').textContent).toContain('Connection lost. Try again.');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'board:board-1:remove:item-1',
+          error: 'Couldn’t remove from board',
+        }),
+      );
+      expect(screen.queryByRole('alert')).toBeNull();
       expect(
         screen.getByRole('button', { name: 'Remove from board' }).hasAttribute('disabled'),
       ).toBe(false);

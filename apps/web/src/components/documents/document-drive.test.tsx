@@ -6,20 +6,30 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { ReactNode } from 'react';
+
 const fakes = vi.hoisted(() => ({
   createFolderAction: vi.fn(),
   deleteFolderAction: vi.fn(),
   finalizeDocumentVersionAction: vi.fn(),
   requestDocumentUploadAction: vi.fn(),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
   useQueryClient: vi.fn(),
   useDocumentListQuery: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: fakes.toastSuccess } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
+}));
 vi.mock('@/lib/use-paginated-queries', () => ({
   useDocumentListQuery: fakes.useDocumentListQuery,
 }));
@@ -32,6 +42,24 @@ vi.mock('@/app/actions/documents', () => ({
 vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: vi.fn(),
   unpinTargetAction: vi.fn(),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { DocumentDrive } = await import('./document-drive.js');
@@ -249,14 +277,15 @@ describe('DocumentDrive', () => {
     );
 
     await waitFor(() => {
-      expect(fakes.toastError).toHaveBeenCalledWith(
-        'Unable to reach document storage. Check your connection, then try again.',
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t upload document',
+        }),
       );
     });
-    expect(fakes.toastError).not.toHaveBeenCalledWith(
-      expect.stringContaining('S3_PUBLIC_ENDPOINT'),
-    );
-    expect(fakes.toastError).not.toHaveBeenCalledWith(expect.stringContaining('RustFS'));
+    expect(await screen.findByText(/Unable to reach document storage/)).toBeTruthy();
+    expect(screen.queryByText(/S3_PUBLIC_ENDPOINT/)).toBeNull();
+    expect(screen.queryByText(/RustFS/)).toBeNull();
   });
 
   it('opens document provenance with the full timeline event id', async () => {
@@ -330,7 +359,7 @@ describe('DocumentDrive', () => {
     expect(JSON.parse(init.body)).toEqual({
       ref: { kind: 'timeline_event', id: EVENT_ID },
     });
-    const fullPage = await screen.findByRole('link', { name: /Open full page/ });
+    const fullPage = await screen.findByRole('link', { name: /Open on Timeline/ });
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
   });
 

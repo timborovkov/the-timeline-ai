@@ -1,4 +1,5 @@
 import { auditLog, ingestWebhookCredentials, ingestWebhooks } from '@timeline/db';
+import { TIMELINE_EVENT_CLASSES } from '@timeline/shared/event-class';
 import * as ingestWebhookKeys from '@timeline/shared/ingest-webhooks';
 import { childLogger } from '@timeline/shared/logger';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -17,6 +18,7 @@ export const dynamic = 'force-dynamic';
 const createSchema = z.object({
   name: z.string().trim().min(1).max(80),
   visibilityDefault: z.enum(['team', 'private']).default('team'),
+  eventClass: z.enum(TIMELINE_EVENT_CLASSES).default('pulse'),
   proposalGenerationEnabled: z.boolean().default(true),
 });
 
@@ -69,6 +71,7 @@ export async function GET(): Promise<Response> {
       id: string;
       name: string;
       visibilityDefault: string;
+      eventClass: string;
       proposalGenerationEnabled: boolean;
       disabledAt: string | null;
       createdAt: string;
@@ -86,6 +89,7 @@ export async function GET(): Promise<Response> {
       id: webhookId,
       name: row.webhook.name,
       visibilityDefault: row.webhook.visibilityDefault,
+      eventClass: row.webhook.eventClass,
       proposalGenerationEnabled: row.webhook.proposalGenerationEnabled,
       disabledAt: row.webhook.disabledAt ? row.webhook.disabledAt.toISOString() : null,
       createdAt: row.webhook.createdAt.toISOString(),
@@ -126,6 +130,7 @@ export async function POST(req: Request): Promise<Response> {
           ownerUserId: gate.session.user.id,
           name: parsed.data.name,
           visibilityDefault: parsed.data.visibilityDefault,
+          eventClass: parsed.data.eventClass,
           proposalGenerationEnabled: parsed.data.proposalGenerationEnabled,
         })
         .returning();
@@ -165,6 +170,7 @@ export async function POST(req: Request): Promise<Response> {
     id: created.webhook.id,
     name: created.webhook.name,
     visibilityDefault: created.webhook.visibilityDefault,
+    eventClass: created.webhook.eventClass,
     proposalGenerationEnabled: created.webhook.proposalGenerationEnabled,
     credential: {
       id: created.credential.id,

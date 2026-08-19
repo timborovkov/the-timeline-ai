@@ -67,7 +67,9 @@ docker compose ps           # all services should be "healthy"
         console). The <code>rustfs-init</code> container runs once to create the required buckets,
         enable versioning, and allow direct browser document uploads from any local
         <code>localhost</code> or <code>127.0.0.1</code> port, including isolated worktree and E2E
-        servers.
+        servers. Compose keeps Qdrant snapshots on the data volume
+        (<code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code>) so snapshot create
+        does not fail with overlayfs <code>EXDEV</code> / CrossesDevices on some Cloud Agent hosts.
       </p>
 
       <p>Install deps, run migrations, and optionally seed demo data:</p>
@@ -78,7 +80,8 @@ set +a
 
 pnpm db:generate            # only if you changed schema
 pnpm db:migrate
-pnpm dev:seed               # optional demo team, users, events, objects, integrations, reconciliation provenance
+pnpm demo:seed              # optional Acme Labs demo corpus; indexes vectors and verifies evidence
+pnpm dev:seed:heavy         # optional extra volume for infinite-scroll / virtualization
 </code></pre>
       <p>
         Exporting the root environment is required for the database and worker commands. The root
@@ -86,14 +89,41 @@ pnpm dev:seed               # optional demo team, users, events, objects, integr
         worker; Next.js reads the same values through <code>apps/web/.env</code>.
       </p>
       <p>
-        <code>pnpm dev:seed</code> only runs against local database hosts unless you set an explicit
-        override, and it requires <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, and
-        <code>SECRETS_ENCRYPTION_KEY</code>. It creates <code>owner@timeline.dev</code> and
-        <code>member@timeline.dev</code> with password <code>timeline-dev</code>. The seeded GitHub
-        and Linear credentials are fake, encrypted, and disabled for sync. Daily digest email is
-        disabled for the demo users so the worker can run without outbound email configuration.
-        Seeded canonical objects leave legacy <code>source_event_id</code> empty and expose demo
-        provenance through reconciliation evidence, associations, and applied outputs.
+        <code>pnpm demo:seed</code> runs the idempotent dev seed, indexes every fixture-version raw
+        event, fact, document chunk, and meeting chunk through the production embed worker path, and
+        then runs <code>pnpm demo:verify</code>. The commands refuse production and only use local
+        database and Qdrant hosts unless <code>ALLOW_DEV_SEED</code> is exactly
+        <code>I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS</code>. Before writing fixture
+        documents, the seed also requires a loopback <code>S3_ENDPOINT</code> and the
+        <code>timeline-documents</code> bucket. Another isolated development store requires the
+        separate exact acknowledgement
+        <code>ALLOW_DEV_SEED_STORAGE=I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE</code>;
+        neither override permits <code>NODE_ENV=production</code>. The full command requires
+        <code>AUTH_SECRET</code>, <code>DATABASE_URL</code>, <code>SECRETS_ENCRYPTION_KEY</code>,
+        <code>OPENROUTER_API_KEY</code>, and <code>QDRANT_URL</code>. It creates eight Acme Labs
+        logins, all with password <code>timeline-dev</code>: <code>owner@timeline.dev</code>,
+        <code>member@timeline.dev</code>, <code>jordan@timeline.dev</code>,
+        <code>sam@timeline.dev</code>, <code>riley@timeline.dev</code>,
+        <code>casey@timeline.dev</code>, <code>quinn@timeline.dev</code>, and
+        <code>harper@timeline.dev</code>. The seeded GitHub, Linear, Monday.com, Sentry, and Google
+        Drive credentials are fake, encrypted, and disabled for sync. The timeline is a month of
+        weekday-scale capture: about a hundred raw events per workday that group into fewer moments.
+        Daily digest send stays disabled so the worker can run without outbound email or chat-bot
+        configuration. Seed still creates the default email digest destination for the team, plus
+        disabled Slack and Telegram destinations, and twenty weekdays of digest history.
+        Verification checks all eight login identities, active team roles, and password usability
+        without printing password hashes. It downloads seeded RustFS objects and verifies their
+        actual SHA-256 bytes, then uses a real query embedding and team/user-scoped Qdrant searches
+        to confirm every expected Northstar raw-event, fact, document-chunk, and meeting-chunk
+        point. It also requires every expanded corpus document version to be
+        <code>embedded</code> with a confirmed Qdrant point for each corpus chunk id. A missing
+        embedding prerequisite fails closed, and documents remain <code>chunked</code> until Qdrant
+        confirms applied point writes. Seeded canonical objects and document versions leave legacy
+        <code>source_event_id</code> empty and expose demo provenance through reconciliation
+        evidence, associations, and applied outputs. The glossary, story, and fake credentials live
+        in <a href="../demo-corpus.md">docs/demo-corpus.md</a>. <code>pnpm demo:reset</code> wipes
+        the local stack and seeds again. <code>pnpm dev:seed:heavy</code> adds enough extra Acme
+        Labs rows to force infinite-scroll fetches and virtualization on collection feeds.
       </p>
 
       <p>Run the app:</p>
@@ -178,6 +208,8 @@ AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
                                       # opt-in live LLM askAgent durable-state + provider/document retrieval eval
 SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live
                                       # opt-in live LLM suggestion extraction/projection eval
+PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/.env pnpm test:proposal-engine:live
+                                      # opt-in live messy proposal-engine eval (real models + vectors; not CI; implicit done, fallback mint)
 pnpm test:reconciliation-eval         # deterministic reconciliation domain/eval checks + sampling CLI gate
 RECONCILIATION_LIVE_ENV_FILE=/path/.env pnpm test:reconciliation-eval:live
                                       # opt-in live LLM planner + judge matrix
@@ -212,6 +244,11 @@ pnpm e2e                              # Playwright core journeys; requires compo
 pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
 pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
 pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
+pnpm demo:seed                        # seed, production-path index, and verify the private/local fictional demo corpus
+pnpm demo:reset                       # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed again
+pnpm dev:seed:heavy                   # extra Acme Labs volume for infinite-scroll / virtualization after the corpus
+pnpm demo:index                       # re-index fixture vectors through the real embed worker path
+pnpm demo:verify                      # verify logins, downloaded document bytes, scoped Qdrant points, and corpus floors
 pnpm lint &amp;&amp; pnpm typecheck           # quick static checks
 pnpm knip                             # dead code / unused deps
 pnpm format                           # prettier write

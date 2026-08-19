@@ -283,6 +283,7 @@ function changeToEvent(_integration: IntegrationRow, change: DriveChange): Integ
     return {
       dedupKey: `google_drive:change:${change.fileId}:removed:${change.time ?? ''}`,
       provider: 'google_drive',
+      signalClass: 'pulse',
       externalObjectId: change.fileId,
       externalEventId: change.time ?? null,
       eventType: 'file.removed',
@@ -304,6 +305,7 @@ function changeToEvent(_integration: IntegrationRow, change: DriveChange): Integ
   return {
     dedupKey: `google_drive:change:${file.id}:${file.modifiedTime ?? ''}`,
     provider: 'google_drive',
+    signalClass: 'pulse',
     externalObjectId: file.id,
     externalEventId: file.modifiedTime ?? null,
     eventType: 'file.changed',

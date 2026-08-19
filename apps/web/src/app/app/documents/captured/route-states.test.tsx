@@ -46,8 +46,8 @@ describe('Captured files route states', () => {
     for (const skeleton of visuals?.querySelectorAll('.animate-pulse') ?? []) {
       expect(skeleton.closest('[class*="motion-reduce"]')).toBeTruthy();
     }
-    expect(visuals?.querySelector('[class*="xl:grid-cols"]')).toBeTruthy();
-    expect(visuals?.querySelector('[class*="md:grid-cols"]')).toBeTruthy();
+    expect(visuals?.querySelector('[data-loading-toolbar="collection"]')).toBeTruthy();
+    expect(visuals?.querySelector('.min-h-11')).toBeTruthy();
   });
 
   it('keeps the Documents path and a keyboard-operable retry when captured files fail to load', async () => {

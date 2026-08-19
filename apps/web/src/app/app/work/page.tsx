@@ -148,20 +148,19 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
           {boardModules.length === 0 ? (
             <EmptyPanel label="No boards yet" body="Create a board to give team work a surface." />
           ) : (
-            <div className="border-x border-border">
+            <div>
               {boardModules.map((board) => (
-                <CollectionRow
-                  key={board.id}
-                  title={
+                <CollectionRow key={board.id}>
+                  <CollectionRow.Title>
                     <Link
                       href={`/app/boards/${board.id}`}
                       className="block truncate hover:underline"
                     >
                       {board.name}
                     </Link>
-                  }
-                  context={`Updated ${dateLabel(board.updatedAt, timezone)}`}
-                  metadata={
+                  </CollectionRow.Title>
+                  <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
+                  <CollectionRow.Metadata>
                     <>
                       <span className="px-2 text-xs tabular-nums text-fg-dim">
                         {board.itemCount} items
@@ -170,8 +169,8 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                         <span className="px-2 text-xs font-medium text-signal">Pinned</span>
                       ) : null}
                     </>
-                  }
-                />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               ))}
             </div>
           )}
@@ -187,7 +186,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
             />
           ) : (
             <TaskCategoryPollingProvider tasks={categoryPollingTasks}>
-              <div className="border-x border-border">
+              <div>
                 {queue.map((item) => (
                   <WorkQueueRow
                     key={item.id}

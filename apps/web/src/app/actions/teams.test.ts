@@ -71,7 +71,14 @@ vi.mock('@timeline/shared/team-scope', () => ({
 vi.mock('@/lib/onboarding', () => ({
   safeMarkOnboardingStep: vi.fn().mockResolvedValue(false),
 }));
-vi.mock('@timeline/shared/messaging', () => ({ sendMessage: fakes.fakeSendMessage }));
+vi.mock('@timeline/shared/messaging', () => ({
+  sendMessage: fakes.fakeSendMessage,
+  insertDefaultDigestDestination: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('@timeline/shared/slack', () => ({
+  hasSlackInstallForTeam: vi.fn(),
+  listSlackConversationsForTeam: vi.fn(),
+}));
 vi.mock('@timeline/shared/team-roles', () => ({
   assertNotLastOwner: fakes.fakeAssertNotLastOwner,
 }));
@@ -596,11 +603,15 @@ describe('inviteMemberAction', () => {
 describe('resendInviteAction', () => {
   it('requires auth, active team, and admin membership', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
-    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error: 'Not signed in',
+    });
 
     fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
     fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
-    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error: 'No active team',
+    });
 
     fakes.fakeResolveActiveTeam.mockResolvedValue({
       active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
@@ -615,7 +626,7 @@ describe('resendInviteAction', () => {
     ]);
     mockTransactionWithTx(tx);
 
-    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
 
     expect(updates).toEqual([
       expect.objectContaining({ token: 'invite-token', sendStatus: 'pending' }),
@@ -640,21 +651,27 @@ describe('resendInviteAction', () => {
     const { tx } = makeTx([[{ id: INVITE_ID, email: 'new@example.test', role: 'admin' }]]);
     mockTransactionWithTx(tx);
 
-    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error: 'Only owners can resend admin invites',
+    });
 
     expect(fakes.fakeSendMessage).not.toHaveBeenCalled();
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
 
 describe('revokeInviteAction', () => {
   it('requires auth, active team, and admin membership', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
-    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error: 'Not signed in',
+    });
 
     fakes.fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
     fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
-    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error: 'No active team',
+    });
 
     fakes.fakeResolveActiveTeam.mockResolvedValue({
       active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
@@ -667,7 +684,7 @@ describe('revokeInviteAction', () => {
     const { tx, inserts, updates } = makeTx([[{ role: 'member' }]]);
     mockTransactionWithTx(tx);
 
-    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
 
     expect(updates).toEqual([expect.objectContaining({ revokedByUserId: USER_ID })]);
     expect(inserts).toContainEqual(
@@ -684,10 +701,12 @@ describe('revokeInviteAction', () => {
     const { tx, updates } = makeTx([[{ role: 'admin' }]]);
     mockTransactionWithTx(tx);
 
-    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toBeUndefined();
+    await expect(revokeInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error: 'Only owners can revoke admin invites',
+    });
 
     expect(updates).toEqual([]);
-    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
 
@@ -696,19 +715,19 @@ describe('changeMemberRoleAction', () => {
     fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
     await expect(
       changeMemberRoleAction(form({ userId: MEMBER_ID, role: 'admin' })),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ error: 'No active team' });
 
     fakes.fakeResolveActiveTeam.mockResolvedValue({
       active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
     });
     await expect(
       changeMemberRoleAction(form({ userId: MEMBER_ID, role: 'bogus' })),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ error: 'Choose a valid role' });
 
     fakes.fakeRequireMembership.mockRejectedValue(new Error('member'));
     await expect(
       changeMemberRoleAction(form({ userId: MEMBER_ID, role: 'admin' })),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ error: 'Only owners can change roles' });
     expect(fakes.fakeTransaction).not.toHaveBeenCalled();
   });
 
@@ -717,13 +736,13 @@ describe('changeMemberRoleAction', () => {
     mockTransactionWithTx(missing.tx);
     await expect(
       changeMemberRoleAction(form({ userId: MEMBER_ID, role: 'admin' })),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ error: 'That member is no longer on this team' });
 
     const noChange = makeTx([[{ role: 'admin' }]]);
     mockTransactionWithTx(noChange.tx);
     await expect(
       changeMemberRoleAction(form({ userId: MEMBER_ID, role: 'admin' })),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ ok: true });
 
     expect(missing.updates).toEqual([]);
     expect(noChange.updates).toEqual([]);
@@ -736,7 +755,7 @@ describe('changeMemberRoleAction', () => {
 
     await expect(
       changeMemberRoleAction(form({ userId: MEMBER_ID, role: 'admin' })),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ error: 'The team needs at least one owner' });
 
     expect(fakes.fakeAssertNotLastOwner).toHaveBeenCalledWith(
       expect.anything(),
@@ -752,7 +771,7 @@ describe('changeMemberRoleAction', () => {
 
     await expect(
       changeMemberRoleAction(form({ userId: MEMBER_ID, role: 'admin' })),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ ok: true });
 
     expect(updates).toEqual([expect.objectContaining({ role: 'admin' })]);
     expect(inserts).toContainEqual(
@@ -772,13 +791,17 @@ describe('changeMemberRoleAction', () => {
 describe('removeMemberAction', () => {
   it('requires auth, active team, admin membership, and rejects self-removal', async () => {
     fakes.fakeAuth.mockResolvedValue(null);
-    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
+    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({
+      error: 'Not signed in',
+    });
 
     fakes.fakeAuth.mockResolvedValue({
       user: { id: USER_ID, name: 'Tim', email: 'tim@example.test' },
     });
     fakes.fakeResolveActiveTeam.mockResolvedValue({ active: null });
-    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
+    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({
+      error: 'No active team',
+    });
 
     fakes.fakeResolveActiveTeam.mockResolvedValue({
       active: { teamId: TEAM_ID, teamName: 'Timeline E2E' },
@@ -787,7 +810,9 @@ describe('removeMemberAction', () => {
     await expect(removeMemberAction(form({ userId: MEMBER_ID }))).rejects.toThrow('forbidden');
 
     fakes.fakeRequireMembership.mockResolvedValue('owner');
-    await expect(removeMemberAction(form({ userId: USER_ID }))).resolves.toBeUndefined();
+    await expect(removeMemberAction(form({ userId: USER_ID }))).resolves.toEqual({
+      error: 'You can’t remove yourself',
+    });
     expect(fakes.fakeTransaction).not.toHaveBeenCalled();
   });
 
@@ -795,14 +820,16 @@ describe('removeMemberAction', () => {
     fakes.fakeRequireMembership.mockResolvedValue('admin');
     const memberRemoval = makeTx([[{ role: 'member' }], [], [], [], [], [], [], [], [], []]);
     mockTransactionWithTx(memberRemoval.tx);
-    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
+    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({ ok: true });
     expect(memberRemoval.updates).toContainEqual(
       expect.objectContaining({ removedByUserId: USER_ID }),
     );
 
     const adminRemoval = makeTx([[{ role: 'admin' }]]);
     mockTransactionWithTx(adminRemoval.tx);
-    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
+    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({
+      error: 'Only owners can remove admins or owners',
+    });
     expect(adminRemoval.updates).toEqual([]);
   });
 
@@ -811,7 +838,9 @@ describe('removeMemberAction', () => {
     mockTransactionWithTx(tx);
     fakes.fakeAssertNotLastOwner.mockRejectedValue(new Error('last_owner'));
 
-    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
+    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({
+      error: 'The team needs at least one owner',
+    });
 
     expect(fakes.fakeAssertNotLastOwner).toHaveBeenCalledWith(
       expect.anything(),
@@ -853,7 +882,7 @@ describe('removeMemberAction', () => {
     ]);
     mockTransactionWithTx(tx);
 
-    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toBeUndefined();
+    await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({ ok: true });
 
     expect(fakes.fakeAssertNotLastOwner).toHaveBeenCalledWith(
       expect.anything(),

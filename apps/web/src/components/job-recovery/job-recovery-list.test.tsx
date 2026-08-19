@@ -1,15 +1,21 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+
 const fakes = vi.hoisted(() => ({
   fetchNextPage: vi.fn(),
   refetchFinishedJobs: vi.fn(),
   routerRefresh: vi.fn(),
+  toastError: vi.fn(),
+  toastLoading: vi.fn(() => 'toast-1'),
+  toastSuccess: vi.fn(),
+  toastWarning: vi.fn(),
   useFinishedJobsInfiniteQuery: vi.fn(),
 }));
 
@@ -17,14 +23,57 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: fakes.routerRefresh }),
 }));
 
+vi.mock('sonner', () => ({
+  toast: {
+    error: fakes.toastError,
+    loading: fakes.toastLoading,
+    success: fakes.toastSuccess,
+    warning: fakes.toastWarning,
+  },
+}));
+
 vi.mock('@/lib/use-paginated-queries', () => ({
   useFinishedJobsInfiniteQuery: fakes.useFinishedJobsInfiniteQuery,
+  useJobDashboardQuery: () => ({
+    data: undefined,
+    error: null,
+    isError: false,
+    isFetching: false,
+    isPending: true,
+    refetch: vi.fn(),
+  }),
 }));
 
 const { JobRecoveryList } = await import('./job-recovery-list.js');
 
 type JobRecoveryItem = jobRecovery.JobRecoveryItem;
+type JobRecoveryKind = jobRecovery.JobRecoveryKind;
 type FinishedJobArchiveItem = jobRecovery.FinishedJobArchiveItem;
+
+function renderList(
+  items: JobRecoveryItem[],
+  props: Partial<{ defaultFilter: JobRecoveryKind; olderCount: number }> = {},
+) {
+  return render(
+    <WorkspaceTimezoneProvider timezone="UTC">
+      <JobRecoveryList
+        teamName="AuditAI"
+        items={items}
+        olderCount={props.olderCount ?? 0}
+        defaultFilter={props.defaultFilter}
+      />
+    </WorkspaceTimezoneProvider>,
+  );
+}
+
+async function chooseRowAction(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  action: 'Retry' | 'Dismiss',
+) {
+  await user.click(screen.getByRole('button', { name: `Actions for ${label}` }));
+  await user.click(screen.getByRole('menuitem', { name: action }));
+}
 
 function recoverableJob(overrides: Partial<JobRecoveryItem> = {}): JobRecoveryItem {
   return {
@@ -91,34 +140,37 @@ function fetchUrl(input: RequestInfo | URL): string {
 }
 
 beforeEach(() => {
+  class FakeIntersectionObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
   vi.clearAllMocks();
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
   installFinishedJobsQuery({ items: [] });
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('JobRecoveryList', () => {
   it('renders product recovery language, filters by kind, and avoids queue internals', async () => {
     const user = userEvent.setup();
-    render(
-      <JobRecoveryList
-        items={[
-          recoverableJob(),
-          recoverableJob({
-            id: 'job-2',
-            kind: 'integration_sync',
-            artifactKind: 'integration',
-            artifactId: 'integration-1',
-            label: 'Sync Sentry issues',
-            error: 'Provider budget paused',
-            syncKind: 'incremental',
-          }),
-        ]}
-      />,
-    );
+    renderList([
+      recoverableJob(),
+      recoverableJob({
+        id: 'job-2',
+        kind: 'integration_sync',
+        artifactKind: 'integration',
+        artifactId: 'integration-1',
+        label: 'Sync Sentry issues',
+        error: 'Provider budget paused',
+        syncKind: 'incremental',
+      }),
+    ]);
 
     expect(screen.getByText('Transcription')).toBeTruthy();
     expect(screen.getByText('Integrations')).toBeTruthy();
@@ -126,12 +178,62 @@ describe('JobRecoveryList', () => {
     expect(screen.getByText('Sync Sentry issues')).toBeTruthy();
     expect(screen.queryByText('BullMQ')).toBeNull();
     expect(screen.queryByText('jobId')).toBeNull();
+    expect(screen.queryByText('Technical details')).toBeNull();
+    expect(screen.queryByText('Job ID')).toBeNull();
+    expect(screen.queryByText('Artifact ID')).toBeNull();
+    expect(screen.queryByText('Provider budget paused')).toBeNull();
+    expect(screen.queryByText('Audio service timed out')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Actions for Transcribe customer call' }),
+    ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Integrations' }));
 
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
     expect(screen.getByText('Sync Sentry issues')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Retry failed (1)' })).toBeTruthy();
+  });
+
+  it('hides kind filters when every listed job is the same kind', () => {
+    renderList([recoverableJob()]);
+    expect(screen.queryByRole('button', { name: 'All' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Transcription' })).toBeNull();
+    expect(screen.getByText('Failed and stuck jobs from the last 7 days.')).toBeTruthy();
+  });
+
+  it('shows relative time and keeps job ids in the row hover title', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-02T17:00:00.000Z'));
+    renderList([recoverableJob()]);
+
+    expect(screen.getAllByText('7 hours ago').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    const hints = screen.getAllByTitle(/Job ID: job-1 \| Artifact UUID: raw-event-1/);
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]?.getAttribute('title')).toContain('Audio service timed out');
+    expect(screen.queryByText('Job ID: job-1')).toBeNull();
+    expect(screen.queryByText('Audio service timed out')).toBeNull();
+  });
+
+  it('keeps conversation suggestion backfill inside Advanced tools', async () => {
+    const user = userEvent.setup();
+    renderList([]);
+
+    const advanced = screen.getByText('Advanced tools').closest('details');
+    expect(advanced).not.toBeNull();
+    expect(advanced?.hasAttribute('open')).toBe(false);
+    await user.click(screen.getByText('Advanced tools'));
+    expect(advanced?.hasAttribute('open')).toBe(true);
+    expect(
+      within(advanced as HTMLElement).getByRole('button', { name: 'Queue suggestions' }),
+    ).toBeTruthy();
+    expect(
+      within(advanced as HTMLElement).getByText(
+        'Re-queue reviews if suggestions did not appear. Leave this unless support asks.',
+      ),
+    ).toBeTruthy();
   });
 
   it('queues individual retry and dismiss actions with visible optimistic state', async () => {
@@ -149,9 +251,9 @@ describe('JobRecoveryList', () => {
       }),
     );
 
-    render(<JobRecoveryList items={[recoverableJob()]} />);
+    renderList([recoverableJob()]);
 
-    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await chooseRowAction(user, 'Transcribe customer call', 'Retry');
 
     await waitFor(() => {
       expect(requests[0]).toMatchObject({
@@ -159,11 +261,14 @@ describe('JobRecoveryList', () => {
         method: 'POST',
       });
     });
-    expect(screen.getByText('retrying')).toBeTruthy();
-    expect(screen.getByText('Retry queued. Watching finished jobs below.')).toBeTruthy();
+    expect(screen.getByText('Retry queued.')).toBeTruthy();
+    expect(fakes.toastSuccess).toHaveBeenCalledWith(
+      'Job queued',
+      expect.objectContaining({ id: 'job-recovery:retry:job-1' }),
+    );
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
 
-    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await chooseRowAction(user, 'Transcribe customer call', 'Dismiss');
 
     await waitFor(() => {
       expect(requests[1]).toMatchObject({
@@ -172,11 +277,15 @@ describe('JobRecoveryList', () => {
       });
     });
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
-    expect(screen.getByText('No jobs need attention in this view.')).toBeTruthy();
+    expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
+    expect(fakes.toastSuccess).toHaveBeenCalledWith(
+      'Job dismissed',
+      expect.objectContaining({ id: 'job-recovery:dismiss:job-1' }),
+    );
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
 
-  it('keeps a failed retry error inside the closed technical disclosure', async () => {
+  it('shows a failed retry without dumping raw provider errors', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date('2026-07-02T10:00:00.000Z'));
     const rawError =
@@ -195,22 +304,18 @@ describe('JobRecoveryList', () => {
       vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))),
     );
 
-    render(<JobRecoveryList items={[recoverableJob()]} />);
-    await userEvent
-      .setup({ advanceTimers: vi.advanceTimersByTime })
-      .click(screen.getByRole('button', { name: 'Retry' }));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderList([recoverableJob()]);
+    await user.click(screen.getByRole('button', { name: 'Actions for Transcribe customer call' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Retry' }));
 
     const recoveryRow = screen.getAllByText('Transcribe customer call')[0]?.closest('li');
     expect(recoveryRow).not.toBeNull();
     await waitFor(() => {
-      expect(
-        within(recoveryRow as HTMLElement).getByText(
-          'Retry failed. Review technical details, then retry the job or dismiss it.',
-        ),
-      ).toBeTruthy();
+      expect(within(recoveryRow as HTMLElement).getByText('Retry failed')).toBeTruthy();
     });
-    const rawErrorValue = within(recoveryRow as HTMLElement).getByText(rawError);
-    expect(rawErrorValue.closest('details')?.open).toBe(false);
+    expect(within(recoveryRow as HTMLElement).queryByText(rawError)).toBeNull();
+    expect(within(recoveryRow as HTMLElement).queryByText('Technical details')).toBeNull();
   });
 
   it('bulk retries visible failed jobs and reports partial queue failures', async () => {
@@ -232,19 +337,15 @@ describe('JobRecoveryList', () => {
       }),
     );
 
-    render(
-      <JobRecoveryList
-        items={[
-          recoverableJob(),
-          recoverableJob({
-            id: 'job-2',
-            artifactId: 'raw-event-2',
-            label: 'Transcribe board update',
-            detectedAt: new Date('2026-07-02T11:00:00.000Z'),
-          }),
-        ]}
-      />,
-    );
+    renderList([
+      recoverableJob(),
+      recoverableJob({
+        id: 'job-2',
+        artifactId: 'raw-event-2',
+        label: 'Transcribe board update',
+        detectedAt: new Date('2026-07-02T11:00:00.000Z'),
+      }),
+    ]);
 
     await user.click(screen.getByRole('button', { name: 'Retry failed (2)' }));
 
@@ -261,8 +362,12 @@ describe('JobRecoveryList', () => {
         { id: 'job-2', detectedAt: '2026-07-02T11:00:00.000Z' },
       ],
     });
-    expect(screen.getByText('Retried 1 failed jobs; 1 could not be queued.')).toBeTruthy();
-    expect(screen.getByText('Retry queued. Watching finished jobs below.')).toBeTruthy();
+    expect(screen.queryByText('Retried 1 failed jobs; 1 could not be queued.')).toBeNull();
+    expect(fakes.toastError).toHaveBeenCalledWith(
+      '1 of 2 jobs couldn’t be queued.',
+      expect.objectContaining({ id: 'job-recovery:retry-failed' }),
+    );
+    expect(screen.getByText('Retry queued.')).toBeTruthy();
     expect(fakes.refetchFinishedJobs).toHaveBeenCalledOnce();
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
   });
@@ -282,42 +387,153 @@ describe('JobRecoveryList', () => {
       }),
     );
 
-    render(
-      <JobRecoveryList
-        defaultFilter="integration_sync"
-        items={[
-          recoverableJob(),
-          recoverableJob({
-            id: 'job-2',
-            kind: 'integration_sync',
-            artifactKind: 'integration',
-            artifactId: 'integration-1',
-            label: 'Sync Sentry issues',
-            detectedAt: new Date('2026-07-02T11:00:00.000Z'),
-          }),
-        ]}
-      />,
+    renderList(
+      [
+        recoverableJob(),
+        recoverableJob({
+          id: 'job-2',
+          kind: 'integration_sync',
+          artifactKind: 'integration',
+          artifactId: 'integration-1',
+          label: 'Sync Sentry issues',
+          detectedAt: new Date('2026-07-02T11:00:00.000Z'),
+        }),
+      ],
+      { defaultFilter: 'integration_sync' },
     );
 
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
-    await user.click(screen.getByRole('button', { name: 'Dismiss failed (1)' }));
-    expect(screen.getByText('Dismiss 1 failed integration sync?')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Dismiss failed' }));
+    await user.click(screen.getByRole('button', { name: 'Dismiss all (1)' }));
+    expect(
+      screen.getByText(
+        'Dismiss 1 integration sync job from the last 7 days? They leave this list. Timeline can still retry them in the background.',
+      ),
+    ).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Dismiss all' }));
 
     await waitFor(() => {
       expect(requests[0]).toMatchObject({
-        url: '/api/team/job-recovery/dismiss-failed',
+        url: '/api/team/job-recovery/dismiss-matching',
         method: 'POST',
       });
     });
     expect(requests[0]?.body).toMatchObject({
       kind: 'integration_sync',
-      expectedCount: 1,
-      items: [{ id: 'job-2', detectedAt: '2026-07-02T11:00:00.000Z' }],
+      window: 'recent',
     });
     expect(screen.queryByText('Sync Sentry issues')).toBeNull();
-    expect(screen.getByText('No jobs need attention in this view.')).toBeTruthy();
+    expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 1 job.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
     expect(fakes.routerRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('offers to dismiss jobs older than the attention window', async () => {
+    const user = userEvent.setup();
+    const requests: { body: unknown; method: string; url: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({
+          url: fetchUrl(input),
+          method: init?.method ?? 'GET',
+          body: fetchJsonBody(init),
+        });
+        return Promise.resolve(
+          new Response(JSON.stringify({ dismissed: 12, remaining: 0 }), { status: 200 }),
+        );
+      }),
+    );
+
+    renderList([], { olderCount: 12 });
+
+    expect(screen.getByRole('button', { name: 'Dismiss older jobs' })).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Dismiss older jobs' }));
+    expect(
+      screen.getByText(
+        'Dismiss 12 jobs older than 7 days? Timeline will stop asking you to recover them. Background workers may still retry a few times, then give up.',
+      ),
+    ).toBeTruthy();
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Dismiss older jobs' }),
+    );
+
+    await waitFor(() => {
+      expect(requests[0]).toMatchObject({
+        url: '/api/team/job-recovery/dismiss-matching',
+        method: 'POST',
+      });
+    });
+    expect(requests[0]?.body).toEqual({ window: 'older' });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 12 older jobs.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
+    expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
+    expect(fakes.routerRefresh).toHaveBeenCalledOnce();
+  });
+
+  it('keeps dismissing older jobs until the server reports none remaining', async () => {
+    const user = userEvent.setup();
+    const requests: { body: unknown; method: string; url: string }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({
+          url: fetchUrl(input),
+          method: init?.method ?? 'GET',
+          body: fetchJsonBody(init),
+        });
+        const dismissed = requests.length === 1 ? 500 : 12;
+        const remaining = requests.length === 1 ? 12 : 0;
+        return Promise.resolve(
+          new Response(JSON.stringify({ dismissed, remaining }), { status: 200 }),
+        );
+      }),
+    );
+
+    renderList([], { olderCount: 512 });
+    await user.click(screen.getByRole('button', { name: 'Dismiss older jobs' }));
+    await user.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Dismiss older jobs' }),
+    );
+
+    await waitFor(() => {
+      expect(requests).toHaveLength(2);
+    });
+    expect(fakes.toastLoading).toHaveBeenCalledWith('Dismissed 500 of 512 older jobs…', {
+      id: 'toast-1',
+      duration: Infinity,
+    });
+    expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 512 older jobs.', {
+      id: 'toast-1',
+      duration: 2_000,
+    });
+    expect(screen.queryByRole('button', { name: 'Dismiss older jobs' })).toBeNull();
+  });
+
+  it('windows a large snapshot with Load more without changing Dismiss all', async () => {
+    const user = userEvent.setup();
+    const items = Array.from({ length: 51 }, (_, index) =>
+      recoverableJob({
+        id: `job-${String(index + 1)}`,
+        artifactId: `raw-event-${String(index + 1)}`,
+        label: `Transcribe job ${String(index + 1)}`,
+        detectedAt: new Date(Date.UTC(2026, 6, 2, 10, index)),
+      }),
+    );
+    renderList(items);
+
+    expect(screen.getByText('Transcribe job 1')).toBeTruthy();
+    expect(screen.queryByText('Transcribe job 51')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Dismiss all (51)' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
+
+    expect(screen.getByText('Transcribe job 51')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Dismiss all (51)' })).toBeTruthy();
   });
 
   it('renders finished archive states and paginates retained jobs', async () => {
@@ -341,19 +557,24 @@ describe('JobRecoveryList', () => {
       ],
     });
 
-    render(<JobRecoveryList items={[]} />);
+    renderList([]);
 
-    const archive = screen.getByRole('table');
-    expect(within(archive).getByText('Transcribe customer call')).toBeTruthy();
-    expect(within(archive).getByText('Sync Sentry issues')).toBeTruthy();
-    expect(within(archive).getByText('provider unavailable')).toBeTruthy();
+    await user.click(screen.getByText('Advanced tools'));
+    const advanced = screen.getByText('Advanced tools').closest('details');
+    if (!advanced) throw new Error('Expected Advanced tools');
+    expect(within(advanced).getByText('Transcribe customer call')).toBeTruthy();
+    expect(within(advanced).getByText('Sync Sentry issues')).toBeTruthy();
+    expect(within(advanced).queryByText('provider unavailable')).toBeNull();
+    expect(within(advanced).queryByText('Technical details')).toBeNull();
+    expect(within(advanced).queryByRole('table')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Load more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
     expect(fakes.fetchNextPage).toHaveBeenCalledOnce();
 
     cleanup();
     installFinishedJobsQuery({ error: new Error('archive offline') });
-    render(<JobRecoveryList items={[]} />);
+    renderList([]);
+    await userEvent.setup().click(screen.getByText('Advanced tools'));
     expect(screen.getByText('archive offline')).toBeTruthy();
   });
 });

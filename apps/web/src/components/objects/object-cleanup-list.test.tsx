@@ -2,16 +2,19 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as objects from '@timeline/shared/objects/types';
+import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   confirm: vi.fn(),
   bulkArchiveObjectsAction: vi.fn(),
   updateObjectAction: vi.fn(),
-  toastError: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -23,8 +26,35 @@ vi.mock('@/components/ui/app-dialog', () => ({
 vi.mock('@/app/actions/objects', () => ({
   bulkArchiveObjectsAction: fakes.bulkArchiveObjectsAction,
   updateObjectAction: fakes.updateObjectAction,
+  loadObjectRowsAction: vi.fn(),
 }));
-vi.mock('sonner', () => ({ toast: { error: fakes.toastError, success: vi.fn() } }));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
+}));
 
 const { ObjectCleanupList } = await import('./object-cleanup-list.js');
 
@@ -103,12 +133,16 @@ describe('ObjectCleanupList', () => {
     expect(screen.queryByText('Merge')).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'Select First object' }));
-    expect(screen.getByRole('status').textContent).toBe('1 object selected');
+    expect(screen.getByRole('status', { name: '1 object selected' }).textContent).toBe(
+      '1 object selected',
+    );
     expect(screen.getByText('Merge').getAttribute('aria-disabled')).toBe('true');
     expect(screen.queryByRole('link', { name: 'Merge' })).toBeNull();
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Second object' }));
-    expect(screen.getByRole('status').textContent).toBe('2 objects selected');
+    expect(screen.getByRole('status', { name: '2 objects selected' }).textContent).toBe(
+      '2 objects selected',
+    );
     expect(screen.getByRole('link', { name: 'Merge' }).getAttribute('href')).toContain(
       '/app/objects/merge?ids=object-1%2Cobject-2',
     );
@@ -145,11 +179,16 @@ describe('ObjectCleanupList', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Priority' }), '1');
 
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('Connection lost');
+      expect(
+        screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' })
+          .textContent,
+      ).toContain('No priority');
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t update priority',
+        }),
+      );
     });
-    expect(
-      screen.getByRole('button', { name: 'Priority for Legacy suggested cleanup row' }).textContent,
-    ).toContain('No priority');
-    expect(fakes.toastError).toHaveBeenCalledWith('Connection lost');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

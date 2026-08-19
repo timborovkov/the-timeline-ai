@@ -35,7 +35,9 @@ records:
   did.
 - Object/project/account state: durable operational memory emerges from the
   event history through extraction, retrieval, and approval-backed state
-  changes.
+  changes. Events are classified as communication, captured work, or pulses
+  so related records can join without dumping high-volume streams into LLMs.
+  See [`docs/relational-memory.md`](./docs/relational-memory.md).
 - Self-maintaining CRM/project layer: for teams that trust the evidence and
   approval path, Timeline should reduce or replace manual CRM and project
   tracker upkeep rather than asking people to maintain parallel records.
@@ -50,8 +52,11 @@ records:
       more expensive than text extraction; text-based PDFs now extract locally
       via Daytona sandbox text extract, but scanned/mixed PDFs and images still need a clear
       budget guardrail before heavy dogfooding.
-- [ ] Add dogfood document content: contracts, deal docs, internal guides,
-      policies, office rules, onboarding docs, and customer notes.
+- [x] Add dogfood document content: contracts, deal docs, internal guides,
+      policies, office rules, onboarding docs, and customer notes. The reusable
+      Acme Labs demo corpus now seeds those documents plus the broader month of
+      weekday-scale use (about a hundred events per workday, collapsing into
+      moments); see `docs/demo-corpus.md`.
 - [ ] Surface terminal meeting bot failed states in the operations/job dashboard
       with a manual retry or rejoin path. Scheduled Saved Meetings already retry
       one in-window no-show automatically; final failures are captured as
@@ -72,8 +77,14 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced
       raw source event mode.
-      First slice shipped the Moments/Audit trail mode split, clearer rows and
-      inspector copy, GitHub workflow bundling, and the
+      First slice shipped the Moments/All events mode split, quieter chrome,
+      weighted rows (story / record / pulse), Linear-style single-icon rows,
+      a wider family-aware inspector with collapsed original-source viewers,
+      Ask citation previews that name transcript/calendar/document/Timeline
+      destinations and reuse that original-source viewer,
+      sentinel infinite scroll with virtualized archive rows and no inventory
+      chip,
+      GitHub workflow bundling, and the
       `search_timeline_moments`/`get_timeline_moment` agent tools, and the
       shared `@timeline/shared/timeline-moments` projection. Outbound MCP now
       has team-visible moment search/list/expand tools. Bounded server-side
@@ -115,13 +126,27 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reads without blocking the page/API response, then filled asynchronously
       by the worker after rebuilding the same visible cache key. Daily digest
       generation now summarizes bundled moment briefs, applies matching cached
-      AI presentations, and leads user-facing digest copy with moment counts
-      while retaining raw eventCount / sourceDistribution for internal metrics
-      and per-source detail. It durably skips quiet windows before summarization
-      and email delivery unless the recipient has fresh local-cycle activity,
-      pending approvals, or upcoming calendar context. Timeline Moments chrome
-      and IndexStrip loaded counts also lead with moments (Audit trail keeps
-      source-event counts). The
+      AI presentations, and writes narrative overview and section prose instead
+      of PR or CI inventories. Pull-request numbers, commit hashes, CI run IDs,
+      ticket keys, and object UUIDs are banned from digest text: the generator
+      scrubs them from the briefing packet and rejects a draft that still lists
+      them. Home, Work → Digests, and email reuse that
+      payload: the latest digest stays folded, the header shows the digest
+      date, and the covering range stays footer metadata. Activity is a count
+      strip of new moments, proposals, pending approvals, tasks, and objects.
+      Task and object blocks
+      cover created or completed work and link to the object on the dashboard,
+      calendar rows in the window and upcoming link to the specific event, and
+      email includes dashboard shortcuts. Repeating calendar series collapse to
+      one upcoming entry. Empty sections and empty groups are omitted. Quiet
+      windows skip summarization and outbound delivery unless the recipient has
+      fresh local-cycle activity, pending approvals, new or completed objects,
+      or calendar events in the digest window; upcoming calendar alone does not
+      trigger a send. Raw
+      eventCount / sourceDistribution remain for internal metrics and per-source
+      detail. Timeline Moments chrome
+      no longer uses IndexStrip loaded counts; All events keeps source-event
+      grouping with uniform pulse weight. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
       Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
@@ -131,6 +156,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       the current instant by default; an explicit upcoming control and future
       date filters are bounded to seven days so recurrence materialization
       cannot crowd historical work out of the archive.
+      The archive CollectionToolbar keeps Search timeline, a Filters trigger,
+      and horizontally scrollable source presets; infinite scroll re-observes
+      the sentinel after each page, and virtualized rows also prefetch via
+      `onEndReached`. Compound toolbar slots stay visible from server pages
+      through a `data-collection-slot` marker.
       An opt-in live OpenRouter smoke test (`OPENROUTER_LIVE_TESTS=1`) now
       verifies the presentation prompt and schema through the real structured
       LLM boundary.
@@ -138,8 +168,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       handoff/update DTO design, and live adapter payload fixtures for providers
       as they ship.
 - [x] U1 — Design-language softening: new `PageHeader` + `SectionHeading`,
-      surface split (`IndexStrip` stays on Timeline and explicit audit/operator
-      views; standard pages get a sentence-case `H1`),
+      surface split (`IndexStrip` stays on explicit audit/operator
+      views; Timeline uses a sticky collection toolbar; standard pages get a sentence-case `H1`),
       update `design.md` in the same PR.
 - [x] U2 — Connect-flow wizard: one guided Connect → Choose → Done flow
       per provider; hide `externalId` / `resourceKind` / `.org` kinds;
@@ -161,22 +191,122 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       calendar series, and timeline moments; add Home preview, Work management,
       detail/list/search controls, accessible reordering, visibility-safe
       restoration, merge/deletion handling, and explicit-intent Ask tools.
+- [x] U8 — Collection density, action toasts, and view-only approval
+      previews: Linear-style optimistic rows, selection-bar bulk actions,
+      Approvals select-all on the loaded queue and multi-item bundle headers,
+      live object/event diffs, title-first calendar chips, and the same
+      toolbar/button/skeleton contract on Approvals, Calendar, Connections,
+      Team, Meetings, Timeline, and remaining work surfaces. Mutations use
+      one `notifyAction` / `notifyProgress` lifecycle (150ms delayed spinner,
+      mapped sentence-like errors, compensating Undo, CopyButton, same-surface
+      Undo on light and dark toasts) instead of inline Saving/Saved chips.
+      Calendar Edit event dialogs link to inspectable workspace objects;
+      object Calendar sections link back to the focused event. Job recovery
+      and Reconciliation reuse the same dense collection rows, with IDs and
+      raw errors in Title/Context hover titles.
+- [x] U8b — Collection chrome: full-bleed board list/table, compact kanban
+      cards with next step under the title and no on-card Move control, view
+      toggles on the search/filter row, slim Add item / New object / Create
+      board actions, matching collection loading skeletons, and `N of M`
+      infinite-scroll counts. Board kanban mutations stay on `notifyAction`
+      (no Saving/Saved chips). Board kanban and grouped list virtualize
+      against their inner scrollers; the board table stays a semantic table
+      with `content-visibility` row containment.
+- [x] U8c — Object and task detail density: Linear-style object page and
+      task peek on one `DetailRail` surface panel, 8px section stack, why-this-exists
+      lead copy, ghost pin, floating Ask binder, overflow Repair/Add task, list
+      `returnTo` + `scroll={false}`, and no empty memory theater cards.
+- [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
+      float on every authenticated page except Home and full Ask. Close keeps
+      the thread; New resets it. The agent sees the current view first and a
+      capped trail of earlier views (documents, timeline events/moments,
+      meetings, calendar events, tasks, boards, and setup pages). Selected
+      items supply names; empty list pages keep the route label. `⌘J` /
+      `Ctrl+J` lives on the launcher. Desktop is a non-modal panel; mobile is
+      a modal sheet. Home still hands questions into `/app/chat`. Full Ask
+      shows linked context badges. `search_app_guide` / `get_app_route` cover
+      the float; Telegram and suggestions stay out.
 
 ## Workspace Reconciliation
 
 - [x] Build the replacement reconciliation engine architecture: normalized
       evidence, artifact resolution, authority policy, output-backed approvals,
       and deterministic/live reconciliation evals.
-- [ ] Wire workspace reconciliation into future authoritative external sync
-      paths when calendar/provider imports directly update artifacts they own.
+- [x] Propose Timeline task status and assignee updates from GitHub PR/issue
+      lifecycle fields without running the suggestion or extract models: merged
+      PRs and closed issues enqueue a coalesced approval-backed `done` job
+      keyed by GitHub work-item id, not by a time window of unrelated events.
+      GitHub actor/assignee logins map to team members through the person-owned
+      GitHub connection (identity: that login belongs to this teammate), a unique
+      compact name match, or a unique email local-part — never by attributing
+      work to whoever connected the integration. Matching uses provider ids,
+      aliases, and high-confidence repo+PR-number titles. Pending unaccepted
+      task creates are living: later merged PRs or closed issues refresh the
+      same approval in place (status, aliases, actor, new evidence) instead of
+      rotting. Comments, reviews, commits, and CI stay out of this path because
+      they are not completion. Per-connection ingest processing is rate-limited.
+      Daily object cleanup backfills the same proposals for already-ingested
+      GitHub clusters.
+- [x] Attach communication task proposals to existing client/project hubs by
+      unique name mention **and container labels**: a Faba meeting, Slack
+      channel `acme-project-development`, or Monday board `Faba-ext` can use
+      the matching company/project even when they are not in the 40 most
+      recently updated objects. Distinctive tokens match (`Faba` in
+      `Faba website redesign`, `acme` in `acme-project-development`); generic
+      words and generic containers (`website`, `meeting`, `#general`) do not.
+      Two named clients stay unattached. Unedited pending creates whose
+      evidence overlaps a later window are amended in place when that later
+      evidence uniquely names the hub. Ask retrieval is unchanged —
+      embeddings still recall; they still do not write. Frozen by
+      [ADR 0015](./docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
+      Path from this point to the ideal engine:
+      [`docs/relational-memory.md`](./docs/relational-memory.md)
+      (Path from here to the ideal engine).
+- [x] Opt-in live messy proposal-engine eval
+      (`pnpm test:proposal-engine:live`): real models, real embeddings/Qdrant
+      when configured, realistic noisy payloads (~90% messy: Sentry spikes,
+      GitHub Actions pulses, Bugbot findings, buried ids, typo fragments,
+      mention soup, truncated paste, silent calendar-linked meetings, outcome
+      evidence without "this is complete"), isolated team, cleanup afterwards.
+      Not part of CI. Safe name-maps are the minority. Covers Slack/Monday
+      qualify, generic `#general` refuse, mixed-client refuse, living pending
+      amend, pulse/finding skip, alias stamp, cosine-recall-is-not-a-write,
+      implicit branding `done`, two-task refuse (qualify strips a guessed
+      `done`), file-share no-create, pending-create prompt section, and
+      empty-model / timeout / invalid-JSON fallback mint (event-local always;
+      conversation review only when the window names exactly one tracked id).
+- [x] Stamp unique provider work-item aliases from the conversation window
+      onto proposed tasks (`acme/app#88`, Linear keys, Monday item ids) so a
+      later captured-work matcher can hard-join. Deterministic copy only when
+      one id is named.
+- [x] When a meeting transcript never names the client **and** the container
+      is silent, inherit a unique company/project hub from the owning
+      calendar event or Saved Meeting's existing object links. Still refuse
+      when two hubs are linked. Do not silently rewrite already-accepted
+      unscoped tasks; propose a relationship or use memory repair.
+- [x] Replace extract's time-ordered team dump (`RECENT_CONTEXT_LIMIT = 5`)
+      with conversation-keyed / same-source context so facts that feed linked
+      context are not five unrelated recent events.
+- [x] Classify ingest by signal class rather than by OAuth app, following
+      [`docs/relational-memory.md`](./docs/relational-memory.md) and
+      [ADR 0016](./docs/adr/0016-ingest-signal-class-lives-on-the-envelope.md):
+      communication may extract and review; structured captured work parses
+      `objectMap` and may write coalesced approval-backed field changes;
+      pulses persist, embed, and never originate; findings (Bugbot, CI,
+      Sentry incidents) attach to the parent hub and do not mint sibling
+      Timeline tasks. GitHub PRs and GitHub CI differ without a core
+      `if (provider === "github")`. Linear/Monday item completion reuses the
+      GitHub living-pending matcher. Opt-in live eval
+      (`pnpm test:proposal-engine:live`) stays messy-first and is not CI.
 - [ ] Ship the cross-source evidence pack north star in
-      [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md): a shared
+      [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) (rollout
+      and copy; engine behavior is
+      [`docs/relational-memory.md`](./docs/relational-memory.md)): a shared
       visibility-safe pack builder with policy-bound admission, deterministic
       ranking, exact per-item citations, conversation reviews and event-local
       paths that eventually cite multi-surface evidence, integrations remaining
       pack-eligible, evals/cost caps, and milestone-gated website copy. Follow
-      the [implementation plan](./docs/cross-source-evidence-implementation-plan.md)
-      and [ADR 0014](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+      [ADR 0014](./docs/adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
       First concrete slice: generic ingest webhook evidence combined with
       directly related conversation and provider events before proposal
       generation. The shared builder, Agent Ask adapter, and first generic
@@ -341,11 +471,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       `team_calendar_settings.default_reminder_minutes`, overridden by
       per-event `calendar_events.reminder_minutes`.
 - [x] Add daily event digest per user. Delivery uses the shared messaging
-      module, stores a dashboard-readable digest payload, sends email only for
-      useful activity or actionable context, durably skips quiet windows,
-      preserves generated/sent rows across concurrent retries, uses
-      daylight-saving-safe local digest boundaries, supports per-user opt-out
-      in Team settings, and keeps individual in-app notifications inbox-only.
+      module, stores a dashboard-readable digest payload, and sends to workspace
+      digest destinations (email by default; Slack/Telegram chats and member DMs
+      are configurable). Email is only sent for useful activity or actionable
+      context. Quiet windows are durably skipped, generated/sent rows are
+      preserved across concurrent retries, local digest boundaries are
+      daylight-saving-safe, per-user opt-out applies to personal email/DMs, and
+      individual in-app notifications stay inbox-only.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
 

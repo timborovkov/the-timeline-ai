@@ -7,17 +7,8 @@ import {
   localDateSpanToUtcRange,
   startOfIsoWeek,
 } from '@timeline/shared/time';
-import {
-  CalendarDays,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-} from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Plus, Search, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Suspense,
@@ -39,6 +30,7 @@ import {
   deleteCalendarEventAction,
   updateCalendarEventAction,
 } from '@/app/actions/calendar';
+import { loadCalendarEventListPageAction } from '@/app/actions/collection-pages';
 import {
   EMPTY_CALENDAR_OVERLAY,
   applyCalendarPageOverlay,
@@ -46,9 +38,12 @@ import {
   calendarOverlayReducer,
   mergeCalendarEvents,
 } from '@/components/calendar/calendar-overlay';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Button } from '@/components/ui/button';
@@ -64,8 +59,10 @@ import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { chatViewLabel } from '@/lib/chat-view';
+import { formatCollectionCount } from '@/lib/collection-count';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
-import { errorMessage } from '@/lib/utils';
 
 type CalendarViewMode = 'month' | 'week' | 'day';
 
@@ -73,7 +70,7 @@ interface CalendarViewProps {
   events: CalendarEvent[];
   eventListEvents?: CalendarEvent[];
   eventListTotal?: number;
-  eventListPage?: number;
+  eventListNextOffset?: number | null;
   eventListQuery?: string;
   eventListScope?: 'future' | 'past' | 'all';
   timezone: string;
@@ -140,28 +137,24 @@ const WEEKDAYS = [
   { short: 'Sat', label: 'Saturday' },
   { short: 'Sun', label: 'Sunday' },
 ] as const;
-const EVENT_LIST_PAGE_SIZE = 12;
 const TITLE_REQUIRED_ERROR = 'Enter a title for this event.';
 type EventListScope = 'future' | 'past' | 'all';
 interface EventListParams {
   query: string;
   scope: EventListScope;
-  page: number;
 }
 
 function sameEventListParams(a: EventListParams, b: EventListParams): boolean {
-  return a.query === b.query && a.scope === b.scope && a.page === b.page;
+  return a.query === b.query && a.scope === b.scope;
 }
 
 function eventListParamsFromSearch(searchParams: {
   get(name: string): string | null;
 }): EventListParams {
   const scope = searchParams.get('eventScope');
-  const parsedPage = Number.parseInt(searchParams.get('eventPage') ?? '1', 10);
   return {
     query: searchParams.get('eventQ')?.trim() ?? '',
     scope: scope === 'past' || scope === 'all' ? scope : 'future',
-    page: Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage - 1 : 0,
   };
 }
 
@@ -360,7 +353,7 @@ function useCalendarViewModel({
   events,
   eventListEvents = events,
   eventListTotal = eventListEvents.length,
-  eventListPage = 0,
+  eventListNextOffset = null,
   eventListQuery = '',
   eventListScope = 'future',
   timezone,
@@ -412,15 +405,13 @@ function useCalendarViewModel({
     () => ({
       query: eventListQuery.trim(),
       scope: eventListScope,
-      page: eventListPage,
     }),
-    [eventListPage, eventListQuery, eventListScope],
+    [eventListQuery, eventListScope],
   );
   const eventListUrlParams = useMemo(() => {
     if (
       eventListRawUrlParams.query === eventListServerParams.query &&
-      eventListRawUrlParams.scope === eventListServerParams.scope &&
-      eventListRawUrlParams.page !== eventListServerParams.page
+      eventListRawUrlParams.scope === eventListServerParams.scope
     ) {
       return eventListServerParams;
     }
@@ -503,21 +494,12 @@ function useCalendarViewModel({
   }, [displayEvents, timezone, visibleDays]);
 
   const updateEventListParams = useCallback(
-    ({
-      query,
-      scope,
-      page,
-    }: {
-      query?: string;
-      scope?: 'future' | 'past' | 'all';
-      page?: number;
-    }) => {
+    ({ query, scope }: { query?: string; scope?: 'future' | 'past' | 'all' }) => {
       const next = new URLSearchParams(searchParams.toString());
       const current = eventListParamsRef.current ?? eventListUrlParams;
       const nextQuery = query ?? current.query;
       const nextScope = scope ?? current.scope;
-      const nextPage = page ?? current.page;
-      const nextParams = { query: nextQuery.trim(), scope: nextScope, page: nextPage };
+      const nextParams = { query: nextQuery.trim(), scope: nextScope };
       eventListParamsRef.current = nextParams;
       setOptimisticEventListParams({ params: nextParams, sourceSearchParamsKey: searchParamsKey });
 
@@ -525,8 +507,7 @@ function useCalendarViewModel({
       else next.delete('eventQ');
       if (nextScope === 'future') next.delete('eventScope');
       else next.set('eventScope', nextScope);
-      if (nextPage > 0) next.set('eventPage', String(nextPage + 1));
-      else next.delete('eventPage');
+      next.delete('eventPage');
 
       router.push(`/app/calendar?${next.toString()}`);
     },
@@ -650,57 +631,100 @@ function useCalendarViewModel({
         redacted: false,
         visibility: draft.visibility,
         visibilityUserIds: draft.visibility === 'specific_users' ? draft.visibilityUserIds : null,
+        linkedObjects: editing?.linkedObjects ?? [],
       };
       dispatchCalendarUi({ surfaceError: null });
       if (savedTimer.current) clearTimeout(savedTimer.current);
       dispatchCalendarUi({ saveState: 'saving', open: false });
       dispatchEventOverlay({ type: 'upsert', event: optimisticEvent });
-      try {
-        const result = editing
-          ? await updateCalendarEventAction({ id: editing.id, ...input })
-          : await createCalendarEventAction(input);
-        if (!result.ok) {
-          throw new Error(result.error ?? 'Failed to save event.');
-        }
-        const savedId = result.id;
-        if (!editing && typeof savedId === 'string') {
-          dispatchEventOverlay({
-            type: 'replace-id',
-            previousId: optimisticId,
-            event: { ...optimisticEvent, id: savedId },
-          });
-        }
-        dispatchCalendarUi({ saveState: 'saved' });
-        router.refresh();
-        savedTimer.current = setTimeout(() => {
-          dispatchCalendarUi({ saveState: 'idle' });
-        }, 1600);
-      } catch (err) {
-        const message = errorMessage(err, 'Failed to save event.');
+      const result = await notifyAction({
+        id: editing ? `calendar:${editing.id}` : 'calendar:create',
+        loading: editing ? 'Updating event…' : 'Creating event…',
+        success: editing ? 'Event updated' : 'Event created',
+        error: editing ? 'Couldn’t update event' : 'Couldn’t create event',
+        run: async () => {
+          const saved = editing
+            ? await updateCalendarEventAction({ id: editing.id, ...input })
+            : await createCalendarEventAction(input);
+          return saved.ok
+            ? saved
+            : {
+                error: saved.error ?? (editing ? 'Couldn’t update event' : 'Couldn’t create event'),
+              };
+        },
+        undo:
+          editing && originalEvent
+            ? {
+                run: async () => {
+                  dispatchEventOverlay({ type: 'restore', event: originalEvent });
+                  const undoResult = await updateCalendarEventAction({
+                    id: editing.id,
+                    title: originalEvent.title,
+                    description: originalEvent.description ?? undefined,
+                    startAt: originalEvent.startAt,
+                    endAt: originalEvent.endAt,
+                    timezone: originalEvent.timezone,
+                    allDay: originalEvent.allDay,
+                    location: originalEvent.location ?? undefined,
+                    visibility: originalEvent.visibility as 'team' | 'private' | 'specific_users',
+                    showAs: originalEvent.showAs,
+                    rrule: originalEvent.rrule,
+                    recurrenceEditMode: draft.recurrenceEditMode,
+                    ...(originalEvent.visibility === 'specific_users'
+                      ? { visibilityUserIds: originalEvent.visibilityUserIds ?? [] }
+                      : {}),
+                  });
+                  if (!undoResult.error && undoResult.ok) router.refresh();
+                  return undoResult.ok ? undoResult : { error: undoResult.error };
+                },
+              }
+            : undefined,
+      });
+      if (result.error) {
         if (editing && originalEvent) {
           dispatchEventOverlay({ type: 'restore', event: originalEvent });
         } else {
           dispatchEventOverlay({ type: 'discard', id: optimisticId });
         }
-        dispatchCalendarUi({ saveState: 'idle', surfaceError: message });
+        dispatchCalendarUi({ saveState: 'idle' });
         if (dialogContextRef.current === saveDialogContext) {
-          dispatchCalendarUi({ open: true, error: message });
+          dispatchCalendarUi({ open: true });
         }
         router.refresh();
+        return;
       }
+      const savedId = 'id' in result ? result.id : undefined;
+      if (!editing && typeof savedId === 'string') {
+        dispatchEventOverlay({
+          type: 'replace-id',
+          previousId: optimisticId,
+          event: { ...optimisticEvent, id: savedId },
+        });
+      }
+      dispatchCalendarUi({ saveState: 'saved' });
+      router.refresh();
+      savedTimer.current = setTimeout(() => {
+        dispatchCalendarUi({ saveState: 'idle' });
+      }, 1600);
     });
   }
 
   function remove() {
     if (!editing) return;
     startTransition(async () => {
-      const result = await deleteCalendarEventAction(editing.id, {
-        recurrenceEditMode: draft.recurrenceEditMode,
+      const result = await notifyAction({
+        id: `calendar:${editing.id}:delete`,
+        loading: 'Deleting event…',
+        success: 'Event deleted',
+        error: 'Couldn’t delete event',
+        run: async () => {
+          const deleted = await deleteCalendarEventAction(editing.id, {
+            recurrenceEditMode: draft.recurrenceEditMode,
+          });
+          return deleted.ok ? deleted : { error: deleted.error ?? 'Couldn’t delete event' };
+        },
       });
-      if (!result.ok) {
-        dispatchCalendarUi({ error: result.error ?? 'Failed to delete event.' });
-        return;
-      }
+      if (result.error) return;
       dispatchEventOverlay({ type: 'remove', id: editing.id });
       dispatchCalendarUi({ open: false });
       router.refresh();
@@ -717,9 +741,9 @@ function useCalendarViewModel({
     draft,
     editing,
     error,
-    eventListPage: eventListDisplayParams.page,
     eventListQuery: eventListDisplayParams.query,
     eventListScope: eventListDisplayParams.scope,
+    eventListNextOffset,
     eventListTotal,
     eventsByDay,
     gridCols,
@@ -740,12 +764,37 @@ function useCalendarViewModel({
     updateEventListParams,
     visibleDays,
     dispatchCalendarUi,
+    focusEventId,
+    displayEvents,
+    searchParamsKey,
   };
 }
 
 function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarViewModel> }) {
+  const focusedEvent =
+    model.open && model.editing && !model.editing.redacted
+      ? model.editing
+      : model.focusEventId
+        ? (model.displayEvents.find((event) => event.id === model.focusEventId) ?? null)
+        : null;
+  const focusedHref = (() => {
+    const params = new URLSearchParams(model.searchParamsKey);
+    if (focusedEvent) params.set('event', focusedEvent.id);
+    const query = params.toString();
+    return query ? `/app/calendar?${query}` : '/app/calendar';
+  })();
+
   return (
     <div className="space-y-4">
+      {focusedEvent ? (
+        <ChatViewContextBinder
+          viewKey={`calendar-event:${focusedEvent.id}`}
+          kind="calendar-event"
+          href={focusedHref}
+          label={chatViewLabel(focusedEvent.title, 'Calendar event')}
+          calendarEventId={focusedEvent.id}
+        />
+      ) : null}
       <CalendarToolbar
         mode={model.safeMode}
         anchor={model.anchor}
@@ -758,7 +807,6 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
           model.openCreate();
         }}
       />
-      <CalendarSaveStatus saveState={model.saveState} surfaceError={model.surfaceError} />
       <CalendarBody
         mode={model.safeMode}
         gridCols={model.gridCols}
@@ -767,30 +815,31 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
         eventsByDay={model.eventsByDay}
         timezone={model.timezone}
         today={model.currentToday}
+        editingId={model.editing?.id ?? null}
         onCreate={model.openCreate}
         onEdit={model.openEdit}
+        onOpenDay={(day) => {
+          model.push('day', day);
+        }}
       />
       <CalendarEventList
         events={model.displayEventListEvents}
         total={model.eventListTotal}
+        nextOffset={model.eventListNextOffset}
         timezone={model.timezone}
         query={model.eventListQuery}
         scope={model.eventListScope}
-        page={model.eventListPage}
         onQueryChange={(query) => {
-          model.updateEventListParams({ query, page: 0 });
+          model.updateEventListParams({ query });
         }}
         onScopeChange={(scope) => {
-          model.updateEventListParams({ scope, page: 0 });
-        }}
-        onPageChange={(page) => {
-          model.updateEventListParams({ page });
+          model.updateEventListParams({ scope });
         }}
         onCreate={() => {
           model.openCreate(model.anchor);
         }}
         onClearFilters={() => {
-          model.updateEventListParams({ query: '', scope: 'future', page: 0 });
+          model.updateEventListParams({ query: '', scope: 'future' });
         }}
         onEdit={model.openEdit}
       />
@@ -819,46 +868,43 @@ function CalendarViewLayout({ model }: { model: ReturnType<typeof useCalendarVie
   );
 }
 
-function CalendarEventList({
-  events,
-  total,
-  timezone,
-  query,
-  scope,
-  page,
-  onQueryChange,
-  onScopeChange,
-  onPageChange,
-  onCreate,
-  onClearFilters,
-  onEdit,
-}: {
+interface CalendarEventListProps {
   events: CalendarEvent[];
   total: number;
+  nextOffset: number | null;
   timezone: string;
   query: string;
   scope: 'future' | 'past' | 'all';
-  page: number;
   onQueryChange: (query: string) => void;
   onScopeChange: (scope: 'future' | 'past' | 'all') => void;
-  onPageChange: (page: number) => void;
   onCreate: () => void;
   onClearFilters: () => void;
   onEdit: (event: CalendarEvent) => void;
-}) {
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Search stays mounted while extra pages remount on filter changes.
+function CalendarEventList({
+  events,
+  total,
+  nextOffset,
+  timezone,
+  query,
+  scope,
+  onQueryChange,
+  onScopeChange,
+  onCreate,
+  onClearFilters,
+  onEdit,
+}: CalendarEventListProps) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const committedSearchRef = useRef(query);
-  const pageCount = Math.max(1, Math.ceil(total / EVENT_LIST_PAGE_SIZE));
-  const effectivePage = Math.min(page, pageCount - 1);
-  const pageStart = effectivePage * EVENT_LIST_PAGE_SIZE;
   const hasActiveFilters = Boolean(query) || scope !== 'future';
-  const eventCountLabel =
-    scope === 'future'
-      ? `${total} upcoming event${total === 1 ? '' : 's'}`
-      : scope === 'past'
-        ? `${total} past event${total === 1 ? '' : 's'}`
-        : `${total} event${total === 1 ? '' : 's'}`;
+  const eventCountLabel = formatCollectionCount({
+    matching: total,
+    total,
+    filtered: false,
+  });
 
   useEffect(() => {
     if (query === committedSearchRef.current) return;
@@ -878,30 +924,6 @@ function CalendarEventList({
         Calendar events
       </h2>
       <CollectionToolbar
-        count={eventCountLabel}
-        search={
-          <div className="flex w-full items-center gap-2 px-2">
-            <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
-            <Label htmlFor="calendar-event-search" className="sr-only">
-              Search calendar events
-            </Label>
-            <Input
-              id="calendar-event-search"
-              ref={searchInputRef}
-              defaultValue={query}
-              onChange={(event) => {
-                const nextQuery = event.target.value;
-                if (searchTimer.current) clearTimeout(searchTimer.current);
-                searchTimer.current = setTimeout(() => {
-                  committedSearchRef.current = nextQuery.trim();
-                  onQueryChange(nextQuery);
-                }, 350);
-              }}
-              placeholder="Search events"
-              className="h-9 border-0 bg-transparent px-0"
-            />
-          </div>
-        }
         activeFilters={[
           ...(query
             ? [
@@ -928,7 +950,32 @@ function CalendarEventList({
               ]
             : []),
         ]}
-        viewControls={
+      >
+        <CollectionToolbar.Count>{eventCountLabel}</CollectionToolbar.Count>
+        <CollectionToolbar.Search>
+          <div className="flex w-full items-center gap-2 px-2">
+            <Search className="size-4 shrink-0 text-fg-dim" aria-hidden="true" />
+            <Label htmlFor="calendar-event-search" className="sr-only">
+              Search calendar events
+            </Label>
+            <Input
+              id="calendar-event-search"
+              ref={searchInputRef}
+              defaultValue={query}
+              onChange={(event) => {
+                const nextQuery = event.target.value;
+                if (searchTimer.current) clearTimeout(searchTimer.current);
+                searchTimer.current = setTimeout(() => {
+                  committedSearchRef.current = nextQuery.trim();
+                  onQueryChange(nextQuery);
+                }, 350);
+              }}
+              placeholder="Search events"
+              className="h-9 border-0 bg-transparent px-0"
+            />
+          </div>
+        </CollectionToolbar.Search>
+        <CollectionToolbar.View>
           <fieldset className="grid grid-cols-3 gap-1 border-0 p-0 sm:flex">
             <legend className="sr-only">Event range</legend>
             {(['future', 'past', 'all'] as const).map((nextScope) => (
@@ -946,51 +993,106 @@ function CalendarEventList({
               </Button>
             ))}
           </fieldset>
-        }
+        </CollectionToolbar.View>
+      </CollectionToolbar>
+      <CalendarEventListPages
+        key={`${scope}:${query}`}
+        events={events}
+        nextOffset={nextOffset}
+        timezone={timezone}
+        query={query}
+        scope={scope}
+        hasActiveFilters={hasActiveFilters}
+        onCreate={onCreate}
+        onClearFilters={onClearFilters}
+        onEdit={onEdit}
       />
+    </section>
+  );
+}
 
-      <div className="border-x border-border bg-bg">
-        {events.length > 0 ? (
-          events.map((event) => (
-            <CollectionRow
-              key={event.id}
-              className="min-h-13"
-              title={
-                <button
-                  type="button"
-                  disabled={event.redacted}
-                  className="block min-w-0 truncate rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-100"
-                  onClick={() => {
-                    onEdit(event);
-                  }}
-                >
-                  {event.redacted ? 'Busy' : event.title}
-                </button>
-              }
-              context={
-                [event.location, event.description].filter(Boolean).join(' · ') ||
-                (event.allDay ? 'All day' : statusLabel(event.showAs))
-              }
-              metadata={
-                <>
-                  <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
-                  <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
-                  <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
-                </>
-              }
-              actions={
-                !event.redacted ? (
-                  <ItemActionGroup label={`Actions for ${event.title}`}>
-                    <PinOverflowMenu
-                      target={{ kind: 'calendar_event', key: event.id }}
-                      title={event.title}
-                      initialPinned={event.pinned}
-                    />
-                  </ItemActionGroup>
-                ) : null
-              }
-            />
-          ))
+interface CalendarEventListPagesProps {
+  events: CalendarEvent[];
+  nextOffset: number | null;
+  timezone: string;
+  query: string;
+  scope: 'future' | 'past' | 'all';
+  hasActiveFilters: boolean;
+  onCreate: () => void;
+  onClearFilters: () => void;
+  onEdit: (event: CalendarEvent) => void;
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Extra pages remount with the filter key instead of syncing props in an effect.
+function CalendarEventListPages({
+  events,
+  nextOffset,
+  timezone,
+  query,
+  scope,
+  hasActiveFilters,
+  onCreate,
+  onClearFilters,
+  onEdit,
+}: CalendarEventListPagesProps) {
+  const [extraEvents, setExtraEvents] = useState<CalendarEvent[]>([]);
+  const [extraOffset, setExtraOffset] = useState<number | null>(null);
+  const [paged, setPaged] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, startLoading] = useTransition();
+  const offset = paged ? extraOffset : nextOffset;
+  const loadedEvents = useMemo(() => {
+    const seen = new Set(events.map((event) => event.id));
+    return [...events, ...extraEvents.filter((event) => !seen.has(event.id))];
+  }, [events, extraEvents]);
+
+  return (
+    <>
+      <div>
+        {loadedEvents.length > 0 ? (
+          <VirtualList
+            items={loadedEvents}
+            getItemKey={(event) => event.id}
+            estimateSize={56}
+            renderItem={(event) => (
+              <CollectionRow className="min-h-13">
+                <CollectionRow.Title>
+                  <button
+                    type="button"
+                    disabled={event.redacted}
+                    className="block min-w-0 truncate rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-100"
+                    onClick={() => {
+                      onEdit(event);
+                    }}
+                  >
+                    {event.redacted ? 'Busy' : event.title}
+                  </button>
+                </CollectionRow.Title>
+                <CollectionRow.Context>
+                  {[event.location, event.description].filter(Boolean).join(' · ') ||
+                    (event.allDay ? 'All day' : statusLabel(event.showAs))}
+                </CollectionRow.Context>
+                <CollectionRow.Metadata>
+                  <>
+                    <span className="text-xs text-fg-dim">{formatEventRange(event, timezone)}</span>
+                    <CollectionStatus value={event.showAs} label={statusLabel(event.showAs)} />
+                    <span className="text-xs text-fg-dim">{statusLabel(event.visibility)}</span>
+                  </>
+                </CollectionRow.Metadata>
+                <CollectionRow.Actions>
+                  {!event.redacted ? (
+                    <ItemActionGroup label={`Actions for ${event.title}`}>
+                      <PinOverflowMenu
+                        target={{ kind: 'calendar_event', key: event.id }}
+                        title={event.title}
+                        initialPinned={event.pinned}
+                      />
+                    </ItemActionGroup>
+                  ) : null}
+                </CollectionRow.Actions>
+              </CollectionRow>
+            )}
+          />
         ) : (
           <div className="p-4">
             <p className="text-sm font-medium text-fg">
@@ -1014,46 +1116,35 @@ function CalendarEventList({
         )}
       </div>
 
-      {total > EVENT_LIST_PAGE_SIZE ? (
-        <nav
-          className="mt-3 flex flex-wrap items-center justify-between gap-3"
-          aria-label="Calendar events pages"
-        >
-          <p className="text-xs text-fg-dim">
-            {pageStart + 1}-{Math.min(pageStart + events.length, total)} of {total}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              disabled={effectivePage === 0}
-              aria-label="Previous events"
-              onClick={() => {
-                onPageChange(Math.max(0, effectivePage - 1));
-              }}
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <p className="text-xs text-fg-dim">
-              Page {effectivePage + 1} / {pageCount}
-            </p>
-            <Button
-              type="button"
-              size="icon"
-              variant="outline"
-              disabled={effectivePage >= pageCount - 1}
-              aria-label="Next events"
-              onClick={() => {
-                onPageChange(Math.min(pageCount - 1, effectivePage + 1));
-              }}
-            >
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        </nav>
-      ) : null}
-    </section>
+      <InfiniteScroll
+        hasMore={offset !== null}
+        loading={loading}
+        error={error}
+        onLoadMore={() => {
+          if (offset === null || loading) return;
+          startLoading(async () => {
+            const page = await loadCalendarEventListPageAction({
+              offset,
+              search: query,
+              scope,
+            });
+            if (page.error) {
+              setError(page.error);
+              return;
+            }
+            setError(null);
+            setPaged(true);
+            setExtraEvents((current) => {
+              const seen = new Set(current.map((event) => event.id));
+              return [...current, ...page.events.filter((event) => !seen.has(event.id))];
+            });
+            setExtraOffset(page.nextOffset);
+          });
+        }}
+        boundLabel="No more matching events"
+        hideBound={loadedEvents.length === 0}
+      />
+    </>
   );
 }
 
@@ -1097,7 +1188,7 @@ function CalendarToolbar({
             <Button
               key={view}
               type="button"
-              variant={mode === view ? 'secondary' : 'outline'}
+              variant={mode === view ? 'secondary' : 'ghost'}
               size="sm"
               aria-pressed={mode === view}
               onClick={() => {
@@ -1112,7 +1203,7 @@ function CalendarToolbar({
           <legend className="sr-only">Calendar navigation</legend>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               onMove(-1);
@@ -1123,7 +1214,7 @@ function CalendarToolbar({
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               onPush(mode, today);
@@ -1133,7 +1224,7 @@ function CalendarToolbar({
           </Button>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => {
               onMove(1);
@@ -1152,25 +1243,6 @@ function CalendarToolbar({
   );
 }
 
-function CalendarSaveStatus({
-  saveState,
-  surfaceError,
-}: {
-  saveState: SaveState;
-  surfaceError: string | null;
-}) {
-  if (saveState === 'idle' && !surfaceError) return null;
-  return (
-    <div
-      role={surfaceError ? 'alert' : 'status'}
-      aria-live="polite"
-      className={`text-xs ${surfaceError ? 'text-danger' : 'text-fg-dim'}`}
-    >
-      {surfaceError ?? (saveState === 'saving' ? 'Saving…' : 'Saved')}
-    </div>
-  );
-}
-
 function CalendarBody({
   mode,
   gridCols,
@@ -1179,8 +1251,10 @@ function CalendarBody({
   eventsByDay,
   timezone,
   today,
+  editingId,
   onCreate,
   onEdit,
+  onOpenDay,
 }: {
   mode: CalendarViewMode;
   gridCols: string;
@@ -1189,13 +1263,15 @@ function CalendarBody({
   eventsByDay: Map<string, CalendarEvent[]>;
   timezone: string;
   today: Temporal.PlainDate;
+  editingId: string | null;
   onCreate: (day: Temporal.PlainDate) => void;
   onEdit: (event: CalendarEvent) => void;
+  onOpenDay: (day: Temporal.PlainDate) => void;
 }) {
   const calendarLabel = `Calendar for ${titleFor(mode, anchor)}`;
   if (mode === 'day') {
     return (
-      <section className="rounded-md border bg-background" aria-label={calendarLabel}>
+      <section className="rounded-sm border bg-background" aria-label={calendarLabel}>
         <DayCell
           day={anchor}
           anchor={anchor}
@@ -1203,15 +1279,17 @@ function CalendarBody({
           events={eventsByDay.get(anchor.toString()) ?? []}
           timezone={timezone}
           today={today}
+          editingId={editingId}
           onCreate={onCreate}
           onEdit={onEdit}
+          onOpenDay={onOpenDay}
         />
       </section>
     );
   }
   return (
     <section
-      className={`grid min-w-0 overflow-hidden ${gridCols} gap-px rounded-md border bg-border`}
+      className={`grid min-w-0 overflow-hidden ${gridCols} gap-px rounded-sm border bg-border`}
       aria-label={calendarLabel}
     >
       <div className="hidden bg-muted/40 p-2 text-center text-xs font-medium text-muted-foreground sm:block">
@@ -1247,13 +1325,44 @@ function CalendarBody({
               events={eventsByDay.get(day.toString()) ?? []}
               timezone={timezone}
               today={today}
+              editingId={editingId}
               onCreate={onCreate}
               onEdit={onEdit}
+              onOpenDay={onOpenDay}
             />
           )),
         ];
       })}
     </section>
+  );
+}
+
+function linkedObjectContext(object: CalendarEvent['linkedObjects'][number]): string {
+  const typeLabel = statusLabel(object.type);
+  if (object.relationshipType === 'due_date') return `Due date · ${typeLabel}`;
+  if (object.relationshipType === 'related') return typeLabel;
+  return `${statusLabel(object.relationshipType)} · ${typeLabel}`;
+}
+
+function CalendarLinkedObjectList({ objects }: { objects: CalendarEvent['linkedObjects'] }) {
+  if (objects.length === 0) return null;
+  return (
+    <div className="border-t border-border pt-3">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-fg-dim">Linked objects</p>
+      <ul className="mt-2 space-y-1.5">
+        {objects.map((object) => (
+          <li key={object.id} className="flex min-w-0 items-baseline gap-2">
+            <Link
+              href={`/app/objects/${object.id}`}
+              className="min-w-0 truncate text-sm font-medium text-fg hover:underline"
+            >
+              {object.title}
+            </Link>
+            <span className="shrink-0 text-[11px] text-fg-dim">{linkedObjectContext(object)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -1320,6 +1429,9 @@ function CalendarEventDialog({
             >
               {error}
             </p>
+          ) : null}
+          {editing && !editing.redacted ? (
+            <CalendarLinkedObjectList objects={editing.linkedObjects} />
           ) : null}
         </div>
         <DialogFooter className="gap-2 sm:justify-between">
@@ -1412,7 +1524,7 @@ function CalendarDraftOptions({
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm">
+        <label className="flex items-center gap-2 rounded-sm border px-3 py-2 text-sm">
           <input
             type="checkbox"
             checked={draft.allDay}
@@ -1430,7 +1542,7 @@ function CalendarDraftOptions({
             onChange={(e) => {
               onDraftChange((d) => ({ ...d, visibility: e.target.value as Draft['visibility'] }));
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
           >
             <option value="team">Team</option>
             <option value="private">Private</option>
@@ -1445,7 +1557,7 @@ function CalendarDraftOptions({
             onChange={(e) => {
               onDraftChange((d) => ({ ...d, showAs: e.target.value as Draft['showAs'] }));
             }}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
           >
             <option value="busy">Busy</option>
             <option value="tentative">Tentative</option>
@@ -1497,7 +1609,7 @@ function CalendarDraftRecurrence({
             if (!preset) return;
             onDraftChange((d) => ({ ...d, rrule: preset.rrule }));
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
         >
           {RECURRENCE_PRESETS.map((preset) => (
             <option key={preset.value} value={preset.value}>
@@ -1530,7 +1642,7 @@ function CalendarDraftRecurrence({
               recurrenceEditMode: e.target.value as Draft['recurrenceEditMode'],
             }));
           }}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
         >
           <option value="single">This event</option>
           <option value="this_and_future">This and future</option>
@@ -1611,8 +1723,10 @@ function DayCell({
   events,
   timezone,
   today,
+  editingId,
   onCreate,
   onEdit,
+  onOpenDay,
 }: {
   day: Temporal.PlainDate;
   anchor: Temporal.PlainDate;
@@ -1620,8 +1734,10 @@ function DayCell({
   events: CalendarEvent[];
   timezone: string;
   today: Temporal.PlainDate;
+  editingId: string | null;
   onCreate: (day: Temporal.PlainDate) => void;
   onEdit: (event: CalendarEvent) => void;
+  onOpenDay: (day: Temporal.PlainDate) => void;
 }) {
   const muted = mode === 'month' && day.month !== anchor.month;
   const isToday = Temporal.PlainDate.compare(day, today) === 0;
@@ -1631,11 +1747,15 @@ function DayCell({
     day: 'numeric',
     year: 'numeric',
   });
+  const monthCap = 3;
+  const visibleEvents =
+    mode === 'month' && events.length > monthCap ? events.slice(0, monthCap) : events;
+  const overflow = mode === 'month' ? Math.max(0, events.length - monthCap) : 0;
   return (
     <div
-      className={`min-w-0 bg-background p-1 sm:min-h-28 sm:p-2 ${isToday ? 'ring-2 ring-inset ring-signal' : ''}`}
+      className={`min-w-0 bg-background p-1 sm:min-h-28 ${isToday ? 'ring-2 ring-inset ring-signal' : ''}`}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-1 flex items-center justify-between gap-1">
         <button
           type="button"
           aria-label={`Create event on ${dayLabel}`}
@@ -1648,48 +1768,69 @@ function DayCell({
         >
           {day.day}
         </button>
-        <span className="text-[10px] text-muted-foreground">W{day.weekOfYear}</span>
       </div>
-      <div className="space-y-1">
-        {events.map((event) => (
-          <button
-            key={event.id}
-            type="button"
-            disabled={event.redacted || event.id.startsWith('optimistic-')}
-            onClick={() => {
-              onEdit(event);
-            }}
-            className={`block w-full min-w-0 overflow-hidden rounded-sm px-2 py-1 text-left text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
-              event.redacted
-                ? 'bg-muted text-muted-foreground italic'
-                : event.showAs === 'tentative'
-                  ? 'border border-warning/40 bg-warning/10 text-foreground hover:bg-warning/15'
-                  : event.allDay
-                    ? 'bg-signal/15 text-signal hover:bg-signal/25'
-                    : 'bg-primary/10 text-foreground hover:bg-primary/15'
-            } disabled:opacity-70`}
-          >
-            <span className="flex min-w-0 items-center gap-1">
-              {event.allDay ? null : <Clock className="size-3" aria-hidden="true" />}
-              {event.showAs === 'tentative' ? <span className="text-[11px]">Tentative</span> : null}
-              {event.rrule || event.recurringParentId ? (
-                <span className="font-mono text-[10px]" aria-label="Recurring">
-                  R
-                </span>
-              ) : null}
-              <span className="min-w-0 truncate">
-                {event.allDay
-                  ? event.redacted
-                    ? 'Busy'
-                    : event.title
-                  : `${formatTime(event, timezone)} ${event.redacted ? 'Busy' : event.title}`}
+      <div className="space-y-0.5">
+        {visibleEvents.map((event) => {
+          const title = event.redacted ? 'Busy' : event.title;
+          const selected = editingId === event.id;
+          return (
+            <button
+              key={event.id}
+              type="button"
+              disabled={event.redacted || event.id.startsWith('optimistic-')}
+              onClick={() => {
+                onEdit(event);
+              }}
+              className={`block w-full min-w-0 overflow-hidden rounded-sm px-1 py-0.5 text-left text-[11px] leading-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                event.redacted
+                  ? 'bg-muted text-muted-foreground italic'
+                  : event.showAs === 'tentative'
+                    ? 'bg-warning/10 text-foreground hover:bg-warning/15'
+                    : event.allDay
+                      ? 'bg-signal/15 text-signal hover:bg-signal/25'
+                      : 'bg-primary/10 text-foreground hover:bg-primary/15'
+              } ${selected ? 'ring-1 ring-signal' : ''} disabled:opacity-70`}
+            >
+              <span className="flex min-w-0 items-center gap-1">
+                {event.showAs === 'tentative' ? (
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-warning"
+                    aria-label={
+                      event.rrule || event.recurringParentId ? 'Tentative recurring' : 'Tentative'
+                    }
+                  />
+                ) : event.rrule || event.recurringParentId ? (
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-current opacity-50"
+                    aria-label="Recurring"
+                  />
+                ) : (
+                  <span
+                    className="size-1.5 shrink-0 rounded-full bg-current opacity-40"
+                    aria-hidden="true"
+                  />
+                )}
+                {event.allDay ? null : (
+                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-fg-dim">
+                    {formatTime(event, timezone)}
+                  </span>
+                )}
+                <span className="min-w-0 truncate">{title}</span>
               </span>
-              {!event.redacted ? (
-                <Pencil className="hidden size-3 shrink-0 opacity-50 sm:block" aria-hidden="true" />
-              ) : null}
-            </span>
+            </button>
+          );
+        })}
+        {overflow > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              onOpenDay(day);
+            }}
+            className="w-full truncate px-1 text-left text-[11px] text-fg-dim hover:text-fg"
+          >
+            +{overflow} more
           </button>
-        ))}
+        ) : null}
       </div>
     </div>
   );

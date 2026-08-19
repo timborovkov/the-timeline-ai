@@ -151,6 +151,15 @@ export const QUICK_LINKS: readonly QuickLinkSeed[] = [
     keywords: ['calendar', 'schedule', 'meeting', 'deadline', 'events'],
   },
   {
+    id: 'digests',
+    kind: 'quick_link',
+    title: 'Digests',
+    snippet: 'Browse daily digest history and open a specific day.',
+    href: '/app/digests',
+    group: 'Work',
+    keywords: ['digest', 'digests', 'daily digest', 'summary', 'briefing'],
+  },
+  {
     id: 'inbox',
     kind: 'quick_link',
     title: 'Inbox',
@@ -323,10 +332,10 @@ export const QUICK_LINKS: readonly QuickLinkSeed[] = [
     id: 'job-recovery',
     kind: 'quick_link',
     title: 'Job recovery',
-    snippet: 'Review failed background jobs.',
+    snippet: 'Retry or dismiss failed processing from the last 7 days.',
     href: '/app/team/jobs',
     group: 'Team',
-    keywords: ['jobs', 'job recovery', 'failed jobs', 'background'],
+    keywords: ['jobs', 'job recovery', 'failed jobs', 'background jobs', 'background'],
     adminOnly: true,
   },
   {

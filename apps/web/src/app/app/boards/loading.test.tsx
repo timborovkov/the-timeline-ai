@@ -4,9 +4,13 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
+const fakes = vi.hoisted(() => ({
+  reportCaughtError: vi.fn(),
+  searchParams: new URLSearchParams(),
+}));
 
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+vi.mock('next/navigation', () => ({ useSearchParams: () => fakes.searchParams }));
 
 import BoardError from '@/app/app/boards/[id]/error';
 import BoardDetailLoading from '@/app/app/boards/[id]/loading';
@@ -16,6 +20,7 @@ import BoardsLoading from '@/app/app/boards/loading';
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  fakes.searchParams = new URLSearchParams();
 });
 
 describe('Boards route states', () => {
@@ -26,13 +31,14 @@ describe('Boards route states', () => {
     expect(screen.getByRole('status').parentElement?.getAttribute('aria-busy')).toBeNull();
     expect(screen.getByLabelText('Loading boards').getAttribute('aria-busy')).toBe('true');
     expect(screen.getAllByRole('heading', { level: 1, name: 'Boards' })).toHaveLength(1);
-    expect(screen.queryByRole('link', { name: 'Boards' })).toBeNull();
-    const listSkeleton = document.querySelector('[aria-busy="true"] > [aria-hidden="true"]');
+    expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
+    const listSkeleton = document.querySelector('[aria-label="Boards list loading placeholder"]');
     expect(listSkeleton).toBeTruthy();
     expect(listSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     expect(
-      document.querySelector('[aria-label="Boards list loading placeholder"] ul')?.className,
-    ).toContain('overflow-hidden rounded-lg border border-border');
+      document.querySelector('[aria-label="Boards list loading placeholder"]')?.firstElementChild
+        ?.className,
+    ).toContain('border-t border-border');
 
     rerender(<BoardDetailLoading />);
 
@@ -52,8 +58,26 @@ describe('Boards route states', () => {
       expect(detailSkeleton.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
     }
     expect(document.querySelector('[data-app-layout="full-bleed"]')).toBeTruthy();
-    expect(screen.getByLabelText('Loading board').className).toContain('overflow-x-auto');
+    expect(document.querySelector('[data-loading-toolbar="collection"]')).toBeTruthy();
+    expect(document.querySelector('[data-board-loading-view="kanban"]')).toBeTruthy();
+    expect(
+      document.querySelector('[data-board-loading-view="kanban"] .overflow-x-auto'),
+    ).toBeTruthy();
     expect(document.querySelectorAll('.motion-reduce\\:animate-none')).not.toHaveLength(0);
+  });
+
+  it('uses a table-shaped board loading fallback when that view is requested', () => {
+    fakes.searchParams = new URLSearchParams('view=table');
+    const { container, unmount } = render(<BoardDetailLoading />);
+    expect(container.querySelector('[data-board-loading-view="table"]')).toBeTruthy();
+    expect(container.querySelector('[data-board-loading-view="kanban"]')).toBeNull();
+    expect(container.querySelector('[data-loading-toolbar="collection"]')).toBeTruthy();
+    unmount();
+
+    fakes.searchParams = new URLSearchParams('view=list');
+    const list = render(<BoardDetailLoading />);
+    expect(list.container.querySelector('[data-board-loading-view="list"]')).toBeTruthy();
+    expect(list.container.querySelector('[data-board-loading-view="table"]')).toBeNull();
   });
 
   it.each([

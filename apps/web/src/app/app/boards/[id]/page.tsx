@@ -108,7 +108,6 @@ export default async function BoardDetailPage({
     };
   });
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
-  const isKanban = view === 'kanban';
   const activeFilters = hasActiveWorkFilters(filters);
   const filterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
   const initialCandidates: typeof candidates = [];
@@ -122,12 +121,8 @@ export default async function BoardDetailPage({
 
   return (
     <div
-      data-app-layout={isKanban ? 'full-bleed' : undefined}
-      className={
-        isKanban
-          ? '-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8'
-          : undefined
-      }
+      data-app-layout="full-bleed"
+      className="-mx-4 -my-6 flex h-[calc(100dvh-3rem)] min-w-0 flex-col md:-mx-8 md:-my-8"
     >
       {categoryFilterBaseline ? (
         <TaskCategoryFilterRefresh
@@ -138,7 +133,6 @@ export default async function BoardDetailPage({
         />
       ) : null}
       <BoardDetailClient
-        teamId={active.teamId}
         boardId={board.id}
         boardName={board.name}
         purpose={board.purpose}

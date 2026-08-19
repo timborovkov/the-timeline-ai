@@ -15,11 +15,19 @@ import type {
 } from '#src/messaging/types.js';
 
 import {
+  absoluteDigestAppUrl,
+  digestActivityStats,
   digestContentSections,
+  digestSectionBody,
   digestSummaryParagraphs,
+  formatDigestActivityLines,
   formatDigestCalendarEvent,
+  formatDigestCalendarEventDetail,
   formatDigestDate,
+  formatDigestObjectType,
   formatDigestTask,
+  formatDigestTaskDetail,
+  formatDigestWindowRange,
 } from '#src/messaging/digest-format.js';
 
 type TemplateName =
@@ -98,6 +106,44 @@ function htmlList(items: string[]): string {
     : '<p style="font-size: 14px; color: #747b7b;">None</p>';
 }
 
+function htmlAppLinks(title: string, items: { href: string | null; label: string }[]): string {
+  const links = items.flatMap((item) =>
+    item.href ? [{ href: item.href, label: item.label }] : [],
+  );
+  if (links.length === 0) return '';
+  return `<p style="font-size: 13px; line-height: 1.55; margin: 20px 0 0">${escapeHtml(
+    title,
+  )} ${links
+    .map(
+      (item) =>
+        `<a href="${escapeHtml(item.href)}" style="color: #68a500; text-decoration: underline;">${escapeHtml(item.label)}</a>`,
+    )
+    .join(' · ')}</p>`;
+}
+
+function htmlNamedLinkedList(
+  title: string,
+  items: { href: string | null; label: string; detail: string }[],
+): string {
+  if (items.length === 0) return '';
+  const list = `<ul style="font-size: 14px; line-height: 1.55; padding-left: 20px;">${items
+    .map((item) => {
+      const label = item.href
+        ? `<a href="${escapeHtml(item.href)}" style="color: #68a500; text-decoration: underline;">${escapeHtml(item.label)}</a>`
+        : escapeHtml(item.label);
+      const detail = item.detail ? ` ${escapeHtml(item.detail)}` : '';
+      return `<li>${label}${detail}</li>`;
+    })
+    .join('')}</ul>`;
+  return `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(title)}</h2>\n${list}`;
+}
+
+function textLinkedLines(items: { href: string | null; text: string }[]): string[] {
+  return items.flatMap((item) =>
+    item.href ? [`- ${item.text}`, `  ${item.href}`] : [`- ${item.text}`],
+  );
+}
+
 function htmlParagraphs(items: string[]): string {
   return items
     .map(
@@ -107,14 +153,36 @@ function htmlParagraphs(items: string[]): string {
     .join('\n');
 }
 
+function htmlActivityBlock(lines: string[]): string {
+  if (lines.length === 0) return '';
+  return [
+    `<h2 style="font-size: 14px; margin: 20px 0 8px">Activity</h2>`,
+    `<p style="font-size: 14px; line-height: 1.55; margin: 0 0 8px">${lines
+      .map((line) => escapeHtml(line))
+      .join(' · ')}</p>`,
+  ].join('\n');
+}
+
+function htmlDateBlock(date: string): string {
+  return `<p style="font-size: 14px; margin: 0 0 16px">${escapeHtml(date)}</p>`;
+}
+
+function htmlWindowBlock(range: string): string {
+  return `<p style="font-size: 12px; color: #747b7b; margin: 20px 0 0;">Covering ${escapeHtml(range)}</p>`;
+}
+
 function htmlDigestSections(sections: ReturnType<typeof digestContentSections>): string {
   return sections
-    .map((section) =>
-      [
+    .map((section) => {
+      const body = digestSectionBody(section);
+      const content = section.body
+        ? `<p style="font-size: 14px; line-height: 1.55; margin: 0 0 8px">${escapeHtml(body)}</p>`
+        : htmlList(section.items);
+      return [
         `<h2 style="font-size: 14px; margin: 20px 0 8px">${escapeHtml(section.title)}</h2>`,
-        htmlList(section.items),
-      ].join('\n'),
-    )
+        content,
+      ].join('\n');
+    })
     .join('\n');
 }
 
@@ -283,44 +351,78 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
   const p = input.payload;
   const subject = `Daily digest for ${p.teamName}`;
   const timezone = p.timezone;
-  const windowEnd = formatDigestDate(p.windowEnd, timezone);
+  const windowRange = formatDigestWindowRange(p.windowStart, p.windowEnd, timezone);
+  const digestDate = formatDigestDate(p.windowEnd, timezone);
   const summaryParagraphs = digestSummaryParagraphs(p.summary);
   const sections = digestContentSections(p);
-  const activityCountLine =
-    typeof p.momentCount === 'number'
-      ? `${p.momentCount} work moment${p.momentCount === 1 ? '' : 's'}`
-      : `${p.eventCount} new timeline events`;
-  const sourceLines = Object.entries(p.sourceDistribution).map(
-    ([source, count]) => `${source}: ${count}`,
-  );
-  const objectLines = Object.entries(p.objectChangesByType).map(
-    ([type, count]) => `${type}: ${count}`,
-  );
+  const activity = digestActivityStats(p);
+  const activityLines = formatDigestActivityLines(activity);
+  const completedTasks = p.completedTasks ?? [];
+  const newObjects = p.newObjects ?? [];
+  const windowCalendar = p.windowCalendar ?? [];
+  const now = new Date(p.windowEnd);
+  const newTaskItems = p.tasks.map((task) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, task.href),
+    label: task.title,
+    detail: formatDigestTaskDetail(task, timezone, now),
+    text: formatDigestTask(task, timezone, now),
+  }));
+  const completedTaskItems = completedTasks.map((task) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, task.href),
+    label: task.title,
+    detail: formatDigestTaskDetail(task, timezone, now),
+    text: formatDigestTask(task, timezone, now),
+  }));
+  const newObjectItems = newObjects.map((object) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, object.href),
+    label: object.title,
+    detail: `(${formatDigestObjectType(object.type)})`,
+    text: `${object.title} (${formatDigestObjectType(object.type)})`,
+  }));
+  const windowCalendarItems = windowCalendar.map((event) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, event.href),
+    label: event.title,
+    detail: formatDigestCalendarEventDetail(event, timezone),
+    text: formatDigestCalendarEvent(event, timezone),
+  }));
+  const calendarItems = p.upcomingCalendar.map((event) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, event.href),
+    label: event.title,
+    detail: formatDigestCalendarEventDetail(event, timezone),
+    text: formatDigestCalendarEvent(event, timezone),
+  }));
+  const dashboardLinks = p.links.map((link) => ({
+    href: absoluteDigestAppUrl(input.digestUrl, link.href),
+    label: link.label,
+  }));
   const textBody = [
-    `Daily digest for ${p.teamName} · ${windowEnd}`,
+    `Daily digest for ${p.teamName}`,
+    digestDate,
     '',
     ...summaryParagraphs.flatMap((paragraph) => [paragraph, '']),
-    ...sections.flatMap((section) => [
-      section.title,
-      ...section.items.map((item) => `- ${item}`),
-      '',
-    ]),
-    '',
-    `${p.pendingApprovals} pending approvals`,
-    activityCountLine,
-    sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'Sources: none',
-    objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'Objects changed: none',
-    '',
-    'Current tasks:',
-    ...(p.tasks.length
-      ? p.tasks.map((task) => `- ${formatDigestTask(task, timezone, new Date(p.windowEnd))}`)
-      : ['- None']),
-    '',
-    'Upcoming calendar:',
-    ...(p.upcomingCalendar.length
-      ? p.upcomingCalendar.map((event) => `- ${formatDigestCalendarEvent(event, timezone)}`)
-      : ['- None']),
-    '',
+    ...sections.flatMap((section) => {
+      const body = digestSectionBody(section);
+      if (section.body || section.items.length === 0) return [section.title, body, ''];
+      return [section.title, ...section.items.map((item) => `- ${item}`), ''];
+    }),
+    ...(activityLines.length ? ['Activity', ...activityLines.map((line) => `- ${line}`), ''] : []),
+    ...(newTaskItems.length ? ['New tasks:', ...textLinkedLines(newTaskItems), ''] : []),
+    ...(completedTaskItems.length
+      ? ['Completed tasks:', ...textLinkedLines(completedTaskItems), '']
+      : []),
+    ...(newObjectItems.length ? ['New objects:', ...textLinkedLines(newObjectItems), ''] : []),
+    ...(windowCalendarItems.length
+      ? ['Calendar this window:', ...textLinkedLines(windowCalendarItems), '']
+      : []),
+    ...(calendarItems.length ? ['Upcoming calendar:', ...textLinkedLines(calendarItems), ''] : []),
+    ...(dashboardLinks.some((link) => link.href)
+      ? [
+          'Open on the dashboard:',
+          ...dashboardLinks.flatMap((link) => (link.href ? [`- ${link.label}: ${link.href}`] : [])),
+          '',
+        ]
+      : []),
+    `Covering ${windowRange}`,
     `Open digest: ${input.digestUrl}`,
   ].join('\n');
   const htmlBody = htmlLayout({
@@ -330,24 +432,20 @@ function renderDailyDigest(input: DailyDigestMessageInput): RenderedMessage {
       'daily-digest',
       {},
       {
+        dateBlock: htmlDateBlock(digestDate),
+        windowBlock: htmlWindowBlock(windowRange),
         summaryBlock: htmlParagraphs(summaryParagraphs),
         summarySections: htmlDigestSections(sections),
-        snapshotList: htmlList([
-          `Digest date: ${windowEnd}`,
-          `${p.pendingApprovals} pending approvals`,
-          activityCountLine,
-          sourceLines.length ? `Sources: ${sourceLines.join(', ')}` : 'No new sources',
-          objectLines.length ? `Objects changed: ${objectLines.join(', ')}` : 'No object changes',
-        ]),
-        tasksList: htmlList(
-          p.tasks.map((task) => formatDigestTask(task, timezone, new Date(p.windowEnd))),
-        ),
-        calendarList: htmlList(
-          p.upcomingCalendar.map((event) => formatDigestCalendarEvent(event, timezone)),
-        ),
+        activityBlock: htmlActivityBlock(activityLines),
+        newTasksBlock: htmlNamedLinkedList('New tasks', newTaskItems),
+        completedTasksBlock: htmlNamedLinkedList('Completed tasks', completedTaskItems),
+        newObjectsBlock: htmlNamedLinkedList('New objects', newObjectItems),
+        windowCalendarBlock: htmlNamedLinkedList('Calendar this window', windowCalendarItems),
+        calendarBlock: htmlNamedLinkedList('Upcoming calendar', calendarItems),
+        linksBlock: htmlAppLinks('Open on the dashboard:', dashboardLinks),
       },
     ),
-    cta: { href: input.digestUrl, label: 'Open digest' },
+    cta: { href: input.digestUrl, label: 'Open this digest' },
   });
   return {
     intent: 'daily_digest',

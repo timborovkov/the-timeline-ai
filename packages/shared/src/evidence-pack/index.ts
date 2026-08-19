@@ -175,11 +175,28 @@ export function evidenceSourceContextForPrompt(
       metadataString(metadata, 'from_email') ??
       metadataString(metadata, 'sender_email');
     conversationName = metadataString(metadata, 'subject');
+  } else if (source === 'integration') {
+    const actor = metadataObject(metadata.actor);
+    const github = metadataObject(metadata.github);
+    senderName =
+      metadataString(actor, 'name') ??
+      metadataString(actor, 'externalId') ??
+      metadataString(github, 'login');
+    const handle =
+      metadataString(actor, 'externalId') ??
+      metadataString(actor, 'login') ??
+      metadataString(github, 'login');
+    senderHandle = handle ? `@${handle.replace(/^@/, '')}` : null;
+    conversationName =
+      metadataString(github, 'repo') ??
+      metadataString(metadata, 'external_object_id') ??
+      metadataString(metadata, 'provider');
   }
 
   const member = authorUserId
     ? members.find((candidate) => candidate.userId === authorUserId)
     : undefined;
+  const verifiedMember = source === 'integration' ? undefined : member;
   return (
     fenceExternalContent(
       JSON.stringify({
@@ -188,9 +205,9 @@ export function evidenceSourceContextForPrompt(
         senderHandle,
         conversationName,
         timelineAuthorUserId: authorUserId,
-        verifiedTimelineMemberId: member?.userId ?? null,
-        verifiedTimelineMemberName: member?.name ?? null,
-        verifiedTimelineMemberEmail: member?.email ?? null,
+        verifiedTimelineMemberId: verifiedMember?.userId ?? null,
+        verifiedTimelineMemberName: verifiedMember?.name ?? null,
+        verifiedTimelineMemberEmail: verifiedMember?.email ?? null,
       }),
       { source: 'raw-event-source-context', eventId },
     ) ?? ''

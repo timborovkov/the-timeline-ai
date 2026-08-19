@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
 
 const PRESETS = [
@@ -124,7 +125,7 @@ export function BoardCreateDialog() {
       <DialogTrigger asChild>
         <button
           type="button"
-          className="inline-flex items-center gap-2 rounded-sm bg-signal px-3 py-1.5 font-sans text-sm font-medium normal-case tracking-normal text-signal-fg hover:opacity-90"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
         >
           <Plus className="size-3.5" aria-hidden="true" />
           Create board
@@ -163,16 +164,20 @@ function BoardCreateForm({ showHeading = true }: BoardCreateFormProps) {
     }
     dispatch({ type: 'error', error: null });
     startTransition(async () => {
-      const result = await createBoardAction({
-        name: name.trim(),
-        templateKind,
-        purpose: purpose.trim() || undefined,
-        lanes,
+      const result = await notifyAction({
+        id: 'board:create',
+        loading: 'Creating board…',
+        success: 'Board created',
+        error: 'Couldn’t create board',
+        run: () =>
+          createBoardAction({
+            name: name.trim(),
+            templateKind,
+            purpose: purpose.trim() || undefined,
+            lanes,
+          }),
       });
-      if ('error' in result && result.error) {
-        dispatch({ type: 'error', error: result.error });
-        return;
-      }
+      if (result.error) return;
       if ('id' in result && result.id) router.push(`/app/boards/${result.id}`);
     });
   }

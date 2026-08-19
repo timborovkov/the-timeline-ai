@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -15,7 +14,8 @@ import { BoardAddItemForm } from '@/components/boards/board-add-item-form';
 import { BoardCardDetail } from '@/components/boards/board-card-detail';
 import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated-board-views';
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
+import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
@@ -43,7 +43,6 @@ interface BoardItemPatchOverlay {
 }
 
 interface Props {
-  teamId?: string;
   boardId: string;
   boardName: string;
   purpose: string | null;
@@ -90,7 +89,6 @@ const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_TYPE_LABELS: Record<string, string> = {};
 
 export function BoardDetailClient({
-  teamId,
   boardId,
   boardName,
   purpose,
@@ -255,13 +253,13 @@ export function BoardDetailClient({
   const boardHeaderTrailing = useMemo(
     () => (
       <div className="flex items-center gap-2">
-        {teamId ? (
-          <ContextualAskLink
-            teamId={teamId}
-            context={{ pathname: `/app/boards/${boardId}`, routeKind: 'board', boardId }}
-            label="Ask about board"
-          />
-        ) : null}
+        <ChatViewContextBinder
+          viewKey={`board:${boardId}`}
+          kind="board"
+          href={`/app/boards/${boardId}`}
+          label={boardName}
+          boardId={boardId}
+        />
         <PinButton target={{ kind: 'board', key: boardId }} initialPinned={pinned} compact />
         <BoardActionsMenu
           id={boardId}
@@ -272,7 +270,7 @@ export function BoardDetailClient({
         />
       </div>
     ),
-    [boardId, boardName, lanes, pinned, purpose, teamId],
+    [boardId, boardName, lanes, pinned, purpose],
   );
 
   return (
@@ -282,20 +280,10 @@ export function BoardDetailClient({
         title={boardName}
         subtitle={description ?? undefined}
         leading={boardHeaderLeading}
-        className={view === 'kanban' ? 'w-full shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
+        className="w-full shrink-0 px-4 md:px-8"
         trailing={boardHeaderTrailing}
       />
-      <WorkSubnav
-        current={`/app/boards/${boardId}`}
-        className={view === 'kanban' ? 'shrink-0 px-4 md:px-8' : 'mb-4 shrink-0'}
-      />
-
-      <BoardViewNavigation
-        boardId={boardId}
-        view={view}
-        selectedItemId={selectedItemId}
-        filterParams={filterParams}
-      />
+      <WorkSubnav current={`/app/boards/${boardId}`} className="shrink-0 px-4 md:px-8" />
 
       <WorkFilterBar
         mode="board"
@@ -309,20 +297,27 @@ export function BoardDetailClient({
         projects={projectOptions}
         lanes={lanes}
         typeLabels={typeLabels}
-        className={view === 'kanban' ? 'shrink-0' : 'mb-4'}
+        className="shrink-0"
+        viewControls={
+          <CollectionViewToggle
+            label="Board view"
+            views={['kanban', 'table', 'list'] as const}
+            current={view}
+            hrefFor={(nextView) => boardViewHref(boardId, nextView, selectedItemId, filterParams)}
+          />
+        }
+        actions={
+          <BoardAddItemForm
+            boardId={boardId}
+            defaultLaneId={defaultLaneId}
+            candidates={availableCandidates}
+            recommendedTypes={recommendedTypes}
+            onOptimisticItem={addOptimisticItem}
+            onItemAdded={commitAddedItem}
+            onItemAddFailed={rollbackAddedItem}
+          />
+        }
       />
-
-      <div className={view === 'kanban' ? 'w-full shrink-0 px-4 py-4 md:px-8' : 'mb-4 shrink-0'}>
-        <BoardAddItemForm
-          boardId={boardId}
-          defaultLaneId={defaultLaneId}
-          candidates={availableCandidates}
-          recommendedTypes={recommendedTypes}
-          onOptimisticItem={addOptimisticItem}
-          onItemAdded={commitAddedItem}
-          onItemAddFailed={rollbackAddedItem}
-        />
-      </div>
 
       <div
         className={
@@ -331,7 +326,7 @@ export function BoardDetailClient({
             : 'min-h-0 flex-1'
         }
       >
-        <div className={view === 'kanban' ? 'h-full min-h-0 min-w-0' : 'min-h-0'}>
+        <div className="h-full min-h-0 min-w-0">
           {view === 'kanban' && (
             <CuratedKanbanBoard
               boardId={boardId}
@@ -366,63 +361,24 @@ export function BoardDetailClient({
           )}
         </div>
         {selectedItem ? (
-          <BoardCardDetail
-            key={selectedItem.id}
-            teamId={teamId}
-            boardId={boardId}
-            view={view}
-            item={selectedItem}
-            connectedWork={selectedObjectContext}
-            history={history}
-            lanes={lanes}
-            members={members}
-            onUpdateItem={updateItem}
-            onItemRemoved={removeLocalItem}
-            filterParams={filterParams}
-          />
+          <div className="min-h-0 overflow-y-auto pr-4 md:pr-8">
+            <BoardCardDetail
+              key={selectedItem.id}
+              boardId={boardId}
+              view={view}
+              item={selectedItem}
+              connectedWork={selectedObjectContext}
+              history={history}
+              lanes={lanes}
+              members={members}
+              onUpdateItem={updateItem}
+              onItemRemoved={removeLocalItem}
+              filterParams={filterParams}
+            />
+          </div>
         ) : null}
       </div>
     </TaskCategoryPollingProvider>
-  );
-}
-
-function BoardViewNavigation({
-  boardId,
-  view,
-  selectedItemId,
-  filterParams,
-}: {
-  boardId: string;
-  view: BoardLayout;
-  selectedItemId: string | null;
-  filterParams: Record<string, string>;
-}) {
-  return (
-    <div
-      className={
-        view === 'kanban'
-          ? 'flex w-full shrink-0 justify-end px-4 py-4 md:px-8'
-          : 'mb-4 flex shrink-0 justify-end'
-      }
-    >
-      <nav
-        aria-label="Board view"
-        className="inline-flex overflow-hidden rounded-sm border border-border"
-      >
-        {(['kanban', 'table', 'list'] as const).map((nextView) => (
-          <Link
-            key={nextView}
-            href={boardViewHref(boardId, nextView, selectedItemId, filterParams)}
-            aria-current={view === nextView ? 'page' : undefined}
-            className={`px-3 py-1.5 text-xs ${
-              view === nextView ? 'bg-signal text-signal-fg' : 'bg-bg text-fg-muted hover:text-fg'
-            }`}
-          >
-            {nextView}
-          </Link>
-        ))}
-      </nav>
-    </div>
   );
 }
 

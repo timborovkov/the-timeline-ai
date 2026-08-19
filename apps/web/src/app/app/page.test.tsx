@@ -21,6 +21,18 @@ const fakes = vi.hoisted(() => ({
   listPins: vi.fn(),
   listRecoverableJobs: vi.fn(),
   listTimelineCapturedFilesByEventId: vi.fn(),
+  loadOnboardingChecklistView: vi.fn<
+    (input: {
+      teamId: string;
+      userId: string;
+      getChecklistState: () => Promise<unknown>;
+    }) => Promise<{
+      dismissed: boolean;
+      items: { key: string; label: string; completed: boolean }[];
+    }>
+  >(),
+  onboardingInitialData: null as { dismissed: boolean } | null,
+  reportCaughtError: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
@@ -67,7 +79,10 @@ vi.mock('@/components/home/home-ask-composer', () => ({
   HomeAskComposer: ({ actions }: { actions?: ReactNode }) => <div>{actions}</div>,
 }));
 vi.mock('@/components/onboarding-checklist', () => ({
-  OnboardingChecklist: () => <div data-testid="home-onboarding">Team setup checklist</div>,
+  OnboardingChecklist: ({ initialData }: { initialData?: { dismissed: boolean } | null }) => {
+    fakes.onboardingInitialData = initialData ?? null;
+    return <div data-testid="home-onboarding">Team setup checklist</div>;
+  },
 }));
 vi.mock('@/components/pins/pinned-workspace-preview', () => ({
   PinnedWorkspacePreview: () => null,
@@ -88,6 +103,10 @@ vi.mock('@/lib/hub-status', () => ({
     Object.entries(counts).reduce((sum, [type, count]) => (type === 'task' ? sum : sum + count), 0),
   homeWorkNeedingAttentionCount: (summary: { overdueTasks: number }) => summary.overdueTasks,
 }));
+vi.mock('@/lib/onboarding-checklist', () => ({
+  loadOnboardingChecklistView: fakes.loadOnboardingChecklistView,
+}));
+vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 vi.mock('@/lib/timeline-captured-files', () => ({
   listTimelineCapturedFilesByEventId: fakes.listTimelineCapturedFilesByEventId,
 }));
@@ -128,6 +147,11 @@ beforeEach(() => {
   fakes.listTimelineCapturedFilesByEventId.mockResolvedValue({});
   fakes.buildTimelineMoments.mockReturnValue([]);
   fakes.isPinnedMany.mockResolvedValue({});
+  fakes.onboardingInitialData = null;
+  fakes.loadOnboardingChecklistView.mockResolvedValue({
+    dismissed: true,
+    items: [{ key: 'first_note', label: 'Capture one timeline event', completed: true }],
+  });
 });
 
 describe('HomeDashboardPage', () => {
@@ -209,5 +233,35 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('aria-label="Recent moments"');
     expect(html).toContain('href="/app/timeline"');
     expect(html).toContain('Go to the full timeline');
+  });
+
+  it('passes the server checklist snapshot into the Home setup panel', async () => {
+    const snapshot = {
+      dismissed: true,
+      items: [{ key: 'first_note', label: 'Capture one timeline event', completed: true }],
+    };
+    fakes.loadOnboardingChecklistView.mockResolvedValue(snapshot);
+
+    renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(fakes.loadOnboardingChecklistView).toHaveBeenCalledOnce();
+    const loadArgs = fakes.loadOnboardingChecklistView.mock.calls[0]?.[0];
+    expect(loadArgs?.teamId).toBe('team-1');
+    expect(loadArgs?.userId).toBe('user-1');
+    expect(typeof loadArgs?.getChecklistState).toBe('function');
+    expect(fakes.onboardingInitialData).toEqual(snapshot);
+  });
+
+  it('still renders Home when the checklist snapshot fails to load', async () => {
+    fakes.loadOnboardingChecklistView.mockRejectedValue(new Error('checklist unavailable'));
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('data-testid="home-onboarding"');
+    expect(fakes.onboardingInitialData).toBeNull();
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
+      surface: 'render',
+      operation: 'onboarding_checklist',
+    });
   });
 });

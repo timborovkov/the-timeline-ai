@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({
   defaultDigestWindow: vi.fn(),
   getDigestPreference: vi.fn(),
+  getWorkspaceDigestSchedule: vi.fn(),
   listDailyDigestRecipients: vi.fn(),
+  listWorkspaceDigestTeamIds: vi.fn(),
   generateDailyDigest: vi.fn(),
   sendDailyDigest: vi.fn(),
+  sendWorkspaceDailyDigest: vi.fn(),
   enqueueDailyDigestRecipientJob: vi.fn(),
   enqueueDailyDigestSendJob: vi.fn(),
+  enqueueDailyDigestWorkspaceSendJob: vi.fn(),
 }));
 
 vi.mock('@timeline/shared', () => ({
@@ -18,12 +22,16 @@ vi.mock('@timeline/shared', () => ({
     listDailyDigestRecipients: fakes.listDailyDigestRecipients,
     generateDailyDigest: fakes.generateDailyDigest,
     sendDailyDigest: fakes.sendDailyDigest,
+    sendWorkspaceDailyDigest: fakes.sendWorkspaceDailyDigest,
+    listWorkspaceDigestTeamIds: fakes.listWorkspaceDigestTeamIds,
+    getWorkspaceDigestSchedule: fakes.getWorkspaceDigestSchedule,
   },
   queue: {
     QUEUE_NAMES: { dailyDigest: 'daily-digest' },
     getRedisConnection: vi.fn(),
     enqueueDailyDigestRecipientJob: fakes.enqueueDailyDigestRecipientJob,
     enqueueDailyDigestSendJob: fakes.enqueueDailyDigestSendJob,
+    enqueueDailyDigestWorkspaceSendJob: fakes.enqueueDailyDigestWorkspaceSendJob,
   },
 }));
 
@@ -44,6 +52,11 @@ describe('daily digest worker', () => {
     });
     fakes.getDigestPreference.mockResolvedValue({
       enabled: true,
+      hour: 12,
+      timezone: 'Europe/Helsinki',
+    });
+    fakes.listWorkspaceDigestTeamIds.mockResolvedValue([]);
+    fakes.getWorkspaceDigestSchedule.mockResolvedValue({
       hour: 12,
       timezone: 'Europe/Helsinki',
     });
@@ -173,6 +186,47 @@ describe('daily digest worker', () => {
     expect(fakes.enqueueDailyDigestSendJob).not.toHaveBeenCalled();
   });
 
+  it('enqueues one workspace send job per team with a shared digest destination', async () => {
+    fakes.listDailyDigestRecipients.mockResolvedValue([
+      { teamId: 'team-1', userId: 'user-1', email: 'a@example.test' },
+    ]);
+    fakes.listWorkspaceDigestTeamIds.mockResolvedValue(['team-1']);
+
+    await expect(processDailyDigestJob({ db: {} as never }, { kind: 'tick' })).resolves.toEqual({
+      recipients: 1,
+    });
+    expect(fakes.getWorkspaceDigestSchedule).toHaveBeenCalledWith({}, 'team-1');
+    expect(fakes.enqueueDailyDigestWorkspaceSendJob).toHaveBeenCalledWith({
+      kind: 'workspace-send',
+      teamId: 'team-1',
+      windowStart: '2026-06-13T12:00:00.000Z',
+      windowEnd: '2026-06-14T12:00:00.000Z',
+    });
+  });
+
+  it('sends a workspace digest through the shared bot destinations', async () => {
+    fakes.sendWorkspaceDailyDigest.mockResolvedValue({ ok: true });
+
+    await expect(
+      processDailyDigestJob(
+        { db: {} as never },
+        {
+          kind: 'workspace-send',
+          teamId: 'team-1',
+          windowStart: '2026-06-13T12:00:00.000Z',
+          windowEnd: '2026-06-14T12:00:00.000Z',
+        },
+      ),
+    ).resolves.toEqual({ sent: true });
+    expect(fakes.sendWorkspaceDailyDigest).toHaveBeenCalledWith({
+      db: {},
+      teamId: 'team-1',
+      windowStart: new Date('2026-06-13T12:00:00.000Z'),
+      windowEnd: new Date('2026-06-14T12:00:00.000Z'),
+      digestUrl: 'http://localhost:3000/app',
+    });
+  });
+
   it('uses VERCEL_URL for digest links when explicit auth URLs are absent', async () => {
     process.env.VERCEL_URL = 'timeline-preview.vercel.app';
     process.env.NEXTAUTH_URL = 'https://production.timeline.example';
@@ -189,7 +243,7 @@ describe('daily digest worker', () => {
       db: {},
       digestId: 'digest-1',
       to: 'a@example.test',
-      digestUrl: 'https://timeline-preview.vercel.app/app',
+      digestUrl: 'https://timeline-preview.vercel.app/app/digests?digest=digest-1',
     });
   });
 

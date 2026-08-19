@@ -62,22 +62,24 @@ export default async function BoardsIndexPage() {
           <div className="mt-4 flex justify-center">{BOARD_CREATE_DIALOG}</div>
         </section>
       ) : (
-        <ul className="overflow-hidden border-x border-border" aria-label="Boards">
+        <ul aria-label="Boards">
           {boards.map((board) => {
             const description = visibleBoardDescription(board.purpose);
             return (
               <li key={board.id}>
-                <CollectionRow
-                  title={
+                <CollectionRow>
+                  <CollectionRow.Title>
                     <Link
                       href={`/app/boards/${board.id}`}
                       className="block truncate rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {board.name}
                     </Link>
-                  }
-                  context={description ?? board.templateKind.replaceAll('_', ' ')}
-                  metadata={
+                  </CollectionRow.Title>
+                  <CollectionRow.Context>
+                    {description ?? board.templateKind.replaceAll('_', ' ')}
+                  </CollectionRow.Context>
+                  <CollectionRow.Metadata>
                     <>
                       <span className="capitalize">{board.templateKind.replaceAll('_', ' ')}</span>
                       <time dateTime={board.updatedAt.toISOString()}>
@@ -89,8 +91,8 @@ export default async function BoardsIndexPage() {
                         {board.itemCount} {board.itemCount === 1 ? 'item' : 'items'}
                       </span>
                     </>
-                  }
-                  actions={
+                  </CollectionRow.Metadata>
+                  <CollectionRow.Actions>
                     <ItemActionGroup label={`Actions for ${board.name}`}>
                       <PinOverflowMenu
                         target={{ kind: 'board', key: board.id }}
@@ -98,8 +100,8 @@ export default async function BoardsIndexPage() {
                         initialPinned={board.pinned}
                       />
                     </ItemActionGroup>
-                  }
-                />
+                  </CollectionRow.Actions>
+                </CollectionRow>
               </li>
             );
           })}

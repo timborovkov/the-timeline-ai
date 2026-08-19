@@ -33,6 +33,7 @@ vi.mock('#src/queue/queues.js', () => ({
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+  enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -888,6 +889,7 @@ describe('writeIntegrationEvents visibility', () => {
       {
         dedupKey: 'sentry:issue:789:resolved',
         provider: 'sentry',
+        signalClass: 'finding' as const,
         externalObjectId: 'issue-789',
         externalEventId: 'evt-sentry-1',
         eventType: 'issue.resolved',
@@ -907,15 +909,43 @@ describe('writeIntegrationEvents visibility', () => {
       events,
     });
     expect(insertedIds).toHaveLength(3);
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    const persisted = await db.select().from(rawEvents);
+    expect(persisted).toHaveLength(3);
+    for (const row of persisted) {
+      const metadata = row.sourceMetadata as {
+        extraction_skipped_reason?: string;
+        event_type?: string;
+        event_class?: string;
+        signal_class?: string;
+      };
+      if (metadata.event_type === 'comment.created') {
+        expect(metadata.extraction_skipped_reason).toBe('integration_finding_source');
+        expect(metadata).toMatchObject({
+          signal_class: 'finding',
+          event_class: 'communication',
+        });
+      } else if (metadata.event_type === 'issue.resolved') {
+        expect(metadata.extraction_skipped_reason).toBe('integration_finding_source');
+        expect(metadata).toMatchObject({
+          signal_class: 'finding',
+          event_class: 'incident',
+        });
+      } else {
+        expect(metadata.extraction_skipped_reason).toBe('integration_structured_source');
+        expect(metadata).toMatchObject({
+          signal_class: 'captured_work',
+          event_class: 'work_record',
+        });
+      }
+    }
     for (const rawEventId of insertedIds) {
-      expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId });
       expect(enqueueEmbedJob).toHaveBeenCalledWith({
         scope: 'raw_event',
         teamId: TEAM_ID,
         rawEventId,
       });
     }
-    expect(enqueueExtractJob).toHaveBeenCalledTimes(3);
     expect(enqueueEmbedJob).toHaveBeenCalledTimes(3);
 
     const retryIds = await writeIntegrationEvents({
@@ -924,7 +954,7 @@ describe('writeIntegrationEvents visibility', () => {
       events,
     });
     expect(retryIds).toEqual([]);
-    expect(enqueueExtractJob).toHaveBeenCalledTimes(3);
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
     expect(enqueueEmbedJob).toHaveBeenCalledTimes(3);
 
     const evidenceRows = await db
@@ -1204,7 +1234,7 @@ describe('writeIntegrationEvents visibility', () => {
   });
 
   it('keeps reconciliation evidence when integration queue handoff fails', async () => {
-    vi.mocked(enqueueExtractJob).mockRejectedValueOnce(new Error('redis unavailable'));
+    vi.mocked(enqueueEmbedJob).mockRejectedValueOnce(new Error('redis unavailable'));
     const [integration] = await db
       .insert(integrations)
       .values({
@@ -1238,7 +1268,7 @@ describe('writeIntegrationEvents visibility', () => {
     });
     if (!eventId) throw new Error('event insert failed');
 
-    expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId: eventId });
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
     expect(enqueueEmbedJob).toHaveBeenCalledWith({
       scope: 'raw_event',
       teamId: TEAM_ID,
@@ -1247,9 +1277,9 @@ describe('writeIntegrationEvents visibility', () => {
 
     const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     const metadata = row?.sourceMetadata as Record<string, unknown> | undefined;
-    expect(metadata?.extraction_error).toBe('enqueue failed: redis unavailable');
-    expect(metadata?.extraction_failed_at).toEqual(expect.any(String));
-    expect(metadata).not.toHaveProperty('embedding_failed_at');
+    expect(metadata?.embedding_error).toBe('enqueue failed: redis unavailable');
+    expect(metadata?.embedding_failed_at).toEqual(expect.any(String));
+    expect(metadata).not.toHaveProperty('extraction_failed_at');
 
     const [evidence] = await db
       .select()
@@ -1409,6 +1439,94 @@ describe('writeIntegrationEvents visibility', () => {
     await expect(db.select().from(rawEvents)).resolves.toEqual([]);
   });
 
+  it('still enqueues extract for conversational Slack events', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'slack',
+        displayName: 'Slack',
+        externalAccountId: 'T_SLACK_EXTRACT',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'slack:message:T_SLACK_EXTRACT:C_FREE:1700000000.000200',
+          provider: 'slack',
+          externalObjectId: 'C_FREE:1700000000.000200',
+          externalEventId: '1700000000.000200',
+          eventType: 'message.created',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Ship the pricing page tomorrow',
+          extra: {
+            slack_team_id: 'T_SLACK_EXTRACT',
+            slack_channel_id: 'C_FREE',
+            slack_message_ts: '1700000000.000200',
+          },
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    expect(enqueueExtractJob).toHaveBeenCalledWith({
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(row?.sourceMetadata).not.toHaveProperty('extraction_skipped_reason');
+  });
+
+  it('does not enqueue extract for Google Drive file-change pulses', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'google_drive',
+        displayName: 'Drive',
+        externalAccountId: 'drive-acct',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'google_drive:change:file-1:2026-05-27',
+          provider: 'google_drive',
+          externalObjectId: 'file-1',
+          eventType: 'file.changed',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Drive file "Acme MSA.pdf" (application/pdf) was modified',
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(row?.sourceMetadata).toMatchObject({
+      extraction_skipped_reason: 'integration_pulse_source',
+      signal_class: 'pulse',
+      event_class: 'artifact',
+    });
+  });
+
   it('falls back to team visibility for private integration events without a connector owner', async () => {
     const [integration] = await db
       .insert(integrations)
@@ -1489,6 +1607,14 @@ describe('writeIntegrationEvents visibility', () => {
       ],
     });
     expect(insertedIds).toHaveLength(1);
+    const [prRow] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, insertedIds[0] ?? ''));
+    expect(prRow?.sourceMetadata).toMatchObject({
+      signal_class: 'captured_work',
+      event_class: 'work_record',
+    });
 
     await expect(db.select().from(entities)).resolves.toEqual([]);
 
@@ -1520,6 +1646,60 @@ describe('writeIntegrationEvents visibility', () => {
         status: 'applied',
       }),
     ]);
+  });
+
+  it('does not promote pulse objectMap into artifact identity', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-pulse-no-object',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const insertedIds = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:workflow_run:3201:in_progress',
+          provider: 'github',
+          externalObjectId: 'timborovkov/audit-ai#workflow_run:3201',
+          eventType: 'workflow_run.in_progress',
+          occurredAt: new Date('2026-06-17T09:00:00Z'),
+          contentText: 'GitHub workflow "CI" #2162 on timborovkov/audit-ai in_progress',
+          extra: {
+            github: {
+              type: 'workflow_run',
+              repo: 'timborovkov/audit-ai',
+              head_branch: 'main',
+            },
+          },
+          objectMap: {
+            type: 'other',
+            canonicalName: 'timborovkov/audit-ai#workflow_run:3201',
+            externalId: 'timborovkov/audit-ai#workflow_run:3201',
+            status: 'in_progress',
+          },
+        },
+      ],
+    });
+    expect(insertedIds).toHaveLength(1);
+    const [row] = await db
+      .select()
+      .from(rawEvents)
+      .where(eq(rawEvents.id, insertedIds[0] ?? ''));
+    expect(row?.sourceMetadata).toMatchObject({
+      event_class: 'pulse',
+      signal_class: 'pulse',
+    });
+    await expect(db.select().from(artifactClusters)).resolves.toEqual([]);
+    await expect(db.select().from(entities)).resolves.toEqual([]);
   });
 
   it('keeps integration output source refs stable when a raw event has multiple evidence rows', async () => {

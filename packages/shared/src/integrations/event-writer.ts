@@ -29,6 +29,17 @@ import {
   reconcileLinkArtifactsForRawEvent,
   textHasLinks,
 } from '#src/conversational/link-artifacts.js';
+import { classifyCapturedEvent, type TimelineEventClass } from '#src/event-class.js';
+import {
+  enqueueGithubTaskProposalJob,
+  capturedWorkItemFromIntegrationEvent,
+} from '#src/integrations/github-task-proposals.js';
+import {
+  integrationExtractSkipReason,
+  integrationSkipsExtract,
+} from '#src/integrations/ingest-processing.js';
+import { compactObjectMap, resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
+import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
 import { enqueueEmbedJob, enqueueExtractJob } from '#src/queue/queues.js';
 import {
@@ -49,6 +60,8 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { withTeam } from '#src/team-scope.js';
+
+const log = childLogger('integrations:event-writer');
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index
@@ -143,6 +156,18 @@ function resolveEventVisibility(args: {
   }
 
   return args.requestedVisibility;
+}
+
+function integrationEventClass(event: IntegrationEvent): TimelineEventClass {
+  if (event.eventClass) return event.eventClass;
+  return classifyCapturedEvent({
+    source: 'integration',
+    metadata: {
+      ...(event.extra ?? {}),
+      provider: event.provider,
+      event_type: event.eventType,
+    },
+  });
 }
 
 export async function writeIntegrationEvents(deps: {
@@ -245,6 +270,21 @@ export async function writeIntegrationEvents(deps: {
         evt,
         tombstonesByTargetKey,
       );
+      const signalClass = resolveSignalClassForEvent(evt);
+      const extractSkipReason = integrationExtractSkipReason({
+        signalClass,
+        provider: evt.provider,
+        eventType: evt.eventType,
+        extra: evt.extra ?? null,
+        objectMap: evt.objectMap ?? null,
+      });
+      const extractionSkip = extractSkipReason
+        ? {
+            extraction_skipped_at: new Date().toISOString(),
+            extraction_skipped_reason: extractSkipReason,
+          }
+        : {};
+      const objectMap = compactObjectMap(evt.objectMap);
 
       return {
         teamId,
@@ -263,12 +303,18 @@ export async function writeIntegrationEvents(deps: {
             external_object_id: evt.externalObjectId,
             external_event_id: evt.externalEventId ?? null,
             event_type: evt.eventType,
+            // Presentation family (`work_record` / `artifact` / …). Ingest
+            // rights live on `signal_class` and must not be substituted.
+            event_class: integrationEventClass(evt),
             actor: evt.actor ?? null,
             dedup_key: evt.dedupKey,
             sync_at: new Date().toISOString(),
             source_kind: 'integration_event',
+            signal_class: signalClass,
+            ...(objectMap ? { object_map: objectMap } : {}),
             ...sourcePayloadMetadata,
             ...deletionMetadata,
+            ...extractionSkip,
           },
           evt.contentText,
         ),
@@ -293,15 +339,33 @@ export async function writeIntegrationEvents(deps: {
     (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
   );
 
+  const eventByDedupKey = new Map(writableEvents.map((event) => [event.dedupKey, event]));
   await Promise.all(
-    activeInserted.flatMap((row) => [
-      enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
-        enqueueExtractJob({ teamId, rawEventId: row.id }),
-      ),
-      enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>
-        enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id }),
-      ),
-    ]),
+    activeInserted.flatMap((row) => {
+      const matchingEvent = eventByDedupKey.get(row.dedupKey);
+      const jobs = [
+        enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>
+          enqueueEmbedJob({ scope: 'raw_event', teamId, rawEventId: row.id }),
+        ),
+      ];
+      if (
+        !integrationSkipsExtract({
+          sourceMetadata: row.sourceMetadata,
+          extra: matchingEvent?.extra,
+          objectMap: matchingEvent?.objectMap,
+          provider: matchingEvent?.provider ?? deps.integration.provider,
+          eventType: matchingEvent?.eventType,
+          signalClass: matchingEvent?.signalClass,
+        })
+      ) {
+        jobs.unshift(
+          enqueueIntegrationProcessingJob(deps.db, row.id, 'extraction', () =>
+            enqueueExtractJob({ teamId, rawEventId: row.id }),
+          ),
+        );
+      }
+      return jobs;
+    }),
   );
 
   // Normalization and artifact reconciliation are repairable from existing
@@ -326,7 +390,8 @@ export async function writeIntegrationEvents(deps: {
   });
 
   const artifactEvents = activeWritableEvents.filter(
-    (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } => Boolean(evt.objectMap),
+    (evt): evt is IntegrationEvent & { objectMap: ObjectMapping } =>
+      Boolean(evt.objectMap) && integrationEventClass(evt) !== 'pulse',
   );
   const linkEvents = activeWritableEvents.filter((evt) => textHasLinks(evt.contentText));
   await Promise.all(
@@ -364,6 +429,29 @@ export async function writeIntegrationEvents(deps: {
       entityByExternalId,
       events: repairableArtifactEvents,
     });
+    const capturedWorkItems = [
+      ...new Set(
+        repairableArtifactEvents
+          .map((event) => capturedWorkItemFromIntegrationEvent(event)?.externalId)
+          .filter((externalId): externalId is string => typeof externalId === 'string'),
+      ),
+    ];
+    await Promise.all(
+      capturedWorkItems.map(async (externalObjectId) => {
+        try {
+          await enqueueGithubTaskProposalJob({
+            teamId,
+            integrationId: deps.integration.id,
+            externalObjectId,
+          });
+        } catch (err) {
+          log.warn(
+            { err, teamId, integrationId: deps.integration.id, externalObjectId },
+            'failed to enqueue captured-work task proposal job',
+          );
+        }
+      }),
+    );
   }
 
   return inserted.map((r) => r.id);
@@ -883,6 +971,7 @@ async function reconcileIntegrationArtifacts(deps: {
         event_type: event.eventType,
         integration_id: deps.integration.id,
         artifact_cluster_kind: artifactClusterKindForIntegrationEvent(event),
+        signal_class: resolveSignalClassForEvent(event),
       },
     });
     await attachReconciliationAssociationForIntegrationEvent(deps.db, {

@@ -38,8 +38,19 @@ vi.mock('@/app/actions/teams', () => ({
   inviteMemberAction: vi.fn(),
   renameTeamAction: vi.fn(),
   updateDigestPreferenceAction: vi.fn(),
+  addDigestDestinationAction: vi.fn(),
+  removeDigestDestinationAction: vi.fn(),
   updateInboundEmailWhitelistAction: vi.fn(),
   updateTeamTimezoneAction: vi.fn(),
+}));
+vi.mock('@/components/form-action-toast', () => ({
+  FormActionToast: () => null,
+}));
+const notify = vi.hoisted(() => ({
+  notifyError: vi.fn(),
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyError: notify.notifyError,
 }));
 
 const {
@@ -90,7 +101,6 @@ describe('InboundEmailWhitelistForm', () => {
     expect(screen.getByText('Not configured')).toBeTruthy();
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' });
     expect(submit.disabled).toBe(true);
-    expect(screen.getByRole('status').textContent).toBe('Saving changes…');
     const enabledCheckbox = screen.getByRole('checkbox', { name: 'Enable sender whitelist' });
     expect(enabledCheckbox.closest('label')?.className).toContain('min-h-9');
     expect(enabledCheckbox.className).toContain('hover:border-border-strong');
@@ -103,20 +113,18 @@ describe('InboundEmailWhitelistForm', () => {
     fakes.useFormStatus.mockReturnValue({ pending: false });
     render(<InboundEmailWhitelistForm inboundEmail={null} enabled={false} senders={[]} />);
 
-    expect(screen.getByRole('alert').textContent).toBe(
-      'Only admins can change inbound email settings.',
-    );
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 
 describe('TeamTimezoneForm', () => {
-  it('replaces stale feedback while pending, then announces action errors and confirmations', () => {
+  it('keeps timezone field validation inline and leaves server failures to the action toast', () => {
     fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action]);
     fakes.useFormStatus.mockReturnValue({ pending: true });
     const view = render(<TeamTimezoneForm timezone="America/New_York" />);
-    const feedback = view.container.querySelector('p[aria-live="polite"]');
 
-    expect(screen.getByRole('status').textContent).toBe('Saving changes…');
+    expect(screen.getByRole('button', { name: 'Working…' })).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
 
     fakes.useActionState.mockReturnValue([
       { error: 'Only admins can update the timezone.' },
@@ -125,18 +133,13 @@ describe('TeamTimezoneForm', () => {
     fakes.useFormStatus.mockReturnValue({ pending: false });
     view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
 
-    const error = screen.getByRole('alert');
     const timezone = screen.getByLabelText('Team timezone');
-    expect(error.textContent).toBe('Only admins can update the timezone.');
-    expect(error.id).toBe('team-timezone-error');
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(timezone.className).toContain('focus-visible:ring-2');
     expect(timezone.className).toContain('h-9');
     expect(timezone.className).toContain('rounded-sm');
     expect(timezone.className).toContain('hover:border-border-strong');
     expect(timezone.getAttribute('aria-invalid')).toBeNull();
-    expect(screen.queryByRole('status')).toBeNull();
-    expect(view.container.querySelector('p[aria-live="polite"]')).toBe(feedback);
-    expect(feedback?.id).toBe('');
 
     fakes.useActionState.mockReturnValue([{ error: 'Choose a valid timezone' }, fakes.action]);
     view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
@@ -158,7 +161,7 @@ describe('TeamTimezoneForm', () => {
     fakes.useFormStatus.mockReturnValue({ pending: false });
     view.rerender(<TeamTimezoneForm timezone="America/New_York" />);
 
-    expect(screen.getByRole('status').textContent).toBe('Timezone updated.');
+    expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });
 });
@@ -167,7 +170,7 @@ describe('DigestPreferenceForm', () => {
   it('gives the digest checkbox a 36px labelled target with a visible focus ring', () => {
     render(<DigestPreferenceForm enabled />);
 
-    const checkbox = screen.getByRole('checkbox', { name: /Send me the daily team digest/ });
+    const checkbox = screen.getByRole('checkbox', { name: /Send me a personal daily digest/ });
     expect(checkbox.className).toContain('focus-visible:ring-2');
     expect(checkbox.className).toContain('hover:border-border-strong');
     expect(checkbox.closest('label')?.className).toContain('min-h-9');
@@ -244,8 +247,7 @@ describe('InviteMemberForm', () => {
 
     render(<InviteMemberForm canInviteAdmin={false} />);
 
-    const error = screen.getByRole('alert');
-    expect(error.textContent).toBe('Only admins can invite members.');
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByLabelText('Email').getAttribute('aria-invalid')).toBeNull();
     expect(screen.getByLabelText('Role').getAttribute('aria-invalid')).toBeNull();
 
@@ -286,11 +288,10 @@ describe('TeamExportPanel', () => {
     fakes.useFormStatus.mockReturnValue({ pending: true });
 
     const view = render(<TeamExportPanel exports={[]} />);
-    const feedback = view.container.querySelector('p[aria-live="polite"]');
 
-    expect(screen.getByRole('status').textContent).toBe('Saving changes…');
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' });
     expect(submit.disabled).toBe(true);
+    expect(screen.queryByRole('status')).toBeNull();
 
     fakes.useActionState.mockReturnValue([
       { error: 'Only owners and admins can export team data' },
@@ -299,11 +300,8 @@ describe('TeamExportPanel', () => {
     fakes.useFormStatus.mockReturnValue({ pending: false });
     view.rerender(<TeamExportPanel exports={[]} />);
 
-    expect(screen.getByRole('alert').textContent).toBe(
-      'Only owners and admins can export team data',
-    );
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
-    expect(view.container.querySelector('p[aria-live="polite"]')).toBe(feedback);
   });
 
   it.each([
@@ -313,10 +311,11 @@ describe('TeamExportPanel', () => {
       'unavailable',
       'This export is not ready or is no longer available. Refresh or start a new export.',
     ],
-  ])('shows the %s download error inside the export panel', (downloadError, message) => {
+  ])('toasts the %s download error instead of a page banner', (downloadError, message) => {
     render(<TeamExportPanel exports={[]} downloadError={downloadError} />);
 
-    expect(screen.getByRole('alert').textContent).toBe(message);
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(notify.notifyError).toHaveBeenCalledWith('team-export:download', message);
   });
 
   it.each(['raw-provider-error', '__proto__', 'toString'])(

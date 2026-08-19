@@ -2,11 +2,13 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
+import type { ReactNode } from 'react';
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@/app/actions/boards', () => ({
@@ -30,6 +32,7 @@ vi.mock('@/components/boards/board-add-item-form', () => ({
     });
     return (
       <>
+        <button type="button">Add item</button>
         <button
           type="button"
           onClick={() => {
@@ -85,6 +88,24 @@ vi.mock('@/components/boards/board-actions-menu', () => ({
 }));
 vi.mock('@/components/boards/curated-kanban-board', () => ({
   CuratedKanbanBoard: () => null,
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { BoardDetailClient } = await import('./board-detail-client.js');
@@ -231,7 +252,11 @@ describe('BoardDetailClient', () => {
     expect(heading.className).not.toContain('uppercase');
     expect(heading.parentElement?.textContent).toContain('Track pilots');
     expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('navigation', { name: 'Board view' })).toBeTruthy();
+    const search = screen.getByLabelText('Search');
+    const view = screen.getByRole('navigation', { name: 'Board view' });
+    const addItem = screen.getByRole('button', { name: 'Add item' });
+    expect(search.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
+    expect(addItem.closest('.flex.min-h-11')).toBe(view.closest('.flex.min-h-11'));
     expect(screen.getByRole('link', { name: 'list' }).getAttribute('aria-current')).toBe('page');
 
     await user.click(screen.getByRole('button', { name: 'Fake optimistic add' }));
@@ -269,7 +294,7 @@ describe('BoardDetailClient', () => {
       />,
     );
 
-    expect(screen.getByText('1 / 8')).toBeTruthy();
+    expect(screen.getByText('1 of 8')).toBeTruthy();
   });
 
   it('does not resurrect a locally committed add after it is removed', async () => {

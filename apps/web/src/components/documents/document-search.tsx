@@ -4,6 +4,8 @@ import { Search } from 'lucide-react';
 import Link from 'next/link';
 import { useId, useRef, useState } from 'react';
 
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { InlineError } from '@/components/inline-error';
 import { useDocumentSearchQuery } from '@/lib/use-paginated-queries';
 import { searchErrorMessage } from '@/lib/ux-errors';
@@ -87,7 +89,7 @@ export function DocumentSearch() {
               retryLabel="Retry search"
             />
           ) : hasNoMatches ? (
-            <div className="rounded-lg border border-border bg-card/30 px-4 py-3 text-sm">
+            <div className="border-y border-border py-3 text-sm">
               <p className="font-medium">No matches for “{query}”</p>
               <p className="mt-1 text-fg-muted">
                 Try a different phrase, or clear the search to return to the document browser.
@@ -102,32 +104,34 @@ export function DocumentSearch() {
             </div>
           ) : (
             <>
-              {hits.map((hit) => (
-                <Link
-                  key={hit.documentChunkId}
-                  href={`/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`}
-                  className="block rounded-lg border border-border bg-surface px-4 py-3 text-sm hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                >
-                  <span className="font-medium">{hit.documentDisplayTitle}</span>
-                  <p className="mt-1 text-[11px] text-fg-dim">
-                    v{String(hit.version)} · {hit.fileKind}
-                    {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
-                  </p>
-                  <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>
-                </Link>
-              ))}
-              {search.hasNextPage || search.isFetchingNextPage ? (
-                <button
-                  type="button"
-                  disabled={search.isFetchingNextPage}
-                  onClick={() => {
-                    void search.fetchNextPage();
-                  }}
-                  className="rounded-sm border border-border px-3 py-1.5 text-xs text-fg-muted hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-40"
-                >
-                  {search.isFetchingNextPage ? 'Loading…' : 'Load more'}
-                </button>
-              ) : null}
+              <VirtualList
+                items={hits}
+                getItemKey={(hit) => hit.documentChunkId}
+                estimateSize={96}
+                gap={8}
+                renderItem={(hit) => (
+                  <Link
+                    href={`/app/documents/${hit.documentId}?version=${String(hit.version)}#chunk-${hit.documentChunkId}`}
+                    className="block border-b border-border py-3 text-sm last:border-b-0 hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  >
+                    <span className="font-medium">{hit.documentDisplayTitle}</span>
+                    <p className="mt-1 text-[11px] text-fg-dim">
+                      v{String(hit.version)} · {hit.fileKind}
+                      {hit.pageNumber !== null ? ` · page ${String(hit.pageNumber)}` : ''}
+                    </p>
+                    <p className="mt-1 line-clamp-3 text-fg-muted">{hit.summary ?? hit.text}</p>
+                  </Link>
+                )}
+              />
+              <InfiniteScroll
+                hasMore={search.hasNextPage}
+                loading={search.isFetchingNextPage}
+                error={search.isFetchNextPageError ? 'Could not load more documents.' : null}
+                onLoadMore={() => {
+                  void search.fetchNextPage();
+                }}
+                boundLabel="No more matching documents"
+              />
             </>
           )}
         </div>

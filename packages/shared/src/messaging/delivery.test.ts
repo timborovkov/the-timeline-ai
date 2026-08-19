@@ -90,8 +90,8 @@ function fakeDailyDigestDbWithPendingDelivery() {
         }
         return {
           from: vi.fn(() => ({
-            where: vi.fn(() => ({
-              limit: vi.fn().mockResolvedValue(
+            where: vi.fn(() => {
+              const rows =
                 selectCount === 1
                   ? [
                       {
@@ -104,9 +104,12 @@ function fakeDailyDigestDbWithPendingDelivery() {
                     ]
                   : selectCount === 3
                     ? [{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]
-                    : [{ id: 'delivery-1', status: 'pending' }],
-              ),
-            })),
+                    : selectCount === 4
+                      ? []
+                      : [{ id: 'delivery-1', status: 'pending' }];
+              const limited = { limit: vi.fn().mockResolvedValue(rows) };
+              return { ...limited, orderBy: vi.fn(() => limited) };
+            }),
           })),
         };
       }),

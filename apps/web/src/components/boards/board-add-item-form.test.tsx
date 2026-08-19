@@ -18,6 +18,15 @@ vi.mock('@/app/actions/boards', () => ({
   addBoardItemAction: fakes.addBoardItemAction,
   quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'failed' };
+    }
+  },
+}));
 
 const { BoardAddItemForm } = await import('./board-add-item-form.js');
 
@@ -78,7 +87,7 @@ describe('BoardAddItemForm', () => {
 
     expect(html).toContain('Add item');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('Expand add item');
+    expect(html).not.toContain('Expand add item');
     expect(html).not.toContain('Search existing objects');
     expect(html).not.toContain('MyAuditor');
     expect(html).not.toContain('<select');
@@ -106,7 +115,7 @@ describe('BoardAddItemForm', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
 
     expect(screen.getByRole('button', { name: /Untitled object/ })).toBeTruthy();
     expect(document.body.textContent).not.toContain(internalName);
@@ -161,7 +170,7 @@ describe('BoardAddItemForm', () => {
 
     expect(screen.queryByRole('searchbox', { name: 'Search existing objects' })).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
     const search = screen.getByRole('searchbox', { name: 'Search existing objects' });
     expect(search).toBeTruthy();
     expect(screen.getByRole('button', { name: /MyAuditor/ })).toBeTruthy();
@@ -223,7 +232,7 @@ describe('BoardAddItemForm', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
     await user.click(screen.getByRole('button', { name: /MyAuditor/ }));
     await user.click(screen.getByRole('button', { name: 'Add to board' }));
 
@@ -232,7 +241,7 @@ describe('BoardAddItemForm', () => {
       const rolledBackItem = rollback.mock.calls[0]?.[0];
       expect(optimisticItem?.id).toMatch(/^optimistic-/);
       expect(rolledBackItem?.id).toBe(optimisticItem?.id);
-      expect(screen.getByRole('alert').textContent).toContain('Network lost');
+      expect(screen.queryByRole('alert')).toBeNull();
     });
   });
 
@@ -247,7 +256,7 @@ describe('BoardAddItemForm', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
 
     expect(screen.getByRole('group', { name: 'Add item mode' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'existing' }).getAttribute('aria-pressed')).toBe(

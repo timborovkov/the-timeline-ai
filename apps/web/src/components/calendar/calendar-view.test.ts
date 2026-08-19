@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { act, createElement } from 'react';
+import { act, createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +26,15 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
   useSearchParams: () => new URLSearchParams(fakes.searchParams),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/app/actions/calendar', () => ({
   createCalendarEventAction: fakes.createCalendarEventAction,
   updateCalendarEventAction: fakes.updateCalendarEventAction,
@@ -35,6 +44,30 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: vi.fn(),
   unpinTargetAction: vi.fn(),
 }));
+vi.mock('@/app/actions/collection-pages', () => ({
+  loadCalendarEventListPageAction: vi.fn(),
+}));
+vi.mock('@/components/collections/virtual-list', async () => {
+  const { createElement: h } = await import('react');
+  return {
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      h(
+        'div',
+        null,
+        items.map((item, index) =>
+          h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
+      ),
+  };
+});
 
 const { CalendarView } = await import('@/components/calendar/calendar-view');
 
@@ -58,6 +91,7 @@ function event(id: string, title = id): CalendarEvent {
     visibility: 'team',
     visibilityUserIds: null,
     pinned: false,
+    linkedObjects: [],
   };
 }
 
@@ -185,7 +219,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     );
 
     expect(html).toContain('Tentative');
-    expect(html).toContain('aria-label="Recurring"');
+    expect(html).toContain('aria-label="Tentative recurring"');
     expect(html).toContain('Apple slot');
   });
 
@@ -284,7 +318,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(fakes.refresh).toHaveBeenCalled();
   });
 
-  it('drives the event list filters and pagination through URL params', async () => {
+  it('drives the event list filters through URL params', async () => {
     const user = userEvent.setup();
     fakes.searchParams = 'view=month&date=2026-06-03';
 
@@ -293,25 +327,19 @@ describe('CalendarView recurrence and tentative UI', () => {
         events: [],
         eventListEvents: [event('event-1', 'Roadmap review')],
         eventListTotal: 13,
-        eventListPage: 0,
+        eventListNextOffset: 12,
         eventListQuery: '',
         eventListScope: 'future',
         timezone: 'UTC',
       }),
     );
 
-    expect(screen.getByText('13 upcoming events')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '13' })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Past' }));
-    expect(await screen.findByText('13 past events')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Past' }).getAttribute('aria-pressed')).toBe('true');
     expect(fakes.push).toHaveBeenLastCalledWith(
       '/app/calendar?view=month&date=2026-06-03&eventScope=past',
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Next events' }));
-    expect(fakes.push).toHaveBeenLastCalledWith(
-      '/app/calendar?view=month&date=2026-06-03&eventScope=past&eventPage=2',
     );
 
     await user.type(screen.getByPlaceholderText('Search events'), 'budget');
@@ -334,7 +362,7 @@ describe('CalendarView recurrence and tentative UI', () => {
         events: [],
         eventListEvents: [budget],
         eventListTotal: 1,
-        eventListPage: 0,
+        eventListNextOffset: null,
         eventListQuery: 'budget',
         eventListScope: 'all',
         timezone: 'UTC',
@@ -345,7 +373,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     if (!eventList) throw new Error('Calendar events section not found');
 
     expect(screen.getByPlaceholderText('Search events')).toHaveProperty('value', 'budget');
-    expect(within(eventList).getByText('1 event')).toBeTruthy();
+    expect(within(eventList).getByRole('status', { name: '1' })).toBeTruthy();
     expect(within(eventList).getByRole('button', { name: 'Budget review' })).toBeTruthy();
     expect(within(eventList).getAllByText('Finance room')).toHaveLength(2);
     expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
@@ -355,14 +383,14 @@ describe('CalendarView recurrence and tentative UI', () => {
         events: [roadmap],
         eventListEvents: [],
         eventListTotal: 0,
-        eventListPage: 0,
+        eventListNextOffset: null,
         eventListQuery: 'budget',
         eventListScope: 'all',
         timezone: 'UTC',
       }),
     );
 
-    expect(within(eventList).getByText('0 events')).toBeTruthy();
+    expect(within(eventList).getByText('0')).toBeTruthy();
     expect(within(eventList).getByText('No events match these filters')).toBeTruthy();
     expect(within(eventList).getByRole('button', { name: 'Clear filters' })).toBeTruthy();
     expect(within(eventList).queryByRole('button', { name: /Roadmap review/ })).toBeNull();
@@ -375,7 +403,7 @@ describe('CalendarView recurrence and tentative UI', () => {
         events: [],
         eventListEvents: [event('event-1', 'Roadmap review')],
         eventListTotal: 1,
-        eventListPage: 0,
+        eventListNextOffset: null,
         eventListQuery: '',
         eventListScope: 'future' as const,
         timezone: 'UTC',
@@ -400,8 +428,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     }
   });
 
-  it('uses the server-clamped event page when URL params lag behind props', async () => {
-    const user = userEvent.setup();
+  it('ignores stale eventPage URL params after infinite scroll replaced numbered pages', () => {
     fakes.searchParams = 'view=month&date=2026-06-03&eventPage=999';
 
     render(
@@ -409,17 +436,16 @@ describe('CalendarView recurrence and tentative UI', () => {
         events: [],
         eventListEvents: [event('event-1', 'Roadmap review')],
         eventListTotal: 36,
-        eventListPage: 2,
+        eventListNextOffset: 12,
         eventListQuery: '',
         eventListScope: 'future',
         timezone: 'UTC',
       }),
     );
 
-    await user.click(screen.getByRole('button', { name: 'Previous events' }));
-    expect(fakes.push).toHaveBeenLastCalledWith(
-      '/app/calendar?view=month&date=2026-06-03&eventPage=2',
-    );
+    expect(screen.getByRole('button', { name: 'Roadmap review' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Previous events' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next events' })).toBeNull();
   });
 
   it('does not append optimistic creates to the server-paginated event list', async () => {
@@ -431,7 +457,7 @@ describe('CalendarView recurrence and tentative UI', () => {
         events: [],
         eventListEvents: [event('event-1', 'Roadmap review')],
         eventListTotal: 1,
-        eventListPage: 0,
+        eventListNextOffset: null,
         eventListQuery: '',
         eventListScope: 'future',
         timezone: 'UTC',
@@ -443,7 +469,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
     expect(await screen.findByRole('button', { name: /New sales sync/ })).toBeTruthy();
-    expect(screen.getByText('1 upcoming event')).toBeTruthy();
+    expect(screen.getByRole('status', { name: '1' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Roadmap review' })).toBeTruthy();
     const eventList = screen.getByText('Calendar events').closest('section');
     if (!eventList) throw new Error('Calendar events section not found');
@@ -519,9 +545,8 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
     await waitFor(() => {
-      expect(screen.getAllByText('Calendar write denied')).toHaveLength(2);
+      expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     });
-    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Title').value).toBe('Denied customer sync');
     expect(screen.queryByRole('button', { name: /Denied customer sync/ })).toBeNull();
     expect(fakes.refresh).toHaveBeenCalled();
@@ -590,7 +615,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     const eventControl = screen.getByRole('button', { name: new RegExp(title) });
     expect(eventControl.className).toContain('min-w-0');
     expect(within(eventControl).getByText(new RegExp(title)).className).toContain('truncate');
-    expect(screen.getByRole('status').textContent).toBe('1 upcoming event');
+    expect(screen.getByRole('status', { name: '1' }).textContent).toBe('1');
   });
 
   it('keeps the event search field visibly focused for keyboard users', () => {
@@ -625,5 +650,37 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: 'Create event' }));
 
     expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
+  });
+
+  it('links inspectable workspace objects from the edit event dialog', async () => {
+    const user = userEvent.setup();
+    const objectId = 'a0000000-0000-4000-8000-000000000001';
+    render(
+      createElement(CalendarView, {
+        events: [
+          {
+            ...event('event-1', 'Atlas kickoff'),
+            linkedObjects: [
+              {
+                id: objectId,
+                title: 'Project Atlas',
+                type: 'project',
+                relationshipType: 'related',
+              },
+            ],
+          },
+        ],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Atlas kickoff/ }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Edit event' });
+    const objectLink = within(dialog).getByRole('link', { name: 'Project Atlas' });
+    expect(objectLink.getAttribute('href')).toBe(`/app/objects/${objectId}`);
+    expect(within(dialog).getByText('Project')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: /Open object/i })).toBeNull();
   });
 });

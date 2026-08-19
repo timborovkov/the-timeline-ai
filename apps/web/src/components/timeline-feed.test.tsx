@@ -178,8 +178,10 @@ describe('TimelineFeed', () => {
       dateLabel: 'Today',
       timeLabel: '12:00',
       source: 'integration',
-      sourceLabel: 'Integration',
+      sourceLabel: 'GitHub',
       sourceIcon: 'integration',
+      eventClass: 'pulse',
+      visualWeight: 'pulse',
       actorLabel: 'GitHub',
       contextLabel: 'CI',
       title: 'Server bundled CI activity',
@@ -223,16 +225,17 @@ describe('TimelineFeed', () => {
     );
 
     expect(html).toContain('Server bundled CI activity');
-    expect(fakes.timelineList).toHaveBeenCalledWith(
+    const listProps = fakes.timelineList.mock.calls.at(-1)?.[0] as {
+      onEndReached?: unknown;
+      serverMoments?: { title: string; rawEvents: TimelineEvent[] }[];
+    };
+    expect(listProps.serverMoments).toEqual([
       expect.objectContaining({
-        serverMoments: [
-          expect.objectContaining({
-            title: 'Server bundled CI activity',
-            rawEvents: [event],
-          }),
-        ],
+        title: 'Server bundled CI activity',
+        rawEvents: [event],
       }),
-    );
+    ]);
+    expect(typeof listProps.onEndReached).toBe('function');
   });
 
   it('passes source-event mode to fetching and the timeline list', () => {
@@ -312,18 +315,16 @@ describe('TimelineFeed', () => {
     expect(screen.getByRole('alert').textContent).toContain(
       'Timeline updates could not load. Check your connection, then try again.',
     );
-    expect(screen.queryByText("You've reached the end of the timeline.")).toBeNull();
+    expect(screen.queryByText('No older activity')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry timeline' }));
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
-  it('retries the failed next page without offering a competing load-more action', async () => {
+  it('retries the failed next page without offering a competing load-more action', () => {
     const initialPage = page([timelineEvent('event-1')]);
     const fetchNextPage = vi.fn(() => Promise.resolve());
     const refetch = vi.fn();
-    const requestAnimationFrame = vi.fn();
-    vi.stubGlobal('requestAnimationFrame', requestAnimationFrame);
     fakes.pages = [initialPage];
     fakes.queryOverrides = {
       isError: true,
@@ -334,7 +335,7 @@ describe('TimelineFeed', () => {
       refetch,
     };
 
-    const { rerender } = render(
+    render(
       createElement(TimelineFeed, {
         initialPage,
         filters: { source: 'integration' },
@@ -351,33 +352,13 @@ describe('TimelineFeed', () => {
     ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
 
-    const retry = screen.getByRole('button', { name: 'Retry loading more' });
-    retry.focus();
-    fireEvent.click(retry);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading more' }));
 
     expect(fetchNextPage).toHaveBeenCalledOnce();
     expect(refetch).not.toHaveBeenCalled();
-
-    await Promise.resolve();
-    fakes.queryOverrides = { hasNextPage: false, fetchNextPage, refetch };
-    rerender(
-      createElement(TimelineFeed, {
-        initialPage,
-        filters: { source: 'integration' },
-        currentUserId: 'user-1',
-        isAdmin: false,
-        members: [],
-      }),
-    );
-    const focusPaginationControl = requestAnimationFrame.mock.calls[0]?.[0] as
-      | (() => void)
-      | undefined;
-    expect(focusPaginationControl).toBeTypeOf('function');
-    focusPaginationControl?.();
-    expect(document.activeElement).toBe(screen.getByRole('status'));
   });
 
-  it('announces that pagination is complete without leaving a disabled action', () => {
+  it('announces that older activity is exhausted without a Load more button', () => {
     const initialPage = page([timelineEvent('event-1')]);
     fakes.pages = [initialPage];
 
@@ -392,8 +373,7 @@ describe('TimelineFeed', () => {
     );
 
     const completionStatus = screen.getByRole('status');
-    expect(completionStatus.textContent).toBe("You've reached the end of the timeline.");
-    expect(completionStatus.getAttribute('tabindex')).toBe('-1');
-    expect(screen.queryByRole('button', { name: 'End of timeline' })).toBeNull();
+    expect(completionStatus.textContent).toBe('No older activity');
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
   });
 });

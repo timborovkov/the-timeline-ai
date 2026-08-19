@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.10 · Object and task detail rails (2026-08-17). Replaces v3.9 Tighter object and task detail rhythm.
+**Version:** v3.17 · Object and task detail rails (2026-08-19). Replaces v3.16 Board kanban toast-only metadata.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -12,9 +12,9 @@ update this document in the same change.
 Timeline is a calm working archive: concise enough to scan, rigorous enough to
 trust, and explicit about its evidence when a person asks for it.
 
-The evidence-driven identity remains structural through the timeline rail,
-citations, inspectors, and audit disclosures. It is not expressed by exposing
-database implementation details in ordinary product views.
+The evidence-driven identity remains structural through the timeline
+chronology, citations, inspectors, and audit disclosures. It is not expressed
+by exposing database implementation details in ordinary product views.
 
 ### Product language
 
@@ -24,14 +24,34 @@ database implementation details in ordinary product views.
 - **Digests** are recurring summaries of change and attention.
 - **Handoffs** are evidence-backed context packs for a teammate or stakeholder.
 - **Operational memory** is durable, queryable work state derived from history.
+- **Signal classes** (internal) split events into communication, captured
+  work, and pulses so the product can relate evidence without treating every
+  source event as a model prompt. Intentional captures stay communication.
+  Curated documents are reference knowledge, not a fourth class. Timeline
+  **event class** is the presentation family (communication, work record,
+  pulse, incident, artifact, schedule), not signal class: a Drive
+  file-changed ping can be a pulse for ingest and an artifact for the
+  inspector. Do not put either label in ordinary chrome.
+- **Work hubs** (internal) are the tasks, projects, people, and artifact
+  clusters that events from different surfaces attach to. Ordinary chrome
+  still names the task or project, not "hub." Proposal chrome should show the
+  attached client or project when one was qualified; it should not invent a
+  "hub" label. Channel and board names that uniquely name a client are qualify
+  evidence, not chrome.
+- **Memory grade** (internal) is the hub's role: goal, work, finding, or
+  mention. Ordinary chrome still names the task or company. Do not add a
+  second importance slider; `priority` 1–4 stays urgency on goals and work.
 - **Artifact clusters** connect evidence that describes the same real-world
   work while keeping evidence association separate from source authority.
 - **Approval-backed state** is durable work state that passed human review.
+  How events become that state is
+  [`docs/relational-memory.md`](docs/relational-memory.md).
 
-Count chrome: Moments mode and digest headlines count **moments**; Audit trail,
+Count chrome: Moments mode and digest headlines count **moments**; All events,
 source filters, and technical disclosures count **source events**. Moment rows
-use **signals** for bundled evidence size; the inspector uses **evidence
-items**. Do not show competing moment and raw-event totals in the same chrome.
+do not show competing signal chips; the inspector uses **evidence items** for
+conversations and an **Activity** log for pulses. Do not show competing moment
+and raw-event totals in the same chrome.
 
 Prefer concrete customer language over internal architecture terms. A user
 should understand what happened, what needs attention, and what they can do
@@ -59,6 +79,11 @@ next before seeing how the system represented it.
   use shadows. Shadows are reserved for menus, dialogs, sheets, and overlays.
 - Dashed borders are prohibited.
 - Dense rows are welcome, but metadata is subordinate to the human title.
+- Async mutations announce progress and outcome with a viewport-sticky toast.
+  Route banners are for durable page-level failures, not the result of a click
+  that already left the viewport.
+- Collection indexes, queues, and directories use `CollectionRow` density.
+  Nested card grids and three-column review layouts are not collection chrome.
 - No gradients, emoji as interface symbols, or extra chromatic accents in the
   authenticated product. The public landing concept diagram may use a single
   signal-colored sweep gradient for the capture → memory motion.
@@ -132,15 +157,16 @@ Ask, Work, Documents, Meetings, Connections, and Team.
   row shows last-activity age; archive stays hidden until hover or focus on
   desktop. A search field under New chat filters history. The Ask heading keeps
   the selected title on the same row and does not show a session count.
-- Inspector: hidden until content exists. Desktop uses the right pane; mobile
-  uses a focus-managed bottom sheet.
+- Inspector: hidden until content exists. Desktop uses a reading pane up to
+  `min(40%, 36rem)`; mobile uses a taller focus-managed bottom sheet.
 - Work routes share `WorkSubnav`: Overview, Pinned, Objects, Tasks, Boards,
-  Calendar, Approvals.
+  Calendar, Digests, Approvals.
 - Team settings use URL-backed `SettingsNav`: Members, General, Preferences,
   Visibility, Email, Exports, and admin-only Advanced.
 
-The `IndexStrip` is restricted to Timeline and explicit audit/operator views.
-It supplements the page title and must never create a second heading.
+The `IndexStrip` is restricted to explicit audit/operator views. Timeline uses
+a sticky collection toolbar under the 48px shell header instead of an index
+strip or loaded-count heading.
 
 ## Shared components
 
@@ -164,21 +190,50 @@ table.
 - `CollectionToolbar` is one 44px control row for search, result count, a
   Filters trigger, view controls, and primary actions. Filters open in a
   popover on desktop and a bottom dialog on mobile. Active filters appear in a
-  removable chip row only while active.
+  removable chip row only while active. Pass chrome through named children
+  (`CollectionToolbar.Search`, `.Count`, `.Filters`, `.View`, `.Actions`,
+  `.ClearAll`) rather than JSX props. The compound slot components stay
+  server-safe so they keep a `data-collection-slot` marker across the RSC
+  client boundary. Inventory counts belong next to search (`24 of 847`
+  filtered, `847` unfiltered). Filter-only toolbars such as Work → Pinned and
+  Approvals have no inventory chip; labeled totals stay in page metadata or
+  group headers.
 - `CollectionGroup` uses a 40px header with glyph, readable status label,
   count, and optional action. Groups start open; collapse state lasts only for
   the mounted session and is never saved as a preference.
 - `CollectionRow` is at least 44px on desktop. It favors one line: selection or
   type cue, human title, compact context, metadata, and overflow. Mobile uses
-  two lines: title plus context, then wrapping metadata. Non-board collections
-  must never force horizontal viewport scrolling. Row actions use the shared
-  `ItemActionGroup` and `ItemOverflowMenu` primitives so item-owned controls
+  two lines: title plus context, then wrapping metadata. Domain content uses
+  named children (`CollectionRow.Leading`, `.Title`, `.Subtitle`, `.Context`,
+  `.Metadata`, `.Actions`) rather than JSX props. Optional `.Subtitle` sits
+  under the title for board-local next steps and similar secondary lines. Pass
+  a native `title` on `.Title` and `.Context` when hover should show IDs,
+  timestamps, or raw errors. Every row
+  keeps a Linear hairline bottom border, including the last row. Do not wrap
+  collection lists in left/right borders or partial boxes. Non-board collections
+  must never force
+  horizontal viewport scrolling. Row actions use the shared `ItemActionGroup`,
+  `ItemIconButton`, and `ItemOverflowMenu` primitives so item-owned controls
   stay labeled, wrap without scrolling, and remain visible without hover.
+  Hover background is the row affordance. When a row opens a preview or detail,
+  clicking the row (except interactive children) does that; keyboard users get
+  the same action from the row, and a quiet icon button may repeat it. Do not
+  add a large text “Preview” button.
+- Row decision and utility actions are ghost icon buttons (32px), with an
+  accessible name and `title`. They are not filled or outline buttons. Accept,
+  Change, and Reject stay inline as one coordinated set. Destructive hover may
+  use danger color; the resting state stays quiet.
+- Bulk work uses selection, then `SelectionBar`. Do not mount a persistent
+  filled Accept-all / Reject-all bar. Checkboxes may fade in on desktop hover
+  or focus and stay visible while selection is active. Collection headers may
+  keep a Select-all checkbox visible so bulk selection does not require
+  per-row clicks.
 - `EditableMetadata` is a quiet, borderless trigger with a minimum 40px hit
-  target. Select-like changes save immediately and optimistically. Text and
-  date changes commit with Apply or Enter and cancel with Escape. Failed saves
-  roll back, return focus, show an inline row error, and keep the existing
-  toast feedback.
+  target. Pass the displayed value and editor through `EditableMetadata.Value`
+  and `EditableMetadata.Editor` children. Select-like changes save immediately
+  and optimistically. Text and date changes commit with Apply or Enter and
+  cancel with Escape. Failed saves roll back, return focus, and report through
+  the shared action toast. Do not add a second inline row error.
 - `SelectionBar` appears only after selection. Desktop checkboxes may fade in
   on row hover or focus and remain visible while selection is active. Touch
   layouts expose selection explicitly and keep its checkboxes visible.
@@ -192,8 +247,11 @@ signal.
 
 Collection transitions last 150–200ms and are limited to background, border,
 opacity, and transform. They honor reduced motion. No collection introduces a
-new global keyboard shortcut; existing inspectors, drag handles, pagination,
-evidence links, and URL state remain the interaction contract.
+new global keyboard shortcut; existing inspectors, drag handles, infinite
+scroll with virtualization, evidence links, and URL state remain the interaction
+contract. Collection inventories use `24 of 847` when a filter is on and `847`
+when it is not, and only when search or labeled page metadata gives that number
+a unit. Timeline, Work → Pinned, and Approvals have no toolbar inventory chip.
 
 ### SectionHeading
 
@@ -245,6 +303,42 @@ approval queue rows. Search, previews, approval cards, daily digests, and
 overdue notifications use the same vocabulary. REST, MCP, export, retrieval,
 embedding, and evidence payloads retain their raw ISO values.
 
+### Feedback
+
+Authenticated mutations use one quiet toast stack (`sonner` via `Toaster` in
+the root layout). Toasts are viewport-sticky, bottom-right on desktop and
+bottom-center on small screens, and limited to three visible at a time. They
+use the popover surface, hairline border, and the existing success / danger /
+muted tokens. Do not enable rich color toasts. Honor reduced motion.
+
+Use the shared `notifyAction` lifecycle in [Action toasts](#action-toasts) for
+async work:
+
+1. Apply the change locally immediately. After 150ms, if the request is still
+   in flight, show one processing toast with a spinner and a short gerund
+   (“Accepting proposal…”, “Saving event…”, “Uploading file…”).
+2. Replace that same toast with success or error copy when the promise
+   settles. Do not leave a loading toast up after the work finishes.
+3. On success, prefer a concrete object title (“Accepted Review planning
+   workbook”) over a generic “Saved”.
+4. Offer Undo on the success toast only when a reverse mutation already
+   exists (pin, category, complete). Do not invent undo for irreversible
+   canonical writes such as accepting an approval.
+5. Optimistic lists may hide the row immediately (Linear-style). If the
+   mutation fails, restore the row and show the error toast. Do not also
+   mount a page-top banner for the same failure.
+6. Forms with an explicit Save control may keep inline field errors. They
+   still toast the terminal success or failure so a scrolled-away user sees
+   the outcome.
+7. Durable route failures (load error, missing permission, empty required
+   evidence) stay on the page. Toasts do not replace `ErrorState` or
+   `InlineError`.
+
+Loading skeletons must mirror the live chrome: collection headers use the
+collection `PageHeaderSkeleton`, indexes use `CollectionRowsSkeleton`, and
+Timeline uses the current rail layout. Never show card-grid skeletons for a
+row collection.
+
 ### TechnicalDetails
 
 A native `<details>` with the summary “Technical details,” closed by default.
@@ -254,20 +348,36 @@ audit view.
 
 ### Evidence and citations
 
-Timeline evidence cues use a compact, mono, lime “View evidence · N signals”
-label that makes the inspector affordance explicit and remains keyboard
-operable. Opening the evidence inspector shows a human source summary first.
-Exact timestamps, ownership/visibility internals, source IDs, payloads, and raw
-provider data sit inside the inspector’s `TechnicalDetails`.
+Timeline rows themselves are the inspector affordance. Conversations and
+meetings read as stories; pull requests, issues, and other named records read
+as compact work records; CI, telemetry, and webhook chatter read as one-line
+pulses. Opening a row shows a human source summary first. Original source
+(full message, email HTML, transcript, or webhook/JSON payload) sits in a
+collapsed inspector disclosure with a readable preview: HTML in a sandboxed
+frame, text as prose, JSON in Commit Mono. Attached documents link to the
+document drive. Exact timestamps, ownership/visibility internals, source IDs,
+and other implementation keys stay inside `TechnicalDetails`. Ask answers cite
+raw source events as lime `[ev:…]` chips, objects as `[ent:…]`, and notes as
+`[note:…]`. Those tokens do not appear on timeline rows. Each inspector
+evidence item shows the matching copyable `[ev:…]` chip so a cited source can
+be identified without putting database IDs on the archive list. Clicking a
+citation opens a preview with the same evidence-first layout as the inspector:
+the readable excerpt, a collapsed original-source disclosure (HTML, text, or
+JSON payload), and named destinations instead of a generic “Open full page.”
+A meeting citation’s primary action is the transcript page, with calendar and
+Timeline moment links when those records exist. Document citations open the
+library (and the capturing timeline event when known); calendar citations open
+the event on Calendar and can jump to the mirrored Timeline moment. Other
+kinds keep one primary workspace page — object, task, board, or help route.
 
-Pack-backed approvals show a compact “Evidence for this change · N sources”
-disclosure beneath each proposed item, using source, sender, timestamp, bounded
-excerpt, and a source-event link. Bundle evidence remains contextual. Raw IDs,
-pack fingerprints, ranks, relationship strengths, and visibility internals stay
-out of the default view. If visible required evidence changed after proposal
-creation, show a plain-language stale warning, disable Accept and Change, and
-keep Reject available. If required evidence is no longer visible or active, do
-not render the derived proposal at all.
+Pack-backed approvals show a compact “Why · N sources” disclosure on the
+collection row and the same citations inside the view-only preview. Bundle
+evidence remains contextual. Raw IDs, pack fingerprints, ranks, relationship
+strengths, and visibility internals stay out of the default view. If visible
+required evidence changed after proposal creation, show a plain-language stale
+warning, disable Accept and Change, and keep Reject available. If required
+evidence is no longer visible or active, do not render the derived proposal at
+all.
 
 ## Surface examples
 
@@ -298,6 +408,26 @@ when every group is zero. Pinned work, digest, and a dense recent-moments scan
 follow as full-width sections without duplicating Timeline or Connections.
 These sections prefer horizontal rules and rows over bordered dashboard cards.
 
+The latest digest stays folded until opened. Its summary and section bodies are
+readable prose, not inventories of pull requests or IDs. The generator bans
+pull-request numbers, commit hashes, CI run IDs, ticket keys, and object
+UUIDs: it scrubs them from the briefing packet, retries a draft that still
+lists them, and discards that draft if the rewrite fails. Narrative sections
+use Highlights, Status, Completed, In progress, Decisions, Risks, and
+Follow-ups; Status is the current state of work, not a product-specific label.
+Empty sections and empty task, object, or calendar groups are omitted. The
+header shows the digest date; the covering time range stays footer metadata.
+Activity is a hairline count strip using the same mono lime numbers as Home
+Attention, and is hidden when every count is zero. Task, object, and
+calendar blocks are ordinary linked lists: newly created or completed tasks,
+new non-task objects, calendar events that fell in the digest window, and
+upcoming events. Titles use the same underlined Home treatment in the app and
+the same lime underlined links as other mail. Repeating calendar series
+collapse to one upcoming entry. Titles open the object or the specific calendar
+event on the dashboard. Work → Digests lists generated days as collapsed rows
+so a teammate can open a specific day. Quiet windows stay skipped and are not
+emailed; upcoming calendar alone does not make an inactive team look busy.
+
 Pinned work is one personal, mixed collection. It may contain canonical
 objects (including tasks, projects, deals, people, and object-type documents),
 boards, library documents and captured files, meetings and saved meetings,
@@ -320,14 +450,31 @@ rest of the archive.
 
 ### Timeline
 
-Timeline is the strongest archive expression. Each row leads with time, source,
-human title, one supporting line, and meaningful impact/status. The rail, sticky
-dates, evidence quick view, and pagination remain. Exact capture and provider
-details move into the inspector. The default view ends at the current instant so
+Timeline is the strongest archive expression. Chrome is a sticky
+`CollectionToolbar` under the 48px shell header. The row includes **Search
+timeline**, a Filters trigger (source, origin, author, impact, and dates),
+source presets, and **Moments** / **All events** as the view control. Search
+submits on Enter and opens global search with the current source and date
+filters. Moments group related activity and give rows
+different visual weight. All events is a uniform compact log of every captured
+source event. The labels and the row density should make the difference
+obvious without a lecture. Timeline has no inventory chip; Moments versus All
+events is the page mode.
+
+Each Moments row is a Linear-style collection row: time, one source icon, a
+single title line, and at most one muted context line. Do not duplicate the
+icon on a rail node, and do not stack source, actor, title, and preview as
+separate competing headings. Stories and records share that same skeleton;
+pulses stay one muted line. Impact on the row is omitted; the inspector shows
+workspace consequences, structured facts, a matching `[ev:…]` citation chip per
+source evidence item, and a collapsed Original source
+disclosure. Attached files link to Documents. Sticky dates (`top-11` under the
+toolbar) and infinite scroll with virtualized rows remain. The default view ends at the current instant so
 materialized calendar occurrences do not displace recent work. Upcoming context
 is an explicit seven-day view; the Calendar surface owns the complete future
 schedule. Compact Home moments are a denser scan of the same formatter: time,
-source, and title only, linking into this surface.
+source, and title only, linking into this surface. Timeline pin and overflow
+actions stay visible without hover, using the shared item-action primitives.
 
 ### Ask
 
@@ -347,9 +494,22 @@ sits beside the heading as truncated muted text. The mobile session summary
 uses that same resolved title, including deep-linked chats outside the recent
 list. Session counts do not appear in the header.
 
+A context-aware floating Ask sits on every authenticated page except Home and
+the full Ask route. It is a quiet icon button in the bottom-right corner, with
+`⌘J` / `Ctrl+J` as the shortcut on the launcher. Desktop opens a non-modal
+panel over the page so the board, object, or document stays usable. Mobile
+opens a modal bottom sheet with a dimmed backdrop. The header shows only the
+current view label — the selected item name when a list page has one,
+otherwise the route label — plus New, full Ask, and close. Closing keeps the
+thread; New starts a blank one. The agent receives the current view first and
+a capped trail of earlier views from the same conversation. Full Ask shows
+those views as compact linked badges on the conversation.
+
 The web Ask surface is the rich research view: answers may be thorough and use
 sections, lists, or tables, while inline citations remain inspectable links to
-evidence. External chat delivery uses the same retrieval and grounding but a
+evidence. Citation previews reuse the inspector’s original-source viewer and
+named destinations (transcript, calendar, documents, Timeline moment) rather
+than a single unlabeled page jump. External chat delivery uses the same retrieval and grounding but a
 compact plain-text presentation, normally one short paragraph or three to five
 bullets. Telegram, Slack, and future external chat providers never expose
 Timeline citation syntax, raw-event IDs, or generic source footers. Explicit
@@ -358,20 +518,111 @@ requests for more detail may expand within the provider-safe reply limit.
 ### Work and settings
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
-links. Work overview puts pinned and team boards above the work queue so saved
-surfaces stay in reach before due and assigned items. Tasks default to the
-grouped list; the list table is full-bleed inside the work canvas, without extra
-page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
-row with search and filters, not on a second strip. Loading placeholders match the
-requested view and default to list. Kanban cards stay compact: a clamped title plus
-one metadata row, with no redundant type label. Team settings render one URL-selected
-section at a time. Save state stays local to the edited form. Member, object, source,
-and artifact labels never fall back to UUIDs.
+links. Work → Digests is the day-by-day archive of those briefings. Work overview
+puts pinned and team boards above the work queue so saved surfaces stay in reach
+before due and assigned items. Tasks default to the grouped list; the list table
+is full-bleed inside the work canvas, without extra page gutters around the rows.
+Kanban/List view controls sit on the CollectionToolbar row with search and
+filters, not on a second strip. Board kanban/table/list uses the same toolbar
+slot. Add item is a compact toolbar action that opens a popover, not a
+full-width boxed header. Loading placeholders match the live CollectionToolbar
+(search, optional count, Filters, view toggle, and compact add on one row) and
+the requested view: Tasks default to list, boards default to kanban, and
+table/list/kanban each have a matching skeleton. Timeline loading uses the same
+toolbar row without a page header or inventory chip, then Linear feed rows.
+Collection pages load as flat rows, not boxed card grids. Objects New object and
+Boards Create board use the same compact toolbar/header action as Add item, not a
+filled primary chip. Kanban cards stay compact: a clamped title plus one
+metadata row, with no redundant type label. Curated boards use the same
+full-bleed work canvas in kanban, table, and grouped list — no boxed inner
+container around the collection. Board kanban cards stay compact: a clamped
+title, optional next-step line directly under the title, and one metadata row.
+Cards have no Move control; the drag handle is the on-card move path (Space or
+Enter, then arrow keys), and opening the card is the keyboard alternative.
+Grouped board list does not repeat the current lane name or add a Move row. Next
+step is the board-local immediate action on that card, not an object description
+and not a table column. It sits under the title in kanban, list, and table, and
+is edited in the open card. Table and card-detail keep the lane name because
+those views are not already organized by column. Board table and list checkboxes
+stay vertically centered with the row. Do not style board lanes as badges. Team
+settings render one URL-selected section at a time. Field validation stays on
+the edited form; pending, success, and server failures use the shared action
+toast. Member, object, source, and artifact labels never fall back to UUIDs.
+
+Team → Members is a collection: compact header, `CollectionRow` members with
+visible role and actions, not a padded card list. Other settings sections stay
+forms, but they use hairline section structure instead of nested dashboard
+cards where a single form is the whole section.
+
+Connections is a collection directory. Provider and capture surfaces are
+`CollectionGroup` + `CollectionRow` rows (icon, name, status, one context
+line, quiet action). They are not bordered `p-4` cards. Status uses
+`CollectionStatus` or readable sentence-case text, not uppercase chips.
+
+Meetings keep the collection header and rows. Capture and saved-meeting setup
+forms sit in a closed disclosure so the list is the default view. Saved
+meeting edit is a closed disclosure or dialog, never an always-open form
+under every row. Meeting mutations use the shared toast contract.
+
+### Calendar
+
+Month and week cells are title-first. Time is a muted prefix that does not
+share the truncated title string. Tentative and recurring are a left rail or
+tiny icon, never the word “Tentative” or a pencil on the chip. Month cells
+show at most three events, then `+N more`, which opens day view for that
+date. Selected or editing events keep a quiet ring. Chips use `text-[11px]`
+and tight padding so names remain readable in a seven-column grid. Week
+numbers belong on the week column, not inside every month cell.
+
+The Edit event dialog stays a calendar-event editor. When the event is linked
+to workspace objects, those objects appear as quiet title links under
+**Linked objects**, never as a large Open button. Object Calendar sections
+link the other way to the focused calendar event.
+
+Job recovery is an admin-only queue, not a processing inventory.
+Members who open `/app/team/jobs` see an Admins-only empty state. Home
+“recoverable jobs” and the jobs page share the same 7-day failed/stuck count,
+and only admins see that Home link. The page uses a sentence-case `PageHeader`
+titled Job recovery, with Team breadcrumbs like other team drill-downs. The
+header is the title and the 7-day subtitle; it has no access, team, or count
+metadata row. It groups Failed then Stuck. Kind filters appear
+only when more than one job kind is present. Rows show status, label, and
+relative time. Retry and dismiss live in the row overflow menu; bulk Retry
+failed and Dismiss all stay on the toolbar. Hovering a row’s label or time
+shows the formatted timestamp, job ID, artifact UUID, and raw provider error
+when one exists. Jobs older than 7 days are hidden from attention; admins can
+dismiss them in bulk, and the action keeps going with a loading toast until the
+hidden count is cleared. The visible 7-day list pages through the current
+snapshot with the shared infinite-scroll sentinel. Retry and dismiss
+use the shared action-toast lifecycle (`notifyAction`), including mapped
+sentence-like partial errors. Bulk older-job dismiss uses `notifyProgress` so
+one loading toast can update in place. Unprocessed
+backlog counts (events still waiting for extraction or embedding) and the
+conversation-suggestion backfill stay inside closed Advanced tools and never
+use “needs attention” language. That fold lists backlog counts as dense rows,
+not a card grid, and shows finished jobs as status, label, and time.
+
+Reconciliation is an admin-only health view, not a retry queue. Members who
+open `/app/team/reconciliation` see an Admins-only empty state. The page
+explains itself in the header. The header is the title and subtitle; it has no
+access, team, or coverage-count metadata row. Sources that still need evidence
+appear as dense rows, then a Check coverage / Preview repair toolbar with hover
+hints, then Recent clusters and Recent outputs as ordinary section titles. There
+is no How it works primer,
+Recently reconciled heading, release-gate banner, or stat-card strip.
+Evidence-by-source counts, manual UUID reconcile, and run history stay inside
+closed Advanced tools. That fold uses the same quiet disclosure, sentence-case
+section titles, and dense count/history rows as the rest of the page — not
+uppercase eyebrows, badge clouds, or a metric strip. Cluster IDs, output IDs, raw-event IDs, and raw enum keys
+stay in the row hover title. Cluster output JSON copy lives in the row overflow
+menu. Cluster detail uses Team / Reconciliation breadcrumbs without a second
+back link; Reconcile and View workspace item sit in the header.
 
 Work → Pinned is the complete pin-management surface. It is a single
-side-to-side list with cursor pagination and All, Objects, Boards, Documents,
-Meetings, Calendar, and Timeline filters. Reordering is available only under
-All so filtered adjacency never changes the mixed global order implicitly.
+side-to-side Linear list with infinite scroll, virtualization, and no inventory
+chip. Filters are All, Objects, Boards, Documents, Meetings, Calendar, and
+Timeline. Reordering is available only under All so filtered adjacency never
+changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
 bottom; keyboard moves announce their result through a polite live region.
 
@@ -379,7 +630,8 @@ Detail pages use a visible icon-only Pin/Unpin control with `aria-pressed`. Dens
 cards, calendar entries, timeline moments, and global-search results keep the
 same action inside their overflow menu, whose accessible label includes the
 target title. Controls update optimistically, retain focus, and restore the
-prior state with a concise error when a mutation fails.
+prior state when a mutation fails. The shared action toast is the busy,
+success, and error signal.
 
 Item-owned actions stay inside the row, card, inspector evidence block, or
 detail region for the item they affect. Use the shared row placement for dense
@@ -429,8 +681,8 @@ the peek.
 The full object page is a Linear-style issue view, not a work-index. It has no
 `WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
 editable title. Board placement is a muted header line, not a standalone
-section, and those same boards are not repeated under Connected work. Pin and
-Ask are ghost icon buttons; Repair memory and Add task live in the overflow
+section, and those same boards are not repeated under Connected work. Pin is a ghost icon; Ask uses the
+shared floating binder. Repair memory and Add task live in the overflow
 menu. The main column uses an 8px section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
@@ -450,23 +702,42 @@ disclosure. Relationship and change metadata stay sentence case. Content is
 grouped by typography and spacing. Nested bordered boxes are not a layout
 system on these surfaces.
 
-Approval rows lead with the proposed change and use human labels and localized
-values, such as `Due soon · <localized date>` and `Status To do`, rather than payload
-keys or JSON. Free-form names and notes stay literal. Reference-valued changes
-resolve current member, object, board, lane, and visibility labels at review
-time instead of trusting stored display text. Show up to four meaningful fields
-inline and keep additional changes in a collapsed disclosure. Calendar match
-warnings include the proposed schedule. Evidence uses plain-language source
-labels, while every distinct reconciliation record remains reachable through
-one closed `TechnicalDetails` disclosure.
+Approval rows use the same collection density as Tasks. One row per review
+item: selection checkbox, human title once, a short context line (`Create
+task · meeting transcript · 17 Aug`), up to three compact metadata values,
+and ghost icon actions. Bundle source is a quiet `CollectionGroup` only when
+a bundle contains more than one item; do not wrap items in nested cards or a
+three-column title/payload/actions grid. Sentence case throughout. Do not
+use uppercase mono operation labels, `PROJECT · NONE` pills, or a lime bulk
+action stripe.
 
-Actionable approval rows end with `Accept`, `Change`, and `Reject`. `Change`
-opens a compact feedback dialog instead of exposing payload fields: the
-reviewer explains what is wrong, Timeline rewrites the same unresolved
-proposal, and the refreshed row remains pending. The dialog states that no
-canonical change has been applied and that attached source evidence is
-preserved. Merge proposals keep their dedicated `Review merge` flow because
-their survivor and field choices require a structured preview.
+Show up to three meaningful fields as row metadata (`Due soon · Aug 20`,
+`To do`, assignee). The rest of the proposed record lives in the preview.
+Calendar match warnings stay on the row as one muted line. Evidence is a
+one-line disclosure under the row (`Why · 1 source`) and the same citations
+appear inside the preview. Do not render `TechnicalDetails`, cluster IDs, or
+output IDs on this queue; those stay on Team → Reconciliation.
+
+Clicking the row (or the quiet preview icon) opens a view-only preview
+dialog. Creates show the full proposed record as it would exist. Updates
+load a live snapshot of the current object or event and highlight every
+changed field against that snapshot. Preview every target kind: objects,
+tasks, calendar events, relationships, board memberships, board field
+updates, notes, identity facets, and merges. Existing records also show
+created and updated timestamps as dim metadata. The dialog is not an
+editor. `Change` remains a natural-language rewrite: the reviewer explains
+what is wrong, Timeline rewrites the same unresolved proposal, and the row
+stays pending. Merge proposals still offer `Review merge` for survivor
+choices and also open this preview.
+
+Actionable rows use ghost icon `Accept`, `Change`, `Preview`, and `Reject`.
+Accepting or rejecting hides the row immediately, shows a loading toast,
+then replaces it with success or error. Failures restore the row. Bulk
+accept and reject run from `SelectionBar` after the reviewer selects rows.
+The selection bar is the only accept/reject bulk chrome. Approvals keep a
+visible Select-all checkbox for the loaded queue, and the same control on
+multi-item bundle headers, matching Tasks. Reviewers do not have to tick
+every row before Accept or Reject.
 
 Approval counts use individual review items, not proposal bundles. “Pending”
 means the item status is literally pending. Failed items remain retryable or
@@ -593,14 +864,71 @@ second indexable destination.
 
 ### Administrator dashboards
 
-Jobs, Reconciliation, Audit, and Integration Audit preserve filters, retries,
-replay actions, and copy access. Human summaries and actionable failures lead.
-UUIDs, raw IDs, refs, and JSON remain closed inside `TechnicalDetails`.
+Jobs and Reconciliation list rows show status, a human label, and relative time.
+IDs, raw enum keys, and provider errors stay in the row hover title. Copy access
+for reconciliation JSON payloads lives in the row overflow menu. Audit and
+Integration Audit still keep UUIDs, refs, and JSON closed inside
+`TechnicalDetails`. Job recovery pages the 7-day snapshot and finished archive
+with the shared infinite-scroll sentinel. Job recovery’s header is title and
+subtitle only; older hidden jobs stay in the body banner. Reconciliation has no
+stat-card strip and no release-gate banner; coverage actions sit on a toolbar
+with hover hints. The dashboard header is title and subtitle only; coverage
+counts stay in the screen-reader summary and Advanced tools. Recent clusters
+and Recent outputs use the same sentence-case section title as
+the rest of the product. Manual UUID reconcile stays in Advanced tools. Job
+recovery Advanced tools uses the same quiet disclosure: unprocessed backlog as
+count rows, conversation suggestions as a heading with actions, and finished
+jobs as status/label/time rows with queue names in the hover title.
+
+## Action toasts
+
+Actions, edits, and other mutations use one toast lifecycle. Page and query
+loads keep skeletons. Field validation stays on the field. Route and query
+failures keep `InlineError` with a specific retry.
+
+1. Apply the change locally immediately.
+2. After 150ms, if the request is still in flight, show one processing toast
+   with a spinner (`Updating status…`).
+3. The same toast morphs to success or error. Do not spawn a second toast.
+4. On error, roll back the optimistic state and restore focus to the control.
+5. Success lasts 2s. Error lasts 6s and is dismissible.
+
+Rapid edits on the same entity share one toast id and replace in place. Two
+entities may show two toasts. The stack caps at three.
+
+Copy is sentence case and names the thing: `Updating status…`, `Status updated`,
+`Couldn’t update status`. Do not toast raw server strings, UUIDs, or
+`Update failed`. A mapped, sentence-like action error may replace the generic
+fallback. Undo is a compensating second request after the original write
+lands. The first request is not cancelled. Show Undo when the client can invert
+the mutation (previous field value, pin toggle, archive/unarchive, or a server
+undo token). Hard deletes and canonical approval decisions have no Undo.
+
+Toasts use the popover surface, a hairline border, 6px radius, and an overlay
+shadow. Color lives on the icon only. Undo is a same-surface control with a
+hairline border, not an inverted fill. In light mode the button stays light;
+in dark mode it stays dark. Position is bottom-right on desktop and
+bottom-center on small screens, above a `SelectionBar`. Reduced motion replaces
+the spinner with a static glyph. Feature code calls `notifyAction`,
+`notifyError`, `notifySuccess`, or `notifyProgress` rather than `toast` from
+`sonner`. Long-running admin batches may update one loading toast in place
+through `notifyProgress`. Completed redirect results (OAuth callback, export
+download, queued reconciliation) use that same toast channel instead of a page
+banner.
+
+Copyable values use the shared `CopyButton`. The control shows a copy icon plus
+label, then a check and `Copied`. Dense technical rows use the icon appearance
+with the same swap. Copy success stays on the control. Copy failure stays on
+the control with recovery copy. Do not invent a second clipboard helper.
 
 ## States and responsive behavior
 
-- Loading skeletons mirror the new page structure and announce busy state.
+- Loading skeletons mirror the live page structure and announce busy state.
+  Collection routes use the collection header skeleton and `CollectionRowsSkeleton`.
+  Timeline uses the current time-rail row. Connections and Team members use
+  collection rows, not card placeholders.
 - Errors retain route context, explain the failure, and offer a specific retry.
+  Mutation failures also toast; they do not rely on a scrolled-away page banner.
 - Empty states use sentence case, one explanation, and one action.
 - All screens work at 320px, tablet, desktop, dark mode, and 200% zoom without
   document-level horizontal scrolling.
@@ -666,6 +994,12 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-14 | Customer-facing public language | Keeps review cadence, implementation state, indexing terms, and capability taxonomy in metadata while public pages explain concrete actions and availability. |
 | 2026-08-15 | Evidence-backed public product story | Makes the working-history problem, deliberate capture boundary, cited-versus-unused evidence, Telegram entry point, inspectable answers, and human approval contract explicit across the landing and how-it-works journey. |
 | 2026-08-16 | Unified workspace collection density | Replaces stacked form chrome and card grids with compact headers, one filter toolbar, 44px rows, semantic status glyphs, optimistic metadata triggers, and contextual selection without changing domain behavior. |
+| 2026-08-17 | Feedback, preview, and remaining collection density | Locks viewport-sticky mutation toasts, Linear-style optimistic rows, view-only approval previews with live diffs, selection-bar bulk actions, title-first calendar chips, and collection rows for Connections, Team members, Meetings, and Approvals. |
+| 2026-08-17 | Calendar object navigation | Edit event dialogs expose quiet linked-object title links; object Calendar sections link back to the focused event. |
+| 2026-08-17 | Timeline event families | Gives Moments weighted story/record/pulse rows and All events a uniform compact log, with provider-agnostic classification. |
+| 2026-08-17 | Linear timeline rows and original source | Drops duplicate rail icons and stacked row chrome; original payloads open from a collapsed inspector viewer. |
+| 2026-08-17 | Inspector citation chips | Ask `[ev:…]` tokens stay off timeline rows and appear as copyable chips on inspector evidence items. |
+| 2026-08-17 | Citation preview destinations | Citation popups name the matching workspace page, Timeline moment, and original payload instead of a generic full-page jump. |
 | 2026-08-17 | Work overview and task canvas density | Puts pinned boards above the work queue, removes extra task-list gutters, matches the default list loading skeleton, puts Kanban/List on the search/filter row, and compacts task kanban cards to a clamped title plus one metadata row. |
 | 2026-08-17 | Home open objects and inline queue edits | Adds open tasks, people, companies, projects, deals, and follow-ups to Home Attention, stops repeating “Task” on work-queue rows, and lets queue status, assignee, due date, and priority change inline. |
 | 2026-08-17 | Quiet Home attention and dense recent moments | Collapses typed open-people/company/project rows into one open-objects count, drops the Attention and Recent moments headings, and replaces the Home timeline preview with denser title-only rows plus a clear Open timeline path. |
@@ -679,3 +1013,37 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Compact object and task detail rhythm | Tightens the object-page section stack to 16px, uses 20px titles, 32px property rows, 1.35 body leading, and keeps peek/page chrome on `--fg` / `--fg-muted` / `--fg-dim` / `--danger` without uppercase metadata. |
 | 2026-08-17 | Tighter object and task detail rhythm | Compresses the object-page section stack to 8px, uses 18px titles, folds board placement into the header, and keeps body, labels, and quiet actions on one `--fg` / `--fg-muted` / `--fg-dim` set. |
 | 2026-08-17 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel so they lift off `--bg` in light and dark without nested field cards. |
+| 2026-08-17 | Board kanban lane control | Stops repeating the current lane name on kanban and grouped list cards, keeps a quiet Move trigger, and leaves lane names on table and card-detail. |
+| 2026-08-17 | Board canvas and compact cards | Makes list and table boards full-bleed like Tasks, puts next step under the kanban title, removes the on-card Move row, and leaves lane names on table and card-detail. |
+| 2026-08-17 | Board next step and row alignment | Treats next step as a title subtitle instead of a table column, and vertically centers board checkboxes. |
+| 2026-08-17 | Collection toolbar view and add | Puts board view toggles on the search/filter row with Tasks, and turns Add item into a compact popover action. |
+| 2026-08-17 | Collection loading skeletons | Matches collection loading placeholders to the live toolbar row, compact add control, view-aware board/task canvases, and flat collection rows. |
+| 2026-08-17 | Action toasts and shared copy controls | Replaces inline Saving/Saved/error chips for mutations with one optimistic toast lifecycle, compensating Undo, and a single CopyButton for clipboard fields. |
+| 2026-08-18 | Shared progress toasts and redirect notices | Folds job-recovery batch progress into `notifyProgress` and sends reconciliation queue results through the toast channel. |
+| 2026-08-18 | Unify mutation toasts on notifyAction | Folds #359 `toastMutation` call sites onto the shared `notifyAction` lifecycle after merging collection density and floating Ask. |
+| 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |
+| 2026-08-17 | Digest status, window range, and linked lists | Replaces Product status with Status, shows the covering time range, lists tasks/objects/calendar with existing Home and email type, and omits empty groups including source inventories. |
+| 2026-08-17 | Digest date header, footer window, and activity strip | Puts the digest date in the header, moves the covering range to footer metadata, and turns web activity into a Home-style mono lime count strip. |
+| 2026-08-17 | Collection chrome with infinite-scroll counts | Keeps compact board/task/object chrome after merging infinite-scroll counts, virtualized kanban lanes, digest briefings, and Timeline’s toolbar-only Linear feed. |
+| 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
+| 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared `notifyAction` path. |
+| 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
+| 2026-08-17 | Job recovery row overflow | Renames the page Job recovery, moves per-row retry/dismiss into the overflow menu, and keeps IDs plus raw errors in the row hover title. |
+| 2026-08-17 | Quiet reconciliation dashboard | Drops the How it works primer, release-gate banner, and stat cards, and puts coverage actions on a hinted toolbar above recent rows. |
+| 2026-08-17 | Reconciliation header and column titles | Drops access and team from the metadata row, removes Recently reconciled, and uses sentence-case Recent clusters / Recent outputs titles. |
+| 2026-08-17 | Job recovery infinite scroll | Pages the 7-day snapshot and finished archive with the shared InfiniteScroll sentinel instead of a Load more button. |
+| 2026-08-17 | Quiet job recovery header | Drops the access, team, last-7-days, and older-hidden metadata row so the page leads with title and subtitle. |
+| 2026-08-17 | Quiet reconciliation header | Drops the checked / needs repair / updated metadata row so Reconciliation also leads with title and subtitle. |
+| 2026-08-17 | Quiet admin Advanced tools | Replaces job-recovery stat cards and reconciliation uppercase/badge chrome with sentence-case headings and dense count or history rows. |
+| 2026-08-18 | Collection chrome with quiet job recovery | Keeps compact board/task/object chrome after merging Home checklist hydration, React Doctor splits, quiet Job recovery, and quiet Reconciliation. |
+| 2026-08-17 | Floating Ask | Replaces per-page Ask-about buttons with a context-aware float, keeps one thread on close, and shows linked context badges in full Ask. |
+| 2026-08-17 | Floating Ask context names | Names the float from the selected timeline, calendar, task, search, or folder item, and makes the mobile sheet modal while desktop stays non-modal. |
+| 2026-08-17 | Quiet floating Ask header | Keeps the shortcut on the launcher and drops the header shortcut plus earlier-count line. |
+| 2026-08-18 | Collection chrome named children | Passes CollectionRow, CollectionToolbar, EditableMetadata, and PageHeader chrome through named children; Title/Context `title` carries hover IDs and errors. |
+| 2026-08-17 | Linear collection rows | Collection rows use a full-width bottom hairline only. Pinned and Approvals drop unlabeled toolbar counts. |
+| 2026-08-18 | Approvals select-all | Restores bulk review without a persistent Accept-all bar: a visible Select-all checkbox for loaded proposals, plus the same control on multi-item bundle headers. |
+| 2026-08-18 | Timeline search and continued paging | Puts Search timeline on the archive toolbar, keeps source presets visible, and re-observes the infinite-scroll sentinel after each page so virtualized rows keep loading. |
+| 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
+| 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
+| 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
+| 2026-08-19 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel after merging collection chrome, floating Ask, and `notifyAction`. |

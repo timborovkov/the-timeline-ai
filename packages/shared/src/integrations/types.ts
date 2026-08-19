@@ -1,3 +1,4 @@
+import type { TimelineEventClass } from '#src/event-class.js';
 import type {
   integrations as integrationsTable,
   providerConnections as providerConnectionsTable,
@@ -58,10 +59,18 @@ export interface ObjectMapping {
  * dedup_key drives the per-team partial unique index that makes
  * webhook replay / backfill rerun a no-op.
  */
+export type SignalClass = 'communication' | 'captured_work' | 'pulse' | 'finding';
+
 export interface IntegrationEvent {
   /** Stable provider-scoped dedup key, e.g. `linear:issue:ABC-123:updated:1716000000`. */
   dedupKey: string;
   provider: string;
+  /**
+   * Envelope signal class. Adapters should stamp this. The event-writer
+   * persists it as `source_metadata.signal_class` and fills a conservative
+   * fallback when omitted so already-ingested rows keep their ingest rights.
+   */
+  signalClass?: SignalClass;
   externalObjectId: string;
   externalEventId?: string | null;
   eventType: string;
@@ -78,6 +87,16 @@ export interface IntegrationEvent {
    * still has a stable source payload ref.
    */
   extra?: Record<string, unknown>;
+  /**
+   * Optional timeline presentation family (`communication` / `work_record` /
+   * `pulse` / `incident` / `artifact` / `schedule`). When omitted, the
+   * event-writer classifies from provider, event type, and nested record
+   * kind. This is not `signalClass`: a Drive `file.changed` ping is
+   * `signalClass=pulse` and `eventClass=artifact`. Presentation `pulse`
+   * never promotes `objectMap` into artifact identity. Ingest and proposals
+   * read `signalClass` only.
+   */
+  eventClass?: TimelineEventClass;
   /**
    * A durable Monday update/reply deletion target. The writer persists it
    * before writing the event batch, hides matching immutable source rows, and

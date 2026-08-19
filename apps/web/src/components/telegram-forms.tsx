@@ -9,6 +9,7 @@ import {
   type GenerateLinkTokenState,
 } from '@/app/actions/telegram';
 import { CopyButton } from '@/components/copy-button';
+import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,19 +26,11 @@ function Submit({ label }: { label: string }) {
 function TokenResult({
   state,
   botUsername,
-  errorId,
 }: {
   state: GenerateLinkTokenState;
   botUsername: string | null;
-  errorId: string;
 }) {
-  if (state.error)
-    return (
-      <p id={errorId} role="alert" className="text-sm text-destructive">
-        {state.error}
-      </p>
-    );
-  if (!state.token) return null;
+  if (state.error || !state.token) return null;
   const deepLinkParam = state.scope === 'group' ? 'startgroup' : 'start';
   const deepLink = botUsername
     ? `https://t.me/${botUsername}?${deepLinkParam}=${state.token}`
@@ -104,12 +97,19 @@ export function GeneratePersonalTokenForm({ botUsername }: { botUsername: string
   const usernameId = 'personal-tg-username';
   return (
     <form action={action} className="space-y-3">
+      <FormActionToast
+        id="telegram:personal-link"
+        error={state.error}
+        success={state.token ? 'Link token created' : undefined}
+        loading="Creating link token…"
+        fieldError={Boolean(state.fieldError)}
+      />
       <p className="sr-only" role="status">
         {state.token ? 'Link token created. It expires in 15 minutes.' : ''}
       </p>
       <TgUsernameField id={usernameId} error={state.fieldError} />
       <Submit label="Generate personal link" />
-      <TokenResult state={state} botUsername={botUsername} errorId={`${usernameId}-error`} />
+      <TokenResult state={state} botUsername={botUsername} />
     </form>
   );
 }
@@ -122,12 +122,19 @@ export function GenerateGroupTokenForm({ botUsername }: { botUsername: string | 
   const usernameId = 'group-tg-username';
   return (
     <form action={action} className="space-y-3">
+      <FormActionToast
+        id="telegram:group-link"
+        error={state.error}
+        success={state.token ? 'Link token created' : undefined}
+        loading="Creating link token…"
+        fieldError={Boolean(state.fieldError)}
+      />
       <p className="sr-only" role="status">
         {state.token ? 'Link token created. It expires in 15 minutes.' : ''}
       </p>
       <TgUsernameField id={usernameId} error={state.fieldError} />
       <Submit label="Generate group link" />
-      <TokenResult state={state} botUsername={botUsername} errorId={`${usernameId}-error`} />
+      <TokenResult state={state} botUsername={botUsername} />
     </form>
   );
 }

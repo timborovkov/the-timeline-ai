@@ -7,11 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   reviseSuggestionItemAction: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('sonner', () => ({ toast: { success: fakes.toastSuccess } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+}));
 vi.mock('@/app/actions/suggestions', () => ({
   reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
 }));
@@ -71,7 +76,14 @@ describe('SuggestionChangeDialog', () => {
       description: 'Miku made the promise.',
       proposedPayload: { ownerName: 'Miku' },
     });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Proposal updated');
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'approval:11111111-1111-4111-8111-111111111111:change',
+        loading: 'Updating proposal…',
+        success: 'Proposal updated',
+        error: 'Couldn’t update proposal',
+      }),
+    );
     expect(fakes.refresh).toHaveBeenCalled();
   });
 
@@ -92,6 +104,12 @@ describe('SuggestionChangeDialog', () => {
 
     expect((await within(dialog).findByRole('alert')).textContent).toBe(
       'Proposal is no longer editable',
+    );
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'approval:11111111-1111-4111-8111-111111111111:change',
+        error: 'Couldn’t update proposal',
+      }),
     );
     expect(fakes.refresh).not.toHaveBeenCalled();
   });

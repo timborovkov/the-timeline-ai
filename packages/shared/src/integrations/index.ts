@@ -1,6 +1,34 @@
 export * from '#src/integrations/types.js';
 export * from '#src/integrations/scope.js';
 export * from '#src/integrations/event-writer.js';
+export {
+  compactObjectMap,
+  extractSkipReasonForSignalClass,
+  isSignalClass,
+  objectMapFromUnknown,
+  resolveSignalClass,
+  resolveSignalClassForEvent,
+  SIGNAL_CLASSES,
+  type SignalClassInput,
+} from '#src/integrations/signal-class.js';
+export {
+  capturedWorkItemFromIntegrationEvent,
+  capturedWorkItemFromRawMetadata,
+  enqueueGithubTaskProposalJob,
+  proposeGithubTaskUpdatesForExternalObject,
+  proposeGithubTaskUpdatesForTeam,
+  proposeGithubTaskUpdatesFromRawEvent,
+} from '#src/integrations/github-task-proposals.js';
+export {
+  GITHUB_TASK_PROPOSAL_COALESCE_MS,
+  integrationExtractSkipReason,
+  integrationIdFromSourceMetadata,
+  integrationSkipsExtract,
+  integrationSkipsLlmIngest,
+  isDelayedIngestResult,
+  providerFromSourceMetadata,
+  takeConnectionIngestSlot,
+} from '#src/integrations/ingest-processing.js';
 export * from '#src/integrations/webhooks.js';
 export * from '#src/integrations/canary.js';
 export * from '#src/integrations/monday-repair.js';

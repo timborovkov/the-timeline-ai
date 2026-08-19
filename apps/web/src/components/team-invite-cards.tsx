@@ -6,8 +6,8 @@ import type {
 
 import { PendingInvitesCard } from '@/components/pending-invites-card';
 import { RemovedMembersCard } from '@/components/removed-members-card';
+import { SettingsSection } from '@/components/section-heading';
 import { InviteMemberForm } from '@/components/team-forms';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export function TeamInviteCards({
   isOwner,
@@ -22,14 +22,9 @@ export function TeamInviteCards({
 }) {
   return (
     <>
-      <Card id="invite" className="scroll-mt-24">
-        <CardHeader>
-          <CardTitle as="h2">Invite a teammate</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <InviteMemberForm canInviteAdmin={isOwner} />
-        </CardContent>
-      </Card>
+      <SettingsSection id="invite" title="Invite a teammate">
+        <InviteMemberForm canInviteAdmin={isOwner} />
+      </SettingsSection>
       <PendingInvitesCard invites={invites} userMap={userMap} />
       <RemovedMembersCard removedMembers={removedMembers} userMap={userMap} />
     </>

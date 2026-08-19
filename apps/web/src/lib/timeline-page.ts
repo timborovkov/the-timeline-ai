@@ -397,7 +397,6 @@ async function collectMomentBackedPage({
     for (const event of page.items) scannedEvents.set(event.id, event);
     moments = buildTimelineMoments([...scannedEvents.values()], new Map(), { timezone });
     nextCursor = page.nextCursor;
-    if (!nextCursor) break;
     if (moments.length > limit) {
       const firstUnreturnedMoment = moments[limit];
       boundaryCursorAdjusted = Boolean(firstUnreturnedMoment);
@@ -406,6 +405,7 @@ async function collectMomentBackedPage({
         : scanCursor;
       break;
     }
+    if (!nextCursor) break;
     if (scanned + 1 >= maxScanPages) maxScanPagesReached = true;
     scanCursor = nextCursor;
   }

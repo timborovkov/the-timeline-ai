@@ -146,7 +146,6 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
       />
       <ObjectDetailClient
         detail={detail}
-        teamId={active.teamId}
         userId={session.user.id}
         initialPinned={initialPinned}
         suggestions={suggestions}

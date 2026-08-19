@@ -18,8 +18,9 @@ interface SectionHeadingProps {
  * tracking-[0.14em]`) that sat above content blocks on Home, Sources,
  * Integrations, etc.
  *
- * Timeline and explicit audit/operator surfaces may keep `IndexStrip` for
- * compact metadata; all ordinary section titles use this component.
+ * Explicit audit/operator surfaces may keep `IndexStrip` for compact
+ * metadata; Timeline uses a sticky collection toolbar instead. All ordinary
+ * section titles use this component.
  */
 export function SectionHeading({ children, actions, id, className }: SectionHeadingProps) {
   return (
@@ -29,5 +30,27 @@ export function SectionHeading({ children, actions, id, className }: SectionHead
       </h2>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
     </div>
+  );
+}
+
+export function SettingsSection({
+  title,
+  children,
+  className,
+  id,
+}: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+  id?: string;
+}) {
+  return (
+    <section
+      id={id}
+      className={cn('space-y-3 border-t border-border pt-5 first:border-t-0 first:pt-0', className)}
+    >
+      <SectionHeading>{title}</SectionHeading>
+      {children}
+    </section>
   );
 }

@@ -3,14 +3,25 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReactNode } from 'react';
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 const fakes = vi.hoisted(() => ({
   promoteCapturedFileAction: vi.fn(),
   routerPush: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
+}));
+
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 
 vi.mock('next/navigation', () => ({
@@ -29,6 +40,24 @@ vi.mock('@/components/documents/document-preview', () => ({
 vi.mock('@/components/evidence-link', () => ({
   EvidenceLink: ({ children }: { children: ReactNode }) =>
     createElement('a', { href: '/app/timeline?event=event-1#ev-event-1' }, children),
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { id: string }[];
+    renderItem: (item: { id: string }, index: number) => ReactNode;
+    getItemKey: (item: { id: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { CapturedFilesList } = await import('./captured-files-list.js');
@@ -83,6 +112,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+beforeEach(() => {
+  class FakeIntersectionObserver {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  }
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+});
+
 describe('CapturedFilesList', () => {
   it('uses friendly labels for captured files and keeps evidence visible', () => {
     const html = renderToStaticMarkup(
@@ -102,7 +140,8 @@ describe('CapturedFilesList', () => {
     expect(html).toContain('Telegram');
     expect(html).toContain('Ready for search');
     expect(html).toContain('Team visibility');
-    expect(html).toContain('Showing 1 captured file');
+    expect(html).toContain('>1<');
+    expect(html).not.toContain('Showing 1 captured file');
     expect(html).toContain('Preview');
     expect(html).toContain('View evidence');
     expect(html).toContain('Promote');
@@ -188,7 +227,7 @@ describe('CapturedFilesList', () => {
     expect(document.activeElement).toBe(trigger);
   });
 
-  it('keeps promotion form values and offers inline retry when promotion fails', async () => {
+  it('keeps promotion form values and lets the user retry when promotion fails', async () => {
     fakes.promoteCapturedFileAction.mockResolvedValue({ ok: false, error: 'network timeout' });
     const user = userEvent.setup();
     render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
@@ -197,17 +236,21 @@ describe('CapturedFilesList', () => {
     const dialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
     await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
 
-    expect(
-      await screen.findByText(
-        'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
-      ),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: 'Promoted to documents',
+          error: 'Couldn’t promote captured file',
+        }),
+      );
+    });
     expect(within(dialog).getByRole('textbox', { name: 'Title' })).toHaveProperty(
       'value',
       'Whiteboard planning photo',
     );
+    expect(fakes.routerPush).not.toHaveBeenCalled();
 
-    await user.click(within(dialog).getByRole('button', { name: 'Promote again' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
     await waitFor(() => {
       expect(fakes.promoteCapturedFileAction).toHaveBeenCalledTimes(2);
     });
@@ -243,7 +286,7 @@ describe('CapturedFilesList', () => {
     });
   });
 
-  it('replaces a failed promotion message with title guidance before retrying', async () => {
+  it('replaces a failed promotion with title guidance before retrying', async () => {
     fakes.promoteCapturedFileAction.mockResolvedValue({ ok: false, error: 'network timeout' });
     const user = userEvent.setup();
     render(<CapturedFilesList folders={[]} members={[]} files={[capturedFile()]} />);
@@ -251,9 +294,11 @@ describe('CapturedFilesList', () => {
     await user.click(screen.getByRole('button', { name: 'Promote' }));
     const dialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
     await user.click(within(dialog).getByRole('button', { name: 'Promote' }));
-    await screen.findByText(
-      'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
-    );
+    await waitFor(() => {
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({ error: 'Couldn’t promote captured file' }),
+      );
+    });
 
     const liveDialog = screen.getByRole('dialog', { name: 'Promote to Documents' });
     const title = within(liveDialog).getByRole('textbox', { name: 'Title' });
@@ -261,12 +306,7 @@ describe('CapturedFilesList', () => {
     await user.click(within(liveDialog).getByRole('button', { name: 'Promote' }));
 
     expect(screen.getByText('Enter a title before promoting this file.')).toBeTruthy();
-    expect(
-      screen.queryByText(
-        'Could not promote this captured file. It remains unchanged. Check your connection, then try again.',
-      ),
-    ).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Promote again' })).toBeNull();
+    expect(fakes.promoteCapturedFileAction).toHaveBeenCalledTimes(1);
   });
 
   it('filters captured files by multiple selected statuses', async () => {
@@ -360,7 +400,7 @@ describe('CapturedFilesList', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older captured files' }));
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
 
     await waitFor(() => {
       expect(screen.queryByText('Old contract')).not.toBeNull();
@@ -380,7 +420,7 @@ describe('CapturedFilesList', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Load older captured files' }));
+    await user.click(screen.getByRole('button', { name: 'Load more' }));
 
     expect(
       await screen.findByText(
@@ -388,13 +428,14 @@ describe('CapturedFilesList', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText('Whiteboard planning photo')).toBeTruthy();
+    expect(fakes.notifyError).not.toHaveBeenCalled();
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'Retry loading older files' }).hasAttribute('disabled'),
-      ).toBe(false);
+      expect(screen.getByRole('button', { name: 'Try again' }).hasAttribute('disabled')).toBe(
+        false,
+      );
     });
-    const retry = screen.getByRole('button', { name: 'Retry loading older files' });
+    const retry = screen.getByRole('button', { name: 'Try again' });
     retry.focus();
     await user.keyboard('{Enter}');
     await waitFor(() => {

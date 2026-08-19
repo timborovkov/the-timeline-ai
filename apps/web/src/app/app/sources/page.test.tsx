@@ -61,19 +61,11 @@ describe('SourcesPage', () => {
 
     expect(html).toContain('aria-label="Manage email: Email"');
     expect(html).toContain('aria-label="Install Slack: Slack"');
-    expect(html).toContain('min-h-9');
-    expect(html).toContain('sm:flex-row sm:items-center sm:justify-between');
-    expect(html).toContain('focus-visible:ring-2 focus-visible:ring-signal/40');
-    expect(html).toContain('rounded-md border border-border bg-surface p-4');
-    expect(html).toContain(
-      '<details class="group rounded-md border border-border bg-surface p-4">',
-    );
-
-    const advancedToolsSummary = /<summary class="[^"]+">[\s\S]*?<\/summary>/.exec(html)?.[0];
-    expect(advancedToolsSummary).toBeTruthy();
-    expect(advancedToolsSummary).toContain('data-disclosure-indicator="true"');
-    expect(advancedToolsSummary).toContain('group-open:rotate-180');
-    expect(advancedToolsSummary).toContain('aria-hidden="true"');
+    expect(html).toContain('min-h-8');
+    expect(html).toContain('sm:flex-row sm:items-center sm:gap-3');
+    expect(html).toContain('focus-visible:ring-2 focus-visible:ring-signal/50');
+    expect(html).toContain('Advanced tools');
+    expect(html).not.toContain('rounded-md border border-border bg-surface p-4');
   });
 
   it('shows administrator tools only to owners and admins', async () => {
@@ -86,5 +78,33 @@ describe('SourcesPage', () => {
     expect(memberHtml).not.toContain('Outbound MCP sharing');
     expect(memberHtml).not.toContain('Integration audit');
     expect(memberHtml).toContain('Provider resources and webhooks');
+  });
+
+  it('sends meeting failures to job recovery for admins only', async () => {
+    const summary = {
+      attention: 1,
+      inboundEmail: 'acme+archive@inbound.timeline.test',
+      emailForwarded: false,
+      telegramConnections: 0,
+      slackConnections: 0,
+      documentsTotal: 0,
+      documentAttention: 0,
+      meetingsRecent: 4,
+      meetingsActive: 0,
+      meetingsFailed: 2,
+      meetingMinutesUsed: 0,
+      nativeIntegrations: 0,
+      integrationErrors: 0,
+      mcpServers: 0,
+      mcpErrors: 0,
+    };
+    fakes.getSourcesStatusSummary.mockResolvedValue(summary);
+
+    const adminHtml = renderToStaticMarkup(await SourcesPage());
+    expect(adminHtml).toContain('/app/team/jobs?kind=meeting_finalization');
+
+    fakes.requireMembership.mockResolvedValue('member');
+    const memberHtml = renderToStaticMarkup(await SourcesPage());
+    expect(memberHtml).not.toContain('/app/team/jobs');
   });
 });

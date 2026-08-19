@@ -175,6 +175,16 @@ export class SlackApi {
     return out;
   }
 
+  async conversationsOpen(users: string): Promise<{ id: string }> {
+    const res = await this.call<SlackResponse & { channel?: { id?: string } }>(
+      'conversations.open',
+      { users },
+    );
+    const id = res.channel?.id;
+    if (!id) throw new Error('Slack conversations.open failed: missing channel');
+    return { id };
+  }
+
   async postMessage(input: {
     channel: string;
     text: string;

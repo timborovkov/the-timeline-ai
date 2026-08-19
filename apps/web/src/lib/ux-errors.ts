@@ -86,6 +86,8 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
       return 'Choose a team before connecting a source.';
     case 'unknown_provider':
       return 'This source is not supported yet.';
+    case 'oauth_denied':
+      return 'The provider denied access. Try connecting again.';
     case 'oauth_start_failed':
       return 'Could not start the connection. The provider may be temporarily unavailable — try again in a moment.';
     case 'no_active_team':

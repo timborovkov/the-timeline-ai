@@ -1,4 +1,5 @@
 import { getEnv } from '@timeline/shared/env';
+import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -11,6 +12,7 @@ import { PageHeader } from '@/components/page-header';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { SUGGESTIONS_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
@@ -57,14 +59,22 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
   const status = STATUS_FILTERS.includes(params.status as ApprovalFilter)
     ? (params.status as ApprovalFilter)
     : 'pending';
-  const [suggestions, calendarSettings, approvalCounts] = await Promise.all([
+  const [suggestionRows, calendarSettings, approvalCounts] = await Promise.all([
     scope.suggestions.withCalendarResolutionHints(
-      await scope.suggestions.listSuggestions({ status }),
+      await scope.suggestions.listSuggestions({
+        status,
+        limit: SUGGESTIONS_PAGE_SIZE + 1,
+        cursor: null,
+      }),
     ),
     scope.calendar.getCalendarSettings(),
     scope.suggestions.getApprovalItemCounts(),
   ]);
-  const visibleSuggestions = suggestions.flatMap((bundle) => {
+  const page = pageWindow(suggestionRows, SUGGESTIONS_PAGE_SIZE, (row) => ({
+    at: row.createdAt.toISOString(),
+    id: row.id,
+  }));
+  const visibleSuggestions = page.items.flatMap((bundle) => {
     const items = bundle.items.filter((item) => {
       if (status === 'pending') return item.status === 'pending';
       if (status === 'failed') return item.status === 'failed';
@@ -73,7 +83,8 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
     });
     return items.length > 0 ? [serializeSuggestionBundle({ ...bundle, items })] : [];
   });
-  const itemCount = visibleSuggestions.reduce((sum, s) => sum + s.items.length, 0);
+  const inventoryCount =
+    status === 'pending' || status === 'failed' ? approvalCounts[status] : null;
 
   return (
     <div className="space-y-6">
@@ -83,14 +94,14 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
         subtitle="Review evidence-backed changes before they become team memory."
         metadata={[
           { label: 'Filter', value: status.replaceAll('_', ' ') },
-          { label: 'Bundles', value: visibleSuggestions.length, mono: true },
-          { label: 'Items', value: itemCount, mono: true },
+          ...(inventoryCount !== null
+            ? [{ label: 'Items', value: inventoryCount, mono: true }]
+            : []),
         ]}
       />
       <WorkSubnav current="/app/approvals" />
-      <CollectionToolbar
-        count={`${itemCount} proposals`}
-        viewControls={
+      <CollectionToolbar>
+        <CollectionToolbar.View>
           <nav className="flex flex-wrap gap-1" aria-label="Approval status filters">
             {STATUS_FILTERS.map((filter) => (
               <Link
@@ -108,10 +119,13 @@ export default async function ApprovalsPage({ searchParams }: PageProps) {
               </Link>
             ))}
           </nav>
-        }
-      />
+        </CollectionToolbar.View>
+      </CollectionToolbar>
       <ApprovalsClient
+        key={status}
         suggestions={visibleSuggestions}
+        nextCursor={page.nextCursor}
+        status={status}
         timezone={calendarSettings.defaultTimezone}
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
         emptyState={EMPTY_STATES[status]}

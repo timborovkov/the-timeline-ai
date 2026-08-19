@@ -25,7 +25,7 @@ export function PinnedWorkspacePreview({ initialItems }: { initialItems: PinnedI
       >
         Pinned work
       </SectionHeading>
-      <div className="border-y border-border">
+      <div>
         {items.map((item) => (
           <PinnedItemRow
             key={item.pinId}

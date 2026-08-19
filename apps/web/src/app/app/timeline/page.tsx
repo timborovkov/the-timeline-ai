@@ -8,12 +8,11 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
-import { Coachmark } from '@/components/coachmark';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
-import { IndexStrip } from '@/components/index-strip';
 import { TimelineFeed } from '@/components/timeline-feed';
+import { TimelineSearchField } from '@/components/timeline-search-field';
 import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -24,7 +23,6 @@ import { listTimelineCapturedFilesByEventId } from '@/lib/timeline-captured-file
 import {
   TIMELINE_IMPACT_FILTERS,
   TIMELINE_PRESETS,
-  TIMELINE_SOURCES,
   TIMELINE_UPCOMING_DAYS,
   isTimelinePresetActive,
   parseTimelineImpacts,
@@ -32,11 +30,8 @@ import {
   parseTimelineSources,
   resolveTimelineDateWindow,
   timelineHref,
-  timelineLoadedCount,
-  timelineLoadedSrLabel,
   timelineOriginOptions,
   timelineOriginValue,
-  timelinePresetCountLabel,
   timelineSourceValues,
 } from '@/lib/timeline-controls';
 import {
@@ -271,17 +266,6 @@ export default async function TimelinePage({ searchParams }: Props) {
     impactFilters.length > 0;
   const hasFilters = hasPanelFilters;
   const originOptions = timelineOriginOptions(sourceFacets);
-  const sourceLabel =
-    originFilters.length === 1
-      ? originOptions.find((option) => option.value === originFilterValue)?.label
-      : originFilters.length > 1
-        ? `${String(originFilters.length)} specific sources`
-        : sourceFilters.length === 1
-          ? TIMELINE_SOURCES.find(([value]) => value === sourceFilters[0])?.[1]
-          : sourceFilters.length > 1
-            ? `${String(sourceFilters.length)} sources`
-            : undefined;
-  const eventCount = events.length;
   let presentationCacheStats: TimelineMomentPresentationCacheStats =
     emptyTimelineMomentPresentationCacheStats();
   const initialMoments =
@@ -313,8 +297,6 @@ export default async function TimelinePage({ searchParams }: Props) {
           )
         ).map(toTimelineMomentDto)
       : [];
-  const momentCount = initialMoments.length;
-  const loadedCount = timelineLoadedCount(mode, momentCount, eventCount);
   const momentPinState = await scope.pins.isPinnedMany(
     initialMoments.map((moment) => ({ kind: 'timeline_moment' as const, key: moment.id })),
   );
@@ -351,38 +333,8 @@ export default async function TimelinePage({ searchParams }: Props) {
     origin: originFilterValue || null,
   };
   return (
-    <div className="space-y-6">
-      <IndexStrip
-        srLabel={`Timeline · ${active.teamName} · ${timelineLoadedSrLabel(mode, loadedCount)}${hasFilters ? ' · filters on' : ''}`}
-        segments={[
-          { value: 'TIMELINE' },
-          { label: 'team', value: active.teamName },
-          { label: 'loaded', value: loadedCount },
-          ...(sourceLabel
-            ? ([{ label: 'source', value: sourceLabel, signal: true }] as const)
-            : []),
-          ...(impactFilters.length > 0
-            ? ([
-                {
-                  label: 'impact',
-                  value:
-                    impactFilters.length === 1
-                      ? (impactFilters[0] ?? '')
-                      : `${String(impactFilters.length)} kinds`,
-                  signal: true,
-                },
-              ] as const)
-            : []),
-          ...(hasFilters && !sourceLabel
-            ? ([{ label: 'filter', value: 'ON', signal: true }] as const)
-            : []),
-        ]}
-      />
-
-      <Coachmark storageKey="citation-inspector">
-        Select a timeline row to inspect its cited source evidence.
-      </Coachmark>
-
+    <div>
+      <h1 className="sr-only">Timeline</h1>
       <TimelineBrowserSection
         sp={sp}
         members={members}
@@ -483,29 +435,28 @@ function TimelineBrowserSection({
   maxUpcomingInput: string;
 }) {
   return (
-    <section className="space-y-3">
-      <TimelineFilterPanel
-        members={members}
-        userMap={userMap}
-        baseParams={baseParams}
-        hasFilters={hasFilters}
-        hasPanelFilters={hasPanelFilters}
-        sourceFilterValue={sourceFilterValue}
-        originFilterValue={originFilterValue}
-        originOptions={originOptions}
-        impactFilterValue={impactFilterValue}
-        authorFilterValue={authorFilterValue}
-        fromValue={toDateInputValue(sp.from)}
-        toValue={toDateInputValue(sp.to)}
-        todayInput={todayInput}
-        maxUpcomingInput={maxUpcomingInput}
-        mode={mode}
-        eventCount={events.length}
-        momentCount={moments?.length ?? events.length}
-        sourceFilters={sourceFilters}
-        impactFilters={impactFilters}
-        hasOriginFilter={Boolean(originFilterValue)}
-      />
+    <section>
+      <div className="sticky top-0 z-20 -mx-4 bg-bg/95 px-4 backdrop-blur md:-mx-8 md:px-8">
+        <TimelineFilterPanel
+          members={members}
+          userMap={userMap}
+          baseParams={baseParams}
+          hasPanelFilters={hasPanelFilters}
+          sourceFilterValue={sourceFilterValue}
+          originFilterValue={originFilterValue}
+          originOptions={originOptions}
+          impactFilterValue={impactFilterValue}
+          authorFilterValue={authorFilterValue}
+          fromValue={toDateInputValue(sp.from)}
+          toValue={toDateInputValue(sp.to)}
+          todayInput={todayInput}
+          maxUpcomingInput={maxUpcomingInput}
+          mode={mode}
+          sourceFilters={sourceFilters}
+          impactFilters={impactFilters}
+          hasOriginFilter={Boolean(originFilterValue)}
+        />
+      </div>
       <TimelineFeed
         initialPage={{
           version: 'timeline_moments_page.v1',
@@ -546,12 +497,22 @@ function TimelineBrowserSection({
         focusMomentId={focusMomentId ?? null}
         timezone={timezone}
         mode={mode}
-        emptyLabel={hasFilters ? 'No events match this view' : 'No events yet'}
+        emptyLabel={
+          hasFilters
+            ? mode === 'events'
+              ? 'No events match this view'
+              : 'No moments match this view'
+            : mode === 'events'
+              ? 'No events yet'
+              : 'No moments yet'
+        }
         emptyAction={{
           href: hasFilters ? '/app/timeline' : '/app#capture',
           label: hasFilters ? 'Clear timeline filters' : 'Capture first event',
           body: hasFilters
-            ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
+            ? mode === 'events'
+              ? 'The archive is still intact. Clear the filters or broaden your search to see more events.'
+              : 'The archive is still intact. Clear the filters or broaden your search to see more moments.'
             : 'Start from Home with one raw note, decision, or follow-up.',
         }}
       />
@@ -563,7 +524,6 @@ function TimelineFilterPanel({
   members,
   userMap,
   baseParams,
-  hasFilters,
   hasPanelFilters,
   sourceFilterValue,
   originFilterValue,
@@ -575,8 +535,6 @@ function TimelineFilterPanel({
   todayInput,
   maxUpcomingInput,
   mode,
-  eventCount,
-  momentCount,
   sourceFilters,
   impactFilters,
   hasOriginFilter,
@@ -584,7 +542,6 @@ function TimelineFilterPanel({
   members: TimelineMember[];
   userMap: TimelineUserMap;
   baseParams: TimelineBaseParams;
-  hasFilters: boolean;
   hasPanelFilters: boolean;
   sourceFilterValue: string;
   originFilterValue: string;
@@ -596,8 +553,6 @@ function TimelineFilterPanel({
   todayInput: string;
   maxUpcomingInput: string;
   mode: TimelineMode;
-  eventCount: number;
-  momentCount: number;
   sourceFilters: ReturnType<typeof parseTimelineSources>;
   impactFilters: ReturnType<typeof parseTimelineImpacts>;
   hasOriginFilter: boolean;
@@ -613,8 +568,36 @@ function TimelineFilterPanel({
     <DebouncedFilterForm id={formId} basePath="/app/timeline">
       {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
       <CollectionToolbar
-        count={`${timelinePresetCountLabel(mode, momentCount, eventCount)}${hasFilters ? ' · filtered' : ''}`}
-        filters={
+        activeFilters={
+          hasPanelFilters
+            ? [
+                {
+                  key: 'filters',
+                  label: 'Timeline filters',
+                  value: upcomingActive
+                    ? `Upcoming · ${String(TIMELINE_UPCOMING_DAYS)} days`
+                    : 'On',
+                  href: timelineHref(baseParams, {
+                    author: null,
+                    from: null,
+                    to: null,
+                    source: null,
+                    origin: null,
+                    impact: null,
+                  }),
+                },
+              ]
+            : []
+        }
+      >
+        <CollectionToolbar.Search>
+          <TimelineSearchField
+            source={sourceFilterValue || null}
+            from={fromValue || null}
+            to={toValue || null}
+          />
+        </CollectionToolbar.Search>
+        <CollectionToolbar.Filters>
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <TimelineSourceFilterControls
               key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
@@ -663,30 +646,12 @@ function TimelineFilterPanel({
               Upcoming · {TIMELINE_UPCOMING_DAYS} days
             </Link>
           </div>
-        }
-        activeFilters={
-          hasPanelFilters
-            ? [
-                {
-                  key: 'filters',
-                  label: 'Timeline filters',
-                  value: upcomingActive
-                    ? `Upcoming · ${String(TIMELINE_UPCOMING_DAYS)} days`
-                    : 'On',
-                  href: timelineHref(baseParams, {
-                    author: null,
-                    from: null,
-                    to: null,
-                    source: null,
-                    origin: null,
-                    impact: null,
-                  }),
-                },
-              ]
-            : []
-        }
-        actions={
-          <nav aria-label="Timeline presets" className="hidden flex-wrap gap-1.5 lg:flex">
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.Actions>
+          <nav
+            aria-label="Timeline presets"
+            className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto"
+          >
             <Link
               href={upcomingHref}
               aria-current={upcomingActive ? 'page' : undefined}
@@ -716,21 +681,27 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        }
-        viewControls={
-          <nav aria-label="Timeline mode" className="flex rounded-sm bg-surface p-0.5">
+        </CollectionToolbar.Actions>
+        <CollectionToolbar.View>
+          <nav aria-label="Timeline view" className="flex rounded-sm bg-surface p-0.5">
             {(
               [
                 ['moments', 'Moments'],
-                ['events', 'Audit trail'],
+                ['events', 'All events'],
               ] as const
             ).map(([value, label]) => {
               const active = mode === value;
+              const description =
+                value === 'moments'
+                  ? 'Moments, grouped related activity'
+                  : 'All events, every captured source event';
               return (
                 <Link
                   key={value}
                   href={timelineHref(baseParams, { mode: value === 'events' ? value : null })}
                   aria-current={active ? 'page' : undefined}
+                  aria-label={description}
+                  title={description}
                   className={`inline-flex min-h-8 items-center rounded-[3px] px-2.5 text-xs transition-colors ${active ? 'bg-bg text-fg shadow-sm' : 'text-fg-muted hover:text-fg'}`}
                 >
                   {label}
@@ -738,8 +709,8 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        }
-      />
+        </CollectionToolbar.View>
+      </CollectionToolbar>
       <div className="sr-only">
         {hasPanelFilters ? (
           <Link

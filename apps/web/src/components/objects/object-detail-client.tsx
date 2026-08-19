@@ -32,12 +32,13 @@ import {
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
+  unarchiveObjectAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
@@ -62,12 +63,12 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { statusLabel } from '@/lib/status-labels';
-import { errorMessage } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -93,7 +94,6 @@ type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
-  teamId?: string;
   userId: string;
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
@@ -166,6 +166,20 @@ function statusOptions(type: string): string[] {
 
 function isDraftField(field: EditableField): field is DraftField {
   return field === 'canonicalName' || field === 'aliases' || field === 'stage' || field === 'dueAt';
+}
+
+function objectFieldLabel(field: EditableField): string {
+  if (field === 'canonicalName') return 'name';
+  if (field === 'dueAt') return 'due date';
+  return field;
+}
+
+function capitalizeLabel(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function serializeEditableValue(value: EditableValue): string | number | readonly string[] | null {
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 function isEditableFieldName(field: string): field is EditableField {
@@ -415,6 +429,27 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     };
   }, []);
 
+  function applyFieldLocally(field: EditableField, value: EditableValue): void {
+    updateLocalDetail((current) => ({
+      ...current,
+      [field]: field === 'dueAt' ? toDateOrNull(value) : value,
+    }));
+    if (field === 'canonicalName') {
+      dispatchObjectUi({
+        nameDraft: value === null ? editableObjectName(serverDetailRef.current) : String(value),
+      });
+    }
+    if (field === 'aliases') {
+      dispatchObjectUi({ aliasesDraft: normalizeAliases(value).join(', ') });
+    }
+    if (field === 'stage') {
+      dispatchObjectUi({ stageDraft: value === null ? '' : String(value) });
+    }
+    if (field === 'dueAt') {
+      dispatchObjectUi({ dueDraft: toLocalInputValue(value, timezone) });
+    }
+  }
+
   function patch(field: EditableField, value: EditableValue): void {
     const currentValue = localDetailRef.current[field];
     if (sameEditableValue(field, currentValue, value)) return;
@@ -424,12 +459,13 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       queuedFieldValuesRef.current[field] = value;
       return;
     }
-    beginFieldSave(field, value);
+    beginFieldSave(field, value, currentValue);
   }
 
   function beginFieldSave(
     field: EditableField,
     value: EditableValue,
+    previousValue: EditableValue,
     options: { preserveBatchFailure?: boolean } = {},
   ): void {
     savingFieldsRef.current[field] += 1;
@@ -441,23 +477,37 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     }
     savingCountRef.current += 1;
     dispatchObjectUi({ savingCount: savingCountRef.current });
+    const label = objectFieldLabel(field);
     startTransition(async () => {
-      try {
-        const actionValue = value instanceof Date ? value.toISOString() : value;
-        const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
-        const failed = 'error' in result && result.error;
-        if (failed) {
-          handleFieldSaveFailure(field, value, result.error ?? 'Update failed');
-        } else if (!batchHadFailureRef.current) {
-          dispatchObjectUi({ error: null });
-        }
-        router.refresh();
-      } catch (err) {
-        handleFieldSaveFailure(field, value, errorMessage(err, 'Update failed'));
-        router.refresh();
-      } finally {
-        finishFieldSave(field);
+      const result = await notifyAction({
+        id: `object:${detail.id}`,
+        loading: `Updating ${label}…`,
+        success: `${capitalizeLabel(label)} updated`,
+        error: `Couldn’t update ${label}`,
+        run: () =>
+          updateObjectAction({
+            id: detail.id,
+            [field]: serializeEditableValue(value),
+          }),
+        undo: {
+          run: async () => {
+            applyFieldLocally(field, previousValue);
+            const undoResult = await updateObjectAction({
+              id: detail.id,
+              [field]: serializeEditableValue(previousValue),
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
+        handleFieldSaveFailure(field, value, result.error);
+      } else if (!batchHadFailureRef.current) {
+        dispatchObjectUi({ error: null });
       }
+      router.refresh();
+      finishFieldSave(field, result.error ? undefined : value);
     });
   }
 
@@ -469,26 +519,11 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       queuedFieldValuesRef.current[field] === undefined &&
       sameEditableValue(field, localDetailRef.current[field], value)
     ) {
-      updateLocalDetail((current) => ({
-        ...current,
-        [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
-      }));
-      if (field === 'canonicalName') {
-        dispatchObjectUi({ nameDraft: editableObjectName(serverDetailRef.current) });
-      }
-      if (field === 'aliases') {
-        dispatchObjectUi({ aliasesDraft: normalizeAliases(rollbackValue).join(', ') });
-      }
-      if (field === 'stage') {
-        dispatchObjectUi({ stageDraft: rollbackValue === null ? '' : String(rollbackValue) });
-      }
-      if (field === 'dueAt') {
-        dispatchObjectUi({ dueDraft: toLocalInputValue(rollbackValue, timezone) });
-      }
+      applyFieldLocally(field, field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue);
     }
   }
 
-  function finishFieldSave(field: EditableField): void {
+  function finishFieldSave(field: EditableField, lastSuccessfulValue?: EditableValue): void {
     savingCountRef.current = Math.max(0, savingCountRef.current - 1);
     if (isDraftField(field)) {
       savingDraftsRef.current[field] = Math.max(0, savingDraftsRef.current[field] - 1);
@@ -498,7 +533,14 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     const queuedValue = queuedFieldValuesRef.current[field];
     queuedFieldValuesRef.current[field] = undefined;
     if (queuedValue !== undefined) {
-      beginFieldSave(field, queuedValue, { preserveBatchFailure: batchHadFailureRef.current });
+      const previousForQueued =
+        lastSuccessfulValue ??
+        (field === 'dueAt'
+          ? toDateOrNull(serverDetailRef.current[field])
+          : serverDetailRef.current[field]);
+      beginFieldSave(field, queuedValue, previousForQueued, {
+        preserveBatchFailure: batchHadFailureRef.current,
+      });
       dispatchObjectUi({ savingCount: savingCountRef.current });
       return;
     }
@@ -535,13 +577,38 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     }));
     dispatchObjectUi({ noteBody: '' });
     startTransition(async () => {
-      const result = await createNoteAction({ entityId: detail.id, body });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:note`,
+        loading: 'Adding note…',
+        success: 'Note added',
+        error: 'Couldn’t add note',
+        run: () => createNoteAction({ entityId: detail.id, body }),
+        undo: {
+          run: async (created) => {
+            const createdId = created.id;
+            if (!createdId) return { ok: true };
+            dispatchLocalDetail((current) => ({
+              ...current,
+              deletedNoteIds: [...current.deletedNoteIds, createdId],
+              pendingNotes: current.pendingNotes.filter(
+                (note) => note.id !== createdId && note.id !== tempId,
+              ),
+            }));
+            const undoResult = await deleteNoteAction({
+              noteId: createdId,
+              entityId: detail.id,
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
         dispatchLocalDetail((current) => ({
           ...current,
           pendingNotes: current.pendingNotes.filter((note) => note.id !== tempId),
         }));
-        dispatchObjectUi({ error: result.error, noteBody: body });
+        dispatchObjectUi({ noteBody: body });
       } else {
         const createdId = 'id' in result && typeof result.id === 'string' ? result.id : null;
         if (createdId) {
@@ -577,10 +644,28 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     }));
     dispatchObjectUi({ editingNoteId: null });
     startTransition(async () => {
-      const result = await updateNoteAction({ noteId, entityId: detail.id, body: trimmedBody });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:note`,
+        loading: 'Updating note…',
+        success: 'Note updated',
+        error: 'Couldn’t update note',
+        run: () => updateNoteAction({ noteId, entityId: detail.id, body: trimmedBody }),
+        undo: {
+          run: async () => {
+            dispatchLocalDetail({ noteUpdates: previousNoteUpdates });
+            const undoResult = await updateNoteAction({
+              noteId,
+              entityId: detail.id,
+              body: currentNote.body,
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
         dispatchLocalDetail({ noteUpdates: previousNoteUpdates });
-        dispatchObjectUi({ error: result.error, editingNoteId: noteId, editingBody: body });
+        dispatchObjectUi({ editingNoteId: noteId, editingBody: body });
       } else {
         router.refresh();
       }
@@ -597,13 +682,18 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       pendingNotes: current.pendingNotes.filter((note) => note.id !== noteId),
     }));
     startTransition(async () => {
-      const result = await deleteNoteAction({ noteId, entityId: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:note`,
+        loading: 'Deleting note…',
+        success: 'Note deleted',
+        error: 'Couldn’t delete note',
+        run: () => deleteNoteAction({ noteId, entityId: detail.id }),
+      });
+      if (result.error) {
         dispatchLocalDetail({
           deletedNoteIds: previousDeletedNoteIds,
           pendingNotes: previousPendingNotes,
         });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -628,19 +718,45 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       pendingRelationships: [optimisticRelationship, ...current.pendingRelationships],
     }));
     startTransition(async () => {
-      const result = await addRelationshipAction({
-        fromEntityId: detail.id,
-        toEntityId: link.id,
-        kind: linkKind,
+      const result = await notifyAction({
+        id: `object:${detail.id}:relationship`,
+        loading: 'Adding relationship…',
+        success: 'Relationship added',
+        error: 'Couldn’t add relationship',
+        run: () =>
+          addRelationshipAction({
+            fromEntityId: detail.id,
+            toEntityId: link.id,
+            kind: linkKind,
+          }),
+        undo: {
+          run: async (created) => {
+            const relationshipId = created.id;
+            if (!relationshipId) return { ok: true };
+            dispatchLocalDetail((current) => ({
+              ...current,
+              deletedRelationshipIds: [...current.deletedRelationshipIds, relationshipId],
+              pendingRelationships: current.pendingRelationships.filter(
+                (relationship) => relationship.id !== relationshipId && relationship.id !== tempId,
+              ),
+            }));
+            const undoResult = await removeRelationshipAction({
+              id: relationshipId,
+              entityId: detail.id,
+              otherEntityId: link.id,
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
       });
-      if ('error' in result && result.error) {
+      if (result.error) {
         dispatchLocalDetail((current) => ({
           ...current,
           pendingRelationships: current.pendingRelationships.filter(
             (relationship) => relationship.id !== tempId,
           ),
         }));
-        dispatchObjectUi({ error: result.error });
       } else {
         const relationshipId = 'id' in result && typeof result.id === 'string' ? result.id : null;
         if (relationshipId) {
@@ -667,14 +783,37 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         (relationship) => relationship.id !== id,
       ),
     }));
+    const removed = viewDetail.relationships.find((relationship) => relationship.id === id);
     startTransition(async () => {
-      const result = await removeRelationshipAction({ id, entityId: detail.id, otherEntityId });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:relationship`,
+        loading: 'Removing relationship…',
+        success: 'Relationship removed',
+        error: 'Couldn’t remove relationship',
+        run: () => removeRelationshipAction({ id, entityId: detail.id, otherEntityId }),
+        undo: removed
+          ? {
+              run: async () => {
+                dispatchLocalDetail({
+                  deletedRelationshipIds: previousDeletedRelationshipIds,
+                  pendingRelationships: previousPendingRelationships,
+                });
+                const undoResult = await addRelationshipAction({
+                  fromEntityId: detail.id,
+                  toEntityId: otherEntityId,
+                  kind: removed.kind,
+                });
+                if (!undoResult.error) router.refresh();
+                return undoResult;
+              },
+            }
+          : undefined,
+      });
+      if (result.error) {
         dispatchLocalDetail({
           deletedRelationshipIds: previousDeletedRelationshipIds,
           pendingRelationships: previousPendingRelationships,
         });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -705,8 +844,14 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       }
     }
     startTransition(async () => {
-      const result = await acceptObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:change`,
+        loading: 'Accepting change…',
+        success: 'Change accepted',
+        error: 'Couldn’t accept change',
+        run: () => acceptObjectChangeAction({ changeId, entityId: detail.id }),
+      });
+      if (result.error) {
         dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
         updateLocalDetail(() => previousDetail);
         dispatchObjectUi({
@@ -715,7 +860,6 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
           stageDraft: previousDetail.stage ?? '',
           dueDraft: toLocalInputValue(previousDetail.dueAt, timezone),
         });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -728,10 +872,15 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       recentChangeStatuses: { ...current.recentChangeStatuses, [changeId]: 'rejected' },
     }));
     startTransition(async () => {
-      const result = await rejectObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:change`,
+        loading: 'Rejecting change…',
+        success: 'Change rejected',
+        error: 'Couldn’t reject change',
+        run: () => rejectObjectChangeAction({ changeId, entityId: detail.id }),
+      });
+      if (result.error) {
         dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -741,10 +890,23 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     const previousArchivedAtOverride = localDetailState.archivedAtOverride;
     dispatchLocalDetail({ archivedAtOverride: new Date() });
     startTransition(async () => {
-      const result = await archiveObjectAction({ id: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:archive`,
+        loading: 'Archiving object…',
+        success: 'Object archived',
+        error: 'Couldn’t archive object',
+        run: () => archiveObjectAction({ id: detail.id }),
+        undo: {
+          run: async () => {
+            dispatchLocalDetail({ archivedAtOverride: previousArchivedAtOverride });
+            const undoResult = await unarchiveObjectAction({ id: detail.id });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
         dispatchLocalDetail({ archivedAtOverride: previousArchivedAtOverride });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -754,10 +916,14 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     setRepairPending(true);
     startTransition(async () => {
       try {
-        const result = await repairObjectMemoryAction({ id: detail.id });
-        if ('error' in result && result.error) {
-          dispatchObjectUi({ error: result.error });
-        } else router.refresh();
+        const result = await notifyAction({
+          id: `object:${detail.id}:repair`,
+          loading: 'Repairing memory…',
+          success: 'Memory repair queued',
+          error: 'Couldn’t repair memory',
+          run: () => repairObjectMemoryAction({ id: detail.id }),
+        });
+        if (!result.error) router.refresh();
       } finally {
         setRepairPending(false);
       }
@@ -812,14 +978,10 @@ function ObjectDetailView(props: Props) {
         detail={view.viewDetail}
         nameDraft={view.nameDraft}
         focusedDraftsRef={view.focusedDraftsRef}
-        teamId={props.teamId}
         initialPinned={props.initialPinned ?? false}
         boardContext={boardContext}
-        error={view.error}
         pending={view.pending}
         repairPending={view.repairPending}
-        saveState={view.saveState}
-        savingCount={view.savingCount}
         onNameDraftChange={(nameDraft) => {
           view.dispatchObjectUi({ nameDraft });
         }}
@@ -968,24 +1130,21 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
   const [pending, startTransition] = useTransition();
   const summary = detail.summary ?? null;
   const generated = summary?.summary ?? null;
-  const [error, setError] = useReducer(
-    (_state: string | null, value: string | null) => value,
-    null,
-  );
   const canRequest =
     Boolean(summary?.canGenerate) &&
     (summary?.status === 'missing' || summary?.status === 'failed' || summary?.status === 'stale');
   const actionLabel = summary?.status === 'failed' ? 'Retry' : 'Generate summary';
 
   function requestSummary(): void {
-    setError(null);
     startTransition(() => {
-      void generateObjectSummaryAction({ entityId: detail.id }).then((result) => {
-        if ('error' in result && result.error) {
-          setError(result.error);
-          return;
-        }
-        router.refresh();
+      void notifyAction({
+        id: `object:${detail.id}:summary`,
+        loading: 'Generating summary…',
+        success: 'Summary queued',
+        error: 'Couldn’t generate summary',
+        run: () => generateObjectSummaryAction({ entityId: detail.id }),
+      }).then((result) => {
+        if (!result.error) router.refresh();
       });
     });
   }
@@ -1045,7 +1204,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
           </button>
         ) : null}
       </div>
-      {error ? <p className="mt-1 text-xs text-danger">{error}</p> : null}
     </section>
   );
 }
@@ -1083,6 +1241,15 @@ function summaryRefToArtifactRef(ref: objects.ObjectSummarySourceRef): ArtifactR
   if (ref.kind === 'fact') return { kind: 'fact', id: ref.id };
   if (ref.kind === 'relationship') return { kind: 'relationship', id: ref.id };
   if (ref.kind === 'object_change') return { kind: 'object_change', id: ref.id };
+  if (ref.kind === 'document_chunk') {
+    return {
+      kind: 'document_chunk',
+      id: ref.id,
+      documentId: ref.documentId,
+      version: ref.version,
+      chunkId: ref.id,
+    };
+  }
   return null;
 }
 
@@ -1090,6 +1257,7 @@ function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
   if (ref.kind === 'timeline_event') return 'event';
   if (ref.kind === 'object_note') return 'note';
   if (ref.kind === 'object_change') return 'change';
+  if (ref.kind === 'document_chunk') return 'document';
   return ref.kind;
 }
 
@@ -1097,14 +1265,10 @@ function ObjectDetailHeader({
   detail,
   nameDraft,
   focusedDraftsRef,
-  teamId,
   initialPinned,
   boardContext,
-  error,
   pending,
   repairPending,
-  saveState,
-  savingCount,
   onNameDraftChange,
   onNameCommit,
   onRepairMemory,
@@ -1112,22 +1276,17 @@ function ObjectDetailHeader({
   detail: ObjectDetail;
   nameDraft: string;
   focusedDraftsRef: RefObject<Record<DraftField, boolean>>;
-  teamId?: string;
   initialPinned: boolean;
   boardContext: boards.ObjectBoardContextRow[];
-  error: string | null;
   pending: boolean;
   repairPending: boolean;
-  saveState: SaveState;
-  savingCount: number;
   onNameDraftChange: (value: string) => void;
   onNameCommit: (value: string) => void;
   onRepairMemory: () => void;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
   const visibleAliases = detail.aliases.filter((alias) => !isInternalIdentifier(alias));
-  const hasAlerts =
-    detail.newSinceLastVisit > 0 || pendingCount > 0 || error !== null || saveState !== 'idle';
+  const hasAlerts = detail.newSinceLastVisit > 0 || pendingCount > 0;
   const addTaskHref =
     detail.type === 'project' && detail.archivedAt === null
       ? `/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`
@@ -1179,20 +1338,13 @@ function ObjectDetailHeader({
         </div>
         <div className="flex shrink-0 items-center">
           <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} icon />
-          {teamId ? (
-            <ContextualAskLink
-              teamId={teamId}
-              context={{
-                pathname: `/app/objects/${detail.id}`,
-                routeKind: 'object-detail',
-                objectId: detail.id,
-              }}
-              pinnedEntityId={detail.id}
-              pinnedEntityName={displayObjectTitle(detail)}
-              label="Ask about object"
-              icon
-            />
-          ) : null}
+          <ChatViewContextBinder
+            viewKey={`object:${detail.id}`}
+            kind="object"
+            href={`/app/objects/${detail.id}`}
+            label={displayObjectTitle(detail)}
+            objectId={detail.id}
+          />
           <ItemOverflowMenu targetLabel={displayObjectTitle(detail)}>
             {addTaskHref ? (
               <DropdownMenuItem asChild>
@@ -1223,18 +1375,6 @@ function ObjectDetailHeader({
           {pendingCount > 0 ? (
             <output className="text-xs text-signal">
               {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
-            </output>
-          ) : null}
-          {error ? (
-            <div role="alert" className="text-xs text-danger">
-              {error}
-            </div>
-          ) : null}
-          {saveState !== 'idle' ? (
-            <output aria-live="polite" className={DETAIL_META_CLASS}>
-              {saveState === 'saving'
-                ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
-                : 'Saved'}
             </output>
           ) : null}
         </div>
@@ -1279,11 +1419,11 @@ function ObjectEditableFields({
   return (
     <section aria-label="Properties" className="flex flex-col">
       <h2 className={`px-1.5 ${DETAIL_SECTION_LABEL_CLASS}`}>Properties</h2>
-      <EditableMetadata
-        label={`Status for ${displayText(title)}`}
-        className="min-h-8 px-1.5"
-        value={() => <CollectionStatus value={detail.status} label={statusLabel(detail.status)} />}
-        editor={() => (
+      <EditableMetadata label={`Status for ${displayText(title)}`} className="min-h-8 px-1.5">
+        <EditableMetadata.Value>
+          <CollectionStatus value={detail.status} label={statusLabel(detail.status)} />
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
           <select
             value={detail.status}
             onChange={(event) => {
@@ -1301,19 +1441,17 @@ function ObjectEditableFields({
               <option value={detail.status}>{statusLabel(detail.status)}</option>
             )}
           </select>
-        )}
-      />
-      <EditableMetadata
-        label={`Priority for ${displayText(title)}`}
-        className="min-h-8 px-1.5"
-        value={() => (
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      <EditableMetadata label={`Priority for ${displayText(title)}`} className="min-h-8 px-1.5">
+        <EditableMetadata.Value>
           <CollectionStatus
             value={detail.priority ? `p${detail.priority}` : 'none'}
             tone={priorityTone(detail.priority)}
             label={detail.priority ? `P${detail.priority}` : 'No priority'}
           />
-        )}
-        editor={() => (
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
           <select
             value={detail.priority ?? ''}
             onChange={(event) => {
@@ -1328,14 +1466,14 @@ function ObjectEditableFields({
             <option value="3">P3</option>
             <option value="4">P4</option>
           </select>
-        )}
-      />
+        </EditableMetadata.Editor>
+      </EditableMetadata>
       {detail.type === 'task' ? (
-        <EditableMetadata
-          label={`Assignee for ${displayText(title)}`}
-          className="min-h-8 px-1.5"
-          value={assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
-          editor={() => (
+        <EditableMetadata label={`Assignee for ${displayText(title)}`} className="min-h-8 px-1.5">
+          <EditableMetadata.Value>
+            {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={detail.assigneeUserId ?? ''}
               onChange={(event) => {
@@ -1351,15 +1489,15 @@ function ObjectEditableFields({
                 </option>
               ))}
             </select>
-          )}
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       ) : null}
       {isSchedulableObjectType(detail.type) ? (
-        <EditableMetadata
-          label={`Due date for ${displayText(title)}`}
-          className="min-h-8 px-1.5"
-          value={() => <DueDateDisplay value={detail.dueAt} variant="field-hint" />}
-          editor={() => (
+        <EditableMetadata label={`Due date for ${displayText(title)}`} className="min-h-8 px-1.5">
+          <EditableMetadata.Value>
+            <DueDateDisplay value={detail.dueAt} variant="field-hint" />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <MetadataDateEditor
               defaultValue={dueDraft}
               onApply={(value) => {
@@ -1368,8 +1506,8 @@ function ObjectEditableFields({
                 patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
               }}
             />
-          )}
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       ) : null}
       {detail.type === 'task' && detail.archivedAt ? (
         <p className="px-1.5 py-1 text-xs text-fg-muted">
@@ -1692,7 +1830,12 @@ function ConnectedCalendarList({
       <ul className="space-y-1">
         {events.map((event) => (
           <li key={event.id} className="grid gap-0.5">
-            <span className={DETAIL_BODY_CLASS}>{displayText(event.title)}</span>
+            <Link
+              href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
+              className={DETAIL_LINK_CLASS}
+            >
+              {displayText(event.title)}
+            </Link>
             <span className={DETAIL_META_CLASS}>
               {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
             </span>

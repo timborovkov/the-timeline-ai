@@ -1,46 +1,34 @@
 'use client';
 
-import {
-  TASK_CATEGORY_OPTIONS,
-  taskCategoryLabel,
-  type TaskCategory,
-} from '@timeline/shared/task-categories/types';
+import { taskCategoryLabel, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import {
-  AlertTriangle,
-  CalendarClock,
-  CalendarPlus,
-  CalendarX,
-  Check,
-  CheckCheck,
-  ExternalLink,
-  GitMerge,
-  MoveRight,
-  Pencil,
-  X,
-} from 'lucide-react';
+import { Check, ExternalLink, Eye, GitMerge, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useMemo, useRef, useState, useTransition } from 'react';
+import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 
+import { loadSuggestionsPageAction } from '@/app/actions/collection-pages';
 import {
-  acceptAllSuggestionAction,
   acceptSuggestionItemAction,
   acceptVisibleSuggestionsAction,
   rejectSuggestionItemAction,
   rejectVisibleSuggestionsAction,
-  reviseTaskSuggestionItemAction,
 } from '@/app/actions/suggestions';
+import { ApprovalPreviewDialog } from '@/components/approvals/approval-preview-dialog';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
+import { CollectionGroup } from '@/components/collections/collection-group';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { SelectionBar } from '@/components/collections/selection-bar';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { EmptyAction } from '@/components/empty-action';
 import { EvidenceLink } from '@/components/evidence-link';
-import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
-import { ItemActionGroup } from '@/components/ui/item-actions';
+import { ItemActionGroup, ItemIconButton } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { useProjectSearch } from '@/hooks/use-project-search';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { evidenceSourceContextLabel, evidenceSourceLabel } from '@/lib/evidence-source-label';
+import { notifyAction } from '@/lib/notify';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 function stableJson(value: unknown): string {
@@ -125,10 +113,112 @@ interface SuggestionBundle {
 type ApprovalAction = (
   action: () => Promise<{ ok?: boolean; error?: string; failedItemIds?: string[] }>,
   optimisticItemIds: string[],
+  messages: { id: string; loading: string; success: string; error?: string },
 ) => void;
+
+interface ApprovalsQueueState {
+  error: string | null;
+  selectedIds: Set<string>;
+  previewItem: { bundle: SuggestionBundle; item: SuggestionItem } | null;
+  resolvedItemSignatures: Map<string, string>;
+  busyItemIds: Set<string>;
+  actionFailedItemIds: Set<string>;
+}
+
+type ApprovalsQueueAction =
+  | { type: 'setError'; error: string | null }
+  | { type: 'selectChange'; itemId: string; checked: boolean }
+  | { type: 'selectMany'; itemIds: string[]; checked: boolean }
+  | { type: 'clearSelection' }
+  | { type: 'openPreview'; bundle: SuggestionBundle; item: SuggestionItem }
+  | { type: 'closePreview' }
+  | { type: 'beginRun'; itemIds: string[]; signatures: Map<string, string> }
+  | { type: 'clearBusy'; itemIds: string[] }
+  | { type: 'restoreItems'; itemIds: string[] }
+  | { type: 'markFailures'; itemIds: string[] };
+
+function mutateSet(source: Set<string>, itemIds: string[], add: boolean): Set<string> {
+  const next = new Set(source);
+  for (const id of itemIds) {
+    if (add) next.add(id);
+    else next.delete(id);
+  }
+  return next;
+}
+
+function approvalsQueueReducer(
+  state: ApprovalsQueueState,
+  action: ApprovalsQueueAction,
+): ApprovalsQueueState {
+  switch (action.type) {
+    case 'setError':
+      return { ...state, error: action.error };
+    case 'selectChange': {
+      const selectedIds = new Set(state.selectedIds);
+      if (action.checked) selectedIds.add(action.itemId);
+      else selectedIds.delete(action.itemId);
+      return { ...state, selectedIds };
+    }
+    case 'selectMany':
+      return {
+        ...state,
+        selectedIds: mutateSet(state.selectedIds, action.itemIds, action.checked),
+      };
+    case 'clearSelection':
+      return { ...state, selectedIds: new Set() };
+    case 'openPreview':
+      return { ...state, previewItem: { bundle: action.bundle, item: action.item } };
+    case 'closePreview':
+      return { ...state, previewItem: null };
+    case 'beginRun': {
+      const resolvedItemSignatures = new Map(state.resolvedItemSignatures);
+      for (const id of action.itemIds) {
+        const signature = action.signatures.get(id);
+        if (signature) resolvedItemSignatures.set(id, signature);
+      }
+      const selectedIds = mutateSet(state.selectedIds, action.itemIds, false);
+      const previewItem =
+        state.previewItem && action.itemIds.includes(state.previewItem.item.id)
+          ? null
+          : state.previewItem;
+      return {
+        ...state,
+        error: null,
+        actionFailedItemIds: mutateSet(state.actionFailedItemIds, action.itemIds, false),
+        resolvedItemSignatures,
+        busyItemIds: mutateSet(state.busyItemIds, action.itemIds, true),
+        selectedIds,
+        previewItem,
+      };
+    }
+    case 'clearBusy':
+      return { ...state, busyItemIds: mutateSet(state.busyItemIds, action.itemIds, false) };
+    case 'restoreItems': {
+      const resolvedItemSignatures = new Map(state.resolvedItemSignatures);
+      for (const id of action.itemIds) resolvedItemSignatures.delete(id);
+      return { ...state, resolvedItemSignatures };
+    }
+    case 'markFailures':
+      return {
+        ...state,
+        actionFailedItemIds: mutateSet(state.actionFailedItemIds, action.itemIds, true),
+      };
+  }
+}
+
+const INITIAL_APPROVALS_QUEUE: ApprovalsQueueState = {
+  error: null,
+  selectedIds: new Set(),
+  previewItem: null,
+  resolvedItemSignatures: new Map(),
+  busyItemIds: new Set(),
+  actionFailedItemIds: new Set(),
+};
 
 interface Props {
   suggestions: SuggestionBundle[];
+  nextCursor?: string | null;
+  status?: 'pending' | 'failed' | 'resolved' | 'all';
   taskCategoriesEnabled?: boolean;
   allowBulkAccept?: boolean;
   allowBulkReject?: boolean;
@@ -175,7 +265,6 @@ interface FormattedPayloadField {
   value: string;
 }
 
-const MAX_INLINE_PAYLOAD_FIELDS = 4;
 const MAX_INLINE_PAYLOAD_VALUE_LENGTH = 120;
 const TOKEN_PAYLOAD_FIELDS = new Set([
   'field',
@@ -199,21 +288,6 @@ const CLEARABLE_PAYLOAD_FIELDS = new Set([
   'rrule',
   'stage',
   'visibilityUserIds',
-]);
-const CALENDAR_SEPARATE_PAYLOAD_FIELDS = new Set([
-  'proposalGroupId',
-  'proposalRole',
-  'proposalStatus',
-  'recurrenceEditMode',
-  'showAs',
-]);
-const CALENDAR_RANGE_PAYLOAD_FIELDS = new Set([
-  'allDay',
-  'endAt',
-  'endDate',
-  'startAt',
-  'startDate',
-  'timezone',
 ]);
 
 function formatPayloadFields(
@@ -313,6 +387,7 @@ function payloadFieldLabel(key: string): string {
     responsibleName: 'Responsible',
     responsibleUserId: 'Responsible',
     rrule: 'Recurrence',
+    showAs: 'Show as',
     stage: 'Stage',
     startAt: 'Starts',
     status: 'Status',
@@ -437,47 +512,8 @@ function localActionFailureReason(item: SuggestionItem): string | null {
   return null;
 }
 
-function metadataString(metadata: Record<string, unknown>, key: string): string | null {
-  const value = metadata[key];
-  return typeof value === 'string' && value.trim() ? value : null;
-}
-
-function metadataStringArray(metadata: Record<string, unknown>, key: string): string[] {
-  const value = metadata[key];
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '');
-}
-
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
-}
-
-function itemReconciliationOutputId(item: SuggestionItem): string | null {
-  return metadataString(item.metadata ?? {}, 'reconciliation_output_id');
-}
-
-function itemReconciliationClusterId(item: SuggestionItem): string | null {
-  return metadataString(item.metadata ?? {}, 'reconciliation_cluster_id');
-}
-
-function bundleReconciliationOutputIds(bundle: SuggestionBundle): string[] {
-  return uniqueStrings([
-    ...metadataStringArray(bundle.metadata ?? {}, 'reconciliation_output_ids'),
-    ...bundle.items.flatMap((item) => {
-      const outputId = itemReconciliationOutputId(item);
-      return outputId ? [outputId] : [];
-    }),
-  ]);
-}
-
-function bundleReconciliationClusterIds(bundle: SuggestionBundle): string[] {
-  return uniqueStrings([
-    ...metadataStringArray(bundle.metadata ?? {}, 'reconciliation_cluster_ids'),
-    ...bundle.items.flatMap((item) => {
-      const clusterId = itemReconciliationClusterId(item);
-      return clusterId ? [clusterId] : [];
-    }),
-  ]);
 }
 
 function calendarRangeLabel(input: {
@@ -486,17 +522,34 @@ function calendarRangeLabel(input: {
   allDay?: boolean | null;
   timezone: string;
 }): string | null {
-  if (!input.startAt || !input.endAt) return null;
   if (input.allDay) {
+    if (!input.startAt || !input.endAt) {
+      if (input.startAt) {
+        return `Starts ${formatDisplayDate(input.startAt, { timezone: input.timezone })}`;
+      }
+      if (input.endAt) {
+        return `Ends ${formatDisplayDate(input.endAt, { timezone: input.timezone })}`;
+      }
+      return null;
+    }
     const end = new Date(input.endAt);
     const displayEnd = Number.isNaN(end.getTime()) ? input.endAt : new Date(end.getTime() - 1);
     const startLabel = formatDisplayDate(input.startAt, { timezone: input.timezone });
     const endLabel = formatDisplayDate(displayEnd, { timezone: input.timezone });
     return startLabel === endLabel ? startLabel : `${startLabel} - ${endLabel}`;
   }
-  return `${formatDisplayDateTime(input.startAt, {
-    timezone: input.timezone,
-  })} -> ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
+  if (input.startAt && input.endAt) {
+    return `${formatDisplayDateTime(input.startAt, {
+      timezone: input.timezone,
+    })} -> ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
+  }
+  if (input.startAt) {
+    return `Starts ${formatDisplayDateTime(input.startAt, { timezone: input.timezone })}`;
+  }
+  if (input.endAt) {
+    return `Ends ${formatDisplayDateTime(input.endAt, { timezone: input.timezone })}`;
+  }
+  return null;
 }
 
 function proposedCalendarRange(item: SuggestionItem, timezone: string): string | null {
@@ -520,38 +573,12 @@ function calendarEventRange(event: CalendarResolutionEvent, timezone: string): s
   );
 }
 
-function calendarActionSummary(item: SuggestionItem): {
-  label: string;
-  icon: typeof CalendarClock;
-  tone: 'default' | 'warning' | 'danger';
-} {
-  const role = payloadString(item.proposedPayload, 'proposalRole');
-  if (item.operation === 'archive_or_cancel') {
-    return { label: 'Cancel', icon: CalendarX, tone: 'danger' };
-  }
-  if (item.operation === 'update' && role === 'selected_slot') {
-    return { label: 'Confirm slot', icon: CalendarClock, tone: 'default' };
-  }
-  if (item.operation === 'update') {
-    const moves =
-      payloadString(item.proposedPayload, 'startAt') ??
-      payloadString(item.proposedPayload, 'endAt');
-    return {
-      label: moves ? 'Move' : 'Update',
-      icon: moves ? MoveRight : CalendarClock,
-      tone: 'default',
-    };
-  }
-  if (item.calendarResolutionHint?.kind === 'exact_duplicate_reuse') {
-    return { label: 'Reuse existing', icon: CalendarClock, tone: 'warning' };
-  }
-  if (item.calendarResolutionHint?.kind === 'semantic_update_candidate') {
-    return { label: 'Possible match', icon: AlertTriangle, tone: 'warning' };
-  }
-  if (item.calendarResolutionHint?.kind === 'ambiguous_match') {
-    return { label: 'Needs review', icon: AlertTriangle, tone: 'warning' };
-  }
-  return { label: 'Create', icon: CalendarPlus, tone: 'default' };
+function approvalSourceLabel(bundle: SuggestionBundle): string {
+  if (bundle.source === 'chat') return 'From Ask';
+  const sources = uniqueStrings(
+    bundle.evidence.flatMap((evidence) => (evidence.source ? [evidence.source] : [])),
+  );
+  return sources.length === 1 ? evidenceSourceLabel(sources[0] ?? null) : 'From captured work';
 }
 
 function objectMergeHref(item: SuggestionItem): string {
@@ -629,6 +656,8 @@ function foldedSummaryText(
 
 export function ApprovalsClient({
   suggestions,
+  nextCursor = null,
+  status = 'pending',
   taskCategoriesEnabled = true,
   allowBulkAccept = true,
   allowBulkReject = true,
@@ -640,22 +669,32 @@ export function ApprovalsClient({
   const resolvedTimezone = timezone ?? workspaceTimezone;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [resolvedItemSignatures, setResolvedItemSignatures] = useState<Map<string, string>>(
-    () => new Map(),
-  );
-  const [busyItemIds, setBusyItemIds] = useState<Set<string>>(() => new Set());
-  const [actionFailedItemIds, setActionFailedItemIds] = useState<Set<string>>(() => new Set());
+  const [pageState, setPageState] = useState<{
+    extraSuggestions: SuggestionBundle[];
+    extraCursor: string | null;
+    paged: boolean;
+    loadError: string | null;
+  }>({ extraSuggestions: [], extraCursor: null, paged: false, loadError: null });
+  const [loadingMore, startLoadingMore] = useTransition();
+  const pageCursor = pageState.paged ? pageState.extraCursor : nextCursor;
+  const loadedSuggestions = useMemo(() => {
+    const seen = new Set(suggestions.map((bundle) => bundle.id));
+    return [...suggestions, ...pageState.extraSuggestions.filter((bundle) => !seen.has(bundle.id))];
+  }, [pageState.extraSuggestions, suggestions]);
+  const [
+    { error, selectedIds, previewItem, resolvedItemSignatures, busyItemIds, actionFailedItemIds },
+    dispatch,
+  ] = useReducer(approvalsQueueReducer, INITIAL_APPROVALS_QUEUE);
   const inFlightItemIdsRef = useRef<Set<string> | null>(null);
   inFlightItemIdsRef.current ??= new Set();
   const serverItemSignatures = useMemo(
     () =>
       new Map(
-        suggestions.flatMap((bundle) =>
+        loadedSuggestions.flatMap((bundle) =>
           bundle.items.map((item) => [item.id, suggestionItemSignature(item)] as const),
         ),
       ),
-    [suggestions],
+    [loadedSuggestions],
   );
   const effectiveResolvedItemIds = useMemo(() => {
     const next = new Set<string>();
@@ -666,47 +705,11 @@ export function ApprovalsClient({
   }, [resolvedItemSignatures, serverItemSignatures]);
   const visibleSuggestions = useMemo(
     () =>
-      suggestions.flatMap((bundle) => {
+      loadedSuggestions.flatMap((bundle) => {
         const items = bundle.items.filter((item) => !effectiveResolvedItemIds.has(item.id));
         return items.length > 0 ? [{ ...bundle, items }] : [];
       }),
-    [effectiveResolvedItemIds, suggestions],
-  );
-  const bulkAcceptSuggestions = visibleSuggestions.flatMap((bundle) => {
-    const itemIds = bundle.items.reduce<string[]>((ids, item) => {
-      if (
-        isActionableSuggestionStatus(item.status) &&
-        item.targetKind !== 'object_merge' &&
-        item.evidenceStatus !== 'stale'
-      ) {
-        ids.push(item.id);
-      }
-      return ids;
-    }, []);
-    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
-  });
-  const bulkAcceptItemCount = bulkAcceptSuggestions.reduce(
-    (sum, suggestion) => sum + suggestion.itemIds.length,
-    0,
-  );
-  const mergeReviewItemCount = visibleSuggestions.reduce(
-    (sum, bundle) =>
-      sum +
-      bundle.items.filter(
-        (item) => isActionableSuggestionStatus(item.status) && item.targetKind === 'object_merge',
-      ).length,
-    0,
-  );
-  const bulkRejectSuggestions = visibleSuggestions.flatMap((bundle) => {
-    const itemIds = bundle.items.reduce<string[]>((ids, item) => {
-      if (isActionableSuggestionStatus(item.status)) ids.push(item.id);
-      return ids;
-    }, []);
-    return itemIds.length > 0 ? [{ suggestionId: bundle.id, itemIds }] : [];
-  });
-  const bulkRejectItemCount = bulkRejectSuggestions.reduce(
-    (sum, suggestion) => sum + suggestion.itemIds.length,
-    0,
+    [effectiveResolvedItemIds, loadedSuggestions],
   );
   const visiblePendingItemCount = visibleSuggestions.reduce(
     (sum, bundle) =>
@@ -714,82 +717,61 @@ export function ApprovalsClient({
     0,
   );
 
-  function markBusy(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setBusyItemIds((previous) => new Set([...previous, ...itemIds]));
-  }
-
   function clearBusy(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setBusyItemIds((previous) => {
-      const next = new Set(previous);
-      for (const id of itemIds) next.delete(id);
-      return next;
-    });
-  }
-
-  function resolveItems(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setResolvedItemSignatures((previous) => {
-      const next = new Map(previous);
-      for (const id of itemIds) {
-        const signature = serverItemSignatures.get(id);
-        if (signature) next.set(id, signature);
-      }
-      return next;
-    });
+    dispatch({ type: 'clearBusy', itemIds });
   }
 
   function restoreItems(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setResolvedItemSignatures((previous) => {
-      const next = new Map(previous);
-      for (const id of itemIds) next.delete(id);
-      return next;
-    });
-  }
-
-  function clearActionFailures(itemIds: string[]) {
-    if (itemIds.length === 0) return;
-    setActionFailedItemIds((previous) => {
-      const next = new Set(previous);
-      for (const id of itemIds) next.delete(id);
-      return next;
-    });
+    dispatch({ type: 'restoreItems', itemIds });
   }
 
   function markActionFailures(itemIds: string[]) {
     if (itemIds.length === 0) return;
-    setActionFailedItemIds((previous) => new Set([...previous, ...itemIds]));
+    dispatch({ type: 'markFailures', itemIds });
   }
 
   function run(
     action: () => Promise<{ ok?: boolean; error?: string; failedItemIds?: string[] }>,
     optimisticItemIds: string[],
+    messages: { id: string; loading: string; success: string; error?: string },
   ) {
     const inFlightItemIds = inFlightItemIdsRef.current;
     if (!inFlightItemIds) return;
     if (optimisticItemIds.some((id) => inFlightItemIds.has(id))) return;
     for (const id of optimisticItemIds) inFlightItemIds.add(id);
-    setError(null);
-    clearActionFailures(optimisticItemIds);
-    resolveItems(optimisticItemIds);
-    markBusy(optimisticItemIds);
+    dispatch({
+      type: 'beginRun',
+      itemIds: optimisticItemIds,
+      signatures: serverItemSignatures,
+    });
     startTransition(async () => {
       try {
-        const result = await action();
+        const result = await notifyAction({
+          id: messages.id,
+          loading: messages.loading.endsWith('…') ? messages.loading : `${messages.loading}…`,
+          success: messages.success,
+          error: messages.error ?? 'Couldn’t finish this action',
+          run: action,
+        });
         if (result.error) {
           const failedItemIds =
-            result.failedItemIds?.filter((id) => optimisticItemIds.includes(id)) ?? [];
+            'failedItemIds' in result
+              ? (result.failedItemIds ?? []).filter((id) => optimisticItemIds.includes(id))
+              : [];
           const restoreItemIds = failedItemIds.length > 0 ? failedItemIds : optimisticItemIds;
           restoreItems(restoreItemIds);
           markActionFailures(restoreItemIds);
-          setError(result.error);
+          dispatch({ type: 'setError', error: result.error });
         }
       } catch (err) {
         restoreItems(optimisticItemIds);
         markActionFailures(optimisticItemIds);
-        setError(err instanceof Error ? err.message : 'Approval action failed');
+        dispatch({
+          type: 'setError',
+          error: err instanceof Error ? err.message : 'Approval action failed',
+        });
       } finally {
         for (const id of optimisticItemIds) inFlightItemIdsRef.current?.delete(id);
         clearBusy(optimisticItemIds);
@@ -798,7 +780,33 @@ export function ApprovalsClient({
     });
   }
 
-  if (suggestions.length === 0) {
+  function loadMore(): void {
+    if (!pageCursor || loadingMore) return;
+    startLoadingMore(async () => {
+      const page = await loadSuggestionsPageAction({ cursor: pageCursor, status });
+      if (page.error) {
+        setPageState((current) => ({
+          ...current,
+          loadError: page.error ?? 'Could not load more.',
+        }));
+        return;
+      }
+      setPageState((current) => {
+        const seen = new Set(current.extraSuggestions.map((bundle) => bundle.id));
+        return {
+          extraSuggestions: [
+            ...current.extraSuggestions,
+            ...page.suggestions.filter((bundle) => !seen.has(bundle.id)),
+          ],
+          extraCursor: page.nextCursor,
+          paged: true,
+          loadError: null,
+        };
+      });
+    });
+  }
+
+  if (loadedSuggestions.length === 0 && pageCursor === null) {
     return (
       <EmptyAction
         title={emptyState?.title ?? 'No pending approvals'}
@@ -813,23 +821,69 @@ export function ApprovalsClient({
   }
 
   const body = (
-    <ApprovalListBody
-      allowBulkAccept={allowBulkAccept}
-      allowBulkReject={allowBulkReject}
-      bulkAcceptItemCount={bulkAcceptItemCount}
-      bulkAcceptSuggestions={bulkAcceptSuggestions}
-      mergeReviewItemCount={mergeReviewItemCount}
-      bulkRejectItemCount={bulkRejectItemCount}
-      bulkRejectSuggestions={bulkRejectSuggestions}
-      actionFailedItemIds={actionFailedItemIds}
-      busyItemIds={busyItemIds}
-      error={error}
-      pending={pending}
-      run={run}
-      timezone={resolvedTimezone}
-      taskCategoriesEnabled={taskCategoriesEnabled}
-      visibleSuggestions={visibleSuggestions}
-    />
+    <>
+      <ApprovalListBody
+        allowBulkAccept={allowBulkAccept}
+        allowBulkReject={allowBulkReject}
+        actionFailedItemIds={actionFailedItemIds}
+        busyItemIds={busyItemIds}
+        error={error ?? pageState.loadError}
+        hasMore={pageCursor !== null}
+        loadingMore={loadingMore}
+        onLoadMore={loadMore}
+        pending={pending}
+        run={run}
+        selectedIds={selectedIds}
+        timezone={resolvedTimezone}
+        taskCategoriesEnabled={taskCategoriesEnabled}
+        visibleSuggestions={visibleSuggestions}
+        onPreview={(bundle, item) => {
+          dispatch({ type: 'openPreview', bundle, item });
+        }}
+        onSelectedChange={(itemId, checked) => {
+          dispatch({ type: 'selectChange', itemId, checked });
+        }}
+        onSelectedMany={(itemIds, checked) => {
+          dispatch({ type: 'selectMany', itemIds, checked });
+        }}
+        onClearSelection={() => {
+          dispatch({ type: 'clearSelection' });
+        }}
+      />
+      {previewItem ? (
+        <ApprovalPreviewDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) dispatch({ type: 'closePreview' });
+          }}
+          item={previewItem.item}
+          timezone={resolvedTimezone}
+          actionLabel={itemActionLabel(previewItem.item)}
+          acceptDisabled={previewItem.item.evidenceStatus === 'stale'}
+          busy={busyItemIds.has(previewItem.item.id)}
+          pending={pending}
+          mergeHref={
+            previewItem.item.targetKind === 'object_merge'
+              ? objectMergeHref(previewItem.item)
+              : null
+          }
+          onAccept={() => {
+            run(
+              () => acceptSuggestionItemAction({ itemId: previewItem.item.id }),
+              [previewItem.item.id],
+              decisionMessages('accept', 1, previewItem.item.title, previewItem.item.id),
+            );
+          }}
+          onReject={() => {
+            run(
+              () => rejectSuggestionItemAction({ itemId: previewItem.item.id }),
+              [previewItem.item.id],
+              decisionMessages('reject', 1, previewItem.item.title, previewItem.item.id),
+            );
+          }}
+        />
+      ) : null}
+    </>
   );
 
   if (!folded) return body;
@@ -852,268 +906,330 @@ export function ApprovalsClient({
   );
 }
 
+function decisionMessages(
+  kind: 'accept' | 'reject',
+  count: number,
+  title?: string,
+  itemId?: string,
+): { id: string; loading: string; success: string } {
+  const id = count === 1 && itemId ? `approval:${itemId}:${kind}` : `approval:bulk-${kind}`;
+  if (count === 1) {
+    const label = displayText(title ?? 'proposal');
+    return kind === 'accept'
+      ? { id, loading: 'Accepting proposal', success: `Accepted ${label}` }
+      : { id, loading: 'Rejecting proposal', success: `Rejected ${label}` };
+  }
+  return kind === 'accept'
+    ? { id, loading: `Accepting ${count} proposals`, success: `Accepted ${count} proposals` }
+    : { id, loading: `Rejecting ${count} proposals`, success: `Rejected ${count} proposals` };
+}
+
 function ApprovalListBody({
   allowBulkAccept,
   allowBulkReject,
-  bulkAcceptItemCount,
-  bulkAcceptSuggestions,
-  mergeReviewItemCount,
-  bulkRejectItemCount,
-  bulkRejectSuggestions,
   actionFailedItemIds,
   busyItemIds,
   error,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   pending,
   run,
+  selectedIds,
   timezone,
   taskCategoriesEnabled,
   visibleSuggestions,
+  onPreview,
+  onSelectedChange,
+  onSelectedMany,
+  onClearSelection,
 }: {
   allowBulkAccept: boolean;
   allowBulkReject: boolean;
-  bulkAcceptItemCount: number;
-  bulkAcceptSuggestions: { suggestionId: string; itemIds: string[] }[];
-  mergeReviewItemCount: number;
-  bulkRejectItemCount: number;
-  bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
   actionFailedItemIds: Set<string>;
   busyItemIds: Set<string>;
   error: string | null;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   pending: boolean;
   run: ApprovalAction;
+  selectedIds: Set<string>;
   timezone: string;
   taskCategoriesEnabled: boolean;
   visibleSuggestions: SuggestionBundle[];
+  onPreview: (bundle: SuggestionBundle, item: SuggestionItem) => void;
+  onSelectedChange: (itemId: string, checked: boolean) => void;
+  onSelectedMany: (itemIds: string[], checked: boolean) => void;
+  onClearSelection: () => void;
 }) {
+  const selectable = allowBulkAccept || allowBulkReject;
+  const selectedItems: SuggestionItem[] = [];
+  const selectedAccept: SuggestionItem[] = [];
+  const selectedByBundle: { suggestionId: string; itemIds: string[] }[] = [];
+  const selectedAcceptByBundle: { suggestionId: string; itemIds: string[] }[] = [];
+  const actionableIds: string[] = [];
+  for (const bundle of visibleSuggestions) {
+    const bundleItemIds: string[] = [];
+    const acceptItemIds: string[] = [];
+    for (const item of bundle.items) {
+      if (!isActionableSuggestionStatus(item.status)) continue;
+      actionableIds.push(item.id);
+      if (!selectedIds.has(item.id)) continue;
+      selectedItems.push(item);
+      bundleItemIds.push(item.id);
+      if (item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale') {
+        selectedAccept.push(item);
+        acceptItemIds.push(item.id);
+      }
+    }
+    if (bundleItemIds.length > 0) {
+      selectedByBundle.push({ suggestionId: bundle.id, itemIds: bundleItemIds });
+    }
+    if (acceptItemIds.length > 0) {
+      selectedAcceptByBundle.push({ suggestionId: bundle.id, itemIds: acceptItemIds });
+    }
+  }
+  const allVisibleSelected =
+    actionableIds.length > 0 && actionableIds.every((id) => selectedIds.has(id));
+
   return (
-    <div className="space-y-3">
-      {error ? <ApprovalError message={error} /> : null}
-      {(allowBulkAccept && bulkAcceptItemCount > 1) ||
-      (allowBulkReject && bulkRejectItemCount > 1) ? (
-        <PageBulkActions
-          bulkAcceptSuggestions={bulkAcceptSuggestions}
-          bulkRejectSuggestions={bulkRejectSuggestions}
-          canAccept={allowBulkAccept && bulkAcceptItemCount > 1}
-          canReject={allowBulkReject && bulkRejectItemCount > 1}
-          disabled={pending}
-          mergeReviewItemCount={mergeReviewItemCount}
-          run={run}
+    <div className="space-y-0">
+      {error ? (
+        <p className="sr-only" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {selectable ? (
+        <SelectionBar
+          count={selectedItems.length}
+          label={selectedItems.length === 1 ? 'proposal selected' : 'proposals selected'}
+          onClear={onClearSelection}
+          actions={
+            <>
+              {allowBulkReject ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={pending || selectedItems.length === 0}
+                  onClick={() => {
+                    run(
+                      () => rejectVisibleSuggestionsAction({ suggestions: selectedByBundle }),
+                      selectedItems.map((item) => item.id),
+                      decisionMessages('reject', selectedItems.length),
+                    );
+                  }}
+                >
+                  <X className="size-4" />
+                  Reject
+                </Button>
+              ) : null}
+              {allowBulkAccept ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={pending || selectedAccept.length === 0}
+                  onClick={() => {
+                    run(
+                      () => acceptVisibleSuggestionsAction({ suggestions: selectedAcceptByBundle }),
+                      selectedAccept.map((item) => item.id),
+                      decisionMessages('accept', selectedAccept.length),
+                    );
+                  }}
+                >
+                  <Check className="size-4" />
+                  Accept
+                </Button>
+              ) : null}
+            </>
+          }
         />
       ) : null}
       {pending && visibleSuggestions.length === 0 ? <ApprovalUpdatingState /> : null}
-      {visibleSuggestions.map((bundle) => (
-        <ApprovalBundleRow
-          allowBulkAccept={allowBulkAccept}
-          actionFailedItemIds={actionFailedItemIds}
-          bundle={bundle}
-          busyItemIds={busyItemIds}
-          key={bundle.id}
-          pending={pending}
-          run={run}
-          timezone={timezone}
-          taskCategoriesEnabled={taskCategoriesEnabled}
+      <div>
+        {selectable && actionableIds.length > 0 ? (
+          <div className="flex min-h-10 items-center border-b border-border bg-surface/70 px-1 sm:px-2">
+            <ApprovalSelectAllControl
+              checked={allVisibleSelected}
+              count={actionableIds.length}
+              label="Select all visible proposals"
+              visibleLabel="Select all visible"
+              onChange={(checked) => {
+                onSelectedMany(actionableIds, checked);
+              }}
+            />
+          </div>
+        ) : null}
+        <VirtualList
+          items={visibleSuggestions}
+          getItemKey={(bundle) => bundle.id}
+          estimateSize={220}
+          renderItem={(bundle) => (
+            <ApprovalBundleRow
+              actionFailedItemIds={actionFailedItemIds}
+              bundle={bundle}
+              busyItemIds={busyItemIds}
+              pending={pending}
+              run={run}
+              selectable={selectable}
+              selectedIds={selectedIds}
+              selectionActive={selectedItems.length > 0}
+              timezone={timezone}
+              taskCategoriesEnabled={taskCategoriesEnabled}
+              onPreview={onPreview}
+              onSelectedChange={onSelectedChange}
+              onSelectedMany={onSelectedMany}
+            />
+          )}
         />
-      ))}
+      </div>
+      <InfiniteScroll
+        hasMore={hasMore}
+        loading={loadingMore}
+        error={null}
+        onLoadMore={onLoadMore}
+        boundLabel="No more matching approvals"
+        hideBound={visibleSuggestions.length === 0 && !hasMore}
+      />
     </div>
   );
 }
 
 function ApprovalUpdatingState() {
-  return (
-    <output className="border border-border bg-muted/30 px-3 py-2 text-xs text-fg-dim">
-      Updating approvals...
-    </output>
-  );
+  return <output className="px-3 py-2 text-xs text-fg-dim">Updating approvals…</output>;
 }
 
-function ApprovalError({ message }: { message: string }) {
-  return (
-    <div
-      aria-live="assertive"
-      className="border border-danger/40 px-3 py-2 text-sm text-danger"
-      role="alert"
-    >
-      {message}
-    </div>
-  );
-}
-
-function PageBulkActions({
-  bulkAcceptSuggestions,
-  bulkRejectSuggestions,
-  canAccept,
-  canReject,
-  disabled,
-  mergeReviewItemCount,
-  run,
+function ApprovalSelectAllControl({
+  checked,
+  count,
+  label,
+  onChange,
+  visibleLabel,
 }: {
-  bulkAcceptSuggestions: { suggestionId: string; itemIds: string[] }[];
-  bulkRejectSuggestions: { suggestionId: string; itemIds: string[] }[];
-  canAccept: boolean;
-  canReject: boolean;
-  disabled: boolean;
-  mergeReviewItemCount: number;
-  run: ApprovalAction;
+  checked: boolean;
+  count: number;
+  label: string;
+  onChange: (checked: boolean) => void;
+  visibleLabel?: string;
 }) {
-  const bulkAcceptItemCount = bulkAcceptSuggestions.reduce(
-    (sum, suggestion) => sum + suggestion.itemIds.length,
-    0,
-  );
-  const visibleActionableItemCount = bulkRejectSuggestions.reduce(
-    (sum, suggestion) => sum + suggestion.itemIds.length,
-    0,
-  );
   return (
-    <div className="flex min-h-11 flex-wrap items-center justify-end gap-2 border-y border-signal/30 bg-signal-soft px-3 py-1.5">
-      {canAccept && mergeReviewItemCount > 0 ? (
-        <span className="text-xs text-fg-dim">
-          {mergeReviewItemCount} merge{' '}
-          {mergeReviewItemCount === 1 ? 'proposal needs' : 'proposals need'} review
-        </span>
+    <label className="flex min-h-10 min-w-0 items-center gap-2 px-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={count === 0}
+        aria-label={label}
+        className="size-4 rounded-sm border-border accent-signal"
+        onChange={(event) => {
+          onChange(event.currentTarget.checked);
+        }}
+      />
+      {visibleLabel ? (
+        <>
+          <span aria-hidden="true" className="truncate text-xs font-medium text-fg">
+            {visibleLabel}
+          </span>
+          <span aria-hidden="true" className="font-mono tabular-nums text-fg-dim">
+            {count}
+          </span>
+        </>
       ) : null}
-      {canReject ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="destructive"
-          disabled={disabled}
-          onClick={() => {
-            run(
-              () => rejectVisibleSuggestionsAction({ suggestions: bulkRejectSuggestions }),
-              bulkRejectSuggestions.flatMap((suggestion) => suggestion.itemIds),
-            );
-          }}
-        >
-          <X className="size-4" />
-          Reject all visible
-        </Button>
-      ) : null}
-      {canAccept ? (
-        <Button
-          type="button"
-          size="sm"
-          disabled={disabled}
-          onClick={() => {
-            run(
-              () => acceptVisibleSuggestionsAction({ suggestions: bulkAcceptSuggestions }),
-              bulkAcceptSuggestions.flatMap((suggestion) => suggestion.itemIds),
-            );
-          }}
-        >
-          <CheckCheck className="size-4" />
-          {bulkAcceptItemCount < visibleActionableItemCount
-            ? `Accept ${bulkAcceptItemCount} visible`
-            : 'Accept all visible'}
-        </Button>
-      ) : null}
-    </div>
+    </label>
   );
 }
 
 function ApprovalBundleRow({
-  allowBulkAccept,
   actionFailedItemIds,
   bundle,
   busyItemIds,
   pending,
   run,
+  selectable,
+  selectedIds,
+  selectionActive,
   timezone,
   taskCategoriesEnabled,
+  onPreview,
+  onSelectedChange,
+  onSelectedMany,
 }: {
-  allowBulkAccept: boolean;
   actionFailedItemIds: Set<string>;
   bundle: SuggestionBundle;
   busyItemIds: Set<string>;
   pending: boolean;
   run: ApprovalAction;
+  selectable: boolean;
+  selectedIds: Set<string>;
+  selectionActive: boolean;
   timezone: string;
   taskCategoriesEnabled: boolean;
+  onPreview: (bundle: SuggestionBundle, item: SuggestionItem) => void;
+  onSelectedChange: (itemId: string, checked: boolean) => void;
+  onSelectedMany: (itemIds: string[], checked: boolean) => void;
 }) {
-  const pendingItems = bundle.items.filter((item) => isActionableSuggestionStatus(item.status));
-  const bulkAcceptItems = pendingItems.filter(
-    (item) => item.targetKind !== 'object_merge' && item.evidenceStatus !== 'stale',
-  );
-  const mergeReviewCount = pendingItems.length - bulkAcceptItems.length;
-  return (
-    <article className="border-t border-border">
-      <div className="flex min-h-11 flex-wrap items-center gap-3 bg-surface/70 px-3 py-1.5">
-        <ApprovalBundleHeader bundle={bundle} timezone={timezone} />
-        {allowBulkAccept && bulkAcceptItems.length > 1 ? (
-          <Button
-            type="button"
-            size="sm"
-            disabled={pending}
-            onClick={() => {
-              run(
-                () =>
-                  acceptAllSuggestionAction({
-                    suggestionId: bundle.id,
-                    itemIds: bulkAcceptItems.map((item) => item.id),
-                  }),
-                bulkAcceptItems.map((item) => item.id),
-              );
-            }}
-          >
-            <CheckCheck className="size-4" />
-            {mergeReviewCount > 0 ? `Accept ${bulkAcceptItems.length}` : 'Accept all'}
-          </Button>
-        ) : null}
+  const bundleActionableIds: string[] = [];
+  for (const item of bundle.items) {
+    if (isActionableSuggestionStatus(item.status)) bundleActionableIds.push(item.id);
+  }
+  const bundleAllSelected =
+    bundleActionableIds.length > 0 && bundleActionableIds.every((id) => selectedIds.has(id));
+  const items = (
+    <>
+      {bundle.items.map((item) => (
+        <ApprovalItemRow
+          actionFailed={actionFailedItemIds.has(item.id)}
+          bundle={bundle}
+          busy={busyItemIds.has(item.id)}
+          item={item}
+          key={item.id}
+          pending={pending}
+          run={run}
+          selectable={selectable}
+          selected={selectedIds.has(item.id)}
+          selectionActive={selectionActive}
+          timezone={timezone}
+          taskCategoriesEnabled={taskCategoriesEnabled}
+          onPreview={() => {
+            onPreview(bundle, item);
+          }}
+          onSelectedChange={(checked) => {
+            onSelectedChange(item.id, checked);
+          }}
+        />
+      ))}
+      <div className="px-3">
+        <ApprovalEvidence bundle={bundle} timezone={timezone} />
       </div>
-      <ul className="divide-y divide-border border-x border-border bg-bg">
-        {bundle.items.map((item) => (
-          <ApprovalItemRow
-            bundle={bundle}
-            actionFailed={actionFailedItemIds.has(item.id)}
-            busy={busyItemIds.has(item.id)}
-            item={item}
-            key={item.id}
-            pending={pending}
-            run={run}
-            timezone={timezone}
-            taskCategoriesEnabled={taskCategoriesEnabled}
-          />
-        ))}
-      </ul>
-      <ApprovalEvidence bundle={bundle} timezone={timezone} />
-      <ApprovalProcessingDetails bundle={bundle} />
+    </>
+  );
+  if (bundle.items.length === 1) {
+    return <article>{items}</article>;
+  }
+  const bundleTitle = displayText(bundle.title, { timezone });
+  return (
+    <article>
+      <CollectionGroup
+        count={bundle.items.length}
+        title={bundleTitle}
+        actions={
+          selectable && bundleActionableIds.length > 0 ? (
+            <ApprovalSelectAllControl
+              checked={bundleAllSelected}
+              count={bundleActionableIds.length}
+              label={`Select all ${bundleTitle} proposals`}
+              onChange={(checked) => {
+                onSelectedMany(bundleActionableIds, checked);
+              }}
+            />
+          ) : undefined
+        }
+      >
+        {items}
+      </CollectionGroup>
     </article>
   );
-}
-
-function ApprovalBundleHeader({
-  bundle,
-  timezone,
-}: {
-  bundle: SuggestionBundle;
-  timezone: string;
-}) {
-  const source = approvalSourceLabel(bundle);
-  return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5">
-      <h2 className="min-w-0 truncate text-sm font-semibold text-fg">
-        {displayText(bundle.title, { timezone })}
-      </h2>
-      <div className="text-[11px] text-fg-dim">
-        {source} ·{' '}
-        <time className="font-mono tabular-nums" dateTime={bundle.createdAt}>
-          {formatDisplayDateTime(bundle.createdAt, { timezone })}
-        </time>
-      </div>
-      {bundle.summary ? (
-        <p className="basis-full truncate text-xs text-fg-muted">
-          {displayText(bundle.summary, { timezone })}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function approvalSourceLabel(bundle: SuggestionBundle): string {
-  if (bundle.source === 'chat') return 'From Ask';
-  const sources = uniqueStrings(
-    bundle.evidence.flatMap((evidence) => (evidence.source ? [evidence.source] : [])),
-  );
-  return sources.length === 1 ? evidenceSourceLabel(sources[0] ?? null) : 'From captured work';
 }
 
 function ApprovalItemRow({
@@ -1123,8 +1239,13 @@ function ApprovalItemRow({
   item,
   pending,
   run,
+  selectable,
+  selected,
+  selectionActive,
   timezone,
   taskCategoriesEnabled,
+  onPreview,
+  onSelectedChange,
 }: {
   actionFailed: boolean;
   bundle: SuggestionBundle;
@@ -1132,65 +1253,82 @@ function ApprovalItemRow({
   item: SuggestionItem;
   pending: boolean;
   run: ApprovalAction;
+  selectable: boolean;
+  selected: boolean;
+  selectionActive: boolean;
   timezone: string;
   taskCategoriesEnabled: boolean;
+  onPreview: () => void;
+  onSelectedChange: (checked: boolean) => void;
 }) {
-  return (
-    <li className="grid min-h-11 gap-2 px-3 py-2 md:grid-cols-[minmax(0,1.3fr)_minmax(10rem,0.8fr)_minmax(9rem,auto)] md:items-center">
-      <ApprovalItemMain actionFailed={actionFailed} item={item} timezone={timezone} />
-      <ApprovalItemPayload
-        bundle={bundle}
-        item={item}
-        timezone={timezone}
-        taskCategoriesEnabled={taskCategoriesEnabled}
-      />
-      {isActionableSuggestionStatus(item.status) ? (
-        <ApprovalItemActions
-          acceptDisabled={item.evidenceStatus === 'stale'}
-          busy={busy}
-          item={item}
-          pending={pending}
-          run={run}
-        />
-      ) : null}
-      <ApprovalItemEvidence item={item} timezone={timezone} />
-    </li>
-  );
-}
-
-function ApprovalItemMain({
-  actionFailed,
-  item,
-  timezone,
-}: {
-  actionFailed: boolean;
-  item: SuggestionItem;
-  timezone: string;
-}) {
+  const title = displayText(item.title, { timezone });
+  const source = approvalSourceLabel(bundle);
+  const context = `${itemActionLabel(item)} · ${source} · ${formatDisplayDateTime(bundle.createdAt, { timezone })}`;
   const actionFailureReason = actionFailed ? localActionFailureReason(item) : null;
   return (
-    <div className="min-w-0 self-center">
-      {item.status !== 'pending' ? (
-        <div className="text-xs text-fg-dim">{itemStatusLabel(item.status)}</div>
-      ) : null}
-      <div
-        className={item.status === 'pending' ? 'font-medium text-fg' : 'mt-1 font-medium text-fg'}
-      >
-        {displayText(item.title, { timezone })}
-      </div>
-      {item.description ? (
-        <p className="mt-1 text-sm text-fg-muted">{displayText(item.description, { timezone })}</p>
-      ) : null}
+    <div>
+      <CollectionRow selected={selected} onActivate={onPreview} activateLabel={`Open ${title}`}>
+        <CollectionRow.Leading>
+          {selectable && isActionableSuggestionStatus(item.status) ? (
+            <input
+              type="checkbox"
+              checked={selected}
+              aria-label={`Select ${title}`}
+              data-row-ignore=""
+              className={`size-4 accent-signal ${
+                selected || selectionActive
+                  ? 'opacity-100'
+                  : 'opacity-0 group-hover/collection-row:opacity-100 group-focus-within/collection-row:opacity-100'
+              }`}
+              onChange={(event) => {
+                onSelectedChange(event.currentTarget.checked);
+              }}
+            />
+          ) : (
+            <span className="size-4" aria-hidden="true" />
+          )}
+        </CollectionRow.Leading>
+        <CollectionRow.Title>{title}</CollectionRow.Title>
+        <CollectionRow.Context>{context}</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          <ApprovalRowMetadata
+            bundle={bundle}
+            item={item}
+            timezone={timezone}
+            taskCategoriesEnabled={taskCategoriesEnabled}
+          />
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
+          {isActionableSuggestionStatus(item.status) ? (
+            <ApprovalItemActions
+              acceptDisabled={item.evidenceStatus === 'stale'}
+              busy={busy}
+              item={item}
+              pending={pending}
+              run={run}
+              onPreview={onPreview}
+            />
+          ) : (
+            <span className="text-[11px] text-fg-dim">{itemStatusLabel(item.status)}</span>
+          )}
+        </CollectionRow.Actions>
+      </CollectionRow>
       {actionFailureReason ? (
-        <p className="mt-1 text-xs text-danger">{actionFailureReason}</p>
+        <p className="px-3 pb-2 text-xs text-danger">{actionFailureReason}</p>
       ) : actionFailed ? (
-        <p className="mt-1 text-xs text-danger">Needs attention</p>
+        <p className="px-3 pb-2 text-xs text-danger">Needs attention</p>
       ) : null}
+      {item.failureReason ? (
+        <p className="px-3 pb-2 text-xs text-danger">{displayText(item.failureReason)}</p>
+      ) : null}
+      <ApprovalCalendarHint item={item} timezone={timezone} />
+      <ApprovalItemDependency item={item} bundle={bundle} />
+      <ApprovalItemEvidence item={item} timezone={timezone} />
     </div>
   );
 }
 
-function ApprovalItemPayload({
+function ApprovalRowMetadata({
   bundle,
   item,
   timezone,
@@ -1201,256 +1339,47 @@ function ApprovalItemPayload({
   timezone: string;
   taskCategoriesEnabled: boolean;
 }) {
-  if (item.targetKind === 'calendar_event') {
-    return <CalendarApprovalPayload item={item} timezone={timezone} />;
+  const relationship = relationshipPayloadSummary(item, bundle);
+  if (relationship) {
+    return <span className="text-[11px] text-fg-dim">{relationship}</span>;
   }
-  if (item.targetKind === 'task' && item.operation === 'create') {
-    return (
-      <TaskApprovalPayload
-        bundle={bundle}
-        item={item}
-        taskCategoriesEnabled={taskCategoriesEnabled}
-        timezone={timezone}
-      />
-    );
-  }
-  const relationshipSummary = relationshipPayloadSummary(item, bundle);
-  const fields = relationshipSummary
-    ? []
-    : formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation);
-  return (
-    <div className="min-w-0 self-center">
-      <div className="text-xs text-fg-dim">{itemActionLabel(item)}</div>
-      {relationshipSummary ? (
-        <p className="mt-1 line-clamp-2 break-words text-xs text-fg-dim">{relationshipSummary}</p>
-      ) : (
-        <ApprovalPayloadSummary fields={fields} />
-      )}
-      {item.failureReason ? (
-        <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
-      ) : null}
-      <ApprovalItemDependency item={item} bundle={bundle} />
-    </div>
-  );
-}
-
-function TaskApprovalPayload({
-  bundle,
-  item,
-  taskCategoriesEnabled,
-  timezone,
-}: {
-  bundle: SuggestionBundle;
-  item: SuggestionItem;
-  taskCategoriesEnabled: boolean;
-  timezone?: string;
-}) {
-  const router = useRouter();
-  const [saving, startSaving] = useTransition();
-  const { query, setQuery, projects } = useProjectSearch();
-  const [error, setError] = useState<string | null>(null);
-  const category = payloadString(item.proposedPayload, 'taskCategory') as TaskCategory | null;
-  const categoryMode = payloadString(item.proposedPayload, 'taskCategoryMode');
+  const fields = formatPayloadFields(item.proposedPayload, timezone, item.title, item.operation)
+    .filter((field) => {
+      if (field.key === 'description' || field.key === 'notes') return false;
+      if (
+        item.targetKind === 'calendar_event' &&
+        (field.key === 'startAt' ||
+          field.key === 'endAt' ||
+          field.key === 'startDate' ||
+          field.key === 'endDate' ||
+          field.key === 'timezone' ||
+          field.key === 'allDay')
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .slice(0, 3);
+  const category =
+    taskCategoriesEnabled && item.targetKind === 'task'
+      ? (payloadString(item.proposedPayload, 'taskCategory') as TaskCategory | null)
+      : null;
   const projectName =
     payloadString(item.proposedPayload, 'parentName') ??
     payloadString(item.proposedPayload, 'projectName') ??
     payloadString(item.proposedPayload, 'createProjectName');
-  const createsProject = Boolean(payloadString(item.proposedPayload, 'createProjectName'));
-  const payloadFields = formatPayloadFields(
-    item.proposedPayload,
-    timezone,
-    item.title,
-    item.operation,
-  ).filter(
-    (field) =>
-      !field.key.startsWith('taskCategory') &&
-      field.key !== 'parentName' &&
-      field.key !== 'projectName' &&
-      field.key !== 'createProjectName',
-  );
-
-  function revise(input: {
-    category?: TaskCategory | 'automatic';
-    project?:
-      | { kind: 'none' }
-      | { kind: 'existing'; projectId: string }
-      | { kind: 'create'; projectName: string };
-  }): void {
-    setError(null);
-    startSaving(async () => {
-      const result = await reviseTaskSuggestionItemAction({ itemId: item.id, ...input });
-      if (result.error) setError(result.error);
-      else router.refresh();
-    });
-  }
-
-  return (
-    <div className="min-w-0 self-center space-y-2">
-      <div className="font-mono text-[11px] uppercase tracking-[0.12em] text-fg-dim">
-        {itemActionLabel(item)}
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {taskCategoriesEnabled ? (
-          <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
-            Category · {category ? taskCategoryLabel(category) : 'Automatic after accept'}
-          </span>
-        ) : null}
-        <span className="rounded-sm border border-border bg-muted/30 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg">
-          Project ·{' '}
-          {projectName ? `${createsProject ? 'Create or reuse ' : ''}${projectName}` : 'None'}
-        </span>
-      </div>
-      <ApprovalPayloadSummary fields={payloadFields} />
-      {taskCategoriesEnabled && category && categoryMode !== 'manual' ? (
-        <p className="text-xs text-fg-dim">
-          AI-proposed category; accepting applies it only if context still matches.
-        </p>
-      ) : null}
-      {item.evidenceStatus !== 'stale' ? (
-        <details className="group border-l border-border pl-2">
-          <summary className="inline-flex cursor-pointer items-center gap-1 font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-fg">
-            <Pencil className="size-3" /> Edit proposal
-          </summary>
-          <div className="mt-2 grid gap-2">
-            {taskCategoriesEnabled ? (
-              <label className="grid gap-1 text-xs text-fg-muted">
-                Category
-                <select
-                  aria-label={`Category for ${item.title}`}
-                  value={
-                    categoryMode === 'manual' && category
-                      ? category
-                      : category
-                        ? 'suggested'
-                        : 'automatic'
-                  }
-                  disabled={saving}
-                  onChange={(event) => {
-                    revise({ category: event.currentTarget.value as TaskCategory | 'automatic' });
-                  }}
-                  className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-                >
-                  {category && categoryMode !== 'manual' ? (
-                    <option value="suggested" disabled>
-                      AI suggestion — {taskCategoryLabel(category)}
-                    </option>
-                  ) : null}
-                  <option value="automatic">Automatic after accept</option>
-                  {TASK_CATEGORY_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <label className="grid gap-1 text-xs text-fg-muted">
-              Find or name a project
-              <input
-                type="search"
-                value={query}
-                disabled={saving}
-                onChange={(event) => {
-                  setQuery(event.currentTarget.value);
-                }}
-                placeholder="Search projects or type a new name"
-                className="h-8 rounded-sm border border-border bg-bg px-2 text-xs text-fg"
-              />
-            </label>
-            {query.trim() ? (
-              <div className="flex flex-wrap gap-1">
-                {projects.map((project) => (
-                  <button
-                    key={project.id}
-                    type="button"
-                    disabled={saving}
-                    onClick={() => {
-                      revise({ project: { kind: 'existing', projectId: project.id } });
-                    }}
-                    className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
-                  >
-                    Use {displayText(project.label)}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => {
-                    revise({ project: { kind: 'create', projectName: query.trim() } });
-                  }}
-                  className="rounded-sm border border-border px-2 py-1 text-xs text-fg hover:border-signal"
-                >
-                  Create “{displayText(query.trim())}”
-                </button>
-              </div>
-            ) : null}
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => {
-                revise({ project: { kind: 'none' } });
-              }}
-              className="w-fit font-mono text-[10px] uppercase tracking-[0.1em] text-fg-dim hover:text-danger"
-            >
-              No project
-            </button>
-          </div>
-        </details>
-      ) : null}
-      {error ? <p className="text-xs text-danger">{error}</p> : null}
-      {item.failureReason ? (
-        <p className="text-xs text-danger">{displayText(item.failureReason)}</p>
-      ) : null}
-      <ApprovalItemDependency item={item} bundle={bundle} />
-    </div>
-  );
-}
-
-function ApprovalPayloadSummary({ fields }: { fields: FormattedPayloadField[] }) {
-  const visibleFields = fields.slice(0, MAX_INLINE_PAYLOAD_FIELDS);
-  const overflowFields = fields.slice(MAX_INLINE_PAYLOAD_FIELDS);
-  const hasLongVisibleField = visibleFields.some(
-    (field) => field.value.length > MAX_INLINE_PAYLOAD_VALUE_LENGTH,
-  );
-  const canExpand = hasLongVisibleField || overflowFields.length > 0;
-  const summary = visibleFields.map((field) => payloadFieldText(field, true)).join(' · ');
   return (
     <>
-      {summary ? (
-        <p className={`mt-1 break-words text-xs text-fg-dim${canExpand ? ' line-clamp-2' : ''}`}>
-          {summary}
-        </p>
+      {category ? (
+        <span className="text-[11px] text-fg-dim">{taskCategoryLabel(category)}</span>
       ) : null}
-      <ApprovalPayloadDisclosure
-        fields={canExpand ? fields : []}
-        overflowCount={overflowFields.length}
-      />
+      {projectName ? <span className="text-[11px] text-fg-dim">{projectName}</span> : null}
+      {fields.map((field) => (
+        <span className="text-[11px] text-fg-dim" key={field.key}>
+          {payloadFieldText(field, true)}
+        </span>
+      ))}
     </>
-  );
-}
-
-function ApprovalPayloadDisclosure({
-  fields,
-  overflowCount,
-}: {
-  fields: FormattedPayloadField[];
-  overflowCount: number;
-}) {
-  if (fields.length === 0) return null;
-  return (
-    <details className="mt-2 text-xs text-fg-dim">
-      <summary className="cursor-pointer hover:text-fg">
-        {overflowCount > 0 ? `Show all ${fields.length} changes` : 'Show full change'}
-      </summary>
-      <dl className="mt-2 grid gap-2 border-l border-border pl-2">
-        {fields.map((field) => (
-          <div key={field.key}>
-            <dt className="text-xs font-medium text-fg-muted">{field.label}</dt>
-            <dd className="mt-0.5 whitespace-pre-wrap break-words text-fg-muted">{field.value}</dd>
-          </div>
-        ))}
-      </dl>
-    </details>
   );
 }
 
@@ -1463,60 +1392,6 @@ function ApprovalItemDependency({
 }) {
   const dependency = approvalDependencyText(item, bundle);
   return dependency ? <p className="mt-2 text-xs text-fg-dim">{dependency}</p> : null;
-}
-
-function CalendarApprovalPayload({ item, timezone }: { item: SuggestionItem; timezone: string }) {
-  const action = calendarActionSummary(item);
-  const Icon = action.icon;
-  const proposedRange = proposedCalendarRange(item, timezone);
-  const showAs = payloadString(item.proposedPayload, 'showAs');
-  const recurrenceEditMode = payloadString(item.proposedPayload, 'recurrenceEditMode');
-  const proposalGroupId = payloadString(item.proposedPayload, 'proposalGroupId');
-  const proposalStatus = payloadString(item.proposedPayload, 'proposalStatus');
-  const proposalRole = payloadString(item.proposedPayload, 'proposalRole');
-  const cancelsSiblingSlots =
-    item.operation === 'update' &&
-    proposalGroupId !== null &&
-    (proposalStatus === 'confirmed' || proposalRole === 'selected_slot');
-  const payloadFields = formatPayloadFields(
-    item.proposedPayload,
-    timezone,
-    item.title,
-    item.operation,
-  ).filter(
-    (field) =>
-      !CALENDAR_SEPARATE_PAYLOAD_FIELDS.has(field.key) &&
-      !(proposedRange && CALENDAR_RANGE_PAYLOAD_FIELDS.has(field.key)),
-  );
-  const toneClass =
-    action.tone === 'danger'
-      ? 'border-danger/40 bg-danger/5 text-danger'
-      : action.tone === 'warning'
-        ? 'border-warning/50 bg-warning/10 text-fg'
-        : 'border-border bg-muted/30 text-fg';
-
-  return (
-    <div className="min-w-0 self-center space-y-2">
-      <div
-        className={`inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 text-[11px] ${toneClass}`}
-      >
-        <Icon className="size-3" />
-        {action.label}
-      </div>
-      <div className="space-y-1 text-xs text-fg-muted">
-        <CalendarResolutionLine item={item} proposedRange={proposedRange} timezone={timezone} />
-        <ApprovalPayloadSummary fields={payloadFields} />
-        {showAs ? <p>Availability: {displayText(showAs)}</p> : null}
-        {recurrenceEditMode ? <p>Recurrence: {displayText(recurrenceEditMode)}</p> : null}
-        {cancelsSiblingSlots ? (
-          <p>Accepting one slot can cancel sibling tentative slots in this group.</p>
-        ) : null}
-      </div>
-      {item.failureReason ? (
-        <p className="mt-1 text-xs text-danger">{displayText(item.failureReason)}</p>
-      ) : null}
-    </div>
-  );
 }
 
 function CalendarResolutionLine({
@@ -1568,8 +1443,21 @@ function CalendarResolutionLine({
   if (hint?.kind === 'missing_target') {
     return <p>The target event is no longer available.</p>;
   }
+  if (proposedRange?.startsWith('Starts ') || proposedRange?.startsWith('Ends ')) {
+    return <p>{proposedRange}.</p>;
+  }
   if (proposedRange) return <p>Scheduled for {proposedRange}.</p>;
   return null;
+}
+
+function ApprovalCalendarHint({ item, timezone }: { item: SuggestionItem; timezone: string }) {
+  if (item.targetKind !== 'calendar_event') return null;
+  const proposedRange = proposedCalendarRange(item, timezone);
+  return (
+    <div className="px-3 pb-2 text-xs text-fg-dim">
+      <CalendarResolutionLine item={item} proposedRange={proposedRange} timezone={timezone} />
+    </div>
+  );
 }
 
 function ApprovalItemActions({
@@ -1578,55 +1466,64 @@ function ApprovalItemActions({
   item,
   pending,
   run,
+  onPreview,
 }: {
   acceptDisabled: boolean;
   busy: boolean;
   item: SuggestionItem;
   pending: boolean;
   run: ApprovalAction;
+  onPreview: () => void;
 }) {
+  const title = displayText(item.title);
   return (
-    <ItemActionGroup label={`Decision actions for ${displayText(item.title)}`}>
+    <ItemActionGroup label={`Decision actions for ${title}`}>
       {item.targetKind === 'object_merge' ? (
-        <Button asChild size="sm" variant="outline" disabled={pending}>
+        <ItemIconButton asChild label={`Review merge for ${title}`} disabled={pending}>
           <Link href={objectMergeHref(item)}>
-            <GitMerge className="size-4" />
-            Review merge
+            <GitMerge />
           </Link>
-        </Button>
+        </ItemIconButton>
       ) : (
         <>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
+          <ItemIconButton
+            label={`Accept ${title}`}
             disabled={busy || acceptDisabled}
             onClick={() => {
-              run(() => acceptSuggestionItemAction({ itemId: item.id }), [item.id]);
+              run(
+                () => acceptSuggestionItemAction({ itemId: item.id }),
+                [item.id],
+                decisionMessages('accept', 1, item.title, item.id),
+              );
             }}
           >
-            <Check className="size-4" />
-            {busy ? 'Working…' : 'Accept'}
-          </Button>
+            <Check />
+          </ItemIconButton>
           <SuggestionChangeDialog
+            compact
             itemId={item.id}
-            title={displayText(item.title)}
+            title={title}
             disabled={busy || acceptDisabled}
           />
         </>
       )}
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
+      <ItemIconButton label={`Preview ${title}`} disabled={busy} onClick={onPreview}>
+        <Eye />
+      </ItemIconButton>
+      <ItemIconButton
+        label={`Reject ${title}`}
+        className="hover:text-danger"
         disabled={busy}
         onClick={() => {
-          run(() => rejectSuggestionItemAction({ itemId: item.id }), [item.id]);
+          run(
+            () => rejectSuggestionItemAction({ itemId: item.id }),
+            [item.id],
+            decisionMessages('reject', 1, item.title, item.id),
+          );
         }}
       >
-        <X className="size-4" />
-        Reject
-      </Button>
+        <X />
+      </ItemIconButton>
     </ItemActionGroup>
   );
 }
@@ -1651,10 +1548,9 @@ function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezo
     evidenceBySurface.set(label, [...(evidenceBySurface.get(label) ?? []), evidence]);
   }
   return (
-    <details className="md:col-span-3 border-l border-border pl-3 text-xs">
+    <details className="px-3 pb-2 text-xs">
       <summary className="cursor-pointer text-fg-dim hover:text-fg">
-        Evidence for this change · {evidenceBySurface.size}{' '}
-        {evidenceBySurface.size === 1 ? 'source' : 'sources'}
+        Why · {evidenceBySurface.size} {evidenceBySurface.size === 1 ? 'source' : 'sources'}
       </summary>
       <div className="mt-2 grid gap-2">
         {[...evidenceBySurface.entries()].map(([surface, evidence]) => (
@@ -1694,8 +1590,8 @@ function ApprovalItemEvidence({ item, timezone }: { item: SuggestionItem; timezo
 function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; timezone: string }) {
   if (bundle.evidence.length === 0 && !bundle.reason) return null;
   return (
-    <details className="mt-2 border-l border-border pl-3">
-      <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg">
+    <details className="pb-2 text-xs">
+      <summary className="cursor-pointer text-fg-dim hover:text-fg">
         Why this was suggested
         {bundle.evidence.length > 0
           ? ` · ${bundle.evidence.length} ${bundle.evidence.length === 1 ? 'source' : 'sources'}`
@@ -1727,50 +1623,5 @@ function ApprovalEvidence({ bundle, timezone }: { bundle: SuggestionBundle; time
         </EvidenceLink>
       ))}
     </details>
-  );
-}
-
-function ApprovalProcessingDetails({ bundle }: { bundle: SuggestionBundle }) {
-  const outputIds = bundleReconciliationOutputIds(bundle);
-  const clusterIds = bundleReconciliationClusterIds(bundle);
-  if (outputIds.length === 0 && clusterIds.length === 0) return null;
-  const records =
-    clusterIds.length > 0
-      ? clusterIds.map((clusterId) => ({
-          key: clusterId,
-          href: `/app/team/reconciliation/clusters/${clusterId}`,
-        }))
-      : [{ key: 'dashboard', href: '/app/team/reconciliation' }];
-  return (
-    <TechnicalDetails
-      className="mt-2 border-l border-t-0 pl-3 pt-0"
-      items={[
-        ...clusterIds.map((clusterId, index) => ({
-          label: `Cluster ID ${index + 1}`,
-          value: clusterId,
-          copyValue: clusterId,
-        })),
-        ...outputIds.map((outputId, index) => ({
-          label: `Output ID ${index + 1}`,
-          value: outputId,
-          copyValue: outputId,
-        })),
-      ]}
-    >
-      <div className="mt-2 grid gap-1">
-        {records.map((record, index) => (
-          <Link
-            href={record.href}
-            className="inline-flex items-center gap-1 hover:text-signal"
-            key={record.key}
-          >
-            <ExternalLink className="size-3" />
-            {records.length === 1
-              ? 'Open processing record'
-              : `Open processing record ${index + 1} of ${records.length}`}
-          </Link>
-        ))}
-      </div>
-    </TechnicalDetails>
   );
 }

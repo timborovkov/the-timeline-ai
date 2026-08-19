@@ -6,12 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import {
-  CollectionStatus,
-  priorityTone,
-  statusTone,
-} from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -22,6 +20,8 @@ describe('collection primitives', () => {
   it('maps workflow and priority semantics to stable icon-and-text tones', () => {
     expect(statusTone('backlog')).toBe('neutral');
     expect(statusTone('in progress')).toBe('progress');
+    expect(statusTone('stuck')).toBe('progress');
+    expect(statusTone('retrying')).toBe('progress');
     expect(statusTone('review')).toBe('review');
     expect(statusTone('shipped')).toBe('success');
     expect(statusTone('overdue')).toBe('danger');
@@ -68,15 +68,111 @@ describe('collection primitives', () => {
     expect(screen.getByRole('button', { name: 'Clear selection' }).className).toContain('size-10');
   });
 
+  it('renders an optional subtitle under the title', () => {
+    render(
+      <CollectionRow>
+        <CollectionRow.Title>Launch plan</CollectionRow.Title>
+        <CollectionRow.Subtitle>Call the buyer</CollectionRow.Subtitle>
+      </CollectionRow>,
+    );
+    expect(screen.getByText('Call the buyer').className).toContain('text-[11px]');
+  });
+
+  it('exposes an optional title hover hint without replacing the subtitle', () => {
+    render(
+      <CollectionRow>
+        <CollectionRow.Title title="job-1 · artifact-2">Recover extraction</CollectionRow.Title>
+        <CollectionRow.Subtitle>Timed out</CollectionRow.Subtitle>
+      </CollectionRow>,
+    );
+    expect(screen.getByText('Recover extraction').getAttribute('title')).toBe('job-1 · artifact-2');
+    expect(screen.getByText('Timed out')).toBeTruthy();
+  });
+
+  it('marks the current collection view without a second toolbar strip', () => {
+    render(
+      <CollectionViewToggle
+        label="Board view"
+        views={['kanban', 'table', 'list'] as const}
+        current="table"
+        hrefFor={(view) => `/app/boards/1?view=${view}`}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'table' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
+      '/app/boards/1?view=kanban',
+    );
+  });
+
   it('uses a 44px desktop row with a two-line responsive content structure', () => {
     const { container } = render(
-      <CollectionRow title="Launch plan" context="Acme" metadata={<span>P2</span>} />,
+      <CollectionRow>
+        <CollectionRow.Title>Launch plan</CollectionRow.Title>
+        <CollectionRow.Context>Acme</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          <span>P2</span>
+        </CollectionRow.Metadata>
+      </CollectionRow>,
     );
     const row = container.firstElementChild;
     expect(row?.className).toContain('min-h-11');
+    expect(row?.className).toContain('border-b');
+    expect(row?.className).not.toContain('last:border-b-0');
+    expect(row?.className).not.toContain('border-x');
     expect(row?.querySelector('.sm\\:flex-row')).toBeTruthy();
     expect(screen.getAllByText('Acme')).toHaveLength(2);
     expect(screen.getByText('P2')).toBeTruthy();
+  });
+
+  it('puts hover titles from Title and Context slots onto the visible row copy', () => {
+    render(
+      <CollectionRow>
+        <CollectionRow.Title title="Job ID: job-1">Audio extract</CollectionRow.Title>
+        <CollectionRow.Context title="Job ID: job-1">2h ago</CollectionRow.Context>
+      </CollectionRow>,
+    );
+
+    const hints = screen.getAllByTitle('Job ID: job-1');
+    expect(hints).toHaveLength(3);
+    expect(hints[0]?.textContent).toBe('Audio extract');
+  });
+
+  it('activates the row when clicking non-interactive content', async () => {
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(
+      <CollectionRow onActivate={onActivate} activateLabel="Open Review planning workbook">
+        <CollectionRow.Title>Review planning workbook</CollectionRow.Title>
+        <CollectionRow.Actions>
+          <button type="button">Keep</button>
+        </CollectionRow.Actions>
+      </CollectionRow>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Open Review planning workbook' }));
+    expect(onActivate).toHaveBeenCalledOnce();
+    onActivate.mockClear();
+    await user.click(screen.getByRole('button', { name: 'Keep' }));
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it('activates the row from the keyboard when it is focused', async () => {
+    const user = userEvent.setup();
+    const onActivate = vi.fn();
+    render(
+      <CollectionRow onActivate={onActivate} activateLabel="Open Review planning workbook">
+        <CollectionRow.Title>Review planning workbook</CollectionRow.Title>
+        <CollectionRow.Actions>
+          <button type="button">Keep</button>
+        </CollectionRow.Actions>
+      </CollectionRow>,
+    );
+
+    const row = screen.getByRole('button', { name: 'Open Review planning workbook' });
+    row.focus();
+    await user.keyboard('{Enter}');
+    expect(onActivate).toHaveBeenCalledOnce();
   });
 
   it('opens desktop filters, removes active chips, and exposes the mobile dialog variant', async () => {
@@ -84,16 +180,21 @@ describe('collection primitives', () => {
     const remove = vi.fn();
     render(
       <CollectionToolbar
-        count="4 results"
-        filters={
+        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
+      >
+        <CollectionToolbar.Count>4 results</CollectionToolbar.Count>
+        <CollectionToolbar.Search>
+          <input aria-label="Search timeline" type="search" />
+        </CollectionToolbar.Search>
+        <CollectionToolbar.Filters>
           <label>
             Owner <input aria-label="Owner" />
           </label>
-        }
-        activeFilters={[{ key: 'owner', label: 'Owner', value: 'Ada', onRemove: remove }]}
-      />,
+        </CollectionToolbar.Filters>
+      </CollectionToolbar>,
     );
 
+    expect(screen.getByRole('searchbox', { name: 'Search timeline' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove Owner filter' }).className).toContain(
       'size-6',
     );
@@ -113,25 +214,49 @@ describe('collection primitives', () => {
     expect(screen.getByText('Refine the visible collection.')).toBeTruthy();
   });
 
+  it('keeps toolbar chrome when slot markers survive the RSC client boundary', () => {
+    render(
+      <CollectionToolbar>
+        <div data-collection-slot="search">
+          <input aria-label="Search timeline" type="search" />
+        </div>
+        <div data-collection-slot="filters">
+          <label>
+            Owner <input aria-label="Owner" />
+          </label>
+        </div>
+        <div data-collection-slot="actions">
+          <a href="/app/timeline?source=linear">Linear</a>
+        </div>
+        <div data-collection-slot="view">
+          <a href="/app/timeline">Moments</a>
+        </div>
+      </CollectionToolbar>,
+    );
+
+    expect(screen.getByRole('searchbox', { name: 'Search timeline' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: /Filters/ }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('link', { name: 'Linear' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Moments' })).toBeTruthy();
+  });
+
   it('keeps metadata triggers accessible, reports row errors, and restores focus on Escape', async () => {
     const user = userEvent.setup();
     render(
-      <EditableMetadata
-        label="Priority for Launch plan"
-        value="P2"
-        error="Save failed"
-        editor={() => (
+      <EditableMetadata label="Priority for Launch plan" error="Save failed">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>
           <select aria-label="Priority" defaultValue="2">
             <option value="2">P2</option>
           </select>
-        )}
-      />,
+        </EditableMetadata.Editor>
+      </EditableMetadata>,
     );
 
     const trigger = screen.getByRole('button', { name: 'Priority for Launch plan' });
     expect(trigger.className).toContain('min-h-10');
-    expect(trigger.getAttribute('aria-invalid')).toBe('true');
-    expect(screen.getByRole('alert').textContent).toBe('Save failed');
+    expect(trigger.getAttribute('aria-describedby')).toBe('priority-for-launch-plan-error');
+    expect(screen.getByText('Save failed').className).toContain('sr-only');
 
     await user.click(trigger);
     expect(screen.getByRole('combobox', { name: 'Priority' })).toBeTruthy();
@@ -141,15 +266,53 @@ describe('collection primitives', () => {
     });
   });
 
+  it('closes the editor while a parent save is pending and does not reopen when it settles', async () => {
+    const user = userEvent.setup();
+    const editor = (
+      <select aria-label="Priority" defaultValue="2">
+        <option value="2">P2</option>
+      </select>
+    );
+    const view = render(
+      <EditableMetadata label="Priority for Launch plan">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>{editor}</EditableMetadata.Editor>
+      </EditableMetadata>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Priority for Launch plan' }));
+    expect(screen.getByRole('combobox', { name: 'Priority' })).toBeTruthy();
+
+    view.rerender(
+      <EditableMetadata pending label="Priority for Launch plan">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>{editor}</EditableMetadata.Editor>
+      </EditableMetadata>,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Priority for Launch plan' }).hasAttribute('disabled'),
+    ).toBe(true);
+
+    view.rerender(
+      <EditableMetadata label="Priority for Launch plan">
+        <EditableMetadata.Value>P2</EditableMetadata.Value>
+        <EditableMetadata.Editor>{editor}</EditableMetadata.Editor>
+      </EditableMetadata>,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull();
+  });
+
   it('cancels date drafts on Escape and commits them with Enter', async () => {
     const user = userEvent.setup();
     const apply = vi.fn();
     render(
-      <EditableMetadata
-        label="Due date for Launch plan"
-        value="Jul 1"
-        editor={() => <MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />}
-      />,
+      <EditableMetadata label="Due date for Launch plan">
+        <EditableMetadata.Value>Jul 1</EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <MetadataDateEditor defaultValue="2026-07-01" onApply={apply} />
+        </EditableMetadata.Editor>
+      </EditableMetadata>,
     );
 
     const trigger = screen.getByRole('button', { name: 'Due date for Launch plan' });

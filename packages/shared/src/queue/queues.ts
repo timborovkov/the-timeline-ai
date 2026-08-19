@@ -58,8 +58,8 @@ export const QUEUE_NAMES = {
   // Autonomous commitment extraction. Runs after raw-event fact extraction
   // and writes proposal-only agent_suggestions rows for the approvals queue.
   suggestions: 'suggestions',
-  // Daily personalized team digest. Tick fans out per active recipient;
-  // recipient jobs generate one durable digest and send it through messaging.
+  // Daily team digest. Tick fans out per-member generate/send plus workspace
+  // bot posts for shared Slack/Telegram destinations.
   dailyDigest: 'daily-digest',
   // Generated object briefs. Produced by canonical object-memory writes and
   // manual object-page requests; consumed by the object-summary worker.
@@ -178,7 +178,8 @@ export async function closeExtractQueue(): Promise<void> {
 export type SuggestionJobData =
   | SuggestionRawEventJobData
   | SuggestionConversationReviewJobData
-  | SuggestionObjectCleanupJobData;
+  | SuggestionObjectCleanupJobData
+  | SuggestionGithubTaskProposalJobData;
 
 export interface SuggestionRawEventJobData {
   rawEventId: string;
@@ -198,6 +199,13 @@ export interface SuggestionObjectCleanupJobData {
   objectId?: string;
 }
 
+export interface SuggestionGithubTaskProposalJobData {
+  scope: 'github_task_proposal';
+  teamId: string;
+  integrationId: string;
+  externalObjectId: string;
+}
+
 let _suggestionQueue: TimelineQueue<SuggestionJobData> | undefined;
 
 function bullmqCustomJobId(parts: string[]): string {
@@ -210,6 +218,14 @@ function suggestionJobId(data: SuggestionJobData, jobIdSuffix?: string): string 
       return bullmqCustomJobId([
         'conversation-review',
         data.conversationReviewId,
+        ...(jobIdSuffix ? [jobIdSuffix] : []),
+      ]);
+    }
+    if (data.scope === 'github_task_proposal') {
+      return bullmqCustomJobId([
+        'github-task-proposal',
+        data.teamId,
+        data.externalObjectId,
         ...(jobIdSuffix ? [jobIdSuffix] : []),
       ]);
     }
@@ -1023,7 +1039,13 @@ export type DailyDigestJobData =
       windowStart: string;
       windowEnd: string;
     }
-  | { kind: 'send'; digestId: string; email: string };
+  | { kind: 'send'; digestId: string; email: string }
+  | {
+      kind: 'workspace-send';
+      teamId: string;
+      windowStart: string;
+      windowEnd: string;
+    };
 
 let _dailyDigestQueue: TimelineQueue<DailyDigestJobData> | undefined;
 
@@ -1092,6 +1114,19 @@ export async function enqueueDailyDigestSendJob(
 ): Promise<void> {
   await getDailyDigestQueue().add('send', data, {
     jobId: bullmqCustomJobId(['daily-digest-send', data.digestId]),
+  });
+}
+
+export async function enqueueDailyDigestWorkspaceSendJob(
+  data: Extract<DailyDigestJobData, { kind: 'workspace-send' }>,
+): Promise<void> {
+  await getDailyDigestQueue().add('workspace-send', data, {
+    jobId: bullmqCustomJobId([
+      'daily-digest-workspace',
+      data.teamId,
+      data.windowStart,
+      data.windowEnd,
+    ]),
   });
 }
 

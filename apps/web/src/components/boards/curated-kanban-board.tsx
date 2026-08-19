@@ -2,29 +2,22 @@
 
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  closestCenter,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
   type Announcements,
   type DragEndEvent,
+  type DragStartEvent,
   type ScreenReaderInstructions,
 } from '@dnd-kit/core';
+import { GripVertical } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useOptimistic,
-  useRef,
-  useState,
-  useTransition,
-} from 'react';
+import { useCallback, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type {
   BoardItemOptimisticPatch,
@@ -33,20 +26,20 @@ import type {
 import type * as boards from '@timeline/shared/boards';
 
 import { updateBoardItemAction } from '@/app/actions/boards';
-import {
-  curatedKanbanSaveState,
-  type CuratedKanbanSaveState,
-} from '@/components/boards/curated-kanban-state';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
+import { kanbanCollisionDetection } from '@/lib/kanban-collision';
+import { notifyAction } from '@/lib/notify';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
-import { cn, errorMessage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface Props {
   boardId: string;
@@ -58,10 +51,9 @@ interface Props {
 }
 
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
-type MoveControlFocus = { id: string; laneValue: string } | null;
 const DRAG_INSTRUCTIONS: ScreenReaderInstructions = {
   draggable:
-    'Press Space or Enter to pick up a card. Use the arrow keys to move it, then press Space or Enter again to drop it, or Escape to cancel. To move directly between lanes with the keyboard, tab to the card’s Move to lane menu.',
+    'Press Space or Enter to pick up a card. Use the arrow keys to move it, then press Space or Enter again to drop it, or Escape to cancel. To change lane without dragging, open the card.',
 };
 
 export function CuratedKanbanBoard({
@@ -85,31 +77,12 @@ export function CuratedKanbanBoard({
   );
   const [, startTransition] = useTransition();
   const [savingIds, setSavingIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saveState, setSaveState] = useState<CuratedKanbanSaveState>('idle');
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const activeDragItem = activeDragId
+    ? (optimisticItems.find((item) => item.id === activeDragId) ?? null)
+    : null;
   const savingRef = useRef<Set<string> | null>(null);
-  const pendingMoveControlFocusRef = useRef<MoveControlFocus>(null);
   savingRef.current ??= new Set<string>();
-  const batchHadFailureRef = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearSaveTimer = useCallback(() => {
-    if (timer.current) {
-      clearTimeout(timer.current);
-      timer.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    return clearSaveTimer;
-  }, [clearSaveTimer]);
-
-  function resetSaveTimer() {
-    clearSaveTimer();
-    timer.current = setTimeout(() => {
-      setSaveState('idle');
-    }, 1600);
-  }
 
   const laneIdSet = useMemo(() => new Set(lanes.map((lane) => lane.id)), [lanes]);
   const byLane = new Map<string | null, boards.BoardItemRow[]>();
@@ -138,17 +111,6 @@ export function CuratedKanbanBoard({
       },
     ];
   }, [boardId, laneIdSet, lanes, optimisticItems]);
-
-  const registerMoveControl = useCallback(
-    (id: string, laneValue: string, node: HTMLButtonElement | null) => {
-      if (!node || node.disabled) return;
-      const pendingFocus = pendingMoveControlFocusRef.current;
-      if (pendingFocus?.id !== id || pendingFocus.laneValue !== laneValue) return;
-      pendingMoveControlFocusRef.current = null;
-      node.focus();
-    },
-    [],
-  );
 
   const cardLabel = useCallback(
     (id: string) => {
@@ -186,62 +148,41 @@ export function CuratedKanbanBoard({
     return savingRef.current;
   }
 
-  function markSaving(id: string, saving: boolean, failed = false) {
+  function markSaving(id: string, saving: boolean) {
     const currentSaving = savingSet();
-    if (saving) {
-      if (timer.current) clearTimeout(timer.current);
-      if (currentSaving.size === 0) batchHadFailureRef.current = false;
-      currentSaving.add(id);
-    } else {
-      if (failed) batchHadFailureRef.current = true;
-      currentSaving.delete(id);
-    }
+    if (saving) currentSaving.add(id);
+    else currentSaving.delete(id);
     setSavingIds(new Set(currentSaving));
-    const nextSaveState = curatedKanbanSaveState(currentSaving.size, batchHadFailureRef.current);
-    setSaveState(nextSaveState);
-    if (!saving && currentSaving.size === 0) {
-      if (!batchHadFailureRef.current) {
-        resetSaveTimer();
-      }
-    }
   }
 
-  function moveItem(id: string, laneId: string | null, focusMoveControl = false): void {
+  function moveItem(id: string, laneId: string | null): void {
     if (savingSet().has(id)) return;
     const item = optimisticItems.find((candidate) => candidate.id === id);
     if (!item || item.laneId === laneId) return;
-    if (focusMoveControl) {
-      pendingMoveControlFocusRef.current = { id, laneValue: laneId ?? 'unset' };
-    }
-    setErrors((current) => {
-      const { [id]: _cleared, ...rest } = current;
-      return rest;
-    });
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch: { laneId } });
-      let failed = false;
-      try {
-        const result = await updateBoardItemAction({ id, laneId });
-        failed = 'error' in result && Boolean(result.error);
-        if ('error' in result && result.error) {
-          if (focusMoveControl) {
-            pendingMoveControlFocusRef.current = { id, laneValue: item.laneId ?? 'unset' };
-          }
-          moveOptimistic({ id, patch: { laneId: item.laneId } });
-          setErrors((current) => ({ ...current, [id]: result.error ?? 'Move failed' }));
-        }
-      } catch (err) {
-        failed = true;
-        if (focusMoveControl) {
-          pendingMoveControlFocusRef.current = { id, laneValue: item.laneId ?? 'unset' };
-        }
-        moveOptimistic({ id, patch: { laneId: item.laneId } });
-        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Move failed') }));
-      } finally {
-        markSaving(id, false, failed);
-        router.refresh();
+      const previousLaneId = item.laneId;
+      const result = await notifyAction({
+        id: `board-item:${id}`,
+        loading: 'Updating status…',
+        success: 'Status updated',
+        error: 'Couldn’t update status',
+        run: () => updateBoardItemAction({ id, laneId }),
+        undo: {
+          run: async () => {
+            moveOptimistic({ id, patch: { laneId: previousLaneId } });
+            const undoResult = await updateBoardItemAction({ id, laneId: previousLaneId });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
+        moveOptimistic({ id, patch: { laneId: previousLaneId } });
       }
+      markSaving(id, false);
+      router.refresh();
     });
   }
 
@@ -252,39 +193,51 @@ export function CuratedKanbanBoard({
     const baseline = Object.fromEntries(
       Object.keys(patch).map((key) => [key, item[key as keyof boards.BoardItemRow]]),
     ) as BoardItemOptimisticPatch;
-    setErrors((current) => {
-      const { [id]: _cleared, ...rest } = current;
-      return rest;
-    });
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch });
-      let failed = false;
-      try {
-        const result = await updateBoardItemAction({
-          id,
-          ...patch,
-          ...(patch.dueAt !== undefined
-            ? { dueAt: patch.dueAt ? patch.dueAt.toISOString() : null }
-            : {}),
-        });
-        failed = 'error' in result && Boolean(result.error);
-        if ('error' in result && result.error) {
-          moveOptimistic({ id, patch: baseline });
-          setErrors((current) => ({ ...current, [id]: result.error ?? 'Save failed' }));
-        }
-      } catch (err) {
-        failed = true;
-        moveOptimistic({ id, patch: baseline });
-        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Save failed') }));
-      } finally {
-        markSaving(id, false, failed);
-        router.refresh();
-      }
+      const label =
+        Object.keys(patch)[0] === 'dueAt' ? 'due date' : (Object.keys(patch)[0] ?? 'item');
+      const result = await notifyAction({
+        id: `board-item:${id}`,
+        loading: `Updating ${label}…`,
+        success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
+        error: `Couldn’t update ${label}`,
+        run: () =>
+          updateBoardItemAction({
+            id,
+            ...patch,
+            ...(patch.dueAt !== undefined
+              ? { dueAt: patch.dueAt ? patch.dueAt.toISOString() : null }
+              : {}),
+          }),
+        undo: {
+          run: async () => {
+            moveOptimistic({ id, patch: baseline });
+            const undoResult = await updateBoardItemAction({
+              id,
+              ...baseline,
+              ...(baseline.dueAt !== undefined
+                ? { dueAt: baseline.dueAt ? baseline.dueAt.toISOString() : null }
+                : {}),
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) moveOptimistic({ id, patch: baseline });
+      markSaving(id, false);
+      router.refresh();
     });
   }
 
+  function onDragStart(event: DragStartEvent): void {
+    setActiveDragId(String(event.active.id));
+  }
+
   function onDragEnd(event: DragEndEvent): void {
+    setActiveDragId(null);
     const overId = event.over?.id ? String(event.over.id) : null;
     if (!overId) return;
     moveItem(String(event.active.id), overId === 'unset' ? null : overId);
@@ -294,7 +247,8 @@ export function CuratedKanbanBoard({
     <DndContext
       id={dndContextId}
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={kanbanCollisionDetection}
+      onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       accessibility={{
         announcements: dragAnnouncements,
@@ -314,23 +268,21 @@ export function CuratedKanbanBoard({
               ordinal={index + 1}
               items={byLane.get(lane.id === 'unset' ? null : lane.id) ?? []}
               savingIds={savingIds}
-              errors={errors}
               selectedItemId={selectedItemId}
               members={members}
               filterParams={filterParams}
-              moveTargets={visibleLanes}
-              onMoveItem={moveItem}
               onUpdateItem={updateItem}
-              onMoveControlRef={registerMoveControl}
             />
           ))}
         </section>
-        {saveState !== 'idle' ? (
-          <output className="px-4 pb-2 text-xs text-fg-dim md:px-8" aria-live="polite">
-            {saveState === 'saving' ? 'Saving…' : 'Saved'}
-          </output>
-        ) : null}
       </div>
+      <DragOverlay>
+        {activeDragItem ? (
+          <div className="rounded-sm border border-signal bg-bg px-2.5 py-2 text-sm shadow-md">
+            {displayText(displayObjectTitle(activeDragItem.object))}
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }
@@ -341,62 +293,57 @@ function KanbanColumn({
   ordinal,
   items,
   savingIds,
-  errors,
   selectedItemId,
   members,
   filterParams,
-  moveTargets,
-  onMoveItem,
   onUpdateItem,
-  onMoveControlRef,
 }: {
   boardId: string;
   lane: boards.BoardLaneRow;
   ordinal: number;
   items: boards.BoardItemRow[];
   savingIds: ReadonlySet<string>;
-  errors: Record<string, string>;
   selectedItemId: string | null;
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
-  moveTargets: boards.BoardLaneRow[];
-  onMoveItem: (id: string, laneId: string | null, focusMoveControl?: boolean) => void;
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
-  onMoveControlRef: (id: string, laneValue: string, node: HTMLButtonElement | null) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane.id });
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   return (
     <section
       ref={setNodeRef}
       aria-label={`${lane.name}, board column ${ordinal}`}
       className={cn(
-        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
+        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
         isOver && 'border-signal/40 bg-signal-soft',
       )}
     >
-      <div className="mb-3 flex shrink-0 items-baseline justify-between">
+      <div className="mb-2 flex shrink-0 items-baseline justify-between px-0.5">
         <h3 className="text-xs text-fg-dim">{lane.name}</h3>
         <span className="text-xs text-fg">{items.length}</span>
       </div>
-      <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
-        {items.map((item) => (
-          <KanbanCard
-            key={item.id}
-            boardId={boardId}
-            item={item}
-            lane={lane}
-            saving={savingIds.has(item.id)}
-            error={errors[item.id]}
-            selected={item.id === selectedItemId}
-            members={members}
-            filterParams={filterParams}
-            moveTargets={moveTargets}
-            onMoveItem={onMoveItem}
-            onUpdateItem={onUpdateItem}
-            onMoveControlRef={onMoveControlRef}
-          />
-        ))}
-      </ul>
+      <div ref={setScrollEl} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <VirtualList
+          items={items}
+          getItemKey={(item) => item.id}
+          estimateSize={76}
+          gap={8}
+          getScrollElement={() => scrollEl}
+          renderItem={(item) => (
+            <KanbanCard
+              boardId={boardId}
+              item={item}
+              lane={lane}
+              saving={savingIds.has(item.id)}
+              selected={item.id === selectedItemId}
+              members={members}
+              filterParams={filterParams}
+              onUpdateItem={onUpdateItem}
+            />
+          )}
+        />
+      </div>
     </section>
   );
 }
@@ -406,27 +353,19 @@ function KanbanCard({
   item,
   lane,
   saving,
-  error,
   selected,
   members,
   filterParams,
-  moveTargets,
-  onMoveItem,
   onUpdateItem,
-  onMoveControlRef,
 }: {
   boardId: string;
   item: boards.BoardItemRow;
   lane: boards.BoardLaneRow;
   saving: boolean;
-  error?: string;
   selected: boolean;
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
-  moveTargets: boards.BoardLaneRow[];
-  onMoveItem: (id: string, laneId: string | null, focusMoveControl?: boolean) => void;
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
-  onMoveControlRef: (id: string, laneValue: string, node: HTMLButtonElement | null) => void;
 }) {
   const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
@@ -434,63 +373,63 @@ function KanbanCard({
       id: item.id,
       disabled: saving || optimistic,
     });
-  const style = transform
-    ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
-    : undefined;
+  const style = {
+    contentVisibility: 'auto' as const,
+    containIntrinsicSize: 'auto 76px',
+    ...(transform
+      ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
+      : {}),
+  };
   const blocked = lane.kind === 'blocked';
   const title = displayObjectTitle(item.object);
-  const titleId = `board-card-${item.id}-title`;
-  const moveControlId = `board-card-${item.id}-move-lane`;
-  const registerMoveControl = useCallback(
-    (node: HTMLButtonElement | null) => {
-      if (saving) return;
-      onMoveControlRef(item.id, lane.id, node);
-    },
-    [item.id, lane.id, onMoveControlRef, saving],
-  );
+  const titleText = displayText(title);
+  const dragLabel = `Drag ${titleText}. Press Space or Enter to pick up, then use the arrow keys to move.`;
   return (
-    <li
+    <article
       ref={setNodeRef}
       style={style}
       className={cn(
-        'rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
+        'rounded-sm border border-border/80 bg-bg px-2 py-1.5 text-sm transition-colors hover:bg-surface',
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         blocked && 'border-danger/50',
         isDragging && 'opacity-50',
         saving && 'cursor-progress opacity-80',
         optimistic && 'cursor-wait opacity-80',
-        error && 'border-danger/50',
       )}
     >
-      <div className="flex min-w-0 items-start gap-1">
-        {optimistic ? (
-          <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug">
-            {displayText(title)}
-          </span>
-        ) : (
-          <Link
-            id={titleId}
-            href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
-            aria-current={selected ? 'true' : undefined}
-            className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
-          >
-            {displayText(title)}
-          </Link>
-        )}
+      <div className="flex min-w-0 items-start gap-0.5">
+        <div className="min-w-0 flex-1">
+          {optimistic ? (
+            <span className="line-clamp-2 whitespace-normal break-words font-medium leading-snug">
+              {titleText}
+            </span>
+          ) : (
+            <Link
+              href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
+              aria-current={selected ? 'true' : undefined}
+              className="line-clamp-2 whitespace-normal break-words font-medium leading-snug hover:underline"
+            >
+              {titleText}
+            </Link>
+          )}
+          {item.nextStep ? (
+            <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-fg-dim">{item.nextStep}</p>
+          ) : null}
+        </div>
         <button
           ref={setActivatorNodeRef}
           type="button"
           {...attributes}
           {...listeners}
-          aria-label={`Drag ${displayText(title)}`}
+          aria-label={dragLabel}
           disabled={saving || optimistic}
-          className="inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-base leading-none text-fg-dim transition-colors hover:bg-surface-raised hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
+          className="-mr-1 inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim transition-colors hover:bg-surface-2 hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
         >
-          <span aria-hidden="true">⠿</span>
+          <GripVertical aria-hidden="true" className="size-3.5" />
         </button>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
-        <span>{statusLabel(item.object.type)}</span>
+      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
+        <span className="px-1.5 text-fg-dim">{statusLabel(item.object.type)}</span>
         {item.object.type === 'task' ? (
           <LiveTaskCategoryBadge
             taskId={item.object.id}
@@ -499,15 +438,17 @@ function KanbanCard({
             updatedAt={item.object.taskCategoryUpdatedAt}
           />
         ) : null}
-        {blocked ? <span className="text-danger">Blocked</span> : null}
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-0.5">
+        {blocked ? <span className="px-1.5 text-danger">Blocked</span> : null}
         <EditableMetadata
-          label={`Responsible person for ${displayText(title)}`}
-          value={ownerLabel(item.responsibleUserId, members)}
+          label={`Responsible person for ${titleText}`}
           pending={saving}
           disabled={optimistic}
-          editor={() => (
+          className="min-h-8 px-1.5"
+        >
+          <EditableMetadata.Value>
+            {ownerLabel(item.responsibleUserId, members)}
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={item.responsibleUserId ?? ''}
               onChange={(event) => {
@@ -523,14 +464,18 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          )}
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
-          label={`Due date for ${displayText(title)}`}
-          value={() => <DueDateDisplay value={item.dueAt} variant="compact" />}
+          label={`Due date for ${titleText}`}
           pending={saving}
           disabled={optimistic}
-          editor={() => (
+          className="min-h-8 px-1.5"
+        >
+          <EditableMetadata.Value>
+            <DueDateDisplay value={item.dueAt} variant="compact" />
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <MetadataDateEditor
               defaultValue={item.dueAt ? item.dueAt.toISOString().slice(0, 10) : ''}
               onApply={(value) => {
@@ -539,20 +484,22 @@ function KanbanCard({
                 });
               }}
             />
-          )}
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
         <EditableMetadata
-          label={`Priority for ${displayText(title)}`}
-          value={() => (
+          label={`Priority for ${titleText}`}
+          pending={saving}
+          disabled={optimistic}
+          className="min-h-8 px-1.5"
+        >
+          <EditableMetadata.Value>
             <CollectionStatus
               value={item.priority ? `p${item.priority}` : 'none'}
               tone={priorityTone(item.priority)}
               label={item.priority ? `P${item.priority}` : 'No priority'}
             />
-          )}
-          pending={saving}
-          disabled={optimistic}
-          editor={() => (
+          </EditableMetadata.Value>
+          <EditableMetadata.Editor>
             <select
               value={item.priority ?? ''}
               onChange={(event) => {
@@ -570,80 +517,10 @@ function KanbanCard({
                 </option>
               ))}
             </select>
-          )}
-        />
-        <EditableMetadata
-          label={`Next step for ${displayText(title)}`}
-          value={item.nextStep ?? 'No next step'}
-          pending={saving}
-          disabled={optimistic}
-          editor={() => (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const rawNextStep = data.get('nextStep');
-                const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
-                onUpdateItem(item.id, { nextStep: nextStep || null });
-              }}
-              className="flex items-center gap-2"
-            >
-              <input
-                name="nextStep"
-                defaultValue={item.nextStep ?? ''}
-                className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Next step"
-              />
-              <button
-                type="submit"
-                className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
-              >
-                Apply
-              </button>
-            </form>
-          )}
-        />
+          </EditableMetadata.Editor>
+        </EditableMetadata>
       </div>
-      {!optimistic ? (
-        <EditableMetadata
-          label={`Lane for ${displayText(title)}`}
-          value={lane.name}
-          pending={saving}
-          error={
-            error
-              ? `Unable to move ${displayText(title)}. ${error} Choose a lane to try again.`
-              : null
-          }
-          className="mt-1"
-          triggerRef={registerMoveControl}
-          editor={() => (
-            <select
-              id={moveControlId}
-              value={lane.id}
-              disabled={saving}
-              aria-label="Move to lane"
-              aria-invalid={error ? true : undefined}
-              aria-describedby={titleId}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-              onChange={(event) => {
-                const nextLaneId =
-                  event.currentTarget.value === 'unset' ? null : event.currentTarget.value;
-                onMoveItem(item.id, nextLaneId, true);
-              }}
-              className="h-9 w-full min-w-0 rounded-sm border border-border bg-surface px-2 text-base text-fg transition-colors focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60 sm:text-sm"
-            >
-              {moveTargets.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name}
-                </option>
-              ))}
-            </select>
-          )}
-        />
-      ) : null}
-    </li>
+    </article>
   );
 }
 

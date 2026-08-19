@@ -4,7 +4,6 @@ import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/docu
 import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type { ReactNode } from 'react';
 
@@ -12,10 +11,11 @@ import { promoteCapturedFileAction } from '@/app/actions/documents';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
-import { InlineError } from '@/components/inline-error';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,8 +29,10 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { formatCollectionCount } from '@/lib/collection-count';
 import { displaySourceLabel } from '@/lib/display-labels';
 import { selectedValues } from '@/lib/filter-values';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 
 interface CapturedFileItem {
@@ -253,20 +255,16 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           }),
         );
       } catch {
-        const message =
-          'Could not load older captured files. The files already shown remain available. Check your connection, then try again.';
-        setLoadMoreError(message);
-        toast.error('Could not load older captured files');
+        setLoadMoreError(
+          'Could not load older captured files. The files already shown remain available. Check your connection, then try again.',
+        );
       }
     });
   }
 
   if (loadedFiles.length === 0) {
     return (
-      <section
-        aria-label="Captured files"
-        className="rounded-md border border-border bg-surface px-4 py-10 text-center"
-      >
+      <section aria-label="Captured files" className="border-y border-border py-10 text-center">
         <p className="text-sm font-semibold text-fg">No captured files yet</p>
         <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-fg-muted">
           Attachments from conversations and connected sources appear here before you add them to
@@ -279,53 +277,6 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
   return (
     <section aria-label="Captured files" className="space-y-4">
       <CollectionToolbar
-        count={
-          activeFilterCount > 0
-            ? `Showing ${capturedFileCountLabel(visibleFiles.length)} of ${String(loadedFiles.length)}`
-            : `Showing ${capturedFileCountLabel(loadedFiles.length)}`
-        }
-        filters={
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <FilterMultiSelect
-              label="Source"
-              value={uiState.sourceFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'source', value });
-              }}
-              placeholder="All sources"
-              options={sourceOptions}
-            />
-            <FilterMultiSelect
-              label="Type"
-              value={uiState.typeFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'fileType', value });
-              }}
-              placeholder="All types"
-              options={typeOptions}
-            />
-            <FilterMultiSelect
-              label="Status"
-              value={uiState.statusFilter}
-              onValueChange={(value) => {
-                dispatchUi({ type: 'status', value });
-              }}
-              placeholder="All statuses"
-              options={statusOptions}
-            />
-            <FilterSelect
-              label="Date"
-              value={uiState.dateFilter}
-              onChange={(value) => {
-                dispatchUi({ type: 'date', value });
-              }}
-            >
-              <option value={ALL}>Any time</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </FilterSelect>
-          </div>
-        }
         activeFilters={[
           ...(uiState.sourceFilter
             ? [
@@ -376,8 +327,60 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
               ]
             : []),
         ]}
-        actions={
-          activeFilterCount > 0 ? (
+      >
+        {cursor ? null : (
+          <CollectionToolbar.Count>
+            {formatCollectionCount({
+              matching: visibleFiles.length,
+              total: loadedFiles.length,
+              filtered: activeFilterCount > 0,
+            })}
+          </CollectionToolbar.Count>
+        )}
+        <CollectionToolbar.Filters>
+          <div className="flex min-w-0 flex-wrap items-end gap-2">
+            <FilterMultiSelect
+              label="Source"
+              value={uiState.sourceFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'source', value });
+              }}
+              placeholder="All sources"
+              options={sourceOptions}
+            />
+            <FilterMultiSelect
+              label="Type"
+              value={uiState.typeFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'fileType', value });
+              }}
+              placeholder="All types"
+              options={typeOptions}
+            />
+            <FilterMultiSelect
+              label="Status"
+              value={uiState.statusFilter}
+              onValueChange={(value) => {
+                dispatchUi({ type: 'status', value });
+              }}
+              placeholder="All statuses"
+              options={statusOptions}
+            />
+            <FilterSelect
+              label="Date"
+              value={uiState.dateFilter}
+              onChange={(value) => {
+                dispatchUi({ type: 'date', value });
+              }}
+            >
+              <option value={ALL}>Any time</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+            </FilterSelect>
+          </div>
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.Actions>
+          {activeFilterCount > 0 ? (
             <Button
               type="button"
               variant="ghost"
@@ -388,9 +391,9 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
             >
               Clear all
             </Button>
-          ) : null
-        }
-      />
+          ) : null}
+        </CollectionToolbar.Actions>
+      </CollectionToolbar>
 
       <Dialog
         open={uiState.promoting !== null}
@@ -398,17 +401,21 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
           if (!open) dispatchUi({ type: 'promote', file: null });
         }}
       >
-        <ul className="overflow-hidden border-x border-border bg-surface">
-          {visibleFiles.map((file) => (
-            <CapturedFileRow
-              key={file.id}
-              file={file}
-              onPromote={() => {
-                dispatchUi({ type: 'promote', file });
-              }}
-            />
-          ))}
-        </ul>
+        <div>
+          <VirtualList
+            items={visibleFiles}
+            getItemKey={(file) => file.id}
+            estimateSize={56}
+            renderItem={(file) => (
+              <CapturedFileRow
+                file={file}
+                onPromote={() => {
+                  dispatchUi({ type: 'promote', file });
+                }}
+              />
+            )}
+          />
+        </div>
         {uiState.promoting ? (
           <PromoteDialog
             file={uiState.promoting}
@@ -421,40 +428,22 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         ) : null}
       </Dialog>
       {visibleFiles.length === 0 ? (
-        <div className="rounded-md border border-border bg-surface px-4 py-8 text-center">
+        <div className="border-y border-border py-8 text-center">
           <p className="text-sm font-medium text-fg">No captured files match these filters</p>
           <p className="mt-1 text-sm leading-6 text-fg-muted">
             {cursor
-              ? 'Load older captures to keep searching, or clear the filters to view every loaded file.'
+              ? 'Keep scrolling to search older captures, or clear the filters to view every loaded file.'
               : 'Clear the filters to view every captured file.'}
           </p>
         </div>
       ) : null}
-      {loadMoreError ? (
-        <InlineError
-          message={loadMoreError}
-          onRetry={loadMore}
-          retrying={loadingMore}
-          retryLabel="Retry loading older files"
-        />
-      ) : null}
-      {cursor ? (
-        <>
-          <output className="sr-only" aria-live="polite">
-            {loadingMore ? 'Loading older captured files' : ''}
-          </output>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={loadMore}
-            disabled={loadingMore}
-            aria-busy={loadingMore}
-          >
-            {loadingMore ? 'Loading…' : 'Load older captured files'}
-          </Button>
-        </>
-      ) : null}
+      <InfiniteScroll
+        hasMore={Boolean(cursor)}
+        loading={loadingMore}
+        error={loadMoreError}
+        onLoadMore={loadMore}
+        boundLabel="No more matching files"
+      />
     </section>
   );
 }
@@ -505,15 +494,14 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
     : null;
 
   return (
-    <li style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
-      <CollectionRow
-        className="min-h-13"
-        leading={
+    <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
+      <CollectionRow className="min-h-13">
+        <CollectionRow.Leading>
           <span className="grid size-8 shrink-0 place-items-center rounded-sm bg-surface-2 text-fg-muted">
             <Icon aria-hidden="true" className="size-4" />
           </span>
-        }
-        title={
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <span className="min-w-0">
             <span
               className="block truncate text-sm font-semibold leading-5 text-fg"
@@ -537,9 +525,11 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               ) : null}
             </span>
           </span>
-        }
-        context={file.description ?? fileTypeLabel(contentType)}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {file.description ?? fileTypeLabel(contentType)}
+        </CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             <Badge variant="secondary" className="text-[11px] text-fg-muted">
               {displaySourceLabel(file.provenance.source)}
@@ -555,8 +545,8 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               Updated {formatDate(file.updatedAt)}
             </span>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${presentation.displayTitle}`}>
             <PinOverflowMenu
               target={{ kind: 'document', key: file.id }}
@@ -591,9 +581,9 @@ function CapturedFileRow({ file, onPromote }: { file: CapturedFileItem; onPromot
               </Button>
             </DialogTrigger>
           </ItemActionGroup>
-        }
-      />
-    </li>
+        </CollectionRow.Actions>
+      </CollectionRow>
+    </div>
   );
 }
 
@@ -654,39 +644,39 @@ function PromoteDialog({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, dispatchForm] = useReducer(promoteDialogReducer, file, promoteDialogInitialState);
-  const [promotionError, setPromotionError] = useState<string | null>(null);
   const [titleError, setTitleError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   function submit(): void {
     if (!form.name.trim()) {
-      setPromotionError(null);
       setTitleError('Enter a title before promoting this file.');
       titleInputRef.current?.focus();
       return;
     }
 
     setTitleError(null);
-    setPromotionError(null);
     startTransition(async () => {
-      try {
-        const result = await promoteCapturedFileAction({
-          id: file.id,
-          name: form.name,
-          folderId: form.folderId || null,
-          visibility: form.visibility,
-          visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
-        });
-        if (!result.ok || !result.documentId) {
-          throw new Error(result.error ?? 'Promotion failed');
-        }
-        toast.success('Promoted to documents');
-        router.push(`/app/documents/${result.documentId}`);
-      } catch (error) {
-        const details = error instanceof Error ? error.message : undefined;
-        setPromotionError(details ?? 'Promotion failed');
-        toast.error('Could not promote captured file');
-      }
+      const result = await notifyAction({
+        id: `captured-file:${file.id}:promote`,
+        loading: 'Promoting captured file…',
+        success: 'Promoted to documents',
+        error: 'Couldn’t promote captured file',
+        run: async () => {
+          const promoted = await promoteCapturedFileAction({
+            id: file.id,
+            name: form.name,
+            folderId: form.folderId || null,
+            visibility: form.visibility,
+            visibilityUserIds: form.visibility === 'specific_users' ? form.visibilityUserIds : [],
+          });
+          if (!promoted.ok || !promoted.documentId) {
+            return { error: promoted.error ?? 'Couldn’t promote captured file' };
+          }
+          return { documentId: promoted.documentId };
+        },
+      });
+      if (result.error || !('documentId' in result) || !result.documentId) return;
+      router.push(`/app/documents/${result.documentId}`);
     });
   }
 
@@ -792,15 +782,6 @@ function PromoteDialog({
             ))}
           </fieldset>
         ) : null}
-        {promotionError ? (
-          <InlineError
-            message="Could not promote this captured file. It remains unchanged. Check your connection, then try again."
-            details={promotionError}
-            onRetry={submit}
-            retrying={pending}
-            retryLabel="Promote again"
-          />
-        ) : null}
         <DialogFooter className="mt-5">
           <Button type="button" variant="outline" onClick={onClose} disabled={pending}>
             Cancel
@@ -822,10 +803,6 @@ function matchesDateFilter(value: string, filter: string): boolean {
 
 function formatDate(value: string): string {
   return capturedFileDateFormatter.format(new Date(value));
-}
-
-function capturedFileCountLabel(count: number): string {
-  return `${String(count)} captured ${count === 1 ? 'file' : 'files'}`;
 }
 
 function fileTypeLabel(contentType: string): string {

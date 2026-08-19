@@ -115,7 +115,7 @@ SLACK_SIGNING_SECRET=
 channels:history channels:read
 chat:write commands files:read
 groups:history groups:read
-im:history im:read
+im:history im:read im:write
 reactions:write users:read users:read.email
 </code></pre>
       <p>
@@ -147,6 +147,9 @@ app_mention
       <p>
         The bot must be present in a private channel before Slack will deliver history/events for
         it. DMs need no channel binding; they route through the linked Slack user's active team.
+        Daily digest delivery uses the same bot token: a workspace can post the team-visible digest
+        to a channel the bot is in, or DM every linked member. Add <code>im:write</code> so the bot
+        can open those DMs. Configure destinations in Team settings → Preferences.
       </p>
       <p>
         In a DM, ordinary text and <code>/ask &lt;question&gt;</code> create durable agent turns.

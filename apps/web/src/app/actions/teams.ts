@@ -21,8 +21,17 @@ import {
   users,
 } from '@timeline/db';
 import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
+import { getEnv } from '@timeline/shared/env';
 import * as integrationsLib from '@timeline/shared/integrations';
-import { sendMessage } from '@timeline/shared/messaging';
+import {
+  addTeamDigestDestination,
+  insertDefaultDigestDestination,
+  parseAddDigestDestinationInput,
+  removeTeamDigestDestination,
+  sendMessage,
+  type AddDigestDestinationInput,
+} from '@timeline/shared/messaging';
+import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
 import { assertNotLastOwner } from '@timeline/shared/team-roles';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -96,6 +105,7 @@ export async function createTeamAction(
           teamId: id,
           defaultTimezone,
         });
+        await insertDefaultDigestDestination(tx, id);
         return id;
       });
     } catch (err) {
@@ -175,6 +185,11 @@ export interface InboundEmailWhitelistState {
 }
 
 export interface DigestPreferenceState {
+  error?: string;
+  ok?: boolean;
+}
+
+export interface DigestDestinationState {
   error?: string;
   ok?: boolean;
 }
@@ -325,6 +340,174 @@ export async function updateDigestPreferenceAction(
   });
 }
 
+function splitDestinationTarget(raw: FormDataEntryValue | null): {
+  targetId?: string;
+  label?: string;
+} {
+  if (typeof raw !== 'string' || raw.trim().length === 0) return {};
+  const [targetId, ...labelParts] = raw.split('::');
+  const label = labelParts.join('::').trim();
+  return {
+    ...(targetId?.trim() ? { targetId: targetId.trim() } : {}),
+    ...(label ? { label } : {}),
+  };
+}
+
+async function assertDigestDestinationAvailable(
+  teamId: string,
+  destination: AddDigestDestinationInput,
+): Promise<string | null> {
+  if (destination.kind === 'slack_channel' || destination.kind === 'slack_dm_members') {
+    if (!(await hasSlackInstallForTeam({ db, teamId }))) {
+      return 'Connect Slack before adding a Slack digest destination.';
+    }
+  }
+  if (destination.kind === 'telegram_chat' || destination.kind === 'telegram_dm_members') {
+    if (!getEnv().TELEGRAM_BOT_TOKEN) {
+      return 'Connect Telegram before adding a Telegram digest destination.';
+    }
+  }
+  if (destination.kind === 'telegram_chat') {
+    const chatId = Number(destination.targetId);
+    if (!Number.isSafeInteger(chatId)) {
+      return 'That Telegram chat is not bound to this team.';
+    }
+    const rows = await db
+      .select({ id: telegramChatBindings.id })
+      .from(telegramChatBindings)
+      .where(
+        and(eq(telegramChatBindings.teamId, teamId), eq(telegramChatBindings.tgChatId, chatId)),
+      )
+      .limit(1);
+    if (!rows[0]) return 'That Telegram chat is not bound to this team.';
+  }
+  if (destination.kind === 'slack_channel') {
+    try {
+      const conversations = await listSlackConversationsForTeam({ db, teamId });
+      const match = conversations.find(
+        (conversation) =>
+          conversation.id === destination.targetId && conversation.is_member !== false,
+      );
+      if (!match) return 'The Slack bot must be a member of that channel.';
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'add_digest_destination_slack_channel',
+      });
+      return 'Could not verify that Slack channel.';
+    }
+  }
+  return null;
+}
+
+export async function addDigestDestinationAction(
+  _prev: DigestDestinationState,
+  formData: FormData,
+): Promise<DigestDestinationState> {
+  return runSentryServerAction('add_digest_destination', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'add_digest_destination_auth',
+      });
+      return { error: 'Only admins can change digest destinations' };
+    }
+
+    const parsed = parseAddDigestDestinationInput({
+      kind: formData.get('kind'),
+      ...splitDestinationTarget(formData.get('target')),
+    });
+    if (!parsed.ok) return { error: parsed.error };
+
+    const unavailable = await assertDigestDestinationAvailable(active.teamId, parsed.value);
+    if (unavailable) return { error: unavailable };
+
+    const result = await addTeamDigestDestination({
+      db,
+      teamId: active.teamId,
+      createdByUserId: session.user.id,
+      destination: parsed.value,
+    });
+    if ('error' in result) return { error: result.error };
+
+    await db.insert(auditLog).values({
+      teamId: active.teamId,
+      actorUserId: session.user.id,
+      action: 'settings.change',
+      targetType: 'team',
+      targetId: active.teamId,
+      targetVisibility: 'team',
+      metadata: {
+        setting: 'team.digest.destination.add',
+        kind: parsed.value.kind,
+        targetId: parsed.value.targetId ?? null,
+      },
+    });
+
+    revalidatePath('/app/team');
+    return { ok: true };
+  });
+}
+
+export async function removeDigestDestinationAction(
+  _prev: DigestDestinationState,
+  formData: FormData,
+): Promise<DigestDestinationState> {
+  return runSentryServerAction('remove_digest_destination', async () => {
+    const session = await auth();
+    if (!session?.user) return { error: 'Not signed in' };
+    const { active } = await resolveActiveTeam(session.user.id);
+    if (!active) return { error: 'No active team' };
+
+    const scope = withTeam(db, active.teamId, session.user.id);
+    try {
+      await scope.requireMembership('admin');
+    } catch (err) {
+      reportCaughtError(err, {
+        surface: 'server_action',
+        operation: 'remove_digest_destination_auth',
+      });
+      return { error: 'Only admins can change digest destinations' };
+    }
+
+    const destinationId = formData.get('destinationId');
+    if (typeof destinationId !== 'string' || !z.uuid().safeParse(destinationId).success) {
+      return { error: 'Choose a digest destination to remove.' };
+    }
+
+    const removed = await removeTeamDigestDestination({
+      db,
+      teamId: active.teamId,
+      destinationId,
+    });
+    if (!removed) return { error: 'That digest destination was already removed.' };
+
+    await db.insert(auditLog).values({
+      teamId: active.teamId,
+      actorUserId: session.user.id,
+      action: 'settings.change',
+      targetType: 'team',
+      targetId: active.teamId,
+      targetVisibility: 'team',
+      metadata: {
+        setting: 'team.digest.destination.remove',
+        destinationId,
+      },
+    });
+
+    revalidatePath('/app/team');
+    return { ok: true };
+  });
+}
+
 export async function updateTeamTimezoneAction(
   _prev: TeamTimezoneState,
   formData: FormData,
@@ -406,6 +589,11 @@ export interface InviteState {
   inviteUrl?: string;
   sendStatus?: 'pending' | 'sent' | 'failed';
   sendError?: string;
+}
+
+export interface TeamMutationResult {
+  error?: string;
+  ok?: boolean;
 }
 
 interface InviteDeliveryInput {
@@ -599,75 +787,84 @@ export async function inviteMemberAction(
   });
 }
 
-export async function resendInviteAction(formData: FormData): Promise<void> {
+export async function resendInviteAction(formData: FormData): Promise<TeamMutationResult> {
   return runSentryServerAction('resend_invite', async () => {
     const session = await auth();
-    if (!session?.user) return;
+    if (!session?.user) return { error: 'Not signed in' };
     const { active } = await resolveActiveTeam(session.user.id);
-    if (!active) return;
+    if (!active) return { error: 'No active team' };
     const inviteId = formData.get('inviteId');
-    if (typeof inviteId !== 'string') return;
+    if (typeof inviteId !== 'string') return { error: 'Invite is missing' };
 
     const scope = withTeam(db, active.teamId, session.user.id);
     const callerRole = await scope.requireMembership('admin');
     const token = randomToken(24);
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
     const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
-    const delivery = await db.transaction(async (tx): Promise<InviteDeliveryInput | null> => {
-      const rows = await tx
-        .select({
-          id: teamInvites.id,
-          email: teamInvites.email,
-          role: teamInvites.role,
-        })
-        .from(teamInvites)
-        .where(
-          and(
-            eq(teamInvites.id, inviteId),
-            eq(teamInvites.teamId, active.teamId),
-            isNull(teamInvites.acceptedAt),
-            isNull(teamInvites.revokedAt),
-          ),
-        )
-        .limit(1)
-        .for('update');
-      const invite = rows[0];
-      if (!invite) return null;
-      if (invite.role === 'owner') return null;
-      if (invite.role === 'admin' && callerRole !== 'owner') return null;
-      await tx
-        .update(teamInvites)
-        .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
-        .where(eq(teamInvites.id, invite.id));
-      return {
-        id: invite.id,
-        teamId: active.teamId,
-        inviterUserId: session.user.id,
-        email: invite.email,
-        role: invite.role,
-        token,
-        expiresAt,
-        teamName: active.teamName,
-        inviterName,
-      };
-    });
-    if (delivery) await deliverInviteEmail(delivery);
+    const delivery = await db.transaction(
+      async (tx): Promise<{ ok: true; input: InviteDeliveryInput } | TeamMutationResult> => {
+        const rows = await tx
+          .select({
+            id: teamInvites.id,
+            email: teamInvites.email,
+            role: teamInvites.role,
+          })
+          .from(teamInvites)
+          .where(
+            and(
+              eq(teamInvites.id, inviteId),
+              eq(teamInvites.teamId, active.teamId),
+              isNull(teamInvites.acceptedAt),
+              isNull(teamInvites.revokedAt),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        const invite = rows[0];
+        if (!invite) return { error: 'Invite is no longer available' };
+        if (invite.role === 'owner') return { error: 'This invite cannot be resent' };
+        if (invite.role === 'admin' && callerRole !== 'owner') {
+          return { error: 'Only owners can resend admin invites' };
+        }
+        await tx
+          .update(teamInvites)
+          .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
+          .where(eq(teamInvites.id, invite.id));
+        return {
+          ok: true,
+          input: {
+            id: invite.id,
+            teamId: active.teamId,
+            inviterUserId: session.user.id,
+            email: invite.email,
+            role: invite.role,
+            token,
+            expiresAt,
+            teamName: active.teamName,
+            inviterName,
+          },
+        };
+      },
+    );
+    if (!('input' in delivery)) return { error: delivery.error ?? 'Couldn’t resend invite' };
+    await deliverInviteEmail(delivery.input);
     revalidatePath('/app/team');
+    return { ok: true };
   });
 }
 
-export async function revokeInviteAction(formData: FormData): Promise<void> {
+export async function revokeInviteAction(formData: FormData): Promise<TeamMutationResult> {
   return runSentryServerAction('revoke_invite', async () => {
     const session = await auth();
-    if (!session?.user) return;
+    if (!session?.user) return { error: 'Not signed in' };
     const { active } = await resolveActiveTeam(session.user.id);
-    if (!active) return;
+    if (!active) return { error: 'No active team' };
     const inviteId = formData.get('inviteId');
-    if (typeof inviteId !== 'string') return;
+    if (typeof inviteId !== 'string') return { error: 'Invite is missing' };
 
     const scope = withTeam(db, active.teamId, session.user.id);
     const callerRole = await scope.requireMembership('admin');
-    await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx): Promise<TeamMutationResult> => {
       const rows = await tx
         .select({ role: teamInvites.role })
         .from(teamInvites)
@@ -682,8 +879,10 @@ export async function revokeInviteAction(formData: FormData): Promise<void> {
         .limit(1)
         .for('update');
       const invite = rows[0];
-      if (!invite) return;
-      if (invite.role === 'admin' && callerRole !== 'owner') return;
+      if (!invite) return { error: 'Invite is no longer available' };
+      if (invite.role === 'admin' && callerRole !== 'owner') {
+        return { error: 'Only owners can revoke admin invites' };
+      }
       await tx
         .update(teamInvites)
         .set({ revokedAt: new Date(), revokedByUserId: session.user.id })
@@ -697,32 +896,37 @@ export async function revokeInviteAction(formData: FormData): Promise<void> {
         targetVisibility: 'team',
         metadata: { setting: 'team.invite_revoked', inviteId, role: invite.role },
       });
+      return { ok: true };
     });
+    if (outcome.error) return outcome;
     revalidatePath('/app/team');
+    return { ok: true };
   });
 }
 
-export async function changeMemberRoleAction(formData: FormData): Promise<void> {
+export async function changeMemberRoleAction(formData: FormData): Promise<TeamMutationResult> {
   return runSentryServerAction('change_member_role', async () => {
     const session = await auth();
-    if (!session?.user) return;
+    if (!session?.user) return { error: 'Not signed in' };
     const { active } = await resolveActiveTeam(session.user.id);
-    if (!active) return;
+    if (!active) return { error: 'No active team' };
     const memberUserId = formData.get('userId');
     const role = formData.get('role');
-    if (typeof memberUserId !== 'string') return;
-    if (role !== 'owner' && role !== 'admin' && role !== 'member') return;
+    if (typeof memberUserId !== 'string') return { error: 'Choose a team member' };
+    if (role !== 'owner' && role !== 'admin' && role !== 'member') {
+      return { error: 'Choose a valid role' };
+    }
 
     const scope = withTeam(db, active.teamId, session.user.id);
     try {
       await scope.requireMembership('owner');
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'change_member_role_auth' });
-      return;
+      return { error: 'Only owners can change roles' };
     }
 
     try {
-      await db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx): Promise<TeamMutationResult> => {
         const targetRows = await tx
           .select({ role: teamMembers.role })
           .from(teamMembers)
@@ -736,8 +940,8 @@ export async function changeMemberRoleAction(formData: FormData): Promise<void> 
           .limit(1)
           .for('update');
         const target = targetRows[0];
-        if (!target) return;
-        if (target.role === role) return;
+        if (!target) return { error: 'That member is no longer on this team' };
+        if (target.role === role) return { ok: true };
         if (target.role === 'owner' && role !== 'owner') {
           await assertNotLastOwner(tx, active.teamId, memberUserId);
         }
@@ -759,27 +963,30 @@ export async function changeMemberRoleAction(formData: FormData): Promise<void> 
             role,
           },
         });
+        return { ok: true };
       });
+      if (outcome.error) return outcome;
     } catch (e) {
       if (e instanceof Error && e.message === 'last_owner') {
         reportCaughtError(e, { surface: 'server_action', operation: 'change_member_role' });
-        return;
+        return { error: 'The team needs at least one owner' };
       }
       throw e;
     }
     revalidatePath('/app/team');
+    return { ok: true };
   });
 }
 
-export async function removeMemberAction(formData: FormData): Promise<void> {
+export async function removeMemberAction(formData: FormData): Promise<TeamMutationResult> {
   return runSentryServerAction('remove_member', async () => {
     const session = await auth();
-    if (!session?.user) return;
+    if (!session?.user) return { error: 'Not signed in' };
     const { active } = await resolveActiveTeam(session.user.id);
-    if (!active) return;
+    if (!active) return { error: 'No active team' };
     const memberUserId = formData.get('userId');
-    if (typeof memberUserId !== 'string') return;
-    if (memberUserId === session.user.id) return;
+    if (typeof memberUserId !== 'string') return { error: 'Choose a team member' };
+    if (memberUserId === session.user.id) return { error: 'You can’t remove yourself' };
 
     const scope = withTeam(db, active.teamId, session.user.id);
     const callerRole = await scope.requireMembership('admin');
@@ -789,7 +996,7 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
     }[] = [];
 
     try {
-      await db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx): Promise<TeamMutationResult> => {
         const targetRows = await tx
           .select({ role: teamMembers.role })
           .from(teamMembers)
@@ -802,9 +1009,13 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           )
           .limit(1);
         const targetRole = targetRows[0]?.role;
-        if (!targetRole) return;
-        if (callerRole === 'admin' && targetRole !== 'member') return;
-        if (callerRole !== 'owner' && callerRole !== 'admin') return;
+        if (!targetRole) return { error: 'That member is no longer on this team' };
+        if (callerRole === 'admin' && targetRole !== 'member') {
+          return { error: 'Only owners can remove admins or owners' };
+        }
+        if (callerRole !== 'owner' && callerRole !== 'admin') {
+          return { error: 'Only admins can remove members' };
+        }
         // Never strand a team with zero owners. `assertNotLastOwner` runs
         // SELECT FOR UPDATE on the team's owner rows so a concurrent removal
         // of a different owner cannot also pass this check.
@@ -1135,11 +1346,13 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
           targetVisibility: 'team',
           metadata: { setting: 'team.member_removed', memberUserId, role: targetRole },
         });
+        return { ok: true };
       });
+      if (outcome.error) return outcome;
     } catch (e) {
       if (e instanceof Error && e.message === 'last_owner') {
         reportCaughtError(e, { surface: 'server_action', operation: 'remove_member' });
-        return;
+        return { error: 'The team needs at least one owner' };
       }
       throw e;
     }
@@ -1159,5 +1372,6 @@ export async function removeMemberAction(formData: FormData): Promise<void> {
       }
     }
     revalidatePath('/app/team');
+    return { ok: true };
   });
 }

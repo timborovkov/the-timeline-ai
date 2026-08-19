@@ -96,6 +96,10 @@ export async function retrieveWorkspaceContext(
   const query = input.query.trim();
   const recipe = input.recipe === 'auto' || !input.recipe ? classifyRecipe(query) : input.recipe;
   const limit = Math.min(Math.max(input.limit ?? 5, 1), 10);
+  const includeDocuments =
+    input.includeDocuments === true ||
+    (input.includeDocuments !== false &&
+      (recipe === 'document_knowledge' || recipe === 'object_profile' || recipe === 'task_status'));
   const routes =
     recipe === 'product_guide' ? searchAppGuide(query, limit) : searchAppGuide(query, 2);
   const adapterFailures: WorkspaceContextAdapterFailure[] = [];
@@ -159,7 +163,7 @@ export async function retrieveWorkspaceContext(
             [],
           )
         : [],
-      input.includeDocuments || recipe === 'document_knowledge'
+      includeDocuments
         ? recoverAdapter(
             adapterFailures,
             'documents',

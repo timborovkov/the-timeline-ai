@@ -3,6 +3,8 @@
 import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink } from 'lucide-react';
 
+import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { VirtualList } from '@/components/collections/virtual-list';
 import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
@@ -26,26 +28,28 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
       {items.length === 0 && query.isPending ? (
         <p className="text-sm font-normal text-fg-dim">Loading…</p>
       ) : (
-        <ul className="space-y-1 text-sm font-normal text-fg">
-          {items.map((item) => (
-            <li key={String((item as { id?: unknown }).id)}>
+        <VirtualList
+          items={items}
+          getItemKey={(item, index) => sectionItemKey(item, index)}
+          estimateSize={48}
+          gap={4}
+          renderItem={(item) => (
+            <div className="text-sm font-normal text-fg">
               <ObjectSectionItem section={section} item={item} />
-            </li>
-          ))}
-        </ul>
+            </div>
+          )}
+        />
       )}
-      {query.hasNextPage || query.isFetchingNextPage ? (
-        <button
-          type="button"
-          disabled={!query.hasNextPage || query.isFetchingNextPage}
-          onClick={() => {
-            void query.fetchNextPage();
-          }}
-          className="mt-1 text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:opacity-40"
-        >
-          {query.isFetchingNextPage ? 'Loading…' : 'Load more'}
-        </button>
-      ) : null}
+      <InfiniteScroll
+        hasMore={query.hasNextPage}
+        loading={query.isFetchingNextPage}
+        error={query.isFetchNextPageError ? 'Could not load more.' : null}
+        onLoadMore={() => {
+          void query.fetchNextPage();
+        }}
+        boundLabel="No more matching activity"
+        hideBound={items.length === 0}
+      />
     </section>
   );
 }
@@ -147,6 +151,12 @@ function text(value: unknown, fallback = ''): string {
   if (typeof value === 'string') return displayText(value);
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return fallback;
+}
+
+function sectionItemKey(item: unknown, index: number): string {
+  if (!item || typeof item !== 'object') return String(index);
+  const id = text((item as Record<string, unknown>).id);
+  return id || String(index);
 }
 
 function rawText(value: unknown, fallback = ''): string {

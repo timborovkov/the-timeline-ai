@@ -31,24 +31,150 @@ An immutable source record captured into the timeline. Raw events are the
 evidence layer behind facts, objects, agent answers, and later exports.
 _Avoid_: Message, activity, log entry
 
+**Signal Class**:
+The processing role of one raw event, independent of which OAuth app emitted
+it. Communication is people talking or deciding (Slack, meetings, email).
+Captured work is a durable work record or lifecycle change (merged PR, Jira
+status, CRM call log). A pulse is telemetry that can explain or impact work
+(CI runs, Sentry events) without originating proposals. Classify the event,
+not the integration. Writers stamp this as `source_metadata.signal_class`.
+It is not Timeline event class: a Drive `file.changed` ping is
+`signalClass=pulse` and `event_class=artifact`; a merged GitHub PR is
+`captured_work` and `work_record`. Ingest, extract skip, and proposals read
+`signalClass` only. The living workflow is
+[docs/relational-memory.md](docs/relational-memory.md).
+_Avoid_: Source, provider, integration type when discussing LLM spend or proposal rights
+
+**Communication Signal**:
+A signal class for conversational evidence. It may extract facts and run a
+conversation review. Isolated messages still do not mint tasks.
+_Avoid_: Chat log, transcript dump
+
+**Captured Work Signal**:
+A signal class for durable work records. Structured lifecycle fields parse
+without an extract or suggestion model. Unstructured records such as a CRM
+call log may extract. Captured work may write approval-backed Timeline field
+changes coalesced by work-item id.
+_Avoid_: Sync event, webhook when discussing memory rights
+
+**Pulse Signal**:
+A signal class for telemetry and heartbeats. Pulses persist, embed, and attach
+to an existing cluster when a hard join key exists. They never call extract
+and never originate proposals. They may appear as supporting evidence. Drive
+file-changed pings and document-drive lifecycle rows ("Uploaded X") are pulses.
+The document body is not.
+_Avoid_: Noise, spam, unimportant event
+
+**Intentional Capture**:
+A communication event the team wrote on purpose: home Capture, Telegram
+`/note`, or a voice memo. High-intent communication, not a pulse and not a
+fourth class. Isolated firehose Slack/Telegram group messages still do not
+mint tasks; an intentional capture may propose from that single event.
+_Avoid_: Pulse, note dump, "just a message"
+
+**Reference Knowledge**:
+Curated document-drive files (manual upload, Drive harvest, promoted captured
+files) stored as versions and chunks. Ask, object summaries, and proposals may
+cite them with `[doc:…]`. They do not originate Timeline tasks by themselves.
+Unpromoted conversational attachments stay captured files, not reference
+knowledge. See [docs/captured-files.md](docs/captured-files.md) and
+[docs/relational-memory.md](docs/relational-memory.md).
+_Avoid_: Pulse, captured file when the team promoted or uploaded it into the drive
+
+**Source Envelope**:
+The provider-blind fields every adapter must emit: signal class, optional
+object map, external object id, human-facing content text, URLs, and aliases.
+Core ingest, matching, and packs read the envelope. GitHub-specific parsing
+such as PR vs workflow run stays in the GitHub adapter.
+_Avoid_: Provider switch in shared proposal code, `github.type` outside the adapter
+
+**Work Hub**:
+The Timeline task, project, person, or artifact cluster that events from
+different surfaces attach to. Telegram, a GitHub PR, a meeting, and last
+month's email become one story when they point at the same hub, not when they
+share a provider id. Embeddings recall candidate hubs; they do not prove the
+link. Pending approvals against a hub stay alive: later captured-work
+completion refreshes the same proposal instead of leaving it to rot.
+Proposal writes qualify an existing company, vendor, deal, or project when
+the evidence uniquely names it: canonical name, alias, distinctive token,
+meeting title, or container label (Slack channel, Monday board, Telegram chat
+title, GitHub repo, Linear team/project). Embeddings and
+"40 recently updated objects" do not prove that join. Later conversation in
+the same window may amend an unedited pending create with that hub.
+The living workflow is
+[docs/relational-memory.md](docs/relational-memory.md).
+The freeze is
+[docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md](docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
+_Avoid_: Conversation, thread, or source when describing cross-surface identity
+
+**Mention-Qualified Hub**:
+An existing company, vendor, deal, or project that the proposal engine may
+attach because the evidence uniquely names it (canonical name, alias, a
+distinctive token such as `Faba` in `Faba website redesign`, a meeting title,
+or a container label such as Slack `#acme-project-development`, Monday board
+`Faba-ext`, or Telegram chat title). Generic words and generic containers
+(`#general`, `#dev`, "Customer Projects") do not qualify. Two hits of the
+same type refuse rather than guess. The primary-project edge is
+`parentObjectId`; a client attaches as `object_relationship` `related`.
+Qualify owns that parent: a unique project overwrites a model-copied hub
+UUID, and silent qualify strips it. Models cannot copy hub UUIDs. This
+is a write-path qualify step, not Ask retrieval and not a recency dump of
+workspace objects. Frozen by
+[ADR 0015](docs/adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md).
+_Avoid_: Similar object, related client, cosine match
+
+**Memory Grade**:
+The role of a hub, not a numeric importance score. Goal is a team commitment
+with a horizon. Work is something the team is actually tracking. Finding is a
+tool finding on a parent work item (Bugbot, CI, Codex) and must not mint a
+sibling Timeline task. Mention is a name that appeared once and stays fact
+text until promoted. Priority 1–4 stays the urgency field on goals and work.
+See [docs/relational-memory.md](docs/relational-memory.md).
+_Avoid_: Importance, score, weight when a grade would do
+
 **Timeline Moment**:
 A user-facing cluster of related raw events shown together on the timeline so
 team members can understand a meaningful slice of work before drilling into
-individual source evidence. The timeline is date-first, with source clusters
-inside each date and impact shown as attached context. Timeline lists should
-show compact signals for extracted file representations; full transcripts,
-OCR text, and visual descriptions belong in event detail, citations, and agent
-tools. User-facing Moments chrome and digests count moments; Audit trail,
-filters, and technical disclosures count source events. Row chips use signals;
-inspectors use evidence items — do not pair moment and raw-event totals in the
-same chrome.
+individual source evidence. Archive rows are Linear-quiet: time, one source
+icon, a title, and at most one muted context line, with sticky dates under the
+filter toolbar. Impact stays in the inspector, not on the row. The archive
+pages older activity through infinite scroll and virtualizes mounted rows;
+the sticky CollectionToolbar keeps Search timeline, Filters, and source
+presets, and paging continues after each loaded page. Timeline has no
+inventory chip. Timeline lists should show compact signals for
+extracted file representations; full transcripts, OCR text, and visual
+descriptions belong in event detail, citations, and agent tools. User-facing
+Moments chrome and digests count moments; All events, filters, and technical
+disclosures count source events. Conversation inspectors use evidence items;
+pulses use a compact activity log — do not pair moment and raw-event totals in
+the same chrome. The inspector keeps original source (message, email HTML,
+transcript, webhook/JSON payload) in a collapsed disclosure; attached documents
+link to the document drive. Ask `[ev:]` citations name those raw source events;
+the inspector evidence item shows the matching chip so a cited source can be
+identified without putting IDs on the timeline list. Citation previews open the
+matching workspace destination (transcript, document, calendar event, object,
+or Timeline moment) and reuse the inspector original-source viewer for payloads.
 _Avoid_: Raw Event when referring to the grouped browsing unit
+
+**Timeline event class**:
+A provider-agnostic presentation family for captured events: communication,
+work record, pulse, incident, artifact, or schedule. Native sources,
+integrations, and ingest webhooks all resolve to one class. Writers stamp
+`source_metadata.event_class`. The class chooses visual weight (story, record,
+pulse), whether `objectMap` may feed artifact identity, and how the inspector
+is laid out. Generic ingest webhooks let an admin set the class when creating
+the webhook; unknown deliveries default to pulse. This is not Signal Class.
+Ingest rights live on `signalClass`
+([ADR 0016](docs/adr/0016-ingest-signal-class-lives-on-the-envelope.md)).
+_Avoid_: GitHub event, Sentry event, webhook type when discussing presentation
 
 **Impact Context**:
 The workspace consequences or links attached to a timeline moment, such as
 tasks, boards, objects, calendar events, documents, decisions, follow-ups, or
 pending approvals that were created, changed, referenced, or suggested from the
-underlying evidence. Extracted emails, phone numbers, and labeled addresses can
+underlying evidence. Work records (merged PRs, issue moves, deal stages) also
+surface deterministic structured facts from source metadata. Pulses do not
+invent impact from machine identifiers. Extracted emails, phone numbers, and labeled addresses can
 ride on raw-event metadata as evidence, but emails/phones become useful product
 state only when they are accepted as person identity facets; addresses remain
 location/object metadata unless a later workflow promotes them. Impact Context
@@ -105,6 +231,22 @@ Semantic similarity can suggest review candidates but is not enough to merge
 evidence into the same artifact cluster by itself.
 _Avoid_: Cleanup, removal, sync, extraction
 
+**Reconciliation Dashboard**:
+A team-scoped owner/admin health view for evidence coverage, clusters, and
+proposed workspace updates. Members who open the page see an Admins-only empty
+state. The header explains that captures are grouped into work and proposed
+updates wait for review. The header is the page title and that subtitle, with no
+access, team, or coverage-count metadata row. Sources that still need evidence
+appear as dense rows. Check coverage and Preview repair sit on a toolbar with
+hover hints. Recent clusters and Recent outputs use ordinary section titles.
+Cluster evidence/output lists show status, a human label, and relative time.
+Cluster IDs, output IDs, raw-event IDs, and raw enum keys stay in the row hover
+title. Copying an output payload lives in the row overflow menu.
+Evidence-by-source counts and manual UUID reconcile stay in Advanced tools,
+using sentence-case headings and dense count or history rows rather than
+uppercase labels, badge clouds, or a metric strip.
+_Avoid_: Recovery queue, retry dashboard, operator console, release gate, stat cards
+
 **Lifecycle Update**:
 A workspace reconciliation outcome that changes the state of a derived artifact
 because timeline evidence shows progress, completion, cancellation, blocking,
@@ -114,9 +256,12 @@ lifecycle state. They may skip intermediate states when newer evidence clearly
 shows the artifact's current state. Lifecycle updates require clear resolution
 to one artifact cluster; ambiguous evidence should not guess between plausible
 artifacts. Progress updates require explicit workflow movement, not mere
-attention or discussion. Completion evidence can come from any credible source
-when the statement is assertive and the artifact match is clear; hedged guesses
-remain evidence only. Cancellation, blocking, and unblocking are lifecycle
+attention or discussion. Completion evidence can come from an assertive
+statement **or** from later outcome evidence that uniquely matches one open
+task (the deliverable exists: brand book captured, naming decision accepted,
+project already using the name). Nobody has to say "this is complete." Hedged
+guesses such as "I think it is done" remain evidence only. Two matching open
+tasks refuse a lifecycle guess. Cancellation, blocking, and unblocking are lifecycle
 updates when they map cleanly to the artifact's supported state vocabulary.
 Each artifact type has one canonical lifecycle vocabulary; conversational and
 display aliases such as "in progress" normalize to that vocabulary before
@@ -287,8 +432,10 @@ An approval-backed agent suggestion to create or update object memory, such as
 adding an alias, identity facet, relationship, note, field value, or missing
 workspace object. Object memory proposals become canonical only when a teammate
 accepts them; weak mentions should remain evidence rather than proposed memory.
-When evidence supports new related objects together, their create proposals and
-relationship proposal should be reviewed as one bundle.
+When evidence uniquely names one existing company or project, a create-task
+proposal should attach that hub in the same bundle rather than leaving a bare
+task. When evidence supports new related objects together, their create
+proposals and relationship proposal should be reviewed as one bundle.
 Creation proposals should be the last resort after checking existing objects
 and pending proposals.
 _Avoid_: Memory write when it hides the approval step
@@ -641,12 +788,18 @@ _Avoid_: Automation permission, write access
 
 **Event-Local Proposal**:
 An approval-backed suggestion generated primarily from one raw event plus its
-available extracted facts, recent context, and existing workspace state. Event-
-local proposals remain the default. Generic ingest webhooks are the first
+extracted facts, mention-qualified hubs, and typed adjacent workspace state.
+It is not a recency dump of the team's last N events or last 40 objects.
+Event-local proposals remain the default for intentional captures and for
+sources without a conversation identity. Generic ingest webhooks are the first
 adapter to honor cross-source evidence mode; in enforced mode, the anchor and
 directly related pack evidence replace time-only raw chronology while typed
-workspace state remains adjacent context. Other event-local adapters keep their
-legacy behavior until their own rollout milestones.
+workspace state remains adjacent context. Other event-local adapters keep
+their legacy behavior until their own rollout milestones. GitHub, Linear,
+Monday, and Sentry skip this LLM path: they persist, embed, and reconcile
+without the extract or suggestion models. GitHub PR and issue lifecycle
+fields enqueue a coalesced, approval-backed Timeline task update keyed by
+work-item id rather than by nearby unrelated events.
 _Avoid_: Full-context proposal, automatic synthesis
 
 **Event Visibility**:
@@ -910,6 +1063,14 @@ inside a Slack workspace. Installation creates a shared capture surface; it is
 separate from a member's Slack user link.
 _Avoid_: Personal Slack link
 
+**Digest Destination**:
+A workspace-configured place the daily digest is sent. Email every member is
+the default. Admins can add Slack channels, Telegram groups, and bot DMs to
+linked members, and can remove email so the digest is chat-only. Shared chats
+receive one team-visible digest; email and DMs stay personalized and honor the
+personal opt-out.
+_Avoid_: Notification channel when referring to digest routing
+
 **Visibility Default**:
 The initial visibility applied to future items from a capture surface. Changing
 a default does not retroactively change existing items.
@@ -932,16 +1093,28 @@ not to track every ordinary page view.
 _Avoid_: Timeline, activity feed
 
 **Job Recovery Dashboard**:
-A team-scoped owner/admin surface for retrying or dismissing failed and stuck
-product jobs tied to visible team artifacts, such as transcription,
-extraction, embedding, document processing, meeting finalization, and
-integration sync.
-_Avoid_: Operator dashboard, BullMQ dashboard, queue admin
+A team-scoped owner/admin surface titled Job recovery for retrying or dismissing
+failed and stuck product jobs from the last 7 days, tied to visible team
+artifacts such as transcription, extraction, embedding, document processing,
+meeting finalization, and integration sync. Home “recoverable jobs” uses this
+same 7-day count and is hidden from members. Members who open the page see an
+Admins-only empty state. The header is the page title and a 7-day subtitle.
+Older failed or stuck work is hidden from attention;
+workers retry it a few times, then give up. Admins can dismiss that older set in
+bulk; the page continues until the hidden count is cleared. The list shows
+status, artifact label, and relative time. Job IDs, artifact UUIDs, and raw
+provider errors stay in the row hover title. Per-row retry and dismiss live in
+the overflow menu. Unprocessed backlog (events that never started extraction or
+embedding) and conversation-suggestion backfill stay in Advanced tools as
+count rows and a heading with actions, not a card grid. Finished jobs in that
+fold use the same status, label, and time rows as the recovery queue.
+_Avoid_: Operator dashboard, BullMQ dashboard, queue admin, processing inventory
 
 **Environment Reset**:
 A development-only operational action that destroys all data and derived state
 in a non-production Timeline environment so it can be rebuilt from migrations
-and seed data.
+and seed data. Locally, `pnpm demo:reset` wipes then reseeds the Acme Labs
+demo corpus documented in `docs/demo-corpus.md`.
 _Avoid_: Team reset, clear everything, backup restore
 
 **Integration Audit Log**:
@@ -972,10 +1145,22 @@ _Avoid_: Setup wizard, activation gate
 **Home**:
 The signed-in landing surface for a team member. It leads with Ask, the team
 setup checklist, and actionable attention, keeps capture in a focused dialog,
-and follows with the latest digest, pinned work, and a dense scan of recent
-moments. It does not duplicate the canonical Timeline, Work navigation, or
-Connections management.
+and follows with a folded latest digest, pinned work, and a dense scan of
+recent moments. The digest header is the day; the covering time range stays
+footer metadata. Opened digests show narrative summaries of what changed and
+linked task, object, and calendar rows; Work → Digests lists generated days.
+It does not duplicate the canonical Timeline, Work navigation, or Connections
+management.
 _Avoid_: Timeline when referring to the landing page
+
+**Ask**:
+The agent chat surface. Full Ask is the research view with session history.
+Elsewhere in the dashboard, a floating Ask opens on the current page, keeps
+one thread per team until New, and remembers a short trail of views the
+conversation touched. Selected timeline, calendar, task, search, and folder
+items supply their names; other list pages keep the route label. Home still
+hands questions into full Ask.
+_Avoid_: Copilot, chatbot, assistant sidebar
 
 **Workspace Time Context**:
 The team's default frame for interpreting relative dates, day boundaries, week
@@ -1371,6 +1556,17 @@ marked done automatically?"
 Domain expert: "Conversation evidence should create a lifecycle update proposal
 for the canonical task. It should not silently mark the task done unless the
 change comes from an authoritative source for that artifact."
+
+Developer: "The branding task is still open, but the timeline already has the
+name, the brand book, and a week of using them. Nobody said branding is
+complete. Should we understand that anyway?"
+
+Domain expert: "Yes. That is outcome evidence, not a missing magic phrase.
+Recall the open task into the proposal prompt by distinctive title tokens,
+propose `status: done` when exactly one open task owns that deliverable, and
+keep it approval-backed. If two branding tasks could own the brand book, refuse.
+A Drive link with no matching open task is not a create. A later GitHub PR that
+only shares topic words still needs a join key; that is not this path."
 
 Developer: "If Google Calendar moves an imported meeting, does that need a
 team approval?"

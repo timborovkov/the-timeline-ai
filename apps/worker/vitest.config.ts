@@ -33,6 +33,7 @@ const integrationTests = [
 ];
 const liveTests = [
   'src/workers/suggestions.live-eval.test.ts',
+  'src/workers/proposal-engine.live-eval.test.ts',
   'src/workers/transcribe.live-eval.test.ts',
 ];
 

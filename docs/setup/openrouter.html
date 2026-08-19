@@ -452,10 +452,12 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
 </code></pre>
           Re-running is idempotent — point ids derived from
           <code>(scope, sourceId, embedding_model, chunk_index)</code> are deterministic, so the
-          same source chunk maps to the same point id and Qdrant upserts naturally. After the final
-          chunk batch lands, the worker deletes stale tail points for the same
-          <code>(team, scope, source, model)</code> where <code>chunk_index</code> is beyond the new
-          chunk count, so shorter re-embeds do not leave obsolete tail chunks.
+          same source chunk maps to the same point id and Qdrant upserts naturally. Upserts use
+          Qdrant's synchronous <code>wait=true</code> mode, so worker completion metadata is written
+          only after the vector change is applied. After the final chunk batch lands, the worker
+          deletes stale tail points for the same <code>(team, scope, source, model)</code> where
+          <code>chunk_index</code> is beyond the new chunk count, so shorter re-embeds do not leave
+          obsolete tail chunks.
         </li>
         <li>
           <strong>Verify</strong> spot-checks against the new collection by overriding

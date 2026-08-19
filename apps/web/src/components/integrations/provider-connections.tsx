@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useId, useMemo, useReducer, useRef, useState } from 'react';
+import { useId, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Skeleton } from '@/components/ui/skeleton';
+import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { groupResourcesByKind, providerLabel, shareDisplayName } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -160,7 +161,7 @@ export function PersonalConnectionsUi({
     return (
       <div className="space-y-3">
         <PersonalConnectionFlow />
-        <div className="space-y-3 rounded-lg border border-border bg-surface p-4">
+        <div className="space-y-3 border-y border-border py-4">
           <div className="space-y-1">
             <p className="text-sm font-medium text-fg">No provider accounts yet</p>
             <p className="text-sm text-fg-muted">
@@ -186,7 +187,7 @@ export function PersonalConnectionsUi({
 
 function PersonalConnectionFlow() {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-surface-2 p-3 text-sm">
+    <div className="space-y-3 border-y border-border py-3 text-sm">
       <div className="grid gap-2 md:grid-cols-3">
         <div>
           <p className="font-medium text-fg">1. Provider account</p>
@@ -394,8 +395,7 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
   }, [connection.provider, resourceByKey, shares]);
   const selected = state.selectedOverride ?? savedSelected;
   const sourceLoadError = queryError instanceof Error ? queryError.message : null;
-  const error = state.error ?? sourceLoadError;
-  const canRetrySourceLoad = state.error === null && sourceLoadError !== null;
+  const error = sourceLoadError;
   const query = state.query;
 
   const activeShareByKey = useMemo(() => {
@@ -458,68 +458,182 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
     const chosen = [...selected]
       .map((key) => resourceByKey.get(key) ?? activeShareToResource(activeShareByKey.get(key)))
       .filter((resource): resource is ProviderResource => Boolean(resource));
-    try {
-      const res = await fetch(`/api/connections/${connection.id}/resources`, {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          resources: chosen.map((resource) => ({
-            kind: resource.kind,
-            externalId: resource.externalId,
-            label: resource.label,
-          })),
-        }),
-      });
-      if (!res.ok) await readJsonResponse(res);
-      await refetch();
-      dispatch({ type: 'resetSelection' });
-      router.refresh();
-    } catch (err) {
-      dispatch({ type: 'error', error: err instanceof Error ? err.message : 'Save failed' });
-    } finally {
-      dispatch({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: `connection:${connection.id}:save`,
+      loading: 'Saving sources…',
+      success: 'Sources saved',
+      error: 'Couldn’t save sources',
+      run: async () => {
+        try {
+          const res = await fetch(`/api/connections/${connection.id}/resources`, {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              resources: chosen.map((resource) => ({
+                kind: resource.kind,
+                externalId: resource.externalId,
+                label: resource.label,
+              })),
+            }),
+          });
+          if (!res.ok) await readJsonResponse(res);
+          await refetch();
+          return { ok: true };
+        } catch {
+          return { error: 'failed' };
+        }
+      },
+    });
+    dispatch({ type: 'busy', busy: null });
+    if (result.error) return;
+    dispatch({ type: 'resetSelection' });
+    router.refresh();
   }
 
   async function deleteConnection() {
     dispatch({ type: 'busy', busy: 'delete' });
     dispatch({ type: 'error', error: null });
-    try {
-      const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
-      await readJsonResponse(res);
-      router.refresh();
-    } catch (err) {
-      dispatch({ type: 'error', error: err instanceof Error ? err.message : 'Delete failed' });
-    } finally {
-      dispatch({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: `connection:${connection.id}:delete`,
+      loading: 'Deleting provider account…',
+      success: 'Provider account deleted',
+      error: 'Couldn’t delete provider account',
+      run: async () => {
+        try {
+          const res = await fetch(`/api/connections/${connection.id}`, { method: 'DELETE' });
+          await readJsonResponse(res);
+          return { ok: true };
+        } catch {
+          return { error: 'failed' };
+        }
+      },
+    });
+    dispatch({ type: 'busy', busy: null });
+    if (!result.error) router.refresh();
   }
 
   async function reconnect() {
     dispatch({ type: 'busy', busy: 'reconnect' });
     dispatch({ type: 'error', error: null });
-    try {
-      const res = await fetch(`/api/integrations/${connection.provider}/start`, {
-        method: 'POST',
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        throw new Error(data.error ?? connectionErrorMessage(data.error, res.status));
-      }
-      window.location.href = data.url;
-    } catch (err) {
-      dispatch({
-        type: 'error',
-        error: err instanceof Error ? err.message : 'Reconnect failed',
-      });
-      dispatch({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: `connection:${connection.id}:reconnect`,
+      loading: 'Opening sign-in…',
+      success: 'Opening sign-in',
+      error: 'Couldn’t start reconnection',
+      run: async () => {
+        const res = await fetch(`/api/integrations/${connection.provider}/start`, {
+          method: 'POST',
+        });
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok || !data.url) {
+          return { error: data.error ?? connectionErrorMessage(data.error, res.status) };
+        }
+        window.location.href = data.url;
+        return { ok: true };
+      },
+    });
+    dispatch({ type: 'busy', busy: null });
+    if (result.error) return;
   }
 
   return (
+    <ConnectionSourcesPanel
+      connection={connection}
+      selected={selected}
+      query={query}
+      searchInputId={searchInputId}
+      searchInputRef={searchInputRef}
+      deleteConfirmationId={deleteConfirmationId}
+      deleteButtonRef={deleteButtonRef}
+      busy={state.busy}
+      confirmDelete={state.confirmDelete}
+      error={error}
+      sourceLoadError={sourceLoadError}
+      picker={{
+        isLoading,
+        isFetching,
+        showEmptyResult,
+        hasSearchQuery,
+      }}
+      grouped={grouped}
+      onQueryChange={(nextQuery) => {
+        dispatch({ type: 'query', query: nextQuery });
+      }}
+      onSave={() => void save()}
+      onDelete={() => {
+        dispatch({ type: 'openDeleteConfirmation' });
+      }}
+      onConfirmDelete={() => void deleteConnection()}
+      onCancelDelete={() => {
+        dispatch({ type: 'closeDeleteConfirmation' });
+        deleteButtonRef.current?.focus();
+      }}
+      onReconnect={() => void reconnect()}
+      onRetry={() => {
+        void retrySourceLoad();
+      }}
+      onToggle={toggle}
+      onClearSearch={clearSearch}
+    />
+  );
+}
+
+function ConnectionSourcesPanel({
+  connection,
+  selected,
+  query,
+  searchInputId,
+  searchInputRef,
+  deleteConfirmationId,
+  deleteButtonRef,
+  busy,
+  confirmDelete,
+  error,
+  sourceLoadError,
+  picker,
+  grouped,
+  onQueryChange,
+  onSave,
+  onDelete,
+  onConfirmDelete,
+  onCancelDelete,
+  onReconnect,
+  onRetry,
+  onToggle,
+  onClearSearch,
+}: {
+  connection: ProviderConnection;
+  selected: Set<string>;
+  query: string;
+  searchInputId: string;
+  searchInputRef: RefObject<HTMLInputElement | null>;
+  deleteConfirmationId: string;
+  deleteButtonRef: RefObject<HTMLButtonElement | null>;
+  busy: SourcePickerState['busy'];
+  confirmDelete: boolean;
+  error: string | null;
+  sourceLoadError: string | null;
+  picker: {
+    isLoading: boolean;
+    isFetching: boolean;
+    showEmptyResult: boolean;
+    hasSearchQuery: boolean;
+  };
+  grouped: ReturnType<typeof groupResourcesByKind>;
+  onQueryChange: (query: string) => void;
+  onSave: () => void;
+  onDelete: () => void;
+  onConfirmDelete: () => void;
+  onCancelDelete: () => void;
+  onReconnect: () => void;
+  onRetry: () => void;
+  onToggle: (resource: ProviderResource) => void;
+  onClearSearch: () => void;
+}) {
+  return (
     <section
       aria-label={`${providerLabel(connection.provider)} account ${connection.displayName}`}
-      className="rounded-lg border border-border bg-surface"
+      className="border-y border-border"
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1">
@@ -530,13 +644,8 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             <span className="rounded-sm border border-destructive/40 px-1.5 py-0.5 text-xs text-destructive">
               Needs reconnect
             </span>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={state.busy !== null}
-              onClick={() => void reconnect()}
-            >
-              {state.busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
+            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onReconnect}>
+              {busy === 'reconnect' ? 'Redirecting…' : 'Reconnect'}
             </Button>
           </>
         ) : null}
@@ -559,24 +668,22 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
               placeholder="Search by name or type"
               value={query}
               onChange={(event) => {
-                dispatch({ type: 'query', query: event.currentTarget.value });
+                onQueryChange(event.currentTarget.value);
               }}
             />
           </div>
           <PersonalConnectionToolbar
             selectedSize={selected.size}
-            busy={state.busy}
-            isSourcesLoading={isLoading}
+            busy={busy}
+            isSourcesLoading={picker.isLoading}
             hasSourceLoadError={Boolean(sourceLoadError)}
-            confirmingDeletion={state.confirmDelete}
+            confirmingDeletion={confirmDelete}
             deleteButtonRef={deleteButtonRef}
-            onSave={() => void save()}
-            onDelete={() => {
-              dispatch({ type: 'openDeleteConfirmation' });
-            }}
+            onSave={onSave}
+            onDelete={onDelete}
           />
         </div>
-        {state.confirmDelete ? (
+        {confirmDelete ? (
           <section
             id={deleteConfirmationId}
             aria-label="Confirm provider account deletion"
@@ -588,20 +695,12 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
             <Button
               size="sm"
               variant="destructive"
-              disabled={state.busy !== null}
-              onClick={() => void deleteConnection()}
+              disabled={busy !== null}
+              onClick={onConfirmDelete}
             >
-              {state.busy === 'delete' ? 'Deleting' : 'Delete provider account'}
+              {busy === 'delete' ? 'Deleting' : 'Delete provider account'}
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={state.busy !== null}
-              onClick={() => {
-                dispatch({ type: 'closeDeleteConfirmation' });
-                deleteButtonRef.current?.focus();
-              }}
-            >
+            <Button size="sm" variant="outline" disabled={busy !== null} onClick={onCancelDelete}>
               Cancel
             </Button>
           </section>
@@ -610,29 +709,26 @@ function ConnectionSources({ connection }: { connection: ProviderConnection }) {
           <InlineError
             message={connectionErrorMessage(error)}
             details={error}
-            onRetry={() => {
-              if (canRetrySourceLoad) void retrySourceLoad();
-              else dispatch({ type: 'error', error: null });
-            }}
-            retryLabel={canRetrySourceLoad ? 'Retry loading sources' : 'Dismiss'}
-            retrying={canRetrySourceLoad && isFetching}
+            onRetry={onRetry}
+            retryLabel="Retry loading sources"
+            retrying={picker.isFetching}
           />
         ) : null}
-        {isLoading ? <SourcePickerLoading /> : null}
+        {picker.isLoading ? <SourcePickerLoading /> : null}
         {grouped.map((group) => (
           <ResourceGroup
             key={group.kind}
             title={group.label}
             resources={group.resources}
             selected={selected}
-            onToggle={toggle}
+            onToggle={onToggle}
           />
         ))}
-        {showEmptyResult ? (
+        {picker.showEmptyResult ? (
           <SourcePickerEmptyState
             query={query}
-            hasSearchQuery={hasSearchQuery}
-            onClearSearch={clearSearch}
+            hasSearchQuery={picker.hasSearchQuery}
+            onClearSearch={onClearSearch}
           />
         ) : null}
       </div>
@@ -843,8 +939,6 @@ export function TeamSourcesUi({
     [activeSelectedByConnection, selectedOverrides],
   );
   const [busy, setBusy] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   if (rows.length === 0) {
     return (
@@ -863,56 +957,45 @@ export function TeamSourcesUi({
 
   async function activate(providerConnectionId: string) {
     setBusy(providerConnectionId);
-    setError(null);
-    setSyncNotice(null);
-    try {
-      const res = await fetch('/api/team/integrations/activate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          providerConnectionId,
-          resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
-        }),
-      });
-      const result = await readJsonResponse<{
-        error?: string;
-        syncRequired?: boolean;
-        syncQueued?: boolean;
-      }>(res);
-      setSyncNotice(
-        !result.syncRequired
+    const outcome = { success: 'Team sync saved' };
+    const result = await notifyAction({
+      id: `integration:activate:${providerConnectionId}`,
+      loading: 'Saving team sync…',
+      get success() {
+        return outcome.success;
+      },
+      error: 'Couldn’t save team sync',
+      run: async () => {
+        const res = await fetch('/api/team/integrations/activate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            providerConnectionId,
+            resourceShareIds: [...(selectedByConnection[providerConnectionId] ?? new Set())],
+          }),
+        });
+        const payload = await readJsonResponse<{
+          error?: string;
+          syncRequired?: boolean;
+          syncQueued?: boolean;
+        }>(res);
+        if (payload.error) return { error: payload.error };
+        outcome.success = !payload.syncRequired
           ? 'Team sync sources saved. No historical import was needed.'
-          : result.syncQueued
+          : payload.syncQueued
             ? 'Initial import queued. Older items will be available after the first sync completes.'
-            : 'Sources were saved, but the initial import could not be queued. Retry team sync.',
-      );
-      setSelectedOverrides({});
-      router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Activation failed');
-    } finally {
-      setBusy(null);
-    }
+            : 'Sources were saved, but the initial import could not be queued. Retry team sync.';
+        setSelectedOverrides({});
+        return { ok: true };
+      },
+    });
+    setBusy(null);
+    if (!result.error) router.refresh();
   }
 
   return (
     <div className="space-y-3">
       <TeamSyncFlow isAdmin={isAdmin} />
-      {error ? (
-        <InlineError
-          message={connectionErrorMessage(error)}
-          details={error}
-          onRetry={() => {
-            setError(null);
-          }}
-          retryLabel="Dismiss"
-        />
-      ) : null}
-      {syncNotice ? (
-        <output className="rounded-sm border border-signal/30 bg-signal-soft px-3 py-2 text-sm text-fg">
-          {syncNotice}
-        </output>
-      ) : null}
       {[...groups.entries()].map(([connectionId, groupRows]) => {
         const connection = groupRows[0]?.connection;
         if (!connection) return null;
@@ -929,7 +1012,7 @@ export function TeamSourcesUi({
             ? 'Save team sync'
             : 'Activate team sync';
         return (
-          <section key={connectionId} className="rounded-md border border-border bg-surface">
+          <section key={connectionId} className="border-y border-border">
             <div className="grid gap-2 border-b border-border px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center">
               <TeamConnectionHeader connection={connection} />
               <TeamSyncStatus selectedSize={selected.size} hasActiveSources={hasActiveSources} />

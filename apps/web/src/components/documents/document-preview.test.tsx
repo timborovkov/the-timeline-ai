@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   getDocumentPreviewUrlAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('next/image', () => ({
@@ -17,7 +18,12 @@ vi.mock('next/image', () => ({
     <img {...props} alt={props.alt ?? ''} />
   ),
 }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => options.run(),
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
+}));
 vi.mock('@/app/actions/documents', () => ({
   getDocumentPreviewUrlAction: fakes.getDocumentPreviewUrlAction,
 }));
@@ -67,6 +73,7 @@ describe('DocumentPreview', () => {
     expect((await screen.findByRole('alert')).textContent).toContain(
       'Could not load this preview: Preview service is unavailable. The original file remains unchanged.',
     );
+    expect(fakes.notifyError).not.toHaveBeenCalled();
     const retry = screen.getByRole('button', { name: 'Try again' });
     await user.tab();
     expect(document.activeElement).toBe(retry);

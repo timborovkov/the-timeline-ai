@@ -177,7 +177,10 @@ describe('shared timeline moments projection', () => {
     expect(moments[0]).toMatchObject({
       version: 'timeline_moment.v1',
       kind: 'ci_deploy',
-      title: 'CI passed on timborovkov/audit-ai',
+      eventClass: 'pulse',
+      visualWeight: 'pulse',
+      sourceLabel: 'GitHub',
+      title: 'CI passed on timborovkov/audit-ai · main',
       evidenceSummary: { rawEventCount: 2 },
       grouping: { strategy: 'provider_workflow_window' },
     });
@@ -186,6 +189,7 @@ describe('shared timeline moments projection', () => {
       'workflow-a',
       'workflow-b',
     ]);
+    expect(moments[0]?.impactItems).toEqual([]);
   });
 
   it('bundles GitHub pull request updates and reviews into one PR moment', () => {
@@ -232,6 +236,8 @@ describe('shared timeline moments projection', () => {
     expect(moments[0]).toMatchObject({
       id: 'moment:integration:github:pr:timborovkov/audit-ai:292',
       kind: 'code_review',
+      eventClass: 'work_record',
+      visualWeight: 'record',
       title: 'PR #292 updated: Fix scoping tie-out extraction and timeline grouping',
       evidenceSummary: { rawEventCount: 2 },
     });
@@ -263,6 +269,8 @@ describe('shared timeline moments projection', () => {
 
     expect(moments[0]).toMatchObject({
       title: 'Linear issue updated · TL-101',
+      eventClass: 'work_record',
+      visualWeight: 'record',
       subtitle: 'Linear · issue updated · 1 event',
     });
   });

@@ -1,5 +1,14 @@
-import { teamExports, teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { getDigestPreference } from '@timeline/shared/messaging';
+import {
+  telegramChatBindings,
+  teamExports,
+  teamInvites,
+  teamMembers,
+  teams,
+  users,
+} from '@timeline/db';
+import { getEnv } from '@timeline/shared/env';
+import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
+import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { redirect } from 'next/navigation';
@@ -8,7 +17,12 @@ import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { ActionChip } from '@/components/action-chip';
+import {
+  DigestDestinationsForm,
+  type DigestDestinationOption,
+} from '@/components/digest-destinations';
 import { PageHeader } from '@/components/page-header';
+import { SettingsSection } from '@/components/section-heading';
 import { SettingsNav } from '@/components/settings-nav';
 import {
   InboundEmailWhitelistForm,
@@ -18,7 +32,6 @@ import {
   TeamExportPanel,
 } from '@/components/team-forms';
 import { TeamMembersSettings } from '@/components/team-members-settings';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { VisibilityDefaultSettings } from '@/components/visibility-default-settings';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -65,13 +78,14 @@ export default async function TeamSettingsPage({
     ? requestedSection
     : 'members';
 
-  const [memberRows, digestPreference] = await Promise.all([
+  const [memberRows, digestPreference, digestDestinations] = await Promise.all([
     scope.timeline.listMembers(),
     getDigestPreference({
       db,
       teamId: active.teamId,
       userId: session.user.id,
     }),
+    listTeamDigestDestinations(db, active.teamId),
   ]);
   const inboundEmailSettings: InboundEmailWhitelistSettings = isAdmin
     ? ((
@@ -177,10 +191,12 @@ export default async function TeamSettingsPage({
     const u = userMap.get(m.userId);
     return { id: m.userId, label: displayMemberLabel(u) };
   });
+  const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
 
   return (
     <div className="space-y-6">
       <PageHeader
+        variant="collection"
         title="Team"
         subtitle="Manage members, defaults, and access."
         srLabel={`Team ${active.teamName} · your role: ${role} · ${memberRows.length} members`}
@@ -209,86 +225,69 @@ export default async function TeamSettingsPage({
             </>
           ) : null}
           {section === 'general' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Team identity</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can rename this team.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Team identity">
+              {isAdmin ? (
+                <RenameTeamForm currentName={active.teamName} teamId={active.teamId} />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can rename this team.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'preferences' ? (
             <>
               <MessagingPreferencesCard enabled={digestPreference.enabled} />
               {isAdmin ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle as="h2">Team timezone</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <TeamTimezoneForm {...timezoneSettings} />
-                  </CardContent>
-                </Card>
+                <SettingsSection title="Digest destinations">
+                  <DigestDestinationsForm
+                    destinations={digestDestinations}
+                    options={destinationOptions}
+                  />
+                </SettingsSection>
+              ) : null}
+              {isAdmin ? (
+                <SettingsSection title="Team timezone">
+                  <TeamTimezoneForm {...timezoneSettings} />
+                </SettingsSection>
               ) : null}
             </>
           ) : null}
           {section === 'visibility' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Visibility defaults</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <VisibilityDefaultSettings
-                    defaults={visibilityDefaults}
-                    members={visibilityMembers}
-                  />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can change visibility defaults.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Visibility defaults">
+              {isAdmin ? (
+                <VisibilityDefaultSettings
+                  defaults={visibilityDefaults}
+                  members={visibilityMembers}
+                />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can change visibility defaults.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'email' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Email sender whitelist</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <InboundEmailWhitelistForm {...inboundEmailSettings} />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can change inbound email settings.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Email sender whitelist">
+              {isAdmin ? (
+                <InboundEmailWhitelistForm {...inboundEmailSettings} />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can change inbound email settings.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'exports' ? (
-            <Card>
-              <CardHeader>
-                <CardTitle as="h2">Team export</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {isAdmin ? (
-                  <TeamExportPanel exports={exportRows} downloadError={query.exportError} />
-                ) : (
-                  <p className="text-sm text-fg-muted">
-                    Only team administrators can create exports.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <SettingsSection title="Team export">
+              {isAdmin ? (
+                <TeamExportPanel exports={exportRows} downloadError={query.exportError} />
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  Only team administrators can create exports.
+                </p>
+              )}
+            </SettingsSection>
           ) : null}
           {section === 'advanced' && isAdmin ? <AdminShortcuts isAdmin /> : null}
         </div>
@@ -299,14 +298,9 @@ export default async function TeamSettingsPage({
 
 function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle as="h2">Messaging</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <DigestPreferenceForm enabled={enabled} />
-      </CardContent>
-    </Card>
+    <SettingsSection title="Messaging">
+      <DigestPreferenceForm enabled={enabled} />
+    </SettingsSection>
   );
 }
 
@@ -314,10 +308,52 @@ function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
-      <ActionChip href="/app/team/jobs" label="Jobs" />
+      <ActionChip href="/app/team/jobs" label="Job recovery" />
       <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
       <ActionChip href="/app/team/audit" label="Audit" />
       <ActionChip href="/app/team/integrations/audit" label="Integration audit" />
     </div>
   );
+}
+
+async function digestDestinationOptions(teamId: string): Promise<DigestDestinationOption[]> {
+  const options: DigestDestinationOption[] = [
+    { kind: 'email_members', label: 'Email every member' },
+  ];
+  const env = getEnv();
+  const slackInstalled = await hasSlackInstallForTeam({ db, teamId });
+  if (slackInstalled) {
+    options.push({ kind: 'slack_dm_members', label: 'Slack DM every linked member' });
+    try {
+      const conversations = await listSlackConversationsForTeam({ db, teamId });
+      for (const conversation of conversations.filter((row) => row.is_member !== false)) {
+        const name = conversation.name ? `#${conversation.name}` : conversation.id;
+        options.push({
+          kind: 'slack_channel',
+          targetId: conversation.id,
+          label: `Slack ${name}`,
+        });
+      }
+    } catch {
+      // Channel picker stays empty when Slack listing fails; DMs remain available.
+    }
+  }
+  if (env.TELEGRAM_BOT_TOKEN) {
+    options.push({ kind: 'telegram_dm_members', label: 'Telegram DM every linked member' });
+    const chats = await db
+      .select({
+        chatId: telegramChatBindings.tgChatId,
+        title: telegramChatBindings.title,
+      })
+      .from(telegramChatBindings)
+      .where(eq(telegramChatBindings.teamId, teamId));
+    for (const chat of chats) {
+      options.push({
+        kind: 'telegram_chat',
+        targetId: String(chat.chatId),
+        label: `Telegram · ${chat.title ?? chat.chatId}`,
+      });
+    }
+  }
+  return options;
 }

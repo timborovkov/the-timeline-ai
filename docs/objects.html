@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Workspace objects</h1>
       <div class="meta">
-        <span class="kind">Architecture</span><span>Last updated 2026-07-17</span>
+        <span class="kind">Implementation</span><span>Last updated 2026-08-17</span>
       </div>
       <p class="tldr">
         Phase 8 turned <code>entities</code> from an extraction artifact into the workspace's
@@ -19,6 +19,11 @@
         a team tracks lives in the same table, behind the same <code>withTeam</code> scope, with the
         same agent tools, with one immutable audit trail. Tasks also carry a reversible LLM-derived
         functional category and an optional singular primary-project edge.
+      </p>
+      <p>
+        How objects participate in ingest, hubs, proposals, and captured-work lifecycle lives in
+        <a href="./relational-memory.md">Operating memory engine</a>. This page is the schema,
+        routes, helpers, and UI surface.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -167,9 +172,12 @@
           </tr>
           <tr>
             <td><code>chat_sessions</code></td>
-            <td>Persisted conversations, optionally pinned to an object.</td>
             <td>
-              <code>created_by</code>, <code>pinned_entity_id</code>, <code>archived_at</code>
+              Persisted conversations, optionally pinned to an object, with a dashboard view trail.
+            </td>
+            <td>
+              <code>created_by</code>, <code>pinned_entity_id</code>, <code>context_trail</code>,
+              <code>archived_at</code>
             </td>
           </tr>
           <tr>
@@ -291,7 +299,11 @@
       </table>
       <p>
         <code>stage</code> is opt-in (used by kanban boards), <code>priority</code> is a smallint
-        1–4 with 1 = urgent, and <code>due_at</code> is a tz-aware timestamp.
+        1–4 with 1 = urgent, and <code>due_at</code> is a tz-aware timestamp. Conversation review
+        should propose priority on goals and tracked work when urgency is in the evidence. Do not
+        add a second importance score. Hub role (goal vs work vs finding vs mention) is behavioral
+        and lives in <a href="./relational-memory.md">relational-memory.md</a>; findings and one-off
+        mentions should not mint sibling Timeline objects.
       </p>
 
       <h2 id="task-categories">Task categories and projects</h2>
@@ -312,7 +324,14 @@
         Approval-backed task creation previews category and project together.
         <code>suggest_task</code>, <code>suggest_object_memory</code>, and background conversation
         review all normalize the same existing/new-project contract before classification.
-        Background review classifies its maximum 25 proposed tasks in one bounded structured LLM
+        Background proposals also mention-qualify existing company, vendor, deal, and project hubs
+        from the evidence (including meeting titles, Slack channel names, Monday board names, and
+        other container labels): a unique project becomes <code>parentObjectId</code>; a unique
+        client becomes an <code>object_relationship</code> <code>related</code> edge. Recency dumps
+        and embedding similarity are not that join. See
+        <a href="./adr/0015-proposal-writes-qualify-hubs-from-mentions-and-container-labels.md"
+          >ADR 0015</a
+        >. Background review classifies its maximum 25 proposed tasks in one bounded structured LLM
         call, preserving proposal-time previews without serial provider calls. Legacy pending task
         approvals that predate the primary-project contract may still reference another object type;
         acceptance preserves that reference as a generic <code>child</code> relationship, not as the
@@ -406,11 +425,13 @@
       <p>
         <code>/api/chat</code> accepts an optional <code>sessionId</code> in the request body. If
         absent, the endpoint auto-creates a session (optionally pinned to an object via
-        <code>pinnedEntityId</code>) and returns the new id via the
-        <code>x-tl-session-id</code> response header. On stream finalize, the endpoint persists the
-        latest user turn and the assistant turn (text + tool calls + finish reason + usage + prompt
-        version) into <code>chat_messages</code> — the delta only, since
-        <code>useChat</code> re-sends the whole transcript on every request.
+        <code>pinnedEntityId</code>, and with a capped <code>contextTrail</code> of dashboard views)
+        and returns the new id via the <code>x-tl-session-id</code> response header. On stream
+        finalize, the endpoint persists the latest user turn and the assistant turn (text + tool
+        calls + finish reason + usage + prompt version) into <code>chat_messages</code> — the delta
+        only, since <code>useChat</code> re-sends the whole transcript on every request. The
+        session's <code>context_trail</code> is merged on later turns so full Ask can show what the
+        conversation was looking at.
       </p>
       <p>
         Sessions without a title get a short title from the first user turn on stream finalize,

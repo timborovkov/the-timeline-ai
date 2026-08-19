@@ -2,9 +2,11 @@
 
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PinnedItem } from '@timeline/shared/pins';
+import type { ReactNode } from 'react';
 
 const fakes = vi.hoisted(() => ({
   movePinAction: vi.fn(),
@@ -16,10 +18,32 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: fakes.refresh }),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  notifyError: vi.fn(),
+}));
 vi.mock('@/app/actions/pins', () => ({
   movePinAction: fakes.movePinAction,
   pinTargetAction: fakes.pinTargetAction,
   unpinTargetAction: fakes.unpinTargetAction,
+}));
+vi.mock('@/components/collections/virtual-list', () => ({
+  VirtualList: ({
+    items,
+    renderItem,
+    getItemKey,
+  }: {
+    items: { pinId: string }[];
+    renderItem: (item: { pinId: string }, index: number) => ReactNode;
+    getItemKey: (item: { pinId: string }, index: number) => string;
+  }) =>
+    createElement(
+      'div',
+      null,
+      items.map((item, index) =>
+        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+      ),
+    ),
 }));
 
 const { PinnedWorkspaceManager } = await import('@/components/pins/pinned-workspace-manager');
@@ -109,5 +133,17 @@ describe('PinnedWorkspaceManager', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Reorder' })).toBeNull();
+  });
+
+  it('does not render a bare inventory count next to the pin filters', () => {
+    render(
+      <PinnedWorkspaceManager
+        initialPage={{ items: [pin(FIRST_ID, 'Alpha', '0')], nextCursor: null }}
+        filter="all"
+      />,
+    );
+
+    expect(screen.queryByText('1')).toBeNull();
+    expect(document.querySelector('output')).toBeNull();
   });
 });
