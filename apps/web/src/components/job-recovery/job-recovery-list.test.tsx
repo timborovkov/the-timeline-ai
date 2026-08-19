@@ -277,7 +277,7 @@ describe('JobRecoveryList', () => {
       });
     });
     expect(screen.queryByText('Transcribe customer call')).toBeNull();
-    expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
+    expect(screen.getByText('No jobs need attention')).toBeTruthy();
     expect(fakes.toastSuccess).toHaveBeenCalledWith(
       'Job dismissed',
       expect.objectContaining({ id: 'job-recovery:dismiss:job-1' }),
@@ -422,7 +422,7 @@ describe('JobRecoveryList', () => {
       window: 'recent',
     });
     expect(screen.queryByText('Sync Sentry issues')).toBeNull();
-    expect(screen.getByText('Nothing needs attention from the last 7 days.')).toBeTruthy();
+    expect(screen.getByText('No jobs need attention')).toBeTruthy();
     expect(fakes.toastSuccess).toHaveBeenCalledWith('Dismissed 1 job.', {
       id: 'toast-1',
       duration: 2_000,

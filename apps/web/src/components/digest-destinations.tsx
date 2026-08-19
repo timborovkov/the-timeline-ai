@@ -1,5 +1,6 @@
 'use client';
 
+import { Mail } from 'lucide-react';
 import { useActionState, useMemo, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 
@@ -9,6 +10,7 @@ import {
   type DigestDestinationState,
 } from '@/app/actions/teams';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { EmptyState } from '@/components/empty-state';
 import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -65,9 +67,12 @@ export function DigestDestinationsForm({
         bot. Email and direct messages stay personalized per member.
       </p>
       {destinations.length === 0 ? (
-        <p className="text-sm text-fg-muted">
-          No destinations yet. Email every member remains the default until you add one.
-        </p>
+        <EmptyState
+          icon={Mail}
+          size="inset"
+          title="No destinations yet"
+          body="Email every member remains the default until you add a Slack, Telegram, or extra email destination."
+        />
       ) : (
         <ul>
           {destinations.map((destination) => (

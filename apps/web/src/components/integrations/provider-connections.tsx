@@ -1,10 +1,11 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Plug, Search } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useId, useMemo, useReducer, useRef, useState, type RefObject } from 'react';
 
+import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
@@ -162,17 +163,15 @@ export function PersonalConnectionsUi({
     return (
       <div className="space-y-3">
         <PersonalConnectionFlow />
-        <div className="space-y-3 border-y border-border py-4">
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-fg">No provider accounts yet</p>
-            <p className="text-sm text-fg-muted">
-              Connect an account to choose the sources this team may use.
-            </p>
-          </div>
+        <EmptyState
+          icon={Plug}
+          title="No provider accounts yet"
+          body="Connect an account to choose the sources this team may use."
+        >
           <Button asChild size="sm">
             <a href={connectProviderHref}>Connect a provider account</a>
           </Button>
-        </div>
+        </EmptyState>
       </div>
     );
   }
@@ -763,24 +762,26 @@ function SourcePickerEmptyState({
 }) {
   if (hasSearchQuery) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm">
-        <p role="status" className="text-fg-muted">
-          No sources match “{query.trim()}”.
-        </p>
+      <EmptyState
+        icon={Search}
+        size="compact"
+        title={`No sources match “${query.trim()}”`}
+        body="Clear the search to see every shareable source on this account."
+      >
         <Button size="sm" variant="outline" onClick={onClearSearch}>
           Clear search
         </Button>
-      </div>
+      </EmptyState>
     );
   }
 
   return (
-    <div className="rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm">
-      <p className="font-medium text-fg">No shareable sources found</p>
-      <p role="status" className="mt-1 text-fg-muted">
-        This provider account does not currently expose any sources you can share with this team.
-      </p>
-    </div>
+    <EmptyState
+      icon={Plug}
+      size="compact"
+      title="No shareable sources found"
+      body="This provider account does not currently expose any sources you can share with this team."
+    />
   );
 }
 
@@ -943,10 +944,12 @@ export function TeamSourcesUi({
 
   if (rows.length === 0) {
     return (
-      <p className="text-sm text-fg-muted">
-        No shared provider sources yet. Connection owners can share sources from Personal
-        connections.
-      </p>
+      <EmptyState
+        icon={Plug}
+        size="inset"
+        title="No shared provider sources yet"
+        body="Connection owners can share sources from Personal connections so this team can import them."
+      />
     );
   }
 

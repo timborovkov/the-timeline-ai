@@ -2,12 +2,13 @@ import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
+import { ListTodo } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { TaskBoard } from '@/components/tasks/task-board';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
@@ -221,7 +222,8 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       ) : null}
 
       {rows.length === 0 ? (
-        <EmptyAction
+        <EmptyState
+          icon={ListTodo}
           title={activeFilters ? 'No tasks match this filter' : 'No active tasks'}
           body={
             activeFilters
@@ -235,9 +237,17 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
               ? view === 'list'
                 ? '/app/tasks?view=list'
                 : '/app/tasks'
-              : '/app#capture'
+              : pendingTaskItems > 0
+                ? '/app/approvals'
+                : '/app#capture'
           }
-          action={activeFilters ? 'Clear filters' : 'Capture a follow-up'}
+          action={
+            activeFilters
+              ? 'Clear filters'
+              : pendingTaskItems > 0
+                ? 'Review proposals'
+                : 'Capture a follow-up'
+          }
         />
       ) : (
         <div className="min-h-0 flex-1">

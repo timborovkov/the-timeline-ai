@@ -1,10 +1,12 @@
 'use client';
 
+import { KeyRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CopyButton } from '@/components/copy-button';
+import { EmptyState } from '@/components/empty-state';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -444,9 +446,12 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
       ) : null}
 
       {keys.length === 0 ? (
-        <p className="border-y border-border py-4 text-sm text-fg-muted">
-          No active keys. Create one to let an external agent read this team&apos;s timeline.
-        </p>
+        <EmptyState
+          icon={KeyRound}
+          size="inset"
+          title="No active keys"
+          body="Create a key to let an external agent read this team's timeline."
+        />
       ) : (
         <ul className="divide-y divide-border border-y border-border">
           {keys.map((k) => {

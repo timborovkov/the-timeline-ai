@@ -89,8 +89,8 @@ describe('SlackSettingsPageView', () => {
     expect(screen.getByRole('link', { name: 'Connect identity' }).getAttribute('href')).toBe(
       '/api/slack/user-link/start',
     );
-    expect(screen.getByText('No Slack conversations bound yet.')).toBeTruthy();
-    expect(screen.getByText('No Slack identities linked yet.')).toBeTruthy();
+    expect(screen.getByText('No Slack conversations bound yet')).toBeTruthy();
+    expect(screen.getByText('No Slack identities linked yet')).toBeTruthy();
   });
 
   it('renders installed workspace, unbound conversation choices, bindings, and linked users', () => {

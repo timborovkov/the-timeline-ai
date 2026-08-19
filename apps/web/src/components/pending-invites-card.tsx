@@ -1,10 +1,10 @@
-import Link from 'next/link';
+import { Mail } from 'lucide-react';
 
 import type { TeamInviteRow, TeamMemberMap } from '@/components/team-member-types';
 
+import { EmptyState } from '@/components/empty-state';
 import { PendingInviteItem } from '@/components/pending-invite-item';
 import { SettingsSection } from '@/components/section-heading';
-import { Button } from '@/components/ui/button';
 
 export function PendingInvitesCard({
   invites,
@@ -16,12 +16,14 @@ export function PendingInvitesCard({
   return (
     <SettingsSection title="Pending invites">
       {invites.length === 0 ? (
-        <div className="space-y-3">
-          <p className="text-sm text-fg-muted">No pending invites.</p>
-          <Button asChild variant="outline" size="sm">
-            <Link href="#invite">Create an invite</Link>
-          </Button>
-        </div>
+        <EmptyState
+          icon={Mail}
+          size="inset"
+          title="No pending invites"
+          body="Create an invite when you want to bring someone onto this team."
+          href="#invite"
+          action="Create an invite"
+        />
       ) : (
         <ul>
           {invites.map((invite) => (

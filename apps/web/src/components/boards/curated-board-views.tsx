@@ -1,6 +1,7 @@
 'use client';
 
 import { presentDueDate } from '@timeline/shared/time';
+import { Columns3 } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useReducer, useState, useTransition } from 'react';
 
@@ -17,6 +18,7 @@ import { MetadataDateEditor } from '@/components/collections/metadata-date-edito
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { EmptyState } from '@/components/empty-state';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref, type BoardLayout } from '@/lib/board-links';
@@ -520,5 +522,12 @@ function isOptimisticItem(item: boards.BoardItemRow): boolean {
 }
 
 function EmptyBoardItems() {
-  return <p className="py-10 text-center text-sm text-fg-dim">No board items yet</p>;
+  return (
+    <EmptyState
+      icon={Columns3}
+      size="inset"
+      title="No board items yet"
+      body="Add an item to start this board. Stages stay ready for the work you already have."
+    />
+  );
 }

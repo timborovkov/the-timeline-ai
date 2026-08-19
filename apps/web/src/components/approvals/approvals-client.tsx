@@ -2,7 +2,7 @@
 
 import { taskCategoryLabel, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import { Check, ExternalLink, Eye, GitMerge, X } from 'lucide-react';
+import { Check, ExternalLink, Eye, GitMerge, Inbox, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
@@ -21,7 +21,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { EvidenceLink } from '@/components/evidence-link';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup, ItemIconButton } from '@/components/ui/item-actions';
@@ -226,6 +226,8 @@ interface Props {
   emptyState?: {
     title: string;
     body: string;
+    href?: string;
+    action?: string;
   };
   folded?: {
     title: string;
@@ -808,14 +810,15 @@ export function ApprovalsClient({
 
   if (loadedSuggestions.length === 0 && pageCursor === null) {
     return (
-      <EmptyAction
-        title={emptyState?.title ?? 'No pending approvals'}
+      <EmptyState
+        icon={Inbox}
+        title={emptyState?.title ?? 'No proposals to review'}
         body={
           emptyState?.body ??
-          'When the agent proposes tasks, objects, calendar items, or document changes, they will queue here before becoming canonical.'
+          'The timeline is collecting events. Proposals will appear here when something needs a decision.'
         }
-        href="/app"
-        action="Back to home"
+        href={emptyState?.href ?? '/app/timeline'}
+        action={emptyState?.action ?? 'Open timeline'}
       />
     );
   }

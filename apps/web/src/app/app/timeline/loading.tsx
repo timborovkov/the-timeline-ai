@@ -6,7 +6,12 @@ export default function TimelineLoading() {
       <output className="sr-only" aria-live="polite">
         Loading timeline
       </output>
-      <div className="space-y-0" aria-busy="true" aria-label="Loading timeline page">
+      <div
+        data-app-layout="flush-top"
+        className="relative space-y-0"
+        aria-busy="true"
+        aria-label="Loading timeline page"
+      >
         <h1 className="sr-only">Timeline</h1>
         <section aria-label="Timeline loading placeholder" className="space-y-0">
           <CollectionToolbarSkeleton search={false} count={false} viewSegments={2} />

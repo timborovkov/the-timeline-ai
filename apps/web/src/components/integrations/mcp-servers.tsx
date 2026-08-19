@@ -1,8 +1,10 @@
 'use client';
 
+import { Server } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useId, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 
+import { EmptyState } from '@/components/empty-state';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
@@ -492,16 +494,16 @@ export function McpServersUi({
       ) : null}
 
       {servers.length === 0 ? (
-        <div className="border-y border-border py-4">
-          <h3 className="text-sm font-medium text-fg">
-            {isPersonalServer ? 'No personal MCP servers' : 'No custom MCP servers'}
-          </h3>
-          <p className="mt-1 text-sm text-fg-muted">
-            {isPersonalServer
+        <EmptyState
+          icon={Server}
+          size="inset"
+          title={isPersonalServer ? 'No personal MCP servers' : 'No custom MCP servers'}
+          body={
+            isPersonalServer
               ? 'Add a custom server to use its tools in chats you start. Teammates cannot view or use it.'
-              : 'Add a custom server to make its tools available to this team.'}
-          </p>
-        </div>
+              : 'Add a custom server to make its tools available to this team.'
+          }
+        />
       ) : (
         <ul
           aria-label={isPersonalServer ? 'Personal MCP servers' : 'MCP servers'}

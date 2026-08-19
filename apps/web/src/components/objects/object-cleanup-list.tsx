@@ -1,6 +1,6 @@
 'use client';
 
-import { Archive, GitMerge, SquareCheckBig } from 'lucide-react';
+import { Archive, GitMerge, Shapes, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
@@ -21,6 +21,7 @@ import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { EmptyState } from '@/components/empty-state';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
   LiveTaskCategoryBadge,
@@ -315,7 +316,12 @@ export function ObjectCleanupList({
           </p>
         ) : null}
         {visibleRows.length === 0 ? (
-          <p className="py-10 text-center text-sm text-fg-dim">No objects visible</p>
+          <EmptyState
+            icon={Shapes}
+            size="inset"
+            title="No objects visible"
+            body="Try another type or clear the current filters to see objects in this directory."
+          />
         ) : (
           <div>
             {typeKeys.map((typeKey) => {

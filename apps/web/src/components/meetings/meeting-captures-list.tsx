@@ -1,5 +1,6 @@
 'use client';
 
+import { Video } from 'lucide-react';
 import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 
@@ -8,7 +9,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { SkipScheduledMeetingButton } from '@/components/meeting-forms';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -116,7 +117,8 @@ export function MeetingCapturesList({
     return (
       <div className="space-y-3">
         {countLabel ? <p className="text-xs tabular-nums text-fg-muted">{countLabel}</p> : null}
-        <EmptyAction
+        <EmptyState
+          icon={Video}
           title={hasActiveFilters ? 'No captures match these filters' : 'No meeting captures yet'}
           body={
             hasActiveFilters

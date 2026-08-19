@@ -1,10 +1,11 @@
 import { withTeam } from '@timeline/shared/team-scope';
+import { ClipboardList } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { Breadcrumb } from '@/components/breadcrumb';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { IndexStrip } from '@/components/index-strip';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { TechnicalDetails } from '@/components/technical-details';
@@ -150,7 +151,8 @@ export default async function TrustAuditPage() {
           Audit entries
         </h2>
         {rows.length === 0 ? (
-          <EmptyAction
+          <EmptyState
+            icon={ClipboardList}
             title="No audit entries yet"
             body="Team activity that creates an audit record will appear here."
             href="/app/team"

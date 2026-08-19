@@ -1,10 +1,12 @@
 'use client';
 
+import { Search } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
+import { EmptyState } from '@/components/empty-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -148,9 +150,12 @@ export function McpCatalog({
       ) : null}
 
       {filtered.length === 0 ? (
-        <p className="border-y border-border py-4 text-sm text-fg-muted">
-          No MCP servers match this filter.
-        </p>
+        <EmptyState
+          icon={Search}
+          size="inset"
+          title="No MCP servers match this filter"
+          body="Clear the filters or try a different search to see available servers."
+        />
       ) : (
         <div>
           {filtered.map((e) => (

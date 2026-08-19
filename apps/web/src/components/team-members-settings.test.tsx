@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
+  useRouter: () => ({ back: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock('@/app/actions/teams', () => ({
   changeMemberRoleAction: vi.fn(),
@@ -45,7 +45,7 @@ describe('TeamMembersSettings', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Members', level: 2 })).toBeTruthy();
-    expect(screen.getByText('No members are available right now.')).toBeTruthy();
+    expect(screen.getByText('No members are available right now')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Refresh members' }).getAttribute('href')).toBe(
       '/app/team?section=members',
     );

@@ -14,7 +14,7 @@ import {
 import { useQueries } from '@tanstack/react-query';
 import { TASK_CATEGORY_OPTIONS, type TaskCategory } from '@timeline/shared/task-categories/types';
 import { presentDueDate } from '@timeline/shared/time';
-import { GripVertical, X } from 'lucide-react';
+import { GripVertical, ListTodo, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -51,6 +51,7 @@ import { MetadataDateEditor } from '@/components/collections/metadata-date-edito
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { EmptyState } from '@/components/empty-state';
 import { CompactKanbanCardSkeleton } from '@/components/loading-states';
 import { ObjectOrigin } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
@@ -1163,9 +1164,12 @@ function TaskListView({
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   if (rows.length === 0) {
     return (
-      <p className="rounded-sm border-y border-border bg-surface py-10 text-center text-xs text-fg-dim">
-        No visible tasks
-      </p>
+      <EmptyState
+        icon={ListTodo}
+        size="inset"
+        title="No visible tasks"
+        body="Try another view or clear filters to see the task board."
+      />
     );
   }
 

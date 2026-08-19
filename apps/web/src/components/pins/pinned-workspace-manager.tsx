@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, ArrowUp, ChevronsDown, ChevronsUp, GripVertical } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronsDown, ChevronsUp, GripVertical, Pin } from 'lucide-react';
 import Link from 'next/link';
 import { useReducer, useRef, useTransition } from 'react';
 
@@ -9,6 +9,7 @@ import type { PinPage, PinTargetKind, PinnedItem } from '@timeline/shared/pins';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
+import { EmptyState } from '@/components/empty-state';
 import { PinnedItemRow } from '@/components/pins/pinned-item-row';
 import { Button } from '@/components/ui/button';
 import { notifyAction, notifyError } from '@/lib/notify';
@@ -351,12 +352,11 @@ function PinnedWorkspacePanel({
       </CollectionToolbar>
 
       {items.length === 0 ? (
-        <div className="border-b border-border py-10 text-center">
-          <p className="text-sm font-medium text-fg">Nothing pinned here yet</p>
-          <p className="mt-1 text-sm text-fg-muted">
-            Use Pin on an item detail page or its overflow menu.
-          </p>
-        </div>
+        <EmptyState
+          icon={Pin}
+          title="No pins yet"
+          body="Pin an item from its detail page or overflow menu to keep it close on Home and Work."
+        />
       ) : (
         <VirtualList
           items={items}

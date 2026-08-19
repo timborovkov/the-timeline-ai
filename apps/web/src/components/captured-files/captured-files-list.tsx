@@ -1,7 +1,7 @@
 'use client';
 
 import { documentKindLabel, truncateFilenameMiddle } from '@timeline/shared/documents/presentation';
-import { FileText, Image as ImageIcon, Link2, Upload } from 'lucide-react';
+import { FileText, Image as ImageIcon, Link2, Paperclip, Upload } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useRef, useState, useTransition } from 'react';
 
@@ -14,6 +14,7 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
+import { EmptyState } from '@/components/empty-state';
 import { EvidenceLink } from '@/components/evidence-link';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
@@ -264,13 +265,11 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
 
   if (loadedFiles.length === 0) {
     return (
-      <section aria-label="Captured files" className="border-y border-border py-10 text-center">
-        <p className="text-sm font-semibold text-fg">No captured files yet</p>
-        <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-fg-muted">
-          Attachments from conversations and connected sources appear here before you add them to
-          Documents.
-        </p>
-      </section>
+      <EmptyState
+        icon={Paperclip}
+        title="No captured files yet"
+        body="Attachments from conversations and connected sources appear here before you add them to Documents."
+      />
     );
   }
 
@@ -428,14 +427,16 @@ export function CapturedFilesList({ files, nextCursor = null, folders, members }
         ) : null}
       </Dialog>
       {visibleFiles.length === 0 ? (
-        <div className="border-y border-border py-8 text-center">
-          <p className="text-sm font-medium text-fg">No captured files match these filters</p>
-          <p className="mt-1 text-sm leading-6 text-fg-muted">
-            {cursor
+        <EmptyState
+          icon={Paperclip}
+          size="inset"
+          title="No captured files match these filters"
+          body={
+            cursor
               ? 'Keep scrolling to search older captures, or clear the filters to view every loaded file.'
-              : 'Clear the filters to view every captured file.'}
-          </p>
-        </div>
+              : 'Clear the filters to view every captured file.'
+          }
+        />
       ) : null}
       <InfiniteScroll
         hasMore={Boolean(cursor)}

@@ -2,6 +2,7 @@ import { users } from '@timeline/db';
 import { pageWindow } from '@timeline/shared/pagination';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
+import { Video } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -11,7 +12,7 @@ import type { Metadata } from 'next';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import {
   ArchiveSavedMeetingButton,
   EditSavedMeetingForm,
@@ -362,7 +363,8 @@ function SavedMeetingsSection({
         </p>
       ) : null}
       {meetings.length === 0 ? (
-        <EmptyAction
+        <EmptyState
+          icon={Video}
           title={hasSearch ? 'No saved meetings match your search' : 'No saved meeting links yet'}
           body={
             hasSearch

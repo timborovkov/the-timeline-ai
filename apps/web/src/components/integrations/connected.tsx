@@ -1,10 +1,12 @@
 'use client';
 
+import { Plug } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useActionState, useId, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { EmptyState } from '@/components/empty-state';
 import { FormActionToast } from '@/components/form-action-toast';
 import { InlineError } from '@/components/inline-error';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -134,7 +136,14 @@ export function ConnectedIntegrations({
   const visibleConnected = connected.filter((row) => !locallyDisconnectedIds.has(row.id));
 
   if (visibleConnected.length === 0) {
-    return <p className="text-sm text-fg-muted">No integrations connected yet.</p>;
+    return (
+      <EmptyState
+        icon={Plug}
+        size="inset"
+        title="No integrations connected yet"
+        body="Connect a source to start capturing work into this team's timeline."
+      />
+    );
   }
 
   async function call(method: 'sync' | 'disconnect', id: string) {

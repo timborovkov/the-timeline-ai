@@ -1,5 +1,5 @@
 import { eventSource } from '@timeline/db';
-import { Play } from 'lucide-react';
+import { Filter, Play } from 'lucide-react';
 import Link from 'next/link';
 
 import type {
@@ -15,6 +15,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CountList } from '@/components/collections/count-list';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
+import { EmptyState } from '@/components/empty-state';
 import {
   artifactClusterKindLabel,
   diagnosticLabel,
@@ -393,9 +394,12 @@ function RecentRuns({
         </DebouncedFilterForm>
       </div>
       {rows.length === 0 ? (
-        <p className="px-1 py-3 text-sm text-fg-muted">
-          No reconciliation runs match these filters.
-        </p>
+        <EmptyState
+          icon={Filter}
+          size="inset"
+          title="No reconciliation runs match these filters"
+          body="Clear or broaden the filters to see run history."
+        />
       ) : (
         <ul className="border-y border-border">
           {rows.map((row) => {
