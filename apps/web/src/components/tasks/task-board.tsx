@@ -1781,7 +1781,7 @@ function TaskColumn({
         <VirtualList
           items={rows}
           getItemKey={(row) => row.id}
-          estimateSize={120}
+          estimateSize={76}
           gap={8}
           getScrollElement={() => scrollEl}
           renderItem={(row) => (

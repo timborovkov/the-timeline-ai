@@ -20,8 +20,8 @@ vi.mock('@/lib/notify', () => ({
   notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
     try {
       return await run();
-    } catch {
-      return { error: 'failed' };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'failed' };
     }
   },
 }));
@@ -292,7 +292,7 @@ describe('CuratedKanbanBoard', () => {
       />,
     );
 
-    const dragHandle = screen.getByRole('button', { name: 'Drag Keyboard drag card' });
+    const dragHandle = screen.getByRole('button', { name: /Drag Keyboard drag card/ });
     dragHandle.focus();
 
     await user.keyboard('[Space]');
@@ -309,15 +309,8 @@ describe('CuratedKanbanBoard', () => {
     });
   });
 
-  it('keeps Move to lane keyboard-reachable beside the drag handle and restores focus', async () => {
+  it('keeps keyboard drag as the only on-card move path', async () => {
     const user = userEvent.setup();
-    let resolveMove!: (value: { ok: true; id: string }) => void;
-    fakes.updateBoardItemAction.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveMove = resolve;
-        }),
-    );
     render(
       <CuratedKanbanBoard
         boardId="board-1"
@@ -329,102 +322,44 @@ describe('CuratedKanbanBoard', () => {
     );
 
     const title = screen.getByRole('link', { name: 'Keyboard card' });
-    const dragHandle = screen.getByRole('button', { name: 'Drag Keyboard card' });
-    const laneTrigger = screen.getByRole('button', { name: 'Lane for Keyboard card' });
+    const dragHandle = screen.getByRole('button', { name: /Drag Keyboard card/ });
+    expect(dragHandle.getAttribute('aria-label')).toContain('Press Space or Enter to pick up');
+    expect(screen.queryByRole('button', { name: 'Lane for Keyboard card' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Move' })).toBeNull();
+    expect(screen.queryByText('Move')).toBeNull();
+    expect(screen.getByText(/To change lane without dragging, open the card/)).toBeTruthy();
+
     title.focus();
     await user.tab();
     expect(document.activeElement).toBe(dragHandle);
-    laneTrigger.focus();
-    await user.keyboard('{Enter}');
-    const moveControl = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' });
-    expect(moveControl.className).toContain('w-full');
-    expect(moveControl.className).toContain('text-base');
-    expect(screen.getByText(/To move directly between lanes with the keyboard/)).toBeTruthy();
-
-    await user.selectOptions(moveControl, 'lane-2');
-
-    await waitFor(() => {
-      expect(fakes.updateBoardItemAction).toHaveBeenCalledWith({ id: 'item-1', laneId: 'lane-2' });
-      expect(
-        screen.getByRole('button', { name: 'Lane for Keyboard card' }).hasAttribute('disabled'),
-      ).toBe(true);
-    });
-
-    resolveMove({ ok: true, id: 'item-1' });
-    await waitFor(() => {
-      const savedControl = screen.getByRole('button', { name: 'Lane for Keyboard card' });
-      expect(savedControl.hasAttribute('disabled')).toBe(false);
-      expect(document.activeElement).toBe(savedControl);
-    });
   });
 
-  it('disables Move to lane and announces saving while its update is pending', async () => {
-    const user = userEvent.setup();
-    let resolveMove!: (value: { ok: true; id: string }) => void;
-    fakes.updateBoardItemAction.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveMove = resolve;
-        }),
-    );
+  it('places the next step under the title and hides empty next-step chrome', () => {
+    const withStep = boardItem('Has next step');
+    withStep.nextStep = 'Send security appendix to legal for final read.';
+    const withoutStep = boardItem('No next step card');
+    withoutStep.id = 'item-2';
+    withoutStep.entityId = 'object-2';
+    withoutStep.object.id = 'object-2';
+
     render(
       <CuratedKanbanBoard
         boardId="board-1"
-        lanes={[lane(), lane('lane-2', 'Doing'), lane('lane-3', 'Done')]}
-        items={[boardItem('Pending move card')]}
+        lanes={[lane()]}
+        items={[withStep, withoutStep]}
         selectedItemId={null}
         members={[]}
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Lane for Pending move card' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Move to lane' }), 'lane-2');
-
-    await waitFor(() => {
-      const pendingControl = screen.getByRole('button', { name: 'Lane for Pending move card' });
-      expect(pendingControl.hasAttribute('disabled')).toBe(true);
-    });
-    expect(fakes.updateBoardItemAction).toHaveBeenCalledOnce();
-
-    resolveMove({ ok: true, id: 'item-1' });
-    await waitFor(() => {
-      expect(
-        screen.getByRole('button', { name: 'Lane for Pending move card' }).hasAttribute('disabled'),
-      ).toBe(false);
-    });
-  });
-
-  it('announces a failed lane move and lets the keyboard user recover', async () => {
-    const user = userEvent.setup();
-    fakes.updateBoardItemAction
-      .mockResolvedValueOnce({ error: 'The board could not be updated.' })
-      .mockResolvedValueOnce({ ok: true, id: 'item-1' });
-    render(
-      <CuratedKanbanBoard
-        boardId="board-1"
-        lanes={[lane(), lane('lane-2', 'Doing')]}
-        items={[boardItem('Recovery card')]}
-        selectedItemId={null}
-        members={[]}
-      />,
-    );
-
-    const laneTrigger = screen.getByRole('button', { name: 'Lane for Recovery card' });
-    await user.click(laneTrigger);
-    const moveControl = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Move to lane' });
-    await user.selectOptions(moveControl, 'lane-2');
-
-    await waitFor(() => {
-      expect(fakes.updateBoardItemAction).toHaveBeenCalledTimes(1);
-    });
-    const recoveredTrigger = screen.getByRole('button', { name: 'Lane for Recovery card' });
-    expect(document.activeElement).toBe(recoveredTrigger);
-    expect(screen.queryByRole('alert')).toBeNull();
-
-    await user.click(recoveredTrigger);
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Move to lane' }), 'lane-2');
-    await waitFor(() => {
-      expect(fakes.updateBoardItemAction).toHaveBeenCalledTimes(2);
-    });
+    const titledCard = screen.getByRole('link', { name: 'Has next step' }).closest('article');
+    if (!titledCard) throw new Error('Expected the titled card');
+    const titleBlock = titledCard.querySelector('div.min-w-0.flex-1');
+    expect(titleBlock?.textContent).toContain('Has next step');
+    expect(titleBlock?.textContent).toContain('Send security appendix to legal for final read.');
+    expect(screen.queryByText('No next step')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next step for Has next step' })).toBeNull();
+    expect(screen.queryByText('Saving…')).toBeNull();
+    expect(screen.queryByText('Saved')).toBeNull();
   });
 });

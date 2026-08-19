@@ -18,9 +18,9 @@ export default function DocumentsLoading() {
           <section className="space-y-3">
             <Skeleton className="h-10 w-full rounded-sm" />
           </section>
-          <section className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <section className="flex flex-wrap items-center justify-between gap-3">
             <Skeleton className="h-4 w-32 max-w-full" />
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Skeleton className="h-8 w-20 rounded-sm" />
               <Skeleton className="h-8 w-24 rounded-sm" />
               <Skeleton className="h-8 w-20 rounded-sm" />

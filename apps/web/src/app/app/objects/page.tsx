@@ -3,6 +3,7 @@ import { getEnv } from '@timeline/shared/env';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
+import { Plus } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -14,7 +15,6 @@ import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
 import { PageHeader } from '@/components/page-header';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
-import { Button } from '@/components/ui/button';
 import { WorkFilterBar } from '@/components/work-filter-bar';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -194,13 +194,7 @@ export default async function ObjectsIndexPage({
             ? [{ label: 'Type', value: OBJECT_TYPE_LABELS[singleType] ?? singleType }]
             : []),
         ]}
-      >
-        <PageHeader.Trailing>
-          <Button asChild>
-            <Link href="/app/objects/new">New object</Link>
-          </Button>
-        </PageHeader.Trailing>
-      </PageHeader>
+      />
       <WorkSubnav current="/app/objects" />
 
       <WorkFilterBar
@@ -214,6 +208,15 @@ export default async function ObjectsIndexPage({
         members={memberOptions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         typeLabels={OBJECT_TYPE_LABELS}
+        actions={
+          <Link
+            href="/app/objects/new"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            New object
+          </Link>
+        }
       />
       {categoryFilterBaseline ? (
         <TaskCategoryFilterRefresh

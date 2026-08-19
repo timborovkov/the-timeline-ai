@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.14 · Timeline search and continued paging (2026-08-18). Replaces v3.13 Approvals select-all.
+**Version:** v3.16 · Board kanban toast-only metadata (2026-08-19). Replaces v3.15 Collection chrome with timeline search.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -204,9 +204,11 @@ table.
 - `CollectionRow` is at least 44px on desktop. It favors one line: selection or
   type cue, human title, compact context, metadata, and overflow. Mobile uses
   two lines: title plus context, then wrapping metadata. Domain content uses
-  named children (`CollectionRow.Leading`, `.Title`, `.Context`, `.Metadata`,
-  `.Actions`) rather than JSX props. Pass a native `title` on `.Title` and
-  `.Context` when hover should show IDs, timestamps, or raw errors. Every row
+  named children (`CollectionRow.Leading`, `.Title`, `.Subtitle`, `.Context`,
+  `.Metadata`, `.Actions`) rather than JSX props. Optional `.Subtitle` sits
+  under the title for board-local next steps and similar secondary lines. Pass
+  a native `title` on `.Title` and `.Context` when hover should show IDs,
+  timestamps, or raw errors. Every row
   keeps a Linear hairline bottom border, including the last row. Do not wrap
   collection lists in left/right borders or partial boxes. Non-board collections
   must never force
@@ -517,16 +519,35 @@ requests for more detail may expand within the provider-safe reply limit.
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
 links. Work → Digests is the day-by-day archive of those briefings. Work overview
-puts pinned and team boards above the work queue so saved
-surfaces stay in reach before due and assigned items. Tasks default to the
-grouped list; the list table is full-bleed inside the work canvas, without extra
-page gutters around the rows. Kanban/List view controls sit on the CollectionToolbar
-row with search and filters, not on a second strip. Loading placeholders match the
-requested view and default to list. Kanban cards stay compact: a clamped title plus
-one metadata row, with no redundant type label. Team settings render one URL-selected
-section at a time. Field validation stays on the edited form; pending, success,
-and server failures use the shared action toast. Member, object, source,
-and artifact labels never fall back to UUIDs.
+puts pinned and team boards above the work queue so saved surfaces stay in reach
+before due and assigned items. Tasks default to the grouped list; the list table
+is full-bleed inside the work canvas, without extra page gutters around the rows.
+Kanban/List view controls sit on the CollectionToolbar row with search and
+filters, not on a second strip. Board kanban/table/list uses the same toolbar
+slot. Add item is a compact toolbar action that opens a popover, not a
+full-width boxed header. Loading placeholders match the live CollectionToolbar
+(search, optional count, Filters, view toggle, and compact add on one row) and
+the requested view: Tasks default to list, boards default to kanban, and
+table/list/kanban each have a matching skeleton. Timeline loading uses the same
+toolbar row without a page header or inventory chip, then Linear feed rows.
+Collection pages load as flat rows, not boxed card grids. Objects New object and
+Boards Create board use the same compact toolbar/header action as Add item, not a
+filled primary chip. Kanban cards stay compact: a clamped title plus one
+metadata row, with no redundant type label. Curated boards use the same
+full-bleed work canvas in kanban, table, and grouped list — no boxed inner
+container around the collection. Board kanban cards stay compact: a clamped
+title, optional next-step line directly under the title, and one metadata row.
+Cards have no Move control; the drag handle is the on-card move path (Space or
+Enter, then arrow keys), and opening the card is the keyboard alternative.
+Grouped board list does not repeat the current lane name or add a Move row. Next
+step is the board-local immediate action on that card, not an object description
+and not a table column. It sits under the title in kanban, list, and table, and
+is edited in the open card. Table and card-detail keep the lane name because
+those views are not already organized by column. Board table and list checkboxes
+stay vertically centered with the row. Do not style board lanes as badges. Team
+settings render one URL-selected section at a time. Field validation stays on
+the edited form; pending, success, and server failures use the shared action
+toast. Member, object, source, and artifact labels never fall back to UUIDs.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
 visible role and actions, not a padded card list. Other settings sections stay
@@ -947,12 +968,18 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Ask session search and title | Filters chat history from the session rail and shows the selected title beside Ask instead of a session count. |
 | 2026-08-17 | Ask mobile session title | Reuses the resolved conversation title in the mobile session summary, including deep-linked chats outside the recent list. |
 | 2026-08-17 | Quiet sidebar brand and fold control | Aligns the product mark with primary nav, sends it to Home, and replaces the boxed fold glyph with a lighter chevron. |
+| 2026-08-17 | Board kanban lane control | Stops repeating the current lane name on kanban and grouped list cards, keeps a quiet Move trigger, and leaves lane names on table and card-detail. |
+| 2026-08-17 | Board canvas and compact cards | Makes list and table boards full-bleed like Tasks, puts next step under the kanban title, removes the on-card Move row, and leaves lane names on table and card-detail. |
+| 2026-08-17 | Board next step and row alignment | Treats next step as a title subtitle instead of a table column, and vertically centers board checkboxes. |
+| 2026-08-17 | Collection toolbar view and add | Puts board view toggles on the search/filter row with Tasks, and turns Add item into a compact popover action. |
+| 2026-08-17 | Collection loading skeletons | Matches collection loading placeholders to the live toolbar row, compact add control, view-aware board/task canvases, and flat collection rows. |
 | 2026-08-17 | Action toasts and shared copy controls | Replaces inline Saving/Saved/error chips for mutations with one optimistic toast lifecycle, compensating Undo, and a single CopyButton for clipboard fields. |
 | 2026-08-18 | Shared progress toasts and redirect notices | Folds job-recovery batch progress into `notifyProgress` and sends reconciliation queue results through the toast channel. |
 | 2026-08-18 | Unify mutation toasts on notifyAction | Folds #359 `toastMutation` call sites onto the shared `notifyAction` lifecycle after merging collection density and floating Ask. |
 | 2026-08-17 | Infinite scroll with Linear timeline rows | Replaces Load more and numbered pagers with sentinel paging and virtualized rows; Timeline keeps Linear archive rows, sticky dates under the toolbar, and no inventory chip. |
 | 2026-08-17 | Digest status, window range, and linked lists | Replaces Product status with Status, shows the covering time range, lists tasks/objects/calendar with existing Home and email type, and omits empty groups including source inventories. |
 | 2026-08-17 | Digest date header, footer window, and activity strip | Puts the digest date in the header, moves the covering range to footer metadata, and turns web activity into a Home-style mono lime count strip. |
+| 2026-08-17 | Collection chrome with infinite-scroll counts | Keeps compact board/task/object chrome after merging infinite-scroll counts, virtualized kanban lanes, digest briefings, and Timeline’s toolbar-only Linear feed. |
 | 2026-08-17 | 7-day job recovery queue | Makes Home and Background jobs share one recent failed/stuck count, hides older backlog from attention, and keeps unprocessed inventory in Advanced tools. |
 | 2026-08-17 | Jobs recovery dismiss at scale | Makes older-job dismiss a batch write with progress toasts, windows the 7-day snapshot behind Load more, and keeps retry/dismiss on the shared `notifyAction` path. |
 | 2026-08-17 | Dense jobs recovery rows | Drops per-row Technical details so the admin queue is status, label, time, and retry/dismiss. |
@@ -963,6 +990,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-17 | Quiet job recovery header | Drops the access, team, last-7-days, and older-hidden metadata row so the page leads with title and subtitle. |
 | 2026-08-17 | Quiet reconciliation header | Drops the checked / needs repair / updated metadata row so Reconciliation also leads with title and subtitle. |
 | 2026-08-17 | Quiet admin Advanced tools | Replaces job-recovery stat cards and reconciliation uppercase/badge chrome with sentence-case headings and dense count or history rows. |
+| 2026-08-18 | Collection chrome with quiet job recovery | Keeps compact board/task/object chrome after merging Home checklist hydration, React Doctor splits, quiet Job recovery, and quiet Reconciliation. |
 | 2026-08-17 | Floating Ask | Replaces per-page Ask-about buttons with a context-aware float, keeps one thread on close, and shows linked context badges in full Ask. |
 | 2026-08-17 | Floating Ask context names | Names the float from the selected timeline, calendar, task, search, or folder item, and makes the mobile sheet modal while desktop stays non-modal. |
 | 2026-08-17 | Quiet floating Ask header | Keeps the shortcut on the launcher and drops the header shortcut plus earlier-count line. |
@@ -971,3 +999,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | Approvals select-all | Restores bulk review without a persistent Accept-all bar: a visible Select-all checkbox for loaded proposals, plus the same control on multi-item bundle headers. |
 | 2026-08-18 | Timeline search and continued paging | Puts Search timeline on the archive toolbar, keeps source presets visible, and re-observes the infinite-scroll sentinel after each page so virtualized rows keep loading. |
 | 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
+| 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
+| 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |

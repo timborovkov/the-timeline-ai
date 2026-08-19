@@ -204,6 +204,14 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       object Calendar sections link back to the focused event. Job recovery
       and Reconciliation reuse the same dense collection rows, with IDs and
       raw errors in Title/Context hover titles.
+- [x] U8b — Collection chrome: full-bleed board list/table, compact kanban
+      cards with next step under the title and no on-card Move control, view
+      toggles on the search/filter row, slim Add item / New object / Create
+      board actions, matching collection loading skeletons, and `N of M`
+      infinite-scroll counts. Board kanban mutations stay on `notifyAction`
+      (no Saving/Saved chips). Board kanban and grouped list virtualize
+      against their inner scrollers; the board table stays a semantic table
+      with `content-visibility` row containment.
 - [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
       float on every authenticated page except Home and full Ask. Close keeps
       the thread; New resets it. The agent sees the current view first and a

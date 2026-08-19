@@ -9,6 +9,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
+import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
@@ -65,6 +66,43 @@ describe('collection primitives', () => {
     );
     expect(screen.getByText('2').parentElement?.textContent).toContain('objects selected');
     expect(screen.getByRole('button', { name: 'Clear selection' }).className).toContain('size-10');
+  });
+
+  it('renders an optional subtitle under the title', () => {
+    render(
+      <CollectionRow>
+        <CollectionRow.Title>Launch plan</CollectionRow.Title>
+        <CollectionRow.Subtitle>Call the buyer</CollectionRow.Subtitle>
+      </CollectionRow>,
+    );
+    expect(screen.getByText('Call the buyer').className).toContain('text-[11px]');
+  });
+
+  it('exposes an optional title hover hint without replacing the subtitle', () => {
+    render(
+      <CollectionRow>
+        <CollectionRow.Title title="job-1 · artifact-2">Recover extraction</CollectionRow.Title>
+        <CollectionRow.Subtitle>Timed out</CollectionRow.Subtitle>
+      </CollectionRow>,
+    );
+    expect(screen.getByText('Recover extraction').getAttribute('title')).toBe('job-1 · artifact-2');
+    expect(screen.getByText('Timed out')).toBeTruthy();
+  });
+
+  it('marks the current collection view without a second toolbar strip', () => {
+    render(
+      <CollectionViewToggle
+        label="Board view"
+        views={['kanban', 'table', 'list'] as const}
+        current="table"
+        hrefFor={(view) => `/app/boards/1?view=${view}`}
+      />,
+    );
+
+    expect(screen.getByRole('link', { name: 'table' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
+      '/app/boards/1?view=kanban',
+    );
   });
 
   it('uses a 44px desktop row with a two-line responsive content structure', () => {

@@ -65,6 +65,7 @@ describe('Work route states', () => {
     expect(screen.getByRole('link', { name: 'Overview' }).getAttribute('aria-current')).toBeNull();
     const pinnedSkeleton = document.querySelector('[data-work-loading-view="pinned"]');
     expect(pinnedSkeleton).toBeTruthy();
+    expect(pinnedSkeleton?.querySelector('[data-loading-toolbar="collection"]')).toBeTruthy();
     expect(pinnedSkeleton?.firstElementChild?.className).toContain('border-b');
     expect(pinnedSkeleton?.innerHTML).not.toContain('overflow-hidden border border-border');
     expect(pinnedSkeleton?.innerHTML).not.toContain('border-x');

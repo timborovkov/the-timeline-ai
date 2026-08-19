@@ -251,39 +251,27 @@ describe('CuratedBoardTable', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('syncs the next step editor when refreshed item props change', async () => {
-    const user = userEvent.setup();
+  it('places next step under the name and keeps checkboxes vertically centered', () => {
     const item = { ...boardItem(), nextStep: 'Call customer' };
-    const { rerender } = render(
+    render(
       <CuratedBoardTable
         boardId="board-1"
         view="table"
-        lanes={[]}
+        lanes={LANES}
         items={[item]}
         members={[]}
         onUpdateItem={fakes.updateItem}
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Next step for Launch review' }));
+    expect(screen.queryByRole('columnheader', { name: 'Next step' })).toBeNull();
+    expect(screen.queryByText('No next step')).toBeNull();
+    const nameCell = screen.getByRole('link', { name: 'Launch review' }).closest('td');
+    expect(nameCell?.textContent).toContain('Call customer');
+    expect(nameCell?.className).toContain('align-middle');
     expect(
-      screen.getByRole<HTMLInputElement>('textbox', { name: 'Next step for Launch review' }).value,
-    ).toBe('Call customer');
-
-    rerender(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={[]}
-        items={[{ ...item, nextStep: null }]}
-        members={[]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    expect(
-      screen.getByRole<HTMLInputElement>('textbox', { name: 'Next step for Launch review' }).value,
-    ).toBe('');
+      screen.getByRole('checkbox', { name: 'Select Launch review' }).closest('td')?.className,
+    ).toContain('align-middle');
   });
 
   it('bulk assigns selected board items in table view', async () => {
@@ -343,6 +331,41 @@ describe('CuratedBoardList', () => {
 
     const title = screen.getByText(longTitle);
     expect(title.className).toContain('truncate');
+  });
+
+  it('keeps grouped list rows on the full-bleed canvas without a Move control', () => {
+    const { container } = render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[boardItem()]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    expect(container.querySelector('.border-x')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lane for Launch review' })).toBeNull();
+    expect(screen.queryByText('Move')).toBeNull();
+    expect(screen.queryByText('No next step')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Next step for Launch review' })).toBeNull();
+  });
+
+  it('places next step under the list title', () => {
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[{ ...boardItem(), nextStep: 'Call customer' }]}
+      />,
+    );
+
+    const title = screen.getByRole('link', { name: 'Launch review' });
+    const titleBlock = title.closest('.min-w-0.flex-1');
+    expect(titleBlock?.textContent).toContain('Call customer');
+    expect(screen.queryByRole('button', { name: 'Next step for Launch review' })).toBeNull();
   });
 
   it('bulk sets due dates for selected board items in list view', async () => {

@@ -192,7 +192,7 @@ export function CuratedBoardTable({
     selectableItems.length > 0 && selectableItems.every((item) => visibleSelectedIds.has(item.id));
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col">
       {onUpdateItem ? (
         <BoardBulkToolbar
           lanes={lanes}
@@ -257,31 +257,32 @@ function CuratedBoardTableGrid({
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => Promise<BoardItemUpdateResult>;
 }) {
   return (
-    <div className="overflow-x-auto rounded-sm border border-border bg-surface">
-      <table className="w-full text-sm">
+    <div className="min-h-0 flex-1 overflow-auto bg-bg">
+      <table className="w-full min-w-[48rem] text-sm">
         <thead className="border-b border-border bg-bg text-left text-xs text-fg-dim">
           <tr>
             {canEdit ? (
-              <th className="w-10 px-3 py-2 font-normal">
-                <input
-                  type="checkbox"
-                  checked={allVisibleSelected}
-                  disabled={selectableItems.length === 0}
-                  onChange={(event) => {
-                    onToggleAll(event.currentTarget.checked);
-                  }}
-                  aria-label="Select all visible board items"
-                  className="size-4 rounded-sm border-border"
-                />
+              <th className="w-10 px-3 py-2 align-middle font-normal">
+                <span className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    disabled={selectableItems.length === 0}
+                    onChange={(event) => {
+                      onToggleAll(event.currentTarget.checked);
+                    }}
+                    aria-label="Select all visible board items"
+                    className="size-4 rounded-sm border-border"
+                  />
+                </span>
               </th>
             ) : null}
-            <th className="px-3 py-2 font-normal">Name</th>
-            <th className="px-3 py-2 font-normal">Type</th>
-            <th className="px-3 py-2 font-normal">Responsible</th>
-            <th className="px-3 py-2 font-normal">Due</th>
-            <th className="px-3 py-2 font-normal">Priority</th>
-            <th className="px-3 py-2 font-normal">Lane</th>
-            <th className="px-3 py-2 font-normal">Next step</th>
+            <th className="px-3 py-2 align-middle font-normal">Name</th>
+            <th className="px-3 py-2 align-middle font-normal">Type</th>
+            <th className="px-3 py-2 align-middle font-normal">Responsible</th>
+            <th className="px-3 py-2 align-middle font-normal">Due</th>
+            <th className="px-3 py-2 align-middle font-normal">Priority</th>
+            <th className="px-3 py-2 align-middle font-normal">Lane</th>
           </tr>
         </thead>
         <CuratedBoardTableBody
@@ -339,20 +340,22 @@ function CuratedBoardTableBody({
         return (
           <tr key={item.id} className="border-t border-border transition-colors hover:bg-bg">
             {canUpdate ? (
-              <td className="px-3 py-2 align-top">
-                <input
-                  type="checkbox"
-                  checked={visibleSelectedIds.has(item.id)}
-                  disabled={optimistic}
-                  onChange={(event) => {
-                    onToggle(item.id, event.currentTarget.checked);
-                  }}
-                  aria-label={`Select ${displayText(objectTitle)}`}
-                  className="size-4 rounded-sm border-border disabled:opacity-50"
-                />
+              <td className="px-3 py-2 align-middle">
+                <span className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={visibleSelectedIds.has(item.id)}
+                    disabled={optimistic}
+                    onChange={(event) => {
+                      onToggle(item.id, event.currentTarget.checked);
+                    }}
+                    aria-label={`Select ${displayText(objectTitle)}`}
+                    className="size-4 rounded-sm border-border disabled:opacity-50"
+                  />
+                </span>
               </td>
             ) : null}
-            <td className="px-3 py-2">
+            <td className="px-3 py-2 align-middle">
               {optimistic ? (
                 <span className="font-medium text-fg">{displayText(objectTitle)}</span>
               ) : (
@@ -363,6 +366,11 @@ function CuratedBoardTableBody({
                   {displayText(objectTitle)}
                 </Link>
               )}
+              {item.nextStep ? (
+                <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-fg-dim">
+                  {item.nextStep}
+                </p>
+              ) : null}
             </td>
             <td className="px-3 py-2 text-xs text-fg-muted">
               <span className="flex flex-wrap items-center gap-1.5">
@@ -494,26 +502,6 @@ function CuratedBoardTableBody({
                       </option>
                     ))}
                   </select>
-                </EditableMetadata.Editor>
-              </EditableMetadata>
-            </td>
-            <td className="min-w-64 px-3 py-2">
-              <EditableMetadata
-                label={`Next step for ${displayText(objectTitle)}`}
-                pending={saving[item.id] === 'nextStep'}
-                disabled={disabled}
-              >
-                <EditableMetadata.Value>{item.nextStep ?? 'No next step'}</EditableMetadata.Value>
-                <EditableMetadata.Editor>
-                  <BoardNextStepInput
-                    key={`${item.id}:${item.nextStep ?? ''}`}
-                    objectName={objectTitle}
-                    nextStep={item.nextStep}
-                    disabled={disabled}
-                    onSave={(nextStep) => {
-                      void onUpdateItem(item.id, { nextStep });
-                    }}
-                  />
                 </EditableMetadata.Editor>
               </EditableMetadata>
             </td>
@@ -692,39 +680,6 @@ function boardBulkReducer(state: BoardBulkState, action: BoardBulkAction): Board
   }
 }
 
-function BoardNextStepInput({
-  objectName,
-  nextStep,
-  disabled,
-  onSave,
-}: {
-  objectName: string;
-  nextStep: string | null;
-  disabled: boolean;
-  onSave: (nextStep: string | null) => void;
-}) {
-  const [draft, setDraft] = useState(nextStep ?? '');
-
-  return (
-    <input
-      value={draft}
-      disabled={disabled}
-      onChange={(event) => {
-        setDraft(event.currentTarget.value);
-      }}
-      onBlur={() => {
-        const trimmed = draft.trim();
-        if ((nextStep ?? '') !== trimmed) {
-          onSave(trimmed || null);
-        }
-      }}
-      className="h-8 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-      aria-label={`Next step for ${displayText(objectName)}`}
-      placeholder="Next step"
-    />
-  );
-}
-
 export function CuratedBoardList({
   boardId,
   view,
@@ -748,6 +703,7 @@ export function CuratedBoardList({
   const timezone = useWorkspaceTimezone();
   const [, startTransition] = useTransition();
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
   const selectableItems = useMemo(() => items.filter((item) => !isOptimisticItem(item)), [items]);
   const visibleSelectedIds = useMemo(() => {
     const itemIds = new Set(selectableItems.map((item) => item.id));
@@ -811,7 +767,7 @@ export function CuratedBoardList({
   });
 
   return (
-    <div className="space-y-3">
+    <div className="flex min-h-0 flex-1 flex-col">
       {onUpdateItem ? (
         <BoardBulkToolbar
           lanes={lanes}
@@ -821,13 +777,14 @@ export function CuratedBoardList({
           onUpdateItems={updateItems}
         />
       ) : null}
-      <div>
+      <div ref={setScrollEl} className="min-h-0 flex-1 overflow-y-auto bg-bg">
         {laneGroups.map((group) => (
           <CollectionGroup key={group.id || 'unset'} title={group.name} count={group.items.length}>
             <VirtualList
               items={group.items}
               getItemKey={(item) => item.id}
               estimateSize={48}
+              getScrollElement={() => scrollEl}
               renderItem={(item) => {
                 const optimistic = isOptimisticItem(item);
                 const objectTitle = displayObjectTitle(item.object);
@@ -859,6 +816,9 @@ export function CuratedBoardList({
                         ) : null}
                       </CollectionRow.Leading>
                       <CollectionRow.Title>{title}</CollectionRow.Title>
+                      {item.nextStep ? (
+                        <CollectionRow.Subtitle>{item.nextStep}</CollectionRow.Subtitle>
+                      ) : null}
                       <CollectionRow.Context>{statusLabel(item.object.type)}</CollectionRow.Context>
                       <CollectionRow.Metadata>
                         <>
@@ -953,46 +913,6 @@ export function CuratedBoardList({
                                   </option>
                                 ))}
                               </select>
-                            </EditableMetadata.Editor>
-                          </EditableMetadata>
-                          <EditableMetadata
-                            label={`Lane for ${displayText(objectTitle)}`}
-                            disabled={optimistic || !onUpdateItem}
-                          >
-                            <EditableMetadata.Value>{group.name}</EditableMetadata.Value>
-                            <EditableMetadata.Editor>
-                              <select
-                                value={item.laneId ?? ''}
-                                onChange={(event) =>
-                                  void updateItem(item.id, {
-                                    laneId: event.currentTarget.value || null,
-                                  })
-                                }
-                                className="h-10 rounded-sm border border-border bg-bg px-2 text-xs"
-                              >
-                                <option value="">Unset</option>
-                                {lanes.map((lane) => (
-                                  <option key={lane.id} value={lane.id}>
-                                    {displayText(lane.name)}
-                                  </option>
-                                ))}
-                              </select>
-                            </EditableMetadata.Editor>
-                          </EditableMetadata>
-                          <EditableMetadata
-                            label={`Next step for ${displayText(objectTitle)}`}
-                            disabled={optimistic || !onUpdateItem}
-                          >
-                            <EditableMetadata.Value>
-                              {item.nextStep ?? 'No next step'}
-                            </EditableMetadata.Value>
-                            <EditableMetadata.Editor>
-                              <BoardNextStepInput
-                                objectName={objectTitle}
-                                nextStep={item.nextStep}
-                                disabled={optimistic || !onUpdateItem}
-                                onSave={(nextStep) => void updateItem(item.id, { nextStep })}
-                              />
                             </EditableMetadata.Editor>
                           </EditableMetadata>
                         </>

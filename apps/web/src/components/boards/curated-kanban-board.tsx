@@ -14,6 +14,7 @@ import {
   type DragStartEvent,
   type ScreenReaderInstructions,
 } from '@dnd-kit/core';
+import { GripVertical } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
@@ -50,10 +51,9 @@ interface Props {
 }
 
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
-type MoveControlFocus = { id: string; laneValue: string } | null;
 const DRAG_INSTRUCTIONS: ScreenReaderInstructions = {
   draggable:
-    'Press Space or Enter to pick up a card. Use the arrow keys to move it, then press Space or Enter again to drop it, or Escape to cancel. To move directly between lanes with the keyboard, tab to the card’s Move to lane menu.',
+    'Press Space or Enter to pick up a card. Use the arrow keys to move it, then press Space or Enter again to drop it, or Escape to cancel. To change lane without dragging, open the card.',
 };
 
 export function CuratedKanbanBoard({
@@ -82,7 +82,6 @@ export function CuratedKanbanBoard({
     ? (optimisticItems.find((item) => item.id === activeDragId) ?? null)
     : null;
   const savingRef = useRef<Set<string> | null>(null);
-  const pendingMoveControlFocusRef = useRef<MoveControlFocus>(null);
   savingRef.current ??= new Set<string>();
 
   const laneIdSet = useMemo(() => new Set(lanes.map((lane) => lane.id)), [lanes]);
@@ -112,17 +111,6 @@ export function CuratedKanbanBoard({
       },
     ];
   }, [boardId, laneIdSet, lanes, optimisticItems]);
-
-  const registerMoveControl = useCallback(
-    (id: string, laneValue: string, node: HTMLButtonElement | null) => {
-      if (!node || node.disabled) return;
-      const pendingFocus = pendingMoveControlFocusRef.current;
-      if (pendingFocus?.id !== id || pendingFocus.laneValue !== laneValue) return;
-      pendingMoveControlFocusRef.current = null;
-      node.focus();
-    },
-    [],
-  );
 
   const cardLabel = useCallback(
     (id: string) => {
@@ -167,13 +155,10 @@ export function CuratedKanbanBoard({
     setSavingIds(new Set(currentSaving));
   }
 
-  function moveItem(id: string, laneId: string | null, focusMoveControl = false): void {
+  function moveItem(id: string, laneId: string | null): void {
     if (savingSet().has(id)) return;
     const item = optimisticItems.find((candidate) => candidate.id === id);
     if (!item || item.laneId === laneId) return;
-    if (focusMoveControl) {
-      pendingMoveControlFocusRef.current = { id, laneValue: laneId ?? 'unset' };
-    }
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch: { laneId } });
@@ -193,11 +178,7 @@ export function CuratedKanbanBoard({
           },
         },
       });
-      const failed = Boolean(result.error);
-      if (failed) {
-        if (focusMoveControl) {
-          pendingMoveControlFocusRef.current = { id, laneValue: previousLaneId ?? 'unset' };
-        }
+      if (result.error) {
         moveOptimistic({ id, patch: { laneId: previousLaneId } });
       }
       markSaving(id, false);
@@ -245,8 +226,7 @@ export function CuratedKanbanBoard({
           },
         },
       });
-      const failed = Boolean(result.error);
-      if (failed) moveOptimistic({ id, patch: baseline });
+      if (result.error) moveOptimistic({ id, patch: baseline });
       markSaving(id, false);
       router.refresh();
     });
@@ -291,10 +271,7 @@ export function CuratedKanbanBoard({
               selectedItemId={selectedItemId}
               members={members}
               filterParams={filterParams}
-              moveTargets={visibleLanes}
-              onMoveItem={moveItem}
               onUpdateItem={updateItem}
-              onMoveControlRef={registerMoveControl}
             />
           ))}
         </section>
@@ -319,10 +296,7 @@ function KanbanColumn({
   selectedItemId,
   members,
   filterParams,
-  moveTargets,
-  onMoveItem,
   onUpdateItem,
-  onMoveControlRef,
 }: {
   boardId: string;
   lane: boards.BoardLaneRow;
@@ -332,10 +306,7 @@ function KanbanColumn({
   selectedItemId: string | null;
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
-  moveTargets: boards.BoardLaneRow[];
-  onMoveItem: (id: string, laneId: string | null, focusMoveControl?: boolean) => void;
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
-  onMoveControlRef: (id: string, laneValue: string, node: HTMLButtonElement | null) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: lane.id });
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
@@ -344,11 +315,11 @@ function KanbanColumn({
       ref={setNodeRef}
       aria-label={`${lane.name}, board column ${ordinal}`}
       className={cn(
-        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-3',
+        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
         isOver && 'border-signal/40 bg-signal-soft',
       )}
     >
-      <div className="mb-3 flex shrink-0 items-baseline justify-between">
+      <div className="mb-2 flex shrink-0 items-baseline justify-between px-0.5">
         <h3 className="text-xs text-fg-dim">{lane.name}</h3>
         <span className="text-xs text-fg">{items.length}</span>
       </div>
@@ -356,7 +327,7 @@ function KanbanColumn({
         <VirtualList
           items={items}
           getItemKey={(item) => item.id}
-          estimateSize={120}
+          estimateSize={76}
           gap={8}
           getScrollElement={() => scrollEl}
           renderItem={(item) => (
@@ -368,10 +339,7 @@ function KanbanColumn({
               selected={item.id === selectedItemId}
               members={members}
               filterParams={filterParams}
-              moveTargets={moveTargets}
-              onMoveItem={onMoveItem}
               onUpdateItem={onUpdateItem}
-              onMoveControlRef={onMoveControlRef}
             />
           )}
         />
@@ -388,10 +356,7 @@ function KanbanCard({
   selected,
   members,
   filterParams,
-  moveTargets,
-  onMoveItem,
   onUpdateItem,
-  onMoveControlRef,
 }: {
   boardId: string;
   item: boards.BoardItemRow;
@@ -400,10 +365,7 @@ function KanbanCard({
   selected: boolean;
   members: BoardMemberOption[];
   filterParams: Record<string, string>;
-  moveTargets: boards.BoardLaneRow[];
-  onMoveItem: (id: string, laneId: string | null, focusMoveControl?: boolean) => void;
   onUpdateItem: (id: string, patch: BoardItemOptimisticPatch) => void;
-  onMoveControlRef: (id: string, laneValue: string, node: HTMLButtonElement | null) => void;
 }) {
   const optimistic = item.id.startsWith('optimistic-');
   const { attributes, listeners, setActivatorNodeRef, setNodeRef, transform, isDragging } =
@@ -411,26 +373,23 @@ function KanbanCard({
       id: item.id,
       disabled: saving || optimistic,
     });
-  const style = transform
-    ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
-    : undefined;
+  const style = {
+    contentVisibility: 'auto' as const,
+    containIntrinsicSize: 'auto 76px',
+    ...(transform
+      ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
+      : {}),
+  };
   const blocked = lane.kind === 'blocked';
   const title = displayObjectTitle(item.object);
-  const titleId = `board-card-${item.id}-title`;
-  const moveControlId = `board-card-${item.id}-move-lane`;
-  const registerMoveControl = useCallback(
-    (node: HTMLButtonElement | null) => {
-      if (saving) return;
-      onMoveControlRef(item.id, lane.id, node);
-    },
-    [item.id, lane.id, onMoveControlRef, saving],
-  );
+  const titleText = displayText(title);
+  const dragLabel = `Drag ${titleText}. Press Space or Enter to pick up, then use the arrow keys to move.`;
   return (
     <article
       ref={setNodeRef}
       style={style}
       className={cn(
-        'rounded-sm border border-border bg-bg px-3 py-2 text-sm transition-colors hover:border-border-strong',
+        'rounded-sm border border-border/80 bg-bg px-2 py-1.5 text-sm transition-colors hover:bg-surface',
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
         blocked && 'border-danger/50',
         isDragging && 'opacity-50',
@@ -438,35 +397,39 @@ function KanbanCard({
         optimistic && 'cursor-wait opacity-80',
       )}
     >
-      <div className="flex min-w-0 items-start gap-1">
-        {optimistic ? (
-          <span className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug">
-            {displayText(title)}
-          </span>
-        ) : (
-          <Link
-            id={titleId}
-            href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
-            aria-current={selected ? 'true' : undefined}
-            className="min-w-0 flex-1 whitespace-normal break-words font-medium leading-snug hover:underline"
-          >
-            {displayText(title)}
-          </Link>
-        )}
+      <div className="flex min-w-0 items-start gap-0.5">
+        <div className="min-w-0 flex-1">
+          {optimistic ? (
+            <span className="line-clamp-2 whitespace-normal break-words font-medium leading-snug">
+              {titleText}
+            </span>
+          ) : (
+            <Link
+              href={boardViewHref(boardId, 'kanban', item.id, filterParams)}
+              aria-current={selected ? 'true' : undefined}
+              className="line-clamp-2 whitespace-normal break-words font-medium leading-snug hover:underline"
+            >
+              {titleText}
+            </Link>
+          )}
+          {item.nextStep ? (
+            <p className="mt-0.5 line-clamp-2 text-[11px] leading-4 text-fg-dim">{item.nextStep}</p>
+          ) : null}
+        </div>
         <button
           ref={setActivatorNodeRef}
           type="button"
           {...attributes}
           {...listeners}
-          aria-label={`Drag ${displayText(title)}`}
+          aria-label={dragLabel}
           disabled={saving || optimistic}
-          className="inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-base leading-none text-fg-dim transition-colors hover:bg-surface-raised hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
+          className="-mr-1 inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim transition-colors hover:bg-surface-2 hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
         >
-          <span aria-hidden="true">⠿</span>
+          <GripVertical aria-hidden="true" className="size-3.5" />
         </button>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-dim">
-        <span>{statusLabel(item.object.type)}</span>
+      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
+        <span className="px-1.5 text-fg-dim">{statusLabel(item.object.type)}</span>
         {item.object.type === 'task' ? (
           <LiveTaskCategoryBadge
             taskId={item.object.id}
@@ -475,13 +438,12 @@ function KanbanCard({
             updatedAt={item.object.taskCategoryUpdatedAt}
           />
         ) : null}
-        {blocked ? <span className="text-danger">Blocked</span> : null}
-      </div>
-      <div className="mt-1 flex flex-wrap items-center gap-0.5">
+        {blocked ? <span className="px-1.5 text-danger">Blocked</span> : null}
         <EditableMetadata
-          label={`Responsible person for ${displayText(title)}`}
+          label={`Responsible person for ${titleText}`}
           pending={saving}
           disabled={optimistic}
+          className="min-h-8 px-1.5"
         >
           <EditableMetadata.Value>
             {ownerLabel(item.responsibleUserId, members)}
@@ -505,9 +467,10 @@ function KanbanCard({
           </EditableMetadata.Editor>
         </EditableMetadata>
         <EditableMetadata
-          label={`Due date for ${displayText(title)}`}
+          label={`Due date for ${titleText}`}
           pending={saving}
           disabled={optimistic}
+          className="min-h-8 px-1.5"
         >
           <EditableMetadata.Value>
             <DueDateDisplay value={item.dueAt} variant="compact" />
@@ -524,9 +487,10 @@ function KanbanCard({
           </EditableMetadata.Editor>
         </EditableMetadata>
         <EditableMetadata
-          label={`Priority for ${displayText(title)}`}
+          label={`Priority for ${titleText}`}
           pending={saving}
           disabled={optimistic}
+          className="min-h-8 px-1.5"
         >
           <EditableMetadata.Value>
             <CollectionStatus
@@ -555,71 +519,7 @@ function KanbanCard({
             </select>
           </EditableMetadata.Editor>
         </EditableMetadata>
-        <EditableMetadata
-          label={`Next step for ${displayText(title)}`}
-          pending={saving}
-          disabled={optimistic}
-        >
-          <EditableMetadata.Value>{item.nextStep ?? 'No next step'}</EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <form
-              action={(formData) => {
-                const rawNextStep = formData.get('nextStep');
-                const nextStep = (typeof rawNextStep === 'string' ? rawNextStep : '').trim();
-                onUpdateItem(item.id, { nextStep: nextStep || null });
-              }}
-              className="flex items-center gap-2"
-            >
-              <input
-                name="nextStep"
-                defaultValue={item.nextStep ?? ''}
-                className="h-10 min-w-56 rounded-sm border border-border bg-bg px-2 text-xs"
-                aria-label="Next step"
-              />
-              <button
-                type="submit"
-                className="min-h-10 rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg"
-              >
-                Apply
-              </button>
-            </form>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
       </div>
-      {!optimistic ? (
-        <EditableMetadata
-          label={`Lane for ${displayText(title)}`}
-          pending={saving}
-          className="mt-1"
-          triggerRef={registerMoveControl}
-        >
-          <EditableMetadata.Value>{lane.name}</EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              id={moveControlId}
-              value={lane.id}
-              disabled={saving}
-              aria-label="Move to lane"
-              aria-describedby={titleId}
-              onPointerDown={(event) => {
-                event.stopPropagation();
-              }}
-              onChange={(event) => {
-                const nextLaneId =
-                  event.currentTarget.value === 'unset' ? null : event.currentTarget.value;
-                onMoveItem(item.id, nextLaneId, true);
-              }}
-              className="h-9 w-full min-w-0 rounded-sm border border-border bg-surface px-2 text-base text-fg transition-colors focus-visible:border-signal/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60 sm:text-sm"
-            >
-              {moveTargets.map((target) => (
-                <option key={target.id} value={target.id}>
-                  {target.name}
-                </option>
-              ))}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-      ) : null}
     </article>
   );
 }

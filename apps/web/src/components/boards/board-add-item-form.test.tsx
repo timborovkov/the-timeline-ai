@@ -87,7 +87,7 @@ describe('BoardAddItemForm', () => {
 
     expect(html).toContain('Add item');
     expect(html).toContain('aria-expanded="false"');
-    expect(html).toContain('Expand add item');
+    expect(html).not.toContain('Expand add item');
     expect(html).not.toContain('Search existing objects');
     expect(html).not.toContain('MyAuditor');
     expect(html).not.toContain('<select');
@@ -115,7 +115,7 @@ describe('BoardAddItemForm', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
 
     expect(screen.getByRole('button', { name: /Untitled object/ })).toBeTruthy();
     expect(document.body.textContent).not.toContain(internalName);
@@ -170,7 +170,7 @@ describe('BoardAddItemForm', () => {
 
     expect(screen.queryByRole('searchbox', { name: 'Search existing objects' })).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
     const search = screen.getByRole('searchbox', { name: 'Search existing objects' });
     expect(search).toBeTruthy();
     expect(screen.getByRole('button', { name: /MyAuditor/ })).toBeTruthy();
@@ -232,7 +232,7 @@ describe('BoardAddItemForm', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
     await user.click(screen.getByRole('button', { name: /MyAuditor/ }));
     await user.click(screen.getByRole('button', { name: 'Add to board' }));
 
@@ -256,7 +256,7 @@ describe('BoardAddItemForm', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: 'Expand add item' }));
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
 
     expect(screen.getByRole('group', { name: 'Add item mode' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'existing' }).getAttribute('aria-pressed')).toBe(

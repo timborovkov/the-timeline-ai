@@ -84,7 +84,7 @@ describe('Approvals route states', () => {
     }
     expect(
       [...visualPlaceholders].some((placeholder) =>
-        placeholder.querySelector('.flex.flex-wrap.gap-2'),
+        placeholder.querySelector('[data-loading-toolbar="collection"]'),
       ),
     ).toBe(true);
   });

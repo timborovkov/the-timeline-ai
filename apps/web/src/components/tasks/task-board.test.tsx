@@ -839,7 +839,9 @@ describe('TaskBoard', () => {
     });
     expect(screen.queryByText('Send proposal duplicate')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
-    expect(screen.getByText('No more matching tasks')).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText('No more matching tasks')).toBeTruthy();
+    });
   });
 
   it('keeps loaded older tasks when refreshed first-page props arrive', async () => {

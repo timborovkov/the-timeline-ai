@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 
 const CollectionRowLeading = createCollectionSlot('leading');
 const CollectionRowTitle = createCollectionSlot('title');
+const CollectionRowSubtitle = createCollectionSlot('subtitle');
 const CollectionRowContext = createCollectionSlot('context');
 const CollectionRowMetadata = createCollectionSlot('metadata');
 const CollectionRowActions = createCollectionSlot('actions');
@@ -15,6 +16,7 @@ const CollectionRowActions = createCollectionSlot('actions');
 const ROW_SLOTS = {
   leading: CollectionRowLeading,
   title: CollectionRowTitle,
+  subtitle: CollectionRowSubtitle,
   context: CollectionRowContext,
   metadata: CollectionRowMetadata,
   actions: CollectionRowActions,
@@ -61,6 +63,7 @@ export function CollectionRow({
   const { titleHint, contextTitle } = readRowHints(children);
   const leading = slots.leading;
   const title = slots.title;
+  const subtitle = slots.subtitle;
   const context = slots.context;
   const metadata = slots.metadata;
   const actions = slots.actions;
@@ -93,6 +96,11 @@ export function CollectionRow({
           <div className="min-w-0 truncate text-sm font-medium leading-5 text-fg" title={titleHint}>
             {title}
           </div>
+          {subtitle ? (
+            <div className="min-w-0 truncate text-[11px] font-normal leading-4 text-fg-dim">
+              {subtitle}
+            </div>
+          ) : null}
           {context ? (
             <div
               className="min-w-0 truncate text-[11px] leading-4 text-fg-dim sm:hidden"
@@ -123,6 +131,7 @@ export function CollectionRow({
 
 CollectionRow.Leading = CollectionRowLeading;
 CollectionRow.Title = CollectionRowTitle;
+CollectionRow.Subtitle = CollectionRowSubtitle;
 CollectionRow.Context = CollectionRowContext;
 CollectionRow.Metadata = CollectionRowMetadata;
 CollectionRow.Actions = CollectionRowActions;

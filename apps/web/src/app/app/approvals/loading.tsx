@@ -1,5 +1,8 @@
-import { CollectionRowsSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
-import { Skeleton } from '@/components/ui/skeleton';
+import {
+  CollectionRowsSkeleton,
+  CollectionToolbarSkeleton,
+  PageHeaderSkeleton,
+} from '@/components/loading-states';
 import { WorkSubnav } from '@/components/work-subnav';
 
 export default function ApprovalsLoading() {
@@ -15,12 +18,10 @@ export default function ApprovalsLoading() {
         </div>
         <WorkSubnav current="/app/approvals" />
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
-          <div className="flex min-h-11 flex-wrap gap-2 border-b border-border px-3 py-2">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-7 w-16 rounded-sm" />
-            ))}
-          </div>
-          <CollectionRowsSkeleton count={6} />
+          <section aria-label="Approvals loading placeholder">
+            <CollectionToolbarSkeleton search={false} viewSegments={4} />
+            <CollectionRowsSkeleton count={6} />
+          </section>
         </div>
       </div>
     </>
