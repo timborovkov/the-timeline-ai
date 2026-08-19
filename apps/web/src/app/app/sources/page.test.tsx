@@ -61,19 +61,11 @@ describe('SourcesPage', () => {
 
     expect(html).toContain('aria-label="Manage email: Email"');
     expect(html).toContain('aria-label="Install Slack: Slack"');
-    expect(html).toContain('min-h-9');
-    expect(html).toContain('sm:flex-row sm:items-center sm:justify-between');
-    expect(html).toContain('focus-visible:ring-2 focus-visible:ring-signal/40');
-    expect(html).toContain('rounded-md border border-border bg-surface p-4');
-    expect(html).toContain(
-      '<details class="group rounded-md border border-border bg-surface p-4">',
-    );
-
-    const advancedToolsSummary = /<summary class="[^"]+">[\s\S]*?<\/summary>/.exec(html)?.[0];
-    expect(advancedToolsSummary).toBeTruthy();
-    expect(advancedToolsSummary).toContain('data-disclosure-indicator="true"');
-    expect(advancedToolsSummary).toContain('group-open:rotate-180');
-    expect(advancedToolsSummary).toContain('aria-hidden="true"');
+    expect(html).toContain('min-h-8');
+    expect(html).toContain('sm:flex-row sm:items-center sm:gap-3');
+    expect(html).toContain('focus-visible:ring-2 focus-visible:ring-signal/50');
+    expect(html).toContain('Advanced tools');
+    expect(html).not.toContain('rounded-md border border-border bg-surface p-4');
   });
 
   it('shows administrator tools only to owners and admins', async () => {

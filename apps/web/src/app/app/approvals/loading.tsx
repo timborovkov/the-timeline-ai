@@ -1,5 +1,5 @@
 import {
-  CollectionRowSkeleton,
+  CollectionRowsSkeleton,
   CollectionToolbarSkeleton,
   PageHeaderSkeleton,
 } from '@/components/loading-states';
@@ -14,17 +14,13 @@ export default function ApprovalsLoading() {
       <div className="space-y-6" aria-busy="true" aria-label="Loading approvals">
         <h1 className="sr-only">Approvals</h1>
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
-          <PageHeaderSkeleton />
+          <PageHeaderSkeleton variant="collection" />
         </div>
         <WorkSubnav current="/app/approvals" />
         <div aria-hidden="true" className="motion-reduce:[&_.animate-pulse]:animate-none">
           <section aria-label="Approvals loading placeholder">
             <CollectionToolbarSkeleton search={false} viewSegments={4} />
-            <div className="border-x border-border">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <CollectionRowSkeleton key={index} subtitle metadata={2} />
-              ))}
-            </div>
+            <CollectionRowsSkeleton count={6} />
           </section>
         </div>
       </div>

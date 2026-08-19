@@ -9,7 +9,9 @@
  *
  * Writers stamp `source_metadata.event_class` at ingest. Presentation reads
  * that stamp first, then infers from nested record types and event-type
- * patterns so older rows still classify.
+ * patterns so older rows still classify. This is not envelope `signalClass`
+ * (ingest/proposal rights). A Drive `file.changed` ping is `event_class=artifact`
+ * and `signal_class=pulse`.
  */
 
 export const TIMELINE_EVENT_CLASSES = [

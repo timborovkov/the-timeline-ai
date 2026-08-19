@@ -28,6 +28,7 @@ import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions'
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { isoTimestamp } from '@/lib/iso-timestamp';
+import { notifyAction } from '@/lib/notify';
 import {
   type FinishedJobArchivePage,
   useFinishedJobsInfiniteQuery,
@@ -250,31 +251,28 @@ export function JobRecoveryList({
   async function call(action: 'retry' | 'dismiss', id: string) {
     const retryStartedAt = Date.now();
     dispatchUi({ type: 'busy', busy: `${action}:${id}` });
-    try {
-      await jobsMutationToast(
-        async () => {
-          await postJson(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`);
-        },
-        {
-          loading: action === 'retry' ? 'Retrying…' : 'Dismissing…',
-          success: action === 'retry' ? 'Retry queued.' : 'Dismissed.',
-        },
-      );
-      if (action === 'retry') {
-        dispatchUi({ type: 'retryQueued', id, startedAt: retryStartedAt });
-        void finishedJobs.refetch();
-      } else {
-        const dismissed = items.find((item) => item.id === id);
-        if (dismissed) {
-          dispatchUi({ type: 'dismiss', key: itemSnapshotKey(dismissed) });
-        }
-        router.refresh();
-      }
-    } catch {
-      // Toast already shows the failure.
-    } finally {
-      dispatchUi({ type: 'busy', busy: null });
+    const result = await notifyAction({
+      id: `job-recovery:${action}:${id}`,
+      loading: action === 'retry' ? 'Retrying job…' : 'Dismissing job…',
+      success: action === 'retry' ? 'Job queued' : 'Job dismissed',
+      error: action === 'retry' ? 'Couldn’t retry job' : 'Couldn’t dismiss job',
+      run: async () => {
+        await postJson(`/api/team/job-recovery/${encodeURIComponent(id)}/${action}`);
+        return { ok: true };
+      },
+    });
+    dispatchUi({ type: 'busy', busy: null });
+    if ('error' in result && result.error) return;
+    if (action === 'retry') {
+      dispatchUi({ type: 'retryQueued', id, startedAt: retryStartedAt });
+      void finishedJobs.refetch();
+      return;
     }
+    const dismissed = items.find((item) => item.id === id);
+    if (dismissed) {
+      dispatchUi({ type: 'dismiss', key: itemSnapshotKey(dismissed) });
+    }
+    router.refresh();
   }
 
   async function dismissVisible() {
@@ -374,48 +372,41 @@ export function JobRecoveryList({
     if (failedCount === 0) return;
     const retryStartedAt = Date.now();
     dispatchUi({ type: 'busy', busy: 'retry-failed' });
-    try {
-      const body = await jobsMutationToast(
-        async () =>
-          postJson<RetryFailedResponse>('/api/team/job-recovery/retry-failed', {
-            ...(filter === 'all' ? {} : { kind: filter }),
-            items: failedItems.map((item) => ({
-              id: item.id,
-              detectedAt: new Date(item.detectedAt).toISOString(),
-            })),
-            expectedCount: failedCount,
-          }),
-        {
-          loading: `Retrying ${String(failedCount)} failed jobs…`,
-          success: (result) => {
-            const failed = result.failed ?? result.failedIds?.length ?? 0;
-            const retried = result.retried ?? failedCount - failed;
-            if (failed > 0) {
-              return `Retried ${String(retried)} failed jobs; ${String(failed)} could not be queued.`;
-            }
-            return `Retry queued for ${String(retried)} failed jobs.`;
-          },
-          tone: (result) =>
-            (result.failed ?? result.failedIds?.length ?? 0) > 0 ? 'warning' : 'success',
-        },
-      );
-      const failedRetryIds = new Set(body.failedIds ?? []);
-      const retryQueuedIds: string[] = [];
-      for (const item of failedItems) {
-        if (!failedRetryIds.has(item.id)) retryQueuedIds.push(item.id);
-      }
-      dispatchUi({
-        type: 'retryQueuedMany',
-        ids: retryQueuedIds,
-        startedAt: retryStartedAt,
-      });
-      void finishedJobs.refetch();
-      router.refresh();
-    } catch {
-      // Toast already shows the failure.
-    } finally {
-      dispatchUi({ type: 'busy', busy: null });
-    }
+    const result = await notifyAction({
+      id: 'job-recovery:retry-failed',
+      loading: 'Retrying failed jobs…',
+      success: 'Failed jobs queued',
+      error: 'Couldn’t retry failed jobs',
+      run: async () => {
+        const body = await postJson<RetryFailedResponse>('/api/team/job-recovery/retry-failed', {
+          ...(filter === 'all' ? {} : { kind: filter }),
+          items: failedItems.map((item) => ({
+            id: item.id,
+            detectedAt: new Date(item.detectedAt).toISOString(),
+          })),
+          expectedCount: failedCount,
+        });
+        const failedRetryIds = new Set(body.failedIds ?? []);
+        const retryQueuedIds: string[] = [];
+        for (const item of failedItems) {
+          if (!failedRetryIds.has(item.id)) retryQueuedIds.push(item.id);
+        }
+        dispatchUi({
+          type: 'retryQueuedMany',
+          ids: retryQueuedIds,
+          startedAt: retryStartedAt,
+        });
+        if ((body.failed ?? failedRetryIds.size) > 0) {
+          const failed = body.failed ?? failedRetryIds.size;
+          return { error: `${failed} of ${failedItems.length} jobs couldn’t be queued.` };
+        }
+        return { ok: true };
+      },
+    });
+    dispatchUi({ type: 'busy', busy: null });
+    if ('error' in result && result.error && !result.error.includes('couldn’t be queued')) return;
+    void finishedJobs.refetch();
+    router.refresh();
   }
 
   return (
@@ -685,8 +676,8 @@ function JobRecoveryRows({
         const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
         return (
           <li key={item.id}>
-            <CollectionRow
-              leading={
+            <CollectionRow>
+              <CollectionRow.Leading>
                 <CollectionStatus
                   value={retry?.status === 'queued' ? 'retrying' : item.status}
                   tone={
@@ -697,16 +688,20 @@ function JobRecoveryRows({
                         : 'progress'
                   }
                 />
-              }
-              title={item.label}
-              titleHint={hint}
-              context={relative}
-              contextTitle={isClient ? hint : undefined}
-              metadata={retry ? <RetryStatus snapshot={retry} /> : null}
-              actions={
+              </CollectionRow.Leading>
+              <CollectionRow.Title title={hint}>{item.label}</CollectionRow.Title>
+              <CollectionRow.Context title={isClient ? hint : undefined}>
+                {relative}
+              </CollectionRow.Context>
+              {retry ? (
+                <CollectionRow.Metadata>
+                  <RetryStatus snapshot={retry} />
+                </CollectionRow.Metadata>
+              ) : null}
+              <CollectionRow.Actions>
                 <JobRecoveryItemActions busy={busy} item={item} onAction={onAction} retry={retry} />
-              }
-            />
+              </CollectionRow.Actions>
+            </CollectionRow>
           </li>
         );
       })}
@@ -774,38 +769,32 @@ function AdvancedJobTools({
 
 function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) {
   const [windowDays, setWindowDays] = useState<ResuggestWindowDays>(30);
-  const [status, setStatus] = useState<string | null>(null);
   const [queueing, setQueueing] = useState(false);
 
   async function queueConversationSuggestions() {
     setQueueing(true);
-    try {
-      const body = await jobsMutationToast(
-        async () =>
-          postJson<{
-            enqueued?: number;
-            scanned?: number;
-            truncated?: boolean;
-          }>('/api/team/job-recovery/resuggest', { windowDays, source: 'all' }),
-        {
-          loading: 'Queueing conversation suggestions…',
-          success: (result) =>
-            `Queued ${String(result.enqueued ?? 0)} conversation reviews from ${String(result.scanned ?? 0)} events${
-              result.truncated ? ' (conversation limit reached)' : ''
-            }.`,
-        },
-      );
-      setStatus(
-        `Queued ${String(body.enqueued ?? 0)} conversation reviews from ${String(body.scanned ?? 0)} events${
-          body.truncated ? ' (conversation limit reached)' : ''
-        }.`,
-      );
-      onQueued();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Queue suggestions failed.');
-    } finally {
-      setQueueing(false);
-    }
+    const outcome = { success: 'Suggestions queued' };
+    const result = await notifyAction({
+      id: 'job-recovery:resuggest',
+      loading: 'Queueing suggestions…',
+      get success() {
+        return outcome.success;
+      },
+      error: 'Couldn’t queue suggestions',
+      run: async () => {
+        const body = await postJson<{
+          enqueued?: number;
+          scanned?: number;
+          truncated?: boolean;
+        }>('/api/team/job-recovery/resuggest', { windowDays, source: 'all' });
+        outcome.success = `Queued ${String(body.enqueued ?? 0)} conversation reviews from ${String(
+          body.scanned ?? 0,
+        )} events${body.truncated ? ' (conversation limit reached)' : ''}.`;
+        return { ok: true };
+      },
+    });
+    setQueueing(false);
+    if (!('error' in result && result.error)) onQueued();
   }
 
   return (
@@ -849,7 +838,6 @@ function ConversationSuggestionRecovery({ onQueued }: { onQueued: () => void }) 
       <p className="text-xs text-fg-muted">
         Re-queue reviews if suggestions did not appear. Leave this unless support asks.
       </p>
-      {status ? <p className="text-xs text-fg-muted">{status}</p> : null}
     </section>
   );
 }
@@ -932,13 +920,15 @@ function FinishedJobsArchive({
             const relative = isClient && iso ? formatRelativeAge(iso) : '\u00a0';
             return (
               <li key={item.id}>
-                <CollectionRow
-                  leading={<CollectionStatus value={item.status} />}
-                  title={item.label}
-                  titleHint={hint}
-                  context={relative}
-                  contextTitle={isClient ? hint : undefined}
-                />
+                <CollectionRow>
+                  <CollectionRow.Leading>
+                    <CollectionStatus value={item.status} />
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>{item.label}</CollectionRow.Title>
+                  <CollectionRow.Context title={isClient ? hint : undefined}>
+                    {relative}
+                  </CollectionRow.Context>
+                </CollectionRow>
               </li>
             );
           })}

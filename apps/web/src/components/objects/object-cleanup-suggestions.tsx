@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { displayText } from '@/lib/display-dates';
+import { notifyAction, notifySuccess } from '@/lib/notify';
 import { isActionableSuggestionStatus } from '@/lib/suggestion-status';
 
 interface SuggestionItem {
@@ -50,7 +51,6 @@ interface Props {
 const EMPTY_MERGE_PREVIEWS: Record<string, objects.ObjectMergePreview> = {};
 
 interface CleanupReviewState {
-  message: string | null;
   resolvedItemIds: Set<string>;
   busyItemIds: Set<string>;
   findingSuggestions: boolean;
@@ -58,7 +58,6 @@ interface CleanupReviewState {
 }
 
 type CleanupReviewAction =
-  | { type: 'message'; message: string | null }
   | { type: 'resolve_item'; itemId: string }
   | { type: 'restore_item'; itemId: string }
   | { type: 'start_item_action'; itemId: string }
@@ -72,8 +71,6 @@ function cleanupReviewReducer(
   action: CleanupReviewAction,
 ): CleanupReviewState {
   switch (action.type) {
-    case 'message':
-      return { ...state, message: action.message };
     case 'resolve_item': {
       const resolvedItemIds = new Set(state.resolvedItemIds).add(action.itemId);
       return {
@@ -99,13 +96,12 @@ function cleanupReviewReducer(
     case 'finish_find':
       return { ...state, findingSuggestions: false };
     case 'review_item':
-      return { ...state, message: null, reviewingItemId: action.itemId };
+      return { ...state, reviewingItemId: action.itemId };
   }
 }
 
 function initialCleanupReviewState(): CleanupReviewState {
   return {
-    message: null,
     resolvedItemIds: new Set(),
     busyItemIds: new Set(),
     findingSuggestions: false,
@@ -161,14 +157,23 @@ export function ObjectCleanupSuggestions({
   }
 
   function rejectItem(itemId: string) {
-    void run(() => rejectSuggestionItemAction({ itemId }), itemId);
+    void run(
+      () => rejectSuggestionItemAction({ itemId }),
+      {
+        id: `cleanup:${itemId}`,
+        loading: 'Dismissing…',
+        success: 'Suggestion dismissed',
+        error: 'Couldn’t dismiss suggestion',
+      },
+      itemId,
+    );
   }
 
   async function run(
     action: () => Promise<{ ok?: boolean; error?: string; message?: string }>,
+    options: { id: string; loading: string; success: string; error: string },
     optimisticItemId?: string,
   ) {
-    dispatch({ type: 'message', message: null });
     if (optimisticItemId && state.busyItemIds.has(optimisticItemId)) return;
     if (optimisticItemId) resolveItem(optimisticItemId);
     if (optimisticItemId) {
@@ -176,20 +181,27 @@ export function ObjectCleanupSuggestions({
     } else {
       dispatch({ type: 'start_find' });
     }
-    try {
-      const result = await action();
-      if (result.error && optimisticItemId) restoreItem(optimisticItemId);
-      dispatch({ type: 'message', message: result.error ?? result.message ?? null });
-      router.refresh();
-    } catch (err) {
-      if (optimisticItemId) restoreItem(optimisticItemId);
-      dispatch({ type: 'message', message: err instanceof Error ? err.message : 'Action failed' });
-    } finally {
-      if (optimisticItemId) {
-        dispatch({ type: 'finish_item_action', itemId: optimisticItemId });
-      } else {
-        dispatch({ type: 'finish_find' });
-      }
+    const outcome = { success: options.success };
+    const result = await notifyAction({
+      id: options.id,
+      loading: options.loading,
+      get success() {
+        return outcome.success;
+      },
+      error: options.error,
+      run: async () => {
+        const next = await action();
+        if (next.error) return { error: next.error };
+        if (next.message) outcome.success = next.message;
+        return { ok: true };
+      },
+    });
+    if (result.error && optimisticItemId) restoreItem(optimisticItemId);
+    if (!result.error) router.refresh();
+    if (optimisticItemId) {
+      dispatch({ type: 'finish_item_action', itemId: optimisticItemId });
+    } else {
+      dispatch({ type: 'finish_find' });
     }
   }
 
@@ -217,15 +229,18 @@ export function ObjectCleanupSuggestions({
             variant="outline"
             disabled={state.findingSuggestions}
             onClick={() => {
-              void run(findObjectCleanupSuggestionsAction);
+              void run(findObjectCleanupSuggestionsAction, {
+                id: 'cleanup:find',
+                loading: 'Finding suggestions…',
+                success: 'Suggestions updated',
+                error: 'Couldn’t find suggestions',
+              });
             }}
           >
             <RefreshCw className="size-4" />
             Find suggestions
           </Button>
         </div>
-
-        {state.message ? <p className="mt-3 text-sm text-fg-muted">{state.message}</p> : null}
 
         {pendingItems.length > 0 ? (
           <VirtualList
@@ -286,7 +301,16 @@ export function ObjectCleanupSuggestions({
                         disabled={itemBusy || !item.targetId}
                         onClick={() => {
                           if (!item.targetId) return;
-                          void run(() => acceptSuggestionItemAction({ itemId: item.id }), item.id);
+                          void run(
+                            () => acceptSuggestionItemAction({ itemId: item.id }),
+                            {
+                              id: `cleanup:${item.id}`,
+                              loading: 'Archiving…',
+                              success: 'Suggestion archived',
+                              error: 'Couldn’t archive suggestion',
+                            },
+                            item.id,
+                          );
                         }}
                       >
                         <Archive className="size-4" />
@@ -347,7 +371,7 @@ export function ObjectCleanupSuggestions({
               }}
               onMerged={() => {
                 resolveItem(reviewingEntry.item.id);
-                dispatch({ type: 'message', message: 'Objects merged.' });
+                notifySuccess('cleanup:merge', 'Objects merged');
                 router.refresh();
               }}
             />

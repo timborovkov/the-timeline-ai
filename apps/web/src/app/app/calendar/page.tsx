@@ -17,7 +17,7 @@ import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
 import { CALENDAR_EVENT_LIST_PAGE_SIZE } from '@/lib/collection-page-sizes';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
-import { serializeCalendarEvent } from '@/lib/serialize-calendar-event';
+import { groupLinkedObjectsByEvent, serializeCalendarEvent } from '@/lib/serialize-calendar-event';
 import { serializeSuggestionBundle } from '@/lib/suggestions';
 
 export const metadata: Metadata = {
@@ -118,12 +118,6 @@ export default async function CalendarPage({ searchParams }: PageProps) {
       )
       .limit(1),
   ]);
-  const allEvents = [...events, ...initialEventList.events];
-  const pinState = await scope.pins.isPinnedMany(
-    allEvents.flatMap((event) =>
-      event.redacted ? [] : [{ kind: 'calendar_event' as const, key: event.id }],
-    ),
-  );
   const eventList = {
     ...initialEventList,
     events: initialEventList.events.slice(0, CALENDAR_EVENT_LIST_PAGE_SIZE),
@@ -132,6 +126,16 @@ export default async function CalendarPage({ searchParams }: PageProps) {
     initialEventList.events.length > CALENDAR_EVENT_LIST_PAGE_SIZE
       ? CALENDAR_EVENT_LIST_PAGE_SIZE
       : null;
+  const allEvents = [...events, ...eventList.events];
+  const linkedRows = await scope.calendar.listLinkedObjectsForEvents(
+    allEvents.map((event) => event.id),
+  );
+  const linkedByEventId = groupLinkedObjectsByEvent(linkedRows);
+  const pinState = await scope.pins.isPinnedMany(
+    allEvents.flatMap((event) =>
+      event.redacted ? [] : [{ kind: 'calendar_event' as const, key: event.id }],
+    ),
+  );
   const memberIds = members.map((m) => m.userId);
   const memberUsers =
     memberIds.length > 0
@@ -143,10 +147,18 @@ export default async function CalendarPage({ searchParams }: PageProps) {
   const memberUserMap = new Map(memberUsers.map((u) => [u.id, u] as const));
 
   const serialized = events.map((event) =>
-    serializeCalendarEvent(event, pinState[`calendar_event:${event.id}`] ?? false),
+    serializeCalendarEvent(
+      event,
+      pinState[`calendar_event:${event.id}`] ?? false,
+      linkedByEventId.get(event.id) ?? [],
+    ),
   );
   const serializedEventList = eventList.events.map((event) =>
-    serializeCalendarEvent(event, pinState[`calendar_event:${event.id}`] ?? false),
+    serializeCalendarEvent(
+      event,
+      pinState[`calendar_event:${event.id}`] ?? false,
+      linkedByEventId.get(event.id) ?? [],
+    ),
   );
   const calendarSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(

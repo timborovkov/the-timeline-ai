@@ -160,15 +160,17 @@ function EvidenceList({ rows }: { rows: ReconciliationClusterDetailEvidence[] })
             ].filter((part): part is string => Boolean(part));
             return (
               <li key={`${row.rawEventId ?? 'no-event'}:${row.role}:${String(index)}`}>
-                <CollectionRow
-                  leading={
+                <CollectionRow>
+                  <CollectionRow.Leading>
                     <CollectionStatus value={row.role} label={evidenceRoleLabel(row.role)} />
-                  }
-                  title={row.objectName ?? row.contentText ?? 'Unavailable evidence'}
-                  titleHint={hint}
-                  context={contextParts.join(' · ')}
-                  contextTitle={hint}
-                />
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>
+                    {row.objectName ?? row.contentText ?? 'Unavailable evidence'}
+                  </CollectionRow.Title>
+                  <CollectionRow.Context title={hint}>
+                    {contextParts.join(' · ')}
+                  </CollectionRow.Context>
+                </CollectionRow>
               </li>
             );
           })}

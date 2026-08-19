@@ -19,10 +19,10 @@ import type { Metadata } from 'next';
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
+import { SettingsSection } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -187,195 +187,167 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
       />
 
       {!model.configured ? (
-        <Card className="rounded-md">
-          <CardContent className="py-4 text-sm text-muted-foreground">
-            Set <code className="font-mono">SLACK_CLIENT_ID</code>,{' '}
-            <code className="font-mono">SLACK_CLIENT_SECRET</code>, and{' '}
-            <code className="font-mono">SLACK_SIGNING_SECRET</code> to enable Slack.
-          </CardContent>
-        </Card>
+        <p className="text-sm text-fg-muted">
+          Set <code className="font-mono">SLACK_CLIENT_ID</code>,{' '}
+          <code className="font-mono">SLACK_CLIENT_SECRET</code>, and{' '}
+          <code className="font-mono">SLACK_SIGNING_SECRET</code> to enable Slack.
+        </p>
       ) : null}
 
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Workspace install</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {model.install ? (
-            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0 flex-1 space-y-2">
-                <p className="text-sm font-medium">{model.install.name ?? 'Slack workspace'}</p>
-                <p className="text-xs text-muted-foreground">
-                  {model.install.enabled ? 'Enabled' : 'Disabled'}
-                </p>
-                <TechnicalDetails
-                  items={[
-                    {
-                      label: 'Slack workspace ID',
-                      value: model.install.slackTeamId,
-                      copyValue: model.install.slackTeamId,
-                    },
-                  ]}
-                />
-              </div>
-              {model.isAdmin ? (
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/api/slack/install/start">Reconnect</Link>
-                </Button>
-              ) : null}
-            </div>
-          ) : (
-            <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted-foreground">
-                Install the Slack app before binding channels, including private ones.
+      <SettingsSection title="Workspace install">
+        {model.install ? (
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1 space-y-2">
+              <p className="text-sm font-medium">{model.install.name ?? 'Slack workspace'}</p>
+              <p className="text-xs text-muted-foreground">
+                {model.install.enabled ? 'Enabled' : 'Disabled'}
               </p>
-              {model.isAdmin ? (
-                <Button asChild size="sm">
-                  <Link href="/api/slack/install/start">Install Slack</Link>
-                </Button>
-              ) : null}
+              <TechnicalDetails
+                items={[
+                  {
+                    label: 'Slack workspace ID',
+                    value: model.install.slackTeamId,
+                    copyValue: model.install.slackTeamId,
+                  },
+                ]}
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
+            {model.isAdmin ? (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/api/slack/install/start">Reconnect</Link>
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              Install the Slack app before binding channels, including private ones.
+            </p>
+            {model.isAdmin ? (
+              <Button asChild size="sm">
+                <Link href="/api/slack/install/start">Install Slack</Link>
+              </Button>
+            ) : null}
+          </div>
+        )}
+      </SettingsSection>
 
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Your Slack identity</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-muted-foreground">
-            Linking lets Slack DMs route to this team and lets /ask run with your personal identity.
-          </p>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/api/slack/user-link/start">Connect identity</Link>
-          </Button>
-        </CardContent>
-      </Card>
+      <SettingsSection title="Your Slack identity">
+        <p className="text-sm text-muted-foreground">
+          Linking lets Slack DMs route to this team and lets /ask run with your personal identity.
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/api/slack/user-link/start">Connect identity</Link>
+        </Button>
+      </SettingsSection>
 
       {model.isAdmin && model.install ? (
-        <Card className="rounded-md">
-          <CardHeader>
-            <CardTitle as="h2">Bind a conversation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form action={bindSlackConversationAction} className="flex gap-2">
-              <label className="sr-only" htmlFor="slack-conversation-id">
-                Conversation to bind
-              </label>
-              <select
-                id="slack-conversation-id"
-                name="conversationId"
-                required
-                aria-describedby="bind-conversation-help"
-                className="min-w-0 flex-1 rounded-sm border border-input bg-background px-3 py-2 text-sm"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Choose a channel
+        <SettingsSection title="Bind a conversation">
+          <form action={bindSlackConversationAction} className="flex gap-2">
+            <label className="sr-only" htmlFor="slack-conversation-id">
+              Conversation to bind
+            </label>
+            <select
+              id="slack-conversation-id"
+              name="conversationId"
+              required
+              aria-describedby="bind-conversation-help"
+              className="min-w-0 flex-1 rounded-sm border border-input bg-background px-3 py-2 text-sm"
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Choose a channel
+              </option>
+              {model.unboundConversations.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.name ?? 'Unnamed channel'}
+                  {c.is_member === false ? ' (invite bot first)' : ''}
                 </option>
-                {model.unboundConversations.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    #{c.name ?? 'Unnamed channel'}
-                    {c.is_member === false ? ' (invite bot first)' : ''}
-                  </option>
-                ))}
-              </select>
-              <Button type="submit">Bind</Button>
-            </form>
-            <p id="bind-conversation-help" className="mt-2 text-xs text-muted-foreground">
-              Channel capture is source-owned by the person who binds it. Sender context is still
-              preserved for every message.
-            </p>
-          </CardContent>
-        </Card>
+              ))}
+            </select>
+            <Button type="submit">Bind</Button>
+          </form>
+          <p id="bind-conversation-help" className="mt-2 text-xs text-muted-foreground">
+            Channel capture is source-owned by the person who binds it. Sender context is still
+            preserved for every message.
+          </p>
+        </SettingsSection>
       ) : null}
 
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Bound conversations</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {model.bindings.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No Slack conversations bound yet.</p>
-          ) : (
-            <ul className="divide-y">
-              {model.bindings.map((b) => (
+      <SettingsSection title="Bound conversations">
+        {model.bindings.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No Slack conversations bound yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {model.bindings.map((b) => (
+              <li
+                key={b.id}
+                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="text-sm font-medium">{b.title ?? 'Unnamed channel'}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {sentenceCaseEnum(b.conversationType)} · {visibilityLabel(b.visibilityDefault)}
+                  </p>
+                  <TechnicalDetails
+                    items={[
+                      {
+                        label: 'Slack conversation ID',
+                        value: b.slackConversationId,
+                        copyValue: b.slackConversationId,
+                      },
+                      { label: 'Conversation type', value: b.conversationType },
+                      { label: 'Default visibility', value: b.visibilityDefault },
+                    ]}
+                  />
+                </div>
+                {model.isAdmin ? (
+                  <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed channel'}`}>
+                    <form action={unbindSlackConversationAction}>
+                      <input type="hidden" name="id" value={b.id} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        Unbind
+                      </Button>
+                    </form>
+                  </ItemActionGroup>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsSection>
+
+      <SettingsSection title="Linked Slack users">
+        {model.linkedSlackUsers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No Slack identities linked yet.</p>
+        ) : (
+          <ul className="divide-y">
+            {model.linkedSlackUsers.map((u) => {
+              return (
                 <li
-                  key={b.id}
-                  className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  key={u.id}
+                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <p className="text-sm font-medium">{b.title ?? 'Unnamed channel'}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {sentenceCaseEnum(b.conversationType)} ·{' '}
-                      {visibilityLabel(b.visibilityDefault)}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {u.appUser?.name ?? u.appUser?.email ?? 'Timeline user'}
                     </p>
-                    <TechnicalDetails
-                      items={[
-                        {
-                          label: 'Slack conversation ID',
-                          value: b.slackConversationId,
-                          copyValue: b.slackConversationId,
-                        },
-                        { label: 'Conversation type', value: b.conversationType },
-                        { label: 'Default visibility', value: b.visibilityDefault },
-                      ]}
-                    />
+                    <p className="break-words text-xs text-muted-foreground">
+                      Slack {u.realName ?? u.name ?? 'member'}
+                      {u.email ? ` · ${u.email}` : ''}
+                    </p>
                   </div>
-                  {model.isAdmin ? (
-                    <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed channel'}`}>
-                      <form action={unbindSlackConversationAction}>
-                        <input type="hidden" name="id" value={b.id} />
-                        <Button type="submit" variant="ghost" size="sm">
-                          Unbind
-                        </Button>
-                      </form>
-                    </ItemActionGroup>
+                  {u.isActive ? (
+                    <Badge className="shrink-0 self-start" variant="outline">
+                      Active DM
+                    </Badge>
                   ) : null}
                 </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-md">
-        <CardHeader>
-          <CardTitle as="h2">Linked Slack users</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {model.linkedSlackUsers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No Slack identities linked yet.</p>
-          ) : (
-            <ul className="divide-y">
-              {model.linkedSlackUsers.map((u) => {
-                return (
-                  <li
-                    key={u.id}
-                    className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">
-                        {u.appUser?.name ?? u.appUser?.email ?? 'Timeline user'}
-                      </p>
-                      <p className="break-words text-xs text-muted-foreground">
-                        Slack {u.realName ?? u.name ?? 'member'}
-                        {u.email ? ` · ${u.email}` : ''}
-                      </p>
-                    </div>
-                    {u.isActive ? (
-                      <Badge className="shrink-0 self-start" variant="outline">
-                        Active DM
-                      </Badge>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+              );
+            })}
+          </ul>
+        )}
+      </SettingsSection>
     </div>
   );
 }

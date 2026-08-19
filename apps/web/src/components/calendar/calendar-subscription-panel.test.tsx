@@ -8,13 +8,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // tests cover the user-visible create, reset, and disable state transitions.
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
-  toastError: vi.fn(),
-  toastSuccess: vi.fn(),
+  notifyAction: vi.fn(),
+  notifyError: vi.fn(),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('sonner', () => ({
-  toast: { error: fakes.toastError, success: fakes.toastSuccess },
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+    fakes.notifyAction(options);
+    return options.run();
+  },
+  notifyError: (id: string, message: string) => {
+    fakes.notifyError(id, message);
+  },
 }));
 
 const { CalendarSubscriptionPanel } = await import('./calendar-subscription-panel.js');
@@ -70,7 +76,16 @@ describe('CalendarSubscriptionPanel', () => {
     expect(screen.getByRole('button', { name: 'Copy' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Copy webcal' })).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith('/api/team/calendar-subscription', { method: 'POST' });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Calendar URL created');
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: 'Calendar URL created',
+        error: 'Couldn’t create calendar URL',
+      }),
+    );
+    expect(
+      (fakes.notifyAction.mock.calls[0]?.[0] as { undo?: { success?: string } } | undefined)?.undo
+        ?.success,
+    ).toBe('Calendar URL disabled');
     expect(fakes.refresh).toHaveBeenCalled();
   });
 
@@ -106,7 +121,13 @@ describe('CalendarSubscriptionPanel', () => {
 
     await screen.findByText('https://timeline.test/api/calendar/feed/tlcal_reset_plaintext.ics');
     expect(fetchMock).toHaveBeenCalledWith('/api/team/calendar-subscription', { method: 'POST' });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Calendar URL reset');
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: 'Calendar URL reset',
+        error: 'Couldn’t reset calendar URL',
+        undo: undefined,
+      }),
+    );
   });
 
   it('shows when the private feed was last accessed', () => {
@@ -137,7 +158,12 @@ describe('CalendarSubscriptionPanel', () => {
 
     await screen.findByText('Create a private URL to see Timeline events in your calendar app.');
     expect(fetchMock).toHaveBeenCalledWith('/api/team/calendar-subscription', { method: 'DELETE' });
-    expect(fakes.toastSuccess).toHaveBeenCalledWith('Calendar URL disabled');
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: 'Calendar URL disabled',
+        error: 'Couldn’t disable calendar URL',
+      }),
+    );
     expect(fakes.refresh).toHaveBeenCalled();
   });
 
@@ -150,13 +176,13 @@ describe('CalendarSubscriptionPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Create URL' }));
 
     await waitFor(() => {
-      expect(fakes.toastError).toHaveBeenCalledWith(
-        'Unable to create the calendar URL. Try again.',
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: 'Couldn’t create calendar URL',
+        }),
       );
     });
-    expect(screen.getByRole('alert').textContent).toContain(
-      'Unable to create the calendar URL. Try again.',
-    );
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(
       screen.getByText('Create a private URL to see Timeline events in your calendar app.'),
     ).toBeTruthy();

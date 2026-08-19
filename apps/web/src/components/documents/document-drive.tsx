@@ -23,6 +23,7 @@ import {
   type ChangeEvent,
   type Dispatch,
   type DragEvent,
+  type ReactNode,
   type RefObject,
   type SetStateAction,
   useId,
@@ -31,7 +32,6 @@ import {
   useRef,
   useTransition,
 } from 'react';
-import { toast } from 'sonner';
 
 import {
   createFolderAction,
@@ -49,6 +49,7 @@ import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { notifyAction } from '@/lib/notify';
 import { queryKeys } from '@/lib/query-keys';
 import { type DocumentListPage, useDocumentListQuery } from '@/lib/use-paginated-queries';
 
@@ -208,58 +209,47 @@ function uploadPhaseLabel(upload: UploadState): string {
   return 'Finishing';
 }
 
-export function DocumentDrive({
-  currentFolderId,
-  breadcrumbs,
-  folders,
-  documents,
-  documentsNextCursor,
-  defaultVisibility,
-  defaultVisibilityUserIds,
-  members,
-}: Props) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const dialog = useAppDialog();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pending, startTransition] = useTransition();
-  const [
-    { uploads, visibility, visibilityUserIds, optimisticFolders, deletedFolderIds },
-    dispatchDriveUi,
-  ] = useReducer(driveUiReducer, {
-    uploads: [],
-    visibility: defaultVisibility,
-    visibilityUserIds: defaultVisibilityUserIds ?? [],
-    optimisticFolders: [],
-    deletedFolderIds: new Set<string>(),
-  });
-  const initialDocumentPage = useMemo(
-    () => ({ items: documents, nextCursor: documentsNextCursor }),
-    [documents, documentsNextCursor],
-  );
-  const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
-  const visibleDocuments: DocumentItem[] = documentQuery.data.pages.flatMap((page) => page.items);
-  const visibleFolders = useMemo(() => {
-    const serverFolderIds = new Set(folders.map((folder) => folder.id));
-    const activeOptimisticFolders = optimisticFolders.filter(
-      (folder) => !serverFolderIds.has(folder.id),
-    );
-    const merged = [...activeOptimisticFolders, ...folders];
-    const byId = new Map<string, FolderItem>();
-    for (const folder of merged) {
-      if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);
-    }
-    return Array.from(byId.values());
-  }, [deletedFolderIds, folders, optimisticFolders]);
-  const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
+function driveUploadButtonLabel(activeUploads: UploadState[]): string {
   const activeUpload = activeUploads[0];
-  const uploadButtonLabel =
-    activeUploads.length === 0
-      ? 'Upload'
-      : activeUploads.length === 1
-        ? `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}...`
-        : `Uploading ${String(activeUploads.length)} files...`;
+  if (activeUploads.length === 0) return 'Upload';
+  if (activeUploads.length === 1) {
+    return `${activeUpload ? uploadPhaseLabel(activeUpload) : 'Uploading'}...`;
+  }
+  return `Uploading ${String(activeUploads.length)} files...`;
+}
 
+function mergeVisibleFolders(
+  folders: readonly FolderItem[],
+  optimisticFolders: readonly FolderItem[],
+  deletedFolderIds: ReadonlySet<string>,
+): FolderItem[] {
+  const serverFolderIds = new Set(folders.map((folder) => folder.id));
+  const activeOptimisticFolders = optimisticFolders.filter(
+    (folder) => !serverFolderIds.has(folder.id),
+  );
+  const merged = [...activeOptimisticFolders, ...folders];
+  const byId = new Map<string, FolderItem>();
+  for (const folder of merged) {
+    if (!deletedFolderIds.has(folder.id) && !byId.has(folder.id)) byId.set(folder.id, folder);
+  }
+  return Array.from(byId.values());
+}
+
+function useDocumentDriveFileActions({
+  currentFolderId,
+  visibility,
+  visibilityUserIds,
+  queryClient,
+  router,
+  dispatchDriveUi,
+}: {
+  currentFolderId: string | null;
+  visibility: Props['defaultVisibility'];
+  visibilityUserIds: string[];
+  queryClient: ReturnType<typeof useQueryClient>;
+  router: ReturnType<typeof useRouter>;
+  dispatchDriveUi: Dispatch<DriveUiAction>;
+}) {
   function updateUpload(id: string, patch: Partial<UploadState>): void {
     dispatchDriveUi({ type: 'update-upload', id, patch });
   }
@@ -313,97 +303,150 @@ export function DocumentDrive({
       upload: { id: uploadId, name: file.name, phase: 'preparing' },
     });
     let optimisticDocumentId: string | null = null;
-    try {
-      const req = await requestDocumentUploadAction({
-        folderId: currentFolderId,
-        name: file.name,
-        filename: file.name,
-        contentType: file.type || 'application/octet-stream',
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
-      });
-      if (!req.ok || !req.url || !req.versionId) {
-        const message = req.error ?? 'Upload failed';
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      if (req.maxBytes && file.size > req.maxBytes) {
-        const message = `File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`;
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      if (req.documentId) {
-        optimisticDocumentId = req.documentId;
-        addOptimisticDocument({
-          id: req.documentId,
-          fileKind: 'document',
-          name: file.name,
-          metadata: {},
-          visibility,
-          updatedAt: new Date().toISOString(),
-          ownerUserId: null,
-          pinned: false,
-          currentVersion: null,
-          provenance: {
-            source: 'manual',
-            sourceEventId: null,
-            parentEventId: null,
-            occurredAt: null,
-            summary: null,
-          },
-          description: null,
-          presentation: documentPresentation({
+    await notifyAction({
+      id: `document:upload:${uploadId}`,
+      loading: 'Uploading document…',
+      success: `Uploaded ${file.name}`,
+      error: 'Couldn’t upload document',
+      run: async () => {
+        try {
+          const req = await requestDocumentUploadAction({
+            folderId: currentFolderId,
             name: file.name,
+            filename: file.name,
             contentType: file.type || 'application/octet-stream',
-            metadata: {},
-            fileKind: 'document',
-          }),
-          optimistic: true,
-        });
-      }
-      updateUpload(uploadId, { phase: 'uploading' });
-      const put = await fetch(req.url, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      });
-      if (!put.ok) {
-        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-        const message = `Storage upload failed (${String(put.status)})`;
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      updateUpload(uploadId, { phase: 'finalizing' });
-      const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
-      if (!fin.ok) {
-        if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-        const message = fin.error ?? 'Finalize failed';
-        toast.error(message);
-        failUpload(uploadId, message);
-        return;
-      }
-      toast.success(`Uploaded ${file.name}`);
-      clearUpload(uploadId);
-      router.refresh();
-    } catch (err) {
-      if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
-      const message =
-        err instanceof TypeError
-          ? 'Unable to reach document storage. Check your connection, then try again.'
-          : err instanceof Error
-            ? err.message
-            : 'Upload error';
-      toast.error(message);
-      failUpload(uploadId, message);
-    }
+            visibility,
+            visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+          });
+          if (!req.ok || !req.url || !req.versionId) {
+            const message = req.error ?? 'Couldn’t upload document';
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          if (req.maxBytes && file.size > req.maxBytes) {
+            const message = `File exceeds ${String(Math.round(req.maxBytes / 1024 / 1024))} MiB limit`;
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          if (req.documentId) {
+            optimisticDocumentId = req.documentId;
+            addOptimisticDocument({
+              id: req.documentId,
+              fileKind: 'document',
+              name: file.name,
+              metadata: {},
+              visibility,
+              updatedAt: new Date().toISOString(),
+              ownerUserId: null,
+              pinned: false,
+              currentVersion: null,
+              provenance: {
+                source: 'manual',
+                sourceEventId: null,
+                parentEventId: null,
+                occurredAt: null,
+                summary: null,
+              },
+              description: null,
+              presentation: documentPresentation({
+                name: file.name,
+                contentType: file.type || 'application/octet-stream',
+                metadata: {},
+                fileKind: 'document',
+              }),
+              optimistic: true,
+            });
+          }
+          updateUpload(uploadId, { phase: 'uploading' });
+          const put = await fetch(req.url, {
+            method: 'PUT',
+            body: file,
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          });
+          if (!put.ok) {
+            if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
+            const message = `Storage upload failed (${String(put.status)})`;
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          updateUpload(uploadId, { phase: 'finalizing' });
+          const fin = await finalizeDocumentVersionAction({ versionId: req.versionId });
+          if (!fin.ok) {
+            if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
+            const message = fin.error ?? 'Couldn’t finish upload';
+            failUpload(uploadId, message);
+            return { error: message };
+          }
+          clearUpload(uploadId);
+          router.refresh();
+          return {};
+        } catch (err) {
+          if (optimisticDocumentId) removeOptimisticDocument(optimisticDocumentId);
+          const message =
+            err instanceof TypeError
+              ? 'Unable to reach document storage. Check your connection, then try again.'
+              : err instanceof Error
+                ? err.message
+                : 'Couldn’t upload document';
+          failUpload(uploadId, message);
+          return { error: message };
+        }
+      },
+    });
   }
+
+  return { handleUploadFile };
+}
+
+export function DocumentDrive({
+  currentFolderId,
+  breadcrumbs,
+  folders,
+  documents,
+  documentsNextCursor,
+  defaultVisibility,
+  defaultVisibilityUserIds,
+  members,
+}: Props) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const dialog = useAppDialog();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [
+    { uploads, visibility, visibilityUserIds, optimisticFolders, deletedFolderIds },
+    dispatchDriveUi,
+  ] = useReducer(driveUiReducer, {
+    uploads: [],
+    visibility: defaultVisibility,
+    visibilityUserIds: defaultVisibilityUserIds ?? [],
+    optimisticFolders: [],
+    deletedFolderIds: new Set<string>(),
+  });
+  const initialDocumentPage = useMemo(
+    () => ({ items: documents, nextCursor: documentsNextCursor }),
+    [documents, documentsNextCursor],
+  );
+  const documentQuery = useDocumentListQuery(currentFolderId, initialDocumentPage);
+  const visibleDocuments: DocumentItem[] = documentQuery.data.pages.flatMap((page) => page.items);
+  const visibleFolders = useMemo(
+    () => mergeVisibleFolders(folders, optimisticFolders, deletedFolderIds),
+    [deletedFolderIds, folders, optimisticFolders],
+  );
+  const activeUploads = uploads.filter((upload) => upload.phase !== 'failed');
+  const uploadButtonLabel = driveUploadButtonLabel(activeUploads);
+  const driveActions = useDocumentDriveFileActions({
+    currentFolderId,
+    visibility,
+    visibilityUserIds,
+    queryClient,
+    router,
+    dispatchDriveUi,
+  });
 
   function onFileChange(e: ChangeEvent<HTMLInputElement>): void {
     const file = e.target.files?.[0];
-    if (file) void handleUploadFile(file);
+    if (file) void driveActions.handleUploadFile(file);
     e.target.value = '';
   }
 
@@ -426,22 +469,45 @@ export function DocumentDrive({
     };
     dispatchDriveUi({ type: 'add-optimistic-folder', folder: optimisticFolder });
     startTransition(async () => {
-      const res = await createFolderAction({
-        name: trimmedName,
-        parentFolderId: currentFolderId,
-        visibility,
-        visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+      await notifyAction({
+        id: `folder:create:${tempId}`,
+        loading: 'Creating folder…',
+        success: 'Folder created',
+        error: 'Couldn’t create folder',
+        run: async () => {
+          const res = await createFolderAction({
+            name: trimmedName,
+            parentFolderId: currentFolderId,
+            visibility,
+            visibilityUserIds: visibility === 'specific_users' ? visibilityUserIds : [],
+          });
+          if (!res.ok) {
+            dispatchDriveUi({ type: 'remove-optimistic-folder', id: tempId });
+            return { error: res.error ?? 'Couldn’t create folder' };
+          }
+          const createdId = typeof res.id === 'string' ? res.id : null;
+          if (createdId) {
+            dispatchDriveUi({ type: 'confirm-folder', tempId, id: createdId });
+          }
+          router.refresh();
+          return createdId ? { id: createdId } : {};
+        },
+        undo: {
+          run: async (result) => {
+            const createdId = 'id' in result && typeof result.id === 'string' ? result.id : null;
+            if (!createdId) return { error: 'Couldn’t undo' };
+            dispatchDriveUi({ type: 'hide-folder', id: createdId });
+            const res = await deleteFolderAction(createdId);
+            if (!res.ok) {
+              dispatchDriveUi({ type: 'restore-folder', id: createdId });
+              return { error: res.error ?? 'Couldn’t undo' };
+            }
+            router.refresh();
+            return {};
+          },
+          success: 'Folder deleted',
+        },
       });
-      if (!res.ok) {
-        dispatchDriveUi({ type: 'remove-optimistic-folder', id: tempId });
-        toast.error(res.error ?? 'Failed to create folder');
-      } else {
-        const createdId = typeof res.id === 'string' ? res.id : null;
-        if (createdId) {
-          dispatchDriveUi({ type: 'confirm-folder', tempId, id: createdId });
-        }
-        router.refresh();
-      }
     });
   }
 
@@ -455,27 +521,104 @@ export function DocumentDrive({
     if (!confirmed) return;
     dispatchDriveUi({ type: 'hide-folder', id });
     startTransition(async () => {
-      const res = await deleteFolderAction(id);
-      if (!res.ok) {
-        dispatchDriveUi({ type: 'restore-folder', id });
-        toast.error(res.error ?? 'Delete failed');
-      } else router.refresh();
+      const result = await notifyAction({
+        id: `folder:delete:${id}`,
+        loading: 'Deleting folder…',
+        success: 'Folder deleted',
+        error: 'Couldn’t delete folder',
+        run: async () => {
+          const res = await deleteFolderAction(id);
+          return res.ok ? {} : { error: res.error ?? 'Couldn’t delete folder' };
+        },
+      });
+      if (result.error) dispatchDriveUi({ type: 'restore-folder', id });
+      else router.refresh();
     });
   }
 
   function onDrop(e: DragEvent<HTMLDivElement>): void {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files);
-    for (const file of files) void handleUploadFile(file);
+    for (const file of files) void driveActions.handleUploadFile(file);
   }
 
+  return (
+    <DocumentDriveChrome
+      breadcrumbs={breadcrumbs}
+      pending={pending}
+      uploadButtonLabel={uploadButtonLabel}
+      uploadDisabled={activeUploads.length > 0}
+      fileInputRef={fileInputRef}
+      uploads={uploads}
+      visibility={visibility}
+      visibilityUserIds={visibilityUserIds}
+      members={members}
+      folders={visibleFolders}
+      documents={visibleDocuments}
+      query={documentQuery}
+      dialogNode={dialog.node}
+      onNewFolder={onNewFolder}
+      onFileChange={onFileChange}
+      onVisibilityChange={(nextVisibility) => {
+        dispatchDriveUi({ type: 'set-visibility', visibility: nextVisibility });
+      }}
+      onVisibilityUserIdsChange={(value) => {
+        dispatchDriveUi({ type: 'set-visibility-user-ids', value });
+      }}
+      onDrop={onDrop}
+      onDeleteFolder={onDeleteFolder}
+    />
+  );
+}
+
+function DocumentDriveChrome({
+  breadcrumbs,
+  pending,
+  uploadButtonLabel,
+  uploadDisabled,
+  fileInputRef,
+  uploads,
+  visibility,
+  visibilityUserIds,
+  members,
+  folders,
+  documents,
+  query,
+  dialogNode,
+  onNewFolder,
+  onFileChange,
+  onVisibilityChange,
+  onVisibilityUserIdsChange,
+  onDrop,
+  onDeleteFolder,
+}: {
+  breadcrumbs: Crumb[];
+  pending: boolean;
+  uploadButtonLabel: string;
+  uploadDisabled: boolean;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  uploads: readonly UploadState[];
+  visibility: Props['defaultVisibility'];
+  visibilityUserIds: string[];
+  members: Props['members'];
+  folders: FolderItem[];
+  documents: DocumentItem[];
+  query: ReturnType<typeof useDocumentListQuery>;
+  dialogNode: ReactNode;
+  onNewFolder: () => Promise<void>;
+  onFileChange: (e: ChangeEvent<HTMLInputElement>) => void;
+  onVisibilityChange: (visibility: Props['defaultVisibility']) => void;
+  onVisibilityUserIdsChange: Dispatch<SetStateAction<string[]>>;
+  onDrop: (e: DragEvent<HTMLDivElement>) => void;
+  onDeleteFolder: (id: string) => Promise<void>;
+}) {
   return (
     <div className="space-y-6">
       <DocumentDriveHeader
         breadcrumbs={breadcrumbs}
         pending={pending}
         uploadButtonLabel={uploadButtonLabel}
-        uploadDisabled={activeUploads.length > 0}
+        uploadDisabled={uploadDisabled}
         fileInputRef={fileInputRef}
         onNewFolder={onNewFolder}
         onFileChange={onFileChange}
@@ -485,22 +628,18 @@ export function DocumentDrive({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
         members={members}
-        onVisibilityChange={(nextVisibility) => {
-          dispatchDriveUi({ type: 'set-visibility', visibility: nextVisibility });
-        }}
-        onVisibilityUserIdsChange={(value) => {
-          dispatchDriveUi({ type: 'set-visibility-user-ids', value });
-        }}
+        onVisibilityChange={onVisibilityChange}
+        onVisibilityUserIdsChange={onVisibilityUserIdsChange}
       />
       <DocumentDropZone
-        folders={visibleFolders}
-        documents={visibleDocuments}
-        query={documentQuery}
+        folders={folders}
+        documents={documents}
+        query={query}
         fileInputRef={fileInputRef}
         onDrop={onDrop}
         onDeleteFolder={onDeleteFolder}
       />
-      {dialog.node}
+      {dialogNode}
     </div>
   );
 }
@@ -592,7 +731,7 @@ function Breadcrumbs({ breadcrumbs }: { breadcrumbs: Crumb[] }) {
 function UploadStatusList({ uploads }: { uploads: readonly UploadState[] }) {
   if (uploads.length === 0) return null;
   return (
-    <output className="space-y-2 rounded-lg border border-border bg-card/40 p-3" aria-live="polite">
+    <output className="space-y-2 border-y border-border py-3" aria-live="polite">
       {uploads.map((upload) => (
         <div key={upload.id} className="flex items-center justify-between gap-3 text-sm">
           <span className="truncate font-medium">{upload.name}</span>
@@ -627,7 +766,7 @@ function NewItemVisibilityPicker({
   const visibilityId = useId();
 
   return (
-    <fieldset className="flex flex-wrap items-center gap-3 rounded-lg border border-border p-3 text-sm">
+    <fieldset className="flex flex-wrap items-center gap-3 border-y border-border py-3 text-sm">
       <legend className="px-1 text-xs text-fg-dim">New item visibility</legend>
       <label className="sr-only" htmlFor={visibilityId}>
         Default visibility for new documents and folders
@@ -700,7 +839,7 @@ function DocumentDropZone({
         e.preventDefault();
       }}
       onDrop={onDrop}
-      className="rounded-md border border-border bg-surface p-4"
+      className="border-y border-border py-4"
     >
       {isEmpty ? (
         <EmptyDocumentDrive fileInputRef={fileInputRef} />
@@ -749,13 +888,15 @@ function FolderList({
   if (folders.length === 0) return null;
   return (
     <CollectionGroup title="Folders" count={folders.length}>
-      <ul className="border-x border-border">
+      <ul>
         {folders.map((f) => (
           <li key={f.id}>
-            <CollectionRow
-              leading={<FolderIcon className="size-4 text-muted-foreground" aria-hidden />}
-              title={
-                f.optimistic ? (
+            <CollectionRow>
+              <CollectionRow.Leading>
+                <FolderIcon className="size-4 text-muted-foreground" aria-hidden />
+              </CollectionRow.Leading>
+              <CollectionRow.Title>
+                {f.optimistic ? (
                   <span className="opacity-70">{f.name}</span>
                 ) : (
                   <Link
@@ -764,11 +905,13 @@ function FolderList({
                   >
                     {f.name}
                   </Link>
-                )
-              }
-              context={f.visibility}
-              metadata={<time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>}
-              actions={
+                )}
+              </CollectionRow.Title>
+              <CollectionRow.Context>{f.visibility}</CollectionRow.Context>
+              <CollectionRow.Metadata>
+                <time dateTime={f.updatedAt}>{formatDate(f.updatedAt)}</time>
+              </CollectionRow.Metadata>
+              <CollectionRow.Actions>
                 <ItemActionGroup label={`Actions for ${f.name}`}>
                   <Button
                     type="button"
@@ -784,8 +927,8 @@ function FolderList({
                     Delete
                   </Button>
                 </ItemActionGroup>
-              }
-            />
+              </CollectionRow.Actions>
+            </CollectionRow>
           </li>
         ))}
       </ul>
@@ -803,7 +946,7 @@ function DocumentList({
   if (documents.length === 0) return null;
   return (
     <CollectionGroup title="Documents" count={documents.length}>
-      <div className="border-x border-border">
+      <div>
         <VirtualList
           items={documents}
           getItemKey={(document) => document.id}
@@ -856,9 +999,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 52px' }}>
-      <CollectionRow
-        className="min-h-13"
-        title={
+      <CollectionRow className="min-h-13">
+        <CollectionRow.Title>
           <DocumentTitleRow
             document={document}
             fileKind={fileKind}
@@ -866,17 +1008,19 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
             storedName={usingFriendlyTitle ? truncateFilenameMiddle(document.name) : null}
             fullStoredName={usingFriendlyTitle ? document.name : null}
           />
-        }
-        context={summary ?? <DocumentMetaLine items={metaItems} />}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>
+          {summary ?? <DocumentMetaLine items={metaItems} />}
+        </CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             <SourceBadge source={source} />
             <ProcessingBadge status={status} optimistic={document.optimistic === true} />
             <VisibilityBadge visibility={document.visibility} />
             <span className="hidden text-xs text-fg-dim sm:inline">{updatedAt}</span>
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${title}`}>
             {sourceEventId ? (
               <EvidenceLink
@@ -898,8 +1042,8 @@ function DocumentListItem({ document }: { document: DocumentItem }) {
               />
             ) : null}
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }

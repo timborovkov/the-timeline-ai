@@ -3,7 +3,6 @@
 import { Link2, RefreshCw, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useReducer } from 'react';
-import { toast } from 'sonner';
 
 import { CopyButton } from '@/components/copy-button';
 import { Button } from '@/components/ui/button';
@@ -17,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { notifyAction } from '@/lib/notify';
 
 interface CalendarSubscription {
   prefix: string;
@@ -38,7 +38,6 @@ interface CalendarSubscriptionPanelState {
   subscription: CalendarSubscription | null;
   revealedUrl: string | null;
   busy: boolean;
-  error: string | null;
   confirmAction: 'reset' | 'disable' | null;
 }
 
@@ -65,57 +64,62 @@ export function CalendarSubscriptionPanel({
     subscription: initialSubscription,
     revealedUrl: null,
     busy: false,
-    error: null,
     confirmAction: null,
   });
-  const { subscription, revealedUrl, busy, error, confirmAction } = state;
+  const { subscription, revealedUrl, busy, confirmAction } = state;
 
   async function createOrReset() {
     const action = subscription ? 'reset' : 'create';
-    dispatch({ busy: true, error: null });
-    try {
-      const res = await fetch('/api/team/calendar-subscription', { method: 'POST' });
-      if (!res.ok) {
-        throw new Error('calendar_subscription_update_failed');
-      }
-      const data = (await res.json()) as SubscriptionResponse;
-      dispatch({ subscription: data.subscription, revealedUrl: data.url, confirmAction: null });
-      toast.success(action === 'reset' ? 'Calendar URL reset' : 'Calendar URL created');
-      router.refresh();
-    } catch {
-      const message =
-        action === 'reset'
-          ? 'Unable to reset the calendar URL. Try again.'
-          : 'Unable to create the calendar URL. Try again.';
-      dispatch({ error: message });
-      toast.error(message);
-    } finally {
-      dispatch({ busy: false });
-    }
+    dispatch({ busy: true });
+    await notifyAction({
+      id: 'calendar:subscription',
+      loading: action === 'reset' ? 'Resetting calendar URL…' : 'Creating calendar URL…',
+      success: action === 'reset' ? 'Calendar URL reset' : 'Calendar URL created',
+      error: action === 'reset' ? 'Couldn’t reset calendar URL' : 'Couldn’t create calendar URL',
+      run: async () => {
+        const res = await fetch('/api/team/calendar-subscription', { method: 'POST' });
+        if (!res.ok) return { error: 'calendar_subscription_update_failed' };
+        const data = (await res.json()) as SubscriptionResponse;
+        dispatch({ subscription: data.subscription, revealedUrl: data.url, confirmAction: null });
+        router.refresh();
+        return {};
+      },
+      undo:
+        action === 'create'
+          ? {
+              run: disableSubscription,
+              loading: 'Disabling calendar URL…',
+              success: 'Calendar URL disabled',
+              error: 'Couldn’t disable calendar URL',
+            }
+          : undefined,
+    });
+    dispatch({ busy: false });
+  }
+
+  async function disableSubscription() {
+    const res = await fetch('/api/team/calendar-subscription', { method: 'DELETE' });
+    if (!res.ok) return { error: 'calendar_subscription_disable_failed' };
+    dispatch({ subscription: null, revealedUrl: null, confirmAction: null });
+    router.refresh();
+    return {};
   }
 
   async function disable() {
-    dispatch({ busy: true, error: null });
-    try {
-      const res = await fetch('/api/team/calendar-subscription', { method: 'DELETE' });
-      if (!res.ok) {
-        throw new Error('calendar_subscription_disable_failed');
-      }
-      dispatch({ subscription: null, revealedUrl: null, confirmAction: null });
-      toast.success('Calendar URL disabled');
-      router.refresh();
-    } catch {
-      const message = 'Unable to disable the calendar URL. Try again.';
-      dispatch({ error: message });
-      toast.error(message);
-    } finally {
-      dispatch({ busy: false });
-    }
+    dispatch({ busy: true });
+    await notifyAction({
+      id: 'calendar:subscription',
+      loading: 'Disabling calendar URL…',
+      success: 'Calendar URL disabled',
+      error: 'Couldn’t disable calendar URL',
+      run: disableSubscription,
+    });
+    dispatch({ busy: false });
   }
 
   return (
     <section
-      className="rounded-md border border-border bg-surface p-4"
+      className="space-y-3 border-y border-border py-4"
       aria-labelledby="calendar-subscription-heading"
       aria-busy={busy}
     >
@@ -185,12 +189,6 @@ export function CalendarSubscriptionPanel({
       ) : subscription ? (
         <p className="mt-3 text-sm text-fg-muted">
           Reset the URL to copy a fresh private link. Reset it if the current link was shared.
-        </p>
-      ) : null}
-
-      {error ? (
-        <p role="alert" className="mt-3 text-sm text-danger">
-          {error}
         </p>
       ) : null}
 

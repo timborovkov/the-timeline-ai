@@ -12,6 +12,7 @@ import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import { FilterMultiSelect } from '@/components/filter-multi-select';
 import { TimelineFeed } from '@/components/timeline-feed';
+import { TimelineSearchField } from '@/components/timeline-search-field';
 import { TimelineSourceFilterControls } from '@/components/timeline-source-filter-controls';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -567,7 +568,36 @@ function TimelineFilterPanel({
     <DebouncedFilterForm id={formId} basePath="/app/timeline">
       {baseParams.mode ? <input type="hidden" name="mode" value={baseParams.mode} /> : null}
       <CollectionToolbar
-        filters={
+        activeFilters={
+          hasPanelFilters
+            ? [
+                {
+                  key: 'filters',
+                  label: 'Timeline filters',
+                  value: upcomingActive
+                    ? `Upcoming · ${String(TIMELINE_UPCOMING_DAYS)} days`
+                    : 'On',
+                  href: timelineHref(baseParams, {
+                    author: null,
+                    from: null,
+                    to: null,
+                    source: null,
+                    origin: null,
+                    impact: null,
+                  }),
+                },
+              ]
+            : []
+        }
+      >
+        <CollectionToolbar.Search>
+          <TimelineSearchField
+            source={sourceFilterValue || null}
+            from={fromValue || null}
+            to={toValue || null}
+          />
+        </CollectionToolbar.Search>
+        <CollectionToolbar.Filters>
           <div className="flex min-w-0 flex-wrap items-end gap-2">
             <TimelineSourceFilterControls
               key={`timeline-source-filters:${sourceFilterValue}:${originFilterValue}`}
@@ -616,30 +646,12 @@ function TimelineFilterPanel({
               Upcoming · {TIMELINE_UPCOMING_DAYS} days
             </Link>
           </div>
-        }
-        activeFilters={
-          hasPanelFilters
-            ? [
-                {
-                  key: 'filters',
-                  label: 'Timeline filters',
-                  value: upcomingActive
-                    ? `Upcoming · ${String(TIMELINE_UPCOMING_DAYS)} days`
-                    : 'On',
-                  href: timelineHref(baseParams, {
-                    author: null,
-                    from: null,
-                    to: null,
-                    source: null,
-                    origin: null,
-                    impact: null,
-                  }),
-                },
-              ]
-            : []
-        }
-        actions={
-          <nav aria-label="Timeline presets" className="hidden flex-wrap gap-1.5 lg:flex">
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.Actions>
+          <nav
+            aria-label="Timeline presets"
+            className="flex max-w-full flex-nowrap gap-1.5 overflow-x-auto"
+          >
             <Link
               href={upcomingHref}
               aria-current={upcomingActive ? 'page' : undefined}
@@ -669,8 +681,8 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        }
-        viewControls={
+        </CollectionToolbar.Actions>
+        <CollectionToolbar.View>
           <nav aria-label="Timeline view" className="flex rounded-sm bg-surface p-0.5">
             {(
               [
@@ -697,8 +709,8 @@ function TimelineFilterPanel({
               );
             })}
           </nav>
-        }
-      />
+        </CollectionToolbar.View>
+      </CollectionToolbar>
       <div className="sr-only">
         {hasPanelFilters ? (
           <Link

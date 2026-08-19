@@ -81,6 +81,13 @@ import {
   tombstoneObjectDueDateCalendarEventsForEntities,
   type DueDateCalendarSyncResult,
 } from '#src/calendar/due-dates.js';
+import {
+  type ChatContextRef,
+  chatContextTrailEqual,
+  mergeChatContextTrail,
+  parseChatContextTrail,
+  pinnedObjectIdFromContext,
+} from '#src/chat-context.js';
 import { resetSurfaceSessionByIdInTransaction } from '#src/conversation-surfaces/scope.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { dueDateRangeConditions } from '#src/due-date-filter.js';
@@ -2222,7 +2229,7 @@ async function getObjectProvenance(
           rawEventId: event.id,
           quote: null,
           source: event.source,
-          contentText: null,
+          contentText: objectProvenancePreview(event.contentText, 320),
           occurredAt: event.occurredAt,
         },
       ],
@@ -2244,11 +2251,11 @@ async function getObjectProvenance(
   };
 }
 
-function objectProvenancePreview(contentText: string | null): string {
+function objectProvenancePreview(contentText: string | null, maxChars = 160): string {
   const cleaned = (contentText ?? 'Related source event').replace(/\s+/g, ' ').trim();
   if (cleaned.length === 0) return 'Related source event';
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
+  if (cleaned.length <= maxChars) return cleaned;
+  return `${cleaned.slice(0, Math.max(0, maxChars - 3))}...`;
 }
 
 async function sourceRefRawEventIdsBySuggestionItem(
@@ -3303,6 +3310,7 @@ export async function getObject(
     summaryRelationshipInCountRows,
     summaryTaskCountRows,
     summaryChangeCountRows,
+    createEvidenceCountRows,
   ] = await Promise.all([
     db
       .select({
@@ -3550,6 +3558,34 @@ export async function getObject(
           .limit(8)
           .as('summary_change_sources'),
       ),
+    db
+      .select({
+        events: sql<number>`count(distinct ${rawEvents.id})::int`,
+      })
+      .from(agentSuggestionItems)
+      .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+      .innerJoin(
+        agentSuggestionEvidence,
+        eq(agentSuggestionEvidence.suggestionId, agentSuggestions.id),
+      )
+      .innerJoin(rawEvents, eq(rawEvents.id, agentSuggestionEvidence.rawEventId))
+      .where(
+        and(
+          eq(agentSuggestions.teamId, scope.teamId),
+          eq(agentSuggestionItems.teamId, scope.teamId),
+          eq(agentSuggestionEvidence.teamId, scope.teamId),
+          eq(rawEvents.teamId, scope.teamId),
+          eq(agentSuggestionItems.status, 'accepted'),
+          eq(agentSuggestionItems.operation, 'create'),
+          eq(agentSuggestions.visibility, 'team'),
+          eq(rawEvents.visibility, 'team'),
+          sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+          or(
+            eq(agentSuggestionItems.targetId, entityRow.id),
+            eq(agentSuggestionItems.resultId, entityRow.id),
+          ),
+        ),
+      ),
   ]);
 
   const lastVisitedAt = viewRows[0]?.lastVisitedAt ?? null;
@@ -3598,7 +3634,7 @@ export async function getObject(
     entityRow.id,
     objectSummarySourceSnapshot(entityRow, {
       facts: factCountRows[0]?.facts ?? 0,
-      events: factCountRows[0]?.events ?? 0,
+      events: (factCountRows[0]?.events ?? 0) + (createEvidenceCountRows[0]?.events ?? 0),
       notes: summaryNoteCountRows[0]?.notes ?? 0,
       relationships:
         (summaryRelationshipOutCountRows[0]?.relationships ?? 0) +
@@ -8140,8 +8176,29 @@ export interface ChatSessionRow {
   surface: string;
   title: string | null;
   pinnedEntityId: string | null;
+  contextTrail: ChatContextRef[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+function chatSessionRowFromRecord(r: {
+  id: string;
+  surface: string;
+  title: string | null;
+  pinnedEntityId: string | null;
+  contextTrail: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}): ChatSessionRow {
+  return {
+    id: r.id,
+    surface: r.surface,
+    title: r.title,
+    pinnedEntityId: r.pinnedEntityId,
+    contextTrail: parseChatContextTrail(r.contextTrail),
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  };
 }
 
 export interface ChatMessageRow {
@@ -8204,29 +8261,29 @@ export async function listChatSessions(
     .where(and(...conds))
     .orderBy(desc(chatSessions.updatedAt), desc(chatSessions.id))
     .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
-  return rows.map((r) => ({
-    id: r.id,
-    surface: r.surface,
-    title: r.title,
-    pinnedEntityId: r.pinnedEntityId,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-  }));
+  return rows.map((r) => chatSessionRowFromRecord(r));
 }
 
 export async function createChatSession(
   db: Db,
   scope: TeamScopeCore,
-  input: { title?: string | null; pinnedEntityId?: string | null; surface?: string } = {},
+  input: {
+    title?: string | null;
+    pinnedEntityId?: string | null;
+    surface?: string;
+    contextTrail?: ChatContextRef[];
+  } = {},
 ): Promise<ChatSessionRow> {
   await scope.requireMembership();
+  const contextTrail = parseChatContextTrail(input.contextTrail);
+  const pinnedEntityId = input.pinnedEntityId ?? pinnedObjectIdFromContext(contextTrail) ?? null;
   // If pinnedEntityId is given, verify team membership of that object.
-  if (input.pinnedEntityId) {
-    if (!UUID_RE.test(input.pinnedEntityId)) throw new Error('Invalid pinnedEntityId');
+  if (pinnedEntityId) {
+    if (!UUID_RE.test(pinnedEntityId)) throw new Error('Invalid pinnedEntityId');
     const ent = await db
       .select({ id: entities.id })
       .from(entities)
-      .where(and(eq(entities.id, input.pinnedEntityId), eq(entities.teamId, scope.teamId)))
+      .where(and(eq(entities.id, pinnedEntityId), eq(entities.teamId, scope.teamId)))
       .limit(1);
     if (!ent[0]) throw new Error('Pinned object not in this team');
   }
@@ -8237,19 +8294,13 @@ export async function createChatSession(
       createdBy: scope.userId,
       surface: input.surface ?? 'web',
       title: input.title ?? null,
-      pinnedEntityId: input.pinnedEntityId ?? null,
+      pinnedEntityId,
+      contextTrail,
     })
     .returning();
   const r = rows[0];
   if (!r) throw new Error('Failed to create chat session');
-  return {
-    id: r.id,
-    surface: r.surface,
-    title: r.title,
-    pinnedEntityId: r.pinnedEntityId,
-    createdAt: r.createdAt,
-    updatedAt: r.updatedAt,
-  };
+  return chatSessionRowFromRecord(r);
 }
 
 /**
@@ -8343,14 +8394,7 @@ export async function getChatSession(
     .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.teamId, scope.teamId)))
     .orderBy(chatMessages.sequence);
   return {
-    session: {
-      id: s.id,
-      surface: s.surface,
-      title: s.title,
-      pinnedEntityId: s.pinnedEntityId,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt,
-    },
+    session: chatSessionRowFromRecord(s),
     messages: msgs.map((m) => ({
       id: m.id,
       role: m.role,
@@ -8523,6 +8567,61 @@ export async function linkChatSessionToObject(
         eq(chatSessions.createdBy, scope.userId),
       ),
     );
+}
+
+export async function mergeChatSessionContextTrail(
+  db: Db,
+  scope: TeamScopeCore,
+  sessionId: string,
+  incoming: ChatContextRef[],
+): Promise<ChatContextRef[]> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(sessionId)) return [];
+  const nextTrail = parseChatContextTrail(incoming);
+  if (nextTrail.length === 0) {
+    const existing = await db
+      .select({ contextTrail: chatSessions.contextTrail })
+      .from(chatSessions)
+      .where(
+        and(
+          eq(chatSessions.id, sessionId),
+          eq(chatSessions.teamId, scope.teamId),
+          eq(chatSessions.createdBy, scope.userId),
+          isNull(chatSessions.archivedAt),
+        ),
+      )
+      .limit(1);
+    return parseChatContextTrail(existing[0]?.contextTrail);
+  }
+
+  const rows = await db
+    .select({ contextTrail: chatSessions.contextTrail })
+    .from(chatSessions)
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        eq(chatSessions.createdBy, scope.userId),
+        isNull(chatSessions.archivedAt),
+      ),
+    )
+    .limit(1);
+  if (!rows[0]) return [];
+  const existing = parseChatContextTrail(rows[0].contextTrail);
+  const merged = mergeChatContextTrail(existing, nextTrail);
+  if (chatContextTrailEqual(existing, merged)) return existing;
+  await db
+    .update(chatSessions)
+    .set({ contextTrail: merged })
+    .where(
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.teamId, scope.teamId),
+        eq(chatSessions.createdBy, scope.userId),
+        isNull(chatSessions.archivedAt),
+      ),
+    );
+  return merged;
 }
 
 export async function archiveChatSession(
@@ -9031,6 +9130,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     ) => setUniqueChatSessionTitle(db, scope, sessionId, title, options),
     linkChatSessionToObject: (sessionId: string, entityId: string | null) =>
       linkChatSessionToObject(db, scope, sessionId, entityId),
+    mergeChatSessionContextTrail: (sessionId: string, incoming: ChatContextRef[]) =>
+      mergeChatSessionContextTrail(db, scope, sessionId, incoming),
     archiveChatSession: (sessionId: string) => archiveChatSession(db, scope, sessionId),
     listObjectChanges: (filter?: Parameters<typeof listObjectChanges>[2]) =>
       listObjectChanges(db, scope, filter),

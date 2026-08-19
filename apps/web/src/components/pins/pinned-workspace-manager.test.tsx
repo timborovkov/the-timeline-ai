@@ -18,6 +18,10 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: fakes.refresh }),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  notifyError: vi.fn(),
+}));
 vi.mock('@/app/actions/pins', () => ({
   movePinAction: fakes.movePinAction,
   pinTargetAction: fakes.pinTargetAction,
@@ -129,5 +133,17 @@ describe('PinnedWorkspaceManager', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Reorder' })).toBeNull();
+  });
+
+  it('does not render a bare inventory count next to the pin filters', () => {
+    render(
+      <PinnedWorkspaceManager
+        initialPage={{ items: [pin(FIRST_ID, 'Alpha', '0')], nextCursor: null }}
+        filter="all"
+      />,
+    );
+
+    expect(screen.queryByText('1')).toBeNull();
+    expect(document.querySelector('output')).toBeNull();
   });
 });

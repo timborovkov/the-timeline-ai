@@ -12,6 +12,9 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/lib/use-paginated-queries', () => ({
   useOnboardingChecklistQuery: fakes.useOnboardingChecklistQuery,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyError: vi.fn(),
+}));
 
 const { OnboardingChecklist } = await import('./onboarding-checklist.js');
 
@@ -187,9 +190,7 @@ describe('OnboardingChecklist', () => {
       { checklistMutationFailed: true },
     );
 
-    expect(screen.getByRole('alert').textContent).toBe(
-      'Unable to update the team setup checklist. Your previous state was restored.',
-    );
+    expect(screen.getByRole('button', { name: 'Retry update' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
     expect(retryChecklistMutation).toHaveBeenCalledOnce();
   });
@@ -518,9 +519,7 @@ describe('OnboardingChecklist', () => {
       { checklistMutationFailed: true },
     );
 
-    expect(screen.getByRole('alert').textContent).toBe(
-      'Unable to update the team setup checklist. Your previous state was restored.',
-    );
+    expect(screen.getByRole('button', { name: 'Retry update' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Retry update' }));
     expect(retryChecklistMutation).toHaveBeenCalledOnce();
   });

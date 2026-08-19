@@ -10,7 +10,7 @@ export default function TeamLoading() {
       <h1 className="sr-only">Team</h1>
       <div className="space-y-6" aria-busy="true" aria-label="Loading team settings">
         <div aria-hidden="true" className="space-y-6">
-          <PageHeaderSkeleton />
+          <PageHeaderSkeleton variant="collection" />
           <div className="flex flex-col gap-6 lg:flex-row">
             <aside className="min-w-0 lg:self-start">
               <div className="w-full max-w-full overflow-x-auto border-b border-border lg:w-52 lg:overflow-visible lg:border-r lg:border-b-0 lg:pr-4">

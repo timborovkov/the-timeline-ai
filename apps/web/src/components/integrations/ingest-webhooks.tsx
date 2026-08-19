@@ -8,13 +8,15 @@ import {
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CopyButton } from '@/components/copy-button';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
+import { notifyAction } from '@/lib/notify';
 
 interface CredentialRow {
   id: string;
@@ -37,6 +39,23 @@ export interface IngestWebhookRow {
 interface MintedCredential {
   webhookName: string;
   plaintext: string;
+}
+
+async function webhookActionError(response: Response, fallback: string): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as { error?: unknown } | null;
+  const code = typeof payload?.error === 'string' ? payload.error : null;
+  switch (code) {
+    case 'forbidden':
+      return 'You do not have permission to make this change.';
+    case 'not_found':
+      return 'This webhook no longer exists. Refresh the page and try again.';
+    case 'unauthorized':
+      return 'Sign in again to manage ingest webhooks.';
+    case 'no_team':
+      return 'Choose a team before managing ingest webhooks.';
+    default:
+      return fallback;
+  }
 }
 
 interface State {
@@ -90,10 +109,6 @@ function reducer(state: State, action: Action): State {
         showCreate: false,
       };
   }
-}
-
-function copyToClipboard(text: string): void {
-  void navigator.clipboard.writeText(text).catch(() => undefined);
 }
 
 function parseEventClass(value: string): TimelineEventClass | null {
@@ -171,54 +186,59 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
     return `${origin || 'https://thetimeline.cc'}/api/webhooks/ingest/${plaintext}`;
   }
 
-  async function alertFailure(title: string, res: Response): Promise<void> {
-    await dialog.alert({ title, description: await res.text() });
-  }
-
   async function create() {
     dispatch({ type: 'busy', busy: true });
-    try {
-      const res = await fetch('/api/team/ingest-webhooks', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name, visibilityDefault, eventClass, proposalGenerationEnabled }),
-      });
-      if (!res.ok) {
-        await alertFailure('Create failed', res);
-        return;
-      }
-      const data = (await res.json()) as { name: string; credential: { plaintext: string } };
-      dispatch({
-        type: 'created',
-        minted: { webhookName: data.name, plaintext: data.credential.plaintext },
-      });
-      router.refresh();
-    } finally {
-      dispatch({ type: 'busy', busy: false });
-    }
+    const result = await notifyAction({
+      id: 'ingest-webhook:create',
+      loading: 'Creating webhook…',
+      success: 'Webhook created',
+      error: 'Couldn’t create webhook',
+      run: async () => {
+        const res = await fetch('/api/team/ingest-webhooks', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, visibilityDefault, eventClass, proposalGenerationEnabled }),
+        });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t create webhook') };
+        const data = (await res.json()) as { name: string; credential: { plaintext: string } };
+        dispatch({
+          type: 'created',
+          minted: { webhookName: data.name, plaintext: data.credential.plaintext },
+        });
+        return { ok: true };
+      },
+    });
+    dispatch({ type: 'busy', busy: false });
+    if (!result.error) router.refresh();
   }
 
   async function patch(id: string, body: Record<string, unknown>) {
-    const res = await fetch(`/api/team/ingest-webhooks/${id}`, {
-      method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+    const result = await notifyAction({
+      id: `ingest-webhook:${id}:update`,
+      loading: 'Updating webhook…',
+      success: 'Webhook updated',
+      error: 'Couldn’t update webhook',
+      run: async () => {
+        const res = await fetch(`/api/team/ingest-webhooks/${id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t update webhook') };
+        const data = (await res.json()) as {
+          name?: string;
+          credential?: { plaintext: string };
+        };
+        if (data.credential?.plaintext && data.name) {
+          dispatch({
+            type: 'minted',
+            minted: { webhookName: data.name, plaintext: data.credential.plaintext },
+          });
+        }
+        return { ok: true };
+      },
     });
-    if (!res.ok) {
-      await alertFailure('Update failed', res);
-      return;
-    }
-    const data = (await res.json()) as {
-      name?: string;
-      credential?: { plaintext: string };
-    };
-    if (data.credential?.plaintext && data.name) {
-      dispatch({
-        type: 'minted',
-        minted: { webhookName: data.name, plaintext: data.credential.plaintext },
-      });
-    }
-    router.refresh();
+    if (!result.error) router.refresh();
   }
 
   async function rotate(id: string, label: string) {
@@ -228,14 +248,20 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       confirmLabel: 'Rotate',
     });
     if (!confirmed) return;
-    const res = await fetch(`/api/team/ingest-webhooks/${id}/credentials`, { method: 'POST' });
-    if (!res.ok) {
-      await alertFailure('Rotate failed', res);
-      return;
-    }
-    const data = (await res.json()) as { plaintext: string };
-    dispatch({ type: 'minted', minted: { webhookName: label, plaintext: data.plaintext } });
-    router.refresh();
+    const result = await notifyAction({
+      id: `ingest-webhook:${id}:rotate`,
+      loading: 'Rotating credential…',
+      success: 'Credential rotated',
+      error: 'Couldn’t rotate credential',
+      run: async () => {
+        const res = await fetch(`/api/team/ingest-webhooks/${id}/credentials`, { method: 'POST' });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t rotate credential') };
+        const data = (await res.json()) as { plaintext: string };
+        dispatch({ type: 'minted', minted: { webhookName: label, plaintext: data.plaintext } });
+        return { ok: true };
+      },
+    });
+    if (!result.error) router.refresh();
   }
 
   async function disable(id: string, label: string) {
@@ -246,12 +272,18 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       destructive: true,
     });
     if (!confirmed) return;
-    const res = await fetch(`/api/team/ingest-webhooks/${id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      await alertFailure('Disable failed', res);
-      return;
-    }
-    router.refresh();
+    const result = await notifyAction({
+      id: `ingest-webhook:${id}:disable`,
+      loading: 'Disabling webhook…',
+      success: 'Webhook disabled',
+      error: 'Couldn’t disable webhook',
+      run: async () => {
+        const res = await fetch(`/api/team/ingest-webhooks/${id}`, { method: 'DELETE' });
+        if (!res.ok) return { error: await webhookActionError(res, 'Couldn’t disable webhook') };
+        return { ok: true };
+      },
+    });
+    if (!result.error) router.refresh();
   }
 
   return (
@@ -272,38 +304,27 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       </div>
 
       {minted ? (
-        <Card className="border-signal/40">
-          <CardContent className="space-y-3 pt-4">
-            <div>
-              <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
-              <p className="text-sm text-fg-muted">
-                This is the only time the secret URL is shown.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
-                {endpointFor(minted.plaintext)}
-              </code>
-              <Button
-                size="sm"
-                onClick={() => {
-                  copyToClipboard(endpointFor(minted.plaintext));
-                }}
-              >
-                Copy
-              </Button>
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                dispatch({ type: 'minted', minted: null });
-              }}
-            >
-              I&apos;ve copied it, dismiss
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="space-y-3 border-y border-border py-4">
+          <div>
+            <div className="text-sm font-medium">Copy the new URL for {minted.webhookName}</div>
+            <p className="text-sm text-fg-muted">This is the only time the secret URL is shown.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all rounded-sm border border-signal/40 bg-surface-2 px-2 py-1.5 font-mono text-xs">
+              {endpointFor(minted.plaintext)}
+            </code>
+            <CopyButton value={endpointFor(minted.plaintext)} />
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              dispatch({ type: 'minted', minted: null });
+            }}
+          >
+            I&apos;ve copied it, dismiss
+          </Button>
+        </div>
       ) : null}
 
       {showCreate ? (
@@ -319,11 +340,9 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       ) : null}
 
       {webhooks.length === 0 ? (
-        <div className="rounded-lg border border-border bg-surface p-4 text-sm text-fg-muted">
-          No ingest webhooks yet.
-        </div>
+        <p className="border-y border-border py-4 text-sm text-fg-muted">No ingest webhooks yet.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-md border border-border bg-surface">
+        <ul className="divide-y divide-border border-y border-border">
           {webhooks.map((webhook) => (
             <IngestWebhookListItem
               key={webhook.id}
@@ -359,65 +378,63 @@ function IngestWebhookCreateForm({
   onCreate: () => void;
 }) {
   return (
-    <Card>
-      <CardContent className="space-y-4 pt-4">
-        <div className="space-y-1">
-          <Label htmlFor="ingest-webhook-name">Name</Label>
-          <Input
-            id="ingest-webhook-name"
-            value={name}
+    <div className="space-y-4 border-y border-border py-4">
+      <div className="space-y-1">
+        <Label htmlFor="ingest-webhook-name">Name</Label>
+        <Input
+          id="ingest-webhook-name"
+          value={name}
+          onChange={(e) => {
+            dispatch({ type: 'name', name: e.target.value });
+          }}
+          placeholder="Pipedrive webhook"
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={visibilityDefault === 'team'}
             onChange={(e) => {
-              dispatch({ type: 'name', name: e.target.value });
-            }}
-            placeholder="Pipedrive webhook"
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={visibilityDefault === 'team'}
-              onChange={(e) => {
-                dispatch({
-                  type: 'visibilityDefault',
-                  visibilityDefault: e.target.checked ? 'team' : 'private',
-                });
-              }}
-            />
-            Team-visible by default
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={proposalGenerationEnabled}
-              onChange={(e) => {
-                dispatch({
-                  type: 'proposalGenerationEnabled',
-                  proposalGenerationEnabled: e.target.checked,
-                });
-              }}
-            />
-            Generate approval proposals
-          </label>
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
-          <EventClassSelect
-            id="ingest-webhook-event-class"
-            value={eventClass}
-            onChange={(next) => {
-              dispatch({ type: 'eventClass', eventClass: next });
+              dispatch({
+                type: 'visibilityDefault',
+                visibilityDefault: e.target.checked ? 'team' : 'private',
+              });
             }}
           />
-          <p className="text-xs text-fg-muted">
-            {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
-          </p>
-        </div>
-        <Button size="sm" disabled={busy || !name.trim()} onClick={onCreate}>
-          {busy ? 'Creating…' : 'Create webhook'}
-        </Button>
-      </CardContent>
-    </Card>
+          Team-visible by default
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={proposalGenerationEnabled}
+            onChange={(e) => {
+              dispatch({
+                type: 'proposalGenerationEnabled',
+                proposalGenerationEnabled: e.target.checked,
+              });
+            }}
+          />
+          Generate approval proposals
+        </label>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="ingest-webhook-event-class">Timeline type</Label>
+        <EventClassSelect
+          id="ingest-webhook-event-class"
+          value={eventClass}
+          onChange={(next) => {
+            dispatch({ type: 'eventClass', eventClass: next });
+          }}
+        />
+        <p className="text-xs text-fg-muted">
+          {TIMELINE_EVENT_CLASS_OPTIONS.find((option) => option.value === eventClass)?.hint}
+        </p>
+      </div>
+      <Button size="sm" disabled={busy || !name.trim()} onClick={onCreate}>
+        {busy ? 'Creating…' : 'Create webhook'}
+      </Button>
+    </div>
   );
 }
 
@@ -435,84 +452,86 @@ function IngestWebhookListItem({
 }) {
   const credential = webhook.credentials[0];
   const disabled = Boolean(webhook.disabledAt);
+  const context = [
+    disabled ? 'disabled' : 'active',
+    eventClassLabel(webhook.eventClass),
+    `visibility ${webhook.visibilityDefault}`,
+    `proposals ${webhook.proposalGenerationEnabled ? 'on' : 'off'}`,
+    credential
+      ? `${credential.prefix}... · last used ${
+          credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'never'
+        }`
+      : 'no active credential',
+  ].join(' · ');
   return (
-    <li className="space-y-3 p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-medium">{webhook.name}</div>
-          <div className="font-mono text-xs text-fg-muted">
-            {disabled ? 'disabled' : 'active'} · {eventClassLabel(webhook.eventClass)} · visibility{' '}
-            {webhook.visibilityDefault} · proposals{' '}
-            {webhook.proposalGenerationEnabled ? 'on' : 'off'}
-            {credential
-              ? ` · ${credential.prefix}... · last used ${
-                  credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'never'
-                }`
-              : ' · no active credential'}
-          </div>
-        </div>
-        <ItemActionGroup label={`Actions for ${webhook.name}`}>
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => void onRotate(webhook.id, webhook.name)}
+    <li>
+      <CollectionRow>
+        <CollectionRow.Title>{webhook.name}</CollectionRow.Title>
+        <CollectionRow.Context>{context}</CollectionRow.Context>
+        <CollectionRow.Metadata>
+          <label
+            className="flex min-w-40 items-center gap-2"
+            htmlFor={`ingest-webhook-type-${webhook.id}`}
           >
-            Rotate
-          </Button>
-          <ItemOverflowMenu targetLabel={webhook.name}>
-            <DropdownMenuItem
+            <span className="sr-only">Timeline type</span>
+            <EventClassSelect
+              id={`ingest-webhook-type-${webhook.id}`}
+              value={webhook.eventClass}
               disabled={disabled}
-              className="text-destructive focus:text-destructive"
-              onSelect={() => void onDisable(webhook.id, webhook.name)}
+              onChange={(next) => {
+                void onPatch(webhook.id, { eventClass: next });
+              }}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={webhook.visibilityDefault === 'team'}
+              disabled={disabled}
+              onChange={(e) =>
+                void onPatch(webhook.id, {
+                  visibilityDefault: e.target.checked ? 'team' : 'private',
+                })
+              }
+            />
+            Team-visible
+          </label>
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={webhook.proposalGenerationEnabled}
+              disabled={disabled}
+              onChange={(e) =>
+                void onPatch(webhook.id, {
+                  proposalGenerationEnabled: e.target.checked,
+                })
+              }
+            />
+            Proposals
+          </label>
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
+          <ItemActionGroup label={`Actions for ${webhook.name}`}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => void onRotate(webhook.id, webhook.name)}
             >
-              Disable
-            </DropdownMenuItem>
-          </ItemOverflowMenu>
-        </ItemActionGroup>
-      </div>
-      <div className="flex flex-wrap items-end gap-3 text-sm">
-        <label
-          className="flex min-w-40 flex-col gap-1"
-          htmlFor={`ingest-webhook-type-${webhook.id}`}
-        >
-          <span className="text-xs text-fg-muted">Timeline type</span>
-          <EventClassSelect
-            id={`ingest-webhook-type-${webhook.id}`}
-            value={webhook.eventClass}
-            disabled={disabled}
-            onChange={(next) => {
-              void onPatch(webhook.id, { eventClass: next });
-            }}
-          />
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={webhook.visibilityDefault === 'team'}
-            disabled={disabled}
-            onChange={(e) =>
-              void onPatch(webhook.id, {
-                visibilityDefault: e.target.checked ? 'team' : 'private',
-              })
-            }
-          />
-          Team-visible
-        </label>
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={webhook.proposalGenerationEnabled}
-            disabled={disabled}
-            onChange={(e) =>
-              void onPatch(webhook.id, {
-                proposalGenerationEnabled: e.target.checked,
-              })
-            }
-          />
-          Proposals
-        </label>
-      </div>
+              Rotate
+            </Button>
+            <ItemOverflowMenu targetLabel={webhook.name}>
+              <DropdownMenuItem
+                disabled={disabled}
+                className="text-destructive focus:text-destructive"
+                onSelect={() => void onDisable(webhook.id, webhook.name)}
+              >
+                Disable
+              </DropdownMenuItem>
+            </ItemOverflowMenu>
+          </ItemActionGroup>
+        </CollectionRow.Actions>
+      </CollectionRow>
     </li>
   );
 }

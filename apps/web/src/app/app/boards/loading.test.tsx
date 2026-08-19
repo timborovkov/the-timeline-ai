@@ -35,8 +35,10 @@ describe('Boards route states', () => {
     const listSkeleton = document.querySelector('[aria-label="Boards list loading placeholder"]');
     expect(listSkeleton).toBeTruthy();
     expect(listSkeleton?.querySelectorAll('a, button, input, select, textarea')).toHaveLength(0);
-    expect(listSkeleton?.querySelector('ul')?.className).toContain('border-x border-border');
-    expect(listSkeleton?.querySelector('.min-h-11')).toBeTruthy();
+    expect(
+      document.querySelector('[aria-label="Boards list loading placeholder"]')?.firstElementChild
+        ?.className,
+    ).toContain('border-t border-border');
 
     rerender(<BoardDetailLoading />);
 

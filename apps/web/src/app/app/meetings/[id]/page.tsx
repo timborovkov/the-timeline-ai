@@ -4,6 +4,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
@@ -110,6 +111,13 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   return (
     <div className="space-y-6">
+      <ChatViewContextBinder
+        viewKey={`meeting:${meeting.id}`}
+        kind="meeting"
+        href={`/app/meetings/${meeting.id}`}
+        label={title}
+        meetingId={meeting.id}
+      />
       <HistoryBackLink fallbackHref="/app/meetings" label="Back" />
       <PageHeader
         title={title}
@@ -131,7 +139,7 @@ export default async function MeetingDetailPage({ params }: Props) {
       />
 
       {summary ? (
-        <section className="space-y-2 rounded-lg border border-border bg-surface p-4">
+        <section className="space-y-2 border-y border-border py-4">
           <SectionHeading>Summary</SectionHeading>
           <p className="whitespace-pre-wrap text-sm">{summary}</p>
         </section>
@@ -146,7 +154,7 @@ export default async function MeetingDetailPage({ params }: Props) {
               : 'No transcript chunks captured.'}
           </p>
         ) : (
-          <ol className="space-y-2 rounded-lg border border-border bg-surface p-3 text-sm">
+          <ol className="space-y-2 border-y border-border py-3 text-sm">
             {chunks.map((c) => (
               <li key={c.id} className="flex gap-3">
                 <span className="w-12 shrink-0 font-mono text-xs text-fg-muted">

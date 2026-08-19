@@ -16,6 +16,15 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock('@/app/actions/boards', () => ({ updateBoardItemAction: fakes.updateBoardItemAction }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'failed' };
+    }
+  },
+}));
 vi.mock('@/app/actions/objects', () => ({
   loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
 }));

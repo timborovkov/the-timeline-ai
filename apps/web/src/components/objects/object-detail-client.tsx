@@ -31,12 +31,13 @@ import {
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
+  unarchiveObjectAction,
   updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
@@ -55,12 +56,13 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { notifyAction } from '@/lib/notify';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { statusLabel } from '@/lib/status-labels';
-import { cn, errorMessage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -79,7 +81,6 @@ type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
 interface Props {
   detail: ObjectDetail;
-  teamId?: string;
   userId: string;
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
@@ -142,6 +143,20 @@ function statusOptions(type: string): string[] {
 
 function isDraftField(field: EditableField): field is DraftField {
   return field === 'canonicalName' || field === 'aliases' || field === 'stage' || field === 'dueAt';
+}
+
+function objectFieldLabel(field: EditableField): string {
+  if (field === 'canonicalName') return 'name';
+  if (field === 'dueAt') return 'due date';
+  return field;
+}
+
+function capitalizeLabel(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
+function serializeEditableValue(value: EditableValue): string | number | readonly string[] | null {
+  return value instanceof Date ? value.toISOString() : value;
 }
 
 function isEditableFieldName(field: string): field is EditableField {
@@ -387,6 +402,27 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     };
   }, []);
 
+  function applyFieldLocally(field: EditableField, value: EditableValue): void {
+    updateLocalDetail((current) => ({
+      ...current,
+      [field]: field === 'dueAt' ? toDateOrNull(value) : value,
+    }));
+    if (field === 'canonicalName') {
+      dispatchObjectUi({
+        nameDraft: value === null ? editableObjectName(serverDetailRef.current) : String(value),
+      });
+    }
+    if (field === 'aliases') {
+      dispatchObjectUi({ aliasesDraft: normalizeAliases(value).join(', ') });
+    }
+    if (field === 'stage') {
+      dispatchObjectUi({ stageDraft: value === null ? '' : String(value) });
+    }
+    if (field === 'dueAt') {
+      dispatchObjectUi({ dueDraft: toLocalInputValue(value, timezone) });
+    }
+  }
+
   function patch(field: EditableField, value: EditableValue): void {
     const currentValue = localDetailRef.current[field];
     if (sameEditableValue(field, currentValue, value)) return;
@@ -396,12 +432,13 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       queuedFieldValuesRef.current[field] = value;
       return;
     }
-    beginFieldSave(field, value);
+    beginFieldSave(field, value, currentValue);
   }
 
   function beginFieldSave(
     field: EditableField,
     value: EditableValue,
+    previousValue: EditableValue,
     options: { preserveBatchFailure?: boolean } = {},
   ): void {
     savingFieldsRef.current[field] += 1;
@@ -413,23 +450,37 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     }
     savingCountRef.current += 1;
     dispatchObjectUi({ savingCount: savingCountRef.current });
+    const label = objectFieldLabel(field);
     startTransition(async () => {
-      try {
-        const actionValue = value instanceof Date ? value.toISOString() : value;
-        const result = await updateObjectAction({ id: detail.id, [field]: actionValue });
-        const failed = 'error' in result && result.error;
-        if (failed) {
-          handleFieldSaveFailure(field, value, result.error ?? 'Update failed');
-        } else if (!batchHadFailureRef.current) {
-          dispatchObjectUi({ error: null });
-        }
-        router.refresh();
-      } catch (err) {
-        handleFieldSaveFailure(field, value, errorMessage(err, 'Update failed'));
-        router.refresh();
-      } finally {
-        finishFieldSave(field);
+      const result = await notifyAction({
+        id: `object:${detail.id}`,
+        loading: `Updating ${label}…`,
+        success: `${capitalizeLabel(label)} updated`,
+        error: `Couldn’t update ${label}`,
+        run: () =>
+          updateObjectAction({
+            id: detail.id,
+            [field]: serializeEditableValue(value),
+          }),
+        undo: {
+          run: async () => {
+            applyFieldLocally(field, previousValue);
+            const undoResult = await updateObjectAction({
+              id: detail.id,
+              [field]: serializeEditableValue(previousValue),
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
+        handleFieldSaveFailure(field, value, result.error);
+      } else if (!batchHadFailureRef.current) {
+        dispatchObjectUi({ error: null });
       }
+      router.refresh();
+      finishFieldSave(field, result.error ? undefined : value);
     });
   }
 
@@ -441,26 +492,11 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       queuedFieldValuesRef.current[field] === undefined &&
       sameEditableValue(field, localDetailRef.current[field], value)
     ) {
-      updateLocalDetail((current) => ({
-        ...current,
-        [field]: field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue,
-      }));
-      if (field === 'canonicalName') {
-        dispatchObjectUi({ nameDraft: editableObjectName(serverDetailRef.current) });
-      }
-      if (field === 'aliases') {
-        dispatchObjectUi({ aliasesDraft: normalizeAliases(rollbackValue).join(', ') });
-      }
-      if (field === 'stage') {
-        dispatchObjectUi({ stageDraft: rollbackValue === null ? '' : String(rollbackValue) });
-      }
-      if (field === 'dueAt') {
-        dispatchObjectUi({ dueDraft: toLocalInputValue(rollbackValue, timezone) });
-      }
+      applyFieldLocally(field, field === 'dueAt' ? toDateOrNull(rollbackValue) : rollbackValue);
     }
   }
 
-  function finishFieldSave(field: EditableField): void {
+  function finishFieldSave(field: EditableField, lastSuccessfulValue?: EditableValue): void {
     savingCountRef.current = Math.max(0, savingCountRef.current - 1);
     if (isDraftField(field)) {
       savingDraftsRef.current[field] = Math.max(0, savingDraftsRef.current[field] - 1);
@@ -470,7 +506,14 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     const queuedValue = queuedFieldValuesRef.current[field];
     queuedFieldValuesRef.current[field] = undefined;
     if (queuedValue !== undefined) {
-      beginFieldSave(field, queuedValue, { preserveBatchFailure: batchHadFailureRef.current });
+      const previousForQueued =
+        lastSuccessfulValue ??
+        (field === 'dueAt'
+          ? toDateOrNull(serverDetailRef.current[field])
+          : serverDetailRef.current[field]);
+      beginFieldSave(field, queuedValue, previousForQueued, {
+        preserveBatchFailure: batchHadFailureRef.current,
+      });
       dispatchObjectUi({ savingCount: savingCountRef.current });
       return;
     }
@@ -507,13 +550,38 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     }));
     dispatchObjectUi({ noteBody: '' });
     startTransition(async () => {
-      const result = await createNoteAction({ entityId: detail.id, body });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:note`,
+        loading: 'Adding note…',
+        success: 'Note added',
+        error: 'Couldn’t add note',
+        run: () => createNoteAction({ entityId: detail.id, body }),
+        undo: {
+          run: async (created) => {
+            const createdId = created.id;
+            if (!createdId) return { ok: true };
+            dispatchLocalDetail((current) => ({
+              ...current,
+              deletedNoteIds: [...current.deletedNoteIds, createdId],
+              pendingNotes: current.pendingNotes.filter(
+                (note) => note.id !== createdId && note.id !== tempId,
+              ),
+            }));
+            const undoResult = await deleteNoteAction({
+              noteId: createdId,
+              entityId: detail.id,
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
         dispatchLocalDetail((current) => ({
           ...current,
           pendingNotes: current.pendingNotes.filter((note) => note.id !== tempId),
         }));
-        dispatchObjectUi({ error: result.error, noteBody: body });
+        dispatchObjectUi({ noteBody: body });
       } else {
         const createdId = 'id' in result && typeof result.id === 'string' ? result.id : null;
         if (createdId) {
@@ -549,10 +617,28 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     }));
     dispatchObjectUi({ editingNoteId: null });
     startTransition(async () => {
-      const result = await updateNoteAction({ noteId, entityId: detail.id, body: trimmedBody });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:note`,
+        loading: 'Updating note…',
+        success: 'Note updated',
+        error: 'Couldn’t update note',
+        run: () => updateNoteAction({ noteId, entityId: detail.id, body: trimmedBody }),
+        undo: {
+          run: async () => {
+            dispatchLocalDetail({ noteUpdates: previousNoteUpdates });
+            const undoResult = await updateNoteAction({
+              noteId,
+              entityId: detail.id,
+              body: currentNote.body,
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
         dispatchLocalDetail({ noteUpdates: previousNoteUpdates });
-        dispatchObjectUi({ error: result.error, editingNoteId: noteId, editingBody: body });
+        dispatchObjectUi({ editingNoteId: noteId, editingBody: body });
       } else {
         router.refresh();
       }
@@ -569,13 +655,18 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       pendingNotes: current.pendingNotes.filter((note) => note.id !== noteId),
     }));
     startTransition(async () => {
-      const result = await deleteNoteAction({ noteId, entityId: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:note`,
+        loading: 'Deleting note…',
+        success: 'Note deleted',
+        error: 'Couldn’t delete note',
+        run: () => deleteNoteAction({ noteId, entityId: detail.id }),
+      });
+      if (result.error) {
         dispatchLocalDetail({
           deletedNoteIds: previousDeletedNoteIds,
           pendingNotes: previousPendingNotes,
         });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -600,19 +691,45 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       pendingRelationships: [optimisticRelationship, ...current.pendingRelationships],
     }));
     startTransition(async () => {
-      const result = await addRelationshipAction({
-        fromEntityId: detail.id,
-        toEntityId: link.id,
-        kind: linkKind,
+      const result = await notifyAction({
+        id: `object:${detail.id}:relationship`,
+        loading: 'Adding relationship…',
+        success: 'Relationship added',
+        error: 'Couldn’t add relationship',
+        run: () =>
+          addRelationshipAction({
+            fromEntityId: detail.id,
+            toEntityId: link.id,
+            kind: linkKind,
+          }),
+        undo: {
+          run: async (created) => {
+            const relationshipId = created.id;
+            if (!relationshipId) return { ok: true };
+            dispatchLocalDetail((current) => ({
+              ...current,
+              deletedRelationshipIds: [...current.deletedRelationshipIds, relationshipId],
+              pendingRelationships: current.pendingRelationships.filter(
+                (relationship) => relationship.id !== relationshipId && relationship.id !== tempId,
+              ),
+            }));
+            const undoResult = await removeRelationshipAction({
+              id: relationshipId,
+              entityId: detail.id,
+              otherEntityId: link.id,
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
       });
-      if ('error' in result && result.error) {
+      if (result.error) {
         dispatchLocalDetail((current) => ({
           ...current,
           pendingRelationships: current.pendingRelationships.filter(
             (relationship) => relationship.id !== tempId,
           ),
         }));
-        dispatchObjectUi({ error: result.error });
       } else {
         const relationshipId = 'id' in result && typeof result.id === 'string' ? result.id : null;
         if (relationshipId) {
@@ -639,14 +756,37 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         (relationship) => relationship.id !== id,
       ),
     }));
+    const removed = viewDetail.relationships.find((relationship) => relationship.id === id);
     startTransition(async () => {
-      const result = await removeRelationshipAction({ id, entityId: detail.id, otherEntityId });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:relationship`,
+        loading: 'Removing relationship…',
+        success: 'Relationship removed',
+        error: 'Couldn’t remove relationship',
+        run: () => removeRelationshipAction({ id, entityId: detail.id, otherEntityId }),
+        undo: removed
+          ? {
+              run: async () => {
+                dispatchLocalDetail({
+                  deletedRelationshipIds: previousDeletedRelationshipIds,
+                  pendingRelationships: previousPendingRelationships,
+                });
+                const undoResult = await addRelationshipAction({
+                  fromEntityId: detail.id,
+                  toEntityId: otherEntityId,
+                  kind: removed.kind,
+                });
+                if (!undoResult.error) router.refresh();
+                return undoResult;
+              },
+            }
+          : undefined,
+      });
+      if (result.error) {
         dispatchLocalDetail({
           deletedRelationshipIds: previousDeletedRelationshipIds,
           pendingRelationships: previousPendingRelationships,
         });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -677,8 +817,14 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       }
     }
     startTransition(async () => {
-      const result = await acceptObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:change`,
+        loading: 'Accepting change…',
+        success: 'Change accepted',
+        error: 'Couldn’t accept change',
+        run: () => acceptObjectChangeAction({ changeId, entityId: detail.id }),
+      });
+      if (result.error) {
         dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
         updateLocalDetail(() => previousDetail);
         dispatchObjectUi({
@@ -687,7 +833,6 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
           stageDraft: previousDetail.stage ?? '',
           dueDraft: toLocalInputValue(previousDetail.dueAt, timezone),
         });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -700,10 +845,15 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       recentChangeStatuses: { ...current.recentChangeStatuses, [changeId]: 'rejected' },
     }));
     startTransition(async () => {
-      const result = await rejectObjectChangeAction({ changeId, entityId: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:change`,
+        loading: 'Rejecting change…',
+        success: 'Change rejected',
+        error: 'Couldn’t reject change',
+        run: () => rejectObjectChangeAction({ changeId, entityId: detail.id }),
+      });
+      if (result.error) {
         dispatchLocalDetail({ recentChangeStatuses: previousRecentChangeStatuses });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -713,10 +863,23 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     const previousArchivedAtOverride = localDetailState.archivedAtOverride;
     dispatchLocalDetail({ archivedAtOverride: new Date() });
     startTransition(async () => {
-      const result = await archiveObjectAction({ id: detail.id });
-      if ('error' in result && result.error) {
+      const result = await notifyAction({
+        id: `object:${detail.id}:archive`,
+        loading: 'Archiving object…',
+        success: 'Object archived',
+        error: 'Couldn’t archive object',
+        run: () => archiveObjectAction({ id: detail.id }),
+        undo: {
+          run: async () => {
+            dispatchLocalDetail({ archivedAtOverride: previousArchivedAtOverride });
+            const undoResult = await unarchiveObjectAction({ id: detail.id });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      if (result.error) {
         dispatchLocalDetail({ archivedAtOverride: previousArchivedAtOverride });
-        dispatchObjectUi({ error: result.error });
       } else router.refresh();
     });
   }
@@ -726,10 +889,14 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     setRepairPending(true);
     startTransition(async () => {
       try {
-        const result = await repairObjectMemoryAction({ id: detail.id });
-        if ('error' in result && result.error) {
-          dispatchObjectUi({ error: result.error });
-        } else router.refresh();
+        const result = await notifyAction({
+          id: `object:${detail.id}:repair`,
+          loading: 'Repairing memory…',
+          success: 'Memory repair queued',
+          error: 'Couldn’t repair memory',
+          run: () => repairObjectMemoryAction({ id: detail.id }),
+        });
+        if (!result.error) router.refresh();
       } finally {
         setRepairPending(false);
       }
@@ -780,13 +947,9 @@ function ObjectDetailView(props: Props) {
     <div className="space-y-5">
       <ObjectDetailHeader
         detail={view.viewDetail}
-        teamId={props.teamId}
         initialPinned={props.initialPinned ?? false}
-        error={view.error}
         pending={view.pending}
         repairPending={view.repairPending}
-        saveState={view.saveState}
-        savingCount={view.savingCount}
         onRepairMemory={view.repairMemory}
       />
       <WorkSubnav current={`/app/objects/${view.detail.id}`} />
@@ -965,10 +1128,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
   const [pending, startTransition] = useTransition();
   const summary = detail.summary ?? null;
   const generated = summary?.summary ?? null;
-  const [error, setError] = useReducer(
-    (_state: string | null, value: string | null) => value,
-    null,
-  );
   const canRequest =
     Boolean(summary?.canGenerate) &&
     (summary?.status === 'missing' || summary?.status === 'failed' || summary?.status === 'stale');
@@ -985,14 +1144,15 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
             : 'available';
 
   function requestSummary(): void {
-    setError(null);
     startTransition(() => {
-      void generateObjectSummaryAction({ entityId: detail.id }).then((result) => {
-        if ('error' in result && result.error) {
-          setError(result.error);
-          return;
-        }
-        router.refresh();
+      void notifyAction({
+        id: `object:${detail.id}:summary`,
+        loading: 'Generating summary…',
+        success: 'Summary queued',
+        error: 'Couldn’t generate summary',
+        run: () => generateObjectSummaryAction({ entityId: detail.id }),
+      }).then((result) => {
+        if (!result.error) router.refresh();
       });
     });
   }
@@ -1040,7 +1200,7 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
               : summary?.status === 'missing' && summary.canGenerate
                 ? 'Ready to generate'
                 : summary?.lastErrorCode
-                  ? 'Update failed'
+                  ? 'Couldn’t generate summary'
                   : 'No summary yet'}
         </p>
         {canRequest ? (
@@ -1054,7 +1214,6 @@ function ObjectSummaryPanel({ detail }: { detail: ObjectDetail }) {
           </button>
         ) : null}
       </div>
-      {error ? <p className="mt-2 text-sm text-danger">{error}</p> : null}
     </ObjectPanel>
   );
 }
@@ -1093,6 +1252,15 @@ function summaryRefToArtifactRef(ref: objects.ObjectSummarySourceRef): ArtifactR
   if (ref.kind === 'fact') return { kind: 'fact', id: ref.id };
   if (ref.kind === 'relationship') return { kind: 'relationship', id: ref.id };
   if (ref.kind === 'object_change') return { kind: 'object_change', id: ref.id };
+  if (ref.kind === 'document_chunk') {
+    return {
+      kind: 'document_chunk',
+      id: ref.id,
+      documentId: ref.documentId,
+      version: ref.version,
+      chunkId: ref.id,
+    };
+  }
   return null;
 }
 
@@ -1100,6 +1268,7 @@ function sourceLabel(ref: objects.ObjectSummarySourceRef): string {
   if (ref.kind === 'timeline_event') return 'event';
   if (ref.kind === 'object_note') return 'note';
   if (ref.kind === 'object_change') return 'change';
+  if (ref.kind === 'document_chunk') return 'document';
   return ref.kind;
 }
 
@@ -1210,8 +1379,8 @@ function timelinePreview(contentText: string | null): string {
   const cleaned = displayText(contentText ?? 'Timeline event')
     .replace(/\s+/g, ' ')
     .trim();
-  if (cleaned.length <= 160) return cleaned;
-  return `${cleaned.slice(0, 157)}...`;
+  if (cleaned.length <= 320) return cleaned;
+  return `${cleaned.slice(0, 317)}...`;
 }
 
 function ProvenanceEntryList({
@@ -1231,7 +1400,7 @@ function ProvenanceEntryList({
             muted && 'border-border bg-bg text-fg-muted',
           )}
         >
-          <p className="line-clamp-2 break-words font-medium leading-5 text-fg">
+          <p className="line-clamp-4 break-words font-medium leading-5 text-fg">
             {timelinePreview(entry.title)}
           </p>
           {entry.reason ? (
@@ -1287,6 +1456,11 @@ function ProvenanceSourceLink({
       className="block break-words text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
     >
       {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
+      {source.contentText || source.quote ? (
+        <span className="mt-0.5 block line-clamp-4 break-words text-fg-muted no-underline">
+          {timelinePreview(source.contentText ?? source.quote)}
+        </span>
+      ) : null}
     </Link>
   );
 }
@@ -1294,9 +1468,7 @@ function ProvenanceSourceLink({
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs uppercase tracking-wide text-muted-foreground">
-        {label}
-      </span>
+      <span className="mb-1 block text-xs text-fg-dim">{label}</span>
       {children}
     </label>
   );
@@ -1304,29 +1476,20 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function ObjectDetailHeader({
   detail,
-  teamId,
   initialPinned,
-  error,
   pending,
   repairPending,
-  saveState,
-  savingCount,
   onRepairMemory,
 }: {
   detail: ObjectDetail;
-  teamId?: string;
   initialPinned: boolean;
-  error: string | null;
   pending: boolean;
   repairPending: boolean;
-  saveState: SaveState;
-  savingCount: number;
   onRepairMemory: () => void;
 }) {
   const pendingCount = detail.recentChanges.filter((c) => c.status === 'suggested').length;
   const visibleAliases = detail.aliases.filter((alias) => !isInternalIdentifier(alias));
-  const hasAlerts =
-    detail.newSinceLastVisit > 0 || pendingCount > 0 || error !== null || saveState !== 'idle';
+  const hasAlerts = detail.newSinceLastVisit > 0 || pendingCount > 0;
   return (
     <header className="border-b border-border pb-5">
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
@@ -1364,39 +1527,18 @@ function ObjectDetailHeader({
                   {pendingCount} suggestion{pendingCount === 1 ? '' : 's'} awaiting review
                 </output>
               ) : null}
-              {error ? (
-                <div
-                  role="alert"
-                  className="rounded-sm border border-danger/40 bg-bg px-3 py-2 text-xs text-danger"
-                >
-                  {error}
-                </div>
-              ) : null}
-              {saveState !== 'idle' ? (
-                <output aria-live="polite" className="text-xs text-fg-dim">
-                  {saveState === 'saving'
-                    ? `Saving${savingCount > 1 ? ` ${savingCount} changes` : ''}...`
-                    : 'Saved'}
-                </output>
-              ) : null}
             </div>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2 lg:justify-end">
           <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} compact />
-          {teamId ? (
-            <ContextualAskLink
-              teamId={teamId}
-              context={{
-                pathname: `/app/objects/${detail.id}`,
-                routeKind: 'object-detail',
-                objectId: detail.id,
-              }}
-              pinnedEntityId={detail.id}
-              pinnedEntityName={displayObjectTitle(detail)}
-              label="Ask about object"
-            />
-          ) : null}
+          <ChatViewContextBinder
+            viewKey={`object:${detail.id}`}
+            kind="object"
+            href={`/app/objects/${detail.id}`}
+            label={displayObjectTitle(detail)}
+            objectId={detail.id}
+          />
           {detail.type === 'project' && detail.archivedAt === null ? (
             <Link
               href={`/app/objects/new?project=${encodeURIComponent(detail.id)}&returnTo=${encodeURIComponent(`/app/objects/${detail.id}`)}`}
@@ -1877,7 +2019,12 @@ function ConnectedCalendarList({
               key={event.id}
               className="grid gap-1 rounded-sm border border-border bg-surface px-3 py-2 text-sm"
             >
-              <span className="font-medium">{displayText(event.title)}</span>
+              <Link
+                href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
+                className="font-medium hover:underline"
+              >
+                {displayText(event.title)}
+              </Link>
               <span className="text-[11px] text-fg-dim">
                 {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
               </span>
@@ -2120,9 +2267,7 @@ function ObjectRelationshipsSection({
     <ObjectPanel title="Related" eyebrow={String(relationships.length)}>
       <div className="mb-4 grid gap-2">
         <label>
-          <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-            Link to object
-          </span>
+          <span className="mb-1 block text-[11px] text-fg-dim">Link to object</span>
           <input
             value={linkQuery}
             onChange={(e) => {
@@ -2134,9 +2279,7 @@ function ObjectRelationshipsSection({
         </label>
         <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
           <label>
-            <span className="mb-1 block text-[11px] uppercase tracking-wide text-muted-foreground">
-              Kind
-            </span>
+            <span className="mb-1 block text-[11px] text-fg-dim">Kind</span>
             <select
               value={linkKind}
               onChange={(e) => {
@@ -2203,7 +2346,7 @@ function ObjectRelationshipsSection({
                 {displayText(relationship.otherName)}
               </a>
               <div className="flex items-center justify-between gap-3">
-                <span className="text-xs uppercase tracking-wide text-muted-foreground">
+                <span className="text-xs text-fg-dim">
                   {relationship.kind === 'related'
                     ? relationship.kind
                     : relationship.direction === 'out'
@@ -2294,7 +2437,7 @@ function ObjectRecentChangeItem({
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words font-medium">{changeFieldLabel(change.field)}</span>
-        <span className="shrink-0 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <span className="shrink-0 text-[11px] text-fg-dim">
           {statusLabel(change.actorKind)} · {statusLabel(change.status)}
         </span>
       </div>

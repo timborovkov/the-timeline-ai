@@ -9,8 +9,8 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { PersonalConnectionsUi } from '@/components/integrations/provider-connections';
 import { PageHeader } from '@/components/page-header';
+import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { SectionHeading } from '@/components/section-heading';
-import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -61,23 +61,19 @@ export default async function PersonalConnectionsPage({
         <ActionChip href="/app/me/mcp-servers" label="Manage personal MCP" />
       </div>
 
-      {params.connected ? (
-        <output className="block rounded-sm border border-signal/40 bg-signal/10 px-3 py-2 text-sm text-fg">
-          Connected {providerLabel(params.connected)}. Choose which sources this team may use.
-        </output>
-      ) : null}
-      {params.error ? (
-        <div
-          role="alert"
-          className="space-y-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          <p>Unable to connect this account. Try again or choose a different account.</p>
-          <TechnicalDetails
-            items={[{ label: 'Connection error', value: params.error }]}
-            className="text-fg"
-          />
-        </div>
-      ) : null}
+      <RedirectActionToast
+        id="connections:oauth"
+        error={
+          params.error
+            ? 'Unable to connect this account. Try again or choose a different account.'
+            : null
+        }
+        success={
+          params.connected
+            ? `Connected ${providerLabel(params.connected)}. Choose which sources this team may use.`
+            : null
+        }
+      />
 
       <section className="space-y-3">
         <SectionHeading>Your provider accounts</SectionHeading>

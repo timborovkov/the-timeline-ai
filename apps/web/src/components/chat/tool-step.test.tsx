@@ -20,7 +20,9 @@ vi.mock('@/app/actions/suggestions', () => ({
   rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
   reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
 }));
-vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
+vi.mock('sonner', () => ({
+  toast: { success: vi.fn(), loading: vi.fn(() => 'toast-1'), error: vi.fn() },
+}));
 
 const { ToolStep } = await import('./tool-step.js');
 

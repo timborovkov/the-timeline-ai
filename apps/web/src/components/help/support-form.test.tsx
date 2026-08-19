@@ -27,6 +27,9 @@ vi.mock('@/components/turnstile-widget', () => ({
     <div data-testid="turnstile-widget" data-action={action} data-site-key={siteKey} />
   ),
 }));
+vi.mock('@/components/form-action-toast', () => ({
+  FormActionToast: () => null,
+}));
 
 const { SupportForm } = await import('./support-form.js');
 
@@ -92,23 +95,20 @@ describe('SupportForm', () => {
     expect(submit.getAttribute('aria-describedby')).toBe(protectionError.id);
   });
 
-  it('shows success, error, and pending action states', () => {
+  it('keeps pending submit state on the button without inline banners', () => {
     fakes.useActionState.mockReturnValue([{ ok: true }, fakes.action, true]);
     render(<SupportForm requiresTurnstile={false} />);
 
-    const success = screen.getByRole('status');
-    expect(success.textContent).toBe('We received your request.');
-    expect(success.parentElement?.getAttribute('aria-live')).toBeNull();
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText('We received your request.')).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Sending…' }).disabled).toBe(true);
 
     cleanup();
     fakes.useActionState.mockReturnValue([{ error: 'Verification failed.' }, fakes.action, false]);
     render(<SupportForm requiresTurnstile={false} />);
 
-    const error = screen.getByRole('alert');
-    expect(error.textContent).toBe('Verification failed.');
-    expect(error.parentElement?.getAttribute('aria-live')).toBeNull();
-    expect(screen.queryByText('We received your request.')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText('Verification failed.')).toBeNull();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
       false,
     );

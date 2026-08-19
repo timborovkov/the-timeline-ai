@@ -19,22 +19,14 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  Fragment,
-  startTransition,
-  useActionState,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { toast } from 'sonner';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { TimelineCapturedFile } from '@/lib/timeline-captured-files';
 import type { TimelineArtifactCluster, TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { removeConversationalEventAction } from '@/app/actions/events';
 import { CitationCopyChip } from '@/components/artifact-reference-chip';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyAction } from '@/components/empty-action';
@@ -55,7 +47,9 @@ import {
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
+import { chatViewLabel } from '@/lib/chat-view';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 import {
   buildTimelineMoments,
@@ -94,6 +88,7 @@ interface Props {
   focusMomentId?: string | null;
   timezone?: string;
   mode?: 'moments' | 'events';
+  onEndReached?: () => void;
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
@@ -1062,23 +1057,10 @@ function EvidenceRemovalAction({
   event: TimelineEvent;
   targetLabel: string;
 }) {
-  const [state, action, pending] = useActionState(removeConversationalEventAction, {});
+  const [pending, setPending] = useState(false);
   const dialog = useAppDialog();
   const inspector = useInspector();
   const router = useRouter();
-
-  useEffect(() => {
-    if (!state.ok) return;
-    inspector.hide();
-    router.refresh();
-    toast.success('Evidence removed from Timeline');
-    window.setTimeout(() => {
-      const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || active === document.body || !active.isConnected) {
-        document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
-      }
-    }, 0);
-  }, [inspector, router, state.ok]);
 
   const requestRemoval = () => {
     void dialog
@@ -1094,8 +1076,28 @@ function EvidenceRemovalAction({
         if (!confirmed) return;
         const formData = new FormData();
         formData.set('id', event.id);
-        startTransition(() => {
-          action(formData);
+        setPending(true);
+        void notifyAction({
+          id: `timeline:evidence:${event.id}`,
+          loading: 'Removing evidence…',
+          success: 'Evidence removed',
+          error: 'Couldn’t remove evidence',
+          run: () => removeConversationalEventAction({}, formData),
+        }).then((result) => {
+          setPending(false);
+          if (result.error) return;
+          inspector.hide();
+          router.refresh();
+          window.setTimeout(() => {
+            const active = document.activeElement;
+            if (
+              !(active instanceof HTMLElement) ||
+              active === document.body ||
+              !active.isConnected
+            ) {
+              document.querySelector<HTMLElement>('[data-inspector-focus-fallback]')?.focus();
+            }
+          }, 0);
         });
       });
   };
@@ -1112,11 +1114,6 @@ function EvidenceRemovalAction({
           {pending ? 'Removing evidence…' : 'Remove evidence'}
         </DropdownMenuItem>
       </ItemOverflowMenu>
-      {state.error ? (
-        <p role="alert" className="w-full basis-full text-xs text-destructive">
-          {state.error} Open actions and try again.
-        </p>
-      ) : null}
       {dialog.node}
     </>
   );
@@ -1258,6 +1255,16 @@ function TimelineMomentRow({
     ...contextParts.filter((part) => !previewText.includes(part)),
     previewOverlapsTitle ? null : previewText,
   ].filter((part): part is string => Boolean(part));
+  const selectedChatBinder = selected ? (
+    <ChatViewContextBinder
+      viewKey={`timeline:${moment.id}`}
+      kind={moment.rawEvents[0]?.id ? 'timeline-event' : 'timeline-moment'}
+      href={compactTimelineMomentHref(moment)}
+      label={chatViewLabel(title, 'Timeline moment')}
+      {...(moment.rawEvents[0]?.id ? { timelineEventId: moment.rawEvents[0].id } : {})}
+      timelineMomentId={moment.id}
+    />
+  ) : null;
   if (compact) {
     return (
       <li
@@ -1269,6 +1276,7 @@ function TimelineMomentRow({
         )}
         data-moment-id={moment.id}
       >
+        {selectedChatBinder}
         <Link
           href={compactTimelineMomentHref(moment)}
           className="flex min-h-9 min-w-0 items-center gap-3 py-1.5 text-left"
@@ -1309,6 +1317,7 @@ function TimelineMomentRow({
       data-visual-weight={moment.visualWeight}
       data-event-class={moment.eventClass}
     >
+      {selectedChatBinder}
       {moment.rawEvents.map((event) => (
         <span
           key={event.id}
@@ -1418,6 +1427,7 @@ export function TimelineList({
   focusMomentId = null,
   timezone,
   mode = 'moments',
+  onEndReached,
 }: Props) {
   const workspaceTimezone = useWorkspaceTimezone();
   const resolvedTimezone = timezone ?? workspaceTimezone;
@@ -1512,6 +1522,25 @@ export function TimelineList({
     );
   }
 
+  const focusedEvent =
+    focusEventId === null ? null : (events.find((event) => event.id === focusEventId) ?? null);
+  const focusedLabel = focusedMoment
+    ? chatViewLabel(
+        displayMomentTitle(focusedMoment),
+        focusMomentId ? 'Timeline moment' : 'Timeline event',
+      )
+    : chatViewLabel(
+        focusedEvent?.contentText?.split(/\r?\n/, 1)[0] ?? '',
+        focusEventId ? 'Timeline event' : 'Timeline moment',
+      );
+  const focusedHref = (() => {
+    const params = new URLSearchParams();
+    if (focusEventId) params.set('event', focusEventId);
+    if (focusMomentId) params.set('moment', focusMomentId);
+    const query = params.toString();
+    return query ? `/app/timeline?${query}` : '/app/timeline';
+  })();
+
   return (
     <div
       aria-label={
@@ -1519,6 +1548,16 @@ export function TimelineList({
       }
       data-timeline-mode={mode}
     >
+      {focusEventId || focusMomentId ? (
+        <ChatViewContextBinder
+          viewKey={`timeline:${focusMomentId ?? focusEventId ?? 'focus'}`}
+          kind={focusEventId ? 'timeline-event' : 'timeline-moment'}
+          href={focusedHref}
+          label={focusedLabel}
+          {...(focusEventId ? { timelineEventId: focusEventId } : {})}
+          {...(focusMomentId ? { timelineMomentId: focusMomentId } : {})}
+        />
+      ) : null}
       {compact || typeof maxMoments === 'number' ? (
         dateGroups.map(([date, group]) => (
           <section key={date} aria-labelledby={`timeline-date-${date}`}>
@@ -1560,6 +1599,7 @@ export function TimelineList({
           items={visibleMoments}
           getItemKey={(moment) => moment.id}
           estimateSize={(moment) => (moment.visualWeight === 'pulse' ? 52 : 64)}
+          onEndReached={onEndReached}
           renderSticky={(moment) =>
             moment ? (
               <h2 className="sticky top-11 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">

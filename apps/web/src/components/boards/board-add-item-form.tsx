@@ -11,9 +11,10 @@ import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/bo
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { displayText } from '@/lib/display-dates';
 import { displayObjectLabel, isInternalIdentifier } from '@/lib/display-labels';
+import { notifyAction } from '@/lib/notify';
 import { filterObjectsByText } from '@/lib/object-filter';
 import { OBJECT_TYPES } from '@/lib/object-types';
-import { cn, errorMessage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface Props {
   boardId: string;
@@ -32,7 +33,6 @@ interface State {
   entityId: string;
   type: objects.ObjectType;
   canonicalName: string;
-  error: string | null;
 }
 
 type Action =
@@ -41,8 +41,7 @@ type Action =
   | { type: 'existingType'; existingType: State['existingType'] }
   | { type: 'entityId'; entityId: string }
   | { type: 'objectType'; objectType: objects.ObjectType }
-  | { type: 'canonicalName'; canonicalName: string }
-  | { type: 'error'; error: string | null };
+  | { type: 'canonicalName'; canonicalName: string };
 
 type SelectableObjectType = (typeof OBJECT_TYPES)[number];
 
@@ -53,7 +52,7 @@ function isSelectableObjectType(type: objects.ObjectType): type is SelectableObj
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case 'mode':
-      return { ...state, mode: action.mode, error: null };
+      return { ...state, mode: action.mode };
     case 'query':
       return { ...state, query: action.query };
     case 'existingType':
@@ -64,8 +63,6 @@ function reducer(state: State, action: Action): State {
       return { ...state, type: action.objectType };
     case 'canonicalName':
       return { ...state, canonicalName: action.canonicalName };
-    case 'error':
-      return { ...state, error: action.error };
   }
 }
 
@@ -394,7 +391,6 @@ export function BoardAddItemForm({
     entityId: '',
     type: recommendedTypes[0] ?? 'task',
     canonicalName: '',
-    error: null,
   });
   const existingTypeOptions = useMemo(() => {
     const typeRank = new Set(recommendedTypes);
@@ -421,7 +417,6 @@ export function BoardAddItemForm({
   const selectedCandidate = candidates.find((row) => row.id === state.entityId) ?? null;
 
   function submit(): void {
-    dispatch({ type: 'error', error: null });
     const object =
       state.mode === 'existing'
         ? selectedCandidate
@@ -434,42 +429,47 @@ export function BoardAddItemForm({
     });
     onOptimisticItem?.(optimisticItem);
     startTransition(async () => {
-      try {
-        const result =
-          state.mode === 'existing'
-            ? await addBoardItemAction({
-                boardId,
-                entityId: state.entityId,
-                laneId: defaultLaneId,
-              })
-            : await quickCreateBoardItemAction({
-                boardId,
-                type: state.type,
-                canonicalName: state.canonicalName,
-                laneId: defaultLaneId,
-              });
-        if ('error' in result && result.error) {
-          onItemAddFailed?.(optimisticItem);
-          setExpanded(true);
-          dispatch({ type: 'error', error: result.error });
-          return;
-        }
-        if (!result.item) {
-          onItemAddFailed?.(optimisticItem);
-          setExpanded(true);
-          dispatch({ type: 'error', error: 'Board item was created, but could not be loaded.' });
-          return;
-        }
-        onItemAdded?.(result.item, optimisticItem.id);
-        setExpanded(false);
-        dispatch({ type: 'query', query: '' });
-        dispatch({ type: 'entityId', entityId: '' });
-        dispatch({ type: 'canonicalName', canonicalName: '' });
-      } catch (err) {
+      const result = await notifyAction({
+        id: `board:${boardId}:add-item`,
+        loading: 'Adding item…',
+        success: 'Item added',
+        error: 'Couldn’t add item',
+        run: async () => {
+          const saved =
+            state.mode === 'existing'
+              ? await addBoardItemAction({
+                  boardId,
+                  entityId: state.entityId,
+                  laneId: defaultLaneId,
+                })
+              : await quickCreateBoardItemAction({
+                  boardId,
+                  type: state.type,
+                  canonicalName: state.canonicalName,
+                  laneId: defaultLaneId,
+                });
+          if ('error' in saved && saved.error) return { error: saved.error };
+          if (!saved.item) {
+            return { error: 'Board item was created, but could not be loaded.' };
+          }
+          return saved;
+        },
+      });
+      if (result.error) {
         onItemAddFailed?.(optimisticItem);
         setExpanded(true);
-        dispatch({ type: 'error', error: errorMessage(err, 'Board item could not be added.') });
+        return;
       }
+      if (!('item' in result) || !result.item) {
+        onItemAddFailed?.(optimisticItem);
+        setExpanded(true);
+        return;
+      }
+      onItemAdded?.(result.item, optimisticItem.id);
+      setExpanded(false);
+      dispatch({ type: 'query', query: '' });
+      dispatch({ type: 'entityId', entityId: '' });
+      dispatch({ type: 'canonicalName', canonicalName: '' });
     });
   }
 
@@ -519,11 +519,6 @@ export function BoardAddItemForm({
             dispatch={dispatch}
           />
         )}
-        {state.error ? (
-          <p className="mt-2 text-xs text-danger" role="alert">
-            {state.error}
-          </p>
-        ) : null}
         <button
           type="button"
           onClick={submit}

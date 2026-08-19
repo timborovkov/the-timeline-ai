@@ -17,7 +17,7 @@ describe('app guide route metadata', () => {
   });
 
   it('searches product guide routes for user intent queries', () => {
-    const results = searchAppGuide('where can I invite new teammates?', 5);
+    const results = searchAppGuide('where can I invite new teammates?', 8);
 
     expect(results[0]).toMatchObject({
       id: 'team/invites',
@@ -39,6 +39,25 @@ describe('app guide route metadata', () => {
 
     expect(results.map((result) => result.id)).toContain('help/work');
     expect(results.map((result) => result.id)).toContain('work');
+  });
+
+  it('routes connection setup questions to Connections and provider accounts', () => {
+    const results = searchAppGuide('where do I connect slack or my github account?', 6);
+
+    expect(results.map((result) => result.id)).toEqual(
+      expect.arrayContaining(['connections', 'me/connections', 'team/slack']),
+    );
+  });
+
+  it('routes floating Ask and keyboard-shortcut questions to the Ask guide', () => {
+    const results = searchAppGuide('how do I ask about this page with command j?', 5);
+
+    expect(results.map((result) => result.id)).toContain('chat');
+    expect(results[0]).toMatchObject({
+      id: 'chat',
+      citation: '[route:chat]',
+    });
+    expect(getAppGuideRoute('chat')?.guide).toMatch(/floating Ask/i);
   });
 
   it('routes Monday.com board, subitem, and WorkDoc questions to integrations', () => {

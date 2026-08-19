@@ -159,22 +159,28 @@ export default async function MeetingsPage({
       <MeetingsViewNavigation tab={tab} />
 
       {tab === 'captures' ? (
-        <div id="invite-notetaker" className="scroll-mt-24">
-          <ScheduleMeetingBotForm
-            defaultVisibility={defaultRow.visibility}
-            defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-            members={memberOptions}
-          />
-        </div>
+        <details className="border-y border-border py-2">
+          <summary className="cursor-pointer text-sm font-medium text-fg">Invite notetaker</summary>
+          <div id="invite-notetaker" className="scroll-mt-24 pt-3">
+            <ScheduleMeetingBotForm
+              defaultVisibility={defaultRow.visibility}
+              defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+              members={memberOptions}
+            />
+          </div>
+        </details>
       ) : (
-        <div id="save-meeting" className="scroll-mt-24">
-          <SavedMeetingForm
-            defaultVisibility={defaultRow.visibility}
-            defaultVisibilityUserIds={defaultRow.visibilityUserIds}
-            defaultTimezone={calendarSettings.defaultTimezone}
-            members={memberOptions}
-          />
-        </div>
+        <details className="border-y border-border py-2">
+          <summary className="cursor-pointer text-sm font-medium text-fg">Save a meeting</summary>
+          <div id="save-meeting" className="scroll-mt-24 pt-3">
+            <SavedMeetingForm
+              defaultVisibility={defaultRow.visibility}
+              defaultVisibilityUserIds={defaultRow.visibilityUserIds}
+              defaultTimezone={calendarSettings.defaultTimezone}
+              members={memberOptions}
+            />
+          </div>
+        </details>
       )}
 
       <MeetingSearchControls
@@ -257,42 +263,6 @@ function MeetingSearchControls({
     <form action="/app/meetings" role="search">
       <input name="tab" type="hidden" value={tab === 'saved' ? 'saved' : ''} />
       <CollectionToolbar
-        search={
-          <label className="block min-w-0">
-            <span className="sr-only">
-              {tab === 'saved' ? 'Search saved meetings' : 'Search captures'}
-            </span>
-            <input
-              id="meeting-search"
-              name="q"
-              type="search"
-              defaultValue={query}
-              placeholder={
-                tab === 'saved' ? 'Title, alias, or platform' : 'Title, platform, or status'
-              }
-              className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40"
-            />
-          </label>
-        }
-        filters={
-          tab === 'captures' ? (
-            <label className="space-y-1">
-              <span className="block text-[11px] text-fg-dim">Capture status</span>
-              <select
-                id="capture-status"
-                name="status"
-                defaultValue={filter}
-                className="flex h-9 w-full min-w-0 rounded-sm border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                {CAPTURE_FILTERS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null
-        }
         activeFilters={[
           ...(query
             ? [{ key: 'query', label: 'Search', value: query, href: meetingHref({ tab, filter }) }]
@@ -308,7 +278,44 @@ function MeetingSearchControls({
               ]
             : []),
         ]}
-        actions={
+      >
+        <CollectionToolbar.Search>
+          <label className="block min-w-0">
+            <span className="sr-only">
+              {tab === 'saved' ? 'Search saved meetings' : 'Search captures'}
+            </span>
+            <input
+              id="meeting-search"
+              name="q"
+              type="search"
+              defaultValue={query}
+              placeholder={
+                tab === 'saved' ? 'Title, alias, or platform' : 'Title, platform, or status'
+              }
+              className="h-9 w-full rounded-sm border-0 bg-transparent px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40"
+            />
+          </label>
+        </CollectionToolbar.Search>
+        <CollectionToolbar.Filters>
+          {tab === 'captures' ? (
+            <label className="space-y-1">
+              <span className="block text-[11px] text-fg-dim">Capture status</span>
+              <select
+                id="capture-status"
+                name="status"
+                defaultValue={filter}
+                className="flex h-9 w-full min-w-0 rounded-sm border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {CAPTURE_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </CollectionToolbar.Filters>
+        <CollectionToolbar.Actions>
           <div className="flex items-center gap-1">
             <Button type="submit" variant="outline">
               Apply
@@ -319,8 +326,8 @@ function MeetingSearchControls({
               </Button>
             ) : null}
           </div>
-        }
-      />
+        </CollectionToolbar.Actions>
+      </CollectionToolbar>
     </form>
   );
 }
@@ -366,7 +373,7 @@ function SavedMeetingsSection({
           action={hasSearch ? 'Clear filters' : 'Save a meeting'}
         />
       ) : (
-        <ul aria-label="Saved meetings" className="border-x border-border">
+        <ul aria-label="Saved meetings">
           {meetings.map((saved) => (
             <li
               id={`saved-meeting-${saved.id}`}
@@ -374,13 +381,13 @@ function SavedMeetingsSection({
               className="scroll-mt-24"
               style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 64px' }}
             >
-              <CollectionRow
-                title={displayMeetingLabel(saved)}
-                context={
-                  saved.description ??
-                  (saved.aliases.length ? saved.aliases.join(', ') : 'No aliases')
-                }
-                metadata={
+              <CollectionRow>
+                <CollectionRow.Title>{displayMeetingLabel(saved)}</CollectionRow.Title>
+                <CollectionRow.Context>
+                  {saved.description ??
+                    (saved.aliases.length ? saved.aliases.join(', ') : 'No aliases')}
+                </CollectionRow.Context>
+                <CollectionRow.Metadata>
                   <>
                     <span>{displaySourceLabel(saved.platform)}</span>
                     <CollectionStatus
@@ -388,8 +395,8 @@ function SavedMeetingsSection({
                       label={saved.autoJoinEnabled ? 'Auto-join' : 'Manual join'}
                     />
                   </>
-                }
-                actions={
+                </CollectionRow.Metadata>
+                <CollectionRow.Actions>
                   <ItemActionGroup label={`Actions for ${displayMeetingLabel(saved)}`}>
                     <JoinSavedMeetingButton query={saved.aliases[0] ?? saved.title} />
                     <PinOverflowMenu
@@ -399,11 +406,20 @@ function SavedMeetingsSection({
                     />
                     <ArchiveSavedMeetingButton savedMeetingId={saved.id} />
                   </ItemActionGroup>
-                }
-              />
-              <div className="border-b border-border/80 px-3 pb-2">
-                <EditSavedMeetingForm saved={saved} defaultTimezone={timezone} members={members} />
-              </div>
+                </CollectionRow.Actions>
+              </CollectionRow>
+              <details className="border-b border-border/80 px-3 py-2">
+                <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg">
+                  Edit details
+                </summary>
+                <div className="pt-2">
+                  <EditSavedMeetingForm
+                    saved={saved}
+                    defaultTimezone={timezone}
+                    members={members}
+                  />
+                </div>
+              </details>
             </li>
           ))}
         </ul>

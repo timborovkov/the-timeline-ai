@@ -1,8 +1,17 @@
 import { createHash } from 'node:crypto';
 
 import { type Db, rawEvents } from '@timeline/db';
-import { childLogger, chunkText, embedding, getEnv, llm, qdrant, queue } from '@timeline/shared';
-import { UnrecoverableError, Worker, type Job } from 'bullmq';
+import {
+  childLogger,
+  chunkText,
+  embedding,
+  getEnv,
+  integrations,
+  llm,
+  qdrant,
+  queue,
+} from '@timeline/shared';
+import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
@@ -22,6 +31,7 @@ interface EmbedWorkerIO {
   embedMany?: typeof llm.embedMany;
   getQdrantClient?: typeof qdrant.getQdrantClient;
   enqueueEmbedJob?: typeof queue.enqueueEmbedJob;
+  takeIngestProcessingSlot?: typeof integrations.takeConnectionIngestSlot;
 }
 
 interface EmbedAttemptContext {
@@ -384,6 +394,24 @@ export async function processEmbedJob(
     return { skipped: true };
   }
 
+  if ('rawEventId' in data && data.rawEventId && data.scope !== 'fact') {
+    const [eventRow] = await deps.db
+      .select({ source: rawEvents.source, sourceMetadata: rawEvents.sourceMetadata })
+      .from(rawEvents)
+      .where(eq(rawEvents.id, data.rawEventId))
+      .limit(1);
+    const integrationId = integrations.integrationIdFromSourceMetadata(eventRow?.sourceMetadata);
+    if (eventRow?.source === 'integration' && integrationId) {
+      const slot = await (io.takeIngestProcessingSlot ?? integrations.takeConnectionIngestSlot)({
+        integrationId,
+        stage: 'embed',
+      });
+      if (!slot.allowed) {
+        return { delayed: true as const, retryAfterMs: slot.retryAfterMs };
+      }
+    }
+  }
+
   // LLM calls BEFORE Qdrant writes so transient embedding failures retry
   // cleanly. Long source text is split into multiple deterministic points
   // instead of being truncated, preserving retrievable evidence.
@@ -523,8 +551,8 @@ export async function processEmbedJob(
 export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobData> {
   const worker = new Worker<queue.EmbedJobData>(
     queue.QUEUE_NAMES.embed,
-    async (job: Job<queue.EmbedJobData>) => {
-      return processEmbedJob(
+    async (job: Job<queue.EmbedJobData>, token?: string) => {
+      const result = await processEmbedJob(
         deps,
         job.data,
         {},
@@ -533,6 +561,11 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
           maxAttempts: job.opts.attempts ?? 1,
         },
       );
+      if (integrations.isDelayedIngestResult(result)) {
+        await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
+        throw new DelayedError();
+      }
+      return result;
     },
     {
       connection: queue.getRedisConnection(),
@@ -544,6 +577,7 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
   );
 
   worker.on('failed', (job, err) => {
+    if (err instanceof DelayedError) return;
     log.error({ jobId: job?.id, err }, 'job failed');
     captureWorkerJobFailure(err, job, embedFailureTags(job));
     if (!job) return;

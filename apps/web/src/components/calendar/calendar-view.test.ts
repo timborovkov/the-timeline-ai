@@ -26,6 +26,15 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
   useSearchParams: () => new URLSearchParams(fakes.searchParams),
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('@/app/actions/calendar', () => ({
   createCalendarEventAction: fakes.createCalendarEventAction,
   updateCalendarEventAction: fakes.updateCalendarEventAction,
@@ -82,6 +91,7 @@ function event(id: string, title = id): CalendarEvent {
     visibility: 'team',
     visibilityUserIds: null,
     pinned: false,
+    linkedObjects: [],
   };
 }
 
@@ -209,7 +219,7 @@ describe('CalendarView recurrence and tentative UI', () => {
     );
 
     expect(html).toContain('Tentative');
-    expect(html).toContain('aria-label="Recurring"');
+    expect(html).toContain('aria-label="Tentative recurring"');
     expect(html).toContain('Apple slot');
   });
 
@@ -535,9 +545,8 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
     await waitFor(() => {
-      expect(screen.getAllByText('Calendar write denied')).toHaveLength(2);
+      expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     });
-    expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
     expect(screen.getByLabelText<HTMLInputElement>('Title').value).toBe('Denied customer sync');
     expect(screen.queryByRole('button', { name: /Denied customer sync/ })).toBeNull();
     expect(fakes.refresh).toHaveBeenCalled();
@@ -641,5 +650,37 @@ describe('CalendarView recurrence and tentative UI', () => {
     await user.click(screen.getByRole('button', { name: 'Create event' }));
 
     expect(screen.getByRole('dialog', { name: 'New event' })).toBeTruthy();
+  });
+
+  it('links inspectable workspace objects from the edit event dialog', async () => {
+    const user = userEvent.setup();
+    const objectId = 'a0000000-0000-4000-8000-000000000001';
+    render(
+      createElement(CalendarView, {
+        events: [
+          {
+            ...event('event-1', 'Atlas kickoff'),
+            linkedObjects: [
+              {
+                id: objectId,
+                title: 'Project Atlas',
+                type: 'project',
+                relationshipType: 'related',
+              },
+            ],
+          },
+        ],
+        eventListEvents: [],
+        timezone: 'UTC',
+      }),
+    );
+
+    await user.click(screen.getByRole('button', { name: /Atlas kickoff/ }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Edit event' });
+    const objectLink = within(dialog).getByRole('link', { name: 'Project Atlas' });
+    expect(objectLink.getAttribute('href')).toBe(`/app/objects/${objectId}`);
+    expect(within(dialog).getByText('Project')).toBeTruthy();
+    expect(within(dialog).queryByRole('button', { name: /Open object/i })).toBeNull();
   });
 });

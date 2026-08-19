@@ -116,12 +116,28 @@ export function WorkFilterBar({
       className={className}
     >
       <CollectionToolbar
-        count={formatCollectionCount({
-          matching: resultCount,
-          total: totalCount,
-          filtered: active,
-        })}
-        search={
+        activeFilters={activeFilterEntries.map(([key, label]) => ({
+          key,
+          label,
+          clear: (
+            <a
+              href={hrefWithParams(basePath, omitParam(currentParams, key))}
+              aria-label={`Remove ${label} filter`}
+              className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+            >
+              <X aria-hidden="true" className="size-3" />
+            </a>
+          ),
+        }))}
+      >
+        <CollectionToolbar.Count>
+          {formatCollectionCount({
+            matching: resultCount,
+            total: totalCount,
+            filtered: active,
+          })}
+        </CollectionToolbar.Count>
+        <CollectionToolbar.Search>
           <label className="relative block min-w-0">
             <span className="sr-only">Search</span>
             <Search
@@ -143,8 +159,8 @@ export function WorkFilterBar({
               className="h-9 w-full rounded-sm border-0 bg-transparent py-1 pl-8 pr-2 text-sm text-fg outline-none transition-colors placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/40"
             />
           </label>
-        }
-        filters={
+        </CollectionToolbar.Search>
+        <CollectionToolbar.Filters>
           <WorkFilterFields
             mode={mode}
             filters={filters}
@@ -160,24 +176,11 @@ export function WorkFilterBar({
             hasRangeFilters={hasRangeFilters}
             onDateRangeToggle={setDateRangeToggle}
           />
-        }
-        activeFilters={activeFilterEntries.map(([key, label]) => ({
-          key,
-          label,
-          clear: (
-            <a
-              href={hrefWithParams(basePath, omitParam(currentParams, key))}
-              aria-label={`Remove ${label} filter`}
-              className="inline-flex size-6 items-center justify-center rounded-sm hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-            >
-              <X aria-hidden="true" className="size-3" />
-            </a>
-          ),
-        }))}
-        clearAll={clearControl}
-        viewControls={viewControls}
-        actions={actions}
-      />
+        </CollectionToolbar.Filters>
+        {viewControls ? <CollectionToolbar.View>{viewControls}</CollectionToolbar.View> : null}
+        {actions ? <CollectionToolbar.Actions>{actions}</CollectionToolbar.Actions> : null}
+        <CollectionToolbar.ClearAll>{clearControl}</CollectionToolbar.ClearAll>
+      </CollectionToolbar>
     </DebouncedFilterForm>
   );
 }

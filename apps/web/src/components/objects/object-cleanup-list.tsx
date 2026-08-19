@@ -4,7 +4,6 @@ import { Archive, GitMerge, SquareCheckBig } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useReducer, useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -34,6 +33,7 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { dateInputValue, toDateOrNull } from '@/lib/iso-timestamp';
+import { notifyAction } from '@/lib/notify';
 import { MAX_OBJECT_MERGE_SELECTION, objectMergeHref } from '@/lib/object-merge';
 import { statusOptionsForType } from '@/lib/object-status-options';
 import { statusLabel } from '@/lib/status-labels';
@@ -60,7 +60,6 @@ interface CleanupListState {
   selecting: boolean;
   selected: Set<string>;
   archivedIds: Set<string>;
-  error: string | null;
   appendedRows: PinnableObjectRow[];
   cursor: string | null;
   paginationKey: string | null;
@@ -72,7 +71,7 @@ type CleanupListAction =
   | { type: 'toggle'; id: string }
   | { type: 'clear-selection' }
   | { type: 'archive-optimistic'; ids: string[] }
-  | { type: 'archive-rollback'; ids: string[]; error: string }
+  | { type: 'archive-rollback'; ids: string[] }
   | {
       type: 'append-page';
       rows: PinnableObjectRow[];
@@ -92,19 +91,18 @@ function cleanupListReducer(state: CleanupListState, action: CleanupListAction):
       return { ...state, selected };
     }
     case 'clear-selection':
-      return { ...state, selecting: false, selected: new Set(), error: null };
+      return { ...state, selecting: false, selected: new Set() };
     case 'archive-optimistic':
       return {
         ...state,
         selecting: false,
         selected: new Set(),
         archivedIds: new Set([...state.archivedIds, ...action.ids]),
-        error: null,
       };
     case 'archive-rollback': {
       const archivedIds = new Set(state.archivedIds);
       for (const id of action.ids) archivedIds.delete(id);
-      return { ...state, archivedIds, error: action.error };
+      return { ...state, archivedIds };
     }
     case 'append-page': {
       const currentRows = action.paginationKey === state.paginationKey ? state.appendedRows : [];
@@ -134,22 +132,12 @@ export function ObjectCleanupList({
   const dialog = useAppDialog();
   const paginationKey = objectFilterKey(filterParams);
   const [
-    {
-      selecting,
-      selected,
-      archivedIds,
-      error,
-      appendedRows,
-      cursor,
-      paginationKey: loadedKey,
-      loadError,
-    },
+    { selecting, selected, archivedIds, appendedRows, cursor, paginationKey: loadedKey, loadError },
     dispatchCleanupList,
   ] = useReducer(cleanupListReducer, {
     selecting: false,
     selected: new Set<string>(),
     archivedIds: new Set<string>(),
-    error: null,
     appendedRows: [],
     cursor: null,
     paginationKey: null,
@@ -247,12 +235,17 @@ export function ObjectCleanupList({
     const idsToArchive = selectedIds;
     dispatchCleanupList({ type: 'archive-optimistic', ids: idsToArchive });
     startTransition(async () => {
-      const result = await bulkArchiveObjectsAction({ ids: idsToArchive });
+      const result = await notifyAction({
+        id: 'objects:archive',
+        loading: 'Archiving objects…',
+        success: 'Objects archived',
+        error: 'Couldn’t archive objects',
+        run: () => bulkArchiveObjectsAction({ ids: idsToArchive }),
+      });
       if (result.error) {
         dispatchCleanupList({
           type: 'archive-rollback',
           ids: idsToArchive,
-          error: result.error,
         });
         return;
       }
@@ -312,11 +305,6 @@ export function ObjectCleanupList({
             </>
           }
         />
-        {error ? (
-          <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
-            {error}
-          </p>
-        ) : null}
         {dialog.node}
         {selecting && selectedCount > MAX_OBJECT_MERGE_SELECTION ? (
           <p className="border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
@@ -326,7 +314,7 @@ export function ObjectCleanupList({
         {visibleRows.length === 0 ? (
           <p className="py-10 text-center text-sm text-fg-dim">No objects visible</p>
         ) : (
-          <div className="border-x border-border">
+          <div>
             {typeKeys.map((typeKey) => {
               const list = grouped.get(typeKey) ?? [];
               return (
@@ -390,6 +378,15 @@ interface ObjectFieldOverlay {
   pendingValues: ObjectEditableValue[];
 }
 
+function objectFieldLabel(key: ObjectEditableKey): string {
+  if (key === 'dueAt') return 'due date';
+  return key;
+}
+
+function capitalizeLabel(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
+}
+
 function sameObjectFieldValue(left: ObjectEditableValue, right: ObjectEditableValue): boolean {
   if (left instanceof Date || right instanceof Date) {
     return (
@@ -420,7 +417,6 @@ function ObjectCollectionItem({
     {},
   );
   const [saving, setSaving] = useState<ObjectEditableKey | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   function effectiveValue(key: ObjectEditableKey): ObjectEditableValue {
     const overlay = overlays[key];
@@ -439,7 +435,6 @@ function ObjectCollectionItem({
     const previous = overlays[key];
     const current = effectiveValue(key);
     if (sameObjectFieldValue(current, value)) return;
-    setError(null);
     setSaving(key);
     setOverlays((existing) => ({
       ...existing,
@@ -456,37 +451,45 @@ function ObjectCollectionItem({
         ),
       },
     }));
-    void updateObjectAction({
-      id: object.id,
-      [key]: value instanceof Date ? value.toISOString() : value,
-    })
-      .then((result) => {
-        if (result.error) {
-          setOverlays((existing) => ({ ...existing, [key]: previous }));
-          setError(result.error ?? 'Update failed');
-          toast.error(result.error ?? 'Update failed');
-          return;
-        }
-        router.refresh();
-      })
-      .catch(() => {
-        setOverlays((existing) => ({ ...existing, [key]: previous }));
-        setError('Update failed');
-        toast.error('Update failed');
-      })
-      .finally(() => {
-        setSaving(null);
-      });
+    const label = objectFieldLabel(key);
+    void notifyAction({
+      id: `object:${object.id}`,
+      loading: `Updating ${label}…`,
+      success: `${capitalizeLabel(label)} updated`,
+      error: `Couldn’t update ${label}`,
+      run: () =>
+        updateObjectAction({
+          id: object.id,
+          [key]: value instanceof Date ? value.toISOString() : value,
+        }),
+      undo: {
+        run: async () => {
+          setOverlays((existing) => ({
+            ...existing,
+            [key]: { value: current, pendingValues: [] },
+          }));
+          const result = await updateObjectAction({
+            id: object.id,
+            [key]: current instanceof Date ? current.toISOString() : current,
+          });
+          if (!result.error) router.refresh();
+          return result;
+        },
+      },
+    }).then((result) => {
+      if (result.error) setOverlays((existing) => ({ ...existing, [key]: previous }));
+      else router.refresh();
+      setSaving(null);
+    });
   }
 
   const statusOptions = statusOptionsForType(object.type, status);
 
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 44px' }}>
-      <CollectionRow
-        selected={selected}
-        leading={
-          selecting ? (
+      <CollectionRow selected={selected}>
+        <CollectionRow.Leading>
+          {selecting ? (
             <input
               type="checkbox"
               checked={selected}
@@ -494,28 +497,27 @@ function ObjectCollectionItem({
               aria-label={`Select ${displayText(object.canonicalName)}`}
               className="size-4 accent-[var(--signal)]"
             />
-          ) : null
-        }
-        title={
+          ) : null}
+        </CollectionRow.Leading>
+        <CollectionRow.Title>
           <Link href={`/app/objects/${object.id}`} className="block truncate hover:underline">
             {displayText(object.canonicalName)}
           </Link>
-        }
-        context={error ? <span className="text-danger">{error}</span> : typeLabel}
-        metadata={
+        </CollectionRow.Title>
+        <CollectionRow.Context>{typeLabel}</CollectionRow.Context>
+        <CollectionRow.Metadata>
           <>
             {object.type === 'task' ? (
-              <EditableMetadata
-                label={`Category for ${displayText(object.canonicalName)}`}
-                value={
+              <EditableMetadata label={`Category for ${displayText(object.canonicalName)}`}>
+                <EditableMetadata.Value>
                   <LiveTaskCategoryBadge
                     taskId={object.id}
                     category={object.taskCategory}
                     status={object.taskCategoryStatus}
                     updatedAt={object.taskCategoryUpdatedAt}
                   />
-                }
-                editor={
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <TaskCategorySelect
                     taskId={object.id}
                     category={object.taskCategory}
@@ -523,21 +525,21 @@ function ObjectCollectionItem({
                     status={object.taskCategoryStatus}
                     updatedAt={object.taskCategoryUpdatedAt}
                   />
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
             ) : null}
             <EditableMetadata
               label={`Status for ${displayText(object.canonicalName)}`}
               pending={saving === 'status'}
-              error={error}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={status}
                   label={statusLabel(status)}
                   tone={statusTone(status)}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   aria-label="Status"
                   value={status}
@@ -555,19 +557,20 @@ function ObjectCollectionItem({
                     <option value={status}>{statusLabel(status)}</option>
                   ) : null}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             <EditableMetadata
               label={`Priority for ${displayText(object.canonicalName)}`}
               pending={saving === 'priority'}
-              value={
+            >
+              <EditableMetadata.Value>
                 <CollectionStatus
                   value={priority ? `p${priority}` : 'none'}
                   tone={priorityTone(priority)}
                   label={priority ? `P${priority}` : 'No priority'}
                 />
-              }
-              editor={
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
                 <select
                   aria-label="Priority"
                   value={priority ?? ''}
@@ -586,26 +589,29 @@ function ObjectCollectionItem({
                     </option>
                   ))}
                 </select>
-              }
-            />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
             {isSchedulableObjectType(object.type) ? (
               <EditableMetadata
                 label={`Due date for ${displayText(object.canonicalName)}`}
                 pending={saving === 'dueAt'}
-                value={<DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />}
-                editor={
+              >
+                <EditableMetadata.Value>
+                  <DueDateDisplay value={dueAt} timezone={timezone} variant="compact" />
+                </EditableMetadata.Value>
+                <EditableMetadata.Editor>
                   <ObjectDueDateEditor
                     value={dueAt}
                     onSave={(value) => {
                       save('dueAt', value);
                     }}
                   />
-                }
-              />
+                </EditableMetadata.Editor>
+              </EditableMetadata>
             ) : null}
           </>
-        }
-        actions={
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${displayText(object.canonicalName)}`}>
             <PinOverflowMenu
               target={{ kind: 'object', key: object.id }}
@@ -613,8 +619,8 @@ function ObjectCollectionItem({
               initialPinned={object.pinned ?? false}
             />
           </ItemActionGroup>
-        }
-      />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </div>
   );
 }

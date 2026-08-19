@@ -27,7 +27,7 @@ export default function TasksLoading() {
       >
         <h1 className="sr-only">Tasks</h1>
         <div aria-hidden="true" inert className="shrink-0 px-4 pt-5 md:px-8">
-          <PageHeaderSkeleton />
+          <PageHeaderSkeleton variant="collection" />
         </div>
         <WorkSubnav current="/app/tasks" className="shrink-0 px-4 md:px-8" />
         <div aria-hidden="true" inert className="shrink-0">

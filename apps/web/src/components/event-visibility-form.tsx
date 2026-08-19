@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useEffectEvent, useId, useRef, useState } from 'react';
 
 import { setEventVisibilityAction } from '@/app/actions/visibility';
+import { FormActionToast } from '@/components/form-action-toast';
 
 interface MemberOption {
   id: string;
@@ -104,16 +105,11 @@ export function EventVisibilityForm({
       >
         {pending ? 'Saving…' : 'Save visibility'}
       </button>
-      {state.error ? (
-        <p role="alert" className="text-xs text-destructive">
-          {state.error}
-        </p>
-      ) : null}
-      {state.ok ? (
-        <p role="status" className="text-xs text-fg-muted">
-          Visibility saved
-        </p>
-      ) : null}
+      <FormActionToast
+        id={`event-visibility:${eventId}`}
+        error={state.error}
+        success={state.ok ? 'Visibility saved' : undefined}
+      />
     </form>
   );
 }

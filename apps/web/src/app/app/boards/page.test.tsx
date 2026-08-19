@@ -50,7 +50,7 @@ describe('BoardsIndexPage', () => {
     expect(html).not.toContain('Capture source material');
   });
 
-  it('keeps populated boards in one rounded list with keyboard-visible board links', async () => {
+  it('keeps populated boards in one Linear list with keyboard-visible board links', async () => {
     fakes.listBoards.mockResolvedValue([
       {
         id: 'board-1',
@@ -66,7 +66,8 @@ describe('BoardsIndexPage', () => {
     const html = renderToStaticMarkup(await BoardsIndexPage());
 
     expect(html).toContain('aria-label="Boards"');
-    expect(html).toContain('overflow-hidden border-x border-border');
+    expect(html).not.toContain('border-x border-border');
+    expect(html).toContain('border-b border-border');
     expect(html).toContain('focus-visible:ring-2 focus-visible:ring-ring');
     expect(html).toContain('Launch plan');
     expect(html).toContain('href="/app/boards/board-1">Launch plan</a>');

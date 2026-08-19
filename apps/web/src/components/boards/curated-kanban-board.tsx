@@ -49,9 +49,10 @@ import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText } from '@/lib/display-dates';
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
+import { notifyAction } from '@/lib/notify';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
-import { cn, errorMessage } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 interface Props {
   boardId: string;
@@ -213,22 +214,29 @@ export function CuratedKanbanBoard({
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch: { laneId } });
-      let failed = false;
-      try {
-        const result = await updateBoardItemAction({ id, laneId });
-        failed = 'error' in result && Boolean(result.error);
-        if ('error' in result && result.error) {
-          moveOptimistic({ id, patch: { laneId: item.laneId } });
-          setErrors((current) => ({ ...current, [id]: result.error ?? 'Move failed' }));
-        }
-      } catch (err) {
-        failed = true;
-        moveOptimistic({ id, patch: { laneId: item.laneId } });
-        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Move failed') }));
-      } finally {
-        markSaving(id, false, failed);
-        router.refresh();
+      const previousLaneId = item.laneId;
+      const result = await notifyAction({
+        id: `board-item:${id}`,
+        loading: 'Updating status…',
+        success: 'Status updated',
+        error: 'Couldn’t update status',
+        run: () => updateBoardItemAction({ id, laneId }),
+        undo: {
+          run: async () => {
+            moveOptimistic({ id, patch: { laneId: previousLaneId } });
+            const undoResult = await updateBoardItemAction({ id, laneId: previousLaneId });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      const failed = Boolean(result.error);
+      if (failed) {
+        moveOptimistic({ id, patch: { laneId: previousLaneId } });
+        setErrors((current) => ({ ...current, [id]: result.error ?? 'Move failed' }));
       }
+      markSaving(id, false, failed);
+      router.refresh();
     });
   }
 
@@ -246,28 +254,43 @@ export function CuratedKanbanBoard({
     markSaving(id, true);
     startTransition(async () => {
       moveOptimistic({ id, patch });
-      let failed = false;
-      try {
-        const result = await updateBoardItemAction({
-          id,
-          ...patch,
-          ...(patch.dueAt !== undefined
-            ? { dueAt: patch.dueAt ? patch.dueAt.toISOString() : null }
-            : {}),
-        });
-        failed = 'error' in result && Boolean(result.error);
-        if ('error' in result && result.error) {
-          moveOptimistic({ id, patch: baseline });
-          setErrors((current) => ({ ...current, [id]: result.error ?? 'Save failed' }));
-        }
-      } catch (err) {
-        failed = true;
+      const label =
+        Object.keys(patch)[0] === 'dueAt' ? 'due date' : (Object.keys(patch)[0] ?? 'item');
+      const result = await notifyAction({
+        id: `board-item:${id}`,
+        loading: `Updating ${label}…`,
+        success: `${label.slice(0, 1).toUpperCase()}${label.slice(1)} updated`,
+        error: `Couldn’t update ${label}`,
+        run: () =>
+          updateBoardItemAction({
+            id,
+            ...patch,
+            ...(patch.dueAt !== undefined
+              ? { dueAt: patch.dueAt ? patch.dueAt.toISOString() : null }
+              : {}),
+          }),
+        undo: {
+          run: async () => {
+            moveOptimistic({ id, patch: baseline });
+            const undoResult = await updateBoardItemAction({
+              id,
+              ...baseline,
+              ...(baseline.dueAt !== undefined
+                ? { dueAt: baseline.dueAt ? baseline.dueAt.toISOString() : null }
+                : {}),
+            });
+            if (!undoResult.error) router.refresh();
+            return undoResult;
+          },
+        },
+      });
+      const failed = Boolean(result.error);
+      if (failed) {
         moveOptimistic({ id, patch: baseline });
-        setErrors((current) => ({ ...current, [id]: errorMessage(err, 'Save failed') }));
-      } finally {
-        markSaving(id, false, failed);
-        router.refresh();
+        setErrors((current) => ({ ...current, [id]: result.error ?? 'Save failed' }));
       }
+      markSaving(id, false, failed);
+      router.refresh();
     });
   }
 

@@ -34,6 +34,7 @@ import {
 } from '@/components/reconciliation/row-hint';
 import { reconciliationOutputTone } from '@/components/reconciliation/row-status';
 import { ReconciliationRowTime } from '@/components/reconciliation/row-time';
+import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { SectionHeading } from '@/components/section-heading';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
@@ -87,7 +88,13 @@ export default async function ReconciliationDashboardPage({
         teamName={active.teamName}
         srLabel={`Reconciliation for ${active.teamName}. Admins only. ${String(coverage.totalRawEvents)} captured items checked; ${String(coverage.missingRawEvents + coverage.degradedReplayEvidence)} need repair. Times in ${timezone}.`}
       />
-      {notice ? <Notice tone={notice.tone} message={notice.message} /> : null}
+      {notice ? (
+        <RedirectActionToast
+          id="reconciliation:notice"
+          error={notice.tone === 'error' ? notice.message : null}
+          success={notice.tone === 'success' ? notice.message : null}
+        />
+      ) : null}
 
       <CoverageSection
         failures={coverage.releaseGate.failures}
@@ -101,16 +108,6 @@ export default async function ReconciliationDashboardPage({
 
       <ReconciliationAdvancedTools dashboard={dashboard} />
     </div>
-  );
-}
-
-function Notice({ tone, message }: { tone: 'success' | 'error'; message: string }) {
-  const toneClass =
-    tone === 'success'
-      ? 'border-signal/30 bg-signal-soft text-fg'
-      : 'border-destructive/30 bg-destructive/10 text-destructive';
-  return (
-    <div className={`rounded-sm border px-4 py-3 text-sm font-medium ${toneClass}`}>{message}</div>
   );
 }
 
@@ -154,14 +151,15 @@ function RepairAttention({
           rawEventCount: failure.rawEventCount,
         });
         return (
-          <CollectionRow
-            key={`${failure.source}:${failure.code}`}
-            leading={<CollectionStatus value="failed" label={copy.status} tone="danger" />}
-            title={copy.detail}
-            titleHint={copy.hint}
-            context={eventSourceLabel(failure.source)}
-            contextTitle={copy.hint}
-          />
+          <CollectionRow key={`${failure.source}:${failure.code}`}>
+            <CollectionRow.Leading>
+              <CollectionStatus value="failed" label={copy.status} tone="danger" />
+            </CollectionRow.Leading>
+            <CollectionRow.Title title={copy.hint}>{copy.detail}</CollectionRow.Title>
+            <CollectionRow.Context title={copy.hint}>
+              {eventSourceLabel(failure.source)}
+            </CollectionRow.Context>
+          </CollectionRow>
         );
       })}
     </div>
@@ -251,23 +249,25 @@ function RecentClusters({
             });
             return (
               <li key={row.id}>
-                <CollectionRow
-                  leading={
+                <CollectionRow>
+                  <CollectionRow.Leading>
                     <CollectionStatus value={row.status} label={clusterStatusLabel(row.status)} />
-                  }
-                  title={
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>
                     <Link
                       href={`/app/team/reconciliation/clusters/${row.id}`}
                       className="block truncate hover:underline"
                     >
                       {row.canonicalName}
                     </Link>
-                  }
-                  titleHint={hint}
-                  context={`${artifactClusterKindLabel(row.artifactClusterKind)} · ${artifactTypeLabel(row.artifactType)}`}
-                  contextTitle={hint}
-                  metadata={<ReconciliationRowTime value={row.updatedAt} hint={hint} />}
-                />
+                  </CollectionRow.Title>
+                  <CollectionRow.Context title={hint}>
+                    {`${artifactClusterKindLabel(row.artifactClusterKind)} · ${artifactTypeLabel(row.artifactType)}`}
+                  </CollectionRow.Context>
+                  <CollectionRow.Metadata>
+                    <ReconciliationRowTime value={row.updatedAt} hint={hint} />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               </li>
             );
           })}
@@ -310,16 +310,16 @@ function RecentOutputs({
             ].filter((part): part is string => Boolean(part));
             return (
               <li key={row.id}>
-                <CollectionRow
-                  leading={
+                <CollectionRow>
+                  <CollectionRow.Leading>
                     <CollectionStatus
                       value={row.status}
                       label={outputStatusLabel(row.status)}
                       tone={reconciliationOutputTone(row.status)}
                     />
-                  }
-                  title={
-                    row.clusterId ? (
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>
+                    {row.clusterId ? (
                       <Link
                         href={`/app/team/reconciliation/clusters/${row.clusterId}`}
                         className="block truncate hover:underline"
@@ -328,13 +328,15 @@ function RecentOutputs({
                       </Link>
                     ) : (
                       action
-                    )
-                  }
-                  titleHint={hint}
-                  context={contextParts.join(' · ')}
-                  contextTitle={hint}
-                  metadata={<ReconciliationRowTime value={row.createdAt} hint={hint} />}
-                />
+                    )}
+                  </CollectionRow.Title>
+                  <CollectionRow.Context title={hint}>
+                    {contextParts.join(' · ')}
+                  </CollectionRow.Context>
+                  <CollectionRow.Metadata>
+                    <ReconciliationRowTime value={row.createdAt} hint={hint} />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               </li>
             );
           })}

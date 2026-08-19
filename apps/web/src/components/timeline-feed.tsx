@@ -191,6 +191,13 @@ export function TimelineFeed({
         focusMomentId={focusMomentId}
         timezone={timezone}
         mode={mode}
+        onEndReached={
+          compact
+            ? undefined
+            : () => {
+                void query.fetchNextPage();
+              }
+        }
       />
       {query.isError ? (
         <InlineError

@@ -1,7 +1,7 @@
 'use client';
 
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,7 @@ interface VirtualListProps<T> {
   itemClassName?: string;
   ariaLabel?: string;
   renderSticky?: (firstVisible: T | undefined) => ReactNode;
+  onEndReached?: () => void;
 }
 
 export function VirtualList<T>({
@@ -32,10 +33,14 @@ export function VirtualList<T>({
   itemClassName,
   ariaLabel,
   renderSticky,
+  onEndReached,
 }: VirtualListProps<T>) {
   const fallbackParentRef = useRef<HTMLDivElement | null>(null);
   const itemsRef = useRef(items);
+  const onEndReachedRef = useRef(onEndReached);
+  const requestedCountRef = useRef(0);
   itemsRef.current = items;
+  onEndReachedRef.current = onEndReached;
 
   const virtualizer = useVirtualizer({
     count: items.length,
@@ -64,6 +69,17 @@ export function VirtualList<T>({
 
   const virtualItems = virtualizer.getVirtualItems();
   const firstVisible = virtualItems[0] ? items[virtualItems[0].index] : items[0];
+  const lastRenderedIndex = virtualItems.at(-1)?.index;
+
+  useEffect(() => {
+    if (onEndReachedRef.current === undefined) return;
+    if (lastRenderedIndex === undefined || items.length === 0) return;
+    if (requestedCountRef.current > items.length) requestedCountRef.current = 0;
+    if (lastRenderedIndex < items.length - overscan) return;
+    if (requestedCountRef.current === items.length) return;
+    requestedCountRef.current = items.length;
+    onEndReachedRef.current();
+  }, [items.length, lastRenderedIndex, overscan]);
 
   return (
     <div

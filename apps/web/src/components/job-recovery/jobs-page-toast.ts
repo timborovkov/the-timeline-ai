@@ -1,41 +1,10 @@
-import { toast } from 'sonner';
+import { notifyProgress } from '@/lib/notify';
 
 /**
- * Linear-style mutation toast: one loading toast that becomes success, warning,
- * or error. Swap this for the shared `toastMutation` helper when that lands.
+ * Long-running job-recovery batches update one loading toast in place.
+ * `notifyProgress` owns the Sonner import and warning-tone mapping.
  */
-export async function jobsMutationToast<T>(
-  work: (update: (message: string) => void) => Promise<T>,
-  messages: {
-    loading: string;
-    success: string | ((result: T) => string);
-    error?: string | ((error: unknown) => string);
-    tone?: (result: T) => 'success' | 'warning';
-  },
-): Promise<T> {
-  const toastId = toast.loading(messages.loading);
-  try {
-    const result = await work((message) => {
-      toast.loading(message, { id: toastId });
-    });
-    const text =
-      typeof messages.success === 'function' ? messages.success(result) : messages.success;
-    if (messages.tone?.(result) === 'warning') {
-      toast.warning(text, { id: toastId });
-    } else {
-      toast.success(text, { id: toastId });
-    }
-    return result;
-  } catch (error) {
-    toast.error(
-      typeof messages.error === 'function'
-        ? messages.error(error)
-        : (messages.error ?? (error instanceof Error ? error.message : 'Something went wrong')),
-      { id: toastId },
-    );
-    throw error;
-  }
-}
+export const jobsMutationToast = notifyProgress;
 
 export async function postJson<T>(url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {

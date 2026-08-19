@@ -1,35 +1,22 @@
-# Cross-source evidence product brief
+# Cross-source evidence packs — rollout and copy
 
 **Status:** Implemented behind a default-off rollout switch; not shipped
 
 **Audience:** Product, engineering, design, and website copy
 
-**Last updated:** 2026-08-07
+**Last updated:** 2026-08-17
 
-Timeline's cross-source evidence direction is one operating memory backed by the
-tools where work happened. The shared builder, proposal and answer adapters,
-exact citations, revision handling, approval UI, and redacted metrics are now
-implemented, but pack-backed proposals remain disabled by default and are not
-shipped. Current product copy must describe today's behavior;
-present-tense cross-source proposal claims remain gated on each source path
-shipping.
+Architecture, signal class, hubs, the proposal engine, and when a later PR
+becomes a `done` proposal live in
+[`relational-memory.md`](./relational-memory.md). This page is only the pack
+builder's product claims, rollout gates, and website copy. Do not restate the
+engine here.
 
-## The promise
-
-Timeline should not ask a team to maintain another system of record. It captures
-work from chat, meetings, email, documents, boards, tickets, and provider tools,
-then connects evidence that refers to the same real-world work.
-
-The target product story is:
-
-> **One memory from every surface.** A commitment in Slack, confirmed on a call,
-> tracked in Monday, and clarified by email becomes one cited record instead of
-> four disconnected histories.
-
-This is not AI chat over notes or a generic integration sync. The
-differentiation is compounding operational memory across the tools a team
-already uses while preserving citations, visibility, source authority, and
-human review.
+The shared builder, proposal and answer adapters, exact citations, revision
+handling, approval UI, and redacted metrics are implemented, but pack-backed
+proposals remain disabled by default. Current product copy must describe today's
+behavior; present-tense cross-source proposal claims remain gated on each source
+path shipping.
 
 ## Current state
 
@@ -42,7 +29,7 @@ proposal and answer packs. Proposal behavior remains on the legacy path while
 | --- | --- |
 | Generic ingest webhooks | `off`: the existing event-local proposal remains unchanged. `shadow`: pack metrics only; pack failures are recorded without interrupting legacy extraction. `enforced`: recent time-only chronology is replaced by the anchor plus directly related pack evidence, and every proposed change requires exact citations. The existing proposal-generation source gate remains an inner gate. |
 | Slack, Telegram, email, meetings, and documents | Existing conversation-review and event-local proposal behavior remains unchanged regardless of the global rollout setting. These adapters must migrate and pass their own gates separately. |
-| GitHub, Linear, Monday, and Sentry | Structured events feed artifact reconciliation, associations, source references, and provider-authoritative outputs. They do not run the suggestion model. |
+| GitHub, Linear, Monday, and Sentry | Classified in [`relational-memory.md`](./relational-memory.md). Structured captured work and pulses persist, embed, and reconcile without the extract or suggestion models. GitHub PR and issue lifecycle fields enqueue a coalesced approval-backed Timeline task `done`/assignee job keyed by `repo#number`. Comments, reviews, commits, CI, and Sentry events are pulses or communication-lite: they are not proposal sources. Per-connection ingest processing is rate-limited. |
 | Agent Ask | Broad workspace retrieval returns a viewer-visible answer-policy pack for raw-event evidence while keeping objects, notes, tasks, boards, documents, and calendar results as typed adjacent context. Semantic matches are labeled as retrieval provenance, pack-only citations are included in the packet's top-level reference index, and partial packets disclose failed source adapters. |
 
 No proposal adapter is considered shipped until its shadow sample, safety,
@@ -194,10 +181,11 @@ Cross-source proposal behavior is shipped for a source path only when:
 - rollback monitoring is active; and
 - product copy names only the source paths that meet those conditions.
 
-The complete sequence, file map, test matrix, and release gates are in the
-[cross-source evidence implementation plan](./cross-source-evidence-implementation-plan.md).
-The durable contract is recorded in
+The complete sequence, file map, test matrix, and release gates used to live
+in a separate implementation plan. That plan is deleted. Remaining rollout
+work is this page plus [`todo.md`](../todo.md). The durable decision is
 [ADR 0014](./adr/0014-cross-source-evidence-packs-use-policy-bound-related-evidence.md).
+The engine is [`relational-memory.md`](./relational-memory.md).
 
 ## Website and landing messaging
 

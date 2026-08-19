@@ -14,6 +14,22 @@ const fakes = vi.hoisted(() => ({
   requestAudioUploadAction: vi.fn(),
   finalizeDocumentVersionAction: vi.fn(),
   requestDocumentUploadAction: vi.fn(),
+  notifyAction: vi.fn(
+    async ({
+      run,
+      error,
+    }: {
+      run: () => Promise<{ error?: string }>;
+      error: string;
+      success?: string;
+    }) => {
+      try {
+        return await run();
+      } catch (caught) {
+        return { error: caught instanceof Error ? caught.message : error };
+      }
+    },
+  ),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
@@ -53,6 +69,9 @@ vi.mock('@/app/actions/events', () => ({
 vi.mock('@/app/actions/documents', () => ({
   finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,
   requestDocumentUploadAction: fakes.requestDocumentUploadAction,
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: fakes.notifyAction,
 }));
 
 const { CaptureForm } = await import('./capture-form.js');
@@ -156,10 +175,14 @@ describe('CaptureForm', () => {
     await user.type(screen.getByPlaceholderText('What happened?'), 'Customer approved launch');
     await user.click(screen.getByRole('button', { name: 'Post' }));
 
-    expect((await screen.findByRole('status')).textContent).toBe(
+    await waitFor(() => {
+      expect(fakes.createTextEventAction).toHaveBeenCalledOnce();
+    });
+    const success = fakes.notifyAction.mock.calls[0]?.[0]?.success;
+    expect(typeof success === 'string' ? success : String(success)).toBe(
       'Saved, but search indexing queue is unreachable.',
     );
-    expect(fakes.createTextEventAction).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('status')).toBeNull();
     expect(fakes.refresh).toHaveBeenCalledOnce();
   });
 
@@ -246,8 +269,10 @@ describe('CaptureForm', () => {
     await user.upload(screen.getByLabelText('Attach files'), [audio, pdf]);
     await user.click(screen.getByRole('button', { name: 'Post' }));
 
-    expect(await screen.findByText('Finalize failed for notes.pdf')).toBeTruthy();
-    expect(screen.queryByText('meeting.m4a')).toBeNull();
+    await waitFor(() => {
+      expect(screen.queryByText('meeting.m4a')).toBeNull();
+    });
+    expect(screen.queryByText('Finalize failed for notes.pdf')).toBeNull();
     expect(screen.getByText('notes.pdf')).toBeTruthy();
     expect(fakes.refresh).toHaveBeenCalledOnce();
 

@@ -14,7 +14,10 @@ const fakes = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ back: fakes.back, push: fakes.push, refresh: fakes.refresh }),
 }));
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+  notifyError: vi.fn(),
+}));
 vi.mock('@/app/actions/documents', () => ({
   deleteDocumentAction: vi.fn(),
   getDocumentDownloadUrlAction: fakes.getDocumentDownloadUrlAction,

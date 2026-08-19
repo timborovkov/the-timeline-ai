@@ -103,14 +103,14 @@
         does the work, Timeline generates the communication and memory from the evidence.
       </p>
       <p>
-        The north-star memory model is
-        <strong>cross-source evidence</strong>: a commitment discussed in chat, confirmed in a
-        meeting, tracked in a work system, and clarified by email should become one cited record —
-        not four siloed tool histories. See
-        <a href="./cross-source-evidence.md">Cross-source evidence</a> for the product promise,
-        current gaps, decided architecture, safe website messaging, and the linked implementation
-        plan. The implementation is available behind a default-off rollout switch; pack-backed
-        proposals are not yet shipped.
+        The north-star memory model is the
+        <a href="./relational-memory.md">operating memory engine</a>: a commitment discussed in
+        chat, confirmed in a meeting, tracked in a work system, and clarified by email should become
+        one cited record — not four siloed tool histories, and not an LLM dump of every pulse from
+        the same hour.
+        <a href="./cross-source-evidence.md">Pack rollout and website copy</a>
+        stay on their own page. The pack implementation is available behind a default-off rollout
+        switch; pack-backed proposals are not yet shipped.
       </p>
 
       <h2 id="target-user">Target user</h2>
@@ -149,6 +149,15 @@
       </div>
 
       <h2 id="architecture-overview">Architecture overview</h2>
+      <p>
+        Ingest, relations, proposals, retrieval, and durable objects follow the
+        <a href="./relational-memory.md">operating memory engine</a>: classify each event as
+        communication, captured work, a pulse, or a finding; adapters emit a source-independent
+        envelope; timeline presentation uses a sibling <code>event_class</code> family and does not
+        decide extract or proposals; cross-source stories meet at a work hub rather than a shared
+        provider; embeddings recall candidate hubs and do not prove a write; spend LLMs only on
+        bounded related evidence.
+      </p>
 
       <h3 id="capture-surfaces">Work surfaces and integrations</h3>
       <ul>
@@ -213,23 +222,28 @@
           for explicit document actions such as upload, promotion, or version changes.
         </li>
         <li>
-          <strong>Extraction.</strong> LLM pulls useful facts and durable-work signals from the
-          transcribed/raw/file representation text. Output is structured JSON linked back to the raw
-          event or document version; noisy message mechanics stay raw evidence, while normalized
-          shared links can become non-authoritative artifact-cluster evidence for timeline grouping.
-          Extracted emails, phone numbers, and conservatively labeled addresses stay on raw-event
-          metadata first; email and phone values graduate into person identity facets only through
-          reviewable memory paths, while addresses remain location/object metadata unless explicitly
-          promoted.
+          <strong>Extraction.</strong> Communication and unstructured captured work may run the
+          extract model. Structured captured work (merged PRs, issue/ticket lifecycle, provider
+          status fields) and pulses (CI, Sentry, most heartbeats) persist and embed without that
+          call. See <a href="./relational-memory.md">Operating memory engine</a>. When extraction
+          runs, the LLM pulls useful facts and durable-work signals from the transcribed/raw/file
+          representation text. Output is structured JSON linked back to the raw event or document
+          version; noisy message mechanics stay raw evidence, while normalized shared links can
+          become non-authoritative artifact-cluster evidence for timeline grouping. Extracted
+          emails, phone numbers, and conservatively labeled addresses stay on raw-event metadata
+          first; email and phone values graduate into person identity facets only through reviewable
+          memory paths, while addresses remain location/object metadata unless explicitly promoted.
         </li>
         <li>
           <strong>Object resolution.</strong> Facts link to existing objects when names or aliases
           match a durable, non-generic workspace item. Generic topic phrases stay as fact text
           rather than becoming object memory by default, and everyday SaaS/tools should not become
-          company objects just because the team mentioned them. Durable tool choices are modeled as
-          decisions or updates to a specific existing artifact. New object memory goes through
-          approval-backed proposals, and plausible duplicates are merged through human-reviewed
-          cleanup.
+          company objects just because the team mentioned them. Automated review findings (Bugbot,
+          CI, Codex) stay on the parent pull request or issue rather than minting a sibling task;
+          one-off company mentions stay fact text until the team treats them as an account. Durable
+          tool choices are modeled as decisions or updates to a specific existing artifact. New
+          object memory goes through approval-backed proposals, and plausible duplicates are merged
+          through human-reviewed cleanup.
         </li>
         <li>
           <strong>Embedding.</strong> Raw text, extracted facts, captured-file representations,
@@ -287,11 +301,13 @@
           Tool-use pattern: agent queries Qdrant for semantic context, queries Postgres for
           structured filters and document versions, synthesizes an answer with event/document
           citations. The web app at <code>/app/chat</code> is the thorough research surface with
-          clickable evidence and the full answer budget. Telegram and Slack direct text share one
-          durable worker-backed runtime, bounded private history, a 90-second deadline, and cached
-          delivery; their sessions also appear in web chat history. Every current and future
-          external chat provider inherits concise plain-text delivery without internal Timeline ids.
-          Group/channel invocations remain stateless and use the same external-chat profile.
+          clickable evidence and the full answer budget. Elsewhere in the dashboard, a floating Ask
+          keeps the current view and a short trail of earlier views attached to that conversation.
+          Telegram and Slack direct text share one durable worker-backed runtime, bounded private
+          history, a 90-second deadline, and cached delivery; their sessions also appear in web chat
+          history. Every current and future external chat provider inherits concise plain-text
+          delivery without internal Timeline ids. Group/channel invocations remain stateless and use
+          the same external-chat profile.
         </li>
       </ul>
 
@@ -559,10 +575,9 @@
         <li>
           <strong>Cross-source evidence packs</strong>: shared visibility-safe packs that let
           Approvals and answers cite related chat, meeting, email, document, and integration
-          evidence for the same work item without changing source authority. The implementation is
-          default-off and unshipped until its rollout gates pass. Direction and messaging live in
-          <a href="./cross-source-evidence.md">Cross-source evidence</a>; the phased work lives in
-          the <a href="./cross-source-evidence-implementation-plan.md">implementation plan</a>.
+          evidence for the same work item without changing source authority. Engine behavior lives
+          in the <a href="./relational-memory.md">operating memory engine</a>. Pack rollout and
+          website copy live in <a href="./cross-source-evidence.md">evidence-pack rollout</a>.
         </li>
         <li>
           <strong>More work-system integrations</strong>: expand first-party adapters across CRM,

@@ -408,20 +408,20 @@ function RecentRuns({
               .join('\n');
             return (
               <li key={row.id}>
-                <CollectionRow
-                  leading={
+                <CollectionRow>
+                  <CollectionRow.Leading>
                     <CollectionStatus value={row.status} label={runStatusLabel(row.status)} />
-                  }
-                  title={row.scope}
-                  titleHint={hint}
-                  context={runTriggerLabel(row.trigger)}
-                  contextTitle={hint}
-                  metadata={
+                  </CollectionRow.Leading>
+                  <CollectionRow.Title title={hint}>{row.scope}</CollectionRow.Title>
+                  <CollectionRow.Context title={hint}>
+                    {runTriggerLabel(row.trigger)}
+                  </CollectionRow.Context>
+                  <CollectionRow.Metadata>
                     <time className="text-xs text-fg-muted" title={hint}>
                       {row.createdAt.toLocaleString()}
                     </time>
-                  }
-                />
+                  </CollectionRow.Metadata>
+                </CollectionRow>
               </li>
             );
           })}

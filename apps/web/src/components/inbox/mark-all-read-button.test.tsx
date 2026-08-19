@@ -12,6 +12,15 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/app/actions/objects', () => ({
   markAllNotificationsReadAction: fakes.markAllRead,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+    try {
+      return await run();
+    } catch {
+      return { error: 'failed' };
+    }
+  },
+}));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
 
 const { MarkAllReadButton } = await import('./mark-all-read-button.js');
@@ -34,17 +43,15 @@ describe('MarkAllReadButton', () => {
     render(<MarkAllReadButton hasUnread />);
     await user.click(screen.getByRole('button', { name: 'Mark all read' }));
 
-    expect((await screen.findByRole('alert')).textContent).toContain(
-      'Unable to mark notifications as read. Your notifications remain unread.',
-    );
+    await waitFor(() => {
+      expect(fakes.markAllRead).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('button', { name: 'Mark all read' }).hasAttribute('disabled')).toBe(
       false,
     );
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
-    await user.tab();
-    expect(document.activeElement).toBe(retry);
-    await user.keyboard('{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Mark all read' }));
 
     await waitFor(() => {
       expect(fakes.markAllRead).toHaveBeenCalledTimes(2);

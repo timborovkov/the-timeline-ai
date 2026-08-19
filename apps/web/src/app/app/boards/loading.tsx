@@ -1,4 +1,4 @@
-import { CollectionRowSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
+import { CollectionRowsSkeleton, PageHeaderSkeleton } from '@/components/loading-states';
 import { WorkSubnav } from '@/components/work-subnav';
 
 export default function BoardsLoading() {
@@ -14,13 +14,7 @@ export default function BoardsLoading() {
         </div>
         <WorkSubnav current="/app/boards" />
         <section aria-hidden="true" aria-label="Boards list loading placeholder">
-          <ul className="overflow-hidden border-x border-border">
-            {Array.from({ length: 3 }).map((_, index) => (
-              <li key={index}>
-                <CollectionRowSkeleton leading={false} metadata={2} />
-              </li>
-            ))}
-          </ul>
+          <CollectionRowsSkeleton count={3} />
         </section>
       </div>
     </>

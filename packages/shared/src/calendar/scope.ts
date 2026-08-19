@@ -34,6 +34,7 @@ import {
 } from '#src/conversational/link-artifacts.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
+import { displayObjectTitle } from '#src/objects/types.js';
 import { getQdrantClient } from '#src/qdrant/client.js';
 import { buildPointId } from '#src/qdrant/point-id.js';
 import { enqueueCalendarEventEmbedJob } from '#src/queue/queues.js';
@@ -47,6 +48,14 @@ type RecurrenceEditMode = CalendarRecurrenceEditMode;
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
 type CalendarQdrantAction = 'embed' | 'delete' | null;
+
+export interface CalendarLinkedObjectRow {
+  calendarEventId: string;
+  id: string;
+  title: string;
+  type: string;
+  relationshipType: string;
+}
 
 const log = childLogger('calendar:scope');
 const RECURRING_PARENT_PAGE_SIZE = 500;
@@ -1670,15 +1679,76 @@ export function createCalendarScope(deps: CalendarScopeDeps) {
     async getLinkedEntities(calendarEventId: string) {
       await ensureMember();
       return db
-        .select()
+        .select({
+          id: calendarEventEntities.id,
+          calendarEventId: calendarEventEntities.calendarEventId,
+          entityId: calendarEventEntities.entityId,
+          teamId: calendarEventEntities.teamId,
+          relationshipType: calendarEventEntities.relationshipType,
+          createdAt: calendarEventEntities.createdAt,
+        })
         .from(calendarEventEntities)
+        .innerJoin(calendarEvents, eq(calendarEvents.id, calendarEventEntities.calendarEventId))
         .where(
           and(
             eq(calendarEventEntities.calendarEventId, calendarEventId),
             eq(calendarEventEntities.teamId, teamId),
+            eq(calendarEvents.teamId, teamId),
+            isNull(calendarEvents.deletedAt),
+            calendarWriteVisibility,
           ),
         )
         .orderBy(asc(calendarEventEntities.createdAt));
+    },
+
+    async listLinkedObjectsForEvents(
+      calendarEventIds: string[],
+    ): Promise<CalendarLinkedObjectRow[]> {
+      await ensureMember();
+      const ids = uniqueIds(calendarEventIds);
+      if (ids.length === 0) return [];
+
+      const rows = await db
+        .select({
+          calendarEventId: calendarEventEntities.calendarEventId,
+          id: entities.id,
+          canonicalName: entities.canonicalName,
+          metadata: entities.metadata,
+          type: entities.type,
+          relationshipType: calendarEventEntities.relationshipType,
+          createdAt: calendarEventEntities.createdAt,
+        })
+        .from(calendarEventEntities)
+        .innerJoin(entities, eq(entities.id, calendarEventEntities.entityId))
+        .innerJoin(calendarEvents, eq(calendarEvents.id, calendarEventEntities.calendarEventId))
+        .where(
+          and(
+            eq(calendarEventEntities.teamId, teamId),
+            inArray(calendarEventEntities.calendarEventId, ids),
+            eq(entities.teamId, teamId),
+            isNull(entities.archivedAt),
+            isNull(entities.mergedIntoId),
+            eq(calendarEvents.teamId, teamId),
+            isNull(calendarEvents.deletedAt),
+            calendarWriteVisibility,
+          ),
+        )
+        .orderBy(
+          asc(calendarEventEntities.createdAt),
+          asc(entities.canonicalName),
+          asc(entities.id),
+        );
+
+      return rows.map((row) => ({
+        calendarEventId: row.calendarEventId,
+        id: row.id,
+        title: displayObjectTitle({
+          canonicalName: row.canonicalName,
+          metadata: recordFromUnknown(row.metadata),
+        }),
+        type: row.type,
+        relationshipType: row.relationshipType,
+      }));
     },
 
     async materializeRecurringEvent(

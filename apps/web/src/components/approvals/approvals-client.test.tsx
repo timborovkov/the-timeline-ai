@@ -16,6 +16,8 @@ const fakes = vi.hoisted(() => ({
   reviseSuggestionItemAction: vi.fn(),
   reviseTaskSuggestionItemAction: vi.fn(),
   searchObjectsAction: vi.fn(),
+  getApprovalTargetSnapshotAction: vi.fn(),
+  notifyAction: vi.fn(async (options: { run: () => Promise<{ error?: string }> }) => options.run()),
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
@@ -29,6 +31,12 @@ vi.mock('@/app/actions/suggestions', () => ({
   reviseTaskSuggestionItemAction: fakes.reviseTaskSuggestionItemAction,
 }));
 vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
+vi.mock('@/app/actions/approval-preview', () => ({
+  getApprovalTargetSnapshotAction: fakes.getApprovalTargetSnapshotAction,
+}));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: fakes.notifyAction,
+}));
 vi.mock('@/app/actions/collection-pages', () => ({
   loadSuggestionsPageAction: vi.fn(() => Promise.resolve({ suggestions: [], nextCursor: null })),
 }));
@@ -69,6 +77,14 @@ beforeEach(() => {
   fakes.reviseSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.reviseTaskSuggestionItemAction.mockResolvedValue({ ok: true });
   fakes.searchObjectsAction.mockResolvedValue({ results: [] });
+  fakes.getApprovalTargetSnapshotAction.mockResolvedValue({
+    ok: true,
+    snapshot: { kind: 'none' },
+    members: {},
+  });
+  fakes.notifyAction.mockImplementation(
+    async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  );
 });
 
 afterEach(() => {
@@ -169,28 +185,23 @@ describe('ApprovalsClient', () => {
     );
 
     expect(html).toContain('Follow up with Acme');
-    expect(html).toContain('Accept all');
     expect(html).toContain('Send proposal');
     expect(html).toContain('Calendar conflict');
     expect(html).toContain('I will send the proposal');
     expect(html).toContain('Evidence from Slack');
     expect(html).toContain('create task');
-    expect(html).toContain('Category · Sales');
-    expect(html).toContain('Project · Acme renewal');
-    expect(html).toContain('Overdue · Jul 19, 2026 · Status To do');
+    expect(html).toContain('Sales');
+    expect(html).toContain('Acme renewal');
+    expect(html).toContain('Overdue · Jul 19, 2026');
     expect(html).not.toContain('Due Jul 18, 2026');
     expect(html).not.toContain(PARENT_ID);
     expect(html).toContain('Why this was suggested · 1 source');
-    expect(html).toContain('Technical details');
-    expect(html).toContain('Open processing record');
+    expect(html).not.toContain('Technical details');
+    expect(html).not.toContain('Open processing record');
     expect(html).not.toContain('Reconciliation output');
-    expect(html).not.toContain('outputs 99999999');
-    expect(html).not.toContain('Cluster 22222222');
-    expect(html).not.toContain('Proposal · pending');
-    expect(html).toContain('99999999-9999-4999-8999-999999999999');
-    expect(html).toContain(
-      'href="/app/team/reconciliation/clusters/22222222-2222-4222-8222-222222222222"',
-    );
+    expect(html).not.toContain('Accept all visible');
+    expect(html).toContain('aria-label="Accept Send proposal"');
+    expect(html).toContain('aria-label="Preview Send proposal"');
   });
 
   it('identifies the source sender and conversation on approval evidence', () => {
@@ -296,7 +307,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Evidence for this change · 1 source');
+    expect(html).toContain('Why · 1 source');
     expect(html).toContain('Owner committed to send the Acme proposal.');
     expect(html).toContain(
       'Required source evidence changed after this proposal was created. Regenerate the proposal before accepting this change.',
@@ -353,11 +364,11 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Evidence for this change · 1 source');
+    expect(html).toContain('Why · 1 source');
     expect(html).toContain('Acme delivery · 2 citations');
   });
 
-  it('keeps every processing record reachable for multi-cluster bundles', () => {
+  it('does not expose processing record identifiers on the approval queue', () => {
     const firstClusterId = '22222222-2222-4222-8222-222222222222';
     const secondClusterId = '33333333-3333-4333-8333-333333333333';
     const html = renderToStaticMarkup(
@@ -405,10 +416,12 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Open processing record 1 of 2');
-    expect(html).toContain('Open processing record 2 of 2');
-    expect(html).toContain(`/app/team/reconciliation/clusters/${firstClusterId}`);
-    expect(html).toContain(`/app/team/reconciliation/clusters/${secondClusterId}`);
+    expect(html).toContain('Update Acme');
+    expect(html).toContain('Update Beta');
+    expect(html).not.toContain('Technical details');
+    expect(html).not.toContain('Open processing record');
+    expect(html).not.toContain(firstClusterId);
+    expect(html).not.toContain(secondClusterId);
   });
 
   it('preserves literal payload values and exposes every meaningful proposed change', () => {
@@ -473,11 +486,10 @@ describe('ApprovalsClient', () => {
     expect(html).not.toContain('John doe work@example.com');
     expect(html).toContain('Also known as ACME-v2');
     expect(html).not.toContain('Name Acme renewal');
-    expect(html).toContain('Show all 8 changes');
-    expect(html).toContain('>Priority</dt>');
-    expect(html).toContain('>Jane-Doe</dd>');
-    expect(html).toContain('>Sam_Taylor</dd>');
-    expect(html).toContain('>Overdue · Jul 19, 2026</dd>');
+    expect(html).not.toContain('Show all 8 changes');
+    expect(html).toContain('aria-label="Preview Acme renewal"');
+    expect(html).toContain('Active');
+    expect(html).toContain('Project');
   });
 
   it('shows the named audience for specific-user visibility changes', () => {
@@ -523,7 +535,8 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('People with access Owner, Reviewer');
+    expect(html).toContain('People with access');
+    expect(html).toContain('Owner, Reviewer');
     expect(html).not.toContain(firstUserId);
     expect(html).not.toContain(secondUserId);
   });
@@ -811,7 +824,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('No due date · Stage None · Owner Unassigned');
+    expect(html).toContain('No due date');
+    expect(html).toContain('Stage None');
+    expect(html).toContain('Owner Unassigned');
   });
 
   it('keeps the rationale available when a bundle has no evidence rows', () => {
@@ -989,7 +1004,8 @@ describe('ApprovalsClient', () => {
     expect(fullPage.getAttribute('href')).toBe(`/app/timeline?event=${EVENT_ID}#ev-${EVENT_ID}`);
   });
 
-  it('lets a reviewer change a proposed task category before acceptance', async () => {
+  it('opens a view-only preview of the proposed record', async () => {
+    const user = userEvent.setup();
     render(
       createElement(ApprovalsClient, {
         suggestions: [
@@ -1027,24 +1043,15 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(screen.getByText('Project · Create or reuse Faba website redesign')).toBeTruthy();
-    await userEvent.click(screen.getByText('Edit proposal'));
-    await userEvent.selectOptions(
-      screen.getByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),
-      'product',
-    );
-
-    await waitFor(() => {
-      expect(fakes.reviseTaskSuggestionItemAction).toHaveBeenCalledWith({
-        itemId: 'item-edit',
-        category: 'product',
-      });
-      expect(fakes.refresh).toHaveBeenCalled();
-    });
+    expect(screen.getByText('Faba website redesign')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: 'Preview Prepare homepage wireframes' }));
+    expect(await screen.findByText(/Proposed record/)).toBeTruthy();
+    expect(screen.getAllByText('Design').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('combobox', { name: /Category for/ })).toBeNull();
   });
 
-  it('hides proposal category controls while keeping project editing available', async () => {
-    render(
+  it('hides category metadata when task categories are disabled', () => {
+    const html = renderToStaticMarkup(
       createElement(ApprovalsClient, {
         taskCategoriesEnabled: false,
         suggestions: [
@@ -1081,12 +1088,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(screen.queryByText(/Category · Design/)).toBeNull();
-    await userEvent.click(screen.getByText('Edit proposal'));
-    expect(
-      screen.queryByRole('combobox', { name: 'Category for Prepare homepage wireframes' }),
-    ).toBeNull();
-    expect(screen.getByRole('searchbox', { name: 'Find or name a project' })).toBeTruthy();
+    expect(html).toContain('Faba website redesign');
+    expect(html).not.toContain('Edit proposal');
+    expect(html).not.toContain('Category for Prepare homepage wireframes');
   });
 
   it('can hide bulk accept while keeping bulk reject for filtered approval surfaces', () => {
@@ -1133,10 +1137,10 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).not.toContain('Accept all');
-    expect(html).toContain('Reject all visible');
-    expect(html).toContain('Send proposal');
-    expect(html).toContain('Book review');
+    expect(html).not.toContain('Accept all visible');
+    expect(html).not.toContain('Reject all visible');
+    expect(html).toContain('Select Send proposal');
+    expect(html).toContain('Select Book review');
   });
 
   it('can hide page-level reject all when bulk reject is disabled', () => {
@@ -1184,7 +1188,8 @@ describe('ApprovalsClient', () => {
     );
 
     expect(html).not.toContain('Reject all visible');
-    expect(html).toContain('Accept all');
+    expect(html).not.toContain('Accept all visible');
+    expect(html).toContain('Select Send proposal');
   });
 
   it('renders a page-level accept all for multiple visible actionable bundles', () => {
@@ -1243,9 +1248,210 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Accept all visible');
-    expect(html).toContain('Follow up with Acme');
-    expect(html).toContain('Book review');
+    expect(html).toContain('Select Send proposal');
+    expect(html).toContain('Send proposal');
+    expect(html).toContain('Proposal meeting');
+    expect(html).toContain('Select all visible proposals');
+    expect(html).not.toContain('Accept all visible');
+    expect(html).not.toContain('border-x border-border');
+  });
+
+  it('accepts every visible actionable proposal after select all', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+            ],
+          },
+          {
+            id: 'bundle-2',
+            source: 'background',
+            status: 'pending',
+            title: 'Book review',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:05:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'calendar_event',
+                targetId: null,
+                title: 'Proposal meeting',
+                description: null,
+                proposedPayload: { title: 'Proposal meeting' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    expect(screen.queryByRole('button', { name: /^Accept$/ })).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: 'Select all visible proposals' }));
+    expect(screen.getByLabelText('2 proposals selected')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^Accept$/ }));
+
+    expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledWith({
+      suggestions: [
+        { suggestionId: 'bundle-1', itemIds: ['item-1'] },
+        { suggestionId: 'bundle-2', itemIds: ['item-2'] },
+      ],
+    });
+  });
+
+  it('selects one bundle from the group header without per-row clicks', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-acme',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+              {
+                id: 'item-2',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Book review',
+                description: null,
+                proposedPayload: { canonicalName: 'Book review' },
+                failureReason: null,
+              },
+            ],
+          },
+          {
+            id: 'bundle-other',
+            source: 'background',
+            status: 'pending',
+            title: 'Other follow-up',
+            summary: null,
+            reason: null,
+            confidence: 'medium',
+            createdAt: '2026-06-01T10:05:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-3',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Write recap',
+                description: null,
+                proposedPayload: { canonicalName: 'Write recap' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Select all Follow up with Acme proposals' }),
+    );
+    expect(screen.getByLabelText('2 proposals selected')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: /^Accept$/ }));
+
+    expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledWith({
+      suggestions: [
+        {
+          suggestionId: 'bundle-acme',
+          itemIds: ['item-1', 'item-2'],
+        },
+      ],
+    });
+  });
+
+  it('clears the loaded queue selection from the select-all checkbox', async () => {
+    const user = userEvent.setup();
+
+    render(
+      createElement(ApprovalsClient, {
+        suggestions: [
+          {
+            id: 'bundle-1',
+            source: 'background',
+            status: 'pending',
+            title: 'Follow up with Acme',
+            summary: null,
+            reason: null,
+            confidence: 'high',
+            createdAt: '2026-06-01T10:00:00.000Z',
+            evidence: [],
+            items: [
+              {
+                id: 'item-1',
+                status: 'pending',
+                operation: 'create',
+                targetKind: 'task',
+                targetId: null,
+                title: 'Send proposal',
+                description: null,
+                proposedPayload: { canonicalName: 'Send proposal' },
+                failureReason: null,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const selectAll = screen.getByRole('checkbox', { name: 'Select all visible proposals' });
+    await user.click(selectAll);
+    expect(screen.getByLabelText('1 proposal selected')).toBeTruthy();
+    await user.click(selectAll);
+    expect(screen.queryByLabelText('1 proposal selected')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Accept$/ })).toBeNull();
   });
 
   it('renders calendar-specific approval summaries and resolution hints', () => {
@@ -1349,10 +1555,8 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Reuse existing');
     expect(html).toContain('Accept will reuse it instead of creating a duplicate');
-    expect(html).toContain('Confirm slot');
-    expect(html).toContain('Accepting one slot can cancel sibling tentative slots');
+    expect(html).toContain('The target event is no longer available.');
     expect(html).toContain('Proposed:');
   });
 
@@ -1577,10 +1781,10 @@ describe('ApprovalsClient', () => {
     );
 
     expect(html).toContain('Scheduled for');
-    expect(html).toContain('Details None');
     expect(html).toContain('Location None');
     expect(html).toContain('Reminder None');
-    expect(html).toContain('Availability: free');
+    expect(html).toContain('Show as Free');
+    expect(html).toContain('aria-label="Preview Move Acme planning"');
     expect(html).not.toContain('Start at');
     expect(html).not.toContain('End at');
   });
@@ -1727,7 +1931,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Create');
+    expect(html).toContain('create calendar event');
     expect(html).not.toContain('Accepting one slot can cancel sibling tentative slots');
   });
 
@@ -1847,9 +2051,11 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(screen.queryByRole('button', { name: 'Accept all visible' })).toBeNull();
-    expect(screen.getByText('1 merge proposal needs review')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Accept 2 visible' }));
+    expect(screen.queryByRole('button', { name: /^Accept$/ })).toBeNull();
+    await user.click(screen.getByRole('checkbox', { name: 'Select Send renewal packet' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Book renewal call' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Merge Acme duplicates' }));
+    await user.click(screen.getByRole('button', { name: /^Accept$/ }));
 
     expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledTimes(1);
     expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledWith({
@@ -1919,7 +2125,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(html).toContain('Accept 2 visible');
+    expect(html).toContain('Select Send renewal packet');
     expect(html).not.toContain('Accept all visible');
   });
 
@@ -1972,7 +2178,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(screen.getByRole('button', { name: 'Accept all visible' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Send renewal packet' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Book renewal call' }));
+    await user.click(screen.getByRole('button', { name: /^Accept$/ }));
 
     await waitFor(() => {
       expect(screen.queryByText('Send renewal packet')).toBeNull();
@@ -1984,7 +2192,7 @@ describe('ApprovalsClient', () => {
 
   it('restores failed bundle rows before refreshing their final server status', async () => {
     const user = userEvent.setup();
-    fakes.acceptAllSuggestionAction.mockResolvedValue({
+    fakes.acceptVisibleSuggestionsAction.mockResolvedValue({
       error: '1 item(s) failed to apply',
       failedItemIds: ['item-calendar'],
     });
@@ -2031,12 +2239,18 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(screen.getByRole('button', { name: 'Accept all' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Send renewal packet' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Book renewal call' }));
+    await user.click(screen.getByRole('button', { name: /^Accept$/ }));
 
     await waitFor(() => {
-      expect(fakes.acceptAllSuggestionAction).toHaveBeenCalledWith({
-        suggestionId: 'bundle-actions',
-        itemIds: ['item-task', 'item-calendar'],
+      expect(fakes.acceptVisibleSuggestionsAction).toHaveBeenCalledWith({
+        suggestions: [
+          {
+            suggestionId: 'bundle-actions',
+            itemIds: ['item-task', 'item-calendar'],
+          },
+        ],
       });
       expect(screen.queryByText('Send renewal packet')).toBeNull();
       expect(screen.getByText('Book renewal call')).toBeTruthy();
@@ -2083,7 +2297,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(screen.getByRole('button', { name: 'Accept' }));
+    await user.click(screen.getByRole('button', { name: 'Accept Book renewal call' }));
 
     await waitFor(() => {
       expect(screen.getByText('Book renewal call')).toBeTruthy();
@@ -2151,9 +2365,9 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    expect(screen.getByRole('button', { name: 'Accept 2' })).toBeTruthy();
     expect(screen.getByRole('link', { name: /Review merge/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Accept all' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Accept$/ })).toBeNull();
   });
 
   it('renders page-level reject all for merge-only visible bundles', async () => {
@@ -2224,7 +2438,8 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(screen.getByRole('button', { name: /Reject all visible/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select all visible proposals' }));
+    await user.click(screen.getByRole('button', { name: /^Reject$/ }));
 
     expect(fakes.rejectVisibleSuggestionsAction).toHaveBeenCalledWith({
       suggestions: [
@@ -2439,7 +2654,7 @@ describe('ApprovalsClient', () => {
 
     expect(getByText('1 waiting')).toBeTruthy();
 
-    await user.click(getByRole('button', { name: /^Accept$/ }));
+    await user.click(getByRole('button', { name: 'Accept Customer follow-up' }));
 
     await waitFor(() => {
       expect(getByText('0 waiting')).toBeTruthy();
@@ -2490,7 +2705,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(getByRole('button', { name: /^Accept$/ }));
+    await user.click(getByRole('button', { name: 'Accept Customer follow-up' }));
     await waitFor(() => {
       expect(getByText('0 waiting')).toBeTruthy();
     });
@@ -2505,7 +2720,7 @@ describe('ApprovalsClient', () => {
     await waitFor(() => {
       expect(getByText('0 waiting')).toBeTruthy();
     });
-    expect(() => getByRole('button', { name: /^Accept$/ })).toThrow();
+    expect(() => getByRole('button', { name: 'Accept Customer follow-up' })).toThrow();
   });
 
   it('restores optimistic hidden rows when refreshed suggestion item data changes', async () => {
@@ -2551,7 +2766,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(getByRole('button', { name: /^Accept$/ }));
+    await user.click(getByRole('button', { name: 'Accept Customer follow-up' }));
     await waitFor(() => {
       expect(getByText('0 waiting')).toBeTruthy();
     });
@@ -2574,7 +2789,7 @@ describe('ApprovalsClient', () => {
     await waitFor(() => {
       expect(getByText('1 waiting')).toBeTruthy();
     });
-    expect(getByRole('button', { name: /^Accept$/ })).toBeTruthy();
+    expect(getByRole('button', { name: 'Accept Updated customer follow-up' })).toBeTruthy();
   });
 
   it('shows an updating state when optimistic approval removes the last visible row', async () => {
@@ -2611,14 +2826,20 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    fireEvent.click(getByRole('button', { name: /^Accept$/ }));
+    fireEvent.click(getByRole('button', { name: 'Accept Customer follow-up' }));
 
     await waitFor(() => {
-      expect(getByRole('status', { name: /Updating approvals/ }).textContent).toContain(
-        'Updating approvals',
-      );
+      expect(getByRole('status').textContent).toContain('Updating approvals');
     });
     expect(fakes.acceptSuggestionItemAction).toHaveBeenCalledWith({ itemId: 'item-1' });
+    expect(fakes.notifyAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'approval:item-1:accept',
+        loading: 'Accepting proposal…',
+        success: 'Accepted Customer follow-up',
+        error: 'Couldn’t finish this action',
+      }),
+    );
   });
 
   it('restores failed optimistic actions with row-level retry feedback', async () => {
@@ -2656,7 +2877,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    await user.click(getByRole('button', { name: /^Accept$/ }));
+    await user.click(getByRole('button', { name: 'Accept Customer follow-up' }));
 
     await waitFor(() => {
       expect(getByText('Customer follow-up')).toBeTruthy();
@@ -2699,7 +2920,7 @@ describe('ApprovalsClient', () => {
       }),
     );
 
-    const accept = getByRole('button', { name: /^Accept$/ });
+    const accept = getByRole('button', { name: 'Accept Customer follow-up' });
     fireEvent.click(accept);
     fireEvent.click(accept);
 

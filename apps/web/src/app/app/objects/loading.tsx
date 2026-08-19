@@ -18,7 +18,7 @@ export default function ObjectsLoading() {
       >
         <h1 className="sr-only">Objects</h1>
         <div aria-hidden="true" inert>
-          <PageHeaderSkeleton />
+          <PageHeaderSkeleton variant="collection" />
         </div>
         <WorkSubnav current="/app/objects" />
         <div aria-hidden="true" inert className="space-y-0">

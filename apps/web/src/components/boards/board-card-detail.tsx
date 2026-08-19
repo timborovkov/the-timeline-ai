@@ -4,7 +4,6 @@ import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink, Save } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { toast } from 'sonner';
 
 import type {
   BoardItemOptimisticPatch,
@@ -16,7 +15,7 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
 
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
-import { ContextualAskLink } from '@/components/chat/contextual-ask-link';
+import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
@@ -34,13 +33,13 @@ import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { boardViewHref } from '@/lib/board-links';
 import { displayText, formatDisplayDate, formatDisplayDateTime } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
+import { notifyAction } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
 import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
 interface Props {
-  teamId?: string;
   boardId: string;
   view: BoardLayout;
   item: boards.BoardItemRow | null;
@@ -99,7 +98,6 @@ function reconcileDraftState(state: DraftState, item: boards.BoardItemRow | null
 }
 
 export function BoardCardDetail({
-  teamId,
   boardId,
   view,
   item,
@@ -126,12 +124,20 @@ export function BoardCardDetail({
 
   function savePatch(patch: BoardItemOptimisticPatch, onSuccess?: () => void): void {
     if (!item || !onUpdateItem) return;
+    const previous = previousBoardItemPatch(item, patch);
+    const label = boardItemPatchLabel(patch);
     startTransition(async () => {
-      const result = await onUpdateItem(item.id, patch);
-      if ('error' in result && result.error) {
-        toast.error(result.error);
-        return;
-      }
+      const result = await notifyAction({
+        id: `board-item:${item.id}`,
+        loading: `Updating ${label}…`,
+        success: `${capitalizeLabel(label)} updated`,
+        error: `Couldn’t update ${label}`,
+        run: () => onUpdateItem(item.id, patch),
+        undo: {
+          run: () => onUpdateItem(item.id, previous),
+        },
+      });
+      if (result.error) return;
       onSuccess?.();
     });
   }
@@ -196,7 +202,6 @@ export function BoardCardDetail({
       />
       <BoardActions
         boardId={boardId}
-        teamId={teamId}
         view={view}
         item={item}
         filterParams={filterParams}
@@ -460,14 +465,12 @@ function BoardNotesSection({
 
 function BoardActions({
   boardId,
-  teamId,
   view,
   item,
   filterParams,
   onItemRemoved,
 }: {
   boardId: string;
-  teamId?: string;
   view: BoardLayout;
   item: boards.BoardItemRow;
   filterParams: Record<string, string>;
@@ -477,22 +480,15 @@ function BoardActions({
   return (
     <div className="flex flex-wrap gap-2 border-b border-border p-4">
       <ObjectPreviewDialog item={item} view={view} filterParams={filterParams} />
-      {teamId ? (
-        <ContextualAskLink
-          teamId={teamId}
-          context={{
-            pathname: `/app/boards/${boardId}`,
-            routeKind: 'board-item',
-            boardId,
-            boardItemId: item.id,
-            objectId: item.entityId,
-          }}
-          pinnedEntityId={item.entityId}
-          pinnedEntityName={item.object.canonicalName}
-          label="Ask about object"
-          className="h-7 px-2 text-xs"
-        />
-      ) : null}
+      <ChatViewContextBinder
+        viewKey={`board-item:${item.id}`}
+        kind="board-item"
+        href={`/app/boards/${boardId}?item=${item.id}`}
+        label={item.object.canonicalName}
+        objectId={item.entityId}
+        boardId={boardId}
+        boardItemId={item.id}
+      />
       <Link
         href={timelineHref}
         className="rounded-sm border border-border px-2 py-1 text-xs font-medium hover:bg-bg"
@@ -674,9 +670,7 @@ function ObjectPreviewDialog({
         </dl>
         {item.object.type === 'task' ? (
           <section>
-            <h3 className="mb-1 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">
-              Category
-            </h3>
+            <h3 className="mb-1 text-xs text-fg-dim">Category</h3>
             <TaskCategorySelect
               taskId={item.object.id}
               category={item.object.taskCategory}
@@ -792,6 +786,34 @@ function Detail({
       <dd className={cn('mt-1 truncate text-sm text-fg', danger && 'text-danger')}>{value}</dd>
     </div>
   );
+}
+
+function previousBoardItemPatch(
+  item: boards.BoardItemRow,
+  patch: BoardItemOptimisticPatch,
+): BoardItemOptimisticPatch {
+  const previous: BoardItemOptimisticPatch = {};
+  if (patch.laneId !== undefined) previous.laneId = item.laneId;
+  if (patch.responsibleUserId !== undefined) previous.responsibleUserId = item.responsibleUserId;
+  if (patch.dueAt !== undefined) previous.dueAt = item.dueAt;
+  if (patch.priority !== undefined) previous.priority = item.priority;
+  if (patch.nextStep !== undefined) previous.nextStep = item.nextStep;
+  if (patch.notes !== undefined) previous.notes = item.notes;
+  return previous;
+}
+
+function boardItemPatchLabel(patch: BoardItemOptimisticPatch): string {
+  if (patch.laneId !== undefined) return 'lane';
+  if (patch.responsibleUserId !== undefined) return 'responsible';
+  if (patch.dueAt !== undefined) return 'due date';
+  if (patch.priority !== undefined) return 'priority';
+  if (patch.nextStep !== undefined) return 'next step';
+  if (patch.notes !== undefined) return 'notes';
+  return 'card';
+}
+
+function capitalizeLabel(value: string): string {
+  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
 function dateInputValue(value: Date, timezone: string): string {

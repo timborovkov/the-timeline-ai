@@ -3,7 +3,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { SectionHeading } from '@/components/section-heading';
+import { SectionHeading, SettingsSection } from '@/components/section-heading';
 
 describe('SectionHeading', () => {
   it('renders the title as an h2 in sentence case', () => {
@@ -27,5 +27,18 @@ describe('SectionHeading', () => {
   it('does not render an actions slot when omitted', () => {
     const { container } = render(<SectionHeading>Native integrations</SectionHeading>);
     expect(container.querySelector('h2')?.textContent).toBe('Native integrations');
+  });
+});
+
+describe('SettingsSection', () => {
+  it('renders a sentence-case section heading without a nested card', () => {
+    const { container } = render(
+      <SettingsSection title="Team identity">
+        <p>Rename this team</p>
+      </SettingsSection>,
+    );
+    expect(screen.getByRole('heading', { name: 'Team identity', level: 2 })).toBeTruthy();
+    expect(container.querySelector('[class*="rounded-md border"]')).toBeNull();
+    expect(screen.getByText('Rename this team')).toBeTruthy();
   });
 });
