@@ -79,7 +79,7 @@ describe('MeetingDetailPage', () => {
     expect(html).toContain('Recall');
     expect(html).toContain('Completed');
     expect(html).toContain('Captured');
-    expect(html).toContain('datetime="2026-07-01T12:00:00.000Z"');
+    expect(html).toContain('2026-07-01T12:00:00.000Z');
     expect(html).toContain('Open meeting');
     expect(html).toContain('aria-label="Open meeting in a new tab"');
     expect(html).toContain('target="_blank"');

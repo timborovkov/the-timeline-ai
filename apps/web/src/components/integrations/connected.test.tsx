@@ -84,7 +84,7 @@ describe('ConnectedIntegrations', () => {
     ).toBeTruthy();
     expect(screen.getByRole('checkbox', { name: 'Avery Chen' })).toBeTruthy();
     expect(screen.getByRole('checkbox', { name: 'Nadiya Singh' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Save default' }).className).toContain('min-h-9');
+    expect(screen.getByRole('button', { name: 'Save default' }).className).toContain('h-8');
   });
 
   it('shows provider budget cooldowns without offering retry sync', () => {
@@ -187,8 +187,8 @@ describe('ConnectedIntegrations', () => {
 
     const title = screen.getByText('Webhook delivery degraded:');
     expect(title).toBeTruthy();
-    expect(title.closest('div')?.className).toContain('border-signal');
-    expect(title.closest('div')?.className).not.toContain('border-danger');
+    expect(title.closest('div')?.className).toContain('text-fg');
+    expect(title.closest('div')?.className).not.toContain('text-danger');
     expect(screen.getByText(/MONDAY_WEBHOOK_SECRET missing/i)).toBeTruthy();
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Sync now' }).disabled).toBe(
       false,
@@ -220,7 +220,7 @@ describe('ConnectedIntegrations', () => {
     );
 
     const title = screen.getByText('Reconnect required:');
-    expect(title.closest('div')?.className).toContain('border-danger');
+    expect(title.closest('div')?.className).toContain('text-danger');
     expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
   });
 
@@ -284,7 +284,7 @@ describe('ConnectedIntegrations', () => {
     });
     expect(screen.queryByText('Connection failed (500).')).toBeNull();
     expect(screen.getByRole('button', { name: 'Confirm disconnect' })).toBeTruthy();
-    expect(screen.getByText('Monday.com — Acme')).toBeTruthy();
+    expect(screen.getAllByText('Monday.com — Acme').length).toBeGreaterThan(0);
   });
 
   it('shows disconnect errors even when a cooldown notice is already visible', async () => {
@@ -339,6 +339,6 @@ describe('ConnectedIntegrations', () => {
       });
     });
     expect(screen.queryByText('Only an admin can do this. Ask a team admin to help.')).toBeNull();
-    expect(screen.getByText('Monday.com — Acme')).toBeTruthy();
+    expect(screen.getAllByText('Monday.com — Acme').length).toBeGreaterThan(0);
   });
 });

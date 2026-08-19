@@ -14,10 +14,10 @@ import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { NativeSelect } from '@/components/ui/native-select';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { notifyAction } from '@/lib/notify';
 
 interface CredentialRow {

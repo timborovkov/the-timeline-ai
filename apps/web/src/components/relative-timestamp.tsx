@@ -41,7 +41,7 @@ export function RelativeTimestamp({
     serverRenderSnapshot,
   );
 
-  if (value == null || value === '') {
+  if (value === null || value === undefined || value === '') {
     return empty ? <span className={cn('text-xs text-fg-dim', className)}>{empty}</span> : null;
   }
 

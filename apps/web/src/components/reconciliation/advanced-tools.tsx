@@ -13,7 +13,6 @@ import type { ReactNode } from 'react';
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
-import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { CountList } from '@/components/collections/count-list';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import {
@@ -27,6 +26,7 @@ import {
   runTriggerLabel,
 } from '@/components/reconciliation/presentation';
 import { runMetricHint } from '@/components/reconciliation/run-metric-hint';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { Button } from '@/components/ui/button';
 

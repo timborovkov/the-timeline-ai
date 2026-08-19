@@ -14,7 +14,6 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { PageHeader } from '@/components/page-header';
-import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { ClusterOutputRow } from '@/components/reconciliation/cluster-output-row';
 import { ReconciliationForbiddenView } from '@/components/reconciliation/forbidden-view';
 import {
@@ -32,6 +31,7 @@ import {
   reconciliationEvidenceRowHint,
   reconciliationOutputRowHint,
 } from '@/components/reconciliation/row-hint';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
