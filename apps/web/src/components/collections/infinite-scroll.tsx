@@ -106,9 +106,9 @@ export function InfiniteScroll({
     >
       {loading ? (
         customLoading ? (
-          <div role="status" aria-label="Loading more" className="w-full">
+          <output aria-label="Loading more" className="block w-full">
             {loadingContent}
-          </div>
+          </output>
         ) : (
           <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
             Loading more…
