@@ -24,6 +24,7 @@ import {
   objectChanges,
   objectIdentityFacets,
   objectNotes,
+  objectNoteMentions,
   objectSummaries,
   notifications,
   rawEvents,
@@ -33,7 +34,7 @@ import {
   reconciliationRuns,
   userPins,
 } from '@timeline/db';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -41,6 +42,7 @@ import { z } from 'zod';
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { PGlite } from '@electric-sql/pglite';
 
+import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetEnvForTests } from '#src/env.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { TimelineAiError } from '#src/llm/errors.js';
@@ -68,6 +70,13 @@ const qdrantFakes = vi.hoisted(() => ({
   getQdrantClient: vi.fn(),
 }));
 
+vi.mock('#src/conversation-surfaces/runtime.js', () => ({
+  acceptDirectAgentTurn: vi.fn().mockResolvedValue({
+    status: 'queued',
+    turnId: '00000000-0000-4000-8000-000000000001',
+    sessionId: '00000000-0000-4000-8000-000000000002',
+  }),
+}));
 vi.mock('#src/queue/queues.js', () => ({
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
@@ -1576,6 +1585,56 @@ describe('object scope — notes and suggestions', () => {
         previous_body: 'Updated rollout note',
       }),
     );
+  });
+
+  it('records discussion mentions, notifies teammates, skips self, and pings Timeline', async () => {
+    const ownerScope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const object = await ownerScope.createObject({
+      type: 'project',
+      canonicalName: 'Mention rollout',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const note = await ownerScope.createNote({
+      entityId: object.id,
+      body: 'Hey @member and @owner and @timeline, please review.',
+      authorUserId: USER_OWNER,
+    });
+    await flushBackgroundWork();
+
+    const mentionRows = await db
+      .select()
+      .from(objectNoteMentions)
+      .where(eq(objectNoteMentions.noteId, note.id));
+    expect(mentionRows.map((row) => row.kind).sort()).toEqual(['agent', 'user', 'user']);
+    expect(mentionRows.some((row) => row.mentionedUserId === USER_MEMBER)).toBe(true);
+    expect(mentionRows.some((row) => row.mentionedUserId === USER_OWNER)).toBe(true);
+    expect(mentionRows.some((row) => row.kind === 'agent' && row.mentionedUserId === null)).toBe(
+      true,
+    );
+
+    const mentionNotifications = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.entityId, object.id), eq(notifications.kind, 'mention')));
+    expect(mentionNotifications).toHaveLength(1);
+    expect(mentionNotifications[0]?.userId).toBe(USER_MEMBER);
+    expect(mentionNotifications[0]?.payload).toEqual(
+      expect.objectContaining({
+        note_id: note.id,
+        actor_user_id: USER_OWNER,
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(vi.mocked(acceptDirectAgentTurn)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          surface: 'object_discussion',
+          externalConversationKey: `object:${object.id}`,
+        }),
+        expect.anything(),
+        expect.objectContaining({ providerAcknowledgement: 'background' }),
+      );
+    });
   });
 
   it('creates link artifact evidence from object audit note text', async () => {

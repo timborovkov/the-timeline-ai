@@ -158,6 +158,7 @@ export async function loadNotificationsPageAction(input: unknown): Promise<{
     summary: string;
     entityId: string | null;
     agentSuggestionId: string | null;
+    payload: Record<string, unknown>;
     createdAt: string;
     readAt: string | null;
   }[];
@@ -187,6 +188,7 @@ export async function loadNotificationsPageAction(input: unknown): Promise<{
         summary: row.summary,
         entityId: row.entityId,
         agentSuggestionId: row.agentSuggestionId,
+        payload: row.payload,
         createdAt: row.createdAt.toISOString(),
         readAt: row.readAt?.toISOString() ?? null,
       })),

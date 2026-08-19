@@ -44,7 +44,7 @@ test.describe('Infinite scroll collections', () => {
       await page.waitForTimeout(400);
     }
     await expect(page.getByText(oldest)).toBeVisible();
-    await expect(page.getByText('No older activity')).toBeVisible();
+    await expect(page.getByRole('status', { name: 'No older activity' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
   });
 

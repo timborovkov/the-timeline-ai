@@ -114,6 +114,7 @@ export default async function AppLayout({
             summary: notification.summary,
             entityId: notification.entityId,
             agentSuggestionId: notification.agentSuggestionId,
+            payload: notification.payload,
             createdAt: notification.createdAt.toISOString(),
             readAt: notification.readAt?.toISOString() ?? null,
           })),

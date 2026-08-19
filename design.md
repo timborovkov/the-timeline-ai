@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.21 · Remaining settings density, board list, task kanban skeletons, and standardized personal pins (2026-08-19). Replaces v3.20.
+**Version:** v3.22 · Object discussions (2026-08-19). Replaces v3.21 Remaining settings density, board list, task kanban skeletons, and standardized personal pins.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -302,7 +302,8 @@ Copy:
   the archive is gone.
 - Object and task detail still omit empty memory, related-context, and
   notes cards. Digest empty groups stay omitted. Infinite-scroll
-  “No more matching …” bound labels are terminators, not empty states.
+  terminators are a short centered hairline, not a “No more matching …”
+  sentence. The bound label stays in the accessibility tree.
   Auth “No account yet?”, the Ask composer prompt, Home attention
   “You're caught up”, and combobox/command-palette “no matches” copy
   are not collection empty states.
@@ -768,9 +769,10 @@ The peek is a dense inspector on the shared detail rail, not a form card:
 due / project / category triggers used in the list. Project and category pickers on this
 surface are borderless. Do not duplicate those values in a second “current”
 grid. Do not label the peek “side panel.” If accepted creation evidence exists,
-lead with that “why this exists” excerpt. Notes and related links follow as
-unboxed rows. Empty memory, empty related context, and empty notes stay out of
-the peek.
+lead with that “why this exists” excerpt. Discussion (activity and comments)
+always follows as unboxed rows, including the borderless composer so a
+comment can start from the peek. Empty memory and empty related context stay
+out of the peek.
 
 The full object page is a Linear-style issue view, not a work-index. It has no
 `WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
@@ -781,8 +783,8 @@ menu. The main column uses an 8px section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
 evidence / facts groups that have items. Empty “Not enough object memory,” “No
-connected work,” and “Nothing here yet” cards are prohibited. Notes keep a
-borderless composer. The right column is one Properties rail: a 6px-radius
+connected work,” and “Nothing here yet” cards are prohibited. Discussion keeps
+a borderless composer with @mentions. The right column is one Properties rail: a 6px-radius
 `--surface` panel with a hairline `--border`, not raw page canvas. Properties,
 Related, recent changes, and Archive share that one panel and divide with
 hairlines. Do not nest a card per field. The task peek uses the same rail so
@@ -1149,3 +1151,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Timeline flush sticky toolbar | Drops main top padding on Timeline (`flush-top`) so the sticky filter bar and `top-11` date labels sit under the 48px header without a negative `top`. |
 | 2026-08-19 | Standardized personal pins | One icon pin with Pin to Home tooltip, mixed Home and Work previews, list pin glyphs, and About labels for Ask object bindings. |
 | 2026-08-19 | Board add-item people and companies | Add item keeps person and company type filters visible and searches beyond a recency window of recent tasks. |
+| 2026-08-19 | Object discussions | Replaces object custom notes with a Linear-style activity + comments thread, @mentions, The Timeline Bot pings, and quiet comment counts. |
+| 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |

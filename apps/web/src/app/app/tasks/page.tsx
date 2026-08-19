@@ -1,7 +1,5 @@
-import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
-import { inArray } from 'drizzle-orm';
 import { ListTodo } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
@@ -118,22 +116,12 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
       scope.pins.isPinnedMany(rows.map((row) => ({ kind: 'object' as const, key: row.id }))),
     ],
   );
-  const memberIds = members.map((member) => member.userId);
-  const memberRows =
-    memberIds.length > 0
-      ? await db
-          .select({ id: users.id, name: users.name, email: users.email })
-          .from(users)
-          .where(inArray(users.id, memberIds))
-      : [];
-  const memberMap = new Map(memberRows.map((member) => [member.id, member] as const));
-  const memberOptions = members.map((member) => {
-    const user = memberMap.get(member.userId);
-    return {
-      id: member.userId,
-      label: displayMemberLabel(user),
-    };
-  });
+  const memberOptions = members.map((member) => ({
+    id: member.userId,
+    label: displayMemberLabel(member),
+    name: member.name ?? undefined,
+    email: member.email,
+  }));
   const taskSuggestions = pendingSuggestions.flatMap((bundle) => {
     const items = bundle.items.filter(
       (item) => item.targetKind === 'task' && item.status === 'pending',
@@ -261,7 +249,9 @@ export default async function TasksPage({ searchParams }: PageProps<'/app/tasks'
             selectedTaskContext={selectedTaskDetail?.connectedWork ?? null}
             selectedTaskProvenance={selectedTaskDetail?.provenance ?? null}
             selectedTaskNotes={selectedTaskDetail?.notes ?? []}
+            selectedTaskRecentChanges={selectedTaskDetail?.recentChanges ?? []}
             selectedTaskPinned={selectedTaskPinned}
+            currentUserId={session.user.id}
             view={view}
             members={memberOptions}
             projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}

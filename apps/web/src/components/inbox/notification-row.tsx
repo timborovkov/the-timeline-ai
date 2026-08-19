@@ -6,6 +6,7 @@ import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
+import { notificationHref } from '@/lib/notification-href';
 import { notificationKindLabel } from '@/lib/notification-labels';
 import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
@@ -16,6 +17,7 @@ interface Props {
   summary: string;
   entityId: string | null;
   agentSuggestionId: string | null;
+  payload?: Record<string, unknown> | null;
   createdAt: string;
   initiallyRead: boolean;
 }
@@ -34,6 +36,7 @@ function NotificationRowContent({
   summary,
   entityId,
   agentSuggestionId,
+  payload,
   createdAt,
   initiallyRead,
 }: Props) {
@@ -143,7 +146,7 @@ function NotificationRowContent({
         <p className="mt-1 text-fg">
           {entityId || agentSuggestionId ? (
             <Link
-              href={entityId ? `/app/objects/${entityId}` : '/app/approvals'}
+              href={notificationHref({ kind, entityId, agentSuggestionId, payload })}
               className="font-medium hover:underline"
               onClick={markRead}
             >

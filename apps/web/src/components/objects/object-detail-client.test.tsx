@@ -159,7 +159,7 @@ describe('ObjectDetailClient', () => {
     const html = renderObjectDetail({ detail, userId: 'user-1', suggestions: [] });
 
     expect(html).toContain('Send proposal');
-    expect(html).toContain('Notes');
+    expect(html).toContain('Discussion');
     expect(html).toContain('Related');
     expect(html).toContain('Search objects');
     expect(html).not.toContain('Object id');
@@ -1102,7 +1102,7 @@ describe('ObjectDetailClient', () => {
     };
     const { rerender } = render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
 
-    const noteInput = screen.getByLabelText('New note');
+    const noteInput = screen.getByLabelText('New comment');
     await user.type(noteInput, 'Draft survives refresh');
 
     rerender(objectDetailElement({ detail: refreshedDetail, userId: 'user-1', suggestions: [] }));

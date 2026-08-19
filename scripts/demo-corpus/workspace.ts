@@ -740,4 +740,85 @@ export const CORPUS_NOTES = [
     authorUserId: CORPUS_PERSON.jordan.id,
     body: 'Preview reads stored bytes. Live vendor calls stay out of CI.',
   },
+  {
+    id: CORPUS_UUID.note(9),
+    entityId: objectByName('Northstar Works'),
+    authorUserId: CORPUS_PERSON.avery.id,
+    body: '@Casey can you confirm the 26 August review still holds? @TheTimelineBot summarize the blockers.',
+  },
+  {
+    id: CORPUS_UUID.note(10),
+    entityId: objectByName('Northstar Works'),
+    authorUserId: CORPUS_PERSON.casey.id,
+    body: '@Avery yes — keep 26 August. CSV fallback is the source of truth.',
+  },
+  {
+    id: CORPUS_UUID.note(11),
+    entityId: objectByName('Helio Retail pilot'),
+    authorUserId: CORPUS_PERSON.mika.id,
+    body: '@Riley please attach the attendee list before Tuesday.',
+  },
+] as const;
+
+export const CORPUS_NOTE_MENTIONS = [
+  {
+    id: CORPUS_UUID.mention(1),
+    noteId: CORPUS_UUID.note(9),
+    entityId: objectByName('Northstar Works'),
+    mentionedUserId: CORPUS_PERSON.casey.id,
+    kind: 'user' as const,
+    startOffset: 0,
+    endOffset: 6,
+  },
+  {
+    id: CORPUS_UUID.mention(2),
+    noteId: CORPUS_UUID.note(9),
+    entityId: objectByName('Northstar Works'),
+    mentionedUserId: null,
+    kind: 'agent' as const,
+    startOffset: 56,
+    endOffset: 66,
+  },
+  {
+    id: CORPUS_UUID.mention(3),
+    noteId: CORPUS_UUID.note(10),
+    entityId: objectByName('Northstar Works'),
+    mentionedUserId: CORPUS_PERSON.avery.id,
+    kind: 'user' as const,
+    startOffset: 0,
+    endOffset: 6,
+  },
+  {
+    id: CORPUS_UUID.mention(4),
+    noteId: CORPUS_UUID.note(11),
+    entityId: objectByName('Helio Retail pilot'),
+    mentionedUserId: CORPUS_PERSON.riley.id,
+    kind: 'user' as const,
+    startOffset: 0,
+    endOffset: 6,
+  },
+] as const;
+
+export const CORPUS_MENTION_NOTIFICATIONS = [
+  {
+    id: CORPUS_UUID.notification(1),
+    userId: CORPUS_PERSON.casey.id,
+    entityId: objectByName('Northstar Works'),
+    noteId: CORPUS_UUID.note(9),
+    summary: 'Avery Timeline mentioned you on Northstar Works',
+    actorUserId: CORPUS_PERSON.avery.id,
+    actorName: 'Avery Timeline',
+    excerpt:
+      '@Casey can you confirm the 26 August review still holds? @TheTimelineBot summarize the blockers.',
+  },
+  {
+    id: CORPUS_UUID.notification(2),
+    userId: CORPUS_PERSON.riley.id,
+    entityId: objectByName('Helio Retail pilot'),
+    noteId: CORPUS_UUID.note(11),
+    summary: 'Mika Product mentioned you on Helio Retail pilot',
+    actorUserId: CORPUS_PERSON.mika.id,
+    actorName: 'Mika Product',
+    excerpt: '@Riley please attach the attendee list before Tuesday.',
+  },
 ] as const;

@@ -9,6 +9,7 @@ export * from '#src/schema/fact-entities.js';
 export * from '#src/schema/entity-relationships.js';
 export * from '#src/schema/object-changes.js';
 export * from '#src/schema/object-notes.js';
+export * from '#src/schema/object-note-mentions.js';
 export * from '#src/schema/object-summaries.js';
 export * from '#src/schema/object-identity-facets.js';
 export * from '#src/schema/object-views.js';

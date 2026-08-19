@@ -34,10 +34,13 @@ import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch, SetStateAction } from 'react';
 
 import {
+  createNoteAction,
+  deleteNoteAction,
   loadTaskPrimaryProjectsAction,
   loadTaskRowsAction,
   resetTaskCategoryAction,
   setTaskCategoryAction,
+  updateNoteAction,
   updateObjectAction,
 } from '@/app/actions/objects';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
@@ -46,13 +49,15 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { CollectionBound, InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
 import { CompactKanbanCardSkeleton } from '@/components/loading-states';
+import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
+import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
 import { ObjectOrigin } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
@@ -79,6 +84,8 @@ import { cn } from '@/lib/utils';
 interface TaskMemberOption {
   id: string;
   label: string;
+  name?: string;
+  email?: string;
 }
 
 type TaskObjectRow = objects.ObjectRow & { pinned?: boolean };
@@ -90,7 +97,9 @@ interface Props {
   selectedTaskContext?: objects.ObjectDetail['connectedWork'] | null;
   selectedTaskProvenance?: objects.ObjectDetail['provenance'] | null;
   selectedTaskNotes?: objects.ObjectDetail['notes'];
+  selectedTaskRecentChanges?: objects.ObjectDetail['recentChanges'];
   selectedTaskPinned?: boolean;
+  currentUserId?: string;
   view: TaskView;
   members: TaskMemberOption[];
   projects?: TaskMemberOption[];
@@ -941,8 +950,10 @@ function TaskBoardView({
   selectedTaskContext,
   selectedTaskProvenance,
   selectedTaskNotes,
+  selectedTaskRecentChanges,
   selectedTaskId,
   selectedTaskPinned = false,
+  currentUserId,
   selectedVisibleIds,
   sensors,
   setSelectedIds,
@@ -1049,9 +1060,7 @@ function TaskBoardView({
           !canLoadMore &&
           !loadingMore &&
           !loadError ? (
-            <p role="status" className="shrink-0 px-4 py-2 text-center text-xs text-fg-dim md:px-8">
-              No more matching tasks
-            </p>
+            <CollectionBound label="No more matching tasks" className="shrink-0 px-4 md:px-8" />
           ) : null}
         </div>
         <DragOverlay>
@@ -1081,7 +1090,9 @@ function TaskBoardView({
           connectedWork={selectedTaskContext}
           provenance={selectedTaskProvenance}
           notes={selectedTaskNotes}
+          recentChanges={selectedTaskRecentChanges}
           initialPinned={selectedTaskPinned}
+          currentUserId={currentUserId}
           columns={allColumns}
           members={members}
           projects={projects}
@@ -1354,6 +1365,7 @@ function TaskListRow({
           >
             {displayText(title)}
           </Link>
+          <DiscussionCountBadge count={row.commentCount} className="ml-2 shrink-0" />
         </CollectionRow.Title>
         <CollectionRow.Metadata>
           <>
@@ -2048,13 +2060,57 @@ function TaskCard({
   );
 }
 
-// react-doctor-disable-next-line react-doctor/no-multi-comp -- The side panel is the task board's selected-row editor and shares the same update path.
+interface TaskDetailUiState {
+  saving: string | null;
+  error: string | null;
+  noteBody: string;
+  editingNoteId: string | null;
+  editingBody: string;
+}
+
+type TaskDetailUiAction =
+  | { type: 'save-start'; field: string }
+  | { type: 'save-end' }
+  | { type: 'error'; error: string | null }
+  | { noteBody: string }
+  | { editingNoteId: string | null; editingBody?: string }
+  | { editingBody: string };
+
+function taskDetailUiReducer(
+  state: TaskDetailUiState,
+  action: TaskDetailUiAction,
+): TaskDetailUiState {
+  if ('type' in action) {
+    if (action.type === 'save-start') {
+      return { ...state, saving: action.field, error: null };
+    }
+    if (action.type === 'save-end') {
+      return { ...state, saving: null };
+    }
+    return { ...state, error: action.error };
+  }
+  if ('noteBody' in action) {
+    return { ...state, noteBody: action.noteBody };
+  }
+  if ('editingBody' in action && !('editingNoteId' in action)) {
+    return { ...state, editingBody: action.editingBody };
+  }
+  return {
+    ...state,
+    editingNoteId: action.editingNoteId,
+    editingBody: action.editingBody ?? state.editingBody,
+  };
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp, react-doctor/no-giant-component -- The side panel is the task board's selected-row editor and shares the same update path.
 function TaskDetailPanel({
   task,
   connectedWork,
   provenance,
   notes,
+  recentChanges,
   initialPinned,
+  currentUserId,
   columns,
   members,
   projects,
@@ -2071,7 +2127,9 @@ function TaskDetailPanel({
   connectedWork?: objects.ObjectDetail['connectedWork'] | null;
   provenance?: objects.ObjectDetail['provenance'] | null;
   notes?: objects.ObjectDetail['notes'];
+  recentChanges?: objects.ObjectDetail['recentChanges'];
   initialPinned: boolean;
+  currentUserId?: string;
   columns: string[];
   members: TaskMemberOption[];
   projects: TaskMemberOption[];
@@ -2084,25 +2142,93 @@ function TaskDetailPanel({
   onProjectChangeCommitted: () => void;
   onProjectChangeReverted: () => void;
 }) {
-  const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [panelUi, dispatchPanelUi] = useReducer(taskDetailUiReducer, {
+    saving: null,
+    error: null,
+    noteBody: '',
+    editingNoteId: null,
+    editingBody: '',
+  });
+  const { saving, error, noteBody, editingNoteId, editingBody } = panelUi;
+  const [notePending, startNoteTransition] = useTransition();
   const timezone = useWorkspaceTimezone();
+  const router = useRouter();
   const title = displayObjectTitle(task);
   const assignee = members.find((member) => member.id === task.assigneeUserId);
-  const visibleNotes = (notes ?? []).slice(0, 2);
+
+  function dispatchObjectUi(
+    action:
+      | { noteBody: string }
+      | { editingNoteId: string | null; editingBody?: string }
+      | { editingBody: string },
+  ): void {
+    dispatchPanelUi(action);
+  }
+
+  function addNote(): void {
+    if (!noteBody.trim()) return;
+    const body = noteBody.trim();
+    dispatchPanelUi({ noteBody: '' });
+    startNoteTransition(async () => {
+      const result = await notifyAction({
+        id: `task:${task.id}:note`,
+        loading: 'Adding comment…',
+        success: 'Comment added',
+        error: 'Couldn’t add comment',
+        run: () => createNoteAction({ entityId: task.id, body }),
+      });
+      if (result.error) dispatchPanelUi({ noteBody: body });
+      else router.refresh();
+    });
+  }
+
+  function saveNote(noteId: string, body: string): void {
+    const trimmed = body.trim();
+    if (!trimmed) return;
+    dispatchPanelUi({ editingNoteId: null });
+    startNoteTransition(async () => {
+      const result = await notifyAction({
+        id: `task:${task.id}:note`,
+        loading: 'Updating comment…',
+        success: 'Comment updated',
+        error: 'Couldn’t update comment',
+        run: () => updateNoteAction({ noteId, entityId: task.id, body: trimmed }),
+      });
+      if (result.error) {
+        dispatchPanelUi({ editingNoteId: noteId, editingBody: body });
+      } else router.refresh();
+    });
+  }
+
+  function deleteNote(noteId: string): void {
+    startNoteTransition(async () => {
+      const result = await notifyAction({
+        id: `task:${task.id}:note`,
+        loading: 'Deleting comment…',
+        success: 'Comment deleted',
+        error: 'Couldn’t delete comment',
+        run: () => deleteNoteAction({ noteId, entityId: task.id }),
+      });
+      if (!result.error) router.refresh();
+    });
+  }
 
   function save(field: string, patch: TaskPatch): void {
-    setSaving(field);
-    setError(null);
+    dispatchPanelUi({ type: 'save-start', field });
     void onUpdate(task.id, patch)
       .then((result) => {
-        if (result.error) setError(result.error);
+        if (result.error) {
+          dispatchPanelUi({ type: 'error', error: result.error });
+        }
       })
       .catch((err: unknown) => {
-        setError(err instanceof Error && err.message ? err.message : 'Save failed');
+        dispatchPanelUi({
+          type: 'error',
+          error: err instanceof Error && err.message ? err.message : 'Save failed',
+        });
       })
       .finally(() => {
-        setSaving(null);
+        dispatchPanelUi({ type: 'save-end' });
       });
   }
 
@@ -2268,17 +2394,22 @@ function TaskDetailPanel({
 
       <ObjectOrigin provenance={provenance} compact />
 
-      {visibleNotes.length > 0 ? (
-        <section className="px-3 py-1.5" aria-label="Notes">
-          <ul className="space-y-1.5">
-            {visibleNotes.map((note) => (
-              <li key={note.id} className="text-sm leading-5 text-fg">
-                {displayText(note.body, { timezone })}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <div className="px-3 py-1.5">
+        <ObjectDiscussionPanel
+          notes={notes ?? []}
+          recentChanges={recentChanges ?? []}
+          userId={currentUserId ?? ''}
+          members={members}
+          pending={notePending}
+          noteBody={noteBody}
+          editingNoteId={editingNoteId}
+          editingBody={editingBody}
+          dispatchObjectUi={dispatchObjectUi}
+          onAddNote={addNote}
+          onSaveNote={saveNote}
+          onDeleteNote={deleteNote}
+        />
+      </div>
 
       <ObjectRelatedContext connectedWork={connectedWork} compact />
 

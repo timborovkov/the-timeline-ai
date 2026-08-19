@@ -11,6 +11,7 @@ import { priorityTone, statusTone } from '@/components/collections/collection-st
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -129,6 +130,7 @@ export function WorkQueueRow({
         <Link href={item.href} className="block truncate hover:underline">
           {displayText(item.title)}
         </Link>
+        <DiscussionCountBadge count={item.commentCount} className="ml-2 shrink-0" />
       </CollectionRow.Title>
       {context ? <CollectionRow.Context>{context}</CollectionRow.Context> : null}
       <CollectionRow.Metadata>

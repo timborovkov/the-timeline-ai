@@ -90,11 +90,7 @@ export function InfiniteScroll({
 
   if (!hasMore && !loading) {
     if (hideBound) return null;
-    return (
-      <p role="status" className={cn('m-0 px-3 py-2 text-center text-xs text-fg-dim', className)}>
-        {boundLabel}
-      </p>
-    );
+    return <CollectionBound label={boundLabel} className={className} />;
   }
 
   const customLoading = loading && loadingContent !== undefined;
@@ -110,9 +106,9 @@ export function InfiniteScroll({
             {loadingContent}
           </output>
         ) : (
-          <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
+          <output className="m-0 px-3 py-2 text-xs font-normal not-italic text-fg-dim">
             Loading more…
-          </p>
+          </output>
         )
       ) : (
         <button
@@ -126,5 +122,17 @@ export function InfiniteScroll({
         </button>
       )}
     </div>
+  );
+}
+
+export function CollectionBound({ label, className }: { label: string; className?: string }) {
+  return (
+    <output className={cn('block w-full py-4 font-normal not-italic', className)}>
+      <span className="sr-only">{label}</span>
+      <span
+        aria-hidden="true"
+        className="mx-auto block h-px w-40 max-w-[70%] bg-gradient-to-r from-transparent via-border-strong to-transparent"
+      />
+    </output>
   );
 }
