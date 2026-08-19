@@ -47,6 +47,25 @@ async function deliveryAdapter(
       externalMessageId: turn.externalMessageId,
     });
   }
+  if (turn.surface === conversationSurfaces.OBJECT_DISCUSSION_SURFACE) {
+    const entityId = conversationSurfaces.parseObjectDiscussionKey(turn.externalConversationKey);
+    if (!entityId) {
+      throw new Error(
+        `Invalid object discussion conversation key: ${turn.externalConversationKey}`,
+      );
+    }
+    return conversationSurfaces.createObjectDiscussionDeliveryAdapter({
+      postComment: async (text) => {
+        await withTeam(deps.db, turn.teamId, turn.userId).objects.createNote({
+          entityId,
+          body: text,
+          authorUserId: null,
+          actor: { kind: 'agent', userId: null },
+          metadata: { discussion_reply_to: turn.externalMessageId },
+        });
+      },
+    });
+  }
   throw new Error(`Unsupported conversation surface: ${turn.surface}`);
 }
 

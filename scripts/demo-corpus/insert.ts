@@ -33,6 +33,8 @@ import {
   messageDeliveries,
   messagePreferences,
   objectNotes,
+  objectNoteMentions,
+  notifications,
   objectSummaries,
   providerConnections,
   rawEvents,
@@ -71,6 +73,8 @@ import {
   CORPUS_INTEGRATIONS,
   CORPUS_MCP,
   CORPUS_NOTES,
+  CORPUS_NOTE_MENTIONS,
+  CORPUS_MENTION_NOTIFICATIONS,
   CORPUS_ONBOARDING_STEPS,
   CORPUS_PINS,
   CORPUS_PROPOSALS,
@@ -910,6 +914,44 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         updatedAt: NOW,
       },
     });
+
+  await tx
+    .insert(objectNoteMentions)
+    .values(
+      CORPUS_NOTE_MENTIONS.map((row) => ({
+        id: row.id,
+        teamId: TEAM_ID,
+        noteId: row.noteId,
+        entityId: row.entityId,
+        mentionedUserId: row.mentionedUserId,
+        kind: row.kind,
+        startOffset: row.startOffset,
+        endOffset: row.endOffset,
+        createdAt: NOW,
+      })),
+    )
+    .onConflictDoNothing();
+
+  await tx
+    .insert(notifications)
+    .values(
+      CORPUS_MENTION_NOTIFICATIONS.map((row) => ({
+        id: row.id,
+        teamId: TEAM_ID,
+        userId: row.userId,
+        kind: 'mention' as const,
+        entityId: row.entityId,
+        summary: row.summary,
+        payload: {
+          note_id: row.noteId,
+          excerpt: row.excerpt,
+          actor_user_id: row.actorUserId,
+          actor_name: row.actorName,
+        },
+        createdAt: NOW,
+      })),
+    )
+    .onConflictDoNothing();
 
   await tx
     .insert(objectSummaries)

@@ -14,6 +14,7 @@ interface InboxNotification {
   summary: string;
   entityId: string | null;
   agentSuggestionId: string | null;
+  payload?: Record<string, unknown> | null;
   createdAt: string;
   readAt: string | null;
 }
@@ -85,6 +86,7 @@ function InboxListPages({
             summary={n.summary}
             entityId={n.entityId}
             agentSuggestionId={n.agentSuggestionId}
+            payload={n.payload}
             createdAt={n.createdAt}
             initiallyRead={n.readAt !== null}
           />

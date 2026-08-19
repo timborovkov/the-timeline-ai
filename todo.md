@@ -540,7 +540,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       urgently needed.
 - [ ] Keep Dockerfiles and `railway.json` in sync with deployed reality.
 - [ ] Keep org-wide searchable embeddings complete for every team-scoped content
-      surface: raw events, facts, entities, objects, object notes, object
+      surface: raw events, facts, entities, objects, object notes (discussion comments), object
       changes, documents, document chunks, meeting transcript chunks, meeting
       summaries, integration events, calendar events, and optionally chat
       messages. Verify with periodic row-count vs. Qdrant payload audits.

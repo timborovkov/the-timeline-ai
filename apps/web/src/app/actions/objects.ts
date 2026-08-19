@@ -958,6 +958,9 @@ const noteCreateSchema = z.object({
 
 function bestEffortRevalidateObjectDetail(entityId: string, operation: string): void {
   bestEffortRevalidatePath(`/app/objects/${entityId}`, operation);
+  bestEffortRevalidatePath('/app/tasks', operation);
+  bestEffortRevalidatePath('/app/work', operation);
+  bestEffortRevalidatePath('/app/inbox', operation);
 }
 
 export async function createNoteAction(input: unknown): Promise<ActionState> {

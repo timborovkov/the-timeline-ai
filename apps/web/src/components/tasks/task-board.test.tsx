@@ -14,6 +14,9 @@ const fakes = vi.hoisted(() => {
   return {
     refresh,
     router: { refresh },
+    createNoteAction: vi.fn(),
+    deleteNoteAction: vi.fn(),
+    updateNoteAction: vi.fn(),
     updateObjectAction: vi.fn(),
     loadTaskRowsAction: vi.fn(),
     loadTaskPrimaryProjectsAction: vi.fn(),
@@ -29,6 +32,9 @@ const fakes = vi.hoisted(() => {
 
 vi.mock('next/navigation', () => ({ useRouter: () => fakes.router }));
 vi.mock('@/app/actions/objects', () => ({
+  createNoteAction: fakes.createNoteAction,
+  deleteNoteAction: fakes.deleteNoteAction,
+  updateNoteAction: fakes.updateNoteAction,
   updateObjectAction: fakes.updateObjectAction,
   loadTaskRowsAction: fakes.loadTaskRowsAction,
   loadTaskPrimaryProjectsAction: fakes.loadTaskPrimaryProjectsAction,

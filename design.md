@@ -768,9 +768,9 @@ The peek is a dense inspector on the shared detail rail, not a form card:
 due / project / category triggers used in the list. Project and category pickers on this
 surface are borderless. Do not duplicate those values in a second “current”
 grid. Do not label the peek “side panel.” If accepted creation evidence exists,
-lead with that “why this exists” excerpt. Notes and related links follow as
-unboxed rows. Empty memory, empty related context, and empty notes stay out of
-the peek.
+lead with that “why this exists” excerpt. Discussion (activity and comments)
+and related links follow as unboxed rows. Empty memory, empty related context,
+and empty discussion stay out of the peek.
 
 The full object page is a Linear-style issue view, not a work-index. It has no
 `WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
@@ -781,8 +781,8 @@ menu. The main column uses an 8px section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
 evidence / facts groups that have items. Empty “Not enough object memory,” “No
-connected work,” and “Nothing here yet” cards are prohibited. Notes keep a
-borderless composer. The right column is one Properties rail: a 6px-radius
+connected work,” and “Nothing here yet” cards are prohibited. Discussion keeps
+a borderless composer with @mentions. The right column is one Properties rail: a 6px-radius
 `--surface` panel with a hairline `--border`, not raw page canvas. Properties,
 Related, recent changes, and Archive share that one panel and divide with
 hairlines. Do not nest a card per field. The task peek uses the same rail so

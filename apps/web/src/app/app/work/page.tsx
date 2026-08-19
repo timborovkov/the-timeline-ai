@@ -24,6 +24,7 @@ import { db } from '@/lib/db';
 import { formatDisplayDate } from '@/lib/display-dates';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { getWorkAttentionSummary } from '@/lib/hub-status';
+import { notificationHref } from '@/lib/notification-href';
 import {
   approvalQueueItem,
   boardQueueItem,
@@ -80,17 +81,22 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
   const calendarSettings = await scope.calendar.getCalendarSettings();
   const timezone = calendarSettings.defaultTimezone;
   const dueBoundaries = workspaceDueDateBoundaries(timezone, now);
-  const [attention, boardItems, queueObjects, pinnedPage, boards, members] = await Promise.all([
-    getWorkAttentionSummary(scope, now, timezone),
-    scope.boards.listWorkQueueItems({
-      dueDateRange: { timezone, to: dueBoundaries.dueSoonEnd },
-      limit: 100,
-    }),
-    listWorkQueueObjects(scope.objects, { userId: session.user.id, now, timezone }),
-    scope.pins.list({ limit: 6 }),
-    scope.boards.listBoards(),
-    scope.timeline.listMembers(),
-  ]);
+  const [attention, boardItems, queueObjects, pinnedPage, boards, members, mentionNotifications] =
+    await Promise.all([
+      getWorkAttentionSummary(scope, now, timezone),
+      scope.boards.listWorkQueueItems({
+        dueDateRange: { timezone, to: dueBoundaries.dueSoonEnd },
+        limit: 100,
+      }),
+      listWorkQueueObjects(scope.objects, { userId: session.user.id, now, timezone }),
+      scope.pins.list({ limit: 6 }),
+      scope.boards.listBoards(),
+      scope.timeline.listMembers(),
+      scope.objects.listNotifications({ unreadOnly: true, limit: 20 }),
+    ]);
+  const mentionPings = mentionNotifications.filter(
+    (notification) => notification.kind === 'mention',
+  );
 
   const approvalsItem = approvalQueueItem(attention.pendingApprovals, now);
   const queue = dedupeWorkQueueItems(
@@ -155,6 +161,25 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       <WorkSubnav current="/app/work" />
 
       <div className="space-y-7">
+        {mentionPings.length > 0 ? (
+          <CollectionGroup title="Unread mentions" count={mentionPings.length}>
+            <div>
+              {mentionPings.map((notification) => (
+                <CollectionRow key={notification.id}>
+                  <CollectionRow.Title>
+                    <Link
+                      href={notificationHref(notification)}
+                      className="block truncate hover:underline"
+                    >
+                      {notification.summary}
+                    </Link>
+                  </CollectionRow.Title>
+                </CollectionRow>
+              ))}
+            </div>
+          </CollectionGroup>
+        ) : null}
+
         <PinnedWorkspacePreview initialItems={pinnedPage.items} heading="Pinned" />
 
         <CollectionGroup title="Boards" count={boards.length}>

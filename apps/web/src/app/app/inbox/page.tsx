@@ -100,6 +100,7 @@ export default async function InboxPage({
             summary: n.summary,
             entityId: n.entityId,
             agentSuggestionId: n.agentSuggestionId,
+            payload: n.payload,
             createdAt: n.createdAt.toISOString(),
             readAt: n.readAt?.toISOString() ?? null,
           }))}

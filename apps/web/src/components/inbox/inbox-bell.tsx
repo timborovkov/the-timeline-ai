@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDate } from '@/lib/display-dates';
+import { notificationHref } from '@/lib/notification-href';
 import { notificationKindLabel } from '@/lib/notification-labels';
 import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
@@ -25,6 +26,7 @@ export interface InboxBellNotification {
   summary: string;
   entityId: string | null;
   agentSuggestionId: string | null;
+  payload?: Record<string, unknown> | null;
   createdAt: string;
   readAt: string | null;
 }
@@ -38,10 +40,8 @@ function formatPreviewTime(ts: string, timezone: string): string {
   return formatDisplayDate(ts, { timezone });
 }
 
-function notificationHref(notification: InboxBellNotification): string {
-  if (notification.entityId) return `/app/objects/${notification.entityId}`;
-  if (notification.agentSuggestionId) return '/app/approvals';
-  return '/app/inbox';
+function inboxItemHref(notification: InboxBellNotification): string {
+  return notificationHref(notification);
 }
 
 export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
@@ -84,7 +84,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
     completeReadAction(
       () => markNotificationReadAction(notification.id),
       () => {
-        router.push(notificationHref(notification));
+        router.push(inboxItemHref(notification));
       },
       notification.id,
     );
@@ -146,7 +146,7 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
               return (
                 <li key={notification.id} className="border-b border-border last:border-b-0">
                   <Link
-                    href={notificationHref(notification)}
+                    href={inboxItemHref(notification)}
                     aria-disabled={pending && unread ? true : undefined}
                     tabIndex={pending && unread ? -1 : undefined}
                     onClick={(event) => {

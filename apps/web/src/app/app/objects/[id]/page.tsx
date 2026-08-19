@@ -1,7 +1,5 @@
-import { users } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
-import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import type { SuggestionBundle } from '@timeline/shared/suggestions';
@@ -114,24 +112,14 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         ? scope.objects.listPrimaryProjectsForTasks([detail.id])
         : Promise.resolve([]),
       scope.pins.isPinned({ kind: 'object', key: detail.id }),
-      detail.type === 'task' ? scope.timeline.listMembers() : Promise.resolve([]),
+      scope.timeline.listMembers(),
     ]);
-  const memberIds = members.map((member) => member.userId);
-  const memberRows =
-    memberIds.length > 0
-      ? await db
-          .select({ id: users.id, name: users.name, email: users.email })
-          .from(users)
-          .where(inArray(users.id, memberIds))
-      : [];
-  const memberMap = new Map(memberRows.map((member) => [member.id, member] as const));
-  const memberOptions = members.map((member) => {
-    const user = memberMap.get(member.userId);
-    return {
-      id: member.userId,
-      label: displayMemberLabel(user),
-    };
-  });
+  const memberOptions = members.map((member) => ({
+    id: member.userId,
+    label: displayMemberLabel(member),
+    name: member.name ?? undefined,
+    email: member.email,
+  }));
   const boardItemIds = new Set(boardContext.map((row) => row.itemId));
   const suggestions = pendingBundles.flatMap((bundle) => {
     const items = objectPageSuggestionItems(bundle, detail.id, boardItemIds);
@@ -151,6 +139,7 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         suggestions={suggestions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
         members={memberOptions}
+        highlightCommentId={firstParam(query.comment) ?? null}
         primaryProject={primaryProjects[0] ?? null}
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
         boardContext={boardContext}

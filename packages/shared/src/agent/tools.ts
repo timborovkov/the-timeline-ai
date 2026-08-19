@@ -1830,7 +1830,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
 
     search_object_notes: tool({
       description:
-        'Semantic search across accepted object notes, especially durable Q&A notes. Use before search_timeline for reusable answers, policies, procedures, and "what is the answer to..." questions. Returns note_id citations plus the owning object; pending proposals are not included.',
+        'Semantic search across object discussion comments, including durable Q&A notes. Use before search_timeline for reusable answers, policies, procedures, discussion decisions, and "what is the answer to..." questions. Returns note_id citations plus the owning object; pending proposals are not included.',
       inputSchema: searchObjectNotesInput,
       execute: async (raw) =>
         runSafe('search_object_notes', async () => {

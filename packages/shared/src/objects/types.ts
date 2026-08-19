@@ -86,6 +86,8 @@ export interface ObjectRow {
   metadata: Record<string, unknown>;
   updatedAt: Date;
   createdAt: Date;
+  /** Omitted when there are no discussion comments. */
+  commentCount?: number;
 }
 
 export interface TaskPrimaryProjectRow {
@@ -170,13 +172,22 @@ export interface ObjectSummarySourceCounts {
   changes: number;
 }
 
+export interface ObjectNoteMentionView {
+  kind: 'user' | 'agent';
+  mentionedUserId: string | null;
+  startOffset: number;
+  endOffset: number;
+}
+
 export interface ObjectDetail extends ObjectRow {
   notes: {
     id: string;
     body: string;
     authorUserId: string | null;
+    authorName?: string | null;
     createdAt: Date;
     updatedAt: Date;
+    mentions?: ObjectNoteMentionView[];
   }[];
   relationships: {
     id: string;
@@ -191,6 +202,7 @@ export interface ObjectDetail extends ObjectRow {
     field: string;
     actorKind: ActorKind;
     actorUserId: string | null;
+    actorName?: string | null;
     previousValue: unknown;
     newValue: unknown;
     status: 'applied' | 'suggested' | 'rejected';

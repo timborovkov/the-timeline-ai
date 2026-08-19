@@ -45,6 +45,7 @@ import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectBoardContext } from '@/components/objects/object-board-context';
+import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
 import { ObjectOrigin, ObjectProvenanceGroups } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
@@ -99,10 +100,11 @@ interface Props {
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
   projects?: { id: string; label: string }[];
-  members?: { id: string; label: string }[];
+  members?: { id: string; label: string; name?: string; email?: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
   taskCategoriesEnabled?: boolean;
   boardContext?: boards.ObjectBoardContextRow[];
+  highlightCommentId?: string | null;
 }
 
 interface ObjectDetailUiState {
@@ -1026,13 +1028,16 @@ function ObjectDetailView(props: Props) {
           <ObjectSectionFeed objectId={view.detail.id} section="events" title="Evidence" />
           <ObjectSectionFeed objectId={view.detail.id} section="facts" title="Facts" />
 
-          <ObjectNotesSection
+          <ObjectDiscussionPanel
             notes={view.viewDetail.notes}
+            recentChanges={view.viewDetail.recentChanges}
             userId={view.userId}
+            members={props.members ?? []}
             pending={view.pending}
             noteBody={view.noteBody}
             editingNoteId={view.editingNoteId}
             editingBody={view.editingBody}
+            highlightCommentId={props.highlightCommentId}
             dispatchObjectUi={view.dispatchObjectUi}
             onAddNote={view.addNote}
             onSaveNote={view.saveNote}
@@ -1583,166 +1588,6 @@ function ObjectEditableFields({
         />
       </label>
     </section>
-  );
-}
-
-function ObjectNotesSection({
-  notes,
-  userId,
-  pending,
-  noteBody,
-  editingNoteId,
-  editingBody,
-  dispatchObjectUi,
-  onAddNote,
-  onSaveNote,
-  onDeleteNote,
-}: {
-  notes: ObjectDetail['notes'];
-  userId: string;
-  pending: boolean;
-  noteBody: string;
-  editingNoteId: string | null;
-  editingBody: string;
-  dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
-  onAddNote: () => void;
-  onSaveNote: (noteId: string, body: string) => void;
-  onDeleteNote: (noteId: string) => void;
-}) {
-  return (
-    <section>
-      <h2 className={DETAIL_SECTION_LABEL_CLASS}>Notes</h2>
-      <div className="mt-1 space-y-1.5">
-        <textarea
-          aria-label="New note"
-          value={noteBody}
-          onChange={(e) => {
-            dispatchObjectUi({ noteBody: e.target.value });
-          }}
-          placeholder="Add a note"
-          className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm text-fg outline-none focus-visible:border-signal"
-          rows={2}
-        />
-        <button
-          type="button"
-          onClick={onAddNote}
-          disabled={pending || !noteBody.trim()}
-          className={DETAIL_ACTION_CLASS}
-        >
-          Add note
-        </button>
-      </div>
-      {notes.length > 0 ? (
-        <ul className="mt-1.5 space-y-1.5">
-          {notes.map((note) => (
-            <ObjectNoteItem
-              key={note.id}
-              note={note}
-              isOwner={note.authorUserId === userId}
-              isEditing={editingNoteId === note.id}
-              editingBody={editingBody}
-              pending={pending}
-              dispatchObjectUi={dispatchObjectUi}
-              onSaveNote={onSaveNote}
-              onDeleteNote={onDeleteNote}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </section>
-  );
-}
-
-function ObjectNoteItem({
-  note,
-  isOwner,
-  isEditing,
-  editingBody,
-  pending,
-  dispatchObjectUi,
-  onSaveNote,
-  onDeleteNote,
-}: {
-  note: ObjectDetail['notes'][number];
-  isOwner: boolean;
-  isEditing: boolean;
-  editingBody: string;
-  pending: boolean;
-  dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
-  onSaveNote: (noteId: string, body: string) => void;
-  onDeleteNote: (noteId: string) => void;
-}) {
-  const timezone = useWorkspaceTimezone();
-  return (
-    <li className="text-sm">
-      {isEditing ? (
-        <div className="space-y-2">
-          <textarea
-            aria-label="Edit note"
-            value={editingBody}
-            onChange={(e) => {
-              dispatchObjectUi({ editingBody: e.target.value });
-            }}
-            className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm text-fg outline-none focus-visible:border-signal"
-            rows={3}
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={pending || !editingBody.trim()}
-              onClick={() => {
-                onSaveNote(note.id, editingBody);
-              }}
-              className={DETAIL_ACTION_CLASS}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                dispatchObjectUi({ editingNoteId: null });
-              }}
-              className={DETAIL_ACTION_CLASS}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className={`whitespace-pre-wrap ${DETAIL_BODY_CLASS}`}>
-          {displayText(note.body, { timezone })}
-        </div>
-      )}
-      <div className={`mt-0.5 flex items-center justify-between ${DETAIL_META_CLASS}`}>
-        <span>{formatDisplayDateTime(note.createdAt, { timezone })}</span>
-        {isOwner && !isEditing ? (
-          <ItemActionGroup
-            label={`Actions for note from ${formatDisplayDateTime(note.createdAt, { timezone })}`}
-          >
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => {
-                dispatchObjectUi({ editingNoteId: note.id, editingBody: note.body });
-              }}
-              className="hover:underline"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={() => {
-                onDeleteNote(note.id);
-              }}
-              className="text-danger hover:underline"
-            >
-              Delete
-            </button>
-          </ItemActionGroup>
-        ) : null}
-      </div>
-    </li>
   );
 }
 

@@ -33,6 +33,7 @@ export interface WorkQueueItem {
   priority: number | null;
   updatedAt: Date;
   reasons: WorkQueueReason[];
+  commentCount?: number;
 }
 
 const OBJECT_QUEUE_SOURCE_LIMIT = 60;
@@ -174,6 +175,7 @@ export function objectQueueItem(
     priority: row.priority,
     updatedAt: row.updatedAt,
     reasons,
+    ...(row.commentCount ? { commentCount: row.commentCount } : {}),
   };
 }
 

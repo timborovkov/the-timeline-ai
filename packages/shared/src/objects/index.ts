@@ -34,6 +34,7 @@ import {
   notifications,
   objectChanges,
   objectIdentityFacets,
+  objectNoteMentions,
   objectNotes,
   objectSummaries,
   objectViews,
@@ -45,6 +46,7 @@ import {
   taskCategoryAssignments,
   taskCategoryProjectInvalidations,
   userPins,
+  users,
 } from '@timeline/db';
 import {
   type SQL,
@@ -102,6 +104,10 @@ import {
   type IdentityFacetKind,
   type IdentityFacetRow,
 } from '#src/objects/identity-facets.js';
+import {
+  persistObjectNoteMentions,
+  pingObjectDiscussionAgent,
+} from '#src/objects/mention-fanout.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
   enqueueObjectSummaryRefresh,
@@ -175,6 +181,7 @@ export {
   type IdentityFacetKind,
   type IdentityFacetRow,
 } from '#src/objects/identity-facets.js';
+export { mentionInsertToken, type MentionMember } from '#src/objects/mentions.js';
 
 const embedLog = childLogger('objects:embed');
 const summaryRefreshLog = childLogger('objects:summary-refresh');
@@ -1296,6 +1303,40 @@ function toObjectRow(row: EntityRow): ObjectRow {
   };
 }
 
+const NOTE_AUDIT_FIELDS = ['__note_create__', '__note_update__', '__note_delete__'] as const;
+const DISCUSSION_NOTE_LIMIT = 100;
+const DISCUSSION_CHANGE_LIMIT = 100;
+
+async function attachCommentCounts(
+  db: Db,
+  scope: TeamScopeCore,
+  rows: ObjectRow[],
+): Promise<ObjectRow[]> {
+  if (rows.length === 0) return rows;
+  const counts = await db
+    .select({
+      entityId: objectNotes.entityId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(objectNotes)
+    .where(
+      and(
+        eq(objectNotes.teamId, scope.teamId),
+        inArray(
+          objectNotes.entityId,
+          rows.map((row) => row.id),
+        ),
+        isNull(objectNotes.deletedAt),
+      ),
+    )
+    .groupBy(objectNotes.entityId);
+  const byId = new Map(counts.map((row) => [row.entityId, row.count]));
+  return rows.map((row) => {
+    const commentCount = byId.get(row.id) ?? 0;
+    return commentCount > 0 ? { ...row, commentCount } : row;
+  });
+}
+
 function toArray<T>(v: T | T[] | undefined): T[] | undefined {
   if (v === undefined) return undefined;
   return Array.isArray(v) ? v : [v];
@@ -1581,7 +1622,7 @@ export async function listObjects(
     .orderBy(...objectListOrder(filter))
     .limit(limit)
     .offset(offset);
-  return rows.map(toObjectRow);
+  return attachCommentCounts(db, scope, rows.map(toObjectRow));
 }
 
 export async function searchObjects(
@@ -1613,7 +1654,7 @@ export async function searchObjects(
       desc(entities.updatedAt),
     )
     .limit(limit);
-  return rows.map(toObjectRow);
+  return attachCommentCounts(db, scope, rows.map(toObjectRow));
 }
 
 export interface ObjectDetail extends ObjectRow {
@@ -1621,8 +1662,15 @@ export interface ObjectDetail extends ObjectRow {
     id: string;
     body: string;
     authorUserId: string | null;
+    authorName?: string | null;
     createdAt: Date;
     updatedAt: Date;
+    mentions?: {
+      kind: 'user' | 'agent';
+      mentionedUserId: string | null;
+      startOffset: number;
+      endOffset: number;
+    }[];
   }[];
   relationships: {
     id: string;
@@ -1637,6 +1685,7 @@ export interface ObjectDetail extends ObjectRow {
     field: string;
     actorKind: ActorKind;
     actorUserId: string | null;
+    actorName?: string | null;
     previousValue: unknown;
     newValue: unknown;
     status: 'applied' | 'suggested' | 'rejected';
@@ -3297,6 +3346,8 @@ export async function getObject(
   }
   if (!entityRow) return null;
 
+  const noteAuthors = alias(users, 'note_authors');
+  const changeActors = alias(users, 'change_actors');
   const [
     noteRows,
     outRows,
@@ -3317,10 +3368,12 @@ export async function getObject(
         id: objectNotes.id,
         body: objectNotes.body,
         authorUserId: objectNotes.authorUserId,
+        authorName: noteAuthors.name,
         createdAt: objectNotes.createdAt,
         updatedAt: objectNotes.updatedAt,
       })
       .from(objectNotes)
+      .leftJoin(noteAuthors, eq(noteAuthors.id, objectNotes.authorUserId))
       .where(
         and(
           eq(objectNotes.teamId, scope.teamId),
@@ -3328,8 +3381,8 @@ export async function getObject(
           isNull(objectNotes.deletedAt),
         ),
       )
-      .orderBy(desc(objectNotes.createdAt), desc(objectNotes.id))
-      .limit(20),
+      .orderBy(asc(objectNotes.createdAt), asc(objectNotes.id))
+      .limit(DISCUSSION_NOTE_LIMIT),
     db
       .select({
         id: entityRelationships.id,
@@ -3381,6 +3434,7 @@ export async function getObject(
         field: objectChanges.field,
         actorKind: objectChanges.actorKind,
         actorUserId: objectChanges.actorUserId,
+        actorName: changeActors.name,
         previousValue: objectChanges.previousValue,
         newValue: objectChanges.newValue,
         status: objectChanges.status,
@@ -3388,9 +3442,16 @@ export async function getObject(
         changedAt: objectChanges.changedAt,
       })
       .from(objectChanges)
-      .where(and(eq(objectChanges.teamId, scope.teamId), eq(objectChanges.entityId, entityRow.id)))
+      .leftJoin(changeActors, eq(changeActors.id, objectChanges.actorUserId))
+      .where(
+        and(
+          eq(objectChanges.teamId, scope.teamId),
+          eq(objectChanges.entityId, entityRow.id),
+          notInArray(objectChanges.field, [...NOTE_AUDIT_FIELDS]),
+        ),
+      )
       .orderBy(desc(objectChanges.changedAt), desc(objectChanges.id))
-      .limit(20),
+      .limit(DISCUSSION_CHANGE_LIMIT),
     db
       .select({
         id: objectIdentityFacets.id,
@@ -3621,6 +3682,62 @@ export async function getObject(
     newSinceLastVisit = countRows[0]?.count ?? 0;
   }
 
+  const mentionRows =
+    noteRows.length === 0
+      ? []
+      : await db
+          .select({
+            noteId: objectNoteMentions.noteId,
+            kind: objectNoteMentions.kind,
+            mentionedUserId: objectNoteMentions.mentionedUserId,
+            startOffset: objectNoteMentions.startOffset,
+            endOffset: objectNoteMentions.endOffset,
+          })
+          .from(objectNoteMentions)
+          .where(
+            and(
+              eq(objectNoteMentions.teamId, scope.teamId),
+              inArray(
+                objectNoteMentions.noteId,
+                noteRows.map((row) => row.id),
+              ),
+            ),
+          );
+  const mentionsByNoteId = new Map<
+    string,
+    {
+      kind: 'user' | 'agent';
+      mentionedUserId: string | null;
+      startOffset: number;
+      endOffset: number;
+    }[]
+  >();
+  for (const mention of mentionRows) {
+    const list = mentionsByNoteId.get(mention.noteId) ?? [];
+    list.push({
+      kind: mention.kind === 'agent' ? 'agent' : 'user',
+      mentionedUserId: mention.mentionedUserId,
+      startOffset: mention.startOffset,
+      endOffset: mention.endOffset,
+    });
+    mentionsByNoteId.set(mention.noteId, list);
+  }
+  const notes = noteRows.map((note) => ({
+    ...note,
+    mentions: mentionsByNoteId.get(note.id) ?? [],
+  }));
+  const commentCountRows = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(objectNotes)
+    .where(
+      and(
+        eq(objectNotes.teamId, scope.teamId),
+        eq(objectNotes.entityId, entityRow.id),
+        isNull(objectNotes.deletedAt),
+      ),
+    );
+  const commentCount = commentCountRows[0]?.count ?? notes.length;
+
   const base = toObjectRow(entityRow);
   const connectedWork = await getConnectedWork(db, scope, base);
   const provenance = await getObjectProvenance(db, scope, base, connectedWork);
@@ -3645,7 +3762,8 @@ export async function getObject(
   );
   return {
     ...base,
-    notes: noteRows,
+    ...(commentCount > 0 ? { commentCount } : {}),
+    notes,
     relationships,
     recentChanges: changeRows,
     identityFacets: identityFacetRows,
@@ -7380,7 +7498,23 @@ export async function createNote(
       body,
     });
 
-    return { id: noteId };
+    const mentionResult = await persistObjectNoteMentions(tx, {
+      teamId: scope.teamId,
+      noteId,
+      entityId: input.entityId,
+      objectName: ent[0].canonicalName,
+      body,
+      authorUserId: input.authorUserId,
+      actorKind: input.actor?.kind ?? 'user',
+    });
+
+    return {
+      id: noteId,
+      pingAgent: mentionResult.pingAgent,
+      actorName: mentionResult.actorName,
+      objectName: ent[0].canonicalName,
+      objectType: ent[0].type,
+    };
   });
 
   runOrDeferPostCommit(scope, () => {
@@ -7396,8 +7530,26 @@ export async function createNote(
       noteId: result.id,
       op: 'createNote',
     });
+    if (result.pingAgent && input.authorUserId) {
+      void pingObjectDiscussionAgent({
+        db: effectsDb,
+        teamId: scope.teamId,
+        userId: input.authorUserId,
+        userName: result.actorName,
+        entityId: input.entityId,
+        objectName: result.objectName,
+        objectType: result.objectType,
+        noteId: result.id,
+        body,
+      }).catch((err: unknown) => {
+        embedLog.error(
+          { err, teamId: scope.teamId, noteId: result.id, op: 'pingObjectDiscussionAgent' },
+          'failed to ping object discussion agent',
+        );
+      });
+    }
   });
-  return result;
+  return { id: result.id };
 }
 
 export async function listIdentityFacets(
@@ -7902,7 +8054,41 @@ export async function updateNote(
       body,
       previousBody: note.body,
     });
-    return { changed: true, entityId: note.entityId };
+    const previousMentionRows = await tx
+      .select({ mentionedUserId: objectNoteMentions.mentionedUserId })
+      .from(objectNoteMentions)
+      .where(
+        and(
+          eq(objectNoteMentions.teamId, scope.teamId),
+          eq(objectNoteMentions.noteId, note.id),
+          eq(objectNoteMentions.kind, 'user'),
+        ),
+      );
+    const objectRows = await tx
+      .select({ canonicalName: entities.canonicalName, type: entities.type })
+      .from(entities)
+      .where(and(eq(entities.id, note.entityId), eq(entities.teamId, scope.teamId)))
+      .limit(1);
+    const mentionResult = await persistObjectNoteMentions(tx, {
+      teamId: scope.teamId,
+      noteId: note.id,
+      entityId: note.entityId,
+      objectName: objectRows[0]?.canonicalName ?? 'object',
+      body,
+      authorUserId: actor.userId ?? input.actorUserId,
+      actorKind: actor.kind,
+      previousMentionedUserIds: previousMentionRows.flatMap((row) =>
+        row.mentionedUserId ? [row.mentionedUserId] : [],
+      ),
+    });
+    return {
+      changed: true,
+      entityId: note.entityId,
+      pingAgent: mentionResult.pingAgent,
+      actorName: mentionResult.actorName,
+      objectName: objectRows[0]?.canonicalName ?? 'object',
+      objectType: objectRows[0]?.type ?? 'other',
+    };
   });
 
   if (updated?.changed) {
@@ -7919,6 +8105,27 @@ export async function updateNote(
         noteId: input.noteId,
         op: 'updateNote',
       });
+      if (updated.pingAgent && (actor.userId ?? input.actorUserId)) {
+        const userId = actor.userId ?? input.actorUserId;
+        if (userId) {
+          void pingObjectDiscussionAgent({
+            db: effectsDb,
+            teamId: scope.teamId,
+            userId,
+            userName: updated.actorName,
+            entityId: updated.entityId,
+            objectName: updated.objectName,
+            objectType: updated.objectType,
+            noteId: input.noteId,
+            body,
+          }).catch((err: unknown) => {
+            embedLog.error(
+              { err, teamId: scope.teamId, noteId: input.noteId, op: 'pingObjectDiscussionAgent' },
+              'failed to ping object discussion agent',
+            );
+          });
+        }
+      }
     });
   }
   return Boolean(updated);

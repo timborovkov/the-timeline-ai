@@ -22,6 +22,7 @@ import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
+import { DiscussionCountBadge } from '@/components/objects/discussion-count-badge';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import {
   LiveTaskCategoryBadge,
@@ -519,6 +520,7 @@ function ObjectCollectionItem({
           >
             {displayText(object.canonicalName)}
           </Link>
+          <DiscussionCountBadge count={object.commentCount} className="ml-2 shrink-0" />
         </CollectionRow.Title>
         <CollectionRow.Context>{typeLabel}</CollectionRow.Context>
         <CollectionRow.Metadata>
