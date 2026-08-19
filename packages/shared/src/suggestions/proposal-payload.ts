@@ -4,7 +4,7 @@ const LOCAL_REF_RE = /^[a-z0-9][a-z0-9_-]{0,79}$/;
 const DATETIME_LIKE_RE =
   /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?$/i;
 
-export const RELATIONSHIP_KIND_VALUES = [
+const RELATIONSHIP_KIND_VALUES = [
   'parent',
   'child',
   'related',
@@ -13,7 +13,7 @@ export const RELATIONSHIP_KIND_VALUES = [
   'duplicate_of',
 ] as const;
 
-export type RelationshipKind = (typeof RELATIONSHIP_KIND_VALUES)[number];
+type RelationshipKind = (typeof RELATIONSHIP_KIND_VALUES)[number];
 
 const RELATIONSHIP_KIND_ALIASES: Record<string, RelationshipKind> = {
   parent: 'parent',
@@ -298,7 +298,7 @@ function pickRelationshipEndpoint(
   return {};
 }
 
-export function normalizeRelationshipKind(value: unknown): RelationshipKind {
+function normalizeRelationshipKind(value: unknown): RelationshipKind {
   if (typeof value !== 'string') return 'related';
   const normalized = value
     .trim()
@@ -307,7 +307,7 @@ export function normalizeRelationshipKind(value: unknown): RelationshipKind {
   return RELATIONSHIP_KIND_ALIASES[normalized] ?? 'related';
 }
 
-export function normalizeRelationshipProposalPayload(
+function normalizeRelationshipProposalPayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const from = pickRelationshipEndpoint(
@@ -353,10 +353,7 @@ export function normalizeRelationshipProposalPayload(
   return canonical;
 }
 
-export function relationshipEndpointCount(
-  payload: Record<string, unknown>,
-  side: 'from' | 'to',
-): number {
+function relationshipEndpointCount(payload: Record<string, unknown>, side: 'from' | 'to'): number {
   return [`${side}EntityId`, `${side}Ref`, `${side}Name`].filter((key) =>
     Boolean(trimmedString(payload[key]) ?? (isUuid(payload[key]) ? payload[key] : null)),
   ).length;
