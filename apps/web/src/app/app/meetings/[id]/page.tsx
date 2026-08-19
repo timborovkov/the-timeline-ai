@@ -154,7 +154,7 @@ export default async function MeetingDetailPage({ params }: Props) {
             size="inset"
             title={
               meeting.status === 'pending' || meeting.status === 'joining'
-                ? 'Waiting for the notetaker'
+                ? 'Waiting for the notetaker to join'
                 : 'No transcript chunks captured'
             }
             body={

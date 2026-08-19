@@ -1,10 +1,14 @@
 // @vitest-environment happy-dom
 
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { Inbox } from 'lucide-react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { EmptyState } from '@/components/empty-state';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('EmptyState', () => {
   it('keeps its recovery action keyboard-visible and linked to its destination', () => {

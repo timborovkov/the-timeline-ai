@@ -3,6 +3,10 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ back: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+}));
+
 vi.mock('@/app/actions/teams', () => ({
   changeMemberRoleAction: vi.fn(),
   removeMemberAction: vi.fn(),
