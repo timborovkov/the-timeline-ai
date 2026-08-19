@@ -53,6 +53,16 @@ function uniqueCandidates(rows: objects.ObjectRow[]): objects.ObjectRow[] {
   return [...byId.values()];
 }
 
+function addableSearchKey(
+  enabled: boolean,
+  query: string,
+  type: objects.ObjectType | 'all',
+): string | null {
+  const trimmed = query.trim();
+  if (!enabled || (type === 'all' && trimmed.length === 0)) return null;
+  return `${type}:${trimmed}`;
+}
+
 function useAddableObjectSearch({
   enabled,
   query,
@@ -62,46 +72,44 @@ function useAddableObjectSearch({
   query: string;
   type: objects.ObjectType | 'all';
 }): { results: objects.ObjectRow[]; status: RemoteSearchStatus } {
-  const [results, setResults] = useState<objects.ObjectRow[]>([]);
-  const [status, setStatus] = useState<RemoteSearchStatus>('idle');
+  const key = addableSearchKey(enabled, query, type);
+  const [fetched, setFetched] = useState<{
+    key: string;
+    results: objects.ObjectRow[];
+    ok: boolean;
+  } | null>(null);
 
   useEffect(() => {
+    if (!key) return;
     const trimmed = query.trim();
-    const needsRemote = enabled && (type !== 'all' || trimmed.length > 0);
-    if (!needsRemote) {
-      setResults([]);
-      setStatus('idle');
-      return;
-    }
-
     let active = true;
     const delay = trimmed.length > 0 ? 250 : 0;
     const timer = setTimeout(() => {
-      if (!active) return;
-      setStatus('loading');
       void searchAddableObjectsAction({
         query: trimmed,
         ...(type === 'all' ? {} : { type }),
-      })
-        .then((result) => {
+      }).then(
+        (result) => {
           if (!active) return;
-          setResults(result.results);
-          setStatus('success');
-        })
-        .catch(() => {
+          setFetched({ key, results: result.results, ok: true });
+        },
+        () => {
           if (!active) return;
-          setResults([]);
-          setStatus('error');
-        });
+          setFetched({ key, results: [], ok: false });
+        },
+      );
     }, delay);
-
     return () => {
       active = false;
       clearTimeout(timer);
     };
-  }, [enabled, query, type]);
+  }, [key, query, type]);
 
-  return { results, status };
+  if (!key) return { results: [], status: 'idle' };
+  if (fetched?.key === key) {
+    return { results: fetched.results, status: fetched.ok ? 'success' : 'error' };
+  }
+  return { results: [], status: 'loading' };
 }
 
 function reducer(state: State, action: Action): State {

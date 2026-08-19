@@ -130,10 +130,16 @@ export default async function BoardDetailPage({
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
   const activeFilters = hasActiveWorkFilters(filters);
   const filterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
-  const initialCandidates = addItemCandidates.filter((candidate) => !candidate.archivedAt);
-  const projectOptions = projectRows
-    .filter((row) => row.type === 'project')
-    .map((row) => ({ id: row.id, label: row.canonicalName }));
+  const initialCandidates: typeof addItemCandidates = [];
+  for (const candidate of addItemCandidates) {
+    if (!candidate.archivedAt) initialCandidates.push(candidate);
+  }
+  const projectOptions: { id: string; label: string }[] = [];
+  for (const row of projectRows) {
+    if (row.type === 'project') {
+      projectOptions.push({ id: row.id, label: row.canonicalName });
+    }
+  }
 
   return (
     <div
