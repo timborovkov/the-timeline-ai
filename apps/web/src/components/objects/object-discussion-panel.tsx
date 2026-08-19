@@ -14,7 +14,7 @@ import {
 
 import type { ObjectDetail } from '@timeline/shared/objects/types';
 
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
@@ -341,13 +341,7 @@ export function ObjectDiscussionPanel({
 const TOKEN_RE = /@([A-Za-z0-9._-]+)|(https?:\/\/[^\s<]+[^\.\s<])/g;
 
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Mention chips and autolinks are local to discussion comments.
-function RichCommentBody({
-  body,
-  members,
-}: {
-  body: string;
-  members: DiscussionMember[];
-}) {
+function RichCommentBody({ body, members }: { body: string; members: DiscussionMember[] }) {
   const matches: { start: number; end: number; token?: string; url?: string }[] = [];
   for (const match of body.matchAll(TOKEN_RE)) {
     matches.push(
@@ -397,13 +391,15 @@ function RichCommentBody({
 // react-doctor-disable-next-line react-doctor/no-multi-comp -- Absolute timestamps live in a tooltip next to relative age.
 function RelativeTime({ at, timezone }: { at: Date; timezone: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <time dateTime={at.toISOString()} className="tabular-nums text-fg-muted">
-          {formatRelativeAge(at)}
-        </time>
-      </TooltipTrigger>
-      <TooltipContent>{formatDisplayDateTime(at, { timezone })}</TooltipContent>
-    </Tooltip>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <time dateTime={at.toISOString()} className="tabular-nums text-fg-muted">
+            {formatRelativeAge(at)}
+          </time>
+        </TooltipTrigger>
+        <TooltipContent>{formatDisplayDateTime(at, { timezone })}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

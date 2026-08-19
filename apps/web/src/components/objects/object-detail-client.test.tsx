@@ -1102,7 +1102,7 @@ describe('ObjectDetailClient', () => {
     };
     const { rerender } = render(objectDetailElement({ detail, userId: 'user-1', suggestions: [] }));
 
-    const noteInput = screen.getByLabelText('New note');
+    const noteInput = screen.getByLabelText('New comment');
     await user.type(noteInput, 'Draft survives refresh');
 
     rerender(objectDetailElement({ detail: refreshedDetail, userId: 'user-1', suggestions: [] }));

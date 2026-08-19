@@ -57,6 +57,7 @@ function resolveMember(token: string, members: MentionMember[]): MentionMember |
     (member) => mentionFirstName(member.name).toLowerCase() === lower,
   );
   if (firstHits.length === 1) return firstHits[0] ?? null;
+  if (firstHits.length > 1) return null;
 
   const emailHits = members.filter(
     (member) => emailLocalPart(member.email).toLowerCase() === lower,

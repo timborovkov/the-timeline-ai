@@ -2062,13 +2062,13 @@ function TaskCard({
   );
 }
 
-type TaskDetailUiState = {
+interface TaskDetailUiState {
   saving: string | null;
   error: string | null;
   noteBody: string;
   editingNoteId: string | null;
   editingBody: string;
-};
+}
 
 type TaskDetailUiAction =
   | { type: 'save-start'; field: string }
@@ -2078,7 +2078,10 @@ type TaskDetailUiAction =
   | { editingNoteId: string | null; editingBody?: string }
   | { editingBody: string };
 
-function taskDetailUiReducer(state: TaskDetailUiState, action: TaskDetailUiAction): TaskDetailUiState {
+function taskDetailUiReducer(
+  state: TaskDetailUiState,
+  action: TaskDetailUiAction,
+): TaskDetailUiState {
   if ('type' in action) {
     if (action.type === 'save-start') {
       return { ...state, saving: action.field, error: null };

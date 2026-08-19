@@ -1624,15 +1624,17 @@ describe('object scope — notes and suggestions', () => {
         actor_user_id: USER_OWNER,
       }),
     );
-    expect(vi.mocked(acceptDirectAgentTurn)).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        surface: 'object_discussion',
-        externalConversationKey: `object:${object.id}`,
-      }),
-      expect.anything(),
-      expect.objectContaining({ providerAcknowledgement: 'background' }),
-    );
+    await vi.waitFor(() => {
+      expect(vi.mocked(acceptDirectAgentTurn)).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          surface: 'object_discussion',
+          externalConversationKey: `object:${object.id}`,
+        }),
+        expect.anything(),
+        expect.objectContaining({ providerAcknowledgement: 'background' }),
+      );
+    });
   });
 
   it('creates link artifact evidence from object audit note text', async () => {
