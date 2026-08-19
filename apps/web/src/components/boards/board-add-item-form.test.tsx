@@ -294,7 +294,7 @@ describe('BoardAddItemForm', () => {
 
     expect(screen.getByRole('button', { name: 'person' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'company' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Write proposal' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Write proposal/ })).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'person' }));
 
@@ -305,6 +305,6 @@ describe('BoardAddItemForm', () => {
       });
     });
     expect(screen.getByRole('button', { name: /Ada Buyer/ })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Write proposal' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Write proposal/ })).toBeNull();
   });
 });
