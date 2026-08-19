@@ -849,7 +849,7 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
   await expect.poll(telegramPendingTokenUsernames).toEqual(['e2egroupadmin']);
 
   await groupRow.getByRole('button', { name: 'Unbind' }).click();
-  await expect(page.getByText('No groups bound yet.')).toBeVisible();
+  await expect(page.getByText('No groups bound yet')).toBeVisible();
   await expect.poll(telegramBoundGroupTitles).toEqual([]);
 });
 

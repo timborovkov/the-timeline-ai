@@ -1,13 +1,15 @@
 import { withTeam } from '@timeline/shared/team-scope';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
+import { Columns3, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
@@ -146,7 +148,14 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       <div className="space-y-7">
         <CollectionGroup title="Pinned and team boards" count={boardModules.length}>
           {boardModules.length === 0 ? (
-            <EmptyPanel label="No boards yet" body="Create a board to give team work a surface." />
+            <EmptyState
+              icon={Columns3}
+              size="inset"
+              title="No boards yet"
+              body="Create a board so the team has a place to run work. Start with a preset, then tailor the stages."
+            >
+              <BoardCreateDialog appearance="empty" />
+            </EmptyState>
           ) : (
             <div>
               {boardModules.map((board) => (
@@ -178,8 +187,10 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
 
         <CollectionGroup title="Work queue" count={queue.length}>
           {queue.length === 0 ? (
-            <EmptyAction
-              title="Work queue clear"
+            <EmptyState
+              icon={ListTodo}
+              size="inset"
+              title="Work queue is clear"
               body="Assigned work, due team items, and pending approvals will appear here when they need attention."
               href="/app/boards"
               action="Open boards"
@@ -200,15 +211,6 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
           )}
         </CollectionGroup>
       </div>
-    </div>
-  );
-}
-
-function EmptyPanel({ label, body }: { label: string; body: string }) {
-  return (
-    <div className="border border-border bg-bg p-4">
-      <p className="text-sm font-medium text-fg">{label}</p>
-      <p className="mt-2 text-sm text-fg-muted">{body}</p>
     </div>
   );
 }

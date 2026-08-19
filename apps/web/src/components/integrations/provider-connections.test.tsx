@@ -442,7 +442,7 @@ describe('PersonalConnectionsUi', () => {
     const search = await screen.findByRole('textbox', { name: 'Search sources' });
     await user.type(search, 'missing');
 
-    expect(await screen.findByText('No sources match “missing”.')).toBeTruthy();
+    expect(await screen.findByText('No sources match “missing”')).toBeTruthy();
 
     await user.tab();
     await user.tab();

@@ -1,9 +1,10 @@
 import { withTeam } from '@timeline/shared/team-scope';
+import { GitMerge } from 'lucide-react';
 import { redirect, unstable_rethrow } from 'next/navigation';
 
 import type { ReactNode } from 'react';
 
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { ObjectMergeForm } from '@/components/objects/object-merge-form';
 import {
@@ -70,7 +71,8 @@ export async function MergeObjectsRouteContent({ presentation, searchParams }: P
   if (ids.length < 2) {
     return renderShell(
       presentation,
-      <EmptyAction
+      <EmptyState
+        icon={GitMerge}
         title="Select objects first"
         body="Choose two or more objects from the objects list before opening merge."
         href="/app/objects"
@@ -97,7 +99,8 @@ export async function MergeObjectsRouteContent({ presentation, searchParams }: P
   if (previewError) {
     return renderShell(
       presentation,
-      <EmptyAction
+      <EmptyState
+        icon={GitMerge}
         title="These objects cannot be merged"
         body={
           previewError instanceof Error

@@ -73,6 +73,9 @@ timestamps, citations, shortcuts, counts, code, and recognizable external
 identifiers, and keep internal IDs or raw payloads inside closed technical
 disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 
+- [x] Shared collection empty states: one `EmptyState` for indexes, queues,
+      and directories, with quiet dim icons, create/recover actions, and
+      waiting copy for proposals, notifications, and captured work.
 - [ ] Timeline moments redesign: turn `/app/timeline` from a raw activity log
       into bundled, evidence-backed work moments with deterministic grouping,
       source-specific adapters, AI-assisted titles/summaries, and an advanced

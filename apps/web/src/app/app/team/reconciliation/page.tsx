@@ -1,6 +1,6 @@
 import { eventSource } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
-import { ListRestart, Play } from 'lucide-react';
+import { GitMerge, ListRestart, Play } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -13,6 +13,7 @@ import type { Metadata } from 'next';
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { EmptyState } from '@/components/empty-state';
 import { ReconciliationAdvancedTools } from '@/components/reconciliation/advanced-tools';
 import { ReconciliationForbiddenView } from '@/components/reconciliation/forbidden-view';
 import { HintedSubmitButton } from '@/components/reconciliation/hinted-submit-button';
@@ -235,7 +236,12 @@ function RecentClusters({
     <section className="space-y-3">
       <SectionHeading>Recent clusters</SectionHeading>
       {rows.length === 0 ? (
-        <p className="px-1 py-4 text-sm text-fg-muted">No reconciliation clusters yet.</p>
+        <EmptyState
+          icon={GitMerge}
+          size="inset"
+          title="No reconciliation clusters yet"
+          body="Clusters appear here as the team reviews overlapping evidence and proposed memory changes."
+        />
       ) : (
         <ul className="border-y border-border">
           {rows.map((row) => {
@@ -288,7 +294,12 @@ function RecentOutputs({
     <section className="space-y-3">
       <SectionHeading>Recent outputs</SectionHeading>
       {rows.length === 0 ? (
-        <p className="px-1 py-4 text-sm text-fg-muted">No reconciliation outputs yet.</p>
+        <EmptyState
+          icon={GitMerge}
+          size="inset"
+          title="No reconciliation outputs yet"
+          body="Accepted or generated outputs will appear here after clusters are reviewed."
+        />
       ) : (
         <ul className="border-y border-border">
           {rows.map((row) => {

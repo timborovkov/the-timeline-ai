@@ -63,7 +63,7 @@ describe('IntegrationsCatalog', () => {
   it('explains an empty provider catalog instead of rendering a blank section', () => {
     render(<IntegrationsCatalog catalog={[]} />);
 
-    expect(screen.getByText('No providers are available.')).toBeTruthy();
+    expect(screen.getByText('No providers are available')).toBeTruthy();
     expect(screen.getByText('There are no providers ready to connect right now.')).toBeTruthy();
   });
 

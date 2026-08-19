@@ -6,6 +6,7 @@ import { useReducer, useTransition } from 'react';
 
 import { createBoardAction } from '@/app/actions/boards';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -119,17 +120,28 @@ interface BoardCreateFormProps {
   showHeading?: boolean;
 }
 
-export function BoardCreateDialog() {
+export function BoardCreateDialog({
+  appearance = 'toolbar',
+}: {
+  appearance?: 'toolbar' | 'empty';
+}) {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-        >
-          <Plus className="size-3.5" aria-hidden="true" />
-          Create board
-        </button>
+        {appearance === 'empty' ? (
+          <Button type="button" size="sm">
+            <Plus aria-hidden="true" />
+            Create board
+          </Button>
+        ) : (
+          <button
+            type="button"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-sm px-2.5 text-xs font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          >
+            <Plus className="size-3.5" aria-hidden="true" />
+            Create board
+          </button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[min(820px,calc(100vh-2rem))] overflow-y-auto border-border bg-bg sm:max-w-5xl">
         <DialogHeader>

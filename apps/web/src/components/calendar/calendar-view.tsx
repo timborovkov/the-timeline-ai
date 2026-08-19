@@ -44,6 +44,7 @@ import { CollectionStatus } from '@/components/collections/collection-status';
 import { CollectionToolbar } from '@/components/collections/collection-toolbar';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
+import { EmptyState } from '@/components/empty-state';
 import { PinButton } from '@/components/pins/pin-button';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { Button } from '@/components/ui/button';
@@ -1094,25 +1095,25 @@ function CalendarEventListPages({
             )}
           />
         ) : (
-          <div className="p-4">
-            <p className="text-sm font-medium text-fg">
-              {hasActiveFilters ? 'No events match these filters' : 'No upcoming events'}
-            </p>
-            <p className="mt-1 text-sm text-fg-muted">
-              {hasActiveFilters
+          <EmptyState
+            icon={CalendarDays}
+            size="inset"
+            title={hasActiveFilters ? 'No events match these filters' : 'No upcoming events'}
+            body={
+              hasActiveFilters
                 ? 'Clear the filters to review all upcoming events.'
-                : 'Create an event to add it to the calendar.'}
-            </p>
+                : 'Create an event to add it to the calendar.'
+            }
+          >
             <Button
               type="button"
               size="sm"
               variant="outline"
-              className="mt-3"
               onClick={hasActiveFilters ? onClearFilters : onCreate}
             >
               {hasActiveFilters ? 'Clear filters' : 'Create event'}
             </Button>
-          </div>
+          </EmptyState>
         )}
       </div>
 

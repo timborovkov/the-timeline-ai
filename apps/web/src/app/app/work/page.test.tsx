@@ -389,7 +389,7 @@ describe('WorkPage', () => {
     const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(html).toContain('Work queue clear');
+    expect(html).toContain('Work queue is clear');
     expect(html).toContain('Open boards');
     expect(html).toContain('Pinned and team boards');
     expect(html.indexOf('Pinned and team boards')).toBeLessThan(html.indexOf('Work queue'));

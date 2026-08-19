@@ -11,12 +11,14 @@ import { getEnv } from '@timeline/shared/env';
 import * as slack from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray } from 'drizzle-orm';
+import { Hash, Users } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
+import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
@@ -276,7 +278,12 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
 
       <SettingsSection title="Bound conversations">
         {model.bindings.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No Slack conversations bound yet.</p>
+          <EmptyState
+            icon={Hash}
+            size="inset"
+            title="No Slack conversations bound yet"
+            body="Bind a channel so Timeline can capture messages as timeline events."
+          />
         ) : (
           <ul className="divide-y">
             {model.bindings.map((b) => (
@@ -319,7 +326,12 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
 
       <SettingsSection title="Linked Slack users">
         {model.linkedSlackUsers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No Slack identities linked yet.</p>
+          <EmptyState
+            icon={Users}
+            size="inset"
+            title="No Slack identities linked yet"
+            body="People appear here after they connect their Slack identity to this team."
+          />
         ) : (
           <ul className="divide-y">
             {model.linkedSlackUsers.map((u) => {

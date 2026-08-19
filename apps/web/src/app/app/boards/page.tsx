@@ -1,4 +1,5 @@
 import { withTeam } from '@timeline/shared/team-scope';
+import { Columns3 } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -6,6 +7,7 @@ import type { Metadata } from 'next';
 
 import { BoardCreateDialog } from '@/components/boards/board-create-form';
 import { CollectionRow } from '@/components/collections/collection-row';
+import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { ItemActionGroup } from '@/components/ui/item-actions';
@@ -22,6 +24,7 @@ export const metadata: Metadata = {
 };
 
 const BOARD_CREATE_DIALOG = <BoardCreateDialog />;
+const EMPTY_BOARD_CREATE_DIALOG = <BoardCreateDialog appearance="empty" />;
 
 export default async function BoardsIndexPage() {
   const session = await auth();
@@ -48,19 +51,13 @@ export default async function BoardsIndexPage() {
       <WorkSubnav current="/app/boards" />
 
       {boards.length === 0 ? (
-        <section
-          className="border-y border-border py-10 text-center"
-          aria-labelledby="empty-boards-title"
+        <EmptyState
+          icon={Columns3}
+          title="No boards yet"
+          body="Boards organize the work your team wants to follow. Start with a preset, then tailor its stages to match how your team works."
         >
-          <h2 id="empty-boards-title" className="text-sm font-semibold text-fg">
-            No boards yet
-          </h2>
-          <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
-            Boards organize the work your team wants to follow. Start with a preset, then tailor its
-            stages to match how your team works.
-          </p>
-          <div className="mt-4 flex justify-center">{BOARD_CREATE_DIALOG}</div>
-        </section>
+          {EMPTY_BOARD_CREATE_DIALOG}
+        </EmptyState>
       ) : (
         <ul aria-label="Boards">
           {boards.map((board) => {

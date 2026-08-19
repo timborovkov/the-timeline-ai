@@ -131,7 +131,7 @@ describe('ApprovalsPage', () => {
 
     expect(html).toContain('pending 0');
     expect(html).toContain('failed 4');
-    expect(html).toContain('No pending approvals');
+    expect(html).toContain('No proposals to review');
     expect(html).not.toMatch(/<output\b[^>]*>\s*\d+\s*<\/output>/);
   });
 
