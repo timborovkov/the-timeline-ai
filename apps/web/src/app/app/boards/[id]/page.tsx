@@ -92,8 +92,8 @@ export default async function BoardDetailPage({
   const selectedItemId = itemParam(query.item);
   const selectedServerItem = board.items.find((item) => item.id === selectedItemId) ?? null;
   const selectedServerItemId = selectedServerItem?.id ?? null;
-  const [projectRows, addItemCandidates, history, members, selectedObjectDetail] = await Promise.all(
-    [
+  const [projectRows, addItemCandidates, history, members, selectedObjectDetail] =
+    await Promise.all([
       loadProjectFilterRows({
         listObjects: (filter) => scope.objects.listObjects(filter),
         selected: filters.project,
@@ -110,8 +110,7 @@ export default async function BoardDetailPage({
       selectedServerItem
         ? scope.objects.getObject(selectedServerItem.entityId)
         : Promise.resolve(null),
-    ],
-  );
+    ]);
   const memberIds = members.map((member) => member.userId);
   const memberRows =
     memberIds.length > 0

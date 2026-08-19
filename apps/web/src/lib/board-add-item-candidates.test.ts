@@ -72,7 +72,9 @@ describe('loadBoardAddItemCandidates', () => {
         ]);
       }
       if (filter.type === 'person') {
-        return Promise.resolve([objectRow({ id: 'person-1', type: 'person', canonicalName: 'Ada' })]);
+        return Promise.resolve([
+          objectRow({ id: 'person-1', type: 'person', canonicalName: 'Ada' }),
+        ]);
       }
       if (filter.type === 'task') {
         return Promise.resolve(
