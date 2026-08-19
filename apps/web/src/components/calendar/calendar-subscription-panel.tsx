@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useReducer } from 'react';
 
 import { CopyButton } from '@/components/copy-button';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -50,10 +51,6 @@ function calendarSubscriptionPanelReducer(
 
 function webcalUrl(url: string): string {
   return url.replace(/^https?:/, 'webcal:');
-}
-
-function dateLabel(value: string | null): string {
-  return value ? new Date(value).toLocaleString() : 'never';
 }
 
 export function CalendarSubscriptionPanel({
@@ -119,7 +116,7 @@ export function CalendarSubscriptionPanel({
 
   return (
     <section
-      className="space-y-3 border-y border-border py-4"
+      className="space-y-2 border-y border-border py-3"
       aria-labelledby="calendar-subscription-heading"
       aria-busy={busy}
     >
@@ -132,15 +129,24 @@ export function CalendarSubscriptionPanel({
             </h2>
           </div>
           <p className="mt-1 text-sm text-fg-muted">
-            {subscription
-              ? `A private URL is active · created ${dateLabel(subscription.createdAt)}`
-              : 'Create a private URL to see Timeline events in your calendar app.'}
+            {subscription ? (
+              <>
+                A private URL is active · created{' '}
+                <RelativeTimestamp value={subscription.createdAt} />
+              </>
+            ) : (
+              'Create a private URL to see Timeline events in your calendar app.'
+            )}
           </p>
           {subscription ? (
             <p className="mt-1 text-xs text-fg-muted">
-              {subscription.lastUsedAt
-                ? `Last accessed ${dateLabel(subscription.lastUsedAt)}`
-                : 'Not yet accessed.'}
+              {subscription.lastUsedAt ? (
+                <>
+                  Last accessed <RelativeTimestamp value={subscription.lastUsedAt} />
+                </>
+              ) : (
+                'Not yet accessed.'
+              )}
             </p>
           ) : null}
         </div>

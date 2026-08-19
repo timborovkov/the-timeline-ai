@@ -25,7 +25,7 @@ export function PendingInvitesCard({
           action="Create an invite"
         />
       ) : (
-        <ul className="divide-y divide-border border-y border-border">
+        <ul>
           {invites.map((invite) => (
             <PendingInviteItem
               key={invite.id}

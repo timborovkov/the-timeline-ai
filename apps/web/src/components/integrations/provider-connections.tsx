@@ -7,6 +7,7 @@ import { useId, useMemo, useReducer, useRef, useState, type RefObject } from 're
 
 import { EmptyState } from '@/components/empty-state';
 import { InlineError } from '@/components/inline-error';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -249,7 +250,7 @@ function TeamConnectionRoleLine({ ownerLabel }: { ownerLabel: string }) {
 function PersonalConnectionRoleLine({ lastConnectedAt }: { lastConnectedAt: string }) {
   return (
     <p className="mt-0.5 truncate text-xs text-fg-muted">
-      Personal provider account · Connected {new Date(lastConnectedAt).toLocaleDateString()}
+      Personal provider account · <RelativeTimestamp prefix="Connected" value={lastConnectedAt} />
     </p>
   );
 }

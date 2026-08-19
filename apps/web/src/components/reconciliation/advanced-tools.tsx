@@ -27,6 +27,7 @@ import {
   runTriggerLabel,
 } from '@/components/reconciliation/presentation';
 import { runMetricHint } from '@/components/reconciliation/run-metric-hint';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { Button } from '@/components/ui/button';
 
@@ -421,9 +422,7 @@ function RecentRuns({
                     {runTriggerLabel(row.trigger)}
                   </CollectionRow.Context>
                   <CollectionRow.Metadata>
-                    <time className="text-xs text-fg-muted" title={hint}>
-                      {row.createdAt.toLocaleString()}
-                    </time>
+                    <RelativeTimestamp value={row.createdAt} />
                   </CollectionRow.Metadata>
                 </CollectionRow>
               </li>

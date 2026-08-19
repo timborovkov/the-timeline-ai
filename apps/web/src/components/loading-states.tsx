@@ -162,9 +162,22 @@ export function CollectionGroupSkeleton({
 }
 
 const KANBAN_LANE_WIDTH = {
-  board: 'w-[min(290px,calc(100vw-4rem))]',
+  board: 'w-[min(280px,calc(100vw-3rem))]',
   task: 'w-[min(260px,calc(100vw-2.5rem))]',
 } as const;
+
+export function CompactKanbanCardSkeleton() {
+  return (
+    <div className="rounded-sm border border-border bg-bg px-2 py-1.5">
+      <Skeleton className="h-4 w-3/4" />
+      <div className="mt-1 flex items-center gap-1">
+        <Skeleton className="h-3 w-10" />
+        <Skeleton className="h-3 w-14" />
+        <Skeleton className="h-3 w-12" />
+      </div>
+    </div>
+  );
+}
 
 export function CompactKanbanSkeleton({
   columns = 3,
@@ -174,72 +187,27 @@ export function CompactKanbanSkeleton({
   variant?: keyof typeof KANBAN_LANE_WIDTH;
 }) {
   return (
-    <section className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-2 pb-4 sm:px-3">
+    <section className="flex min-h-0 flex-1 overflow-x-auto px-2 pb-4 sm:px-3">
       {Array.from({ length: columns }).map((_, column) => (
         <div
           key={column}
           className={cn(
-            'flex shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
+            'flex shrink-0 flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
             KANBAN_LANE_WIDTH[variant],
           )}
         >
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
             <Skeleton className="h-3 w-16" />
             <Skeleton className="h-3 w-6" />
           </div>
           <div className="space-y-1.5">
             {Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="rounded-sm border border-border bg-bg px-2 py-1.5">
-                <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="mt-1 h-3 w-1/2" />
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <Skeleton className="h-3 w-10" />
-                  <Skeleton className="h-3 w-14" />
-                  <Skeleton className="h-3 w-12" />
-                </div>
-              </div>
+              <CompactKanbanCardSkeleton key={index} />
             ))}
           </div>
         </div>
       ))}
     </section>
-  );
-}
-
-export function CollectionTableSkeleton({
-  rows = 6,
-  columns = 5,
-  subtitle = true,
-}: {
-  rows?: number;
-  columns?: number;
-  subtitle?: boolean;
-}) {
-  return (
-    <div className="min-h-0 flex-1 overflow-auto">
-      <div className="flex min-h-10 items-center gap-3 border-b border-border px-2 sm:px-3">
-        <Skeleton className="size-4 shrink-0" />
-        <Skeleton className="h-3 w-16" />
-        {Array.from({ length: columns }).map((_, index) => (
-          <Skeleton key={index} className="ml-auto h-3 w-14 first:ml-0" />
-        ))}
-      </div>
-      {Array.from({ length: rows }).map((_, index) => (
-        <div
-          key={index}
-          className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 sm:px-3"
-        >
-          <Skeleton className="size-4 shrink-0" />
-          <div className="min-w-0 flex-1 space-y-1">
-            <Skeleton className="h-4 w-2/5" />
-            {subtitle ? <Skeleton className="h-3 w-1/3" /> : null}
-          </div>
-          {Array.from({ length: columns }).map((_, column) => (
-            <Skeleton key={column} className="hidden h-4 w-14 sm:block" />
-          ))}
-        </div>
-      ))}
-    </div>
   );
 }
 

@@ -7,7 +7,6 @@ const fakes = vi.hoisted(() => ({
   requireMembership: vi.fn(),
   getMeeting: vi.fn(),
   listChunks: vi.fn(),
-  getCalendarSettings: vi.fn(),
   isPinned: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error('notFound');
@@ -28,9 +27,6 @@ vi.mock('@timeline/shared/team-scope', () => ({
     meetings: {
       getMeeting: fakes.getMeeting,
       listChunks: fakes.listChunks,
-    },
-    calendar: {
-      getCalendarSettings: fakes.getCalendarSettings,
     },
     pins: { isPinned: fakes.isPinned },
   }),
@@ -59,7 +55,6 @@ beforeEach(() => {
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.requireMembership.mockResolvedValue(undefined);
   fakes.getMeeting.mockResolvedValue(meetingRow());
-  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/New_York' });
   fakes.isPinned.mockResolvedValue(false);
   fakes.listChunks.mockResolvedValue([
     {
@@ -83,7 +78,8 @@ describe('MeetingDetailPage', () => {
     expect(html).toContain('Customer launch sync');
     expect(html).toContain('Recall');
     expect(html).toContain('Completed');
-    expect(html).toContain('Jul 1, 2026, 8:00 AM');
+    expect(html).toContain('Captured');
+    expect(html).toContain('2026-07-01T12:00:00.000Z');
     expect(html).toContain('Open meeting');
     expect(html).toContain('aria-label="Open meeting in a new tab"');
     expect(html).toContain('target="_blank"');

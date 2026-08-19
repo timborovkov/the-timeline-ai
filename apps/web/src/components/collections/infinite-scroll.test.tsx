@@ -43,7 +43,7 @@ describe('InfiniteScroll', () => {
 
   it('loads more when the sentinel intersects or receives focus', () => {
     const onLoadMore = vi.fn();
-    render(
+    const { rerender } = render(
       <InfiniteScroll
         hasMore
         loading={false}
@@ -58,6 +58,14 @@ describe('InfiniteScroll', () => {
     expect(onLoadMore).toHaveBeenCalledOnce();
 
     onLoadMore.mockClear();
+    rerender(
+      <InfiniteScroll
+        hasMore
+        loading={false}
+        onLoadMore={onLoadMore}
+        boundLabel="No more matching tasks"
+      />,
+    );
     fireEvent.focus(screen.getByRole('button', { name: 'Load more' }));
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
@@ -97,6 +105,30 @@ describe('InfiniteScroll', () => {
     );
     expect(screen.getByRole('status').textContent).toBe('No older activity');
     expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull();
+  });
+
+  it('renders custom loading content instead of the Loading more label', () => {
+    render(
+      <InfiniteScroll
+        hasMore
+        loading
+        onLoadMore={vi.fn()}
+        boundLabel="No more matching tasks"
+        loadingContent={<div data-testid="load-skeleton">skeleton</div>}
+      />,
+    );
+    expect(screen.getByTestId('load-skeleton')).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Loading more' })).toBeTruthy();
+    expect(screen.queryByText('Loading more…')).toBeNull();
+  });
+
+  it('locks a second load request until the first call can report loading', () => {
+    const onLoadMore = vi.fn();
+    render(<InfiniteScroll hasMore onLoadMore={onLoadMore} boundLabel="No more matching tasks" />);
+    const observer = FakeIntersectionObserver.instances[0];
+    observer?.trigger(true);
+    observer?.trigger(true);
+    expect(onLoadMore).toHaveBeenCalledOnce();
   });
 
   it('does not observe the page scroller while a nested root is still mounting', () => {

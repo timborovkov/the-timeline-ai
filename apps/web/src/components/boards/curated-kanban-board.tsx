@@ -258,7 +258,7 @@ export function CuratedKanbanBoard({
       <div className="flex h-full min-h-0 min-w-0 flex-col">
         <section
           aria-label="Board columns"
-          className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-4 pb-2 md:px-8"
+          className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
         >
           {visibleLanes.map((lane, index) => (
             <KanbanColumn
@@ -315,20 +315,20 @@ function KanbanColumn({
       ref={setNodeRef}
       aria-label={`${lane.name}, board column ${ordinal}`}
       className={cn(
-        'flex h-full w-[min(290px,calc(100vw-4rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
-        isOver && 'border-signal/40 bg-signal-soft',
+        'flex h-full w-[min(280px,calc(100vw-3rem))] shrink-0 flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
+        isOver && 'bg-signal-soft',
       )}
     >
-      <div className="mb-2 flex shrink-0 items-baseline justify-between px-0.5">
-        <h3 className="text-xs text-fg-dim">{lane.name}</h3>
-        <span className="text-xs text-fg">{items.length}</span>
+      <div className="mb-1.5 flex w-full shrink-0 items-center justify-between gap-2 px-0.5">
+        <h3 className="min-w-0 truncate text-xs text-fg-dim">{lane.name}</h3>
+        <span className="shrink-0 text-xs tabular-nums text-fg">{items.length}</span>
       </div>
       <div ref={setScrollEl} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <VirtualList
           items={items}
           getItemKey={(item) => item.id}
-          estimateSize={76}
-          gap={8}
+          estimateSize={56}
+          gap={6}
           getScrollElement={() => scrollEl}
           renderItem={(item) => (
             <KanbanCard
@@ -375,7 +375,7 @@ function KanbanCard({
     });
   const style = {
     contentVisibility: 'auto' as const,
-    containIntrinsicSize: 'auto 76px',
+    containIntrinsicSize: 'auto 56px',
     ...(transform
       ? { transform: `translate3d(${String(transform.x)}px,${String(transform.y)}px,0)` }
       : {}),
@@ -397,7 +397,7 @@ function KanbanCard({
         optimistic && 'cursor-wait opacity-80',
       )}
     >
-      <div className="flex min-w-0 items-start gap-0.5">
+      <div className="flex min-w-0 items-start gap-1">
         <div className="min-w-0 flex-1">
           {optimistic ? (
             <span className="line-clamp-2 whitespace-normal break-words font-medium leading-snug">
@@ -423,13 +423,13 @@ function KanbanCard({
           {...listeners}
           aria-label={dragLabel}
           disabled={saving || optimistic}
-          className="-mr-1 inline-flex size-8 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim transition-colors hover:bg-surface-2 hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
+          className="inline-flex size-6 shrink-0 touch-none cursor-grab items-center justify-center rounded-sm text-fg-dim transition-colors hover:bg-surface-2 hover:text-fg active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-progress disabled:opacity-60"
         >
           <GripVertical aria-hidden="true" className="size-3.5" />
         </button>
       </div>
-      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
-        <span className="px-1.5 text-fg-dim">{statusLabel(item.object.type)}</span>
+      <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
+        <span className="shrink-0 text-fg-dim">{statusLabel(item.object.type)}</span>
         {item.object.type === 'task' ? (
           <LiveTaskCategoryBadge
             taskId={item.object.id}
@@ -438,12 +438,12 @@ function KanbanCard({
             updatedAt={item.object.taskCategoryUpdatedAt}
           />
         ) : null}
-        {blocked ? <span className="px-1.5 text-danger">Blocked</span> : null}
+        {blocked ? <span className="shrink-0 text-danger">Blocked</span> : null}
         <EditableMetadata
           label={`Responsible person for ${titleText}`}
           pending={saving}
           disabled={optimistic}
-          className="min-h-8 px-1.5"
+          density="compact"
         >
           <EditableMetadata.Value>
             {ownerLabel(item.responsibleUserId, members)}
@@ -470,7 +470,7 @@ function KanbanCard({
           label={`Due date for ${titleText}`}
           pending={saving}
           disabled={optimistic}
-          className="min-h-8 px-1.5"
+          density="compact"
         >
           <EditableMetadata.Value>
             <DueDateDisplay value={item.dueAt} variant="compact" />
@@ -490,13 +490,14 @@ function KanbanCard({
           label={`Priority for ${titleText}`}
           pending={saving}
           disabled={optimistic}
-          className="min-h-8 px-1.5"
+          density="compact"
         >
           <EditableMetadata.Value>
             <CollectionStatus
               value={item.priority ? `p${item.priority}` : 'none'}
               tone={priorityTone(item.priority)}
               label={item.priority ? `P${item.priority}` : 'No priority'}
+              showIcon={false}
             />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>

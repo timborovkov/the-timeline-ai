@@ -5,6 +5,7 @@ import { useActionState, useState } from 'react';
 import { setVisibilityDefaultAction } from '@/app/actions/visibility';
 import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
+import { NativeSelect } from '@/components/ui/native-select';
 
 type Source =
   | 'team'
@@ -53,7 +54,7 @@ export function VisibilityDefaultSettings({
   members: Member[];
 }) {
   return (
-    <div className="space-y-3">
+    <div>
       {defaults.map((row) => {
         const userKey = (row.visibilityUserIds ?? []).join(',');
         return (
@@ -73,31 +74,37 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
   const specificAllowed = SPECIFIC_OK.has(row.source);
   const [selectedVisibility, setSelectedVisibility] = useState(row.visibility);
   return (
-    <form action={action} className="space-y-2 rounded-sm border border-border p-3">
+    <form action={action} className="border-b border-border/80 py-2 last:border-b-0">
       <input type="hidden" name="source" value={row.source} />
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex min-h-11 flex-wrap items-center gap-2">
         <div className="min-w-40 flex-1">
           <p className="text-sm font-medium">{SOURCE_LABEL[row.source]}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-fg-dim">
             {row.inherited ? 'Inherits fallback' : 'Explicit default'}
           </p>
         </div>
-        <select
+        <NativeSelect
           name="visibility"
           value={selectedVisibility}
           onChange={(e) => {
             setSelectedVisibility(e.currentTarget.value as Visibility);
+            if (e.currentTarget.value !== 'specific_users') {
+              e.currentTarget.form?.requestSubmit();
+            }
           }}
-          className="h-9 rounded-sm border border-border bg-bg px-2 text-sm"
+          className="h-8 w-auto min-w-32"
         >
           <option value="team">Team</option>
           <option value="private">Private</option>
           {specificAllowed ? <option value="specific_users">Specific users</option> : null}
-        </select>
-        <select
+        </NativeSelect>
+        <NativeSelect
           name="sourceOwnerUserId"
           defaultValue={row.sourceOwnerUserId ?? ''}
-          className="h-9 rounded-sm border border-border bg-bg px-2 text-sm"
+          className="h-8 w-auto min-w-36"
+          onChange={(e) => {
+            e.currentTarget.form?.requestSubmit();
+          }}
         >
           <option value="">No source owner</option>
           {members.map((m) => (
@@ -105,10 +112,12 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
               {m.label}
             </option>
           ))}
-        </select>
-        <Button type="submit" size="sm" variant="secondary" disabled={pending}>
-          {pending ? 'Saving' : 'Save'}
-        </Button>
+        </NativeSelect>
+        {selectedVisibility === 'specific_users' ? (
+          <Button type="submit" size="sm" variant="outline" disabled={pending}>
+            {pending ? 'Saving' : 'Save'}
+          </Button>
+        ) : null}
         <FormActionToast
           id={`visibility-default:${row.source}`}
           error={state.error}
@@ -116,9 +125,9 @@ function VisibilityDefaultForm({ row, members }: { row: DefaultRow; members: Mem
         />
       </div>
       {specificAllowed && selectedVisibility === 'specific_users' ? (
-        <div className="flex flex-wrap gap-3 border-t border-border/60 pt-2">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 pt-2">
           {members.map((m) => (
-            <label key={m.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <label key={m.id} className="flex items-center gap-1.5 text-xs text-fg-muted">
               <input
                 type="checkbox"
                 name="visibilityUserIds"

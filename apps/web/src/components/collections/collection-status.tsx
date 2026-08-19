@@ -12,24 +12,27 @@ export function CollectionStatus({
   label = statusLabel(value),
   tone = statusTone(value),
   compact = false,
+  showIcon = true,
   className,
 }: {
   value: string;
   label?: string;
   tone?: StatusTone;
   compact?: boolean;
+  showIcon?: boolean;
   className?: string;
 }) {
   const Icon = STATUS_TONE_ICON[tone];
   return (
     <span
       className={cn(
-        'inline-flex min-w-0 items-center gap-1.5 text-xs',
+        'inline-flex min-w-0 items-center text-xs',
+        showIcon ? 'gap-1.5' : 'gap-0',
         STATUS_TONE_CLASS[tone],
         className,
       )}
     >
-      <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+      {showIcon ? <Icon aria-hidden="true" className="size-3.5 shrink-0" /> : null}
       <span className={cn('truncate', compact && 'sr-only')}>{label}</span>
     </span>
   );

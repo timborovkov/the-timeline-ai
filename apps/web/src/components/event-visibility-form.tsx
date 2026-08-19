@@ -4,6 +4,8 @@ import { useActionState, useEffect, useEffectEvent, useId, useRef, useState } fr
 
 import { setEventVisibilityAction } from '@/app/actions/visibility';
 import { FormActionToast } from '@/components/form-action-toast';
+import { Button } from '@/components/ui/button';
+import { NativeSelect } from '@/components/ui/native-select';
 
 interface MemberOption {
   id: string;
@@ -59,26 +61,26 @@ export function EventVisibilityForm({
             .filter((value): value is string => typeof value === 'string'),
         };
       }}
-      className="mt-2 grid gap-3 rounded-sm border border-border p-3"
+      className="mt-2 grid gap-3 border-y border-border py-3"
     >
       <input type="hidden" name="id" value={eventId} />
       <div className="grid gap-1.5">
         <label htmlFor={selectId} className="text-xs font-medium text-fg">
           Who can see this evidence?
         </label>
-        <select
+        <NativeSelect
           id={selectId}
           name="visibility"
           value={selectedVisibility}
           onChange={(e) => {
             setSelectedVisibility(e.currentTarget.value);
           }}
-          className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
+          className="h-8"
         >
           <option value="team">Team</option>
           <option value="private">Private</option>
           <option value="specific_users">Specific people</option>
-        </select>
+        </NativeSelect>
       </div>
       {selectedVisibility === 'specific_users' ? (
         <fieldset className="grid gap-2">
@@ -98,13 +100,9 @@ export function EventVisibilityForm({
           </div>
         </fieldset>
       ) : null}
-      <button
-        type="submit"
-        disabled={pending}
-        className="h-8 w-fit rounded-sm border border-border px-3 text-xs hover:bg-surface-2 disabled:opacity-60"
-      >
+      <Button type="submit" size="sm" variant="outline" disabled={pending}>
         {pending ? 'Saving…' : 'Save visibility'}
-      </button>
+      </Button>
       <FormActionToast
         id={`event-visibility:${eventId}`}
         error={state.error}

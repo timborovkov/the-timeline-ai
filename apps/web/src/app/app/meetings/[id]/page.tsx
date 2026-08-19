@@ -11,6 +11,7 @@ import { MeetingExportButtons } from '@/components/meeting-export-buttons';
 import { CancelMeetingButton } from '@/components/meeting-forms';
 import { PageHeader } from '@/components/page-header';
 import { PinButton } from '@/components/pins/pin-button';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,6 @@ import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime } from '@/lib/display-dates';
 import { displayMeetingLabel, displaySourceLabel } from '@/lib/display-labels';
 import { formatMeetingOffset, formatTranscriptExport } from '@/lib/meeting-transcript-export';
 import { statusLabel } from '@/lib/status-labels';
@@ -83,9 +83,8 @@ export default async function MeetingDetailPage({ params }: Props) {
 
   const meeting = await scope.meetings.getMeeting(id);
   if (!meeting) notFound();
-  const [chunks, calendarSettings, initialPinned] = await Promise.all([
+  const [chunks, initialPinned] = await Promise.all([
     scope.meetings.listChunks(id),
-    scope.calendar.getCalendarSettings(),
     scope.pins.isPinned({ kind: 'meeting', key: meeting.id }),
   ]);
 
@@ -127,9 +126,7 @@ export default async function MeetingDetailPage({ params }: Props) {
           { label: 'Status', value: statusLabel(meeting.status) },
           {
             label: 'Captured',
-            value: formatDisplayDateTime(meeting.createdAt, {
-              timezone: calendarSettings.defaultTimezone,
-            }),
+            value: <RelativeTimestamp value={meeting.createdAt} />,
             mono: true,
           },
         ]}

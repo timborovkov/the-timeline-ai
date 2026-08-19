@@ -890,6 +890,40 @@ describe('TaskBoard', () => {
     });
   });
 
+  it('paginates populated kanban columns with card skeletons instead of loading labels', async () => {
+    const user = userEvent.setup();
+    let resolvePage!: (value: { rows: objects.ObjectRow[]; nextCursor: string | null }) => void;
+    fakes.loadTaskRowsAction.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePage = resolve;
+        }),
+    );
+    render(
+      <TaskBoard
+        rows={[task({ id: 'task-1', canonicalName: 'Send proposal' })]}
+        columns={['todo', 'doing', 'done', 'blocked', 'cancelled']}
+        selectedTaskId={null}
+        view="kanban"
+        members={[{ id: 'user-1', label: 'Ada Lovelace' }]}
+        totalCount={2}
+        nextCursor="older-cursor"
+      />,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Load more' })).toHaveLength(1);
+    await clickLoadMore(user);
+    expect(screen.queryByText('Loading more…')).toBeNull();
+    expect(screen.getByRole('status', { name: 'Loading more' })).toBeTruthy();
+    expect(document.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
+
+    resolvePage({
+      rows: [task({ id: 'task-2', canonicalName: 'Older task' })],
+      nextCursor: null,
+    });
+    await screen.findByRole('link', { name: 'Older task' });
+  });
+
   it('keeps loaded older tasks when refreshed first-page props arrive', async () => {
     const user = userEvent.setup();
     fakes.loadTaskRowsAction.mockResolvedValue({
@@ -1191,6 +1225,14 @@ describe('TaskBoard', () => {
     expect(screen.queryByText('Task', { exact: true })).toBeNull();
     expect(screen.getByRole('button', { name: 'Project for Send proposal' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Send proposal' }).className).toContain('line-clamp-2');
+    const card = screen.getByRole('link', { name: 'Send proposal' }).closest('article');
+    const drag = screen.getByRole('button', { name: /Drag Send proposal/ });
+    const project = screen.getByRole('button', { name: 'Project for Send proposal' });
+    expect(
+      card?.firstElementChild?.contains(screen.getByRole('link', { name: 'Send proposal' })),
+    ).toBe(true);
+    expect(project.className).toContain('h-5');
+    expect(drag.className).toContain('size-6');
   });
 
   it('bulk assigns selected tasks from list view', async () => {

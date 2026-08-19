@@ -18,14 +18,16 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { bindSlackConversationAction, unbindSlackConversationAction } from '@/app/actions/slack';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
 import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
 import { TechnicalDetails } from '@/components/technical-details';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { NativeSelect } from '@/components/ui/native-select';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -175,16 +177,17 @@ export default async function SlackSettingsPage() {
 
 export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <HistoryBackLink fallbackHref="/app/team" label="Team settings" />
       <PageHeader
+        variant="collection"
         title="Slack"
         subtitle="Capture DMs, channel messages, slash-command answers, and linked sender context."
         srLabel={`Slack capture for ${model.teamName} · ${model.bindings.length} bound conversations · ${model.linkedSlackUsers.length} linked users`}
         metadata={[
-          { label: 'team', value: model.teamName, signal: true },
-          { label: 'channels', value: model.bindings.length },
-          { label: 'users', value: model.linkedSlackUsers.length },
+          { label: 'Team', value: model.teamName },
+          { label: 'Channels', value: model.bindings.length, mono: true },
+          { label: 'Users', value: model.linkedSlackUsers.length, mono: true },
         ]}
       />
 
@@ -245,16 +248,16 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
 
       {model.isAdmin && model.install ? (
         <SettingsSection title="Bind a conversation">
-          <form action={bindSlackConversationAction} className="flex gap-2">
+          <form action={bindSlackConversationAction} className="flex items-end gap-2">
             <label className="sr-only" htmlFor="slack-conversation-id">
               Conversation to bind
             </label>
-            <select
+            <NativeSelect
               id="slack-conversation-id"
               name="conversationId"
               required
               aria-describedby="bind-conversation-help"
-              className="min-w-0 flex-1 rounded-sm border border-input bg-background px-3 py-2 text-sm"
+              className="min-w-0 flex-1"
               defaultValue=""
             >
               <option value="" disabled>
@@ -266,8 +269,10 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
                   {c.is_member === false ? ' (invite bot first)' : ''}
                 </option>
               ))}
-            </select>
-            <Button type="submit">Bind</Button>
+            </NativeSelect>
+            <Button type="submit" size="sm">
+              Bind
+            </Button>
           </form>
           <p id="bind-conversation-help" className="mt-2 text-xs text-muted-foreground">
             Channel capture is source-owned by the person who binds it. Sender context is still
@@ -285,17 +290,28 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
             body="Bind a channel so Timeline can capture messages as timeline events."
           />
         ) : (
-          <ul className="divide-y">
+          <ul>
             {model.bindings.map((b) => (
-              <li
-                key={b.id}
-                className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0 flex-1 space-y-2">
-                  <p className="text-sm font-medium">{b.title ?? 'Unnamed channel'}</p>
-                  <p className="text-xs text-muted-foreground">
+              <li key={b.id}>
+                <CollectionRow>
+                  <CollectionRow.Title>{b.title ?? 'Unnamed channel'}</CollectionRow.Title>
+                  <CollectionRow.Context>
                     {sentenceCaseEnum(b.conversationType)} · {visibilityLabel(b.visibilityDefault)}
-                  </p>
+                  </CollectionRow.Context>
+                  <CollectionRow.Actions>
+                    {model.isAdmin ? (
+                      <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed channel'}`}>
+                        <form action={unbindSlackConversationAction}>
+                          <input type="hidden" name="id" value={b.id} />
+                          <Button type="submit" variant="ghost" size="sm">
+                            Unbind
+                          </Button>
+                        </form>
+                      </ItemActionGroup>
+                    ) : undefined}
+                  </CollectionRow.Actions>
+                </CollectionRow>
+                <div className="px-3 pb-2">
                   <TechnicalDetails
                     items={[
                       {
@@ -308,16 +324,6 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
                     ]}
                   />
                 </div>
-                {model.isAdmin ? (
-                  <ItemActionGroup label={`Actions for ${b.title ?? 'Unnamed channel'}`}>
-                    <form action={unbindSlackConversationAction}>
-                      <input type="hidden" name="id" value={b.id} />
-                      <Button type="submit" variant="ghost" size="sm">
-                        Unbind
-                      </Button>
-                    </form>
-                  </ItemActionGroup>
-                ) : null}
               </li>
             ))}
           </ul>
@@ -333,27 +339,24 @@ export function SlackSettingsPageView({ model }: { model: SlackSettingsViewModel
             body="People appear here after they connect their Slack identity to this team."
           />
         ) : (
-          <ul className="divide-y">
+          <ul>
             {model.linkedSlackUsers.map((u) => {
               return (
-                <li
-                  key={u.id}
-                  className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">
+                <li key={u.id}>
+                  <CollectionRow>
+                    <CollectionRow.Title>
                       {u.appUser?.name ?? u.appUser?.email ?? 'Timeline user'}
-                    </p>
-                    <p className="break-words text-xs text-muted-foreground">
+                    </CollectionRow.Title>
+                    <CollectionRow.Context>
                       Slack {u.realName ?? u.name ?? 'member'}
                       {u.email ? ` · ${u.email}` : ''}
-                    </p>
-                  </div>
-                  {u.isActive ? (
-                    <Badge className="shrink-0 self-start" variant="outline">
-                      Active DM
-                    </Badge>
-                  ) : null}
+                    </CollectionRow.Context>
+                    <CollectionRow.Metadata>
+                      {u.isActive ? (
+                        <CollectionStatus value="active" label="Active DM" />
+                      ) : undefined}
+                    </CollectionRow.Metadata>
+                  </CollectionRow>
                 </li>
               );
             })}

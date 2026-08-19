@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 function Submit({ label }: { label: string }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" disabled={pending}>
+    <Button type="submit" size="sm" disabled={pending}>
       {pending ? 'Working…' : label}
     </Button>
   );
@@ -65,7 +65,9 @@ function TgUsernameField({ id, error }: { id: string; error?: string }) {
   const errorId = `${id}-error`;
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>Your Telegram @username</Label>
+      <Label htmlFor={id} size="sm">
+        Your Telegram @username
+      </Label>
       <Input
         id={id}
         name="tgUsername"

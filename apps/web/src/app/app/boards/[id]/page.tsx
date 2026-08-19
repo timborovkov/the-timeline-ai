@@ -4,13 +4,13 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
-import type { BoardLayout } from '@/lib/board-links';
 import type { Metadata } from 'next';
 
 import { BoardDetailClient } from '@/components/boards/board-detail-client';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { boardViewHref, normalizeBoardView, type BoardLayout } from '@/lib/board-links';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
@@ -30,8 +30,19 @@ export const metadata: Metadata = {
 };
 
 function viewParam(value: string | string[] | undefined): BoardLayout {
-  const v = Array.isArray(value) ? value[0] : value;
-  return v === 'table' || v === 'list' ? v : 'kanban';
+  return normalizeBoardView(value);
+}
+
+function legacyTableQueryParams(
+  query: Record<string, string | string[] | undefined>,
+): Record<string, string> {
+  const extra: Record<string, string> = {};
+  for (const [key, value] of Object.entries(query)) {
+    if (key === 'view' || key === 'item') continue;
+    const v = Array.isArray(value) ? value[0] : value;
+    if (typeof v === 'string' && v.length > 0) extra[key] = v;
+  }
+  return extra;
 }
 
 function itemParam(value: string | string[] | undefined): string | null {
@@ -50,6 +61,10 @@ export default async function BoardDetailPage({
   if (!session?.user) redirect('/sign-in');
   const { active } = await resolveActiveTeam(session.user.id);
   if (!active) redirect('/sign-in');
+  const rawView = Array.isArray(query.view) ? query.view[0] : query.view;
+  if (rawView === 'table') {
+    redirect(boardViewHref(id, 'list', itemParam(query.item), legacyTableQueryParams(query)));
+  }
 
   const scope = withTeam(db, active.teamId, session.user.id);
   const now = new Date();

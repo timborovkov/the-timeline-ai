@@ -32,13 +32,14 @@ import {
   reconciliationEvidenceRowHint,
   reconciliationOutputRowHint,
 } from '@/components/reconciliation/row-hint';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
+import { formatRelativeAge } from '@/lib/display-dates';
 import { displayArtifactLabel, displaySourceLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
@@ -93,9 +94,7 @@ export default async function ReconciliationClusterPage({
         subtitle={
           <>
             {artifactTypeLabel(cluster.artifactType)} ·{' '}
-            <time dateTime={cluster.updatedAt.toISOString()}>
-              Updated {formatDisplayDateTime(cluster.updatedAt, { timezone })}
-            </time>
+            <RelativeTimestamp prefix="Updated" value={cluster.updatedAt} />
           </>
         }
         metadata={[

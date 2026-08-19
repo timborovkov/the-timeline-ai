@@ -504,9 +504,9 @@ updates. Board purpose guides both teammates and agent suggestions.
 _Avoid_: Internal prompt when discussing the user-facing board description
 
 **Board View**:
-One way to display the same curated board items, such as Kanban, table, list,
-or calendar. Board views do not create separate membership; they let the team
-inspect and edit the same board through different layouts.
+One way to display the same curated board items: Kanban or grouped list.
+Board views do not create separate membership; they let the team inspect and
+edit the same board through different layouts.
 _Avoid_: Separate board when only the layout changed
 
 **Board Membership**:

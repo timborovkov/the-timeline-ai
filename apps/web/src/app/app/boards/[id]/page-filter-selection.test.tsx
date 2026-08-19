@@ -165,15 +165,24 @@ describe('BoardDetailPage', () => {
     expect(fakes.listBoardItemHistory).toHaveBeenCalledWith('item-1');
   });
 
-  it('keeps list and table board views on the same full-bleed canvas as kanban', async () => {
+  it('keeps list board views on the same full-bleed canvas as kanban', async () => {
     const html = renderToStaticMarkup(
       await BoardDetailPage({
         params: Promise.resolve({ id: 'board-1' }),
-        searchParams: Promise.resolve({ view: 'table' }),
+        searchParams: Promise.resolve({ view: 'list' }),
       }),
     );
 
     expect(html).toContain('data-app-layout="full-bleed"');
+  });
+
+  it('redirects legacy table bookmarks to list while preserving filters', async () => {
+    await expect(
+      BoardDetailPage({
+        params: Promise.resolve({ id: 'board-1' }),
+        searchParams: Promise.resolve({ view: 'table', q: 'pilot', item: 'item-1' }),
+      }),
+    ).rejects.toThrow('redirect:/app/boards/board-1?q=pilot&view=list&item=item-1');
   });
 
   it('keeps an archived selected project in filters but not add-item candidates', async () => {

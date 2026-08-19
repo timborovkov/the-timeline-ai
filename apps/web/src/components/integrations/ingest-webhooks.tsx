@@ -12,12 +12,14 @@ import { useEffect, useReducer } from 'react';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CopyButton } from '@/components/copy-button';
 import { EmptyState } from '@/components/empty-state';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { notifyAction } from '@/lib/notify';
 
 interface CredentialRow {
@@ -134,7 +136,7 @@ function EventClassSelect({
   onChange: (value: TimelineEventClass) => void;
 }) {
   return (
-    <select
+    <NativeSelect
       id={id}
       value={value}
       disabled={disabled}
@@ -143,14 +145,14 @@ function EventClassSelect({
         if (!next) return;
         onChange(next);
       }}
-      className="h-9 w-full rounded-sm border border-border bg-bg px-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+      className="h-8"
     >
       {TIMELINE_EVENT_CLASS_OPTIONS.map((option) => (
         <option key={option.value} value={option.value}>
           {option.label}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -464,11 +466,7 @@ function IngestWebhookListItem({
     eventClassLabel(webhook.eventClass),
     `visibility ${webhook.visibilityDefault}`,
     `proposals ${webhook.proposalGenerationEnabled ? 'on' : 'off'}`,
-    credential
-      ? `${credential.prefix}... · last used ${
-          credential.lastUsedAt ? new Date(credential.lastUsedAt).toLocaleString() : 'never'
-        }`
-      : 'no active credential',
+    credential ? `${credential.prefix}...` : 'no active credential',
   ].join(' · ');
   return (
     <li>
@@ -476,46 +474,53 @@ function IngestWebhookListItem({
         <CollectionRow.Title>{webhook.name}</CollectionRow.Title>
         <CollectionRow.Context>{context}</CollectionRow.Context>
         <CollectionRow.Metadata>
-          <label
-            className="flex min-w-40 items-center gap-2"
-            htmlFor={`ingest-webhook-type-${webhook.id}`}
-          >
-            <span className="sr-only">Timeline type</span>
-            <EventClassSelect
-              id={`ingest-webhook-type-${webhook.id}`}
-              value={webhook.eventClass}
-              disabled={disabled}
-              onChange={(next) => {
-                void onPatch(webhook.id, { eventClass: next });
-              }}
+          <>
+            <RelativeTimestamp
+              prefix="Last used"
+              value={credential?.lastUsedAt}
+              empty={credential ? 'Never used' : undefined}
             />
-          </label>
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={webhook.visibilityDefault === 'team'}
-              disabled={disabled}
-              onChange={(e) =>
-                void onPatch(webhook.id, {
-                  visibilityDefault: e.target.checked ? 'team' : 'private',
-                })
-              }
-            />
-            Team-visible
-          </label>
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={webhook.proposalGenerationEnabled}
-              disabled={disabled}
-              onChange={(e) =>
-                void onPatch(webhook.id, {
-                  proposalGenerationEnabled: e.target.checked,
-                })
-              }
-            />
-            Proposals
-          </label>
+            <label
+              className="flex min-w-40 items-center gap-2"
+              htmlFor={`ingest-webhook-type-${webhook.id}`}
+            >
+              <span className="sr-only">Timeline type</span>
+              <EventClassSelect
+                id={`ingest-webhook-type-${webhook.id}`}
+                value={webhook.eventClass}
+                disabled={disabled}
+                onChange={(next) => {
+                  void onPatch(webhook.id, { eventClass: next });
+                }}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={webhook.visibilityDefault === 'team'}
+                disabled={disabled}
+                onChange={(e) =>
+                  void onPatch(webhook.id, {
+                    visibilityDefault: e.target.checked ? 'team' : 'private',
+                  })
+                }
+              />
+              Team-visible
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={webhook.proposalGenerationEnabled}
+                disabled={disabled}
+                onChange={(e) =>
+                  void onPatch(webhook.id, {
+                    proposalGenerationEnabled: e.target.checked,
+                  })
+                }
+              />
+              Proposals
+            </label>
+          </>
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
           <ItemActionGroup label={`Actions for ${webhook.name}`}>

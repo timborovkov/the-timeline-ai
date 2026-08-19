@@ -1,5 +1,6 @@
 'use client';
 
+import { Archive, LogIn, SkipForward } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useMemo, useReducer, useRef, useState } from 'react';
 
@@ -16,7 +17,9 @@ import {
 } from '@/app/actions/meetings';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ItemIconButton } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { notifyAction } from '@/lib/notify';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
@@ -183,21 +186,20 @@ function TimezoneSelect({
 }) {
   const options = useMemo(() => timezoneOptions(value), [value]);
   return (
-    <select
+    <NativeSelect
       id={id}
       name="timezone"
       value={value}
       onChange={(event) => {
         onChange(event.target.value);
       }}
-      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       {options.map((timezone) => (
         <option key={timezone} value={timezone}>
           {timezone}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }
 
@@ -273,7 +275,9 @@ function ScheduleFields({
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-[minmax(0,1.15fr)_minmax(14rem,1fr)]">
         <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-times`}>Start times</Label>
+          <Label size="sm" htmlFor={`${idPrefix}-times`}>
+            Start times
+          </Label>
           <Input
             id={`${idPrefix}-times`}
             name="times"
@@ -284,12 +288,14 @@ function ScheduleFields({
             aria-describedby={timesDescribedBy}
             aria-invalid={timesInvalid || undefined}
           />
-          <p id={timesHelpId} className="text-xs text-muted-foreground">
+          <p id={timesHelpId} className="text-xs text-fg-dim">
             Use 24-hour local times, separated by commas.
           </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-timezone`}>Timezone</Label>
+          <Label size="sm" htmlFor={`${idPrefix}-timezone`}>
+            Timezone
+          </Label>
           <TimezoneSelect
             id={`${idPrefix}-timezone`}
             value={timezone}
@@ -301,7 +307,9 @@ function ScheduleFields({
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-duration`}>Meeting duration</Label>
+          <Label size="sm" htmlFor={`${idPrefix}-duration`}>
+            Meeting duration
+          </Label>
           <NumberWithUnit
             id={`${idPrefix}-duration`}
             name="durationMinutes"
@@ -311,7 +319,9 @@ function ScheduleFields({
           <p className="text-xs text-muted-foreground">How long Timeline should expect the call.</p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor={`${idPrefix}-join-offset`}>Join before start</Label>
+          <Label size="sm" htmlFor={`${idPrefix}-join-offset`}>
+            Join before start
+          </Label>
           <NumberWithUnit
             id={`${idPrefix}-join-offset`}
             name="joinOffsetMinutes"
@@ -329,20 +339,31 @@ function ScheduleFields({
         className="space-y-2"
       >
         <legend className="text-sm font-medium">Repeat on</legend>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {WEEKDAYS.map((label, index) => (
             <label
               key={label}
-              className="flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-sm border px-2 text-sm"
+              className={
+                compact
+                  ? 'cursor-pointer'
+                  : 'flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-sm border px-2 text-sm'
+              }
             >
               <input
                 aria-label={compact ? WEEKDAY_NAMES[index] : undefined}
+                className={compact ? 'peer sr-only' : undefined}
                 name={`weekday-${index}`}
                 onChange={onScheduleFieldChange}
                 type="checkbox"
                 defaultChecked={weekdays?.includes(index) ?? (index > 0 && index < 6)}
               />
-              {compact ? label.slice(0, 1) : label}
+              {compact ? (
+                <span className="inline-flex size-8 items-center justify-center rounded-sm border border-border text-xs text-fg-muted transition-colors hover:bg-surface-2 peer-checked:border-signal peer-checked:bg-signal-soft peer-checked:text-fg peer-focus-visible:ring-2 peer-focus-visible:ring-signal/40">
+                  {label.slice(0, 1)}
+                </span>
+              ) : (
+                label
+              )}
             </label>
           ))}
         </div>
@@ -521,7 +542,9 @@ export function ScheduleMeetingBotForm({
   return (
     <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-2">
-        <Label htmlFor="meetingUrl">Meeting URL</Label>
+        <Label size="sm" htmlFor="meetingUrl">
+          Meeting URL
+        </Label>
         <Input
           id="meetingUrl"
           name="meetingUrl"
@@ -535,7 +558,9 @@ export function ScheduleMeetingBotForm({
         </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="title">Meeting title (optional)</Label>
+        <Label size="sm" htmlFor="title">
+          Meeting title (optional)
+        </Label>
         <Input id="title" name="title" placeholder="Weekly product sync" />
       </div>
       <VisibilityField
@@ -564,7 +589,7 @@ export function ScheduleMeetingBotForm({
           and capturing the transcript.
         </span>
       </label>
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" size="sm" disabled={pending}>
         {pending ? 'Inviting notetaker…' : 'Invite notetaker'}
       </Button>
     </form>
@@ -690,11 +715,15 @@ export function SavedMeetingForm({
     <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
-          <Label htmlFor="saved-title">Meeting title</Label>
+          <Label size="sm" htmlFor="saved-title">
+            Meeting title
+          </Label>
           <Input id="saved-title" name="title" required placeholder="Internal daily meeting" />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="saved-url">Meeting URL</Label>
+          <Label size="sm" htmlFor="saved-url">
+            Meeting URL
+          </Label>
           <Input
             id="saved-url"
             name="meetingUrl"
@@ -708,7 +737,9 @@ export function SavedMeetingForm({
         </div>
       </div>
       <div className="space-y-2">
-        <Label htmlFor="saved-description">Description</Label>
+        <Label size="sm" htmlFor="saved-description">
+          Description
+        </Label>
         <Input
           id="saved-description"
           name="description"
@@ -716,7 +747,9 @@ export function SavedMeetingForm({
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="saved-aliases">Aliases</Label>
+        <Label size="sm" htmlFor="saved-aliases">
+          Aliases
+        </Label>
         <Input id="saved-aliases" name="aliases" placeholder="daily, standup, team call" />
         <p className="text-xs text-muted-foreground">
           Works with commands like /join daily or /timeline join standup.
@@ -734,8 +767,8 @@ export function SavedMeetingForm({
         visibility={visibility}
         visibilityUserIds={visibilityUserIds}
       />
-      <div className="space-y-3 rounded-md border border-border bg-surface-2/40 p-3">
-        <label className="flex items-center gap-2 text-sm">
+      <div className="space-y-3 border-y border-border py-3">
+        <label className="flex min-h-9 items-center gap-2 text-sm">
           <input
             type="checkbox"
             checked={scheduled}
@@ -744,6 +777,7 @@ export function SavedMeetingForm({
               dispatch({ type: 'error', error: null });
               dispatch({ type: 'scheduleError', scheduleError: null });
             }}
+            className="size-4 rounded-sm border-input accent-signal"
           />
           Add a recurring schedule
         </label>
@@ -786,7 +820,7 @@ export function SavedMeetingForm({
         </span>
       </label>
       <FormError errorRef={errorRef} id={errorId} message={error} />
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" size="sm" disabled={pending}>
         {pending ? 'Saving…' : 'Save meeting'}
       </Button>
     </form>
@@ -878,111 +912,110 @@ export function EditSavedMeetingForm({
   }
 
   return (
-    <details className="space-y-3 text-sm">
-      <summary className="inline-flex min-h-10 cursor-pointer items-center rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-        Edit saved meeting
-      </summary>
-      <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4 pt-3">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor={`saved-title-${saved.id}`}>Meeting title</Label>
-            <Input
-              id={`saved-title-${saved.id}`}
-              name="title"
-              required
-              defaultValue={saved.title}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`saved-aliases-${saved.id}`}>Aliases</Label>
-            <Input
-              id={`saved-aliases-${saved.id}`}
-              name="aliases"
-              defaultValue={saved.aliases.join(', ')}
-            />
-          </div>
+    <form aria-busy={pending} onSubmit={onSubmit} className="space-y-3">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label size="sm" htmlFor={`saved-title-${saved.id}`}>
+            Meeting title
+          </Label>
+          <Input id={`saved-title-${saved.id}`} name="title" required defaultValue={saved.title} />
         </div>
         <div className="space-y-2">
-          <Label htmlFor={`saved-meeting-url-${saved.id}`}>Meeting URL</Label>
+          <Label size="sm" htmlFor={`saved-aliases-${saved.id}`}>
+            Aliases
+          </Label>
           <Input
-            id={`saved-meeting-url-${saved.id}`}
-            name="meetingUrl"
-            type="url"
-            required
-            defaultValue={saved.meetingUrl}
+            id={`saved-aliases-${saved.id}`}
+            name="aliases"
+            defaultValue={saved.aliases.join(', ')}
           />
         </div>
-        <div className="space-y-2">
-          <Label htmlFor={`saved-description-${saved.id}`}>Description</Label>
-          <Input
-            id={`saved-description-${saved.id}`}
-            name="description"
-            defaultValue={saved.description ?? ''}
-          />
-        </div>
-        <VisibilityField
-          idPrefix={`edit-saved-meeting-${saved.id}`}
-          members={members}
-          onVisibilityChange={(nextVisibility) => {
-            dispatch({ type: 'visibility', visibility: nextVisibility });
-          }}
-          onVisibilityUserIdsChange={(nextVisibilityUserIds) => {
-            dispatch({ type: 'visibilityUserIds', visibilityUserIds: nextVisibilityUserIds });
-          }}
-          visibility={visibility}
-          visibilityUserIds={visibilityUserIds}
+      </div>
+      <div className="space-y-2">
+        <Label size="sm" htmlFor={`saved-meeting-url-${saved.id}`}>
+          Meeting URL
+        </Label>
+        <Input
+          id={`saved-meeting-url-${saved.id}`}
+          name="meetingUrl"
+          type="url"
+          required
+          defaultValue={saved.meetingUrl}
         />
-        <div className="space-y-3 rounded-md border border-border bg-surface-2/40 p-3">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={scheduled}
-              onChange={(event) => {
-                onScheduleToggle(event.target.checked);
+      </div>
+      <div className="space-y-2">
+        <Label size="sm" htmlFor={`saved-description-${saved.id}`}>
+          Description
+        </Label>
+        <Input
+          id={`saved-description-${saved.id}`}
+          name="description"
+          defaultValue={saved.description ?? ''}
+        />
+      </div>
+      <VisibilityField
+        idPrefix={`edit-saved-meeting-${saved.id}`}
+        members={members}
+        onVisibilityChange={(nextVisibility) => {
+          dispatch({ type: 'visibility', visibility: nextVisibility });
+        }}
+        onVisibilityUserIdsChange={(nextVisibilityUserIds) => {
+          dispatch({ type: 'visibilityUserIds', visibilityUserIds: nextVisibilityUserIds });
+        }}
+        visibility={visibility}
+        visibilityUserIds={visibilityUserIds}
+      />
+      <div className="space-y-3 border-y border-border py-3">
+        <label className="flex min-h-9 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={scheduled}
+            onChange={(event) => {
+              onScheduleToggle(event.target.checked);
+            }}
+            className="size-4 rounded-sm border-input accent-signal"
+          />
+          Add a recurring schedule
+        </label>
+        {scheduled ? (
+          <div className="space-y-4">
+            <ScheduleFields
+              idPrefix={`saved-${saved.id}`}
+              timezone={timezone}
+              onTimezoneChange={(next) => {
+                dispatch({ type: 'timezone', timezone: next });
+              }}
+              times={schedule?.times}
+              weekdays={schedule?.weekdays}
+              durationMinutes={saved.durationMinutes}
+              joinOffsetMinutes={schedule?.joinOffsetMinutes ?? 2}
+              compact
+              timesInvalid={scheduleError === 'times' || scheduleError === 'both'}
+              weekdaysInvalid={scheduleError === 'weekdays' || scheduleError === 'both'}
+              errorId={errorId}
+              onScheduleFieldChange={() => {
+                dispatch({ type: 'error', error: null });
+                dispatch({ type: 'scheduleError', scheduleError: null });
               }}
             />
-            Add a recurring schedule
-          </label>
-          {scheduled ? (
-            <div className="space-y-4">
-              <ScheduleFields
-                idPrefix={`saved-${saved.id}`}
-                timezone={timezone}
-                onTimezoneChange={(next) => {
-                  dispatch({ type: 'timezone', timezone: next });
-                }}
-                times={schedule?.times}
-                weekdays={schedule?.weekdays}
-                durationMinutes={saved.durationMinutes}
-                joinOffsetMinutes={schedule?.joinOffsetMinutes ?? 2}
-                compact
-                timesInvalid={scheduleError === 'times' || scheduleError === 'both'}
-                weekdaysInvalid={scheduleError === 'weekdays' || scheduleError === 'both'}
-                errorId={errorId}
-                onScheduleFieldChange={() => {
-                  dispatch({ type: 'error', error: null });
-                  dispatch({ type: 'scheduleError', scheduleError: null });
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={autoJoin}
+                onChange={(event) => {
+                  dispatch({ type: 'autoJoin', autoJoin: event.target.checked });
                 }}
               />
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={autoJoin}
-                  onChange={(event) => {
-                    dispatch({ type: 'autoJoin', autoJoin: event.target.checked });
-                  }}
-                />
-                Auto-join scheduled occurrences
-              </label>
-            </div>
-          ) : null}
-        </div>
-        <FormError errorRef={errorRef} id={errorId} message={error} />
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending ? 'Updating…' : 'Update meeting'}
-        </Button>
-      </form>
-    </details>
+              Auto-join scheduled occurrences
+            </label>
+          </div>
+        ) : null}
+      </div>
+      <FormError errorRef={errorRef} id={errorId} message={error} />
+      <Button type="submit" size="sm" disabled={pending}>
+        {pending ? 'Updating…' : 'Update meeting'}
+      </Button>
+    </form>
   );
 }
 
@@ -990,9 +1023,9 @@ export function JoinSavedMeetingButton({ query }: { query: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
   return (
-    <Button
-      size="sm"
+    <ItemIconButton
       disabled={pending}
+      label="Join meeting"
       onClick={() => {
         setPending(true);
         void notifyAction({
@@ -1012,8 +1045,8 @@ export function JoinSavedMeetingButton({ query }: { query: string }) {
         });
       }}
     >
-      {pending ? 'Joining meeting…' : 'Join meeting'}
-    </Button>
+      <LogIn />
+    </ItemIconButton>
   );
 }
 
@@ -1021,10 +1054,10 @@ export function ArchiveSavedMeetingButton({ savedMeetingId }: { savedMeetingId: 
   const router = useRouter();
   const [pending, setPending] = useState(false);
   return (
-    <Button
-      variant="outline"
-      size="sm"
+    <ItemIconButton
       disabled={pending}
+      label="Archive meeting"
+      className="hover:text-danger"
       onClick={() => {
         setPending(true);
         void notifyAction({
@@ -1039,8 +1072,8 @@ export function ArchiveSavedMeetingButton({ savedMeetingId }: { savedMeetingId: 
         });
       }}
     >
-      {pending ? 'Archiving meeting…' : 'Archive meeting'}
-    </Button>
+      <Archive />
+    </ItemIconButton>
   );
 }
 
@@ -1048,10 +1081,9 @@ export function SkipScheduledMeetingButton({ meetingId }: { meetingId: string })
   const router = useRouter();
   const [pending, setPending] = useState(false);
   return (
-    <Button
-      variant="outline"
-      size="sm"
+    <ItemIconButton
       disabled={pending}
+      label="Skip this occurrence"
       onClick={() => {
         setPending(true);
         void notifyAction({
@@ -1066,7 +1098,7 @@ export function SkipScheduledMeetingButton({ meetingId }: { meetingId: string })
         });
       }}
     >
-      {pending ? 'Skipping occurrence…' : 'Skip this occurrence'}
-    </Button>
+      <SkipForward />
+    </ItemIconButton>
   );
 }

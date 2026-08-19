@@ -1,5 +1,8 @@
 import type { TeamInviteRow, TeamMemberInfo } from '@/components/team-member-types';
 
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CopyButton } from '@/components/copy-button';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { PendingInviteActions } from '@/components/team-member-actions';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -11,33 +14,41 @@ export function PendingInviteItem({
   inviter: TeamMemberInfo | undefined;
 }) {
   const inviteUrl = `${getSiteUrl()}/accept-invite/${invite.token}`;
-  const deliveryStatus =
-    invite.sendStatus === 'failed'
-      ? `Email delivery failed. ${invite.sendError ?? 'Try resending the invite or share the link.'}`
-      : `Email ${invite.sendStatus}${invite.lastSentAt ? ` · sent ${invite.lastSentAt.toLocaleDateString()}` : ''}`;
+  const deliveryFailed = invite.sendStatus === 'failed';
+  const deliveryStatus = deliveryFailed
+    ? `Email delivery failed. ${invite.sendError ?? 'Try resending the invite or share the link.'}`
+    : invite.sendStatus === 'sent'
+      ? 'Email sent'
+      : `Email ${invite.sendStatus}`;
 
   return (
-    <li className="flex flex-col gap-3 py-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <p className="break-all text-sm font-medium">{invite.email}</p>
-          <p className="text-xs text-fg-muted">
-            {invite.role} · invited by {inviter?.name ?? inviter?.email ?? 'Unknown'} · expires{' '}
-            {invite.expiresAt.toLocaleDateString()}
-          </p>
-          <p
-            className={
-              invite.sendStatus === 'failed' ? 'text-xs text-danger' : 'text-xs text-fg-muted'
-            }
-          >
-            {deliveryStatus}
-          </p>
-        </div>
-        <PendingInviteActions inviteEmail={invite.email} inviteId={invite.id} />
-      </div>
-      <code className="block w-full break-all rounded-md bg-surface-2 px-3 py-2 text-[12px]">
-        {inviteUrl}
-      </code>
+    <li>
+      <CollectionRow>
+        <CollectionRow.Title>{invite.email}</CollectionRow.Title>
+        <CollectionRow.Context>
+          {invite.role} · invited by {inviter?.name ?? inviter?.email ?? 'Unknown'}
+        </CollectionRow.Context>
+        <CollectionRow.Subtitle>
+          <span className="font-mono text-[11px] text-fg-dim">{inviteUrl}</span>
+        </CollectionRow.Subtitle>
+        <CollectionRow.Metadata>
+          <>
+            <RelativeTimestamp prefix="Expires" value={invite.expiresAt} />
+            {invite.lastSentAt ? (
+              <RelativeTimestamp prefix="Sent" value={invite.lastSentAt} />
+            ) : null}
+            <span
+              className={deliveryFailed ? 'text-[11px] text-danger' : 'text-[11px] text-fg-dim'}
+            >
+              {deliveryStatus}
+            </span>
+          </>
+        </CollectionRow.Metadata>
+        <CollectionRow.Actions>
+          <CopyButton appearance="icon" label="Copy invite link" value={inviteUrl} />
+          <PendingInviteActions inviteEmail={invite.email} inviteId={invite.id} />
+        </CollectionRow.Actions>
+      </CollectionRow>
     </li>
   );
 }

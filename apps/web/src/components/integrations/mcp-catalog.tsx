@@ -157,7 +157,7 @@ export function McpCatalog({
           body="Clear the filters or try a different search to see available servers."
         />
       ) : (
-        <div className="border-x border-border">
+        <div>
           {filtered.map((e) => (
             <CatalogCard key={e.id} entry={e} localConnectionsEnabled={localConnectionsEnabled} />
           ))}

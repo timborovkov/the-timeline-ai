@@ -134,7 +134,7 @@ export const HELP_PAGES: HelpPage[] = [
   {
     slug: 'boards',
     title: 'Boards',
-    description: 'Use kanban, table, and list views over tasks and workspace objects.',
+    description: 'Use kanban and list views over tasks and workspace objects.',
     icon: KanbanSquare,
     related: ['work', 'objects'],
     sections: [
@@ -143,7 +143,7 @@ export const HELP_PAGES: HelpPage[] = [
         body: 'Boards are part of Work. They do not create a second task system; they organize the same people, companies, deals, projects, and tasks that appear in objects, search, and answers.',
         items: [
           'Kanban boards group explicit board items by board-owned lanes.',
-          'Table views help scan responsible people, due dates, priority, and recent activity.',
+          'List views help scan responsible people, due dates, priority, and next steps in compact rows.',
           'Templates help create pipelines, task boards, catalogs, and custom boards.',
         ],
         appLink: { href: '/app/boards', label: 'Open boards' },

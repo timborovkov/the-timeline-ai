@@ -109,7 +109,7 @@ vi.mock('@/components/collections/virtual-list', () => ({
 }));
 
 const { BoardDetailClient } = await import('./board-detail-client.js');
-const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
+const { CuratedBoardList } = await import('./curated-board-views.js');
 
 function testObjectRow(input: { id: string; canonicalName: string }): objects.ObjectRow {
   return {
@@ -177,7 +177,7 @@ function renderClient(
   items: boards.BoardItemRow[],
   options: {
     selectedItemId?: string | null;
-    view?: 'kanban' | 'table' | 'list';
+    view?: 'kanban' | 'list';
     purpose?: string;
     itemCount?: number;
   } = {},
@@ -302,7 +302,7 @@ describe('BoardDetailClient', () => {
     const { rerender } = render(
       renderClient([], {
         selectedItemId: 'item-2',
-        view: 'table',
+        view: 'list',
       }),
     );
 
@@ -318,7 +318,7 @@ describe('BoardDetailClient', () => {
     rerender(
       renderClient([], {
         selectedItemId: null,
-        view: 'table',
+        view: 'list',
       }),
     );
 
@@ -350,7 +350,7 @@ describe('BoardDetailClient', () => {
             canonicalName: 'Alpha',
           }),
         ],
-        { selectedItemId: 'item-1', view: 'table' },
+        { selectedItemId: 'item-1', view: 'list' },
       ),
     );
 
@@ -373,7 +373,7 @@ describe('BoardDetailClient', () => {
             updatedAt: refreshedAt.toISOString(),
           }),
         ],
-        { selectedItemId: 'item-1', view: 'table' },
+        { selectedItemId: 'item-1', view: 'list' },
       ),
     );
 
@@ -394,7 +394,7 @@ describe('BoardDetailClient', () => {
             updatedAt: new Date(refreshedAt.getTime() + 1000).toISOString(),
           }),
         ],
-        { selectedItemId: 'item-1', view: 'table' },
+        { selectedItemId: 'item-1', view: 'list' },
       ),
     );
 
@@ -405,7 +405,7 @@ describe('BoardDetailClient', () => {
     });
   });
 
-  it('does not link optimistic table or list rows to temporary ids', () => {
+  it('does not link optimistic list rows to temporary ids', () => {
     const items = [
       boardItem({
         id: 'optimistic-object-1',
@@ -414,16 +414,11 @@ describe('BoardDetailClient', () => {
       }),
     ];
 
-    const table = renderToStaticMarkup(
-      <CuratedBoardTable boardId="board-1" view="table" items={items} />,
-    );
     const list = renderToStaticMarkup(
       <CuratedBoardList boardId="board-1" view="list" items={items} />,
     );
 
-    expect(table).toContain('Pending company');
     expect(list).toContain('Pending company');
-    expect(table).not.toContain('optimistic-object-1');
     expect(list).not.toContain('optimistic-object-1');
   });
 });

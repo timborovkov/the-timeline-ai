@@ -12,7 +12,7 @@ import { updateBoardItemAction } from '@/app/actions/boards';
 import { BoardActionsMenu } from '@/components/boards/board-actions-menu';
 import { BoardAddItemForm } from '@/components/boards/board-add-item-form';
 import { BoardCardDetail } from '@/components/boards/board-card-detail';
-import { CuratedBoardList, CuratedBoardTable } from '@/components/boards/curated-board-views';
+import { CuratedBoardList } from '@/components/boards/curated-board-views';
 import { CuratedKanbanBoard } from '@/components/boards/curated-kanban-board';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { CollectionViewToggle } from '@/components/collections/collection-view-toggle';
@@ -295,7 +295,7 @@ export function BoardDetailClient({
         viewControls={
           <CollectionViewToggle
             label="Board view"
-            views={['kanban', 'table', 'list'] as const}
+            views={['kanban', 'list'] as const}
             current={view}
             hrefFor={(nextView) => boardViewHref(boardId, nextView, selectedItemId, filterParams)}
           />
@@ -328,17 +328,6 @@ export function BoardDetailClient({
               items={items}
               selectedItemId={selectedItemId}
               members={members}
-              filterParams={filterParams}
-            />
-          )}
-          {view === 'table' && (
-            <CuratedBoardTable
-              boardId={boardId}
-              view={view}
-              lanes={lanes}
-              items={items}
-              members={members}
-              onUpdateItem={updateItem}
               filterParams={filterParams}
             />
           )}

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { getApprovalTargetSnapshotAction } from '@/app/actions/approval-preview';
 import { SuggestionChangeDialog } from '@/components/approvals/suggestion-change-dialog';
 import { EvidenceLink } from '@/components/evidence-link';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,7 +23,7 @@ import {
   type ApprovalPreviewField,
   type ApprovalTargetSnapshot,
 } from '@/lib/approval-preview';
-import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { displayText } from '@/lib/display-dates';
 import { evidenceSourceContextLabel } from '@/lib/evidence-source-label';
 import { cn } from '@/lib/utils';
 
@@ -137,14 +138,14 @@ export function ApprovalPreviewDialog({
             ))}
           </dl>
           {timestamps.createdAt || timestamps.updatedAt ? (
-            <p className="font-mono text-[11px] tabular-nums text-fg-dim">
-              {timestamps.createdAt
-                ? `Created ${formatDisplayDateTime(timestamps.createdAt, { timezone })}`
-                : null}
-              {timestamps.createdAt && timestamps.updatedAt ? ' · ' : null}
-              {timestamps.updatedAt
-                ? `Updated ${formatDisplayDateTime(timestamps.updatedAt, { timezone })}`
-                : null}
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-dim">
+              {timestamps.createdAt ? (
+                <RelativeTimestamp prefix="Created" value={timestamps.createdAt} />
+              ) : null}
+              {timestamps.createdAt && timestamps.updatedAt ? <span>·</span> : null}
+              {timestamps.updatedAt ? (
+                <RelativeTimestamp prefix="Updated" value={timestamps.updatedAt} />
+              ) : null}
             </p>
           ) : null}
           {item.description ? (

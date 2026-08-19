@@ -123,7 +123,7 @@ describe('TeamTimezoneForm', () => {
     fakes.useFormStatus.mockReturnValue({ pending: true });
     const view = render(<TeamTimezoneForm timezone="America/New_York" />);
 
-    expect(screen.getByRole('button', { name: 'Working…' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save timezone' })).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
 
     fakes.useActionState.mockReturnValue([
@@ -267,8 +267,7 @@ describe('InviteMemberForm', () => {
 
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Creating invite…' });
     expect(submit.disabled).toBe(true);
-    expect(submit.className).toContain('w-full');
-    expect(submit.className).toContain('sm:w-auto');
+    expect(submit.className).toContain('h-8');
   });
 });
 
@@ -364,12 +363,12 @@ describe('TeamExportPanel', () => {
     expect(rows).toHaveLength(3);
     const [readyRow, queuedRow, failedRow] = rows;
     if (!readyRow || !queuedRow || !failedRow) throw new Error('expected three export rows');
-    expect(within(readyRow).getByText('ready')).toBeTruthy();
+    expect(within(readyRow).getByText('Ready')).toBeTruthy();
     expect(within(readyRow).getByDisplayValue('ready-export')).toBeTruthy();
     expect(within(readyRow).getByRole('button', { name: 'Download' })).toBeTruthy();
-    expect(within(queuedRow).getByText('queued')).toBeTruthy();
+    expect(within(queuedRow).getByText('Queued')).toBeTruthy();
     expect(within(queuedRow).queryByRole('button', { name: 'Download' })).toBeNull();
-    expect(within(failedRow).getByText('failed')).toBeTruthy();
+    expect(within(failedRow).getByText('Failed')).toBeTruthy();
     expect(
       within(failedRow).getByText(
         'This export could not be completed. Start a new export or try again later.',

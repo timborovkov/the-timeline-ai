@@ -132,11 +132,26 @@ describe('MeetingsPage', () => {
     expect(html).toContain('No saved meetings match your search');
     expect(html).toContain('0 of 1');
     expect(html).toContain('href="/app/meetings?tab=saved"');
-    expect(html).toContain('Scheduled and recent captures');
-    expect(fakes.listMeetings).toHaveBeenCalledWith({ limit: 31, cursor: null });
+    expect(html).not.toContain('Scheduled and recent captures');
+    expect(html).not.toContain('Recent captures');
+    expect(fakes.listMeetings).not.toHaveBeenCalled();
   });
 
-  it('keeps scheduled and recent captures visible when searching saved meetings', async () => {
+  it('keeps the saved editor behind one Edit details disclosure', async () => {
+    fakes.listSavedMeetings.mockResolvedValue([savedMeetingRow({ title: 'Quarterly planning' })]);
+
+    const html = renderToStaticMarkup(
+      await MeetingsPage({ searchParams: Promise.resolve({ tab: 'saved' }) }),
+    );
+
+    expect(html).toContain('Edit details');
+    expect(html).not.toContain('Edit saved meeting');
+    expect(html).toContain('Quarterly planning');
+    expect(html).not.toContain('Independent capture');
+    expect(html).not.toContain('aria-label="Meeting captures"');
+  });
+
+  it('does not mix capture rows into the saved meetings view', async () => {
     fakes.listSavedMeetings.mockResolvedValue([savedMeetingRow({ title: 'Quarterly planning' })]);
     fakes.listMeetings.mockResolvedValue([
       meetingRow({ id: 'meeting-independent', title: 'Independent capture' }),
@@ -147,8 +162,9 @@ describe('MeetingsPage', () => {
     );
 
     expect(html).toContain('Quarterly planning');
-    expect(html).toContain('aria-label="Meeting captures"');
-    expect(html).toContain('Independent capture');
+    expect(html).not.toContain('aria-label="Meeting captures"');
+    expect(html).not.toContain('Independent capture');
+    expect(fakes.listMeetings).not.toHaveBeenCalled();
   });
 
   it('keeps unauthenticated users out before loading meeting data', async () => {

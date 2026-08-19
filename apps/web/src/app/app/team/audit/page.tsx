@@ -7,12 +7,12 @@ import type { Metadata } from 'next';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { EmptyState } from '@/components/empty-state';
 import { IndexStrip } from '@/components/index-strip';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Badge } from '@/components/ui/badge';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime } from '@/lib/display-dates';
 import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = {
@@ -159,7 +159,7 @@ export default async function TrustAuditPage() {
             action="Manage team settings"
           />
         ) : (
-          <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
+          <ul className="border-y border-border text-sm">
             {rows.map((row) => {
               const summary = row.redacted
                 ? { label: 'Restricted activity', outcome: null, danger: false }
@@ -181,7 +181,7 @@ export default async function TrustAuditPage() {
               return (
                 <li
                   key={row.id}
-                  className="grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,18rem)]"
+                  className="grid gap-3 border-b border-border py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,18rem)]"
                 >
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -189,12 +189,7 @@ export default async function TrustAuditPage() {
                         <Badge variant="destructive">{summary.outcome}</Badge>
                       ) : null}
                       {row.redacted ? <Badge variant="outline">Restricted</Badge> : null}
-                      <time
-                        dateTime={row.createdAt.toISOString()}
-                        className="font-mono text-xs tabular-nums text-fg-muted"
-                      >
-                        {formatDisplayDateTime(row.createdAt, { timezone })}
-                      </time>
+                      <RelativeTimestamp value={row.createdAt} />
                     </div>
                     <div
                       className={cn(

@@ -26,6 +26,7 @@ import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { SectionHeading } from '@/components/section-heading';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
+import { NativeSelect } from '@/components/ui/native-select';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { formatCollectionCount } from '@/lib/collection-count';
@@ -100,7 +101,9 @@ export default async function MeetingsPage({
 
   const [list, savedMeetings, usedMinutes, settings, calendarSettings, defaultRow, members] =
     await Promise.all([
-      scope.meetings.listMeetings({ limit: MEETINGS_PAGE_SIZE + 1, cursor: null }),
+      tab === 'captures'
+        ? scope.meetings.listMeetings({ limit: MEETINGS_PAGE_SIZE + 1, cursor: null })
+        : Promise.resolve([]),
       tab === 'saved' ? scope.meetings.listSavedMeetings() : Promise.resolve([]),
       scope.meetings.getCurrentMonthMinutes(),
       scope.meetings.getMeetingSettings(),
@@ -146,7 +149,7 @@ export default async function MeetingsPage({
   const clearCurrentViewHref = meetingHref({ tab });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         variant="collection"
         title="Meetings"
@@ -160,8 +163,10 @@ export default async function MeetingsPage({
       <MeetingsViewNavigation tab={tab} />
 
       {tab === 'captures' ? (
-        <details className="border-y border-border py-2">
-          <summary className="cursor-pointer text-sm font-medium text-fg">Invite notetaker</summary>
+        <details className="border-y border-border py-1.5">
+          <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
+            Invite notetaker
+          </summary>
           <div id="invite-notetaker" className="scroll-mt-24 pt-3">
             <ScheduleMeetingBotForm
               defaultVisibility={defaultRow.visibility}
@@ -171,8 +176,10 @@ export default async function MeetingsPage({
           </div>
         </details>
       ) : (
-        <details className="border-y border-border py-2">
-          <summary className="cursor-pointer text-sm font-medium text-fg">Save a meeting</summary>
+        <details className="border-y border-border py-1.5">
+          <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
+            Save a meeting
+          </summary>
           <div id="save-meeting" className="scroll-mt-24 pt-3">
             <SavedMeetingForm
               defaultVisibility={defaultRow.visibility}
@@ -202,26 +209,24 @@ export default async function MeetingsPage({
           timezone={calendarSettings.defaultTimezone}
           totalCount={savedMeetings.length}
         />
-      ) : null}
-
-      <MeetingCapturesSection
-        clearHref={clearCurrentViewHref}
-        filter={filter}
-        hasActiveFilters={hasCaptureFilters}
-        meetings={capturePage.items.map((meeting) => ({
-          id: meeting.id,
-          title: meeting.title,
-          platform: meeting.platform,
-          status: meeting.status,
-          createdAt: meeting.createdAt.toISOString(),
-          scheduledStartAt: meeting.scheduledStartAt?.toISOString() ?? null,
-          pinned: pinState[`meeting:${meeting.id}`] ?? false,
-        }))}
-        nextCursor={capturePage.nextCursor}
-        query={tab === 'captures' ? query : ''}
-        tab={tab}
-        timezone={calendarSettings.defaultTimezone}
-      />
+      ) : (
+        <MeetingCapturesSection
+          clearHref={clearCurrentViewHref}
+          filter={filter}
+          hasActiveFilters={hasCaptureFilters}
+          meetings={capturePage.items.map((meeting) => ({
+            id: meeting.id,
+            title: meeting.title,
+            platform: meeting.platform,
+            status: meeting.status,
+            createdAt: meeting.createdAt.toISOString(),
+            scheduledStartAt: meeting.scheduledStartAt?.toISOString() ?? null,
+            pinned: pinState[`meeting:${meeting.id}`] ?? false,
+          }))}
+          nextCursor={capturePage.nextCursor}
+          query={query}
+        />
+      )}
     </div>
   );
 }
@@ -301,24 +306,19 @@ function MeetingSearchControls({
           {tab === 'captures' ? (
             <label className="space-y-1">
               <span className="block text-[11px] text-fg-dim">Capture status</span>
-              <select
-                id="capture-status"
-                name="status"
-                defaultValue={filter}
-                className="flex h-9 w-full min-w-0 rounded-sm border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
+              <NativeSelect id="capture-status" name="status" defaultValue={filter}>
                 {CAPTURE_FILTERS.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
           ) : null}
         </CollectionToolbar.Filters>
         <CollectionToolbar.Actions>
           <div className="flex items-center gap-1">
-            <Button type="submit" variant="outline">
+            <Button type="submit" size="sm" variant="outline">
               Apply
             </Button>
             {hasActiveFilters ? (
@@ -410,8 +410,8 @@ function SavedMeetingsSection({
                   </ItemActionGroup>
                 </CollectionRow.Actions>
               </CollectionRow>
-              <details className="border-b border-border/80 px-3 py-2">
-                <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg">
+              <details className="px-3 pb-3">
+                <summary className="cursor-pointer py-1.5 text-xs text-fg-dim hover:text-fg">
                   Edit details
                 </summary>
                 <div className="pt-2">
@@ -437,8 +437,6 @@ function MeetingCapturesSection({
   meetings,
   nextCursor,
   query,
-  tab,
-  timezone,
 }: {
   clearHref: string;
   filter: CaptureFilter;
@@ -454,23 +452,18 @@ function MeetingCapturesSection({
   }[];
   nextCursor: string | null;
   query: string;
-  tab: MeetingTab;
-  timezone: string;
 }) {
   return (
     <section aria-labelledby="meeting-captures-heading" className="space-y-3">
-      <SectionHeading id="meeting-captures-heading">
-        {tab === 'saved' ? 'Scheduled and recent captures' : 'Recent captures'}
-      </SectionHeading>
+      <SectionHeading id="meeting-captures-heading">Recent captures</SectionHeading>
       <MeetingCapturesList
         clearHref={clearHref}
-        filter={tab === 'captures' ? filter : 'all'}
+        filter={filter}
         hasActiveFilters={hasActiveFilters}
         initialMeetings={meetings}
         nextCursor={nextCursor}
         query={query}
-        tab={tab}
-        timezone={timezone}
+        tab="captures"
       />
     </section>
   );

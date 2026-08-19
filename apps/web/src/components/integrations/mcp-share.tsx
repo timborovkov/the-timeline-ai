@@ -7,6 +7,7 @@ import { useEffect, useId, useReducer, useRef, useState, type SyntheticEvent } f
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CopyButton } from '@/components/copy-button';
 import { EmptyState } from '@/components/empty-state';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Badge } from '@/components/ui/badge';
@@ -459,11 +460,17 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
               <li key={k.id}>
                 <CollectionRow>
                   <CollectionRow.Title>{k.name}</CollectionRow.Title>
-                  <CollectionRow.Context>{`${k.prefix}… · created ${new Date(k.createdAt).toLocaleDateString()}${
-                    k.lastUsedAt
-                      ? ` · last used ${new Date(k.lastUsedAt).toLocaleString()}`
-                      : ' · never used'
-                  }`}</CollectionRow.Context>
+                  <CollectionRow.Context>
+                    <span className="inline-flex flex-wrap items-center gap-x-1">
+                      <span>{k.prefix}…</span>
+                      <RelativeTimestamp prefix="created" value={k.createdAt} />
+                      {k.lastUsedAt ? (
+                        <RelativeTimestamp prefix="last used" value={k.lastUsedAt} />
+                      ) : (
+                        <span>never used</span>
+                      )}
+                    </span>
+                  </CollectionRow.Context>
                   <CollectionRow.Actions>
                     <ItemActionGroup label={`Actions for ${k.name}`}>
                       <Button

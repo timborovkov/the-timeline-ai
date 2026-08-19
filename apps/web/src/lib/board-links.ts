@@ -1,4 +1,9 @@
-export type BoardLayout = 'kanban' | 'table' | 'list';
+export type BoardLayout = 'kanban' | 'list';
+
+export function normalizeBoardView(value: string | string[] | null | undefined): BoardLayout {
+  const v = Array.isArray(value) ? value[0] : value;
+  return v === 'list' || v === 'table' ? 'list' : 'kanban';
+}
 
 export function boardViewHref(
   boardId: string,

@@ -52,8 +52,9 @@ export function SettingsNav({
                 href={`${basePath}?section=${encodeURIComponent(item.value)}`}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex min-h-10 shrink-0 snap-start touch-manipulation items-center gap-2 rounded-sm px-3 text-sm font-medium text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:min-h-9',
-                  active && 'bg-surface-2 text-fg',
+                  'flex min-h-10 shrink-0 snap-start touch-manipulation items-center gap-2 rounded-sm px-2.5 text-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:min-h-8',
+                  active &&
+                    'bg-surface-2 font-medium text-fg lg:shadow-[inset_2px_0_0_var(--color-signal)]',
                 )}
               >
                 {item.icon}

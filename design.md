@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.20 · Standardized personal pins (2026-08-19). Replaces v3.19 Timeline flush sticky toolbar.
+**Version:** v3.21 · Remaining settings density, board list, task kanban skeletons, and standardized personal pins (2026-08-19). Replaces v3.20.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -312,11 +312,22 @@ Copy:
 A sentence-case semantic `<h2>` at 16px Switzer semibold with optional actions.
 Do not recreate route-local uppercase eyebrow headings.
 
-### Button, Input, and Textarea
+### Button, Input, Textarea, and NativeSelect
 
 Controls are 36px high by default, with 40px allowed for mobile-critical
 actions. They use a 4px radius, explicit hover states, and a visible focus
-ring. Secondary buttons do not need a persistent filled background.
+ring. Secondary buttons do not need a persistent filled background. Native
+`<select>` controls use the shared `NativeSelect` (same height, radius, hover,
+and focus as `Input`). Do not restyle selects with one-off `h-10`,
+`rounded-md`, or unhovered gray boxes.
+
+### Relative timestamps
+
+Age metadata (`created`, `updated`, `last synced`, `expires`) uses
+`RelativeTimestamp`: Commit Mono 11px, a relative label such as `7 hours ago`,
+and the localized date-time on hover (`title` plus tooltip). Calendar chips and
+due dates keep their own clock-time and due-date vocabularies. Exact instants
+still belong in `TechnicalDetails` when they are implementation detail.
 
 ### Card
 
@@ -581,46 +592,60 @@ leads with mixed personal pins (same rows as Home), then team boards, then the
 work queue so saved work stays in reach before due and assigned items. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
 Kanban/List view controls sit on the CollectionToolbar row with search and
-filters, not on a second strip. Board kanban/table/list uses the same toolbar
+filters, not on a second strip. Board kanban/list uses the same toolbar
 slot. Add item is a compact toolbar action that opens a popover, not a
 full-width boxed header. Loading placeholders match the live CollectionToolbar
 (search, optional count, Filters, view toggle, and compact add on one row) and
 the requested view: Tasks default to list, boards default to kanban, and
-table/list/kanban each have a matching skeleton. Timeline loading uses the same
+list/kanban each have a matching skeleton. Timeline loading uses the same
 toolbar row without a page header or inventory chip, then Linear feed rows.
 Collection pages load as flat rows, not boxed card grids. Objects New object and
 Boards Create board use the same compact toolbar/header action as Add item, not a
 filled primary chip. Kanban cards stay compact: a clamped title plus one
 metadata row, with no redundant type label. Curated boards use the same
-full-bleed work canvas in kanban, table, and grouped list — no boxed inner
+full-bleed work canvas in kanban and grouped list — no boxed inner
 container around the collection. Board kanban cards stay compact: a clamped
 title, optional next-step line directly under the title, and one metadata row.
-Cards have no Move control; the drag handle is the on-card move path (Space or
-Enter, then arrow keys), and opening the card is the keyboard alternative.
+Kanban lanes use a hairline divider, not boxed column chrome. Card title and
+metadata share the same left edge: compact 20px chips, no extra type/metadata
+padding, and no wrapping priority row. The drag handle sits with the card
+actions on the right. Cards have no Move control; the drag handle is the
+on-card move path (Space or Enter, then arrow keys), and opening the card is
+the keyboard alternative. Task kanban paging uses card skeletons in columns
+that already have cards; empty lanes stay empty instead of flashing
+Loading more labels.
 Grouped board list does not repeat the current lane name or add a Move row. Next
 step is the board-local immediate action on that card, not an object description
-and not a table column. It sits under the title in kanban, list, and table, and
-is edited in the open card. Table and card-detail keep the lane name because
-those views are not already organized by column. Board table and list checkboxes
+and not a spreadsheet column. It sits under the title in kanban and list, and
+is edited in the open card. Card-detail keeps the lane name because that view
+is not already organized by column. Board list checkboxes
 stay vertically centered with the row. Do not style board lanes as badges. Team
 settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
-visible role and actions, not a padded card list. Other settings sections stay
-forms, but they use hairline section structure instead of nested dashboard
-cards where a single form is the whole section.
+visible role and quiet actions, not a padded card list. Role changes save on
+select. Remove, resend, and revoke are tooltiped icon buttons. Invite, pending,
+removed, and export lists use the same rows. Other settings sections stay
+forms, with hairline section structure, 12px muted labels, compact `sm`
+outline saves, and at most one filled primary action per view (Rename, Create
+invite, Start export). Select and checkbox preferences may save immediately.
 
 Connections is a collection directory. Provider and capture surfaces are
 `CollectionGroup` + `CollectionRow` rows (icon, name, status, one context
 line, quiet action). They are not bordered `p-4` cards. Status uses
 `CollectionStatus` or readable sentence-case text, not uppercase chips.
+Slack, Telegram, provider accounts, and connected integrations reuse the same
+row density.
 
 Meetings keep the collection header and rows. Capture and saved-meeting setup
-forms sit in a closed disclosure so the list is the default view. Saved
-meeting edit is a closed disclosure or dialog, never an always-open form
-under every row. Meeting mutations use the shared toast contract.
+forms sit in a closed disclosure so the list is the default view. The Saved tab
+lists saved meeting links only; captures stay on Captures. Saved meeting edit
+is one closed **Edit details** disclosure that opens the editor, never a nested
+second “Edit saved meeting” control. Join, archive, and skip are tooltiped icon
+buttons. Capture times use relative age with a timestamp tooltip. Meeting
+mutations use the shared toast contract.
 
 ### Calendar
 
@@ -635,7 +660,9 @@ numbers belong on the week column, not inside every month cell.
 The Edit event dialog stays a calendar-event editor. When the event is linked
 to workspace objects, those objects appear as quiet title links under
 **Linked objects**, never as a large Open button. Object Calendar sections
-link the other way to the focused calendar event.
+link the other way to the focused calendar event. Subscription create/last-used
+times use relative age with a timestamp tooltip. Event dialog selects use
+`NativeSelect`.
 
 Job recovery is an admin-only queue, not a processing inventory.
 Members who open `/app/team/jobs` see an Admins-only empty state. Home
@@ -1113,6 +1140,9 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
 | 2026-08-19 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel after merging collection chrome, floating Ask, and `notifyAction`. |
+| 2026-08-19 | Remaining settings and directory density | Aligns Team settings, Connections, Meetings, Calendar, Slack, Telegram, and remaining timestamps with compact collection rows, NativeSelect, quiet icon actions, and relative age plus hover datetime. |
+| 2026-08-19 | Kanban card alignment and saved-meeting editor | Aligns board/task kanban title and metadata on one left edge with compact chips and hairline lanes, and makes Meetings Edit details open the editor instead of a nested Edit saved meeting control. |
+| 2026-08-19 | Board list replaces table; task kanban skeletons | Drops the legacy board Table spreadsheet so boards match Tasks with Kanban and grouped List, maps `?view=table` to list, and pages task kanban with card skeletons instead of flickering Loading more labels. |
 | 2026-08-19 | Shared collection empty states | Replaces one-off empty copy and ad-hoc wells with `EmptyState`: quiet dim icon, title, explanation, and create/recover actions only when the person can act. |
 | 2026-08-19 | Timeline flush sticky toolbar | Drops main top padding on Timeline (`flush-top`) so the sticky filter bar and `top-11` date labels sit under the 48px header without a negative `top`. |
 | 2026-08-19 | Standardized personal pins | One icon pin with Pin to Home tooltip, mixed Home and Work previews, list pin glyphs, and About labels for Ask object bindings. |

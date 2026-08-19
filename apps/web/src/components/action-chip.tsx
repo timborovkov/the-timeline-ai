@@ -2,7 +2,7 @@ export function ActionChip({ href, label }: { href: string; label: string }) {
   return (
     <a
       href={href}
-      className="inline-flex items-center gap-1 rounded-sm border border-border bg-surface px-2 py-1 text-xs font-medium text-fg-muted hover:border-signal hover:text-signal"
+      className="inline-flex items-center rounded-sm px-2 py-1 text-xs text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
     >
       {label}
     </a>

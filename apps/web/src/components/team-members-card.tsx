@@ -32,7 +32,7 @@ export function MembersCard({
           action="Refresh members"
         />
       ) : (
-        <ul className="border-x border-border">
+        <ul>
           {members.map((member) => (
             <TeamMemberListItem
               key={member.userId}

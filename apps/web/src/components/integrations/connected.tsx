@@ -5,12 +5,15 @@ import { useRouter } from 'next/navigation';
 import { useActionState, useId, useState } from 'react';
 
 import { setIntegrationVisibilityDefaultAction } from '@/app/actions/visibility';
+import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
 import { FormActionToast } from '@/components/form-action-toast';
 import { InlineError } from '@/components/inline-error';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { NativeSelect } from '@/components/ui/native-select';
 import { notifyAction } from '@/lib/notify';
 import { providerLabel } from '@/lib/resource-labels';
 import { connectionErrorMessage } from '@/lib/ux-errors';
@@ -46,20 +49,16 @@ interface MemberOption {
 }
 
 const EMPTY_MEMBERS: MemberOption[] = [];
-const DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
-  dateStyle: 'medium',
-  timeStyle: 'short',
-  timeZone: 'UTC',
-});
 
-function syncPauseText(syncPause: ConnectedRow['syncPause']): string | null {
+function syncPauseText(
+  syncPause: ConnectedRow['syncPause'],
+): { reason: string; retryAt: string } | null {
   if (!syncPause) return null;
-  const retryAt = new Date(syncPause.retryAt);
-  const formattedRetryAt = Number.isNaN(retryAt.getTime())
-    ? syncPause.retryAt
-    : DATE_FORMAT.format(retryAt);
   const scope = syncPause.scope ? ` (${syncPause.scope})` : '';
-  return `Provider quota cooldown${scope}. Sync resumes at ${formattedRetryAt}.`;
+  return {
+    reason: `Provider quota cooldown${scope}. Sync resumes`,
+    retryAt: syncPause.retryAt,
+  };
 }
 
 function attentionTitle(category: ConnectedAttention['category']): string {
@@ -178,132 +177,130 @@ export function ConnectedIntegrations({
 
   return (
     <>
-      <ul className="divide-y divide-border rounded-md border border-border bg-surface">
-        {visibleConnected.map((c) => {
-          const pauseText = syncPauseText(c.syncPause);
-          const attention = dedupeAttention(c.attention);
-          const needsReplacement =
-            attention.length === 0 && needsReplacementFromLastError(c.lastError);
-          const blockingAction =
-            blockingAttentionAction(attention) ??
-            (needsReplacement
-              ? { href: '#available-shared-sources', label: 'Choose replacement' }
-              : null);
-          const syncDisabled =
-            busy !== null ||
-            !c.enabled ||
-            Boolean(c.syncPause) ||
-            hasBlockingAttention(attention) ||
-            needsReplacement;
-          return (
-            <li key={c.id} className="flex flex-col gap-3 px-3 py-2 sm:flex-row sm:items-center">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">{providerLabel(c.provider)}</span>
-                  <span className="truncate text-sm text-fg-muted">{c.displayName}</span>
-                  {!c.enabled ? (
-                    <span className="rounded-sm border border-border px-1 text-[10px] uppercase text-fg-muted">
-                      Disabled
-                    </span>
-                  ) : null}
-                </div>
-                <div className="text-xs text-fg-muted">
-                  {c.lastSyncedAt
-                    ? `Last synced ${DATE_FORMAT.format(new Date(c.lastSyncedAt))}`
-                    : 'Never synced'}
-                </div>
-                {attention.length > 0 ? (
-                  <IntegrationAttentionPanel attention={attention} details={c.lastError} />
-                ) : null}
-                {pauseText ? (
-                  <output className="mt-2 block rounded-sm border border-border bg-surface-2 px-3 py-2 text-sm text-fg-muted">
-                    {pauseText}
-                  </output>
-                ) : null}
-                {c.lastError && !pauseText && c.attention.length === 0 ? (
-                  <InlineError
-                    message={connectionErrorMessage(c.lastError)}
-                    details={c.lastError}
-                    onRetry={needsReplacement ? undefined : () => void call('sync', c.id)}
-                    retrying={busy === `sync:${c.id}`}
-                    retryLabel="Retry sync"
-                    className="mt-2"
+      {visibleConnected.map((c) => {
+        const pause = syncPauseText(c.syncPause);
+        const attention = dedupeAttention(c.attention);
+        const needsReplacement =
+          attention.length === 0 && needsReplacementFromLastError(c.lastError);
+        const blockingAction =
+          blockingAttentionAction(attention) ??
+          (needsReplacement
+            ? { href: '#available-shared-sources', label: 'Choose replacement' }
+            : null);
+        const syncDisabled =
+          busy !== null ||
+          !c.enabled ||
+          Boolean(c.syncPause) ||
+          hasBlockingAttention(attention) ||
+          needsReplacement;
+        return (
+          <div key={c.id}>
+            <CollectionRow>
+              <CollectionRow.Title>{providerLabel(c.provider)}</CollectionRow.Title>
+              <CollectionRow.Context>{c.displayName}</CollectionRow.Context>
+              <CollectionRow.Metadata>
+                <>
+                  {!c.enabled ? <span className="text-[11px] text-fg-dim">Disabled</span> : null}
+                  <RelativeTimestamp
+                    prefix="Last synced"
+                    value={c.lastSyncedAt}
+                    empty="Never synced"
                   />
-                ) : null}
-                {confirmDisconnectId === c.id ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm">
-                    <span className="min-w-0 flex-1 text-destructive">
-                      Future sync stops, but existing timeline events remain available.
-                    </span>
+                </>
+              </CollectionRow.Metadata>
+              <CollectionRow.Actions>
+                <ItemActionGroup label={`Actions for ${c.displayName}`}>
+                  {blockingAction ? (
+                    <Button asChild size="sm" variant="outline">
+                      <a href={blockingAction.href}>{blockingAction.label}</a>
+                    </Button>
+                  ) : (
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      disabled={busy !== null}
+                      disabled={syncDisabled}
                       onClick={() => {
-                        setConfirmDisconnectId(null);
+                        void call('sync', c.id);
                       }}
                     >
-                      Cancel
+                      {busy === `sync:${c.id}`
+                        ? 'Syncing…'
+                        : !c.enabled
+                          ? 'Disabled'
+                          : c.syncPause
+                            ? 'Paused'
+                            : 'Sync now'}
                     </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="destructive"
-                      disabled={busy !== null}
-                      onClick={() => {
-                        void call('disconnect', c.id);
-                      }}
-                    >
-                      {busy === `disconnect:${c.id}` ? 'Disconnecting' : 'Confirm disconnect'}
-                    </Button>
-                  </div>
-                ) : null}
-                <IntegrationVisibilityForm integration={c} members={members} />
-              </div>
-              <ItemActionGroup label={`Actions for ${c.displayName}`}>
-                {blockingAction ? (
-                  <Button asChild size="sm" variant="secondary" className="flex-1 sm:flex-none">
-                    <a href={blockingAction.href}>{blockingAction.label}</a>
-                  </Button>
-                ) : (
+                  )}
+                  {confirmDisconnectId === c.id ? null : (
+                    <ItemOverflowMenu targetLabel={c.displayName}>
+                      <DropdownMenuItem
+                        disabled={busy !== null}
+                        className="text-destructive focus:text-destructive"
+                        onSelect={() => {
+                          setConfirmDisconnectId(c.id);
+                        }}
+                      >
+                        Disconnect
+                      </DropdownMenuItem>
+                    </ItemOverflowMenu>
+                  )}
+                </ItemActionGroup>
+              </CollectionRow.Actions>
+            </CollectionRow>
+            <div className="space-y-2 px-3 pb-3">
+              {attention.length > 0 ? (
+                <IntegrationAttentionPanel attention={attention} details={c.lastError} />
+              ) : null}
+              {pause ? (
+                <output className="block text-sm text-fg-muted">
+                  {pause.reason} <RelativeTimestamp value={pause.retryAt} />.
+                </output>
+              ) : null}
+              {c.lastError && !pause && c.attention.length === 0 ? (
+                <InlineError
+                  message={connectionErrorMessage(c.lastError)}
+                  details={c.lastError}
+                  onRetry={needsReplacement ? undefined : () => void call('sync', c.id)}
+                  retrying={busy === `sync:${c.id}`}
+                  retryLabel="Retry sync"
+                />
+              ) : null}
+              {confirmDisconnectId === c.id ? (
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="min-w-0 flex-1 text-destructive">
+                    Future sync stops, but existing timeline events remain available.
+                  </span>
                   <Button
                     type="button"
                     size="sm"
-                    variant="secondary"
-                    className="flex-1 sm:flex-none"
-                    disabled={syncDisabled}
+                    variant="outline"
+                    disabled={busy !== null}
                     onClick={() => {
-                      void call('sync', c.id);
+                      setConfirmDisconnectId(null);
                     }}
                   >
-                    {busy === `sync:${c.id}`
-                      ? 'Syncing…'
-                      : !c.enabled
-                        ? 'Disabled'
-                        : c.syncPause
-                          ? 'Paused'
-                          : 'Sync now'}
+                    Cancel
                   </Button>
-                )}
-                {confirmDisconnectId === c.id ? null : (
-                  <ItemOverflowMenu targetLabel={c.displayName}>
-                    <DropdownMenuItem
-                      disabled={busy !== null}
-                      className="text-destructive focus:text-destructive"
-                      onSelect={() => {
-                        setConfirmDisconnectId(c.id);
-                      }}
-                    >
-                      Disconnect
-                    </DropdownMenuItem>
-                  </ItemOverflowMenu>
-                )}
-              </ItemActionGroup>
-            </li>
-          );
-        })}
-      </ul>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    disabled={busy !== null}
+                    onClick={() => {
+                      void call('disconnect', c.id);
+                    }}
+                  >
+                    {busy === `disconnect:${c.id}` ? 'Disconnecting' : 'Confirm disconnect'}
+                  </Button>
+                </div>
+              ) : null}
+              <IntegrationVisibilityForm integration={c} members={members} />
+            </div>
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -319,13 +316,7 @@ function IntegrationAttentionPanel({
   const sorted = [...attention].sort((a, b) => a.category.localeCompare(b.category));
   const softStatus = hasOnlyWebhookDegradedAttention(sorted);
   return (
-    <div
-      className={
-        softStatus
-          ? 'mt-2 rounded-sm border border-signal/30 bg-signal/10 px-3 py-2 text-sm text-fg'
-          : 'mt-2 rounded-sm border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger'
-      }
-    >
+    <div className={softStatus ? 'text-sm text-fg' : 'text-sm text-danger'}>
       <ul className="space-y-1.5">
         {sorted.map((item) => (
           <li key={item.id}>
@@ -379,19 +370,19 @@ function IntegrationVisibilityForm({
       <label htmlFor={visibilityId} className="font-medium text-fg">
         Default visibility for {providerLabel(integration.provider)}
       </label>
-      <select
+      <NativeSelect
         id={visibilityId}
         name="visibility"
         value={selectedVisibility}
         onChange={(e) => {
           setSelectedVisibility(e.currentTarget.value as ConnectedRow['visibilityDefault']);
         }}
-        className="min-h-9 rounded-sm border border-border bg-bg px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        className="h-8 w-auto min-w-32"
       >
         <option value="team">Team</option>
         <option value="private">Private</option>
         <option value="specific_users">Specific users</option>
-      </select>
+      </NativeSelect>
       {selectedVisibility === 'specific_users' ? (
         <fieldset className="flex flex-wrap items-center gap-2">
           <legend className="sr-only">People who can view new captured events</legend>
@@ -408,7 +399,7 @@ function IntegrationVisibilityForm({
           ))}
         </fieldset>
       ) : null}
-      <Button type="submit" size="sm" variant="outline" className="min-h-9" disabled={pending}>
+      <Button type="submit" size="sm" variant="ghost" disabled={pending}>
         {pending ? 'Saving' : 'Save default'}
       </Button>
       <FormActionToast

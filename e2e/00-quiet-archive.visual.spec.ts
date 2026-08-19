@@ -104,8 +104,8 @@ test('unified collection surfaces', async ({ browser }) => {
   expect(boardHref).toBeTruthy();
   await page.goto(`${boardHref ?? '/app/boards'}?view=kanban`);
   await capture(page, 'collections-board-kanban-dark-desktop.png', false);
-  await page.goto(`${boardHref ?? '/app/boards'}?view=table`);
-  await capture(page, 'collections-board-table-dark-desktop.png', false);
+  await page.goto(`${boardHref ?? '/app/boards'}?view=list`);
+  await capture(page, 'collections-board-list-dark-desktop.png', false);
   await page.goto('/app/timeline');
   await capture(page, 'collections-timeline-dark-desktop.png', false);
   await page.goto('/app/documents/captured');
@@ -122,8 +122,8 @@ test('unified collection surfaces', async ({ browser }) => {
   await capture(page, 'collections-objects-light-mobile.png', false);
   await page.goto(`${boardHref ?? '/app/boards'}?view=kanban`);
   await capture(page, 'collections-board-kanban-light-mobile.png', false);
-  await page.goto(`${boardHref ?? '/app/boards'}?view=table`);
-  await capture(page, 'collections-board-table-light-mobile.png', false);
+  await page.goto(`${boardHref ?? '/app/boards'}?view=list`);
+  await capture(page, 'collections-board-list-light-mobile.png', false);
   await page.goto('/app/timeline');
   await capture(page, 'collections-timeline-light-mobile.png', false);
   await page.goto('/app/meetings');

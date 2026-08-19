@@ -1490,9 +1490,10 @@ test('saved meeting setup and finalized notes render in meetings and timeline', 
     await expect(savedMeeting.getByText('auto-join on')).toBeVisible();
     await expect(savedMeeting.getByText(alias)).toBeVisible();
 
+    await page.goto('/app/meetings');
     const scheduledCapture = page
       .locator('section')
-      .filter({ hasText: 'Scheduled and recent captures' })
+      .filter({ hasText: 'Recent captures' })
       .locator('li')
       .filter({ hasText: title })
       .filter({ hasText: 'scheduled' })

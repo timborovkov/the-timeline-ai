@@ -41,22 +41,23 @@ export default async function PersonalConnectionsPage({
   ]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <Breadcrumb
         items={[{ label: 'Connections', href: '/app/sources' }, { label: 'Provider accounts' }]}
       />
 
       <PageHeader
+        variant="collection"
         title="Provider accounts"
         subtitle="Manage personal OAuth accounts and share allowed sources to the active team."
         srLabel={`Provider accounts · ${String(connections.length)} connected`}
         metadata={[
-          { label: 'team', value: active.teamName, signal: true },
-          { label: 'accounts', value: connections.length },
+          { label: 'Team', value: active.teamName },
+          { label: 'Accounts', value: connections.length, mono: true },
         ]}
       />
 
-      <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
         <ActionChip href="/app/sources" label="View connections" />
         <ActionChip href="/app/me/mcp-servers" label="Manage personal MCP" />
       </div>

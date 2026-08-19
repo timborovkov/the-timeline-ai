@@ -15,9 +15,7 @@ import { FormActionToast } from '@/components/form-action-toast';
 import { Button } from '@/components/ui/button';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
-
-const SELECT_CLASS =
-  'h-9 w-full rounded-sm border border-border bg-bg px-3 text-sm text-fg transition-colors hover:border-border-strong ring-offset-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 focus-visible:ring-offset-2';
+import { NativeSelect } from '@/components/ui/native-select';
 
 export interface DigestDestinationRow {
   id: string;
@@ -63,7 +61,7 @@ export function DigestDestinationsForm({
   const [selected, setSelected] = useState(available[0] ? optionValue(available[0]) : '');
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <p className="text-sm text-fg-muted">
         Choose where the daily digest should go. Shared chats get one team-visible digest from the
         bot. Email and direct messages stay personalized per member.
@@ -76,7 +74,7 @@ export function DigestDestinationsForm({
           body="Email every member remains the default until you add a Slack, Telegram, or extra email destination."
         />
       ) : (
-        <ul className="border-x border-border">
+        <ul>
           {destinations.map((destination) => (
             <li key={destination.id}>
               <CollectionRow>
@@ -130,7 +128,7 @@ function AddDestinationForm({
     [available, selected],
   );
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-end">
       <input type="hidden" name="kind" value={selectedOption?.kind ?? ''} />
       {selectedOption?.targetId ? (
         <input
@@ -139,11 +137,12 @@ function AddDestinationForm({
           value={`${selectedOption.targetId}::${selectedOption.label}`}
         />
       ) : null}
-      <div className="space-y-2">
-        <Label htmlFor="digest-destination">Add destination</Label>
-        <select
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <Label htmlFor="digest-destination" size="sm">
+          Add destination
+        </Label>
+        <NativeSelect
           id="digest-destination"
-          className={SELECT_CLASS}
           value={selected}
           onChange={(event) => {
             onSelectedChange(event.target.value);
@@ -154,16 +153,14 @@ function AddDestinationForm({
               {option.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Submit label="Add destination" />
-        <FormActionToast
-          id="digest:destination:add"
-          error={state.error}
-          success={state.ok ? 'Digest destination added' : undefined}
-        />
-      </div>
+      <Submit label="Add destination" />
+      <FormActionToast
+        id="digest:destination:add"
+        error={state.error}
+        success={state.ok ? 'Digest destination added' : undefined}
+      />
     </form>
   );
 }
@@ -191,20 +188,15 @@ function RemoveDestinationForm({ destinationId, label }: { destinationId: string
 function Submit({
   label,
   pendingLabel = 'Working…',
-  variant = 'default',
+  variant = 'outline',
 }: {
   label: string;
   pendingLabel?: string;
-  variant?: 'default' | 'ghost';
+  variant?: 'default' | 'ghost' | 'outline';
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button
-      type="submit"
-      variant={variant}
-      size={variant === 'ghost' ? 'sm' : 'default'}
-      disabled={pending}
-    >
+    <Button type="submit" variant={variant} size="sm" disabled={pending}>
       {pending ? pendingLabel : label}
     </Button>
   );

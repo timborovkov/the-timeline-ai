@@ -108,11 +108,11 @@ describe('SlackSettingsPageView', () => {
     expect(screen.getByLabelText('Conversation to bind')).toHaveProperty('required', true);
     expect(screen.queryByRole('option', { name: '#launch' })).toBeNull();
     expect(screen.getByText('#launch')).toBeTruthy();
-    expect(screen.getByText('Channel · Team visibility')).toBeTruthy();
+    expect(screen.getAllByText('Channel · Team visibility')).toHaveLength(2);
     expect(screen.getByText('Slack conversation ID').closest('details')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Unbind' })).toBeTruthy();
     expect(screen.getByText('Ada')).toBeTruthy();
-    expect(screen.getByText(/Slack Ada Lovelace · ada@slack\.test/)).toBeTruthy();
+    expect(screen.getAllByText(/Slack Ada Lovelace · ada@slack\.test/)).toHaveLength(2);
     expect(screen.getByText('Active DM')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Slack', level: 1 })).toBeTruthy();
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
@@ -146,21 +146,23 @@ describe('SlackSettingsPageView', () => {
       />,
     );
 
-    const bindingRow = screen
-      .getByText('#a-very-long-conversation-name-that-needs-room-to-wrap')
-      .closest('li');
-    expect(bindingRow?.className).toContain('flex-col');
-    expect(bindingRow?.className).toContain('sm:flex-row');
+    const bindingTitle = screen.getByText('#a-very-long-conversation-name-that-needs-room-to-wrap');
+    const bindingRow = bindingTitle.closest('[class*="group/collection-row"]');
+    expect(bindingRow?.className).toContain('min-h-11');
+    expect(bindingRow?.className).toContain('grid-cols-[auto_minmax(0,1fr)_auto]');
+    expect(bindingTitle.className).toContain('truncate');
+    expect(bindingRow?.querySelector('.sm\\:flex-row')).toBeTruthy();
+    expect(screen.getAllByText('Private channel · Selected people')).toHaveLength(2);
 
-    const identity = screen.getByText(
+    const identityContexts = screen.getAllByText(
       'Slack A very long Slack member name · a-very-long-slack-identity-address@example.test',
     );
-    const identityRow = identity.closest('li');
-    expect(identityRow?.className).toContain('flex-col');
-    expect(identityRow?.className).toContain('sm:flex-row');
-    expect(identity.className).toContain('break-words');
-    expect(screen.getByText('Active DM').className).toContain('shrink-0');
-    expect(screen.getByText('Active DM').className).toContain('self-start');
+    expect(identityContexts).toHaveLength(2);
+    const identityRow = identityContexts[0]?.closest('[class*="group/collection-row"]');
+    expect(identityRow?.className).toContain('min-h-11');
+    expect(identityRow?.querySelector('.sm\\:flex-row')).toBeTruthy();
+    expect(screen.getByText('A very long Timeline member name').className).toContain('truncate');
+    expect(screen.getByText('Active DM').className).toContain('truncate');
   });
 
   it('keeps member-facing settings read-only while preserving status context', () => {

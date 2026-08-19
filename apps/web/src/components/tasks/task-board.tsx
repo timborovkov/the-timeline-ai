@@ -52,6 +52,7 @@ import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { EmptyState } from '@/components/empty-state';
+import { CompactKanbanCardSkeleton } from '@/components/loading-states';
 import { ObjectOrigin } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
@@ -514,6 +515,7 @@ function useTaskBoardController({
   const filterKey = `${filterParamsKey(filterParams)}\u0000${categoryFilterRefreshToken ?? ''}`;
   const [boardState, dispatchBoard] = useReducer(taskBoardReducer, INITIAL_TASK_BOARD_STATE);
   const [loadingMore, startLoadMore] = useTransition();
+  const loadMoreLockRef = useRef(false);
   const appendedRows =
     boardState.pagination.filterKey === filterKey
       ? boardState.pagination.appendedRows
@@ -867,22 +869,27 @@ function useTaskBoardController({
   }
 
   function loadMoreTasks(): void {
-    if (!cursor || loadingMore) return;
+    if (!cursor || loadingMore || loadMoreLockRef.current) return;
+    loadMoreLockRef.current = true;
     startLoadMore(async () => {
-      const page = await loadTaskRowsAction({
-        cursor,
-        ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
-      });
-      if (page.error) {
-        notifyError('tasks:load-more', 'Couldn’t load older tasks');
-        return;
+      try {
+        const page = await loadTaskRowsAction({
+          cursor,
+          ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
+        });
+        if (page.error) {
+          notifyError('tasks:load-more', 'Couldn’t load older tasks');
+          return;
+        }
+        dispatchBoard({
+          type: 'append-page',
+          rows: page.rows,
+          nextCursor: page.nextCursor,
+          filterKey,
+        });
+      } finally {
+        loadMoreLockRef.current = false;
       }
-      dispatchBoard({
-        type: 'append-page',
-        rows: page.rows,
-        nextCursor: page.nextCursor,
-        filterKey,
-      });
     });
   }
 
@@ -985,7 +992,7 @@ function TaskBoardView({
           {view === 'kanban' ? (
             <section
               aria-label="Task status columns"
-              className="flex min-h-0 flex-1 gap-3 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
+              className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-2 pb-2 sm:px-3"
             >
               {allColumns.map((column) => (
                 <TaskColumn
@@ -1780,22 +1787,22 @@ function TaskColumn({
       ref={setNodeRef}
       aria-labelledby={headingId}
       className={cn(
-        'flex h-full w-[min(260px,calc(100vw-2.5rem))] shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
-        isOver && 'border-signal/40 bg-signal-soft',
+        'flex h-full w-[min(260px,calc(100vw-2.5rem))] shrink-0 flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
+        isOver && 'bg-signal-soft',
       )}
     >
-      <div className="mb-2 flex shrink-0 items-baseline justify-between px-0.5">
-        <h3 id={headingId} className="text-xs text-fg-dim">
+      <div className="mb-1.5 flex w-full shrink-0 items-center justify-between gap-2 px-0.5">
+        <h3 id={headingId} className="min-w-0 truncate text-xs text-fg-dim">
           {statusLabel(id)}
         </h3>
-        <span className="text-xs text-fg">{rows.length}</span>
+        <span className="shrink-0 text-xs tabular-nums text-fg">{rows.length}</span>
       </div>
       <div ref={setScrollEl} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <VirtualList
           items={rows}
           getItemKey={(row) => row.id}
-          estimateSize={76}
-          gap={8}
+          estimateSize={56}
+          gap={6}
           getScrollElement={() => scrollEl}
           renderItem={(row) => (
             <TaskCard
@@ -1815,15 +1822,24 @@ function TaskColumn({
             />
           )}
         />
-        <InfiniteScroll
-          hasMore={canLoadMore}
-          loading={loadingMore}
-          error={loadError}
-          onLoadMore={onLoadMore}
-          boundLabel="No more matching tasks"
-          hideBound
-          root={scrollEl}
-        />
+        {rows.length > 0 ? (
+          <InfiniteScroll
+            hasMore={canLoadMore}
+            loading={loadingMore}
+            error={loadError}
+            onLoadMore={onLoadMore}
+            boundLabel="No more matching tasks"
+            hideBound
+            root={scrollEl}
+            className="space-y-1.5 py-1.5"
+            loadingContent={
+              <>
+                <CompactKanbanCardSkeleton />
+                <CompactKanbanCardSkeleton />
+              </>
+            }
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -1877,7 +1893,7 @@ function TaskCard({
   return (
     <article
       ref={setNodeRef}
-      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 76px', ...style }}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 56px', ...style }}
       className={cn(
         'rounded-sm border border-border/80 bg-bg px-2 py-1.5 text-sm transition-colors hover:bg-surface',
         selected && 'border-signal bg-signal-soft shadow-[inset_3px_0_0_var(--color-signal)]',
@@ -1885,17 +1901,7 @@ function TaskCard({
         saving && 'opacity-80',
       )}
     >
-      <div className="flex min-w-0 items-start gap-0.5">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          disabled={saving}
-          className="-ml-1 inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 active:cursor-grabbing disabled:cursor-progress"
-          aria-label={`Drag ${displayText(title)}`}
-        >
-          <GripVertical aria-hidden="true" className="size-3.5" />
-        </button>
+      <div className="flex min-w-0 items-start gap-1">
         <Link
           href={href}
           scroll={false}
@@ -1903,6 +1909,16 @@ function TaskCard({
         >
           {displayText(title)}
         </Link>
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          disabled={saving}
+          className="inline-flex size-6 shrink-0 cursor-grab items-center justify-center rounded-sm text-fg-dim hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 active:cursor-grabbing disabled:cursor-progress"
+          aria-label={`Drag ${displayText(title)}`}
+        >
+          <GripVertical aria-hidden="true" className="size-3.5" />
+        </button>
         <ItemActionGroup label={`Actions for ${displayText(title)}`} className="w-auto shrink-0">
           <PinOverflowMenu
             target={{ kind: 'object', key: row.id }}
@@ -1911,9 +1927,9 @@ function TaskCard({
           />
         </ItemActionGroup>
       </div>
-      <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-0 text-[11px]">
+      <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
         {taskCategoriesEnabled ? (
-          <EditableMetadata label={`Category for ${displayText(title)}`}>
+          <EditableMetadata label={`Category for ${displayText(title)}`} density="compact">
             <EditableMetadata.Value>
               <TaskCategoryBadge category={row.taskCategory} status={row.taskCategoryStatus} />
             </EditableMetadata.Value>
@@ -1928,7 +1944,7 @@ function TaskCard({
             </EditableMetadata.Editor>
           </EditableMetadata>
         ) : null}
-        <EditableMetadata label={`Project for ${displayText(title)}`}>
+        <EditableMetadata label={`Project for ${displayText(title)}`} density="compact">
           <EditableMetadata.Value>
             {primaryProject?.projectName ?? 'No project'}
           </EditableMetadata.Value>
@@ -1951,7 +1967,11 @@ function TaskCard({
             />
           </EditableMetadata.Editor>
         </EditableMetadata>
-        <EditableMetadata label={`Assignee for ${displayText(title)}`} pending={metadataSaving}>
+        <EditableMetadata
+          label={`Assignee for ${displayText(title)}`}
+          pending={metadataSaving}
+          density="compact"
+        >
           <EditableMetadata.Value>
             {memberLabel(row.assigneeUserId, members)}
           </EditableMetadata.Value>
@@ -1972,7 +1992,11 @@ function TaskCard({
             </select>
           </EditableMetadata.Editor>
         </EditableMetadata>
-        <EditableMetadata label={`Due date for ${displayText(title)}`} pending={metadataSaving}>
+        <EditableMetadata
+          label={`Due date for ${displayText(title)}`}
+          pending={metadataSaving}
+          density="compact"
+        >
           <EditableMetadata.Value>
             <DueDateDisplay value={row.dueAt} variant="compact" />
           </EditableMetadata.Value>
@@ -1987,12 +2011,17 @@ function TaskCard({
             />
           </EditableMetadata.Editor>
         </EditableMetadata>
-        <EditableMetadata label={`Priority for ${displayText(title)}`} pending={metadataSaving}>
+        <EditableMetadata
+          label={`Priority for ${displayText(title)}`}
+          pending={metadataSaving}
+          density="compact"
+        >
           <EditableMetadata.Value>
             <CollectionStatus
               value={row.priority ? `p${row.priority}` : 'none'}
               tone={priorityTone(row.priority)}
               label={row.priority ? `P${row.priority}` : 'No priority'}
+              showIcon={false}
             />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>

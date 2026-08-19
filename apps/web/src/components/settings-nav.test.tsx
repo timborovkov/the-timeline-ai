@@ -50,7 +50,7 @@ describe('SettingsNav', () => {
     expect(general.getAttribute('href')).toBe('/app/team?section=general');
     expect(general.getAttribute('aria-current')).toBe('page');
     expect(general.className).toContain('min-h-10');
-    expect(general.className).toContain('lg:min-h-9');
+    expect(general.className).toContain('lg:min-h-8');
     expect(screen.queryByRole('link', { name: 'Advanced' })).toBeNull();
     expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
   });

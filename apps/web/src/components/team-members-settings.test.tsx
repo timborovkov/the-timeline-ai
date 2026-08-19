@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ back: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
 }));
-
 vi.mock('@/app/actions/teams', () => ({
   changeMemberRoleAction: vi.fn(),
   removeMemberAction: vi.fn(),
@@ -83,7 +82,6 @@ describe('TeamMembersSettings', () => {
 
     const memberRole = screen.getByLabelText<HTMLSelectElement>('Role for Ada Lovelace');
     expect(memberRole.value).toBe('member');
-    expect(screen.getByRole('button', { name: 'Save role' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Remove member' })).toBeTruthy();
     expect(screen.getByText('Invite form: owner')).toBeTruthy();
     expect(
@@ -95,9 +93,9 @@ describe('TeamMembersSettings', () => {
 
     const memberRow = screen.getByText('Ada Lovelace').closest('li');
     const inviteRow = screen.getByText('grace@example.com').closest('li');
-    expect(memberRow?.querySelector('[class*="sm:flex-row"]')).toBeTruthy();
-    expect(inviteRow?.className).toContain('flex-col');
-    expect(inviteRow?.firstElementChild?.className).toContain('sm:flex-row');
+    expect(memberRow).toBeTruthy();
+    expect(inviteRow).toBeTruthy();
+    expect(inviteRow?.textContent).toContain('accept-invite/invite-token');
   });
 
   it('keeps administrator permissions scoped to member invites and member removals', () => {
