@@ -302,7 +302,8 @@ Copy:
   the archive is gone.
 - Object and task detail still omit empty memory, related-context, and
   notes cards. Digest empty groups stay omitted. Infinite-scroll
-  “No more matching …” bound labels are terminators, not empty states.
+  terminators are a short centered hairline, not a “No more matching …”
+  sentence. The bound label stays in the accessibility tree.
   Auth “No account yet?”, the Ask composer prompt, Home attention
   “You're caught up”, and combobox/command-palette “no matches” copy
   are not collection empty states.
@@ -1150,4 +1151,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Timeline flush sticky toolbar | Drops main top padding on Timeline (`flush-top`) so the sticky filter bar and `top-11` date labels sit under the 48px header without a negative `top`. |
 | 2026-08-19 | Standardized personal pins | One icon pin with Pin to Home tooltip, mixed Home and Work previews, list pin glyphs, and About labels for Ask object bindings. |
 | 2026-08-19 | Board add-item people and companies | Add item keeps person and company type filters visible and searches beyond a recency window of recent tasks. |
-| 2026-08-19 | Object discussions | Replaces object custom notes with a Linear-style activity + comments thread, @mentions, Timeline pings, and quiet comment counts. |
+| 2026-08-19 | Object discussions | Replaces object custom notes with a Linear-style activity + comments thread, @mentions, The Timeline Bot pings, and quiet comment counts. |
+| 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |

@@ -1,4 +1,7 @@
-const AGENT_MENTION_ALIASES = ['timeline', 'bot', 'agent'] as const;
+export const AGENT_DISPLAY_NAME = 'The Timeline Bot';
+export const AGENT_INSERT_TOKEN = 'TheTimelineBot';
+
+const AGENT_MENTION_ALIASES = ['timeline', 'bot', 'agent', 'thetimelinebot'] as const;
 
 const MENTION_TOKEN_RE = /@([A-Za-z0-9._-]+)/g;
 const AGENT_ALIAS_SET = new Set<string>(AGENT_MENTION_ALIASES);
@@ -108,10 +111,14 @@ export function actorDisplayName(
   members: MentionMember[],
   fallback = 'Someone',
 ): string {
-  if (!authorUserId) return 'Timeline';
+  if (!authorUserId) return AGENT_DISPLAY_NAME;
   const member = members.find((candidate) => candidate.userId === authorUserId);
   const name = member?.name.trim();
   if (name) return name;
   const local = member ? emailLocalPart(member.email) : '';
   return local || fallback;
+}
+
+export function isAgentMentionToken(token: string): boolean {
+  return AGENT_ALIAS_SET.has(token.toLowerCase());
 }

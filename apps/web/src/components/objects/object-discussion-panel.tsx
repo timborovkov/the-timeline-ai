@@ -1,6 +1,12 @@
 'use client';
 
-import { mentionInsertToken, type MentionMember } from '@timeline/shared/objects/mentions';
+import {
+  AGENT_DISPLAY_NAME,
+  AGENT_INSERT_TOKEN,
+  isAgentMentionToken,
+  mentionInsertToken,
+  type MentionMember,
+} from '@timeline/shared/objects/mentions';
 import Link from 'next/link';
 import {
   type Dispatch,
@@ -62,8 +68,8 @@ function toMentionMembers(members: DiscussionMember[]): MentionMember[] {
 }
 
 function mentionChipLabel(token: string, members: DiscussionMember[]): string {
+  if (isAgentMentionToken(token)) return AGENT_DISPLAY_NAME;
   const lower = token.toLowerCase();
-  if (lower === 'timeline' || lower === 'bot' || lower === 'agent') return 'Timeline';
   const hit = members.find((member) => {
     const displayName = nonempty(member.name) ?? member.label;
     const compact = displayName.replace(/[^A-Za-z0-9._-]/g, '');
@@ -76,7 +82,7 @@ function mentionChipLabel(token: string, members: DiscussionMember[]): string {
 
 function activitySummary(change: ObjectDetail['recentChanges'][number]): string {
   const actor =
-    nonempty(change.actorName) ?? (change.actorKind === 'agent' ? 'Timeline' : 'Someone');
+    nonempty(change.actorName) ?? (change.actorKind === 'agent' ? AGENT_DISPLAY_NAME : 'Someone');
   return `${actor} updated ${change.field}`;
 }
 
@@ -143,9 +149,19 @@ export function ObjectDiscussionPanel({
       const haystack = `${member.label} ${member.name ?? ''} ${member.email ?? ''}`.toLowerCase();
       return query.length === 0 || haystack.includes(query);
     });
+    const agentQuery = query.replace(/[^a-z0-9]/g, '');
     const agent: DiscussionMember[] =
-      query.length === 0 || 'timeline bot agent'.includes(query)
-        ? [{ id: 'timeline', label: 'Timeline', name: 'Timeline', email: '' }]
+      query.length === 0 ||
+      'thetimelinebot timeline bot agent'.includes(agentQuery) ||
+      AGENT_DISPLAY_NAME.toLowerCase().includes(query)
+        ? [
+            {
+              id: 'timeline',
+              label: AGENT_DISPLAY_NAME,
+              name: AGENT_DISPLAY_NAME,
+              email: '',
+            },
+          ]
         : [];
     return [...agent, ...people].slice(0, 8);
   }, [members, suggestOpen, suggestQuery]);
@@ -154,7 +170,7 @@ export function ObjectDiscussionPanel({
     const textarea = composerRef.current;
     const token =
       member.id === 'timeline'
-        ? 'timeline'
+        ? AGENT_INSERT_TOKEN
         : mentionInsertToken(
             {
               userId: member.id,
@@ -198,14 +214,12 @@ export function ObjectDiscussionPanel({
 
   return (
     <section>
-      <h2 className="text-[11px] font-medium uppercase tracking-[0.14em] text-fg-muted">
-        Discussion
-      </h2>
-      <ol className="mt-2 space-y-2">
+      <h2 className="mb-1 text-xs font-normal text-fg-dim">Discussion</h2>
+      <ol className="space-y-2">
         {feed.map((item) => {
           if (item.kind === 'activity') {
             return (
-              <li key={item.id} className="text-xs text-fg-muted">
+              <li key={item.id} className="text-xs font-normal text-fg-dim">
                 <RelativeTime at={new Date(item.at)} timezone={timezone} />
                 <span className="ml-1.5">{activitySummary(item.change)}</span>
               </li>
@@ -214,7 +228,8 @@ export function ObjectDiscussionPanel({
           const note = item.note;
           const isOwner = note.authorUserId === userId;
           const isEditing = editingNoteId === note.id;
-          const author = nonempty(note.authorName) ?? (note.authorUserId ? 'Member' : 'Timeline');
+          const author =
+            nonempty(note.authorName) ?? (note.authorUserId ? 'Member' : AGENT_DISPLAY_NAME);
           return (
             <li
               key={note.id}
@@ -224,8 +239,8 @@ export function ObjectDiscussionPanel({
                 highlightCommentId === note.id && 'bg-signal/10',
               )}
             >
-              <div className="flex items-baseline justify-between gap-2 text-xs text-fg-muted">
-                <span className="font-medium text-fg">{author}</span>
+              <div className="flex items-baseline justify-between gap-2 text-xs font-normal text-fg-dim">
+                <span className="text-sm font-normal text-fg">{author}</span>
                 <RelativeTime at={new Date(note.createdAt)} timezone={timezone} />
               </div>
               {isEditing ? (
@@ -236,7 +251,7 @@ export function ObjectDiscussionPanel({
                     onChange={(event) => {
                       dispatchObjectUi({ editingBody: event.target.value });
                     }}
-                    className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm text-fg outline-none focus-visible:border-signal"
+                    className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm font-normal text-fg outline-none focus-visible:border-signal"
                     rows={3}
                   />
                   <div className="flex gap-2">
@@ -246,7 +261,7 @@ export function ObjectDiscussionPanel({
                       onClick={() => {
                         onSaveNote(note.id, editingBody);
                       }}
-                      className="text-xs text-signal hover:underline"
+                      className="text-xs font-normal text-fg-dim hover:underline"
                     >
                       Save
                     </button>
@@ -255,19 +270,19 @@ export function ObjectDiscussionPanel({
                       onClick={() => {
                         dispatchObjectUi({ editingNoteId: null });
                       }}
-                      className="text-xs text-fg-muted hover:underline"
+                      className="text-xs font-normal text-fg-dim hover:underline"
                     >
                       Cancel
                     </button>
                   </div>
                 </div>
               ) : (
-                <p className="mt-0.5 whitespace-pre-wrap text-fg">
+                <p className="mt-0.5 whitespace-pre-wrap text-sm font-normal text-fg">
                   <RichCommentBody body={note.body} members={members} />
                 </p>
               )}
               {isOwner && !isEditing ? (
-                <div className="mt-0.5 flex gap-2 text-[11px] text-fg-muted">
+                <div className="mt-0.5 flex gap-2 text-xs font-normal text-fg-dim">
                   <button
                     type="button"
                     disabled={pending}
@@ -303,8 +318,8 @@ export function ObjectDiscussionPanel({
             onComposerChange(event.target.value, event.target.selectionStart);
           }}
           onKeyDown={onComposerKeyDown}
-          placeholder="Comment, @mention people or @timeline"
-          className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm text-fg outline-none focus-visible:border-signal"
+          placeholder={`Comment, @mention people or @${AGENT_DISPLAY_NAME}`}
+          className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm font-normal text-fg outline-none focus-visible:border-signal"
           rows={2}
         />
         {suggestOpen && suggestions.length > 0 ? (
@@ -313,7 +328,7 @@ export function ObjectDiscussionPanel({
               <li key={member.id}>
                 <button
                   type="button"
-                  className="flex w-full px-2 py-1 text-left text-sm hover:bg-surface-2"
+                  className="flex w-full px-2 py-1 text-left text-sm font-normal text-fg hover:bg-surface-2"
                   onMouseDown={(event) => {
                     event.preventDefault();
                     insertMention(member);
@@ -329,7 +344,7 @@ export function ObjectDiscussionPanel({
           type="button"
           onClick={onAddNote}
           disabled={pending || !noteBody.trim()}
-          className="mt-1.5 text-xs font-medium text-signal hover:underline disabled:text-fg-muted"
+          className="mt-1.5 text-xs font-normal text-fg-dim hover:underline disabled:text-fg-dim/70"
         >
           Comment
         </button>
@@ -376,7 +391,7 @@ function RichCommentBody({ body, members }: { body: string; members: DiscussionM
       nodes.push(
         <span
           key={`mention-${String(index)}`}
-          className="rounded-sm bg-signal/10 px-0.5 font-medium text-signal"
+          className="rounded-sm bg-signal/10 px-0.5 font-normal text-signal"
         >
           @{mentionChipLabel(match.token ?? '', members)}
         </span>,
@@ -394,7 +409,7 @@ function RelativeTime({ at, timezone }: { at: Date; timezone: string }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <time dateTime={at.toISOString()} className="tabular-nums text-fg-muted">
+          <time dateTime={at.toISOString()} className="tabular-nums font-normal text-fg-dim">
             {formatRelativeAge(at)}
           </time>
         </TooltipTrigger>

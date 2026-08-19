@@ -49,7 +49,7 @@ import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { priorityTone, statusTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
-import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { CollectionBound, InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
@@ -1060,9 +1060,7 @@ function TaskBoardView({
           !canLoadMore &&
           !loadingMore &&
           !loadError ? (
-            <p role="status" className="shrink-0 px-4 py-2 text-center text-xs text-fg-dim md:px-8">
-              No more matching tasks
-            </p>
+            <CollectionBound label="No more matching tasks" className="shrink-0 px-4 md:px-8" />
           ) : null}
         </div>
         <DragOverlay>

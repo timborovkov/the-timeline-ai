@@ -235,7 +235,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       pages and the task peek, `@mention` autocomplete, in-app mention
       notifications (self-mentions recorded, not notified), unread mention
       pings at the top of Work, comment-count glyphs on object/task/work
-      rows, and `@timeline` / `@bot` / `@agent` pings that reply in-thread.
+      rows, and `@The Timeline Bot` pings that reply in-thread.
 - [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
       float on every authenticated page except Home and full Ask. Close keeps
       the thread; New resets it. The agent sees the current view first and a

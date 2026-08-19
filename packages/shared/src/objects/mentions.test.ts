@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  AGENT_DISPLAY_NAME,
+  AGENT_INSERT_TOKEN,
   actorDisplayName,
+  isAgentMentionToken,
   mentionInsertToken,
   parseMentions,
   type MentionMember,
@@ -72,6 +75,14 @@ describe('parseMentions', () => {
         endOffset: 9,
       },
     ]);
+    expect(parseMentions('@TheTimelineBot please look', members)).toEqual([
+      {
+        kind: 'agent',
+        token: 'TheTimelineBot',
+        startOffset: 0,
+        endOffset: 15,
+      },
+    ]);
   });
 
   it('keeps self-mentions and dedupes the same person', () => {
@@ -105,6 +116,23 @@ describe('parseMentions', () => {
   });
 });
 
+describe('isAgentMentionToken', () => {
+  it('recognizes compact Timeline Bot tokens and legacy aliases', () => {
+    expect(isAgentMentionToken(AGENT_INSERT_TOKEN)).toBe(true);
+    expect(isAgentMentionToken('timeline')).toBe(true);
+    expect(isAgentMentionToken('bot')).toBe(true);
+    expect(isAgentMentionToken('agent')).toBe(true);
+    expect(isAgentMentionToken('Casey')).toBe(false);
+  });
+});
+
+describe('actorDisplayName constants', () => {
+  it('names the agent The Timeline Bot', () => {
+    expect(AGENT_DISPLAY_NAME).toBe('The Timeline Bot');
+    expect(AGENT_INSERT_TOKEN).toBe('TheTimelineBot');
+  });
+});
+
 describe('mentionInsertToken', () => {
   it('inserts a unique first name, otherwise a compact full name', () => {
     expect(mentionInsertToken(avery, members)).toBe('Avery');
@@ -118,9 +146,9 @@ describe('mentionInsertToken', () => {
 });
 
 describe('actorDisplayName', () => {
-  it('uses the member name, then email local-part, then Timeline for agent authors', () => {
+  it('uses the member name, then email local-part, then The Timeline Bot for agent authors', () => {
     expect(actorDisplayName(avery.userId, members)).toBe('Avery Timeline');
-    expect(actorDisplayName(null, members)).toBe('Timeline');
+    expect(actorDisplayName(null, members)).toBe('The Timeline Bot');
     expect(
       actorDisplayName('55555555-5555-5555-5555-555555555555', [
         { userId: '55555555-5555-5555-5555-555555555555', name: '', email: 'sam@acme.test' },

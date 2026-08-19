@@ -135,7 +135,7 @@ These are not production secrets. They exist so settings screens look configured
 
 ### Companies and deals
 
-- **Northstar Works** — design partner. The dealflow Active lane holds the Northstar Works company; invoice `inv_2041` paid. The object discussion includes Casey’s confirmation of the 26 August review and an `@timeline` ping to summarize blockers.
+- **Northstar Works** — design partner. The dealflow Active lane holds the Northstar Works company; invoice `inv_2041` paid. The object discussion includes Casey’s confirmation of the 26 August review and an `@The Timeline Bot` ping to summarize blockers.
 - **Helio Retail** — Qualified, technical validation 21 August
 - **Brightline Health** — Proposal, CSV + evidence packs only. The company record is **Brightline Health account**.
 - **Moss & Co** — Qualified, wants to keep Monday.com

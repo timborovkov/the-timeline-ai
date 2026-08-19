@@ -744,7 +744,7 @@ export const CORPUS_NOTES = [
     id: CORPUS_UUID.note(9),
     entityId: objectByName('Northstar Works'),
     authorUserId: CORPUS_PERSON.avery.id,
-    body: '@Casey can you confirm the 26 August review still holds? @timeline summarize the blockers.',
+    body: '@Casey can you confirm the 26 August review still holds? @TheTimelineBot summarize the blockers.',
   },
   {
     id: CORPUS_UUID.note(10),
@@ -809,7 +809,7 @@ export const CORPUS_MENTION_NOTIFICATIONS = [
     actorUserId: CORPUS_PERSON.avery.id,
     actorName: 'Avery Timeline',
     excerpt:
-      '@Casey can you confirm the 26 August review still holds? @timeline summarize the blockers.',
+      '@Casey can you confirm the 26 August review still holds? @TheTimelineBot summarize the blockers.',
   },
   {
     id: CORPUS_UUID.notification(2),

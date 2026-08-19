@@ -17,5 +17,5 @@ test('production build lets a seeded owner load app and timeline', async ({ page
     page.getByRole('link', { name: 'All events, every captured source event' }),
   ).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Timeline presets' })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('No older activity');
+  await expect(page.getByRole('status', { name: 'No older activity' })).toBeVisible();
 });

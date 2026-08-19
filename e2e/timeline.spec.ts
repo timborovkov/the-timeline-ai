@@ -2705,7 +2705,7 @@ test('calendar event list search, scope, and infinite scroll use real page data'
       await ownerPage.waitForTimeout(400);
     }
     await expect(ownerPage.getByRole('button', { name: new RegExp(oldest) })).toBeVisible();
-    await expect(eventList.getByText('No more matching events')).toBeVisible();
+    await expect(eventList.getByRole('status', { name: 'No more matching events' })).toBeVisible();
     await expect(ownerPage).not.toHaveURL(/eventPage=/);
 
     await eventList.getByRole('button', { name: 'past' }).click();

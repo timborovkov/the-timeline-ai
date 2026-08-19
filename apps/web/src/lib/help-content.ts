@@ -215,7 +215,7 @@ export const HELP_PAGES: HelpPage[] = [
         title: 'Ownership and edits',
         body: 'The visibility owner controls whether an event changes from private or restricted to broader visibility. Team admins do not bypass private context.',
         items: [
-          'Use object discussion comments for human judgment, @mentions, and extra context.',
+          'Use object discussion comments for human judgment, @mentions, and extra context. Ping @The Timeline Bot to reply in the thread.',
           'Resolve duplicate meanings before creating a new object.',
           'Keep responsible people, priority, due dates, and next steps current for boards.',
         ],
