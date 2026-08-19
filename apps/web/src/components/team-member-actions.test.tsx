@@ -34,24 +34,18 @@ afterEach(() => {
 });
 
 describe('MemberRoleForm', () => {
-  it('names the role control, explains its permission impact, and reflows on narrow screens', () => {
+  it('names the role control and saves immediately on change', async () => {
+    const user = userEvent.setup();
     render(<MemberRoleForm memberLabel="Ada Lovelace" memberRole="member" userId="member-1" />);
 
     const control = screen.getByLabelText<HTMLSelectElement>('Role for Ada Lovelace');
     expect(control.value).toBe('member');
-    expect(control.getAttribute('aria-describedby')).toBe('member-role-member-1-help');
-    expect(
-      screen.getByText(
-        'Changing a role updates permissions immediately. Owners can manage all team settings.',
-      ),
-    ).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Save role' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Save role' })).toBeNull();
 
-    const form = control.closest('form');
-    expect(form?.className).toContain('w-full');
-    const controlRow = control.closest('div')?.parentElement;
-    expect(controlRow?.className).toContain('flex-col');
-    expect(controlRow?.className).toContain('sm:flex-row');
+    await user.selectOptions(control, 'admin');
+    await waitFor(() => {
+      expect(fakes.changeMemberRoleAction).toHaveBeenCalledOnce();
+    });
   });
 
   it('does not treat a permission failure as a successful role update', async () => {
@@ -59,7 +53,7 @@ describe('MemberRoleForm', () => {
     fakes.changeMemberRoleAction.mockResolvedValue({ error: 'Only owners can change roles' });
     render(<MemberRoleForm memberLabel="Ada Lovelace" memberRole="member" userId="member-1" />);
 
-    await user.click(screen.getByRole('button', { name: 'Save role' }));
+    await user.selectOptions(screen.getByLabelText('Role for Ada Lovelace'), 'admin');
 
     await waitFor(() => {
       expect(fakes.changeMemberRoleAction).toHaveBeenCalledOnce();

@@ -30,7 +30,9 @@ export function TeamMemberListItem({
         <CollectionRow.Title>{memberLabel}</CollectionRow.Title>
         <CollectionRow.Context>{user?.email ?? undefined}</CollectionRow.Context>
         <CollectionRow.Metadata>
-          <Badge variant="outline">{member.role}</Badge>
+          <Badge variant="outline" className="capitalize">
+            {member.role}
+          </Badge>
         </CollectionRow.Metadata>
         <CollectionRow.Actions>
           {canManageRole || canRemove ? (

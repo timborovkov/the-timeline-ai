@@ -21,6 +21,7 @@ import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EvidenceLink } from '@/components/evidence-link';
 import { SectionHeading } from '@/components/section-heading';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { StatusBadge } from '@/components/status-badge';
 import { TechnicalDetails } from '@/components/technical-details';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -238,7 +239,7 @@ export function DocumentDetail({
           </h1>
           <p className="text-sm text-muted-foreground">
             {currentDocument.folderPath} · Updated{' '}
-            {new Date(currentDocument.updatedAt).toLocaleString()}
+            <RelativeTimestamp value={currentDocument.updatedAt} />
           </p>
           {usingFriendlyName ? (
             <p className="max-w-full truncate text-xs text-muted-foreground">
@@ -265,7 +266,8 @@ export function DocumentDetail({
           </Button>
           <Button
             size="sm"
-            variant="destructive"
+            variant="ghost"
+            className="text-fg-dim hover:text-danger"
             onClick={() => void onDelete()}
             disabled={pending}
           >
@@ -312,7 +314,7 @@ export function DocumentDetail({
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {formatBytes(v.byteSize)} · {v.contentType ?? 'unknown'} ·{' '}
-                    {new Date(v.createdAt).toLocaleString()}
+                    <RelativeTimestamp value={v.createdAt} />
                   </p>
                   {v.processingError ? (
                     <TechnicalDetails
@@ -394,7 +396,7 @@ function CurrentVersionPanel({
           </SectionHeading>
           <p className="mt-1 text-xs text-muted-foreground">
             v{String(version.version)} · {formatBytes(version.byteSize)} ·{' '}
-            {version.contentType ?? 'unknown'} · {new Date(version.createdAt).toLocaleString()}
+            {version.contentType ?? 'unknown'} · <RelativeTimestamp value={version.createdAt} />
           </p>
         </div>
         <Button

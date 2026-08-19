@@ -152,7 +152,7 @@ export function McpCatalog({
           No MCP servers match this filter.
         </p>
       ) : (
-        <div className="border-x border-border">
+        <div>
           {filtered.map((e) => (
             <CatalogCard key={e.id} entry={e} localConnectionsEnabled={localConnectionsEnabled} />
           ))}

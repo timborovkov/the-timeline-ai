@@ -70,7 +70,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
       </output>
       <div className="space-y-4" aria-busy={pending !== null}>
         {available.length > 0 ? (
-          <div className="border-x border-border">
+          <div>
             {available.map((provider) => (
               <ProviderRow
                 key={provider.id}
@@ -95,7 +95,7 @@ export function IntegrationsCatalog({ catalog }: { catalog: CatalogEntry[] }) {
                 connect an account.
               </p>
             ) : null}
-            <div className="mt-3 border-x border-border">
+            <div className="mt-3">
               {unavailable.map((provider) => (
                 <ProviderRow
                   key={provider.id}
@@ -151,7 +151,7 @@ function ProviderRow({
         <CollectionRow.Actions>
           <Button
             size="sm"
-            variant={provider.available ? 'default' : 'outline'}
+            variant="outline"
             aria-busy={isPending || undefined}
             aria-describedby={!provider.available ? setupStatusId : undefined}
             disabled={!provider.available || pending !== null}

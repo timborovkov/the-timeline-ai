@@ -7,7 +7,16 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const labelVariants = cva(
-  'text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
+  'font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70',
+  {
+    variants: {
+      size: {
+        default: 'text-sm text-fg',
+        sm: 'text-xs text-fg-muted',
+      },
+    },
+    defaultVariants: { size: 'default' },
+  },
 );
 
 type LabelProps = React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> &
@@ -15,8 +24,10 @@ type LabelProps = React.ComponentPropsWithoutRef<typeof LabelPrimitive.Root> &
     ref?: React.Ref<React.ElementRef<typeof LabelPrimitive.Root>>;
   };
 
-function Label({ className, ref, ...props }: LabelProps) {
-  return <LabelPrimitive.Root ref={ref} className={cn(labelVariants(), className)} {...props} />;
+function Label({ className, size, ref, ...props }: LabelProps) {
+  return (
+    <LabelPrimitive.Root ref={ref} className={cn(labelVariants({ size }), className)} {...props} />
+  );
 }
 Label.displayName = LabelPrimitive.Root.displayName;
 

@@ -11,9 +11,9 @@ import { VirtualList } from '@/components/collections/virtual-list';
 import { EmptyAction } from '@/components/empty-action';
 import { SkipScheduledMeetingButton } from '@/components/meeting-forms';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { formatCollectionCount } from '@/lib/collection-count';
-import { formatDisplayDateTime } from '@/lib/display-dates';
 import { displayMeetingLabel, displaySourceLabel } from '@/lib/display-labels';
 import { type CaptureFilter } from '@/lib/meeting-capture-filters';
 
@@ -50,7 +50,6 @@ export function MeetingCapturesList({
   query,
   filter,
   hasActiveFilters,
-  timezone,
   tab,
   clearHref,
 }: {
@@ -59,7 +58,6 @@ export function MeetingCapturesList({
   query: string;
   filter: CaptureFilter;
   hasActiveFilters: boolean;
-  timezone: string;
   tab: 'captures' | 'saved';
   clearHref: string;
 }) {
@@ -164,14 +162,7 @@ export function MeetingCapturesList({
             <CollectionRow.Metadata>
               <>
                 <CollectionStatus value={meeting.status} />
-                <time
-                  className="font-mono tabular-nums"
-                  dateTime={meeting.scheduledStartAt ?? meeting.createdAt}
-                >
-                  {formatDisplayDateTime(meeting.scheduledStartAt ?? meeting.createdAt, {
-                    timezone,
-                  })}
-                </time>
+                <RelativeTimestamp value={meeting.scheduledStartAt ?? meeting.createdAt} />
               </>
             </CollectionRow.Metadata>
             <CollectionRow.Actions>

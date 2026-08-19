@@ -14,6 +14,7 @@ import { Breadcrumb } from '@/components/breadcrumb';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { PageHeader } from '@/components/page-header';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { ClusterOutputRow } from '@/components/reconciliation/cluster-output-row';
 import { ReconciliationForbiddenView } from '@/components/reconciliation/forbidden-view';
 import {
@@ -37,7 +38,7 @@ import { Button } from '@/components/ui/button';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
+import { formatRelativeAge } from '@/lib/display-dates';
 import { displayArtifactLabel, displaySourceLabel } from '@/lib/display-labels';
 
 export const metadata: Metadata = {
@@ -92,9 +93,7 @@ export default async function ReconciliationClusterPage({
         subtitle={
           <>
             {artifactTypeLabel(cluster.artifactType)} ·{' '}
-            <time dateTime={cluster.updatedAt.toISOString()}>
-              Updated {formatDisplayDateTime(cluster.updatedAt, { timezone })}
-            </time>
+            <RelativeTimestamp prefix="Updated" value={cluster.updatedAt} />
           </>
         }
         metadata={[

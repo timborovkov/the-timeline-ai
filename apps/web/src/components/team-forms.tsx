@@ -22,12 +22,16 @@ import {
   type InviteState,
   type RenameTeamState,
 } from '@/app/actions/teams';
+import { CollectionRow } from '@/components/collections/collection-row';
+import { CollectionStatus } from '@/components/collections/collection-status';
 import { FormActionToast } from '@/components/form-action-toast';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { DEFAULT_TIMEZONE, timezoneOptions } from '@/lib/timezones';
 
@@ -46,14 +50,18 @@ function Submit({
   label,
   pendingLabel = 'Working…',
   className,
+  variant = 'outline',
+  size = 'sm',
 }: {
   label: string;
   pendingLabel?: string;
   className?: string;
+  variant?: 'default' | 'outline' | 'ghost';
+  size?: 'default' | 'sm';
 }) {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" className={className} disabled={pending}>
+    <Button type="submit" variant={variant} size={size} className={className} disabled={pending}>
       {pending ? pendingLabel : label}
     </Button>
   );
@@ -149,10 +157,12 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
   const errorId = `${id}-error`;
 
   return (
-    <form action={action} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+    <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-end">
       <input type="hidden" name="timezone" value={timezone} />
-      <div className="flex-1 space-y-2">
-        <Label htmlFor={id}>Team name</Label>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <Label htmlFor={id} size="sm">
+          Team name
+        </Label>
         <FieldError error={nameError}>
           {(activeNameError) => (
             <Input
@@ -160,14 +170,13 @@ export function CreateTeamForm({ id = 'new-team-name' }: { id?: string }) {
               name="name"
               placeholder="Acme Sales"
               required
-              className="transition-colors hover:border-border-strong"
               aria-invalid={activeNameError ? true : undefined}
               aria-describedby={activeNameError ? errorId : undefined}
             />
           )}
         </FieldError>
       </div>
-      <Submit label="Create" />
+      <Submit label="Create" variant="default" />
       <div className="self-center">
         <FormFeedback
           toastId="create-team"
@@ -185,42 +194,43 @@ export function TeamTimezoneForm({ timezone }: { timezone: string }) {
   const options = useMemo(() => timezoneOptions(timezone), [timezone]);
   const timezoneError = state.error === 'Choose a valid timezone' ? state.error : undefined;
   return (
-    <form action={action} className="space-y-4">
-      <div className="space-y-2">
-        <Label htmlFor="team-timezone">Team timezone</Label>
+    <form action={action} className="space-y-3">
+      <div className="space-y-1.5">
+        <Label htmlFor="team-timezone" size="sm">
+          Team timezone
+        </Label>
         <FieldError error={timezoneError}>
           {(activeTimezoneError) => (
-            <select
+            <NativeSelect
               id="team-timezone"
               name="timezone"
               defaultValue={timezone}
-              className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm transition-colors hover:border-border-strong ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               aria-invalid={activeTimezoneError ? true : undefined}
               aria-describedby={activeTimezoneError ? 'team-timezone-error' : undefined}
+              onChange={(event) => {
+                event.currentTarget.form?.requestSubmit();
+              }}
             >
               {options.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           )}
         </FieldError>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-xs text-fg-dim">
           Used for calendar views, event defaults, meeting schedules, daily digests, and
           workspace-relative dates in chat.
         </p>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <Submit label="Save timezone" />
-        <FormFeedback
-          toastId="team-timezone"
-          error={state.error}
-          success={state.ok ? 'Timezone updated' : undefined}
-          errorId="team-timezone-error"
-          fieldError={Boolean(timezoneError)}
-        />
-      </div>
+      <FormFeedback
+        toastId="team-timezone"
+        error={state.error}
+        success={state.ok ? 'Timezone updated' : undefined}
+        errorId="team-timezone-error"
+        fieldError={Boolean(timezoneError)}
+      />
     </form>
   );
 }
@@ -229,11 +239,13 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
   const [state, action] = useActionState<RenameTeamState, FormData>(renameTeamAction, {});
   const nameError = state.error === 'Invalid team name' ? state.error : undefined;
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="space-y-2">
       <input type="hidden" name="teamId" value={teamId} />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex-1 space-y-2">
-          <Label htmlFor="team-name">Team name</Label>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Label htmlFor="team-name" size="sm">
+            Team name
+          </Label>
           <FieldError error={nameError}>
             {(activeNameError) => (
               <Input
@@ -242,14 +254,13 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
                 defaultValue={currentName}
                 required
                 maxLength={80}
-                className="transition-colors hover:border-border-strong"
                 aria-invalid={activeNameError ? true : undefined}
                 aria-describedby={activeNameError ? 'team-name-error' : undefined}
               />
             )}
           </FieldError>
         </div>
-        <Submit label="Rename" />
+        <Submit label="Rename" variant="default" />
       </div>
       <FormFeedback
         toastId="rename-team"
@@ -281,10 +292,10 @@ export function InboundEmailWhitelistForm({
       ? state.error
       : undefined;
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-3">
       <div className="space-y-1">
-        <Label>Team email address</Label>
-        <code className="block break-all rounded-md bg-muted px-3 py-2 text-[12px]">
+        <Label size="sm">Team email address</Label>
+        <code className="block break-all font-mono text-[12px] text-fg-muted">
           {inboundEmail ?? 'Not configured'}
         </code>
       </div>
@@ -297,8 +308,10 @@ export function InboundEmailWhitelistForm({
         />
         Enable sender whitelist
       </label>
-      <div className="space-y-2">
-        <Label htmlFor="inbound-email-senders">Allowed senders</Label>
+      <div className="space-y-1.5">
+        <Label htmlFor="inbound-email-senders" size="sm">
+          Allowed senders
+        </Label>
         <FieldError error={sendersError}>
           {(activeSendersError) => (
             <Textarea
@@ -306,14 +319,14 @@ export function InboundEmailWhitelistForm({
               name="senders"
               defaultValue={senders.join(', ')}
               placeholder="alice@example.com, vendor@example.net"
-              className="min-h-28 transition-colors hover:border-border-strong"
+              className="min-h-24"
               aria-invalid={activeSendersError ? true : undefined}
               aria-describedby={activeSendersError ? 'inbound-email-senders-error' : undefined}
             />
           )}
         </FieldError>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <Submit label="Save email settings" />
         <FormFeedback
           toastId="inbound-email"
@@ -333,30 +346,30 @@ export function DigestPreferenceForm({ enabled }: { enabled: boolean }) {
     {},
   );
   return (
-    <form action={action} className="space-y-4">
-      <label className="flex min-h-9 items-center gap-3 text-sm">
+    <form action={action} className="space-y-3">
+      <label className="flex min-h-9 items-start gap-3 text-sm">
         <input
           type="checkbox"
           name="dailyDigestEnabled"
           defaultChecked={enabled}
-          className="size-4 rounded-sm border-input accent-signal transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="mt-0.5 size-4 rounded-sm border-input accent-signal transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          onChange={(event) => {
+            event.currentTarget.form?.requestSubmit();
+          }}
         />
         <span>
           <span className="block font-medium">Send me a personal daily digest</span>
-          <span className="block text-muted-foreground">
+          <span className="mt-0.5 block text-xs text-fg-dim">
             Email or bot DMs configured for this workspace. Shared Slack or Telegram chats still
             receive the team digest. Individual inbox notifications are not emailed.
           </span>
         </span>
       </label>
-      <div className="flex flex-wrap items-center gap-3">
-        <Submit label="Save digest setting" />
-        <FormFeedback
-          toastId="digest-preference"
-          error={state.error}
-          success={state.ok ? 'Digest setting updated' : undefined}
-        />
-      </div>
+      <FormFeedback
+        toastId="digest-preference"
+        error={state.error}
+        success={state.ok ? 'Digest setting updated' : undefined}
+      />
     </form>
   );
 }
@@ -371,9 +384,11 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
         sendStatus={state.sendStatus}
         sendError={state.sendError}
       />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="min-w-0 flex-1 space-y-2">
-          <Label htmlFor="invite-email">Email</Label>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <Label htmlFor="invite-email" size="sm">
+            Email
+          </Label>
           <FieldError error={emailError}>
             {(activeEmailError) => (
               <Input
@@ -382,30 +397,22 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
                 type="email"
                 placeholder="teammate@example.com"
                 required
-                className="transition-colors hover:border-border-strong"
                 aria-invalid={activeEmailError ? true : undefined}
                 aria-describedby={activeEmailError ? 'invite-error' : undefined}
               />
             )}
           </FieldError>
         </div>
-        <div className="space-y-2 sm:w-36">
-          <Label htmlFor="invite-role">Role</Label>
-          <select
-            id="invite-role"
-            name="role"
-            defaultValue="member"
-            className="h-9 w-full rounded-sm border border-input bg-background px-2 text-sm transition-colors hover:border-border-strong ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          >
+        <div className="space-y-1.5 sm:w-32">
+          <Label htmlFor="invite-role" size="sm">
+            Role
+          </Label>
+          <NativeSelect id="invite-role" name="role" defaultValue="member">
             <option value="member">Member</option>
             {canInviteAdmin ? <option value="admin">Admin</option> : null}
-          </select>
+          </NativeSelect>
         </div>
-        <Submit
-          label="Create invite"
-          pendingLabel="Creating invite…"
-          className="w-full sm:w-auto"
-        />
+        <Submit label="Create invite" pendingLabel="Creating invite…" variant="default" />
       </div>
       <FormFeedback
         toastId="invite-member"
@@ -421,9 +428,11 @@ export function InviteMemberForm({ canInviteAdmin }: { canInviteAdmin: boolean }
         fieldError={Boolean(emailError)}
       />
       {state.inviteUrl ? (
-        <div className="rounded-md border bg-muted p-3 text-xs">
-          <p className="mb-1 font-medium">Invite link (copy and share):</p>
-          <code className="break-all font-mono text-[12px]">{state.inviteUrl}</code>
+        <div className="space-y-2 border-t border-border pt-3 text-xs">
+          <p className="font-medium">Invite link (copy and share):</p>
+          <code className="block break-all font-mono text-[12px] text-fg-muted">
+            {state.inviteUrl}
+          </code>
           {state.sendStatus === 'sent' ? (
             <p className="mt-2 text-muted-foreground">Invite email sent.</p>
           ) : null}
@@ -478,14 +487,14 @@ export function TeamExportPanel({
   );
   const downloadErrorMessage = teamExportDownloadErrorMessage(downloadError);
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <RedirectActionToast id="team-export:download" error={downloadErrorMessage} />
       <form
         action={action}
-        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
       >
         <div className="min-w-0 space-y-1">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-fg-muted">
             Builds a 24-hour archive of team data you are already allowed to see.
           </p>
           <FormFeedback
@@ -494,43 +503,51 @@ export function TeamExportPanel({
             success={state.ok ? 'Export queued' : undefined}
           />
         </div>
-        <Submit label="Start export" />
+        <Submit label="Start export" variant="default" />
       </form>
 
       {exports.length > 0 ? (
-        <ul className="divide-y rounded-md border">
+        <ul>
           {exports.map((row) => (
-            <li key={row.id} className="flex items-center justify-between gap-3 p-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{row.status}</p>
-                <p className="text-xs text-muted-foreground">
-                  Created {row.createdAt.toLocaleString()}
-                  {row.expiresAt ? ` · expires ${row.expiresAt.toLocaleString()}` : ''}
-                </p>
-                {row.error ? (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-xs text-destructive">
-                      This export could not be completed. Start a new export or try again later.
-                    </p>
-                    <TechnicalDetails
-                      items={[
-                        {
-                          label: 'Export error',
-                          value: row.error,
-                          copyValue: row.error,
-                        },
-                      ]}
-                    />
-                  </div>
-                ) : null}
-              </div>
-              {row.status === 'ready' ? (
-                <form action={downloadTeamExportAction}>
-                  <input type="hidden" name="exportId" value={row.id} />
-                  <Button type="submit" variant="outline" size="sm">
-                    Download
-                  </Button>
-                </form>
+            <li key={row.id}>
+              <CollectionRow>
+                <CollectionRow.Title>
+                  <CollectionStatus value={row.status} />
+                </CollectionRow.Title>
+                <CollectionRow.Metadata>
+                  <>
+                    <RelativeTimestamp prefix="Created" value={row.createdAt} />
+                    {row.expiresAt ? (
+                      <RelativeTimestamp prefix="Expires" value={row.expiresAt} />
+                    ) : null}
+                  </>
+                </CollectionRow.Metadata>
+                <CollectionRow.Actions>
+                  {row.status === 'ready' ? (
+                    <form action={downloadTeamExportAction}>
+                      <input type="hidden" name="exportId" value={row.id} />
+                      <Button type="submit" variant="ghost" size="sm">
+                        Download
+                      </Button>
+                    </form>
+                  ) : null}
+                </CollectionRow.Actions>
+              </CollectionRow>
+              {row.error ? (
+                <div className="space-y-2 px-3 pb-3">
+                  <p className="text-xs text-destructive">
+                    This export could not be completed. Start a new export or try again later.
+                  </p>
+                  <TechnicalDetails
+                    items={[
+                      {
+                        label: 'Export error',
+                        value: row.error,
+                        copyValue: row.error,
+                      },
+                    ]}
+                  />
+                </div>
               ) : null}
             </li>
           ))}

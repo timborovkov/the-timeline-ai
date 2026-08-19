@@ -1,7 +1,8 @@
 import type { RemovedTeamMemberRow, TeamMemberMap } from '@/components/team-member-types';
 
+import { CollectionRow } from '@/components/collections/collection-row';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SettingsSection } from '@/components/section-heading';
-import { Badge } from '@/components/ui/badge';
 import { displayRemovedMemberLabel } from '@/lib/display-labels';
 
 export function RemovedMembersCard({
@@ -14,23 +15,21 @@ export function RemovedMembersCard({
   if (removedMembers.length === 0) return null;
   return (
     <SettingsSection title="Removed members">
-      <ul className="divide-y divide-border border-y border-border">
+      <ul>
         {removedMembers.map((member) => {
           const user = userMap.get(member.userId);
           return (
-            <li
-              key={member.userId}
-              className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0">
-                <p className="break-words text-sm font-medium">{displayRemovedMemberLabel(user)}</p>
-                {user?.email ? (
-                  <p className="break-all text-xs text-fg-muted">
-                    {user.email} · removed {member.removedAt?.toLocaleDateString()}
-                  </p>
-                ) : null}
-              </div>
-              <Badge variant="outline">{member.role}</Badge>
+            <li key={member.userId}>
+              <CollectionRow>
+                <CollectionRow.Title>{displayRemovedMemberLabel(user)}</CollectionRow.Title>
+                <CollectionRow.Context>{user?.email ?? undefined}</CollectionRow.Context>
+                <CollectionRow.Metadata>
+                  <>
+                    <span>{member.role}</span>
+                    <RelativeTimestamp prefix="Removed" value={member.removedAt} />
+                  </>
+                </CollectionRow.Metadata>
+              </CollectionRow>
             </li>
           );
         })}

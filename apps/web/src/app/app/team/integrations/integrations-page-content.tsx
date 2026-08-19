@@ -315,17 +315,18 @@ export function IntegrationsPageView({
   model: IntegrationsPageModel;
 }) {
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       <Breadcrumb items={[{ label: 'Team', href: '/app/team' }, { label: 'Integrations' }]} />
 
       <PageHeader
+        variant="collection"
         title="Team integrations"
         subtitle="Manage provider sync, source access, and integration recovery for this team."
         srLabel={`Team integrations · ${String(model.totalConnected)} active syncs · ${String(model.totalCatalog)} providers in catalog`}
         metadata={[
-          { label: 'team', value: active.teamName, signal: true },
-          { label: 'active syncs', value: model.totalConnected },
-          { label: 'providers', value: model.totalCatalog },
+          { label: 'Team', value: active.teamName },
+          { label: 'Active syncs', value: model.totalConnected, mono: true },
+          { label: 'Providers', value: model.totalCatalog, mono: true },
         ]}
       />
 
@@ -338,10 +339,7 @@ export function IntegrationsPageView({
       />
 
       {model.blockingAttentionCount > 0 ? (
-        <div
-          role="alert"
-          className="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
-        >
+        <div role="alert" className="text-sm text-danger">
           {String(model.blockingAttentionCount)} integration item
           {model.blockingAttentionCount === 1 ? '' : 's'} need attention. Use the affected provider
           below to reconnect credentials, replace the connection, narrow shared sources, or retry
@@ -349,7 +347,7 @@ export function IntegrationsPageView({
         </div>
       ) : null}
       {model.webhookDegradedCount > 0 ? (
-        <output className="block rounded-md border border-signal/30 bg-signal/10 px-3 py-2 text-sm text-fg">
+        <output className="block text-sm text-fg-muted">
           {String(model.webhookDegradedCount)} webhook subscription
           {model.webhookDegradedCount === 1 ? '' : 's'} degraded. Reconciliation remains active
           while provider webhook delivery is repaired.
@@ -382,7 +380,7 @@ export function IntegrationsPageView({
 
 function IntegrationPageActions({ isAdmin }: { isAdmin: boolean }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
       <ActionChip href="/app/me/connections" label="Provider accounts →" />
       <ActionChip href="/app/team/integrations/audit" label="Audit log →" />
       {isAdmin ? <ActionChip href="/app/team/jobs" label="Job recovery →" /> : null}
@@ -441,7 +439,7 @@ function IntegrationWorkflow({
   if (!hasSharedSources && !hasActiveImports) return null;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
       {attentionRows.length > 0 ? (
         <section className="space-y-3" aria-labelledby="integration-needs-attention">
           <SectionHeading id="integration-needs-attention">Needs attention</SectionHeading>
@@ -463,9 +461,7 @@ function IntegrationWorkflow({
       ) : hasActiveImports ? null : (
         <section className="space-y-3" aria-labelledby="active-team-sync">
           <SectionHeading id="active-team-sync">Active team sync</SectionHeading>
-          <p className="rounded-md border border-border bg-surface p-4 text-sm text-fg-muted">
-            No provider sources are actively syncing yet.
-          </p>
+          <p className="text-sm text-fg-muted">No provider sources are actively syncing yet.</p>
         </section>
       )}
       {hasSharedSources || needsSharedSourceReview ? (
@@ -576,8 +572,8 @@ function AdvancedIntegrationSection({
 
 function NoSourcesState({ isAdmin }: { isAdmin: boolean }) {
   return (
-    <div className="rounded-md border border-border bg-surface p-6 text-sm text-fg-muted">
-      <p className="mb-1 font-medium text-fg">No sources connected yet.</p>
+    <div className="space-y-2 border-y border-border py-4 text-sm text-fg-muted">
+      <p className="font-medium text-fg">No sources connected yet.</p>
       <p>
         Connect a native provider to sync work into the timeline, or add an MCP-compatible server
         for live agent tool access.

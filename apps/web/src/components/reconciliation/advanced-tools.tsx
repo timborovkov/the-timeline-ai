@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { queueReconciliationJobFormAction } from '@/app/actions/reconciliation';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { CountList } from '@/components/collections/count-list';
 import { DebouncedFilterForm } from '@/components/debounced-filter-form';
 import {
@@ -417,9 +418,7 @@ function RecentRuns({
                     {runTriggerLabel(row.trigger)}
                   </CollectionRow.Context>
                   <CollectionRow.Metadata>
-                    <time className="text-xs text-fg-muted" title={hint}>
-                      {row.createdAt.toLocaleString()}
-                    </time>
+                    <RelativeTimestamp value={row.createdAt} />
                   </CollectionRow.Metadata>
                 </CollectionRow>
               </li>

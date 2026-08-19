@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.17 · Object and task detail rails (2026-08-19). Replaces v3.16 Board kanban toast-only metadata.
+**Version:** v3.18 · Remaining settings and directory density (2026-08-19).
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -258,11 +258,22 @@ a unit. Timeline, Work → Pinned, and Approvals have no toolbar inventory chip.
 A sentence-case semantic `<h2>` at 16px Switzer semibold with optional actions.
 Do not recreate route-local uppercase eyebrow headings.
 
-### Button, Input, and Textarea
+### Button, Input, Textarea, and NativeSelect
 
 Controls are 36px high by default, with 40px allowed for mobile-critical
 actions. They use a 4px radius, explicit hover states, and a visible focus
-ring. Secondary buttons do not need a persistent filled background.
+ring. Secondary buttons do not need a persistent filled background. Native
+`<select>` controls use the shared `NativeSelect` (same height, radius, hover,
+and focus as `Input`). Do not restyle selects with one-off `h-10`,
+`rounded-md`, or unhovered gray boxes.
+
+### Relative timestamps
+
+Age metadata (`created`, `updated`, `last synced`, `expires`) uses
+`RelativeTimestamp`: Commit Mono 11px, a relative label such as `7 hours ago`,
+and the localized date-time on hover (`title` plus tooltip). Calendar chips and
+due dates keep their own clock-time and due-date vocabularies. Exact instants
+still belong in `TechnicalDetails` when they are implementation detail.
 
 ### Card
 
@@ -550,19 +561,26 @@ the edited form; pending, success, and server failures use the shared action
 toast. Member, object, source, and artifact labels never fall back to UUIDs.
 
 Team → Members is a collection: compact header, `CollectionRow` members with
-visible role and actions, not a padded card list. Other settings sections stay
-forms, but they use hairline section structure instead of nested dashboard
-cards where a single form is the whole section.
+visible role and quiet actions, not a padded card list. Role changes save on
+select. Remove, resend, and revoke are tooltiped icon buttons. Invite, pending,
+removed, and export lists use the same rows. Other settings sections stay
+forms, with hairline section structure, 12px muted labels, compact `sm`
+outline saves, and at most one filled primary action per view (Rename, Create
+invite, Start export). Select and checkbox preferences may save immediately.
 
 Connections is a collection directory. Provider and capture surfaces are
 `CollectionGroup` + `CollectionRow` rows (icon, name, status, one context
 line, quiet action). They are not bordered `p-4` cards. Status uses
 `CollectionStatus` or readable sentence-case text, not uppercase chips.
+Slack, Telegram, provider accounts, and connected integrations reuse the same
+row density.
 
 Meetings keep the collection header and rows. Capture and saved-meeting setup
 forms sit in a closed disclosure so the list is the default view. Saved
 meeting edit is a closed disclosure or dialog, never an always-open form
-under every row. Meeting mutations use the shared toast contract.
+under every row. Join, archive, and skip are tooltiped icon buttons. Capture
+times use relative age with a timestamp tooltip. Meeting mutations use the
+shared toast contract.
 
 ### Calendar
 
@@ -577,7 +595,9 @@ numbers belong on the week column, not inside every month cell.
 The Edit event dialog stays a calendar-event editor. When the event is linked
 to workspace objects, those objects appear as quiet title links under
 **Linked objects**, never as a large Open button. Object Calendar sections
-link the other way to the focused calendar event.
+link the other way to the focused calendar event. Subscription create/last-used
+times use relative age with a timestamp tooltip. Event dialog selects use
+`NativeSelect`.
 
 Job recovery is an admin-only queue, not a processing inventory.
 Members who open `/app/team/jobs` see an Admins-only empty state. Home
@@ -1046,4 +1066,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
-| 2026-08-19 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel after merging collection chrome, floating Ask, and `notifyAction`. |
+| 2026-08-19 | Remaining settings and directory density | Aligns Team settings, Connections, Meetings, Calendar, Slack, Telegram, and remaining timestamps with compact collection rows, NativeSelect, quiet icon actions, and relative age plus hover datetime. |

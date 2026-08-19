@@ -30,7 +30,7 @@ export default function HomeLoading() {
               </div>
             ))}
           </div>
-          <div className="border-x border-border">
+          <div>
             {Array.from({ length: 5 }).map((_, index) => (
               <CollectionRowSkeleton key={index} leading={false} metadata={0} />
             ))}

@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState, useTransition } from 'react';
 
 import { markNotificationReadAction } from '@/app/actions/objects';
-import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
-import { formatDisplayDateTime } from '@/lib/display-dates';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { notificationKindLabel } from '@/lib/notification-labels';
 import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
@@ -19,10 +18,6 @@ interface Props {
   agentSuggestionId: string | null;
   createdAt: string;
   initiallyRead: boolean;
-}
-
-function formatTs(ts: string, timezone: string): string {
-  return formatDisplayDateTime(ts, { timezone });
 }
 
 export function NotificationRow(props: Props) {
@@ -42,7 +37,6 @@ function NotificationRowContent({
   createdAt,
   initiallyRead,
 }: Props) {
-  const timezone = useWorkspaceTimezone();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   // Optimistic read state so clicking through to an object instantly
@@ -135,9 +129,7 @@ function NotificationRowContent({
         read ? 'opacity-70' : 'opacity-100',
       )}
     >
-      <time dateTime={createdAt} className="font-mono text-xs text-fg-dim">
-        {formatTs(createdAt, timezone)}
-      </time>
+      <RelativeTimestamp value={createdAt} className="text-xs" />
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-xs text-fg-dim">
           {!read ? (

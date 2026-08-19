@@ -216,6 +216,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       task peek on one `DetailRail` surface panel, 8px section stack, why-this-exists
       lead copy, ghost pin, floating Ask binder, overflow Repair/Add task, list
       `returnTo` + `scroll={false}`, and no empty memory theater cards.
+- [x] U8d — Remaining settings and directory density: Team settings, Connections,
+      Meetings, Calendar, Slack, Telegram, inbox, and audit metadata use compact
+      hairline forms, NativeSelect, one primary action, tooltiped icon row
+      actions, and relative age plus hover datetime.
 - [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
       float on every authenticated page except Home and full Ask. Close keeps
       the thread; New resets it. The agent sees the current view first and a

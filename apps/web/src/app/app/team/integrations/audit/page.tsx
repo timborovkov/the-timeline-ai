@@ -7,11 +7,11 @@ import { integrationAuditSummary } from '@/app/app/team/integrations/audit/integ
 import { Breadcrumb } from '@/components/breadcrumb';
 import { EmptyAction } from '@/components/empty-action';
 import { IndexStrip } from '@/components/index-strip';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
-import { formatDisplayDateTime } from '@/lib/display-dates';
 
 export const metadata: Metadata = {
   title: 'Integration audit',
@@ -75,20 +75,15 @@ export default async function IntegrationAuditPage() {
             action="Manage integrations"
           />
         ) : (
-          <ul className="divide-y divide-border rounded-sm border border-border bg-surface text-sm">
+          <ul className="border-y border-border text-sm">
             {rows.map((r) => (
-              <li key={r.id} className="p-3">
+              <li key={r.id} className="border-b border-border py-3 last:border-b-0">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="font-medium leading-snug text-fg">
                       {integrationAuditSummary(r.kind)}
                     </div>
-                    <time
-                      dateTime={r.createdAt.toISOString()}
-                      className="font-mono text-xs tabular-nums text-fg-muted"
-                    >
-                      {formatDisplayDateTime(r.createdAt, { timezone })}
-                    </time>
+                    <RelativeTimestamp value={r.createdAt} />
                   </div>
                   <TechnicalDetails
                     className="mt-3"

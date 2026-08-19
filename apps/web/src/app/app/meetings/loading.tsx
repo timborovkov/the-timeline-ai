@@ -40,7 +40,7 @@ export default function MeetingsLoading() {
           <CollectionToolbarSkeleton />
         </section>
         <section aria-label="Meeting captures loading placeholder">
-          <ul className="border-x border-border">
+          <ul>
             {Array.from({ length: 4 }).map((_, index) => (
               <li key={index}>
                 <CollectionRowSkeleton subtitle metadata={2} />

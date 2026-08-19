@@ -47,7 +47,10 @@ export function SettingsSection({
   return (
     <section
       id={id}
-      className={cn('space-y-3 border-t border-border pt-5 first:border-t-0 first:pt-0', className)}
+      className={cn(
+        'space-y-2.5 border-t border-border pt-4 first:border-t-0 first:pt-0',
+        className,
+      )}
     >
       <SectionHeading>{title}</SectionHeading>
       {children}

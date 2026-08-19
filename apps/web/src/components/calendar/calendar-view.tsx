@@ -58,6 +58,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { Textarea } from '@/components/ui/textarea';
 import { chatViewLabel } from '@/lib/chat-view';
 import { formatCollectionCount } from '@/lib/collection-count';
@@ -1437,13 +1438,19 @@ function CalendarEventDialog({
         <DialogFooter className="gap-2 sm:justify-between">
           <div>
             {editing ? (
-              <Button type="button" variant="outline" onClick={onRemove} disabled={pending}>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onRemove}
+                disabled={pending}
+              >
                 <Trash2 className="mr-1 size-4" />
                 Delete
               </Button>
             ) : null}
           </div>
-          <Button type="button" onClick={onSave} disabled={pending}>
+          <Button type="button" size="sm" onClick={onSave} disabled={pending}>
             <Check className="mr-1 size-4" />
             {pending ? 'Saving…' : 'Save'}
           </Button>
@@ -1524,7 +1531,7 @@ function CalendarDraftOptions({
   return (
     <>
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="flex items-center gap-2 rounded-sm border px-3 py-2 text-sm">
+        <label className="flex min-h-9 items-center gap-2 text-sm">
           <input
             type="checkbox"
             checked={draft.allDay}
@@ -1536,33 +1543,31 @@ function CalendarDraftOptions({
         </label>
         <div className="space-y-1">
           <Label htmlFor="calendar-visibility">Visibility</Label>
-          <select
+          <NativeSelect
             id="calendar-visibility"
             value={draft.visibility}
             onChange={(e) => {
               onDraftChange((d) => ({ ...d, visibility: e.target.value as Draft['visibility'] }));
             }}
-            className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
           >
             <option value="team">Team</option>
             <option value="private">Private</option>
             <option value="specific_users">Specific users</option>
-          </select>
+          </NativeSelect>
         </div>
         <div className="space-y-1">
           <Label htmlFor="calendar-show-as">Show as</Label>
-          <select
+          <NativeSelect
             id="calendar-show-as"
             value={draft.showAs}
             onChange={(e) => {
               onDraftChange((d) => ({ ...d, showAs: e.target.value as Draft['showAs'] }));
             }}
-            className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
           >
             <option value="busy">Busy</option>
             <option value="tentative">Tentative</option>
             <option value="free">Free</option>
-          </select>
+          </NativeSelect>
         </div>
       </div>
       {draft.visibility === 'specific_users' ? (
@@ -1601,7 +1606,7 @@ function CalendarDraftRecurrence({
     <div className="grid gap-4 sm:grid-cols-[12rem_1fr_12rem]">
       <div className="space-y-2">
         <Label htmlFor="calendar-recurrence-preset">Repeats</Label>
-        <select
+        <NativeSelect
           id="calendar-recurrence-preset"
           value={recurrencePresetValue(draft.rrule)}
           onChange={(e) => {
@@ -1609,7 +1614,6 @@ function CalendarDraftRecurrence({
             if (!preset) return;
             onDraftChange((d) => ({ ...d, rrule: preset.rrule }));
           }}
-          className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
         >
           {RECURRENCE_PRESETS.map((preset) => (
             <option key={preset.value} value={preset.value}>
@@ -1617,7 +1621,7 @@ function CalendarDraftRecurrence({
             </option>
           ))}
           <option value="custom">Custom</option>
-        </select>
+        </NativeSelect>
       </div>
       <div className="space-y-2">
         <Label htmlFor="calendar-rrule">RRULE</Label>
@@ -1633,7 +1637,7 @@ function CalendarDraftRecurrence({
       </div>
       <div className="space-y-2">
         <Label htmlFor="calendar-recurrence-edit">Edit scope</Label>
-        <select
+        <NativeSelect
           id="calendar-recurrence-edit"
           value={draft.recurrenceEditMode}
           onChange={(e) => {
@@ -1642,12 +1646,11 @@ function CalendarDraftRecurrence({
               recurrenceEditMode: e.target.value as Draft['recurrenceEditMode'],
             }));
           }}
-          className="w-full rounded-sm border bg-background px-3 py-2 text-sm"
         >
           <option value="single">This event</option>
           <option value="this_and_future">This and future</option>
           <option value="series">Series</option>
-        </select>
+        </NativeSelect>
       </div>
     </div>
   );

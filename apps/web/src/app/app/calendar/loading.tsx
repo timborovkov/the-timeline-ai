@@ -51,7 +51,7 @@ export default function CalendarLoading() {
               </div>
               <div className="border-t border-border">
                 <CollectionToolbarSkeleton viewSegments={3} action />
-                <div className="border-x border-border">
+                <div>
                   {Array.from({ length: 3 }).map((_, index) => (
                     <CollectionRowSkeleton key={index} subtitle metadata={2} />
                   ))}

@@ -7,6 +7,7 @@ import { useFormStatus } from 'react-dom';
 import type { TeamMembership } from '@/lib/active-team';
 
 import { acceptRecipientInviteAction, declineInviteAction } from '@/app/actions/invites';
+import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { CreateTeamForm } from '@/components/team-forms';
 import {
   Dialog,
@@ -232,7 +233,7 @@ export function TeamSwitcher({
                 {recipientInvites.map((invite) => (
                   <div
                     key={invite.id}
-                    className="rounded-md border border-border bg-surface px-4 py-3"
+                    className="border-b border-border/80 px-3 py-2 last:border-b-0"
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
@@ -242,7 +243,7 @@ export function TeamSwitcher({
                         </div>
                         <p className="mt-1 break-words text-xs text-fg-dim">
                           {invite.role} · invited by {invite.invitedBy} · expires{' '}
-                          {new Date(invite.expiresAt).toLocaleDateString()}
+                          <RelativeTimestamp value={invite.expiresAt} />
                         </p>
                       </div>
                       <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
@@ -268,13 +269,11 @@ export function TeamSwitcher({
                 ))}
               </div>
             ) : (
-              <div className="rounded-lg border border-border bg-surface/60 px-4 py-5 text-sm text-fg-dim">
-                No pending invites for your account.
-              </div>
+              <p className="text-sm text-fg-dim">No pending invites for your account.</p>
             )}
           </section>
 
-          <section className="space-y-3 rounded-md border border-border bg-surface p-4">
+          <section className="space-y-3">
             <div className="flex items-center gap-2">
               <Plus className="size-4 text-fg-dim" />
               <h2 className="text-base font-semibold text-fg">Create team</h2>

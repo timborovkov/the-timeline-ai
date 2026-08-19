@@ -194,7 +194,7 @@ export default async function TeamSettingsPage({
   const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         variant="collection"
         title="Team"
@@ -206,7 +206,7 @@ export default async function TeamSettingsPage({
           { label: 'Members', value: memberRows.length, mono: true },
         ]}
       />
-      <div className="flex flex-col gap-6 lg:flex-row">
+      <div className="flex flex-col gap-5 lg:flex-row lg:gap-8">
         <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
           <SettingsNav items={[...SETTINGS_ITEMS]} activeSection={section} isAdmin={isAdmin} />
         </aside>
@@ -307,7 +307,7 @@ function MessagingPreferencesCard({ enabled }: { enabled: boolean }) {
 function AdminShortcuts({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 border-y border-border py-2">
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 border-y border-border py-1.5">
       <ActionChip href="/app/team/jobs" label="Job recovery" />
       <ActionChip href="/app/team/reconciliation" label="Reconciliation" />
       <ActionChip href="/app/team/audit" label="Audit" />

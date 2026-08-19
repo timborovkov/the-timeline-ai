@@ -23,7 +23,7 @@ export default function CapturedDocumentsLoading() {
             <Skeleton className="h-9 w-24 rounded-sm" />
           </div>
           <CollectionToolbarSkeleton search={false} />
-          <ul aria-label="Captured files loading placeholder" className="border-x border-border">
+          <ul aria-label="Captured files loading placeholder">
             {Array.from({ length: 4 }).map((_, index) => (
               <li key={index}>
                 <CollectionRowSkeleton leading subtitle metadata={2} />

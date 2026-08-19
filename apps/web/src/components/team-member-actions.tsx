@@ -1,8 +1,8 @@
 'use client';
 
+import { RotateCw, UserMinus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useRef, type SyntheticEvent } from 'react';
-import { useFormStatus } from 'react-dom';
 
 import {
   changeMemberRoleAction,
@@ -12,8 +12,8 @@ import {
   type TeamMutationResult,
 } from '@/app/actions/teams';
 import { useAppDialog } from '@/components/ui/app-dialog';
-import { Button } from '@/components/ui/button';
-import { ItemActionGroup } from '@/components/ui/item-actions';
+import { ItemActionGroup, ItemIconButton } from '@/components/ui/item-actions';
+import { NativeSelect } from '@/components/ui/native-select';
 import { notifyAction } from '@/lib/notify';
 
 type TeamAction = (formData: FormData) => void | Promise<void>;
@@ -24,29 +24,6 @@ async function runTeamMutation(
 ): Promise<TeamMutationResult> {
   const result = await action(formData);
   return result.error ? { error: result.error } : { ok: true };
-}
-
-function SubmitButton({
-  label,
-  pendingLabel,
-  variant = 'outline',
-}: {
-  label: string;
-  pendingLabel: string;
-  variant?: 'destructive' | 'outline';
-}) {
-  const { pending } = useFormStatus();
-  return (
-    <Button
-      type="submit"
-      variant={variant}
-      size="sm"
-      className="w-full sm:w-auto"
-      disabled={pending}
-    >
-      {pending ? pendingLabel : label}
-    </Button>
-  );
 }
 
 function ConfirmingActionForm({
@@ -87,7 +64,7 @@ function ConfirmingActionForm({
   }
 
   return (
-    <form ref={formRef} action={action} onSubmit={confirmSubmit} className="w-full sm:w-auto">
+    <form ref={formRef} action={action} onSubmit={confirmSubmit} className="contents">
       {children}
       {dialog.node}
     </form>
@@ -105,7 +82,6 @@ export function MemberRoleForm({
 }) {
   const router = useRouter();
   const controlId = `member-role-${userId}`;
-  const helpId = `${controlId}-help`;
 
   return (
     <form
@@ -129,32 +105,23 @@ export function MemberRoleForm({
         });
         if (!result.error) router.refresh();
       }}
-      className="w-full space-y-2 sm:w-auto"
+      className="min-w-0"
     >
       <input type="hidden" name="userId" value={userId} />
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-        <div className="min-w-0 space-y-1">
-          <label htmlFor={controlId} className="text-xs font-medium text-fg-muted">
-            Role
-          </label>
-          <select
-            id={controlId}
-            aria-label={`Role for ${memberLabel}`}
-            aria-describedby={helpId}
-            name="role"
-            defaultValue={memberRole}
-            className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm sm:w-36"
-          >
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
-            <option value="owner">Owner</option>
-          </select>
-        </div>
-        <SubmitButton label="Save role" pendingLabel="Saving role…" />
-      </div>
-      <p id={helpId} className="text-xs text-fg-muted sm:max-w-72">
-        Changing a role updates permissions immediately. Owners can manage all team settings.
-      </p>
+      <NativeSelect
+        id={controlId}
+        aria-label={`Role for ${memberLabel}`}
+        name="role"
+        defaultValue={memberRole}
+        className="h-8 w-[7.5rem]"
+        onChange={(event) => {
+          event.currentTarget.form?.requestSubmit();
+        }}
+      >
+        <option value="member">Member</option>
+        <option value="admin">Admin</option>
+        <option value="owner">Owner</option>
+      </NativeSelect>
     </form>
   );
 }
@@ -178,7 +145,9 @@ export function RemoveMemberForm({ memberLabel, userId }: { memberLabel: string;
       confirmLabel="Remove member"
     >
       <input type="hidden" name="userId" value={userId} />
-      <SubmitButton label="Remove member" pendingLabel="Removing member…" variant="destructive" />
+      <ItemIconButton type="submit" label="Remove member" className="hover:text-danger">
+        <UserMinus />
+      </ItemIconButton>
     </ConfirmingActionForm>
   );
 }
@@ -204,10 +173,11 @@ export function PendingInviteActions({
           });
           if (!result.error) router.refresh();
         }}
-        className="w-full sm:w-auto"
       >
         <input type="hidden" name="inviteId" value={inviteId} />
-        <SubmitButton label="Resend invite" pendingLabel="Resending invite…" />
+        <ItemIconButton type="submit" label="Resend invite">
+          <RotateCw />
+        </ItemIconButton>
       </form>
       <ConfirmingActionForm
         action={async (formData) => {
@@ -225,7 +195,9 @@ export function PendingInviteActions({
         confirmLabel="Revoke invite"
       >
         <input type="hidden" name="inviteId" value={inviteId} />
-        <SubmitButton label="Revoke invite" pendingLabel="Revoking invite…" variant="destructive" />
+        <ItemIconButton type="submit" label="Revoke invite" className="hover:text-danger">
+          <X />
+        </ItemIconButton>
       </ConfirmingActionForm>
     </ItemActionGroup>
   );

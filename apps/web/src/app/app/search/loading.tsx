@@ -20,7 +20,7 @@ export default function SearchLoading() {
           data-testid="search-loading-visuals"
         >
           <CollectionToolbarSkeleton />
-          <div className="border-x border-border">
+          <div>
             {Array.from({ length: 3 }).map((_, index) => (
               <CollectionRowSkeleton key={index} subtitle metadata={2} />
             ))}

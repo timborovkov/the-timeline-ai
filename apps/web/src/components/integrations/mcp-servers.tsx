@@ -10,6 +10,7 @@ import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import { networkActionError, readPublicApiError } from '@/lib/client-api-error';
 import { notifyAction, notifyError } from '@/lib/notify';
 
@@ -261,10 +262,9 @@ function AddCustomMcpServerForm({
             </div>
             <div className="space-y-1">
               <Label htmlFor={`${formId}-auth-type`}>Authentication</Label>
-              <select
+              <NativeSelect
                 id={`${formId}-auth-type`}
                 name="mcp-auth-type"
-                className="h-9 w-full rounded-sm border border-border bg-surface px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 value={authType}
                 onChange={(e) => {
                   setFormState({ authType: e.target.value as AuthType });
@@ -274,7 +274,7 @@ function AddCustomMcpServerForm({
                 <option value="bearer">Bearer token</option>
                 <option value="header">Custom header</option>
                 <option value="oauth">OAuth</option>
-              </select>
+              </NativeSelect>
             </div>
             {authType === 'bearer' ? (
               <div className="space-y-1">

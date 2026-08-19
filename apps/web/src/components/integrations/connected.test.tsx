@@ -54,7 +54,9 @@ describe('ConnectedIntegrations', () => {
       />,
     );
 
-    expect(screen.getByText('Last synced Jun 28, 2026, 11:30 PM')).toBeTruthy();
+    expect(screen.getByText(/Last synced/)).toBeTruthy();
+    const time = screen.getByText(/Last synced/);
+    expect(time.getAttribute('title')).toBeTruthy();
   });
 
   it('labels visibility defaults and lets keyboard users choose the people who can view new events', async () => {

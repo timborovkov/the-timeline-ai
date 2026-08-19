@@ -37,7 +37,7 @@ function IntegrationSectionSkeleton({ cards, grid = false }: { cards: number; gr
     <div aria-hidden="true" className="space-y-3">
       <Skeleton className="h-5 w-52 max-w-full" />
       <Skeleton className="h-4 w-full max-w-2xl" />
-      <div className={grid ? 'border-x border-border' : 'space-y-3'}>
+      <div className={grid ? undefined : 'space-y-3'}>
         {grid ? (
           <CollectionRowsSkeleton count={cards} />
         ) : (
