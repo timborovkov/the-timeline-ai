@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
@@ -17,12 +17,27 @@ export function PinOverflowMenu({
   title: string;
   initialPinned: boolean;
 }) {
+  return (
+    <PinOverflowControls
+      key={`${target.kind}:${target.key}:${String(initialPinned)}`}
+      target={target}
+      title={title}
+      initialPinned={initialPinned}
+    />
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- keyed inner control remounts when the server pin state changes
+function PinOverflowControls({
+  target,
+  title,
+  initialPinned,
+}: {
+  target: PinTargetRef;
+  title: string;
+  initialPinned: boolean;
+}) {
   const [pinned, setPinned] = useState(initialPinned);
-
-  useEffect(() => {
-    setPinned(initialPinned);
-  }, [initialPinned]);
-
   return (
     <>
       {pinned ? <PinnedGlyph /> : null}

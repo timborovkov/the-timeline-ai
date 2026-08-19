@@ -101,7 +101,7 @@ describe('ChatPane', () => {
       }),
     );
 
-    expect(html).toContain('Pinned');
+    expect(html).toContain('About');
     expect(html).toContain('Proposal');
     expect(html).toContain('What is due?');
     expect(html).toContain('Send proposal');

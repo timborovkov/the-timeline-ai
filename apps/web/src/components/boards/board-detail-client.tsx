@@ -261,12 +261,7 @@ export function BoardDetailClient({
           boardId={boardId}
         />
         <PinButton target={{ kind: 'board', key: boardId }} initialPinned={pinned} />
-        <BoardActionsMenu
-          id={boardId}
-          name={boardName}
-          purpose={purpose ?? ''}
-          lanes={lanes}
-        />
+        <BoardActionsMenu id={boardId} name={boardName} purpose={purpose ?? ''} lanes={lanes} />
       </div>
     ),
     [boardId, boardName, lanes, pinned, purpose],

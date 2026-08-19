@@ -1,7 +1,7 @@
 'use client';
 
 import { Pin } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
@@ -19,12 +19,25 @@ export function PinButton({
   target: PinTargetRef;
   initialPinned: boolean;
 }) {
+  return (
+    <PinButtonControl
+      key={`${target.kind}:${target.key}:${String(initialPinned)}`}
+      target={target}
+      initialPinned={initialPinned}
+    />
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- keyed inner control remounts when the server pin state changes
+function PinButtonControl({
+  target,
+  initialPinned,
+}: {
+  target: PinTargetRef;
+  initialPinned: boolean;
+}) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    if (!pending) setPinned(initialPinned);
-  }, [initialPinned, pending]);
 
   function toggle(): void {
     const nextPinned = !pinned;

@@ -65,9 +65,9 @@ describe('shared pin controls', () => {
 
     await waitFor(() => {
       expect(fakes.pinTargetAction).toHaveBeenCalledWith(pinnedItem.target);
-      expect(screen.getByRole('button', { name: 'Unpin from Home' }).getAttribute('aria-pressed')).toBe(
-        'true',
-      );
+      expect(
+        screen.getByRole('button', { name: 'Unpin from Home' }).getAttribute('aria-pressed'),
+      ).toBe('true');
     });
   });
 

@@ -25,14 +25,10 @@ vi.mock('@/lib/notify', () => ({
   },
 }));
 vi.mock('@/components/pins/pin-overflow-menu', () => ({
-  PinOverflowMenu: ({
-    title,
-    initialPinned,
-  }: {
-    title: string;
-    initialPinned: boolean;
-  }) => (
-    <button type="button">{initialPinned ? `Unpin from Home ${title}` : `Pin to Home ${title}`}</button>
+  PinOverflowMenu: ({ title, initialPinned }: { title: string; initialPinned: boolean }) => (
+    <button type="button">
+      {initialPinned ? `Unpin from Home ${title}` : `Pin to Home ${title}`}
+    </button>
   ),
 }));
 

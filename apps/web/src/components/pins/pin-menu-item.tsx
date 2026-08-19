@@ -1,7 +1,7 @@
 'use client';
 
 import { Pin } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
@@ -22,13 +22,31 @@ export function PinMenuItem({
   initialPinned: boolean;
   onPinnedChange?: (pinned: boolean) => void;
 }) {
+  return (
+    <PinMenuItemControl
+      key={`${target.kind}:${target.key}:${String(initialPinned)}`}
+      target={target}
+      title={title}
+      initialPinned={initialPinned}
+      onPinnedChange={onPinnedChange}
+    />
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- keyed inner control remounts when the server pin state changes
+function PinMenuItemControl({
+  target,
+  title,
+  initialPinned,
+  onPinnedChange,
+}: {
+  target: PinTargetRef;
+  title: string;
+  initialPinned: boolean;
+  onPinnedChange?: (pinned: boolean) => void;
+}) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    if (!pending) setPinned(initialPinned);
-  }, [initialPinned, pending]);
-
   const action = pinControlLabel(pinned);
   const pendingLabel = pinControlLabel(pinned, true);
   return (
