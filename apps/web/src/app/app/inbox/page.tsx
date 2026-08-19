@@ -1,10 +1,11 @@
 import { withTeam } from '@timeline/shared/team-scope';
+import { Bell } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { InboxList } from '@/components/inbox/inbox-list';
 import { MarkAllReadButton } from '@/components/inbox/mark-all-read-button';
@@ -80,11 +81,16 @@ export default async function InboxPage({
       </nav>
 
       {pageRows.length === 0 ? (
-        <EmptyAction
+        <EmptyState
+          icon={Bell}
           title={unreadOnly ? 'No unread notifications' : 'No notifications yet'}
-          body="Notifications appear when objects you own change or agent suggestions need your attention."
-          href={unreadOnly ? '/app/inbox' : '/app/objects'}
-          action={unreadOnly ? 'Show all notifications' : 'Open objects'}
+          body={
+            unreadOnly
+              ? 'You are caught up. New notifications will appear here when owned objects change or a proposal needs you.'
+              : 'Notifications appear when objects you own change or a proposal needs your attention.'
+          }
+          href={unreadOnly ? '/app/inbox' : '/app/timeline'}
+          action={unreadOnly ? 'Show all notifications' : 'Open timeline'}
         />
       ) : (
         <InboxList

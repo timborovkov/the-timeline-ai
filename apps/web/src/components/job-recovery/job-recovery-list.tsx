@@ -1,6 +1,6 @@
 'use client';
 
-import { CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
+import { Archive, CheckCircle2, CircleAlert, LoaderCircle, RotateCcw, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 
@@ -10,6 +10,7 @@ import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+import { EmptyState } from '@/components/empty-state';
 import { jobRecoveryRowHint } from '@/components/job-recovery/job-recovery-row-hint';
 import {
   DISMISS_MATCHING_CLIENT_MAX_ROUNDS,
@@ -602,9 +603,12 @@ function JobRecoveryItems({
 
   if (items.length === 0) {
     return (
-      <p className="px-1 py-4 text-sm text-fg-muted">
-        Nothing needs attention from the last {String(JOBS_ATTENTION_DAYS)} days.
-      </p>
+      <EmptyState
+        icon={CheckCircle2}
+        size="inset"
+        title="Nothing needs attention"
+        body={`Failed and stuck jobs from the last ${String(JOBS_ATTENTION_DAYS)} days will appear here.`}
+      />
     );
   }
 
@@ -911,7 +915,12 @@ function FinishedJobsArchive({
       ) : query.isError ? (
         <p className="px-1 py-3 text-sm text-destructive">{query.error.message}</p>
       ) : items.length === 0 ? (
-        <p className="px-1 py-3 text-sm text-fg-muted">No finished jobs are currently retained.</p>
+        <EmptyState
+          icon={Archive}
+          size="inset"
+          title="No finished jobs retained"
+          body="Recently finished jobs stay here for a short window so you can confirm they completed."
+        />
       ) : (
         <ul className="border-y border-border">
           {items.map((item) => {

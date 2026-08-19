@@ -42,7 +42,7 @@ describe('TeamMembersSettings', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Members', level: 2 })).toBeTruthy();
-    expect(screen.getByText('No members are available right now.')).toBeTruthy();
+    expect(screen.getByText('No members are available right now')).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Refresh members' }).getAttribute('href')).toBe(
       '/app/team?section=members',
     );

@@ -3,14 +3,14 @@ import { getEnv } from '@timeline/shared/env';
 import { OBJECT_TYPES } from '@timeline/shared/objects/types';
 import { withTeam } from '@timeline/shared/team-scope';
 import { inArray } from 'drizzle-orm';
-import { Plus } from 'lucide-react';
+import { Plus, Shapes } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type * as objects from '@timeline/shared/objects/types';
 import type { Metadata } from 'next';
 
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { ObjectCleanupList } from '@/components/objects/object-cleanup-list';
 import { ObjectCleanupSuggestions } from '@/components/objects/object-cleanup-suggestions';
 import { PageHeader } from '@/components/page-header';
@@ -232,9 +232,14 @@ export default async function ObjectsIndexPage({
       />
 
       {rows.length === 0 ? (
-        <EmptyAction
+        <EmptyState
+          icon={Shapes}
           title={activeFilters ? 'No objects match this filter' : 'No objects yet'}
-          body="Objects are extracted from captured work. You can also create one manually when you already know what should be tracked."
+          body={
+            activeFilters
+              ? 'The object directory is still intact. Clear the filter to see everything tracked for this team.'
+              : 'Objects are extracted from captured work. Create one now if you already know what to track.'
+          }
           href={activeFilters ? '/app/objects' : '/app#capture'}
           action={activeFilters ? 'Clear filter' : 'Capture first note'}
         />

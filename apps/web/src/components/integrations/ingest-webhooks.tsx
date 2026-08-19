@@ -5,11 +5,13 @@ import {
   TIMELINE_EVENT_CLASS_OPTIONS,
   type TimelineEventClass,
 } from '@timeline/shared/event-class';
+import { Webhook } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useReducer } from 'react';
 
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CopyButton } from '@/components/copy-button';
+import { EmptyState } from '@/components/empty-state';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -340,7 +342,12 @@ export function IngestWebhooksUi({ webhooks }: { webhooks: IngestWebhookRow[] })
       ) : null}
 
       {webhooks.length === 0 ? (
-        <p className="border-y border-border py-4 text-sm text-fg-muted">No ingest webhooks yet.</p>
+        <EmptyState
+          icon={Webhook}
+          size="inset"
+          title="No ingest webhooks yet"
+          body="Create a webhook to accept signed events from tools that aren't connected as a native source."
+        />
       ) : (
         <ul className="divide-y divide-border border-y border-border">
           {webhooks.map((webhook) => (

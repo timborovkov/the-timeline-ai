@@ -4,7 +4,7 @@ import {
   documentPresentation,
   truncateFilenameMiddle,
 } from '@timeline/shared/documents/presentation';
-import { Download, EyeOff, FileText, Link2, Trash2 } from 'lucide-react';
+import { Download, EyeOff, FileText, History, Link2, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useId, useState, useTransition } from 'react';
@@ -19,6 +19,7 @@ import {
 import { Breadcrumb } from '@/components/breadcrumb';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DocumentPreview } from '@/components/documents/document-preview';
+import { EmptyState } from '@/components/empty-state';
 import { EvidenceLink } from '@/components/evidence-link';
 import { SectionHeading } from '@/components/section-heading';
 import { StatusBadge } from '@/components/status-badge';
@@ -288,7 +289,15 @@ export function DocumentDetail({
 
       <section className="space-y-3 border-y border-border py-4">
         <SectionHeading>Version history</SectionHeading>
-        <ul className="divide-y divide-border">
+        {versions.length === 0 ? (
+          <EmptyState
+            icon={History}
+            size="inset"
+            title="No versions yet"
+            body="New uploads of this document will appear here as version history."
+          />
+        ) : (
+          <ul className="divide-y divide-border">
           {versions.map((v) => {
             const highlight = requestedVersion === v.version;
             const isCurrent = v.id === currentDocument.currentVersionId;
@@ -351,10 +360,8 @@ export function DocumentDetail({
               </li>
             );
           })}
-          {versions.length === 0 && (
-            <li className="py-6 text-center text-sm text-muted-foreground">No versions yet</li>
-          )}
         </ul>
+        )}
       </section>
       {dialog.node}
     </div>

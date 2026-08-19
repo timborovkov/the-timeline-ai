@@ -96,8 +96,8 @@ describe('ApprovalsClient', () => {
   it('renders the empty approval state', () => {
     const html = renderToStaticMarkup(createElement(ApprovalsClient, { suggestions: [] }));
 
-    expect(html).toContain('No pending approvals');
-    expect(html).toContain('Back to home');
+    expect(html).toContain('No proposals to review');
+    expect(html).toContain('Open timeline');
   });
 
   it('renders filter-specific empty approval copy', () => {
@@ -113,7 +113,7 @@ describe('ApprovalsClient', () => {
 
     expect(html).toContain('No failed approvals');
     expect(html).toContain('Approvals that need a retry or rejection will appear here.');
-    expect(html).not.toContain('No pending approvals');
+    expect(html).not.toContain('No proposals to review');
   });
 
   it('renders actionable pending suggestions with evidence and accept controls', () => {

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { type MouseEvent, useState, useTransition } from 'react';
 
 import { markAllNotificationsReadAction, markNotificationReadAction } from '@/app/actions/objects';
+import { EmptyState } from '@/components/empty-state';
 import { formatNavBadge } from '@/components/nav-items';
 import {
   DropdownMenu,
@@ -132,7 +133,12 @@ export function InboxBell({ unreadCount, notifications }: InboxBellProps) {
         </div>
 
         {notifications.length === 0 ? (
-          <div className="px-3 py-8 text-center text-sm text-fg-muted">No notifications yet.</div>
+          <EmptyState
+            icon={Bell}
+            size="compact"
+            title="No notifications yet"
+            body="Updates appear here when owned objects change or a proposal needs you."
+          />
         ) : (
           <ul className="max-h-[22rem] overflow-y-auto">
             {notifications.map((notification) => {

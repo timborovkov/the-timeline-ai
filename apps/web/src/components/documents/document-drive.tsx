@@ -43,6 +43,7 @@ import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { VirtualList } from '@/components/collections/virtual-list';
+import { EmptyState } from '@/components/empty-state';
 import { EvidenceLink } from '@/components/evidence-link';
 import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { useAppDialog } from '@/components/ui/app-dialog';
@@ -859,22 +860,20 @@ function EmptyDocumentDrive({
   fileInputRef: RefObject<HTMLInputElement | null>;
 }) {
   return (
-    <div className="py-8 text-center">
-      <p className="text-xs text-fg-dim">No documents yet</p>
-      <p className="mx-auto mt-2 max-w-md text-sm text-fg-muted">
-        Upload a document to make contracts, policies, notes, and customer files searchable and
-        citeable.
-      </p>
+    <EmptyState
+      icon={FileText}
+      title="No documents yet"
+      body="Upload a contract, policy, note, or customer file to make it searchable and citeable."
+    >
       <Button
         type="button"
         variant="outline"
         size="sm"
         onClick={() => fileInputRef.current?.click()}
-        className="mt-4"
       >
         Upload first document
       </Button>
-    </div>
+    </EmptyState>
   );
 }
 

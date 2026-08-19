@@ -8,11 +8,13 @@ import {
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { Hash, Users } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { revokeLinkTokenAction, unbindChatAction } from '@/app/actions/telegram';
+import { EmptyState } from '@/components/empty-state';
 import { HistoryBackLink } from '@/components/history-back-link';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
@@ -192,7 +194,12 @@ export default async function TelegramSettingsPage() {
 
       <SettingsSection title="Bound group chats">
         {bindings.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No groups bound yet.</p>
+          <EmptyState
+            icon={Hash}
+            size="inset"
+            title="No groups bound yet"
+            body="Generate a group token and run it in the Telegram chat you want Timeline to capture."
+          />
         ) : (
           <ul className="divide-y">
             {bindings.map((b) => (
@@ -238,7 +245,12 @@ export default async function TelegramSettingsPage() {
 
       <SettingsSection title="Linked Telegram users">
         {linkedTgUsers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No Telegram users linked yet.</p>
+          <EmptyState
+            icon={Users}
+            size="inset"
+            title="No Telegram users linked yet"
+            body="People appear here after they complete a personal Telegram link for this team."
+          />
         ) : (
           <ul className="divide-y">
             {linkedTgUsers.map((u) => {

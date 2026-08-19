@@ -58,8 +58,9 @@ describe('McpShareUi', () => {
 
     expect(screen.getByText('Team-visible only')).toBeTruthy();
     expect(screen.getByText('Private and specific-user events stay out.')).toBeTruthy();
+    expect(screen.getByText('No active keys')).toBeTruthy();
     expect(
-      screen.getByText(/No active keys\. Create one to let an external agent read/),
+      screen.getByText(/Create a key to let an external agent read this team's timeline/),
     ).toBeTruthy();
     expect(screen.getByText(/Bearer <create a key first>/)).toBeTruthy();
 

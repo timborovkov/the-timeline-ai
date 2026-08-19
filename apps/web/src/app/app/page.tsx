@@ -259,6 +259,11 @@ export default async function HomeDashboardPage() {
           live={false}
           timezone={calendarSettings.defaultTimezone}
           emptyLabel="No recent moments yet"
+          emptyAction={{
+            href: '/app/timeline',
+            label: 'Open timeline',
+            body: 'Moments will appear here as the timeline collects work from capture and connected sources.',
+          }}
         />
         <p>
           <Link

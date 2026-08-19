@@ -4,6 +4,7 @@ import { ArrowRight, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { EmptyState } from '@/components/empty-state';
 import { HELP_PAGES } from '@/lib/help-content';
 
 function searchableText(page: (typeof HELP_PAGES)[number]): string {
@@ -97,19 +98,22 @@ export function HelpGuideDirectory() {
             </Link>
           ))
         ) : (
-          <div className="py-10 text-center">
-            <p className="text-base font-semibold text-fg">No guide matches “{query.trim()}”</p>
-            <p className="mt-1 text-sm text-fg-muted">Try a broader term or contact support.</p>
+          <EmptyState
+            icon={Search}
+            size="inset"
+            title={`No guide matches “${query.trim()}”`}
+            body="Try a broader term, or clear the search to see every guide."
+          >
             <button
               type="button"
               onClick={() => {
                 setQuery('');
               }}
-              className="mt-4 rounded-sm border border-border px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="rounded-sm border border-border px-3 py-2 text-sm font-medium text-fg transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               Clear search
             </button>
-          </div>
+          </EmptyState>
         )}
       </div>
     </section>

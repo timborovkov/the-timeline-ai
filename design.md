@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.17 · Object and task detail rails (2026-08-19). Replaces v3.16 Board kanban toast-only metadata.
+**Version:** v3.18 · Shared collection empty states (2026-08-19). Replaces v3.17 Object and task detail rails.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -252,6 +252,57 @@ scroll with virtualization, evidence links, and URL state remain the interaction
 contract. Collection inventories use `24 of 847` when a filter is on and `847`
 when it is not, and only when search or labeled page metadata gives that number
 a unit. Timeline, Work → Pinned, and Approvals have no toolbar inventory chip.
+
+### Empty states
+
+Collection indexes, queues, directories, and side lists use one shared
+`EmptyState` (`apps/web/src/components/empty-state.tsx`). Do not invent a
+second empty layout. The composition is always:
+
+1. One quiet Lucide icon at 28px (20px in compact), `text-fg-dim`, 1.5 stroke.
+2. A sentence-case title in 14px Switzer semibold.
+3. One explanation in 14px `text-fg-muted`, max 28rem, 1.5 line-height.
+4. Optional actions. Zero, one, or two controls. Never a dummy
+   “Back to home” just to fill the slot.
+
+Sizes:
+
+- `page` — full collection canvas. Hairline top/bottom borders, 64px vertical
+  padding. Timeline, objects, tasks, boards, approvals, inbox, documents.
+- `inset` — inside a `CollectionGroup`, board lane, or settings subsection.
+  No extra outer border. 40px vertical padding.
+- `compact` — popovers, chat session rails, and other dense chrome. 32px
+  padding and the smaller icon.
+
+Actions:
+
+- If the person can create the missing thing, show that control. Lime
+  `Button` only when this empty state is the view’s sole primary create
+  (for example Boards hides the header create when the list is empty).
+  If the header already has the create control, the empty-state control is
+  outline and may point at the next-best recovery (capture, connect, clear
+  filters).
+- Filter-empty states recover with “Clear filters” / “Clear search”.
+- Waiting states (approvals, notifications, captured files, reconciliation)
+  explain what will arrive. They may offer an outline path such as
+  “Open timeline”. They must not invent a create action the person cannot
+  perform.
+
+Copy:
+
+- Titles stay factual: `No boards yet`, `No proposals to review`,
+  `No tasks match this filter`. No exclamation marks and no
+  “Nothing here yet”.
+- Body is one or two short sentences: what this surface is, what happens
+  next, and what the person can do.
+- Distinguish an empty corpus from a filter miss. Filters never pretend
+  the archive is gone.
+- Object and task detail still omit empty memory, related-context, and
+  notes cards. Digest empty groups stay omitted. Infinite-scroll
+  “No more matching …” bound labels are terminators, not empty states.
+  Auth “No account yet?”, the Ask composer prompt, Home attention
+  “You're caught up”, and combobox/command-palette “no matches” copy
+  are not collection empty states.
 
 ### SectionHeading
 
@@ -929,7 +980,8 @@ the control with recovery copy. Do not invent a second clipboard helper.
   collection rows, not card placeholders.
 - Errors retain route context, explain the failure, and offer a specific retry.
   Mutation failures also toast; they do not rely on a scrolled-away page banner.
-- Empty states use sentence case, one explanation, and one action.
+- Empty states use shared `EmptyState`: sentence case, one explanation, a quiet
+  dim icon, and an action only when the person can create or recover.
 - All screens work at 320px, tablet, desktop, dark mode, and 200% zoom without
   document-level horizontal scrolling.
 - Authenticated-product motion is minimal-functional: 80ms hover, 120ms overlay
@@ -1046,4 +1098,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
-| 2026-08-19 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel after merging collection chrome, floating Ask, and `notifyAction`. |
+| 2026-08-19 | Shared collection empty states | Replaces one-off empty copy and ad-hoc wells with `EmptyState`: quiet dim icon, title, explanation, and create/recover actions only when the person can act. |
