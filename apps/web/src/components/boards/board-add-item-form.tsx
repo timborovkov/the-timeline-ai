@@ -32,7 +32,7 @@ interface State {
   mode: 'existing' | 'new';
   query: string;
   existingType: objects.ObjectType | 'all';
-  entityId: string;
+  selectedObject: objects.ObjectRow | null;
   type: objects.ObjectType;
   canonicalName: string;
 }
@@ -41,7 +41,7 @@ type Action =
   | { type: 'mode'; mode: State['mode'] }
   | { type: 'query'; query: string }
   | { type: 'existingType'; existingType: State['existingType'] }
-  | { type: 'entityId'; entityId: string }
+  | { type: 'selectExisting'; object: objects.ObjectRow | null }
   | { type: 'objectType'; objectType: objects.ObjectType }
   | { type: 'canonicalName'; canonicalName: string };
 
@@ -71,8 +71,10 @@ function useAddableObjectSearch({
   enabled: boolean;
   query: string;
   type: objects.ObjectType | 'all';
-}): { results: objects.ObjectRow[]; status: RemoteSearchStatus } {
-  const key = addableSearchKey(enabled, query, type);
+}): { results: objects.ObjectRow[]; status: RemoteSearchStatus; retry: () => void } {
+  const searchKey = addableSearchKey(enabled, query, type);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const key = searchKey ? `${searchKey}#${retryNonce}` : null;
   const [fetched, setFetched] = useState<{
     key: string;
     results: objects.ObjectRow[];
@@ -105,11 +107,19 @@ function useAddableObjectSearch({
     };
   }, [key, query, type]);
 
-  if (!key) return { results: [], status: 'idle' };
-  if (fetched?.key === key) {
-    return { results: fetched.results, status: fetched.ok ? 'success' : 'error' };
+  function retry(): void {
+    setRetryNonce((current) => current + 1);
   }
-  return { results: [], status: 'loading' };
+
+  if (!key) return { results: [], status: 'idle', retry };
+  if (fetched?.key === key) {
+    return {
+      results: fetched.results,
+      status: fetched.ok ? 'success' : 'error',
+      retry,
+    };
+  }
+  return { results: [], status: 'loading', retry };
 }
 
 function reducer(state: State, action: Action): State {
@@ -119,9 +129,9 @@ function reducer(state: State, action: Action): State {
     case 'query':
       return { ...state, query: action.query };
     case 'existingType':
-      return { ...state, existingType: action.existingType, entityId: '' };
-    case 'entityId':
-      return { ...state, entityId: action.entityId };
+      return { ...state, existingType: action.existingType, selectedObject: null };
+    case 'selectExisting':
+      return { ...state, selectedObject: action.object };
     case 'objectType':
       return { ...state, type: action.objectType };
     case 'canonicalName':
@@ -220,8 +230,8 @@ function ExistingObjectPicker({
   selectableCandidates,
   query,
   remoteStatus,
-  entityId,
   selectedCandidate,
+  onRetrySearch,
   dispatch,
 }: {
   candidates: objects.ObjectRow[];
@@ -230,8 +240,8 @@ function ExistingObjectPicker({
   selectableCandidates: objects.ObjectRow[];
   query: string;
   remoteStatus: RemoteSearchStatus;
-  entityId: string;
   selectedCandidate: objects.ObjectRow | null;
+  onRetrySearch: () => void;
   dispatch: Dispatch<Action>;
 }) {
   return (
@@ -273,6 +283,7 @@ function ExistingObjectPicker({
           {selectableCandidates.length}
           {remoteStatus === 'idle' ? ` / ${candidates.length}` : ''}
           {remoteStatus === 'loading' ? ' · Searching…' : ''}
+          {remoteStatus === 'error' ? ' · Couldn’t load' : ''}
         </output>
       </div>
 
@@ -294,8 +305,9 @@ function ExistingObjectPicker({
 
       <CandidateList
         candidates={selectableCandidates}
-        entityId={entityId}
-        loading={remoteStatus === 'loading'}
+        selectedId={selectedCandidate?.id ?? ''}
+        remoteStatus={remoteStatus}
+        onRetry={onRetrySearch}
         dispatch={dispatch}
       />
 
@@ -305,7 +317,7 @@ function ExistingObjectPicker({
           <button
             type="button"
             onClick={() => {
-              dispatch({ type: 'entityId', entityId: '' });
+              dispatch({ type: 'selectExisting', object: null });
             }}
             className="inline-flex items-center gap-2 rounded-sm border border-border bg-surface px-2 py-1 text-fg transition-colors hover:bg-surface-2"
           >
@@ -348,24 +360,26 @@ function ExistingTypeButton({
 
 function CandidateList({
   candidates,
-  entityId,
-  loading,
+  selectedId,
+  remoteStatus,
+  onRetry,
   dispatch,
 }: {
   candidates: objects.ObjectRow[];
-  entityId: string;
-  loading: boolean;
+  selectedId: string;
+  remoteStatus: RemoteSearchStatus;
+  onRetry: () => void;
   dispatch: Dispatch<Action>;
 }) {
   return (
     <div
       className="max-h-56 overflow-y-auto rounded-sm border border-border bg-bg"
-      aria-busy={loading}
+      aria-busy={remoteStatus === 'loading'}
     >
       {candidates.length > 0 ? (
         <ul className="divide-y divide-border">
           {candidates.map((row) => {
-            const selected = row.id === entityId;
+            const selected = row.id === selectedId;
             const visibleAliases = row.aliases
               .filter((alias) => !isInternalIdentifier(alias))
               .slice(0, 2);
@@ -374,7 +388,7 @@ function CandidateList({
                 <button
                   type="button"
                   onClick={() => {
-                    dispatch({ type: 'entityId', entityId: row.id });
+                    dispatch({ type: 'selectExisting', object: row });
                   }}
                   aria-pressed={selected}
                   className={cn(
@@ -403,9 +417,20 @@ function CandidateList({
             );
           })}
         </ul>
+      ) : remoteStatus === 'error' ? (
+        <div className="space-y-2 px-3 py-4" role="alert">
+          <p className="text-sm text-fg-muted">Couldn’t load existing objects.</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-sm border border-border px-2 py-1 text-xs font-medium text-fg hover:bg-surface-2"
+          >
+            Retry
+          </button>
+        </div>
       ) : (
         <p className="px-3 py-4 text-sm text-fg-muted">
-          {loading ? 'Searching…' : 'No existing objects match this search.'}
+          {remoteStatus === 'loading' ? 'Searching…' : 'No existing objects match this search.'}
         </p>
       )}
     </div>
@@ -471,7 +496,7 @@ export function BoardAddItemForm({
     mode: 'existing',
     query: '',
     existingType: 'all',
-    entityId: '',
+    selectedObject: null,
     type: recommendedTypes[0] ?? 'task',
     canonicalName: '',
   });
@@ -479,7 +504,11 @@ export function BoardAddItemForm({
     () => boardAddItemTypeOptions(recommendedTypes),
     [recommendedTypes],
   );
-  const { results: remoteCandidates, status: remoteStatus } = useAddableObjectSearch({
+  const {
+    results: remoteCandidates,
+    status: remoteStatus,
+    retry: retrySearch,
+  } = useAddableObjectSearch({
     enabled: expanded && state.mode === 'existing',
     query: state.query,
     type: state.existingType,
@@ -495,10 +524,7 @@ export function BoardAddItemForm({
       (a, b) => Number(typeRank.has(b.type)) - Number(typeRank.has(a.type)),
     );
   }, [candidates, recommendedTypes, remoteCandidates, state.existingType, state.query]);
-  const selectedCandidate =
-    candidates.find((row) => row.id === state.entityId) ??
-    remoteCandidates.find((row) => row.id === state.entityId) ??
-    null;
+  const selectedCandidate = state.selectedObject;
 
   function submit(): void {
     const object =
@@ -523,7 +549,7 @@ export function BoardAddItemForm({
             state.mode === 'existing'
               ? await addBoardItemAction({
                   boardId,
-                  entityId: state.entityId,
+                  entityId: object.id,
                   laneId: defaultLaneId,
                 })
               : await quickCreateBoardItemAction({
@@ -552,14 +578,14 @@ export function BoardAddItemForm({
       onItemAdded?.(result.item, optimisticItem.id);
       setExpanded(false);
       dispatch({ type: 'query', query: '' });
-      dispatch({ type: 'entityId', entityId: '' });
+      dispatch({ type: 'selectExisting', object: null });
       dispatch({ type: 'canonicalName', canonicalName: '' });
     });
   }
 
   const disabled =
     pending ||
-    (state.mode === 'existing' ? !state.entityId : !state.canonicalName.trim() || !state.type);
+    (state.mode === 'existing' ? !selectedCandidate : !state.canonicalName.trim() || !state.type);
 
   return (
     <Popover open={expanded} onOpenChange={setExpanded}>
@@ -593,8 +619,8 @@ export function BoardAddItemForm({
             selectableCandidates={selectableCandidates}
             query={state.query}
             remoteStatus={remoteStatus}
-            entityId={state.entityId}
             selectedCandidate={selectedCandidate}
+            onRetrySearch={retrySearch}
             dispatch={dispatch}
           />
         ) : (
