@@ -39,7 +39,8 @@ import {
 import { ApprovalsClient } from '@/components/approvals/approvals-client';
 import { ArtifactReferenceChip } from '@/components/artifact-reference-chip';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
-import { CollectionStatus, priorityTone } from '@/components/collections/collection-status';
+import { CollectionStatus } from '@/components/collections/collection-status';
+import { priorityTone } from '@/components/collections/collection-status-tone';
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
