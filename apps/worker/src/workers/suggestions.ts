@@ -2007,8 +2007,13 @@ function resolveRelationshipNameEndpoint(
   const resolved = resolveName(name);
   if (resolved?.startsWith('entity:')) {
     payload[idKey] = resolved.slice('entity:'.length);
-    delete payload[nameKey];
-    delete payload[refKey];
+    if (side === 'from') {
+      delete payload.fromName;
+      delete payload.fromRef;
+    } else {
+      delete payload.toName;
+      delete payload.toRef;
+    }
     return;
   }
   const sibling = siblingCreateForName(bundle, name);
@@ -2023,8 +2028,13 @@ function resolveRelationshipNameEndpoint(
     sibling.proposedPayload = { ...sibling.proposedPayload, localRef: siblingRef };
   }
   payload[refKey] = siblingRef;
-  delete payload[nameKey];
-  delete payload[idKey];
+  if (side === 'from') {
+    delete payload.fromName;
+    delete payload.fromEntityId;
+  } else {
+    delete payload.toName;
+    delete payload.toEntityId;
+  }
 }
 
 function repairRelationshipBundle(

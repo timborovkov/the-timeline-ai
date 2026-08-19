@@ -1071,7 +1071,6 @@ function normalizeLifecyclePayload(
   const payload = normalizeProposalPayload({
     operation: item.operation,
     targetKind: item.targetKind,
-    title: item.title,
     proposedPayload: item.proposedPayload,
   });
   if (typeof payload.ownerUserId === 'string' && UUID_RE.test(payload.ownerUserId)) {

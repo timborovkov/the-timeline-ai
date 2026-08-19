@@ -81,10 +81,6 @@ const CALENDAR_ALIAS_KEYS = [
   ...CALENDAR_END_DATE_ALIASES,
   'all_day',
 ] as const;
-const MEMBER_ID_FIELDS = [
-  ['ownerUserId', 'ownerName'],
-  ['assigneeUserId', 'assigneeName'],
-] as const;
 const RELATIONSHIP_FROM_ALIASES = [
   'from',
   'from_entity_id',
@@ -106,8 +102,16 @@ const RELATIONSHIP_ALIAS_KEYS = [...RELATIONSHIP_FROM_ALIASES, ...RELATIONSHIP_T
 export interface ProposalPayloadItem {
   operation?: string;
   targetKind: string;
-  title?: string | null;
+  title?: string;
   proposedPayload: unknown;
+}
+
+function omitKeys(
+  payload: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const keySet = new Set(keys);
+  return Object.fromEntries(Object.entries(payload).filter(([key]) => !keySet.has(key)));
 }
 
 function recordFromUnknown(value: unknown): Record<string, unknown> {
@@ -122,7 +126,7 @@ function trimmedString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isUuid(value: unknown): value is string {
+function isUuid(value: unknown): boolean {
   return typeof value === 'string' && UUID_RE.test(value);
 }
 
@@ -173,9 +177,13 @@ function calendarInstantOrDate(value: unknown): { instant?: string; date?: strin
   return instant ? { instant } : {};
 }
 
+function isPresent(value: unknown): boolean {
+  return value !== null && value !== undefined && value !== '';
+}
+
 function firstPresent(payload: Record<string, unknown>, keys: readonly string[]): unknown {
   for (const key of keys) {
-    if (Object.hasOwn(payload, key) && payload[key] != null && payload[key] !== '') {
+    if (Object.hasOwn(payload, key) && isPresent(payload[key])) {
       return payload[key];
     }
   }
@@ -218,88 +226,71 @@ export function normalizeCalendarProposalAliases(
   if (!Object.hasOwn(normalized, 'allDay') && typeof normalized.all_day === 'boolean') {
     normalized.allDay = normalized.all_day;
   }
-  for (const key of CALENDAR_ALIAS_KEYS) delete normalized[key];
-  return normalized;
+  return omitKeys(normalized, CALENDAR_ALIAS_KEYS);
 }
 
 export function coerceMemberIdFields(payload: Record<string, unknown>): Record<string, unknown> {
   const normalized = { ...payload };
-  for (const [idKey, nameKey] of MEMBER_ID_FIELDS) {
-    const idValue = normalized[idKey];
-    if (isUuid(idValue) || idValue === null || idValue === undefined || idValue === '') continue;
-    const nameFromId = trimmedString(idValue);
-    delete normalized[idKey];
-    if (nameFromId && trimmedString(normalized[nameKey]) === null) {
-      normalized[nameKey] = nameFromId;
+  if (
+    !isUuid(normalized.ownerUserId) &&
+    normalized.ownerUserId !== null &&
+    normalized.ownerUserId !== undefined &&
+    normalized.ownerUserId !== ''
+  ) {
+    if (trimmedString(normalized.ownerName) === null) {
+      const nameFromId = trimmedString(normalized.ownerUserId);
+      if (nameFromId) normalized.ownerName = nameFromId;
     }
+    delete normalized.ownerUserId;
+  }
+  if (
+    !isUuid(normalized.assigneeUserId) &&
+    normalized.assigneeUserId !== null &&
+    normalized.assigneeUserId !== undefined &&
+    normalized.assigneeUserId !== ''
+  ) {
+    if (trimmedString(normalized.assigneeName) === null) {
+      const nameFromId = trimmedString(normalized.assigneeUserId);
+      if (nameFromId) normalized.assigneeName = nameFromId;
+    }
+    delete normalized.assigneeUserId;
   }
   return normalized;
 }
 
-function takeAliasedEndpoint(
+function pickRelationshipEndpoint(
   payload: Record<string, unknown>,
   aliases: readonly string[],
-): unknown {
-  for (const alias of aliases) {
-    if (Object.hasOwn(payload, alias) && payload[alias] != null && payload[alias] !== '') {
-      return payload[alias];
-    }
-  }
-  return undefined;
-}
-
-function assignRelationshipEndpoint(
-  payload: Record<string, unknown>,
-  side: 'from' | 'to',
-  aliases: readonly string[],
-): void {
-  const idKey = `${side}EntityId`;
-  const refKey = `${side}Ref`;
-  const nameKey = `${side}Name`;
-  if (
-    payload[idKey] == null &&
-    payload[refKey] == null &&
-    trimmedString(payload[nameKey]) === null
-  ) {
-    const aliased = takeAliasedEndpoint(payload, aliases);
-    if (aliased !== undefined) payload[idKey] = aliased;
+  idValue: unknown,
+  refValue: unknown,
+  nameValue: unknown,
+): { id?: string; ref?: string; name?: string } {
+  let id = idValue;
+  let ref = refValue;
+  let name = nameValue;
+  if (!isPresent(id) && !isPresent(ref) && trimmedString(name) === null) {
+    const aliased = firstPresent(payload, aliases);
+    if (aliased !== undefined) id = aliased;
   }
 
-  const idValue = payload[idKey];
-  if (typeof idValue === 'string' && !isUuid(idValue)) {
-    const text = idValue.trim();
+  if (typeof id === 'string' && !isUuid(id)) {
+    const text = id.trim();
     if (looksLikeLocalRef(text)) {
-      if (trimmedString(payload[refKey]) === null) payload[refKey] = localRefSlug(text);
-    } else if (trimmedString(payload[nameKey]) === null && text) {
-      payload[nameKey] = text;
+      if (trimmedString(ref) === null) ref = localRefSlug(text);
+    } else if (trimmedString(name) === null && text) {
+      name = text;
     }
-    delete payload[idKey];
-  } else if (idValue != null && idValue !== '' && !isUuid(idValue)) {
-    delete payload[idKey];
+    id = undefined;
+  } else if (isPresent(id) && !isUuid(id)) {
+    id = undefined;
   }
 
-  if (isUuid(payload[idKey])) {
-    delete payload[refKey];
-    delete payload[nameKey];
-    return;
-  }
-  const ref = trimmedString(payload[refKey]);
-  const slug = ref ? localRefSlug(ref) : null;
-  if (slug) {
-    payload[refKey] = slug;
-    delete payload[idKey];
-    delete payload[nameKey];
-    return;
-  }
-  delete payload[refKey];
-  const name = trimmedString(payload[nameKey]);
-  if (name) {
-    payload[nameKey] = name;
-    delete payload[idKey];
-    return;
-  }
-  delete payload[idKey];
-  delete payload[nameKey];
+  if (isUuid(id) && typeof id === 'string') return { id };
+  const slug = trimmedString(ref) ? localRefSlug(trimmedString(ref) ?? '') : null;
+  if (slug) return { ref: slug };
+  const endpointName = trimmedString(name);
+  if (endpointName) return { name: endpointName };
+  return {};
 }
 
 export function normalizeRelationshipKind(value: unknown): RelationshipKind {
@@ -314,21 +305,47 @@ export function normalizeRelationshipKind(value: unknown): RelationshipKind {
 export function normalizeRelationshipProposalPayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  const normalized = { ...payload };
-  assignRelationshipEndpoint(normalized, 'from', RELATIONSHIP_FROM_ALIASES);
-  assignRelationshipEndpoint(normalized, 'to', RELATIONSHIP_TO_ALIASES);
-  normalized.kind = normalizeRelationshipKind(normalized.kind);
-  for (const key of RELATIONSHIP_ALIAS_KEYS) delete normalized[key];
+  const from = pickRelationshipEndpoint(
+    payload,
+    RELATIONSHIP_FROM_ALIASES,
+    payload.fromEntityId,
+    payload.fromRef,
+    payload.fromName,
+  );
+  const to = pickRelationshipEndpoint(
+    payload,
+    RELATIONSHIP_TO_ALIASES,
+    payload.toEntityId,
+    payload.toRef,
+    payload.toName,
+  );
+  const canonical = omitKeys(payload, [
+    ...RELATIONSHIP_ALIAS_KEYS,
+    'fromEntityId',
+    'fromRef',
+    'fromName',
+    'toEntityId',
+    'toRef',
+    'toName',
+    'kind',
+  ]);
+  canonical.kind = normalizeRelationshipKind(payload.kind);
+  if (from.id) canonical.fromEntityId = from.id;
+  else if (from.ref) canonical.fromRef = from.ref;
+  else if (from.name) canonical.fromName = from.name;
+  if (to.id) canonical.toEntityId = to.id;
+  else if (to.ref) canonical.toRef = to.ref;
+  else if (to.name) canonical.toName = to.name;
   if (
-    normalized.kind === 'related' &&
-    isUuid(normalized.fromEntityId) &&
-    isUuid(normalized.toEntityId)
+    canonical.kind === 'related' &&
+    isUuid(canonical.fromEntityId) &&
+    isUuid(canonical.toEntityId)
   ) {
-    const [fromEntityId, toEntityId] = [normalized.fromEntityId, normalized.toEntityId].sort();
-    normalized.fromEntityId = fromEntityId;
-    normalized.toEntityId = toEntityId;
+    const [fromEntityId, toEntityId] = [canonical.fromEntityId, canonical.toEntityId].sort();
+    canonical.fromEntityId = fromEntityId;
+    canonical.toEntityId = toEntityId;
   }
-  return normalized;
+  return canonical;
 }
 
 export function relationshipEndpointCount(
@@ -362,7 +379,7 @@ export function canonicalProposalPayloadIssues(item: ProposalPayloadItem): strin
     'parentObjectId',
   ]) {
     const value = payload[key];
-    if (value == null || value === '') continue;
+    if (value === null || value === undefined || value === '') continue;
     if (!isUuid(value)) {
       issues.push(`${key} is not a UUID`);
     }
@@ -377,7 +394,7 @@ export function canonicalProposalPayloadIssues(item: ProposalPayloadItem): strin
       ...CALENDAR_END_ALIASES,
       ...CALENDAR_START_DATE_ALIASES,
       ...CALENDAR_END_DATE_ALIASES,
-    ].some((key) => payload[key] != null && payload[key] !== '');
+    ].some((key) => isPresent(payload[key]));
     if (hasTimeHint) {
       if (typeof payload.startAt !== 'string' && typeof payload.startDate !== 'string') {
         issues.push('calendar create is missing startAt/startDate');

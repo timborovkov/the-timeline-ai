@@ -784,15 +784,15 @@ maybeDescribe('live messy proposal-engine eval', () => {
       sourceMetadata: {},
     });
     await runEventLocal(db, duplicateId);
-    const companyCreates = (await pendingItems(db)).filter(
-      (item) =>
-        item.operation === 'create' &&
-        item.targetKind === 'object' &&
-        item.proposedPayload.type === 'company' &&
-        String(item.proposedPayload.canonicalName ?? item.title)
-          .toLowerCase()
-          .includes('acme'),
-    );
+    const companyCreates = (await pendingItems(db)).filter((item) => {
+      if (item.operation !== 'create' || item.targetKind !== 'object') return false;
+      if (item.proposedPayload.type !== 'company') return false;
+      const name =
+        typeof item.proposedPayload.canonicalName === 'string'
+          ? item.proposedPayload.canonicalName
+          : item.title;
+      return name.toLowerCase().includes('acme');
+    });
     expect(companyCreates).toEqual([]);
   }, 360_000);
 });
