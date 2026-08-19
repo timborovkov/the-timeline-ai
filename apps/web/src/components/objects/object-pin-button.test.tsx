@@ -12,6 +12,9 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pin,
   unpinTargetAction: fakes.unpin,
 }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 const { ObjectPinButton } = await import('@/components/objects/object-pin-button');
 
@@ -28,15 +31,15 @@ describe('ObjectPinButton', () => {
   it('pins and unpins the same object', async () => {
     render(<ObjectPinButton objectId="object-1" initialPinned={false} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Pin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pin to Home' }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Unpin' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Unpin from Home' })).toBeTruthy();
     });
     expect(fakes.pin).toHaveBeenCalledWith({ kind: 'object', key: 'object-1' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Unpin' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin from Home' }));
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Pin' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Pin to Home' })).toBeTruthy();
     });
     expect(fakes.unpin).toHaveBeenCalledWith({ kind: 'object', key: 'object-1' });
   });

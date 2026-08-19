@@ -1,82 +1,96 @@
 'use client';
 
-import { Pin, PinOff } from 'lucide-react';
+import { Pin } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
 
+import { pinControlLabel, pinNotifyCopy } from '@/components/pins/pin-copy';
+import { mutatePin } from '@/components/pins/pin-mutate';
+import { ItemIconButton } from '@/components/ui/item-icon-button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
-
-async function mutatePin(target: PinTargetRef, pinned: boolean) {
-  const { pinTargetAction, unpinTargetAction } = await import('@/app/actions/pins');
-  return pinned ? pinTargetAction(target) : unpinTargetAction(target);
-}
 
 export function PinButton({
   target,
   initialPinned,
-  compact = false,
-  icon = false,
 }: {
   target: PinTargetRef;
   initialPinned: boolean;
-  compact?: boolean;
-  icon?: boolean;
+}) {
+  return (
+    <PinButtonControl
+      key={`${target.kind}:${target.key}:${String(initialPinned)}`}
+      target={target}
+      initialPinned={initialPinned}
+    />
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- keyed inner control remounts when the server pin state changes
+function PinButtonControl({
+  target,
+  initialPinned,
+}: {
+  target: PinTargetRef;
+  initialPinned: boolean;
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
+  const router = useRouter();
 
   function toggle(): void {
     const nextPinned = !pinned;
     const previous = pinned;
+    const copy = pinNotifyCopy(nextPinned);
     setPinned(nextPinned);
     setPending(true);
     void notifyAction({
       id: `pin:${target.kind}:${target.key}`,
-      loading: nextPinned ? 'Pinning…' : 'Unpinning…',
-      success: nextPinned ? 'Pinned' : 'Unpinned',
-      error: nextPinned ? 'Couldn’t pin item' : 'Couldn’t unpin item',
+      loading: copy.loading,
+      success: copy.success,
+      error: copy.error,
       run: () => mutatePin(target, nextPinned),
       undo: {
         run: async () => {
           setPinned(previous);
-          return mutatePin(target, previous);
+          const result = await mutatePin(target, previous);
+          if (!result.error) router.refresh();
+          return result;
         },
-        success: previous ? 'Pinned' : 'Unpinned',
+        success: pinNotifyCopy(previous).success,
       },
     }).then((result) => {
       if (result.error) setPinned(previous);
+      else router.refresh();
       setPending(false);
     });
   }
-  const Icon = pinned ? PinOff : Pin;
 
-  const label = pending ? `Saving ${pinned ? 'pin' : 'unpin'}…` : pinned ? 'Unpin' : 'Pin';
+  const label = pinControlLabel(pinned, pending);
 
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={pinned}
-      aria-busy={pending}
-      disabled={pending}
-      onClick={toggle}
-      className={cn(
-        'inline-flex items-center rounded-sm text-xs font-medium transition-colors motion-reduce:transition-none disabled:cursor-not-allowed disabled:opacity-50',
-        icon
-          ? 'size-8 justify-center text-fg-muted hover:bg-surface-2 hover:text-fg'
-          : 'h-9 gap-2 border px-3',
-        !icon &&
-          (pinned
-            ? 'border-signal/40 bg-signal-soft text-signal hover:bg-signal/20'
-            : 'border-border bg-bg text-fg-muted hover:border-signal/50 hover:text-signal'),
-        !icon && compact && 'h-8 px-2',
-        icon && pinned && 'text-signal hover:bg-signal-soft',
-      )}
-    >
-      <Icon aria-hidden="true" className="size-3.5" />
-      {icon ? null : pinned ? 'Unpin' : 'Pin'}
-    </button>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <ItemIconButton
+            label={label}
+            title={undefined}
+            aria-pressed={pinned}
+            aria-busy={pending}
+            disabled={pending}
+            onClick={toggle}
+            className={cn(pinned && 'text-signal hover:bg-signal-soft hover:text-signal')}
+          >
+            <Pin aria-hidden="true" className={cn('size-3.5', pinned && 'fill-current')} />
+          </ItemIconButton>
+        </TooltipTrigger>
+        <TooltipContent className="font-sans text-xs font-normal tracking-normal">
+          {label}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

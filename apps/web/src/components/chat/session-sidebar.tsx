@@ -89,7 +89,7 @@ function SessionSummary({ session }: { session: SessionEntry }) {
       </span>
       {session.pinnedEntityName && !session.title && (
         <span className="block truncate text-[10px] text-fg-dim">
-          Pinned · {session.pinnedEntityName}
+          About {session.pinnedEntityName}
         </span>
       )}
       <SessionAge updatedAt={session.updatedAt} />

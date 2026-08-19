@@ -146,4 +146,35 @@ describe('PinnedWorkspaceManager', () => {
     expect(screen.queryByText('1')).toBeNull();
     expect(document.querySelector('output')).toBeNull();
   });
+
+  it('uses the shared empty state when there are no pins', () => {
+    render(<PinnedWorkspaceManager initialPage={{ items: [], nextCursor: null }} filter="all" />);
+
+    expect(screen.getByText('No pins yet')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Pin an item from its detail page or overflow menu to keep it close on Home and Work.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('replaces loaded pins when the server filter page changes', () => {
+    const { rerender } = render(
+      <PinnedWorkspaceManager
+        initialPage={{ items: [pin(FIRST_ID, 'Alpha', '0')], nextCursor: null }}
+        filter="all"
+      />,
+    );
+    expect(screen.getByText('Alpha')).toBeTruthy();
+
+    rerender(
+      <PinnedWorkspaceManager
+        initialPage={{ items: [pin(SECOND_ID, 'Beta', '1024')], nextCursor: null }}
+        filter="objects"
+      />,
+    );
+    expect(screen.queryByText('Alpha')).toBeNull();
+    expect(screen.getByText('Beta')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reorder' })).toBeNull();
+  });
 });

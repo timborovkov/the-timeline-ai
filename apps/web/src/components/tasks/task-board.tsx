@@ -2113,7 +2113,7 @@ function TaskDetailPanel({
           {displayText(title)}
         </h2>
         <div className="flex shrink-0 items-center">
-          <ObjectPinButton key={task.id} objectId={task.id} initialPinned={initialPinned} icon />
+          <ObjectPinButton key={task.id} objectId={task.id} initialPinned={initialPinned} />
           <Link
             href={closeHref}
             aria-label="Close"

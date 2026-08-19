@@ -11,8 +11,11 @@ import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
+import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { WorkQueueRow } from '@/components/work/work-queue-row';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -77,14 +80,14 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
   const calendarSettings = await scope.calendar.getCalendarSettings();
   const timezone = calendarSettings.defaultTimezone;
   const dueBoundaries = workspaceDueDateBoundaries(timezone, now);
-  const [attention, boardItems, queueObjects, pinnedBoards, boards, members] = await Promise.all([
+  const [attention, boardItems, queueObjects, pinnedPage, boards, members] = await Promise.all([
     getWorkAttentionSummary(scope, now, timezone),
     scope.boards.listWorkQueueItems({
       dueDateRange: { timezone, to: dueBoundaries.dueSoonEnd },
       limit: 100,
     }),
     listWorkQueueObjects(scope.objects, { userId: session.user.id, now, timezone }),
-    scope.boards.listPinnedBoards({ timezone, now }),
+    scope.pins.list({ limit: 6 }),
     scope.boards.listBoards(),
     scope.timeline.listMembers(),
   ]);
@@ -100,7 +103,13 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       }),
     ]),
   ).slice(0, QUEUE_LIMIT);
-  const boardModules = uniqueBoards([...pinnedBoards, ...boards]).slice(0, 6);
+  const queuePinState = await scope.pins.isPinnedMany(
+    queue.flatMap((item) =>
+      item.entityId && item.source !== 'approval'
+        ? [{ kind: 'object' as const, key: item.entityId }]
+        : [],
+    ),
+  );
   const memberOptions = members.map((member) => ({
     id: member.userId,
     label: displayMemberLabel(member),
@@ -146,8 +155,10 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       <WorkSubnav current="/app/work" />
 
       <div className="space-y-7">
-        <CollectionGroup title="Pinned and team boards" count={boardModules.length}>
-          {boardModules.length === 0 ? (
+        <PinnedWorkspacePreview initialItems={pinnedPage.items} heading="Pinned" />
+
+        <CollectionGroup title="Boards" count={boards.length}>
+          {boards.length === 0 ? (
             <EmptyState
               icon={Columns3}
               size="inset"
@@ -158,7 +169,7 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
             </EmptyState>
           ) : (
             <div>
-              {boardModules.map((board) => (
+              {boards.map((board) => (
                 <CollectionRow key={board.id}>
                   <CollectionRow.Title>
                     <Link
@@ -170,15 +181,19 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                   </CollectionRow.Title>
                   <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
                   <CollectionRow.Metadata>
-                    <>
-                      <span className="px-2 text-xs tabular-nums text-fg-dim">
-                        {board.itemCount} items
-                      </span>
-                      {board.pinned ? (
-                        <span className="px-2 text-xs font-medium text-signal">Pinned</span>
-                      ) : null}
-                    </>
+                    <span className="px-2 text-xs tabular-nums text-fg-dim">
+                      {board.itemCount} items
+                    </span>
                   </CollectionRow.Metadata>
+                  <CollectionRow.Actions>
+                    <ItemActionGroup label={`Actions for ${board.name}`}>
+                      <PinOverflowMenu
+                        target={{ kind: 'board', key: board.id }}
+                        title={board.name}
+                        initialPinned={board.pinned}
+                      />
+                    </ItemActionGroup>
+                  </CollectionRow.Actions>
                 </CollectionRow>
               ))}
             </div>
@@ -204,6 +219,9 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                     item={item}
                     members={memberOptions}
                     timezone={timezone}
+                    pinned={
+                      item.entityId ? (queuePinState[`object:${item.entityId}`] ?? false) : false
+                    }
                   />
                 ))}
               </div>
@@ -213,15 +231,6 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
       </div>
     </div>
   );
-}
-
-function uniqueBoards<T extends { id: string }>(boards: T[]): T[] {
-  const seen = new Set<string>();
-  return boards.filter((board) => {
-    if (seen.has(board.id)) return false;
-    seen.add(board.id);
-    return true;
-  });
 }
 
 function dateLabel(value: Date, timezone: string): string {

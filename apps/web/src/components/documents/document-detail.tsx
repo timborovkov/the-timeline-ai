@@ -21,6 +21,7 @@ import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DocumentPreview } from '@/components/documents/document-preview';
 import { EmptyState } from '@/components/empty-state';
 import { EvidenceLink } from '@/components/evidence-link';
+import { PinButton } from '@/components/pins/pin-button';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { SectionHeading } from '@/components/section-heading';
 import { StatusBadge } from '@/components/status-badge';
@@ -76,6 +77,7 @@ interface Props {
     summary: string | null;
     pageNumber: number | null;
   }[];
+  initialPinned?: boolean;
 }
 
 function formatBytes(n: number | null): string {
@@ -99,6 +101,7 @@ export function DocumentDetail({
   requestedVersion,
   activeVersionId,
   activeVersionChunks,
+  initialPinned = false,
 }: Props) {
   const router = useRouter();
   const dialog = useAppDialog();
@@ -261,6 +264,10 @@ export function DocumentDetail({
             href={`/app/documents/${currentDocument.id}`}
             label={currentDocument.name}
             documentId={currentDocument.id}
+          />
+          <PinButton
+            target={{ kind: 'document', key: currentDocument.id }}
+            initialPinned={initialPinned}
           />
           <Button size="sm" variant="outline" onClick={() => void onRename()} disabled={pending}>
             Rename

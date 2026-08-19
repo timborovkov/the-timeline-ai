@@ -1400,21 +1400,20 @@ function CalendarEventDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
-          <DialogDescription>
-            Times are saved in {timezone}. All-day events use an exclusive end date.
-          </DialogDescription>
-        </DialogHeader>
-        {editing && !editing.redacted ? (
-          <div className="flex justify-end">
+        <DialogHeader className="flex-row items-start justify-between gap-2 pr-8 text-left">
+          <div className="min-w-0 space-y-2">
+            <DialogTitle>{editing ? 'Edit event' : 'New event'}</DialogTitle>
+            <DialogDescription>
+              Times are saved in {timezone}. All-day events use an exclusive end date.
+            </DialogDescription>
+          </div>
+          {editing && !editing.redacted ? (
             <PinButton
               target={{ kind: 'calendar_event', key: editing.id }}
               initialPinned={editing.pinned}
-              compact
             />
-          </div>
-        ) : null}
+          ) : null}
+        </DialogHeader>
         <div className="grid gap-4">
           <CalendarDraftFields
             draft={draft}

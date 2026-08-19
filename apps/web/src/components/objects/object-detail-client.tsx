@@ -1338,7 +1338,7 @@ function ObjectDetailHeader({
           <ObjectBoardContext rows={boardContext} />
         </div>
         <div className="flex shrink-0 items-center">
-          <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} icon />
+          <ObjectPinButton objectId={detail.id} initialPinned={initialPinned} />
           <ChatViewContextBinder
             viewKey={`object:${detail.id}`}
             kind="object"
