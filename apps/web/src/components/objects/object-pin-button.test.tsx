@@ -12,6 +12,9 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pin,
   unpinTargetAction: fakes.unpin,
 }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 const { ObjectPinButton } = await import('@/components/objects/object-pin-button');
 

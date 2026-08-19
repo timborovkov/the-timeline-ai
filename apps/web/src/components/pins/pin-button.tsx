@@ -1,6 +1,7 @@
 'use client';
 
 import { Pin } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
@@ -38,6 +39,7 @@ function PinButtonControl({
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
+  const router = useRouter();
 
   function toggle(): void {
     const nextPinned = !pinned;
@@ -54,12 +56,15 @@ function PinButtonControl({
       undo: {
         run: async () => {
           setPinned(previous);
-          return mutatePin(target, previous);
+          const result = await mutatePin(target, previous);
+          if (!result.error) router.refresh();
+          return result;
         },
         success: pinNotifyCopy(previous).success,
       },
     }).then((result) => {
       if (result.error) setPinned(previous);
+      else router.refresh();
       setPending(false);
     });
   }

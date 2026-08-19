@@ -1,6 +1,7 @@
 'use client';
 
 import { Pin } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import type { PinTargetRef } from '@timeline/shared/pins';
@@ -47,6 +48,7 @@ function PinMenuItemControl({
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
+  const router = useRouter();
   const action = pinControlLabel(pinned);
   const pendingLabel = pinControlLabel(pinned, true);
   return (
@@ -71,7 +73,9 @@ function PinMenuItemControl({
             run: async () => {
               setPinned(previous);
               onPinnedChange?.(previous);
-              return mutatePin(target, previous);
+              const result = await mutatePin(target, previous);
+              if (!result.error) router.refresh();
+              return result;
             },
             success: pinNotifyCopy(previous).success,
           },
@@ -81,6 +85,7 @@ function PinMenuItemControl({
               setPinned(previous);
             } else {
               onPinnedChange?.(next);
+              router.refresh();
             }
           })
           .catch(() => {

@@ -18,6 +18,9 @@ vi.mock('@/app/actions/pins', () => ({
   pinTargetAction: fakes.pinTargetAction,
   unpinTargetAction: fakes.unpinTargetAction,
 }));
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 vi.mock('@/lib/notify', () => ({
   notifyAction: fakes.notifyAction,
 }));
@@ -110,6 +113,26 @@ describe('shared pin controls', () => {
     await waitFor(() => {
       expect(screen.queryByLabelText('Pinned work')).toBeNull();
     });
+  });
+
+  it('replaces the Home preview when the server pin set changes', () => {
+    const nextItem: PinnedItem = {
+      ...pinnedItem,
+      pinId: '22222222-2222-4222-8222-222222222222',
+      title: 'Atlas Launch',
+      target: { kind: 'board', key: 'board-1' },
+      href: '/app/boards/board-1',
+      iconKind: 'board',
+    };
+    const { rerender } = render(<PinnedWorkspacePreview initialItems={[]} />);
+    expect(screen.queryByLabelText('Pinned work')).toBeNull();
+
+    rerender(<PinnedWorkspacePreview initialItems={[nextItem]} />);
+    expect(screen.getByText('Atlas Launch')).toBeTruthy();
+
+    rerender(<PinnedWorkspacePreview initialItems={[pinnedItem, nextItem]} />);
+    expect(screen.getByText('Launch plan')).toBeTruthy();
+    expect(screen.getByText('Atlas Launch')).toBeTruthy();
   });
 
   it('keeps a Home preview item when its unpin action fails', async () => {

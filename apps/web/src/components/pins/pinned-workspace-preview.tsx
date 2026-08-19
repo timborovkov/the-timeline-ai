@@ -15,6 +15,23 @@ export function PinnedWorkspacePreview({
   initialItems: PinnedItem[];
   heading?: string;
 }) {
+  return (
+    <PinnedWorkspacePreviewList
+      key={initialItems.map((item) => item.pinId).join('|') || 'empty'}
+      initialItems={initialItems}
+      heading={heading}
+    />
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- keyed inner list remounts when the server pin set changes
+function PinnedWorkspacePreviewList({
+  initialItems,
+  heading,
+}: {
+  initialItems: PinnedItem[];
+  heading: string;
+}) {
   const [items, setItems] = useState(initialItems);
   if (items.length === 0) return null;
   return (
