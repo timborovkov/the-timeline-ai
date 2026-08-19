@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.15 · Collection chrome with timeline search (2026-08-19). Replaces v3.14 Timeline search and continued paging.
+**Version:** v3.16 · Board kanban toast-only metadata (2026-08-19). Replaces v3.15 Collection chrome with timeline search.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -204,9 +204,11 @@ table.
 - `CollectionRow` is at least 44px on desktop. It favors one line: selection or
   type cue, human title, compact context, metadata, and overflow. Mobile uses
   two lines: title plus context, then wrapping metadata. Domain content uses
-  named children (`CollectionRow.Leading`, `.Title`, `.Context`, `.Metadata`,
-  `.Actions`) rather than JSX props. Pass a native `title` on `.Title` and
-  `.Context` when hover should show IDs, timestamps, or raw errors. Every row
+  named children (`CollectionRow.Leading`, `.Title`, `.Subtitle`, `.Context`,
+  `.Metadata`, `.Actions`) rather than JSX props. Optional `.Subtitle` sits
+  under the title for board-local next steps and similar secondary lines. Pass
+  a native `title` on `.Title` and `.Context` when hover should show IDs,
+  timestamps, or raw errors. Every row
   keeps a Linear hairline bottom border, including the last row. Do not wrap
   collection lists in left/right borders or partial boxes. Non-board collections
   must never force
@@ -998,3 +1000,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | Timeline search and continued paging | Puts Search timeline on the archive toolbar, keeps source presets visible, and re-observes the infinite-scroll sentinel after each page so virtualized rows keep loading. |
 | 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
+| 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |

@@ -359,5 +359,7 @@ describe('CuratedKanbanBoard', () => {
     expect(titleBlock?.textContent).toContain('Send security appendix to legal for final read.');
     expect(screen.queryByText('No next step')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Next step for Has next step' })).toBeNull();
+    expect(screen.queryByText('Saving…')).toBeNull();
+    expect(screen.queryByText('Saved')).toBeNull();
   });
 });
