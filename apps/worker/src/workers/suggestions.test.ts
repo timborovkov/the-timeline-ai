@@ -4036,9 +4036,8 @@ describe('processSuggestionJobForTests', () => {
       .select({ status: agentSuggestionItems.status, resultId: agentSuggestionItems.resultId })
       .from(agentSuggestionItems)
       .where(eq(agentSuggestionItems.id, task?.id ?? ''));
-    expect(acceptedTask).toEqual(
-      expect.objectContaining({ status: 'accepted', resultId: expect.any(String) }),
-    );
+    expect(acceptedTask?.status).toBe('accepted');
+    expect(typeof acceptedTask?.resultId).toBe('string');
     await expect(scope.suggestions.acceptSuggestionItem(calendar?.id ?? '')).resolves.toBe(true);
   });
 
