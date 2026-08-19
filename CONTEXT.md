@@ -607,8 +607,8 @@ _Avoid_: Mandatory workflow
 **Pipeline Board**:
 A board started from pipeline-style defaults for tracking objects through
 relationship, sales, partnership, or delivery stages. A lightweight pipeline
-can track companies directly; a separate deal or project object is used when
-one company has multiple active commercial or delivery threads.
+can track companies and people directly; a separate deal or project object is
+used when one company has multiple active commercial or delivery threads.
 _Avoid_: CRM when the board is not specifically customer relationship work
 
 **Correction Proposal**:

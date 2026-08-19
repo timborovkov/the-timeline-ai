@@ -17,7 +17,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 
 import type { PGlite } from '@electric-sql/pglite';
 
-import { buildBoardDirectWriteSourceContext, defaultBoardLanes } from '#src/boards/index.js';
+import {
+  buildBoardDirectWriteSourceContext,
+  defaultBoardLanes,
+  defaultBoardRecommendedTypes,
+} from '#src/boards/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
 
@@ -140,6 +144,23 @@ describe('board scope', () => {
       'Won',
       'Lost',
     ]);
+  });
+
+  it('recommends CRM object types on pipeline boards', () => {
+    expect(defaultBoardRecommendedTypes('pipeline')).toEqual([
+      'company',
+      'deal',
+      'person',
+      'project',
+    ]);
+    expect(defaultBoardRecommendedTypes('task_board')).toEqual(['task', 'follow_up']);
+    expect(defaultBoardRecommendedTypes('catalog')).toEqual([
+      'project',
+      'document',
+      'vendor',
+      'other',
+    ]);
+    expect(defaultBoardRecommendedTypes('custom')).toEqual([]);
   });
 
   it('builds direct-write source context from private board evidence visibility', async () => {

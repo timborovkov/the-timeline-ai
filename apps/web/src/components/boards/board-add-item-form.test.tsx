@@ -12,11 +12,15 @@ import type * as objects from '@timeline/shared/objects/types';
 const fakes = vi.hoisted(() => ({
   addBoardItemAction: vi.fn(),
   quickCreateBoardItemAction: vi.fn(),
+  searchAddableObjectsAction: vi.fn(),
 }));
 
 vi.mock('@/app/actions/boards', () => ({
   addBoardItemAction: fakes.addBoardItemAction,
   quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
+}));
+vi.mock('@/app/actions/objects', () => ({
+  searchAddableObjectsAction: fakes.searchAddableObjectsAction,
 }));
 vi.mock('@/lib/notify', () => ({
   notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
@@ -65,6 +69,8 @@ describe('BoardAddItemForm', () => {
     cleanup();
     fakes.addBoardItemAction.mockReset();
     fakes.quickCreateBoardItemAction.mockReset();
+    fakes.searchAddableObjectsAction.mockReset();
+    fakes.searchAddableObjectsAction.mockResolvedValue({ results: [] });
   });
 
   it('renders add item as a collapsed panel toggle by default', () => {
@@ -264,5 +270,41 @@ describe('BoardAddItemForm', () => {
     );
     await user.click(screen.getByRole('button', { name: 'new' }));
     expect(screen.getByRole('button', { name: 'new' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps person and company filters and loads those types from the server', async () => {
+    const person = objectRow({
+      id: 'person-1',
+      canonicalName: 'Ada Buyer',
+      type: 'person',
+    });
+    fakes.searchAddableObjectsAction.mockResolvedValue({ results: [person] });
+    const user = userEvent.setup();
+
+    render(
+      <BoardAddItemForm
+        boardId="board-1"
+        defaultLaneId={null}
+        recommendedTypes={['company', 'deal', 'project']}
+        candidates={[objectRow({ id: 'task-1', canonicalName: 'Write proposal', type: 'task' })]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
+
+    expect(screen.getByRole('button', { name: 'person' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'company' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Write proposal' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'person' }));
+
+    await waitFor(() => {
+      expect(fakes.searchAddableObjectsAction).toHaveBeenCalledWith({
+        query: '',
+        type: 'person',
+      });
+    });
+    expect(screen.getByRole('button', { name: /Ada Buyer/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Write proposal' })).toBeNull();
   });
 });

@@ -995,6 +995,13 @@ function isBoardItemPatchField(
   );
 }
 
+export function defaultBoardRecommendedTypes(template: BoardTemplateKind): ObjectType[] {
+  if (template === 'pipeline') return ['company', 'deal', 'person', 'project'];
+  if (template === 'task_board') return ['task', 'follow_up'];
+  if (template === 'catalog') return ['project', 'document', 'vendor', 'other'];
+  return [];
+}
+
 export function defaultBoardLanes(template: BoardTemplateKind): BoardLaneInput[] {
   if (template === 'task_board') {
     return [
@@ -1538,7 +1545,8 @@ export function createBoardScope({
             name,
             purpose: input.purpose?.trim() ?? '',
             templateKind,
-            recommendedObjectTypes: input.recommendedObjectTypes ?? [],
+            recommendedObjectTypes:
+              input.recommendedObjectTypes ?? defaultBoardRecommendedTypes(templateKind),
             strictObjectTypes: input.strictObjectTypes ?? false,
             candidateFilter: input.candidateFilter ?? {},
             isShared: input.isShared ?? true,

@@ -90,13 +90,6 @@ function friendlyError(err: unknown, fallback: string): string {
   return publicActionError(err, { operation: fallback, fallback: 'Board action failed.' });
 }
 
-function recommendedTypesFor(templateKind: boardDomain.BoardTemplateKind): objects.ObjectType[] {
-  if (templateKind === 'pipeline') return ['company', 'deal', 'project'];
-  if (templateKind === 'task_board') return ['task', 'follow_up'];
-  if (templateKind === 'catalog') return ['project', 'document', 'vendor', 'other'];
-  return [];
-}
-
 export async function createBoardAction(input: unknown): Promise<ActionState> {
   return runSentryServerAction('create_board', async () => {
     const parsed = createBoardSchema.safeParse(input);
@@ -110,7 +103,8 @@ export async function createBoardAction(input: unknown): Promise<ActionState> {
         purpose: parsed.data.purpose ?? '',
         templateKind,
         recommendedObjectTypes:
-          parsed.data.recommendedObjectTypes ?? recommendedTypesFor(templateKind),
+          parsed.data.recommendedObjectTypes ??
+          boardDomain.defaultBoardRecommendedTypes(templateKind),
         lanes: parsed.data.lanes ?? boardDomain.defaultBoardLanes(templateKind),
       });
       revalidateBoardSurfaces(board.id);

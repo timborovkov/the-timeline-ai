@@ -21,6 +21,7 @@ import {
   repairObjectMemoryAction,
   resetTaskCategoryAction,
   retryTaskCategoryAction,
+  searchAddableObjectsAction,
   searchObjectsAction,
   setTaskCategoryAction,
   undoTaskCategoryChangeAction,
@@ -349,6 +350,54 @@ describe('searchObjectsAction', () => {
     fakes.fakeCheckRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 2500 });
 
     await expect(searchObjectsAction({ query: 'acme' })).resolves.toEqual({ results: [] });
+
+    expect(fakes.fakeObjects.searchObjects).not.toHaveBeenCalled();
+    expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();
+  });
+});
+
+describe('searchAddableObjectsAction', () => {
+  it('lists a type window so board add-item can find people and companies', async () => {
+    await expect(searchAddableObjectsAction({ query: '', type: 'person' })).resolves.toEqual({
+      results: [
+        expect.objectContaining({ id: OBJECT_ID, type: 'project' }),
+        expect.objectContaining({ id: OTHER_OBJECT_ID, type: 'company' }),
+      ],
+    });
+
+    expect(fakes.fakeObjects.listObjects).toHaveBeenCalledWith({
+      type: 'person',
+      archived: false,
+      limit: 81,
+    });
+    expect(fakes.fakeObjects.searchObjects).not.toHaveBeenCalled();
+  });
+
+  it('searches indexed objects of a selected type', async () => {
+    await expect(
+      searchAddableObjectsAction({ query: 'ada buyer', type: 'person' }),
+    ).resolves.toEqual({
+      results: [
+        { id: OBJECT_ID, canonicalName: 'Current Object', type: 'project' },
+        { id: OTHER_OBJECT_ID, canonicalName: 'Acme Corporation', type: 'company' },
+      ],
+    });
+
+    expect(fakes.fakeObjects.searchObjects).toHaveBeenCalledWith({
+      query: 'ada buyer',
+      type: 'person',
+      archived: false,
+      limit: 81,
+    });
+    expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();
+  });
+
+  it('returns no addable objects when search is rate limited', async () => {
+    fakes.fakeCheckRateLimit.mockResolvedValue({ ok: false, retryAfterMs: 2500 });
+
+    await expect(searchAddableObjectsAction({ query: 'acme', type: 'company' })).resolves.toEqual({
+      results: [],
+    });
 
     expect(fakes.fakeObjects.searchObjects).not.toHaveBeenCalled();
     expect(fakes.fakeObjects.listObjects).not.toHaveBeenCalled();

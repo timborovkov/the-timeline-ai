@@ -98,7 +98,7 @@ describe('createBoardAction', () => {
         name: 'Pilot pipeline',
         purpose: '',
         templateKind: 'pipeline',
-        recommendedObjectTypes: ['company', 'deal', 'project'],
+        recommendedObjectTypes: ['company', 'deal', 'person', 'project'],
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards');

@@ -1,14 +1,16 @@
 'use client';
 
 import { Check, Plus, Search, X } from 'lucide-react';
-import { useId, useMemo, useReducer, useState, useTransition } from 'react';
+import { useEffect, useId, useMemo, useReducer, useState, useTransition } from 'react';
 
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
 import type { Dispatch } from 'react';
 
 import { addBoardItemAction, quickCreateBoardItemAction } from '@/app/actions/boards';
+import { searchAddableObjectsAction } from '@/app/actions/objects';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { boardAddItemTypeOptions } from '@/lib/board-add-item-candidates';
 import { displayText } from '@/lib/display-dates';
 import { displayObjectLabel, isInternalIdentifier } from '@/lib/display-labels';
 import { notifyAction } from '@/lib/notify';
@@ -43,10 +45,63 @@ type Action =
   | { type: 'objectType'; objectType: objects.ObjectType }
   | { type: 'canonicalName'; canonicalName: string };
 
-type SelectableObjectType = (typeof OBJECT_TYPES)[number];
+type RemoteSearchStatus = 'idle' | 'loading' | 'success' | 'error';
 
-function isSelectableObjectType(type: objects.ObjectType): type is SelectableObjectType {
-  return (OBJECT_TYPES as readonly objects.ObjectType[]).includes(type);
+function uniqueCandidates(rows: objects.ObjectRow[]): objects.ObjectRow[] {
+  const byId = new Map<string, objects.ObjectRow>();
+  for (const row of rows) byId.set(row.id, row);
+  return [...byId.values()];
+}
+
+function useAddableObjectSearch({
+  enabled,
+  query,
+  type,
+}: {
+  enabled: boolean;
+  query: string;
+  type: objects.ObjectType | 'all';
+}): { results: objects.ObjectRow[]; status: RemoteSearchStatus } {
+  const [results, setResults] = useState<objects.ObjectRow[]>([]);
+  const [status, setStatus] = useState<RemoteSearchStatus>('idle');
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    const needsRemote = enabled && (type !== 'all' || trimmed.length > 0);
+    if (!needsRemote) {
+      setResults([]);
+      setStatus('idle');
+      return;
+    }
+
+    let active = true;
+    const delay = trimmed.length > 0 ? 250 : 0;
+    const timer = setTimeout(() => {
+      if (!active) return;
+      setStatus('loading');
+      void searchAddableObjectsAction({
+        query: trimmed,
+        ...(type === 'all' ? {} : { type }),
+      })
+        .then((result) => {
+          if (!active) return;
+          setResults(result.results);
+          setStatus('success');
+        })
+        .catch(() => {
+          if (!active) return;
+          setResults([]);
+          setStatus('error');
+        });
+    }, delay);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [enabled, query, type]);
+
+  return { results, status };
 }
 
 function reducer(state: State, action: Action): State {
@@ -156,6 +211,7 @@ function ExistingObjectPicker({
   existingType,
   selectableCandidates,
   query,
+  remoteStatus,
   entityId,
   selectedCandidate,
   dispatch,
@@ -165,6 +221,7 @@ function ExistingObjectPicker({
   existingType: State['existingType'];
   selectableCandidates: objects.ObjectRow[];
   query: string;
+  remoteStatus: RemoteSearchStatus;
   entityId: string;
   selectedCandidate: objects.ObjectRow | null;
   dispatch: Dispatch<Action>;
@@ -200,8 +257,14 @@ function ExistingObjectPicker({
             </button>
           ) : null}
         </label>
-        <output className="text-xs text-fg-dim" aria-live="polite">
-          {selectableCandidates.length} / {candidates.length}
+        <output
+          className="text-xs text-fg-dim"
+          aria-live="polite"
+          aria-busy={remoteStatus === 'loading'}
+        >
+          {selectableCandidates.length}
+          {remoteStatus === 'idle' ? ` / ${candidates.length}` : ''}
+          {remoteStatus === 'loading' ? ' · Searching…' : ''}
         </output>
       </div>
 
@@ -221,7 +284,12 @@ function ExistingObjectPicker({
         </div>
       ) : null}
 
-      <CandidateList candidates={selectableCandidates} entityId={entityId} dispatch={dispatch} />
+      <CandidateList
+        candidates={selectableCandidates}
+        entityId={entityId}
+        loading={remoteStatus === 'loading'}
+        dispatch={dispatch}
+      />
 
       {selectedCandidate ? (
         <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -273,19 +341,24 @@ function ExistingTypeButton({
 function CandidateList({
   candidates,
   entityId,
+  loading,
   dispatch,
 }: {
   candidates: objects.ObjectRow[];
   entityId: string;
+  loading: boolean;
   dispatch: Dispatch<Action>;
 }) {
   return (
-    <div className="max-h-56 overflow-y-auto rounded-sm border border-border bg-bg">
+    <div
+      className="max-h-56 overflow-y-auto rounded-sm border border-border bg-bg"
+      aria-busy={loading}
+    >
       {candidates.length > 0 ? (
         <ul className="divide-y divide-border">
           {candidates.map((row) => {
             const selected = row.id === entityId;
-            const visibleAliases = row.aliases
+            const visibleAliases = (row.aliases ?? [])
               .filter((alias) => !isInternalIdentifier(alias))
               .slice(0, 2);
             return (
@@ -323,7 +396,9 @@ function CandidateList({
           })}
         </ul>
       ) : (
-        <p className="px-3 py-4 text-sm text-fg-muted">No existing objects match this search.</p>
+        <p className="px-3 py-4 text-sm text-fg-muted">
+          {loading ? 'Searching…' : 'No existing objects match this search.'}
+        </p>
       )}
     </div>
   );
@@ -392,29 +467,30 @@ export function BoardAddItemForm({
     type: recommendedTypes[0] ?? 'task',
     canonicalName: '',
   });
-  const existingTypeOptions = useMemo(() => {
-    const typeRank = new Set(recommendedTypes);
-    const selectableTypes = new Set<SelectableObjectType>();
-    for (const row of candidates) {
-      if (isSelectableObjectType(row.type)) selectableTypes.add(row.type);
-    }
-    return Array.from(selectableTypes).sort(
-      (a, b) =>
-        Number(typeRank.has(b)) - Number(typeRank.has(a)) ||
-        OBJECT_TYPES.indexOf(a) - OBJECT_TYPES.indexOf(b),
-    );
-  }, [candidates, recommendedTypes]);
+  const existingTypeOptions = useMemo(
+    () => boardAddItemTypeOptions(recommendedTypes),
+    [recommendedTypes],
+  );
+  const { results: remoteCandidates, status: remoteStatus } = useAddableObjectSearch({
+    enabled: expanded && state.mode === 'existing',
+    query: state.query,
+    type: state.existingType,
+  });
   const selectableCandidates = useMemo(() => {
     const typeRank = new Set(recommendedTypes);
-    const typedCandidates =
+    const typedLocal =
       state.existingType === 'all'
         ? candidates
         : candidates.filter((row) => row.type === state.existingType);
-    return filterObjectsByText(typedCandidates, state.query)
-      .slice()
-      .sort((a, b) => Number(typeRank.has(b.type)) - Number(typeRank.has(a.type)));
-  }, [candidates, recommendedTypes, state.existingType, state.query]);
-  const selectedCandidate = candidates.find((row) => row.id === state.entityId) ?? null;
+    const localMatches = filterObjectsByText(typedLocal, state.query);
+    return uniqueCandidates([...localMatches, ...remoteCandidates]).sort(
+      (a, b) => Number(typeRank.has(b.type)) - Number(typeRank.has(a.type)),
+    );
+  }, [candidates, recommendedTypes, remoteCandidates, state.existingType, state.query]);
+  const selectedCandidate =
+    candidates.find((row) => row.id === state.entityId) ??
+    remoteCandidates.find((row) => row.id === state.entityId) ??
+    null;
 
   function submit(): void {
     const object =
@@ -508,6 +584,7 @@ export function BoardAddItemForm({
             existingType={state.existingType}
             selectableCandidates={selectableCandidates}
             query={state.query}
+            remoteStatus={remoteStatus}
             entityId={state.entityId}
             selectedCandidate={selectedCandidate}
             dispatch={dispatch}
