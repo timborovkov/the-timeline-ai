@@ -1412,9 +1412,15 @@ timezone used for interpretation and display.
 Date-only means the date is concrete and belongs on the calendar as all-day.
 Vague time means the date is not concrete and should not create a calendar
 event. Date-only calendar suggestion payloads may arrive as canonical
-`startDate` / `endDate` fields or legacy `start_date` / `end_date` aliases; both
-normalize to an all-day local date span in the workspace calendar timezone when
-no explicit timezone is supplied.
+`startDate` / `endDate` fields or aliases such as `start_date`, `startsAt`, or
+`start`; both date-only and instant aliases normalize before accept. Date-only
+values become an all-day local date span in the workspace calendar timezone
+when no explicit timezone is supplied. Instant aliases (`startsAt`, `startTime`,
+`start`) become `startAt` / `endAt`. Assignment fields that are not UUIDs are
+treated as `ownerName` / `assigneeName` and resolve only when they uniquely
+match an active member. A relationship endpoint that locally-ref a pending
+sibling create in the same bundle accepts that sibling first; it does not wait
+for a separate Accept on the sibling item.
 
 ## Example Dialogue
 

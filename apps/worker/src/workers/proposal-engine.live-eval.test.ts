@@ -12,7 +12,7 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { embedding, llm, qdrant } from '@timeline/shared';
+import { embedding, llm, qdrant, suggestions } from '@timeline/shared';
 import { withTeam } from '@timeline/shared/team-scope';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -40,6 +40,7 @@ const maybeDescribe = process.env.PROPOSAL_ENGINE_LIVE_EVAL === '1' ? describe :
 
 const TEAM_ID = '15151515-1515-4151-8151-151515151515';
 const USER_ID = 'a1a1a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1';
+const MIKAEL_ID = 'b2b2b2b2-b2b2-42b2-82b2-b2b2b2b2b2b2';
 const FABA_COMPANY_ID = 'faba0001-0000-4000-8000-000000000001';
 const FABA_PROJECT_ID = 'faba0001-0000-4000-8000-000000000002';
 const ACME_COMPANY_ID = 'a0ce0001-0000-4000-8000-000000000001';
@@ -739,6 +740,61 @@ maybeDescribe('live messy proposal-engine eval', () => {
     },
     240_000,
   );
+
+  it('stores applyable payloads for messy assignment, calendar, and duplicate-hub chat', async () => {
+    const assignId = seedId('81');
+    const assignReviewId = seedId('82');
+    await seedSlackThread(db, {
+      eventId: assignId,
+      reviewId: assignReviewId,
+      channelId: 'C_WORKSHEET',
+      channelName: 'acme-project-development',
+      text: 'yeah <@U0ABC> can Mikael just take the worksheet preview fix tomorrow lol, also book padel with Mikael Friday 18:00-19:00',
+    });
+    await runConversationReview(db, assignReviewId);
+
+    const tasks = await pendingTaskCreates(db);
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(
+      tasks.some(
+        (item) =>
+          item.proposedPayload.assigneeUserId === MIKAEL_ID ||
+          item.proposedPayload.ownerUserId === MIKAEL_ID ||
+          item.proposedPayload.assigneeName === 'Mikael' ||
+          item.proposedPayload.ownerName === 'Mikael',
+      ),
+    ).toBe(true);
+
+    const calendars = (await pendingItems(db)).filter(
+      (item) => item.targetKind === 'calendar_event' && item.operation === 'create',
+    );
+    expect(calendars.length).toBeGreaterThan(0);
+    expect(
+      calendars.every(
+        (item) =>
+          typeof item.proposedPayload.startAt === 'string' ||
+          typeof item.proposedPayload.startDate === 'string',
+      ),
+    ).toBe(true);
+
+    const duplicateId = seedId('83');
+    await seedCapture(db, {
+      id: duplicateId,
+      text: 'please add Acme Labs as a company in the workspace, we keep forgetting it exists',
+      sourceMetadata: {},
+    });
+    await runEventLocal(db, duplicateId);
+    const companyCreates = (await pendingItems(db)).filter((item) => {
+      if (item.operation !== 'create' || item.targetKind !== 'object') return false;
+      if (item.proposedPayload.type !== 'company') return false;
+      const name =
+        typeof item.proposedPayload.canonicalName === 'string'
+          ? item.proposedPayload.canonicalName
+          : item.title;
+      return name.toLowerCase().includes('acme');
+    });
+    expect(companyCreates).toEqual([]);
+  }, 360_000);
 });
 
 async function seedAgencyWorkspace(db: Db): Promise<void> {
@@ -747,16 +803,30 @@ async function seedAgencyWorkspace(db: Db): Promise<void> {
     slug: 'live-proposal-engine-eval',
     name: 'Live Proposal Engine Eval',
   });
-  await db.insert(users).values({
-    id: USER_ID,
-    email: 'eval@example.test',
-    name: 'Eval Owner',
-  });
-  await db.insert(teamMembers).values({
-    teamId: TEAM_ID,
-    userId: USER_ID,
-    role: 'owner',
-  });
+  await db.insert(users).values([
+    {
+      id: USER_ID,
+      email: 'eval@example.test',
+      name: 'Eval Owner',
+    },
+    {
+      id: MIKAEL_ID,
+      email: 'mikael@example.test',
+      name: 'Mikael',
+    },
+  ]);
+  await db.insert(teamMembers).values([
+    {
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      role: 'owner',
+    },
+    {
+      teamId: TEAM_ID,
+      userId: MIKAEL_ID,
+      role: 'member',
+    },
+  ]);
   await db.insert(entities).values([
     {
       id: FABA_COMPANY_ID,
@@ -880,7 +950,14 @@ async function pendingItems(db: Db): Promise<PendingItem[]> {
     TEAM_ID,
     USER_ID,
   ).suggestions.listPendingSuggestions();
-  return bundles.flatMap((bundle) => bundle.items);
+  const items = bundles.flatMap((bundle) => bundle.items);
+  for (const item of items) {
+    expect(
+      suggestions.canonicalProposalPayloadIssues(item),
+      `${item.targetKind} ${item.operation} "${item.title}" payload is not applyable`,
+    ).toEqual([]);
+  }
+  return items;
 }
 
 async function pendingTaskCreates(db: Db): Promise<PendingItem[]> {

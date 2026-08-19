@@ -401,7 +401,12 @@ function normalizeSuggestionItemPayload(
   item: z.infer<typeof suggestionItemSchema>,
   objectType?: EntityType | null,
 ): Record<string, unknown> {
-  const payload = { ...item.proposedPayload };
+  const payload = suggestions.normalizeProposalPayload({
+    operation: item.operation,
+    targetKind: item.targetKind,
+    title: item.title,
+    proposedPayload: item.proposedPayload,
+  });
   if (item.targetKind === 'object_note') return payload;
   const lifecycleType = lifecycleStatusTypeForPayload(item, payload, objectType);
   if (lifecycleType && typeof payload.status === 'string') {
@@ -1912,6 +1917,141 @@ function payloadHasKey(payload: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(payload, key);
 }
 
+async function rowsMatchingProposedCreates(
+  db: Db,
+  teamId: string,
+  bundles: SuggestionBundleOutput[],
+  existing: CleanupObjectRow[],
+): Promise<CleanupObjectRow[]> {
+  const names = [
+    ...new Set(
+      bundles.flatMap((bundle) =>
+        bundle.items
+          .filter(
+            (item) =>
+              item.operation === 'create' &&
+              (item.targetKind === 'object' || item.targetKind === 'task'),
+          )
+          .map((item) => itemCanonicalName(item).trim().toLowerCase())
+          .filter((name) => name.length > 0),
+      ),
+    ),
+  ];
+  if (names.length === 0) return existing;
+  const extraRows = await db
+    .select({
+      id: entities.id,
+      teamId: entities.teamId,
+      type: entities.type,
+      canonicalName: entities.canonicalName,
+      aliases: entities.aliases,
+      metadata: entities.metadata,
+      status: entities.status,
+      updatedAt: entities.updatedAt,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        isNull(entities.mergedIntoId),
+        isNull(entities.archivedAt),
+        or(
+          ...names.map((name) => sql`lower(${entities.canonicalName}) = ${name}`),
+          ...names.map(
+            (name) =>
+              sql`EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(${entities.aliases}) AS alias(value)
+                WHERE lower(alias.value) = ${name}
+              )`,
+          ),
+        ),
+      ),
+    );
+  const byId = new Map(existing.map((row) => [row.id, row]));
+  for (const row of extraRows) {
+    byId.set(row.id, row);
+  }
+  return [...byId.values()];
+}
+
+function siblingCreateForName(
+  bundle: SuggestionBundleOutput,
+  name: string,
+): SuggestionItemOutput | null {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return null;
+  const matches = bundle.items.filter((item) => {
+    if (item.operation !== 'create') return false;
+    if (item.targetKind !== 'object' && item.targetKind !== 'task') return false;
+    if (itemCanonicalName(item).trim().toLowerCase() === normalized) return true;
+    const aliases = Array.isArray(item.proposedPayload.aliases)
+      ? item.proposedPayload.aliases.filter((alias): alias is string => typeof alias === 'string')
+      : [];
+    return aliases.some((alias) => alias.trim().toLowerCase() === normalized);
+  });
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+function resolveRelationshipNameEndpoint(
+  payload: Record<string, unknown>,
+  side: 'from' | 'to',
+  bundle: SuggestionBundleOutput,
+  resolveName: (name: string) => string | null,
+): void {
+  const nameKey = `${side}Name`;
+  const idKey = `${side}EntityId`;
+  const refKey = `${side}Ref`;
+  const name = typeof payload[nameKey] === 'string' ? payload[nameKey] : null;
+  if (!name) return;
+  const resolved = resolveName(name);
+  if (resolved?.startsWith('entity:')) {
+    payload[idKey] = resolved.slice('entity:'.length);
+    if (side === 'from') {
+      delete payload.fromName;
+      delete payload.fromRef;
+    } else {
+      delete payload.toName;
+      delete payload.toRef;
+    }
+    return;
+  }
+  const sibling = siblingCreateForName(bundle, name);
+  if (!sibling) return;
+  const existingRef =
+    typeof sibling.proposedPayload.localRef === 'string'
+      ? localRefSlug(sibling.proposedPayload.localRef)
+      : null;
+  const siblingRef = existingRef ?? localRefSlug(itemCanonicalName(sibling));
+  if (!siblingRef) return;
+  if (!existingRef) {
+    sibling.proposedPayload = { ...sibling.proposedPayload, localRef: siblingRef };
+  }
+  payload[refKey] = siblingRef;
+  if (side === 'from') {
+    delete payload.fromName;
+    delete payload.fromEntityId;
+  } else {
+    delete payload.toName;
+    delete payload.toEntityId;
+  }
+}
+
+function repairRelationshipBundle(
+  bundle: SuggestionBundleOutput,
+  resolveName: (name: string) => string | null,
+): SuggestionBundleOutput {
+  const items = bundle.items.flatMap((item) => {
+    if (item.targetKind !== 'object_relationship') return [item];
+    const proposedPayload = suggestions.normalizeProposalPayload(item);
+    resolveRelationshipNameEndpoint(proposedPayload, 'from', bundle, resolveName);
+    resolveRelationshipNameEndpoint(proposedPayload, 'to', bundle, resolveName);
+    const repaired = { ...item, proposedPayload };
+    return suggestions.canonicalProposalPayloadIssues(repaired).length === 0 ? [repaired] : [];
+  });
+  return { ...bundle, items };
+}
+
 function lowSignalCreateObject(item: SuggestionItemOutput): boolean {
   if (item.operation !== 'create' || item.targetKind !== 'object') return false;
   const normalized = normalizeCleanupName(itemCanonicalName(item));
@@ -3224,10 +3364,15 @@ async function runSuggestionExtraction(
   }
 
   const relationshipDedupe = await relationshipDedupeContextForTeam(deps.db, teamId);
+  const modelBundles = result.object.bundles;
+  const matchingRowsForCreates =
+    modelBundles.length > 0
+      ? await rowsMatchingProposedCreates(deps.db, teamId, modelBundles, objectRowsForMatching)
+      : objectRowsForMatching;
   const extractedBundles =
-    result.object.bundles.length > 0
-      ? result.object.bundles.map((bundle) =>
-          normalizeBundleAgainstExistingObjects(bundle, objectRowsForMatching),
+    modelBundles.length > 0
+      ? modelBundles.map((bundle) =>
+          normalizeBundleAgainstExistingObjects(bundle, matchingRowsForCreates),
         )
       : shouldUseCommitmentFallback({
             conversation: Boolean(args.conversation),
@@ -3260,7 +3405,10 @@ async function runSuggestionExtraction(
       relatedOpenWorkIds: relatedOpenWork.map((work) => work.id),
     })
     .map((bundle) =>
-      filterExistingRelationshipItems(bundle as SuggestionBundleOutput, relationshipDedupe),
+      repairRelationshipBundle(
+        filterExistingRelationshipItems(bundle as SuggestionBundleOutput, relationshipDedupe),
+        relationshipDedupe.resolveName,
+      ),
     );
   let enforcedEvidenceByBundle: suggestions.SuggestionEvidenceInput[][] | null = null;
   if (evidencePackEnforced && evidencePack) {

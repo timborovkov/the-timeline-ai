@@ -81,6 +81,12 @@ import {
 import { sourcePayloadRefFromMetadata } from '#src/reconciliation/source-snapshot.js';
 import { stableStringify, suggestionDedupeKey } from '#src/suggestions/dedupe-key.js';
 import {
+  canonicalProposalPayloadIssues,
+  coerceMemberIdFields,
+  normalizeCalendarProposalAliases,
+  normalizeProposalPayload,
+} from '#src/suggestions/proposal-payload.js';
+import {
   TASK_CATEGORY_TAXONOMY_VERSION,
   taskCategorySchema,
   type TaskCategory,
@@ -109,6 +115,7 @@ export {
   mergeInheritedLinkedHubs,
   loadLinkedWorkspaceHubsForRawEvent,
 } from '#src/suggestions/linked-hubs.js';
+export { canonicalProposalPayloadIssues, normalizeProposalPayload };
 export {
   stampUniqueWorkItemAliasesOntoBundles,
   uniqueWorkItemAliasesFromText,
@@ -756,28 +763,14 @@ function normalizeCalendarPayload(
     materializeDefaultTimezone?: boolean;
   },
 ): Record<string, unknown> {
-  const payload = item.proposedPayload as Record<string, unknown>;
-  const normalized = { ...payload };
+  const payload =
+    item.proposedPayload &&
+    typeof item.proposedPayload === 'object' &&
+    !Array.isArray(item.proposedPayload)
+      ? (item.proposedPayload as Record<string, unknown>)
+      : {};
+  const normalized = normalizeCalendarProposalAliases(payload);
   if (!Object.hasOwn(normalized, 'title') && opts.fallbackTitle) normalized.title = item.title;
-  if (!Object.hasOwn(normalized, 'startDate') && typeof payload.start_date === 'string') {
-    normalized.startDate = payload.start_date;
-  }
-  if (!Object.hasOwn(normalized, 'endDate') && typeof payload.end_date === 'string') {
-    normalized.endDate = payload.end_date;
-  }
-  if (!Object.hasOwn(normalized, 'startAt')) {
-    if (typeof payload.startTime === 'string') normalized.startAt = payload.startTime;
-    else if (typeof payload.start_at === 'string') normalized.startAt = payload.start_at;
-    else if (typeof payload.start === 'string') normalized.startAt = payload.start;
-  }
-  if (!Object.hasOwn(normalized, 'endAt')) {
-    if (typeof payload.endTime === 'string') normalized.endAt = payload.endTime;
-    else if (typeof payload.end_at === 'string') normalized.endAt = payload.end_at;
-    else if (typeof payload.end === 'string') normalized.endAt = payload.end;
-  }
-  if (!Object.hasOwn(normalized, 'allDay') && typeof payload.all_day === 'boolean') {
-    normalized.allDay = payload.all_day;
-  }
   if (
     opts.inferAllDayFromDateOnly === true &&
     !Object.hasOwn(normalized, 'allDay') &&
@@ -1075,12 +1068,11 @@ function normalizeLifecyclePayload(
     title?: string;
   },
 ): Record<string, unknown> {
-  const payload =
-    item.proposedPayload &&
-    typeof item.proposedPayload === 'object' &&
-    !Array.isArray(item.proposedPayload)
-      ? { ...(item.proposedPayload as Record<string, unknown>) }
-      : {};
+  const payload = normalizeProposalPayload({
+    operation: item.operation,
+    targetKind: item.targetKind,
+    proposedPayload: item.proposedPayload,
+  });
   if (typeof payload.ownerUserId === 'string' && UUID_RE.test(payload.ownerUserId)) {
     delete payload.ownerName;
   }
@@ -2252,7 +2244,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     payload: Record<string, unknown>,
     options: { includeLabels?: boolean; requireUnique?: boolean } = {},
   ): Promise<Record<string, unknown>> {
-    const normalized = { ...payload };
+    const normalized = coerceMemberIdFields(payload);
     for (const [idKey, nameKey] of [
       ['ownerUserId', 'ownerName'],
       ['assigneeUserId', 'assigneeName'],
@@ -3036,7 +3028,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           ),
         ),
     ]);
-    const payloads = items.map((item) => recordFromUnknown(item.proposedPayload));
+    const payloads = items.map((item) =>
+      normalizeLifecyclePayload({
+        ...item,
+        proposedPayload: recordFromUnknown(item.proposedPayload),
+      }),
+    );
     const [boardLabels, entityNamesById] = await Promise.all([
       boardPayloadLabelsForPayloads(payloads),
       approvalEntityNamesForPayloads(payloads),
@@ -3047,9 +3044,15 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         proposedPayload: resolveParentObjectRef(
           resolveApprovalEntityLabels(
             await resolveBoardItemRefs(
-              await resolvePayloadMemberRefs(recordFromUnknown(item.proposedPayload), {
-                includeLabels: true,
-              }),
+              await resolvePayloadMemberRefs(
+                normalizeLifecyclePayload({
+                  ...item,
+                  proposedPayload: recordFromUnknown(item.proposedPayload),
+                }),
+                {
+                  includeLabels: true,
+                },
+              ),
               { includeLabels: true, requireUnique: false, labels: boardLabels },
             ),
             entityNamesById,
@@ -5165,6 +5168,33 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     return new Map(rows.map((row) => [row.id, row.type]));
   }
 
+  async function acceptedResultFromSibling(
+    sibling: typeof agentSuggestionItems.$inferSelect,
+    errors: {
+      missingResult: string;
+      notAcceptable: string;
+      acceptFailed: string;
+    },
+  ): Promise<string> {
+    const existing = sibling.resultId ?? (await existingResultForItem(sibling));
+    if (existing) return existing;
+    if (sibling.status === 'accepted') {
+      throw new Error(errors.missingResult);
+    }
+    if (sibling.status !== 'pending' && sibling.status !== 'failed') {
+      throw new Error(errors.notAcceptable);
+    }
+    const accepted = await acceptSuggestionItem(sibling.id);
+    if (!accepted) throw new Error(errors.acceptFailed);
+    const [resolved] = await db
+      .select({ resultId: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(and(eq(agentSuggestionItems.teamId, teamId), eq(agentSuggestionItems.id, sibling.id)))
+      .limit(1);
+    if (!resolved?.resultId) throw new Error(errors.missingResult);
+    return resolved.resultId;
+  }
+
   async function resolveLocalRef(
     item: typeof agentSuggestionItems.$inferSelect,
     ref: string,
@@ -5172,11 +5202,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     const normalizedRef = normalizedLocalRef(ref);
     if (!normalizedRef) throw new Error('Relationship endpoint ref was empty');
     const rows = await db
-      .select({
-        id: agentSuggestionItems.id,
-        resultId: agentSuggestionItems.resultId,
-        status: agentSuggestionItems.status,
-      })
+      .select()
       .from(agentSuggestionItems)
       .where(
         and(
@@ -5186,13 +5212,20 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
           sql`lower(${agentSuggestionItems.proposedPayload} ->> 'localRef') = ${normalizedRef}`,
         ),
       )
-      .limit(1);
-    const row = rows[0];
-    if (!row) throw new Error(`Relationship endpoint ref "${ref}" was not found`);
-    if (row.status !== 'accepted' || !row.resultId) {
-      throw new Error(`Relationship endpoint ref "${ref}" has not been accepted yet`);
+      .limit(2);
+    const sibling = rows[0];
+    if (!sibling || rows.length !== 1) {
+      throw new Error(
+        rows.length === 0
+          ? `Relationship endpoint ref "${ref}" was not found`
+          : `Relationship endpoint ref "${ref}" was not uniquely matched`,
+      );
     }
-    return row.resultId;
+    return acceptedResultFromSibling(sibling, {
+      missingResult: 'Relationship endpoint sibling object has no accepted result',
+      notAcceptable: `Relationship endpoint ref "${ref}" has not been accepted yet`,
+      acceptFailed: 'Relationship endpoint sibling object could not be accepted',
+    });
   }
 
   async function resolveRelationshipPayload(
@@ -5209,12 +5242,12 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
         parsed.fromEntityId ??
         (parsed.fromRef
           ? await resolveLocalRef(item, parsed.fromRef)
-          : await resolveRelationshipEndpointName(parsed.fromName ?? '', 'source')),
+          : await resolveRelationshipEndpointName(parsed.fromName ?? '', 'source', item)),
       toEntityId:
         parsed.toEntityId ??
         (parsed.toRef
           ? await resolveLocalRef(item, parsed.toRef)
-          : await resolveRelationshipEndpointName(parsed.toName ?? '', 'target')),
+          : await resolveRelationshipEndpointName(parsed.toName ?? '', 'target', item)),
       kind: parsed.kind,
     };
   }
@@ -5222,6 +5255,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
   async function resolveRelationshipEndpointName(
     name: string,
     endpointLabel: 'source' | 'target',
+    item: typeof agentSuggestionItems.$inferSelect,
   ): Promise<string> {
     const normalized = name.trim().toLowerCase();
     if (!normalized) throw new Error(`Relationship ${endpointLabel} endpoint object is required`);
@@ -5246,7 +5280,56 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       .limit(2);
     const row = rows[0];
     if (rows.length === 1 && row) return row.id;
+    if (rows.length > 1) {
+      throw new Error(`Relationship ${endpointLabel} endpoint object was not uniquely matched`);
+    }
+    const siblingId = await resolveRelationshipEndpointSibling(normalized, item);
+    if (siblingId) return siblingId;
     throw new Error(`Relationship ${endpointLabel} endpoint object was not uniquely matched`);
+  }
+
+  async function resolveRelationshipEndpointSibling(
+    normalizedName: string,
+    item: typeof agentSuggestionItems.$inferSelect,
+  ): Promise<string | null> {
+    const rows = await db
+      .select()
+      .from(agentSuggestionItems)
+      .where(
+        and(
+          eq(agentSuggestionItems.teamId, teamId),
+          eq(agentSuggestionItems.suggestionId, item.suggestionId),
+          eq(agentSuggestionItems.operation, 'create'),
+          inArray(agentSuggestionItems.targetKind, ['object', 'task']),
+        ),
+      );
+    const matches = rows.filter((candidate) => {
+      if (candidate.id === item.id) return false;
+      const payload = normalizeLifecyclePayload(candidate);
+      const canonicalName =
+        typeof payload.canonicalName === 'string' && payload.canonicalName.trim().length > 0
+          ? payload.canonicalName
+          : candidate.title;
+      if (canonicalName.trim().toLowerCase() === normalizedName) return true;
+      const aliases = Array.isArray(payload.aliases)
+        ? payload.aliases.filter((alias): alias is string => typeof alias === 'string')
+        : [];
+      return aliases.some((alias) => alias.trim().toLowerCase() === normalizedName);
+    });
+    if (matches.length !== 1 || !matches[0]) return null;
+
+    const sibling = matches[0];
+    const existing = sibling.resultId ?? (await existingResultForItem(sibling));
+    if (existing) return existing;
+    if (sibling.status === 'accepted') {
+      throw new Error('Relationship endpoint sibling object has no accepted result');
+    }
+    if (sibling.status !== 'pending' && sibling.status !== 'failed') return null;
+    return acceptedResultFromSibling(sibling, {
+      missingResult: 'Relationship endpoint sibling object has no accepted result',
+      notAcceptable: 'Relationship endpoint sibling object is not actionable',
+      acceptFailed: 'Relationship endpoint sibling object could not be accepted',
+    });
   }
 
   async function supersedeRelationshipDependents(

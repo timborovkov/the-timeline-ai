@@ -503,13 +503,19 @@ function payloadBoolean(payload: Record<string, unknown>, key: string): boolean 
 }
 
 function localActionFailureReason(item: SuggestionItem): string | null {
-  if (
-    item.targetKind === 'calendar_event' &&
-    item.operation === 'create' &&
-    (!payloadString(item.proposedPayload, 'startAt') ||
-      !payloadString(item.proposedPayload, 'endAt'))
-  ) {
-    return 'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.';
+  if (item.targetKind === 'calendar_event' && item.operation === 'create') {
+    const start =
+      payloadString(item.proposedPayload, 'startAt') ??
+      payloadString(item.proposedPayload, 'startDate') ??
+      payloadString(item.proposedPayload, 'startsAt');
+    const end =
+      payloadString(item.proposedPayload, 'endAt') ??
+      payloadString(item.proposedPayload, 'endDate') ??
+      payloadString(item.proposedPayload, 'endsAt') ??
+      start;
+    if (!start || !end) {
+      return 'Calendar proposal is missing a start or end time. Reject it or revise the source details before accepting.';
+    }
   }
   return null;
 }

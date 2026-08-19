@@ -505,6 +505,20 @@ does not write. If two clients are named, neither is unique; omit rather than
 guess. Generic containers (`#general`, `#dev`, a board named "Customer
 Projects") do not unique-match.
 
+Model payloads are untrusted structured output. Before persist and again on
+accept, Timeline canonicalizes assignment ids, calendar bounds, and
+relationship endpoints: a name stuffed into `assigneeUserId` becomes
+`assigneeName` (then a unique member UUID when one exists), `startsAt` /
+`endsAt` become `startAt` / `endAt`, and relationship `kind` aliases such as
+`associated_with` become `related`. Duplicate hub creates whose exact
+canonical name already exists anywhere on the team rewrite to updates even
+when that object is outside the 500-row recency matching window. Relationship
+endpoints that name or locally-ref a unique existing object or a pending
+sibling create in the same bundle resolve on accept, including when the
+relationship item is accepted first; ambiguous names still fail closed rather
+than guess. `canonicalProposalPayloadIssues` is the live-eval hygiene check for
+those shapes.
+
 ### Qualify vs recall vs invent
 
 | Operation | Allowed on this write path | Forbidden |
@@ -1013,6 +1027,8 @@ When code changes ingest or proposals, update this file in the same change.
 - Live messy proposal eval (opt-in, not CI):
   `apps/worker/src/workers/proposal-engine.live-eval.test.ts`
   (`pnpm test:proposal-engine:live`)
+- Proposal payload canonicalization:
+  `packages/shared/src/suggestions/proposal-payload.ts`
 - Captured-work proposals: `packages/shared/src/integrations/github-task-proposals.ts`
   (envelope matcher on `objectMap` + status + aliases; GitHub extra still enriches logins)
 - Packs: `packages/shared/src/evidence-pack/`
@@ -1099,8 +1115,10 @@ not CI. About 90% of live fixtures should be messy (Sentry spikes, CI
 pulses, overlapping clients, typos, mention soup, truncated paste, silent
 meetings, outcome evidence without "this is complete"). Safe name-maps are the
 minority. The suite must include unique-channel mint+attach, buried alias
-stamp, living pending amend, implicit branding `done`, two-task refuse, and
-file-share no-create.
+stamp, living pending amend, implicit branding `done`, two-task refuse,
+file-share no-create, and applyable proposal payloads (assignment names in
+UUID fields, calendar `startsAt` aliases, relationship kind/endpoint
+aliases, exact-name duplicate hub rewrite).
 
 **Do next, in this order. Do not start pairwise cosine-qualify first.**
 
