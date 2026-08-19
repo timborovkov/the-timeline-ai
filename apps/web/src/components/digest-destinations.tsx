@@ -1,9 +1,8 @@
 'use client';
 
+import { Mail } from 'lucide-react';
 import { useActionState, useMemo, useState } from 'react';
 import { useFormStatus } from 'react-dom';
-
-import { Mail } from 'lucide-react';
 
 import {
   addDigestDestinationAction,
