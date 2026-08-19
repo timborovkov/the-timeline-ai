@@ -7143,6 +7143,83 @@ describe('suggestion scope', () => {
     expect(eventsAfterRetry.rows[0]?.count).toBe('1');
   });
 
+  it('accepts calendar creates that used startsAt/endsAt aliases', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Padel with Mikael',
+      dedupeKey: 'calendar-create-startsat-alias',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Padel with Mikael',
+          dedupeKey: 'calendar-create-startsat-alias:item',
+          proposedPayload: {
+            title: 'Padel with Mikael',
+            startsAt: '2026-08-18T00:00:00.000Z',
+            endsAt: '2026-08-19T00:00:00.000Z',
+            visibility: 'team',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({
+      startAt: '2026-08-18T00:00:00.000Z',
+      endAt: '2026-08-19T00:00:00.000Z',
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const result = await pg.query<{ count: string }>(
+      `SELECT count(*)::text FROM calendar_events WHERE team_id = '${TEAM_ID}' AND title = 'Padel with Mikael'`,
+    );
+    expect(result.rows[0]?.count).toBe('1');
+  });
+
+  it('resolves assignment names stuffed into UUID fields', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Fix worksheet',
+      dedupeKey: 'task-create-assignee-name-in-id',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Fix worksheet',
+          dedupeKey: 'task-create-assignee-name-in-id:item',
+          proposedPayload: {
+            canonicalName: 'Fix worksheet',
+            assigneeUserId: 'Reviewer',
+            ownerUserId: 'Owner',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({
+      assigneeUserId: REVIEWER_ID,
+      ownerUserId: USER_ID,
+    });
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const result = await pg.query<{
+      assignee_user_id: string | null;
+      owner_user_id: string | null;
+    }>(
+      `SELECT assignee_user_id::text, owner_user_id::text
+       FROM entities
+       WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Fix worksheet'`,
+    );
+    expect(result.rows[0]).toEqual({
+      assignee_user_id: REVIEWER_ID,
+      owner_user_id: USER_ID,
+    });
+  });
+
   it('treats blank optional object update fields as absent values', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const task = await scope.objects.createObject({
@@ -8591,6 +8668,117 @@ describe('suggestion scope', () => {
         failureReason: 'Relationship source endpoint object was not uniquely matched',
       }),
     );
+  });
+
+  it('accepts relationship payloads that include both ids and names plus aliased kinds', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const project = await scope.objects.createObject({
+      type: 'project',
+      canonicalName: 'Alias kind project',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const company = await scope.objects.createObject({
+      type: 'company',
+      canonicalName: 'Alias kind company',
+      actor: { kind: 'user', userId: USER_ID },
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'chat',
+      title: 'Link aliased relationship',
+      dedupeKey: 'aliased-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate aliased endpoints',
+          dedupeKey: 'aliased-object-relationship:item',
+          proposedPayload: {
+            fromEntityId: project.id,
+            fromName: 'Alias kind project',
+            toName: 'Alias kind company',
+            kind: 'associated_with',
+          },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    expect(bundle.items[0]?.proposedPayload).toMatchObject({
+      kind: 'related',
+      fromEntityId: project.id,
+      toName: 'Alias kind company',
+    });
+    expect(bundle.items[0]?.proposedPayload.fromName).toBeUndefined();
+
+    await expect(scope.suggestions.acceptSuggestionItem(itemId)).resolves.toBe(true);
+
+    const detail = await scope.objects.getObject(project.id);
+    expect(detail?.relationships).toEqual([
+      expect.objectContaining({
+        kind: 'related',
+        otherId: company.id,
+      }),
+    ]);
+  });
+
+  it('accepts name-only relationships by first creating sibling objects in the same bundle', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create related sibling objects',
+      dedupeKey: 'sibling-name-object-relationship',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Sibling person',
+          dedupeKey: 'sibling-name-object-relationship:person',
+          proposedPayload: {
+            type: 'person',
+            canonicalName: 'Sibling Person',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object',
+          title: 'Sibling company',
+          dedupeKey: 'sibling-name-object-relationship:company',
+          proposedPayload: {
+            type: 'company',
+            canonicalName: 'Sibling Company',
+          },
+        },
+        {
+          operation: 'create',
+          targetKind: 'object_relationship',
+          title: 'Relate siblings by name',
+          dedupeKey: 'sibling-name-object-relationship:rel',
+          proposedPayload: {
+            fromName: 'Sibling Person',
+            toName: 'Sibling Company',
+            kind: 'linked',
+          },
+        },
+      ],
+    });
+    const relationshipId =
+      bundle.items.find((item) => item.targetKind === 'object_relationship')?.id ?? '';
+
+    await expect(scope.suggestions.acceptSuggestionItem(relationshipId)).resolves.toBe(true);
+
+    const person = await pg.query<{ id: string }>(
+      `SELECT id::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Sibling Person'`,
+    );
+    const company = await pg.query<{ id: string }>(
+      `SELECT id::text FROM entities WHERE team_id = '${TEAM_ID}' AND canonical_name = 'Sibling Company'`,
+    );
+    const personId = person.rows[0]?.id ?? '';
+    const detail = await scope.objects.getObject(personId);
+    expect(detail?.relationships).toEqual([
+      expect.objectContaining({
+        kind: 'related',
+        otherId: company.rows[0]?.id,
+      }),
+    ]);
   });
 
   it('supersedes relationship proposals when a sibling local-ref dependency is rejected', async () => {

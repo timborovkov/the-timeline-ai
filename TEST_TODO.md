@@ -357,7 +357,9 @@ Legend:
   truncated paste, silent calendar-linked meetings, branding outcome evidence
   without "this is complete"). Safe name-maps are the minority. Cleanup of any
   Qdrant points afterwards. Not CI. Covers implicit `done`, two-task refuse
-  (qualify strips a guessed `done`), pending-create prompt listing, and
+  (qualify strips a guessed `done`), pending-create prompt listing,
+  applyable proposal payloads (assignment names, calendar aliases,
+  relationship endpoints, exact-name duplicate hub rewrite), and
   empty-model / timeout / invalid-JSON fallback mint (event-local always;
   conversation review only when the window names exactly one tracked id). Set
   `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when the shell has not already

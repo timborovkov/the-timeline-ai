@@ -276,7 +276,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       qualify, generic `#general` refuse, mixed-client refuse, living pending
       amend, pulse/finding skip, alias stamp, cosine-recall-is-not-a-write,
       implicit branding `done`, two-task refuse (qualify strips a guessed
-      `done`), file-share no-create, pending-create prompt section, and
+      `done`), file-share no-create, pending-create prompt section,
+      applyable proposal payloads (assignment names, calendar aliases,
+      relationship endpoints, exact-name duplicate hub rewrite), and
       empty-model / timeout / invalid-JSON fallback mint (event-local always;
       conversation review only when the window names exactly one tracked id).
 - [x] Stamp unique provider work-item aliases from the conversation window

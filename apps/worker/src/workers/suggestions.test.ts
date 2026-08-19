@@ -3851,6 +3851,191 @@ describe('processSuggestionJobForTests', () => {
     expect(item?.proposedPayload.ownerName).toBe('Member');
   });
 
+  it('rewrites exact-name creates even when the existing object is outside the recent matching window', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000b1';
+    const [stale] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Stale Hub Co',
+        updatedAt: new Date('2020-01-01T00:00:00.000Z'),
+      })
+      .returning({ id: entities.id });
+    if (!stale) throw new Error('expected stale company');
+    await db.insert(entities).values(
+      Array.from({ length: 500 }, (_, index) => ({
+        teamId: TEAM_ID,
+        type: 'topic' as const,
+        canonicalName: `Recent noise ${String(index)}`,
+        updatedAt: new Date('2026-05-27T12:00:00.000Z'),
+      })),
+    );
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Stale Hub Co is still the client.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Remember Stale Hub Co',
+            summary: 'Stale Hub Co is still the client.',
+            reason: 'The source names an existing company.',
+            confidence: 'high',
+            quote: 'Stale Hub Co is still the client.',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'object',
+                title: 'Stale Hub Co',
+                proposedPayload: {
+                  type: 'company',
+                  canonicalName: 'Stale Hub Co',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]).toMatchObject({
+      operation: 'update',
+      targetKind: 'object',
+      targetId: stale.id,
+    });
+  });
+
+  it('sanitizes model-backed assignment, calendar, and relationship payloads before persist', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000b2';
+    const [company] = await db
+      .insert(entities)
+      .values({
+        teamId: TEAM_ID,
+        type: 'company',
+        canonicalName: 'Payload Co',
+      })
+      .returning({ id: entities.id });
+    if (!company) throw new Error('expected company');
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'Member will fix the worksheet for Payload Co. Padel with Member tomorrow.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Worksheet and padel',
+            summary: 'Member takes the worksheet and padel is scheduled.',
+            reason: 'The source assigns work and names a calendar hold.',
+            confidence: 'high',
+            quote: 'Member will fix the worksheet',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Fix worksheet',
+                proposedPayload: {
+                  canonicalName: 'Fix worksheet',
+                  localRef: 'fix-worksheet',
+                  assigneeUserId: 'Member',
+                },
+              },
+              {
+                operation: 'create',
+                targetKind: 'calendar_event',
+                title: 'Padel with Member',
+                proposedPayload: {
+                  title: 'Padel with Member',
+                  startsAt: '2026-05-28T00:00:00.000Z',
+                  endsAt: '2026-05-29T00:00:00.000Z',
+                },
+              },
+              {
+                operation: 'create',
+                targetKind: 'object_relationship',
+                title: 'Relate worksheet to Payload Co',
+                proposedPayload: {
+                  fromRef: 'fix-worksheet',
+                  fromName: 'Fix worksheet',
+                  toName: 'Payload Co',
+                  kind: 'associated_with',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, modelId: MODEL_ID },
+    );
+
+    const scope = withTeam(db as never, TEAM_ID, OWNER_ID);
+    const [bundle] = await scope.suggestions.listPendingSuggestions();
+    const task = bundle?.items.find((item) => item.targetKind === 'task');
+    const calendar = bundle?.items.find((item) => item.targetKind === 'calendar_event');
+    const relationship = bundle?.items.find((item) => item.targetKind === 'object_relationship');
+    expect(task?.proposedPayload.assigneeUserId).toBe(MEMBER_ID);
+    expect(calendar?.proposedPayload).toMatchObject({
+      startAt: '2026-05-28T00:00:00.000Z',
+      endAt: '2026-05-29T00:00:00.000Z',
+    });
+    expect(relationship?.proposedPayload).toMatchObject({
+      kind: 'related',
+      fromRef: 'fix-worksheet',
+      toEntityId: company.id,
+    });
+    expect(relationship?.proposedPayload.fromName).toBeUndefined();
+    expect(relationship?.proposedPayload.toName).toBeUndefined();
+    expect(
+      suggestions.canonicalProposalPayloadIssues(
+        task ?? { targetKind: 'task', proposedPayload: {} },
+      ),
+    ).toEqual([]);
+    expect(
+      suggestions.canonicalProposalPayloadIssues(
+        calendar ?? { targetKind: 'calendar_event', operation: 'create', proposedPayload: {} },
+      ),
+    ).toEqual([]);
+    expect(
+      suggestions.canonicalProposalPayloadIssues(
+        relationship ?? { targetKind: 'object_relationship', proposedPayload: {} },
+      ),
+    ).toEqual([]);
+
+    await expect(scope.suggestions.acceptSuggestionItem(task?.id ?? '')).resolves.toBe(true);
+    await expect(scope.suggestions.acceptSuggestionItem(calendar?.id ?? '')).resolves.toBe(true);
+    await expect(scope.suggestions.acceptSuggestionItem(relationship?.id ?? '')).resolves.toBe(
+      true,
+    );
+  });
+
   it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000036';
     await db.insert(entities).values([
