@@ -72,6 +72,8 @@ const CALENDAR_END_ALIASES = [
   'finish',
   'finishAt',
 ] as const;
+const CALENDAR_START_DATE_ALIASES = ['start_date', 'startsOn', 'startOn'] as const;
+const CALENDAR_END_DATE_ALIASES = ['end_date', 'endsOn', 'endOn'] as const;
 const CALENDAR_ALIAS_KEYS = [
   ...CALENDAR_START_ALIASES,
   ...CALENDAR_END_ALIASES,
@@ -90,6 +92,14 @@ const RELATIONSHIP_FROM_ALIASES = [
   'sourceId',
   'source',
   'sourceName',
+] as const;
+const RELATIONSHIP_TO_ALIASES = [
+  'to',
+  'to_entity_id',
+  'toId',
+  'targetId',
+  'target',
+  'targetName',
 ] as const;
 const RELATIONSHIP_ALIAS_KEYS = [
   ...RELATIONSHIP_FROM_ALIASES,
@@ -133,8 +143,9 @@ function localRefSlug(value: string): string | null {
 
 function looksLikeLocalRef(value: string): boolean {
   const trimmed = value.trim();
+  if (trimmed !== trimmed.toLowerCase() || /\s/.test(trimmed)) return false;
   const slug = localRefSlug(trimmed);
-  return slug !== null && slug === trimmed.toLowerCase() && !/\s/.test(trimmed);
+  return slug !== null && slug === trimmed && /[-_]/.test(trimmed);
 }
 
 function coerceIsoDateTime(value: string): string | null {
@@ -180,7 +191,7 @@ function assignCalendarBound(
   dateKey: 'startDate' | 'endDate',
   aliases: readonly string[],
 ): void {
-  if (!Object.hasOwn(payload, instantKey) && !Object.hasOwn(payload, dateKey)) {
+  if (!Object.hasOwn(payload, instantKey)) {
     const aliased = firstPresent(payload, aliases);
     if (aliased !== undefined) payload[instantKey] = aliased;
   }
