@@ -101,10 +101,7 @@ const RELATIONSHIP_TO_ALIASES = [
   'target',
   'targetName',
 ] as const;
-const RELATIONSHIP_ALIAS_KEYS = [
-  ...RELATIONSHIP_FROM_ALIASES,
-  ...RELATIONSHIP_TO_ALIASES,
-] as const;
+const RELATIONSHIP_ALIAS_KEYS = [...RELATIONSHIP_FROM_ALIASES, ...RELATIONSHIP_TO_ALIASES] as const;
 
 export interface ProposalPayloadItem {
   operation?: string;
@@ -239,7 +236,10 @@ export function coerceMemberIdFields(payload: Record<string, unknown>): Record<s
   return normalized;
 }
 
-function takeAliasedEndpoint(payload: Record<string, unknown>, aliases: readonly string[]): unknown {
+function takeAliasedEndpoint(
+  payload: Record<string, unknown>,
+  aliases: readonly string[],
+): unknown {
   for (const alias of aliases) {
     if (Object.hasOwn(payload, alias) && payload[alias] != null && payload[alias] !== '') {
       return payload[alias];
@@ -304,7 +304,10 @@ function assignRelationshipEndpoint(
 
 export function normalizeRelationshipKind(value: unknown): RelationshipKind {
   if (typeof value !== 'string') return 'related';
-  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
   return RELATIONSHIP_KIND_ALIASES[normalized] ?? 'related';
 }
 
@@ -351,7 +354,13 @@ export function normalizeProposalPayload(item: ProposalPayloadItem): Record<stri
 export function canonicalProposalPayloadIssues(item: ProposalPayloadItem): string[] {
   const payload = normalizeProposalPayload(item);
   const issues: string[] = [];
-  for (const key of ['ownerUserId', 'assigneeUserId', 'fromEntityId', 'toEntityId', 'parentObjectId']) {
+  for (const key of [
+    'ownerUserId',
+    'assigneeUserId',
+    'fromEntityId',
+    'toEntityId',
+    'parentObjectId',
+  ]) {
     const value = payload[key];
     if (value == null || value === '') continue;
     if (!isUuid(value)) {
