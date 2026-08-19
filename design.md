@@ -594,7 +594,9 @@ is full-bleed inside the work canvas, without extra page gutters around the rows
 Kanban/List view controls sit on the CollectionToolbar row with search and
 filters, not on a second strip. Board kanban/list uses the same toolbar
 slot. Add item is a compact toolbar action that opens a popover, not a
-full-width boxed header. Loading placeholders match the live CollectionToolbar
+full-width boxed header. Existing-object search keeps every object type
+filter available, including people and companies, and looks past the first
+preloaded window so a pipeline is not limited to recent tasks. Loading placeholders match the live CollectionToolbar
 (search, optional count, Filters, view toggle, and compact add on one row) and
 the requested view: Tasks default to list, boards default to kanban, and
 list/kanban each have a matching skeleton. Timeline loading uses the same
@@ -1146,3 +1148,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Shared collection empty states | Replaces one-off empty copy and ad-hoc wells with `EmptyState`: quiet dim icon, title, explanation, and create/recover actions only when the person can act. |
 | 2026-08-19 | Timeline flush sticky toolbar | Drops main top padding on Timeline (`flush-top`) so the sticky filter bar and `top-11` date labels sit under the 48px header without a negative `top`. |
 | 2026-08-19 | Standardized personal pins | One icon pin with Pin to Home tooltip, mixed Home and Work previews, list pin glyphs, and About labels for Ask object bindings. |
+| 2026-08-19 | Board add-item people and companies | Add item keeps person and company type filters visible and searches beyond a recency window of recent tasks. |

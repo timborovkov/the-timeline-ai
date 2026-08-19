@@ -10,6 +10,7 @@ import { BoardDetailClient } from '@/components/boards/board-detail-client';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { loadBoardAddItemCandidates } from '@/lib/board-add-item-candidates';
 import { boardViewHref, normalizeBoardView, type BoardLayout } from '@/lib/board-links';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
@@ -91,21 +92,25 @@ export default async function BoardDetailPage({
   const selectedItemId = itemParam(query.item);
   const selectedServerItem = board.items.find((item) => item.id === selectedItemId) ?? null;
   const selectedServerItemId = selectedServerItem?.id ?? null;
-  const [candidates, history, members, selectedObjectDetail] = await Promise.all([
-    loadProjectFilterRows({
-      listObjects: (filter) => scope.objects.listObjects(filter),
-      selected: filters.project,
-      includeArchivedSelected: true,
-      preloadFilter: { archived: false, limit: 200 },
-    }),
-    selectedServerItemId
-      ? scope.boards.listBoardItemHistory(selectedServerItemId)
-      : Promise.resolve([]),
-    scope.timeline.listMembers(),
-    selectedServerItem
-      ? scope.objects.getObject(selectedServerItem.entityId)
-      : Promise.resolve(null),
-  ]);
+  const [projectRows, addItemCandidates, history, members, selectedObjectDetail] =
+    await Promise.all([
+      loadProjectFilterRows({
+        listObjects: (filter) => scope.objects.listObjects(filter),
+        selected: filters.project,
+        includeArchivedSelected: true,
+      }),
+      loadBoardAddItemCandidates({
+        listObjects: (filter) => scope.objects.listObjects(filter),
+        recommendedTypes: board.recommendedObjectTypes,
+      }),
+      selectedServerItemId
+        ? scope.boards.listBoardItemHistory(selectedServerItemId)
+        : Promise.resolve([]),
+      scope.timeline.listMembers(),
+      selectedServerItem
+        ? scope.objects.getObject(selectedServerItem.entityId)
+        : Promise.resolve(null),
+    ]);
   const memberIds = members.map((member) => member.userId);
   const memberRows =
     memberIds.length > 0
@@ -125,12 +130,14 @@ export default async function BoardDetailPage({
   const firstLaneId = board.lanes.find((lane) => !lane.archivedAt)?.id ?? null;
   const activeFilters = hasActiveWorkFilters(filters);
   const filterParams = workFilterHiddenParams(query, WORK_FILTER_PARAM_KEYS);
-  const initialCandidates: typeof candidates = [];
-  const projectOptions: { id: string; label: string }[] = [];
-  for (const candidate of candidates) {
+  const initialCandidates: typeof addItemCandidates = [];
+  for (const candidate of addItemCandidates) {
     if (!candidate.archivedAt) initialCandidates.push(candidate);
-    if (candidate.type === 'project') {
-      projectOptions.push({ id: candidate.id, label: candidate.canonicalName });
+  }
+  const projectOptions: { id: string; label: string }[] = [];
+  for (const row of projectRows) {
+    if (row.type === 'project') {
+      projectOptions.push({ id: row.id, label: row.canonicalName });
     }
   }
 

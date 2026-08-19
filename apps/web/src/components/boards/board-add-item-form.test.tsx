@@ -12,11 +12,15 @@ import type * as objects from '@timeline/shared/objects/types';
 const fakes = vi.hoisted(() => ({
   addBoardItemAction: vi.fn(),
   quickCreateBoardItemAction: vi.fn(),
+  searchAddableObjectsAction: vi.fn(),
 }));
 
 vi.mock('@/app/actions/boards', () => ({
   addBoardItemAction: fakes.addBoardItemAction,
   quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
+}));
+vi.mock('@/app/actions/objects', () => ({
+  searchAddableObjectsAction: fakes.searchAddableObjectsAction,
 }));
 vi.mock('@/lib/notify', () => ({
   notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
@@ -65,6 +69,8 @@ describe('BoardAddItemForm', () => {
     cleanup();
     fakes.addBoardItemAction.mockReset();
     fakes.quickCreateBoardItemAction.mockReset();
+    fakes.searchAddableObjectsAction.mockReset();
+    fakes.searchAddableObjectsAction.mockResolvedValue({ results: [] });
   });
 
   it('renders add item as a collapsed panel toggle by default', () => {
@@ -264,5 +270,146 @@ describe('BoardAddItemForm', () => {
     );
     await user.click(screen.getByRole('button', { name: 'new' }));
     expect(screen.getByRole('button', { name: 'new' }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('keeps person and company filters and loads those types from the server', async () => {
+    const person = objectRow({
+      id: 'person-1',
+      canonicalName: 'Ada Buyer',
+      type: 'person',
+    });
+    fakes.searchAddableObjectsAction.mockResolvedValue({ results: [person] });
+    const user = userEvent.setup();
+
+    render(
+      <BoardAddItemForm
+        boardId="board-1"
+        defaultLaneId={null}
+        recommendedTypes={['company', 'deal', 'project']}
+        candidates={[objectRow({ id: 'task-1', canonicalName: 'Write proposal', type: 'task' })]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
+
+    expect(screen.getByRole('button', { name: 'person' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'company' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Write proposal/ })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'person' }));
+
+    await waitFor(() => {
+      expect(fakes.searchAddableObjectsAction).toHaveBeenCalledWith({
+        query: '',
+        type: 'person',
+      });
+    });
+    expect(screen.getByRole('button', { name: /Ada Buyer/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Write proposal/ })).toBeNull();
+  });
+
+  it('keeps a selected remote object addable after search results change', async () => {
+    const person = objectRow({
+      id: 'person-1',
+      canonicalName: 'Ada Buyer',
+      type: 'person',
+    });
+    fakes.searchAddableObjectsAction.mockResolvedValue({ results: [person] });
+    fakes.addBoardItemAction.mockResolvedValue({
+      ok: true,
+      id: 'item-1',
+      item: {
+        id: 'item-1',
+        boardId: 'board-1',
+        entityId: 'person-1',
+        laneId: null,
+        position: 0,
+        responsibleUserId: null,
+        dueAt: null,
+        priority: null,
+        nextStep: null,
+        notes: null,
+        customFields: {},
+        archivedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        object: person,
+      },
+    });
+    const user = userEvent.setup();
+
+    render(
+      <BoardAddItemForm
+        boardId="board-1"
+        defaultLaneId={null}
+        recommendedTypes={['company', 'deal', 'project']}
+        candidates={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
+    await user.click(screen.getByRole('button', { name: 'person' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Ada Buyer/ })).toBeTruthy();
+    });
+    await user.click(screen.getByRole('button', { name: /Ada Buyer/ }));
+    expect(screen.getByRole('button', { name: 'Add to board' }).hasAttribute('disabled')).toBe(
+      false,
+    );
+
+    fakes.searchAddableObjectsAction.mockResolvedValue({ results: [] });
+    await user.type(screen.getByRole('searchbox', { name: 'Search existing objects' }), 'zzz');
+    await waitFor(() => {
+      expect(fakes.searchAddableObjectsAction).toHaveBeenCalledWith({
+        query: 'zzz',
+        type: 'person',
+      });
+    });
+    expect(screen.getByText('Ada Buyer')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Add to board' }).hasAttribute('disabled')).toBe(
+      false,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add to board' }));
+    await waitFor(() => {
+      expect(fakes.addBoardItemAction).toHaveBeenCalledWith({
+        boardId: 'board-1',
+        entityId: 'person-1',
+        laneId: null,
+      });
+    });
+  });
+
+  it('shows a search failure instead of an empty match list', async () => {
+    const person = objectRow({
+      id: 'person-1',
+      canonicalName: 'Ada Buyer',
+      type: 'person',
+    });
+    fakes.searchAddableObjectsAction
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ results: [person] });
+    const user = userEvent.setup();
+
+    render(
+      <BoardAddItemForm
+        boardId="board-1"
+        defaultLaneId={null}
+        recommendedTypes={['company']}
+        candidates={[]}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Add item' }));
+    await user.click(screen.getByRole('button', { name: 'person' }));
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toMatch(/Couldn.t load existing objects/);
+    });
+    expect(screen.queryByText('No existing objects match this search.')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Ada Buyer/ })).toBeTruthy();
+    });
   });
 });

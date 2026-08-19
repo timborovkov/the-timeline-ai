@@ -211,5 +211,14 @@ describe('BoardDetailPage', () => {
 
     expect(fakes.projectOptionIds).toContain(archivedProjectId);
     expect(fakes.candidateIds).not.toContain(archivedProjectId);
+    expect(fakes.listObjects).toHaveBeenCalledWith({
+      type: 'project',
+      archived: false,
+      limit: 200,
+    });
+    expect(fakes.listObjects).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'company', archived: false }),
+    );
+    expect(fakes.listObjects).not.toHaveBeenCalledWith({ archived: false, limit: 200 });
   });
 });

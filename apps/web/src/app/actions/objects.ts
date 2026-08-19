@@ -122,6 +122,7 @@ function revalidateObjectMutationSurfaces(ids: string | string[]): void {
 }
 
 const OBJECT_SEARCH_RESULT_LIMIT = 12;
+const ADDABLE_OBJECT_SEARCH_LIMIT = 80;
 const loadTaskRowsSchema = z.object({
   cursor: z.string().max(500).nullable().optional(),
   filters: z
@@ -195,6 +196,33 @@ export async function searchObjectsAction(input: unknown): Promise<{
       if (results.length >= OBJECT_SEARCH_RESULT_LIMIT) break;
     }
     return { results };
+  });
+}
+
+export async function searchAddableObjectsAction(input: unknown): Promise<{
+  results: objects.ObjectRow[];
+}> {
+  return runSentryServerAction('search_addable_objects', async () => {
+    const parsed = searchObjectsSchema.safeParse(input);
+    if (!parsed.success) return { results: [] };
+    const r = await resolveScope();
+    if (!r.ok) return { results: [] };
+    if (!(await checkUserSearchRateLimit(r.userId))) return { results: [] };
+    const query = parsed.data.query.trim();
+    const typeFilter = parsed.data.type ? { type: parsed.data.type } : {};
+    const rows = query
+      ? await r.scope.objects.searchObjects({
+          query,
+          ...typeFilter,
+          archived: false,
+          limit: ADDABLE_OBJECT_SEARCH_LIMIT + 1,
+        })
+      : await r.scope.objects.listObjects({
+          ...typeFilter,
+          archived: false,
+          limit: ADDABLE_OBJECT_SEARCH_LIMIT + 1,
+        });
+    return { results: rows.slice(0, ADDABLE_OBJECT_SEARCH_LIMIT) };
   });
 }
 
