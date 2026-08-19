@@ -581,10 +581,11 @@ _Avoid_: Duplicated object status
 **Personal Pin**:
 A current team member's ordered shortcut to durable workspace content. Personal
 pins can target objects (including tasks), boards, documents and captured files,
-meetings, calendar series, or grouped timeline moments. Home previews the mixed
-collection; Work → Pinned owns filtering and reordering. Visibility loss hides a
+meetings, calendar series, or grouped timeline moments. Home and Work overview
+preview the mixed collection; Work → Pinned owns filtering and reordering.
+Visibility loss hides a
 pin without deleting it.
-_Avoid_: Pinned board, shared pin, embedded object
+_Avoid_: Pinned board, shared pin, embedded object, Ask About binding
 
 **Board Preset**:
 A board creation starting point that explains a board's intended use through a

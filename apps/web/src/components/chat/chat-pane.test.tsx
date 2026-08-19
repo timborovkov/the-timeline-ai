@@ -274,7 +274,7 @@ describe('ChatPane', () => {
         },
       });
     });
-    expect(screen.getByRole('link', { name: 'Pinned · Launch plan' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'About Launch plan' })).toBeTruthy();
     expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
   });
 

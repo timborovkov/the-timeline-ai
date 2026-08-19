@@ -8,7 +8,6 @@ import type * as boards from '@timeline/shared/boards';
 
 import { deleteBoardAction, updateBoardSettingsAction } from '@/app/actions/boards';
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
-import { PinMenuItem } from '@/components/pins/pin-menu-item';
 import { useAppDialog } from '@/components/ui/app-dialog';
 import {
   Dialog,
@@ -30,13 +29,11 @@ export function BoardActionsMenu({
   id,
   name,
   purpose,
-  pinned,
   lanes,
 }: {
   id: string;
   name: string;
   purpose: string;
-  pinned: boolean;
   lanes: boards.BoardLaneRow[];
 }) {
   const router = useRouter();
@@ -93,7 +90,6 @@ export function BoardActionsMenu({
             <Pencil className="size-3.5 text-fg-dim" aria-hidden="true" />
             Board settings
           </DropdownMenuItem>
-          <PinMenuItem target={{ kind: 'board', key: id }} title={name} initialPinned={pinned} />
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={() => {

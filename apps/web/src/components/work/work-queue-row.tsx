@@ -11,7 +11,9 @@ import { priorityTone, statusTone } from '@/components/collections/collection-st
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { displayText } from '@/lib/display-dates';
 import { isSchedulableObjectType } from '@/lib/due-dates';
 import { dateInputValue, isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
@@ -38,6 +40,7 @@ export function WorkQueueRow({
   item,
   members,
   timezone,
+  pinned = false,
 }: {
   item: Omit<WorkQueueItem, 'dueAt' | 'updatedAt'> & {
     dueAt: Date | string | null;
@@ -45,6 +48,7 @@ export function WorkQueueRow({
   };
   members: WorkQueueMemberOption[];
   timezone: string;
+  pinned?: boolean;
 }) {
   const router = useRouter();
   const [overlays, setOverlays] = useState<Partial<Record<EditableKey, EditableValue>>>({});
@@ -252,6 +256,17 @@ export function WorkQueueRow({
           ) : null}
         </>
       </CollectionRow.Metadata>
+      {objectId && item.source !== 'approval' ? (
+        <CollectionRow.Actions>
+          <ItemActionGroup label={`Actions for ${displayText(item.title)}`}>
+            <PinOverflowMenu
+              target={{ kind: 'object', key: objectId }}
+              title={displayText(item.title)}
+              initialPinned={pinned}
+            />
+          </ItemActionGroup>
+        </CollectionRow.Actions>
+      ) : null}
     </CollectionRow>
   );
 }

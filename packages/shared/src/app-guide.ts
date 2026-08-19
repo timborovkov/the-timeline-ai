@@ -36,7 +36,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'pinned work',
     ],
     guide:
-      'Use Home to ask the timeline, capture a quick note, revisit pinned boards or objects, and review current team activity. The Home Ask composer opens the full Ask page. On other dashboard pages, use the floating Ask button or ⌘J / Ctrl+J instead of a per-page Ask-about link.',
+      'Use Home to ask the timeline, capture a quick note, reopen pinned work, and review current team activity. The Home Ask composer opens the full Ask page. On other dashboard pages, use the floating Ask button or ⌘J / Ctrl+J instead of a per-page Ask-about link.',
     relatedRouteIds: ['timeline', 'chat'],
   },
   {
@@ -128,9 +128,10 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'digests',
       'handoffs',
       'tasks and boards',
+      'pinned work',
     ],
     guide:
-      'Use Work as the daily operating surface. It keeps tasks, boards, objects, updates, digests, and handoffs current from captured evidence without requiring a separate tracker.',
+      'Use Work as the daily operating surface. Overview shows mixed pinned work, team boards, and the work queue. Work → Pinned is the full pin manager. Tasks, boards, objects, updates, digests, and handoffs stay current from captured evidence without a separate tracker.',
     relatedRouteIds: ['tasks', 'boards', 'objects', 'timeline', 'help/work'],
   },
   {

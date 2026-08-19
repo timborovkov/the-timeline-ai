@@ -13,6 +13,8 @@ const fakes = vi.hoisted(() => ({
   listWorkQueueItems: vi.fn(),
   listObjects: vi.fn(),
   listPinnedBoards: vi.fn(),
+  listPins: vi.fn(),
+  isPinnedMany: vi.fn(),
   listBoards: vi.fn(),
   listEventsPage: vi.fn(),
   listMembers: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listPinnedBoards: fakes.listPinnedBoards,
       listBoards: fakes.listBoards,
     },
+    pins: { list: fakes.listPins, isPinnedMany: fakes.isPinnedMany },
     objects: { countObjects: fakes.countObjects, listObjects: fakes.listObjects },
     suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
     timeline: { listEventsPage: fakes.listEventsPage, listMembers: fakes.listMembers },
@@ -118,6 +121,8 @@ beforeEach(() => {
   fakes.listWorkQueueItems.mockResolvedValue([]);
   fakes.listObjects.mockResolvedValue([]);
   fakes.listPinnedBoards.mockResolvedValue([]);
+  fakes.listPins.mockResolvedValue({ items: [], nextCursor: null });
+  fakes.isPinnedMany.mockResolvedValue({});
   fakes.listBoards.mockResolvedValue([]);
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
   fakes.listMembers.mockResolvedValue([]);
@@ -391,13 +396,15 @@ describe('WorkPage', () => {
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain('Work queue clear');
     expect(html).toContain('Open boards');
-    expect(html).toContain('Pinned and team boards');
-    expect(html.indexOf('Pinned and team boards')).toBeLessThan(html.indexOf('Work queue'));
+    expect(html).toContain('Boards');
+    expect(html).toContain('No boards yet');
+    expect(html).not.toContain('Pinned and team boards');
+    expect(html.indexOf('Boards')).toBeLessThan(html.indexOf('Work queue'));
     expect(html).not.toContain('Work surfaces');
   });
 
   it('renders compact boards without duplicating recent timeline changes', async () => {
-    fakes.listPinnedBoards.mockResolvedValue([
+    fakes.listBoards.mockResolvedValue([
       {
         id: 'board-1',
         name: 'Pilot pipeline',
@@ -423,6 +430,41 @@ describe('WorkPage', () => {
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Pinned');
     expect(html).not.toContain('Moved Revigo into scoping.');
+  });
+
+  it('previews mixed pinned work above team boards', async () => {
+    fakes.listPins.mockResolvedValue({
+      items: [
+        {
+          pinId: 'pin-1',
+          target: { kind: 'object', key: 'object-1' },
+          title: 'Northstar pilot',
+          subtitle: 'Project · active',
+          href: '/app/objects/object-1',
+          iconKind: 'project',
+          sortKey: '0',
+          pinnedAt: '2026-07-31T10:00:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    fakes.listBoards.mockResolvedValue([
+      {
+        id: 'board-1',
+        name: 'Pilot pipeline',
+        itemCount: 7,
+        pinned: false,
+        updatedAt: new Date('2026-06-14T00:00:00.000Z'),
+      },
+    ]);
+
+    const html = renderToStaticMarkup(await WorkPage(pageProps()));
+
+    expect(html).toContain('aria-label="Pinned"');
+    expect(html).toContain('Northstar pilot');
+    expect(html).toContain('Pilot pipeline');
+    expect(html.indexOf('Northstar pilot')).toBeLessThan(html.indexOf('Pilot pipeline'));
+    expect(html.indexOf('aria-label="Pinned"')).toBeLessThan(html.indexOf('Work queue'));
   });
 
   it('does not duplicate timeline event text on the work overview', async () => {

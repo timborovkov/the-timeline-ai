@@ -439,7 +439,9 @@ Home previews at most six currently available pins as lightweight, full-width
 rows with a type icon, title, one context line, and overflow menu. Hidden,
 archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
-opens Work → Pinned.
+opens Work → Pinned. Work overview repeats that same mixed preview (heading
+**Pinned**, omitted when empty) above a separate **Boards** list of team boards
+and the work queue. Pins are personal shortcuts, not a team-shared board set.
 
 Home recent moments have no visible heading. They show up to eight dense rows
 of time, source, and an underlined title, with quiet non-sticky date labels
@@ -479,8 +481,9 @@ actions stay visible without hover, using the shared item-action primitives.
 ### Ask
 
 Ask uses a standard sans header. Human/assistant role labels are quiet 12px
-text; citations remain mono and lime. Tool execution is collapsed. Pinned
-objects always have a human label. Prompts handed off from Home are stored
+text; citations remain mono and lime. Tool execution is collapsed. Ask object
+bindings always have a human label and read **About {name}**, not Pin. Prompts
+handed off from Home are stored
 briefly in team-scoped session storage and never in the URL.
 
 The desktop session list stays dense: last-activity age under each title in
@@ -519,8 +522,8 @@ requests for more detail may expand within the provider-safe reply limit.
 
 Work pages share one subnavigation and lead with the task at hand, not a grid of
 links. Work → Digests is the day-by-day archive of those briefings. Work overview
-puts pinned and team boards above the work queue so saved surfaces stay in reach
-before due and assigned items. Tasks default to the grouped list; the list table
+leads with mixed personal pins (same rows as Home), then team boards, then the
+work queue so saved work stays in reach before due and assigned items. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
 Kanban/List view controls sit on the CollectionToolbar row with search and
 filters, not on a second strip. Board kanban/table/list uses the same toolbar
@@ -626,12 +629,18 @@ changes the mixed global order implicitly.
 Drag reorder has equivalent keyboard actions for move up, down, top, and
 bottom; keyboard moves announce their result through a polite live region.
 
-Detail pages use a visible icon-only Pin/Unpin control with `aria-pressed`. Dense rows,
-cards, calendar entries, timeline moments, and global-search results keep the
-same action inside their overflow menu, whose accessible label includes the
-target title. Controls update optimistically, retain focus, and restore the
-prior state when a mutation fails. The shared action toast is the busy,
-success, and error signal.
+Detail pages, peeks, board headers, document headers, meeting headers, and
+calendar edit dialogs use one visible icon-only pin control: the `Pin` glyph,
+muted when off and signal-filled when on, with `aria-pressed` and a hover
+tooltip **Pin to Home** / **Unpin from Home**. Never use `PinOff`, a bordered
+Pin/Unpin chip, or a duplicate pin item in the same overflow menu. Dense rows,
+cards, calendar entries, timeline moments, work-queue object rows, and
+global-search results keep the action inside their overflow menu as **Pin to
+Home** / **Unpin from Home**, whose accessible label includes the target title.
+Already-pinned dense rows show a quiet filled pin glyph beside overflow; it is
+not a second toggle. Controls update optimistically, retain focus, and restore
+the prior state when a mutation fails. The shared action toast is the busy,
+success (**Pinned to Home** / **Unpinned**), and error signal, with Undo.
 
 Item-owned actions stay inside the row, card, inspector evidence block, or
 detail region for the item they affect. Use the shared row placement for dense
@@ -647,7 +656,7 @@ one workflow, not independent commands. Overflow menus support keyboard
 navigation, close on Escape, and restore focus to their trigger.
 
 Collection toolbars, page-level actions, form Save/Cancel controls, modal
-footers, field-level table editors, and visible detail-page Pin/Unpin controls
+footers, field-level table editors, and visible detail-page pin controls
 remain in their established ownership zones. Item actions are always visible
 or reachable without hover; hidden or paginated items expose no detached or
 orphaned controls.
@@ -670,7 +679,7 @@ so Back restores the originating list. In-list selection links use
 `scroll={false}` so opening a peek does not jump the page.
 
 The peek is a dense inspector on the shared detail rail, not a form card:
-14px title, ghost icon Pin/Close, then the same status / priority / assignee /
+14px title, ghost icon pin (tooltip Pin to Home) and Close, then the same status / priority / assignee /
 due / project / category triggers used in the list. Project and category pickers on this
 surface are borderless. Do not duplicate those values in a second “current”
 grid. Do not label the peek “side panel.” If accepted creation evidence exists,
@@ -681,7 +690,7 @@ the peek.
 The full object page is a Linear-style issue view, not a work-index. It has no
 `WorkSubnav`. The type (and task category) sit as quiet metadata above an 18px
 editable title. Board placement is a muted header line, not a standalone
-section, and those same boards are not repeated under Connected work. Pin is a ghost icon; Ask uses the
+section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
 shared floating binder. Repair memory and Add task live in the overflow
 menu. The main column uses an 8px section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
@@ -1046,4 +1055,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
-| 2026-08-19 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel after merging collection chrome, floating Ask, and `notifyAction`. |
+| 2026-08-19 | Standardized personal pins | One icon pin with Pin to Home tooltip, mixed Home and Work previews, list pin glyphs, and About labels for Ask object bindings. |
