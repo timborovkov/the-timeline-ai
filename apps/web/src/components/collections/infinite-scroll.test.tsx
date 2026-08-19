@@ -43,7 +43,7 @@ describe('InfiniteScroll', () => {
 
   it('loads more when the sentinel intersects or receives focus', () => {
     const onLoadMore = vi.fn();
-    render(
+    const { rerender } = render(
       <InfiniteScroll
         hasMore
         loading={false}
@@ -58,6 +58,14 @@ describe('InfiniteScroll', () => {
     expect(onLoadMore).toHaveBeenCalledOnce();
 
     onLoadMore.mockClear();
+    rerender(
+      <InfiniteScroll
+        hasMore
+        loading={false}
+        onLoadMore={onLoadMore}
+        boundLabel="No more matching tasks"
+      />,
+    );
     fireEvent.focus(screen.getByRole('button', { name: 'Load more' }));
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
