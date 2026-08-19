@@ -124,9 +124,7 @@ describe('InfiniteScroll', () => {
 
   it('locks a second load request until the first call can report loading', () => {
     const onLoadMore = vi.fn();
-    render(
-      <InfiniteScroll hasMore onLoadMore={onLoadMore} boundLabel="No more matching tasks" />,
-    );
+    render(<InfiniteScroll hasMore onLoadMore={onLoadMore} boundLabel="No more matching tasks" />);
     const observer = FakeIntersectionObserver.instances[0];
     observer?.trigger(true);
     observer?.trigger(true);
