@@ -106,9 +106,9 @@ export function InfiniteScroll({
             {loadingContent}
           </output>
         ) : (
-          <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
+          <output className="m-0 px-3 py-2 text-xs font-normal not-italic text-fg-dim">
             Loading more…
-          </p>
+          </output>
         )
       ) : (
         <button
@@ -127,9 +127,9 @@ export function InfiniteScroll({
 
 export function CollectionBound({ label, className }: { label: string; className?: string }) {
   return (
-    <div role="status" className={cn('flex justify-center py-3', className)}>
+    <output className={cn('flex justify-center py-3 font-normal not-italic', className)}>
       <span className="sr-only">{label}</span>
       <span aria-hidden="true" className="block h-px w-[60%] bg-border/40" />
-    </div>
+    </output>
   );
 }
