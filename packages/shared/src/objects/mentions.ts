@@ -122,3 +122,22 @@ export function actorDisplayName(
 export function isAgentMentionToken(token: string): boolean {
   return AGENT_ALIAS_SET.has(token.toLowerCase());
 }
+
+export function matchesAgentMentionQuery(query: string): boolean {
+  const trimmed = query.trim().toLowerCase();
+  if (trimmed.length === 0) return true;
+  const compact = trimmed.replace(/[^a-z0-9]/g, '');
+  if (AGENT_DISPLAY_NAME.toLowerCase().startsWith(trimmed)) return true;
+  if (
+    AGENT_DISPLAY_NAME.toLowerCase()
+      .split(/\s+/)
+      .some((word) => word.startsWith(trimmed))
+  ) {
+    return true;
+  }
+  const aliases =
+    compact.length >= 3
+      ? [...AGENT_MENTION_ALIASES, AGENT_INSERT_TOKEN.toLowerCase()]
+      : (['timeline', 'thetimelinebot', AGENT_INSERT_TOKEN.toLowerCase()] as const);
+  return aliases.some((alias) => alias.startsWith(compact));
+}

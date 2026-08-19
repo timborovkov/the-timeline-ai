@@ -4,6 +4,7 @@ import {
   AGENT_DISPLAY_NAME,
   AGENT_INSERT_TOKEN,
   isAgentMentionToken,
+  matchesAgentMentionQuery,
   mentionInsertToken,
   type MentionMember,
 } from '@timeline/shared/objects/mentions';
@@ -12,6 +13,7 @@ import {
   type Dispatch,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
   useEffect,
   useMemo,
   useRef,
@@ -105,6 +107,7 @@ export function ObjectDiscussionPanel({
   const mentionMembers = useMemo(() => toMentionMembers(members), [members]);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [suggestQuery, setSuggestQuery] = useState('');
+  const [suggestIndex, setSuggestIndex] = useState(0);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const feed = useMemo(() => {
@@ -149,20 +152,16 @@ export function ObjectDiscussionPanel({
       const haystack = `${member.label} ${member.name ?? ''} ${member.email ?? ''}`.toLowerCase();
       return query.length === 0 || haystack.includes(query);
     });
-    const agentQuery = query.replace(/[^a-z0-9]/g, '');
-    const agent: DiscussionMember[] =
-      query.length === 0 ||
-      'thetimelinebot timeline bot agent'.includes(agentQuery) ||
-      AGENT_DISPLAY_NAME.toLowerCase().includes(query)
-        ? [
-            {
-              id: 'timeline',
-              label: AGENT_DISPLAY_NAME,
-              name: AGENT_DISPLAY_NAME,
-              email: '',
-            },
-          ]
-        : [];
+    const agent: DiscussionMember[] = matchesAgentMentionQuery(query)
+      ? [
+          {
+            id: 'timeline',
+            label: AGENT_DISPLAY_NAME,
+            name: AGENT_DISPLAY_NAME,
+            email: '',
+          },
+        ]
+      : [];
     return [...agent, ...people].slice(0, 8);
   }, [members, suggestOpen, suggestQuery]);
 
@@ -183,9 +182,17 @@ export function ObjectDiscussionPanel({
     const before = noteBody.slice(0, caret);
     const at = before.lastIndexOf('@');
     const prefix = at >= 0 ? before.slice(0, at) : before;
-    dispatchObjectUi({ noteBody: `${prefix}@${token} ${noteBody.slice(caret)}` });
+    const next = `${prefix}@${token} ${noteBody.slice(caret)}`;
+    const caretPos = prefix.length + token.length + 2;
+    dispatchObjectUi({ noteBody: next });
     setSuggestOpen(false);
     setSuggestQuery('');
+    queueMicrotask(() => {
+      const node = composerRef.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(caretPos, caretPos);
+    });
   }
 
   function onComposerChange(value: string, caret: number): void {
@@ -203,9 +210,33 @@ export function ObjectDiscussionPanel({
     }
     setSuggestOpen(true);
     setSuggestQuery(token);
+    setSuggestIndex(0);
   }
 
   function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (suggestOpen && suggestions.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSuggestIndex((index) => (index + 1) % suggestions.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSuggestIndex((index) => (index - 1 + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+        const selected = suggestions[suggestIndex] ?? suggestions[0];
+        if (selected) insertMention(selected);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSuggestOpen(false);
+        return;
+      }
+    }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && noteBody.trim()) {
       event.preventDefault();
       onAddNote();
@@ -309,47 +340,91 @@ export function ObjectDiscussionPanel({
           );
         })}
       </ol>
-      <div className="relative mt-3">
-        <textarea
-          ref={composerRef}
-          aria-label="New comment"
-          value={noteBody}
-          onChange={(event) => {
-            onComposerChange(event.target.value, event.target.selectionStart);
-          }}
-          onKeyDown={onComposerKeyDown}
-          placeholder={`Comment, @mention people or @${AGENT_DISPLAY_NAME}`}
-          className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm font-normal text-fg outline-none focus-visible:border-signal"
-          rows={2}
-        />
-        {suggestOpen && suggestions.length > 0 ? (
-          <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-sm border border-border bg-surface py-1 shadow-sm">
-            {suggestions.map((member) => (
-              <li key={member.id}>
-                <button
-                  type="button"
-                  className="flex w-full px-2 py-1 text-left text-sm font-normal text-fg hover:bg-surface-2"
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    insertMention(member);
-                  }}
-                >
-                  {member.label}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <button
-          type="button"
-          onClick={onAddNote}
-          disabled={pending || !noteBody.trim()}
-          className="mt-1.5 text-xs font-normal text-fg-dim hover:underline disabled:text-fg-dim/70"
-        >
-          Comment
-        </button>
-      </div>
+      <DiscussionComposer
+        composerRef={composerRef}
+        noteBody={noteBody}
+        pending={pending}
+        suggestions={suggestions}
+        suggestOpen={suggestOpen}
+        suggestIndex={suggestIndex}
+        onChange={onComposerChange}
+        onKeyDown={onComposerKeyDown}
+        onAddNote={onAddNote}
+        onPickMention={insertMention}
+      />
     </section>
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- Composer + mention list stay local to the discussion thread.
+function DiscussionComposer({
+  composerRef,
+  noteBody,
+  pending,
+  suggestions,
+  suggestOpen,
+  suggestIndex,
+  onChange,
+  onKeyDown,
+  onAddNote,
+  onPickMention,
+}: {
+  composerRef: RefObject<HTMLTextAreaElement | null>;
+  noteBody: string;
+  pending: boolean;
+  suggestions: DiscussionMember[];
+  suggestOpen: boolean;
+  suggestIndex: number;
+  onChange: (value: string, caret: number) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onAddNote: () => void;
+  onPickMention: (member: DiscussionMember) => void;
+}) {
+  const highlight = suggestions.length === 0 ? 0 : Math.min(suggestIndex, suggestions.length - 1);
+  return (
+    <div className="relative mt-3">
+      <textarea
+        ref={composerRef}
+        aria-label="New comment"
+        value={noteBody}
+        onChange={(event) => {
+          onChange(event.target.value, event.target.selectionStart);
+        }}
+        onKeyDown={onKeyDown}
+        placeholder={`Comment, @mention people or @${AGENT_DISPLAY_NAME}`}
+        className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm font-normal text-fg outline-none focus-visible:border-signal"
+        rows={2}
+      />
+      {suggestOpen && suggestions.length > 0 ? (
+        <ul className="absolute z-20 mt-1 max-h-48 w-full overflow-auto rounded-sm border border-border bg-surface py-1 shadow-sm">
+          {suggestions.map((member, index) => (
+            <li key={member.id}>
+              <button
+                type="button"
+                className={cn(
+                  'flex w-full px-2 py-1 text-left text-sm font-normal text-fg hover:bg-surface-2',
+                  index === highlight && 'bg-surface-2',
+                )}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onPickMention(member);
+                }}
+              >
+                {member.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <button
+        type="button"
+        onClick={onAddNote}
+        disabled={pending || !noteBody.trim()}
+        className="mt-1.5 text-xs font-normal text-fg-dim hover:underline disabled:text-fg-dim/70"
+      >
+        Comment
+      </button>
+    </div>
   );
 }
 

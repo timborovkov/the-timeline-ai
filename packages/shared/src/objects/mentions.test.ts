@@ -5,6 +5,7 @@ import {
   AGENT_INSERT_TOKEN,
   actorDisplayName,
   isAgentMentionToken,
+  matchesAgentMentionQuery,
   mentionInsertToken,
   parseMentions,
   type MentionMember,
@@ -123,6 +124,21 @@ describe('isAgentMentionToken', () => {
     expect(isAgentMentionToken('bot')).toBe(true);
     expect(isAgentMentionToken('agent')).toBe(true);
     expect(isAgentMentionToken('Casey')).toBe(false);
+  });
+});
+
+describe('matchesAgentMentionQuery', () => {
+  it('matches prefixes of The Timeline Bot and compact aliases, not stray letters', () => {
+    expect(matchesAgentMentionQuery('')).toBe(true);
+    expect(matchesAgentMentionQuery('The')).toBe(true);
+    expect(matchesAgentMentionQuery('timeline')).toBe(true);
+    expect(matchesAgentMentionQuery('Bot')).toBe(true);
+    expect(matchesAgentMentionQuery('TheTimeline')).toBe(true);
+    expect(matchesAgentMentionQuery('age')).toBe(true);
+    expect(matchesAgentMentionQuery('a')).toBe(false);
+    expect(matchesAgentMentionQuery('e')).toBe(false);
+    expect(matchesAgentMentionQuery('b')).toBe(true);
+    expect(matchesAgentMentionQuery('Casey')).toBe(false);
   });
 });
 
