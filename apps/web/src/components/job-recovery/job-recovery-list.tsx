@@ -606,7 +606,7 @@ function JobRecoveryItems({
       <EmptyState
         icon={CheckCircle2}
         size="inset"
-        title="Nothing needs attention"
+        title="No jobs need attention"
         body={`Failed and stuck jobs from the last ${String(JOBS_ATTENTION_DAYS)} days will appear here.`}
       />
     );

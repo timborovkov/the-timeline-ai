@@ -291,8 +291,9 @@ Actions:
 Copy:
 
 - Titles stay factual: `No boards yet`, `No proposals to review`,
-  `No tasks match this filter`. No exclamation marks and no
-  “Nothing here yet”.
+  `No tasks match this filter`, `No pins yet`. No exclamation marks and
+  no “Nothing here yet” / “Nothing pinned yet” openings. Waiting queues
+  use the same `No …` shape (`No jobs need attention`).
 - Body is one or two short sentences: what this surface is, what happens
   next, and what the person can do.
 - Distinguish an empty corpus from a filter miss. Filters never pretend

@@ -354,7 +354,7 @@ function PinnedWorkspacePanel({
       {items.length === 0 ? (
         <EmptyState
           icon={Pin}
-          title="Nothing pinned yet"
+          title="No pins yet"
           body="Pin an item from its detail page or overflow menu to keep it close on Home and Work."
         />
       ) : (
