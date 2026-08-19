@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.13 · Approvals select-all (2026-08-18). Replaces v3.12 Linear collection rows.
+**Version:** v3.14 · Timeline search and continued paging (2026-08-18). Replaces v3.13 Approvals select-all.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -192,10 +192,12 @@ table.
   popover on desktop and a bottom dialog on mobile. Active filters appear in a
   removable chip row only while active. Pass chrome through named children
   (`CollectionToolbar.Search`, `.Count`, `.Filters`, `.View`, `.Actions`,
-  `.ClearAll`) rather than JSX props. Inventory counts belong next to search
-  (`24 of 847` filtered, `847` unfiltered). Filter-only toolbars such as Work →
-  Pinned and Approvals have no inventory chip; labeled totals stay in page
-  metadata or group headers.
+  `.ClearAll`) rather than JSX props. The compound slot components stay
+  server-safe so they keep a `data-collection-slot` marker across the RSC
+  client boundary. Inventory counts belong next to search (`24 of 847`
+  filtered, `847` unfiltered). Filter-only toolbars such as Work → Pinned and
+  Approvals have no inventory chip; labeled totals stay in page metadata or
+  group headers.
 - `CollectionGroup` uses a 40px header with glyph, readable status label,
   count, and optional action. Groups start open; collapse state lasts only for
   the mounted session and is never saved as a preference.
@@ -447,8 +449,11 @@ rest of the archive.
 ### Timeline
 
 Timeline is the strongest archive expression. Chrome is a sticky
-`CollectionToolbar` under the 48px shell header, with **Moments** and **All
-events** as the view control. Moments group related activity and give rows
+`CollectionToolbar` under the 48px shell header. The row includes **Search
+timeline**, a Filters trigger (source, origin, author, impact, and dates),
+source presets, and **Moments** / **All events** as the view control. Search
+submits on Enter and opens global search with the current source and date
+filters. Moments group related activity and give rows
 different visual weight. All events is a uniform compact log of every captured
 source event. The labels and the row density should make the difference
 obvious without a lecture. Timeline has no inventory chip; Moments versus All
@@ -964,3 +969,5 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-18 | Collection chrome named children | Passes CollectionRow, CollectionToolbar, EditableMetadata, and PageHeader chrome through named children; Title/Context `title` carries hover IDs and errors. |
 | 2026-08-17 | Linear collection rows | Collection rows use a full-width bottom hairline only. Pinned and Approvals drop unlabeled toolbar counts. |
 | 2026-08-18 | Approvals select-all | Restores bulk review without a persistent Accept-all bar: a visible Select-all checkbox for loaded proposals, plus the same control on multi-item bundle headers. |
+| 2026-08-18 | Timeline search and continued paging | Puts Search timeline on the archive toolbar, keeps source presets visible, and re-observes the infinite-scroll sentinel after each page so virtualized rows keep loading. |
+| 2026-08-18 | RSC collection toolbar slots | CollectionToolbar compound slots render a `data-collection-slot` marker so search/filters/view/actions survive the RSC client boundary. |

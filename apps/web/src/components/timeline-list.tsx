@@ -88,6 +88,7 @@ interface Props {
   focusMomentId?: string | null;
   timezone?: string;
   mode?: 'moments' | 'events';
+  onEndReached?: () => void;
 }
 
 const EMPTY_MEMBERS: NonNullable<Props['members']> = [];
@@ -1426,6 +1427,7 @@ export function TimelineList({
   focusMomentId = null,
   timezone,
   mode = 'moments',
+  onEndReached,
 }: Props) {
   const workspaceTimezone = useWorkspaceTimezone();
   const resolvedTimezone = timezone ?? workspaceTimezone;
@@ -1597,6 +1599,7 @@ export function TimelineList({
           items={visibleMoments}
           getItemKey={(moment) => moment.id}
           estimateSize={(moment) => (moment.visualWeight === 'pulse' ? 52 : 64)}
+          onEndReached={onEndReached}
           renderSticky={(moment) =>
             moment ? (
               <h2 className="sticky top-11 z-10 -mx-3 border-y border-border bg-bg px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-fg-dim">

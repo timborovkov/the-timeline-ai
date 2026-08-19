@@ -156,6 +156,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       the current instant by default; an explicit upcoming control and future
       date filters are bounded to seven days so recurrence materialization
       cannot crowd historical work out of the archive.
+      The archive CollectionToolbar keeps Search timeline, a Filters trigger,
+      and horizontally scrollable source presets; infinite scroll re-observes
+      the sentinel after each page, and virtualized rows also prefetch via
+      `onEndReached`. Compound toolbar slots stay visible from server pages
+      through a `data-collection-slot` marker.
       An opt-in live OpenRouter smoke test (`OPENROUTER_LIVE_TESTS=1`) now
       verifies the presentation prompt and schema through the real structured
       LLM boundary.

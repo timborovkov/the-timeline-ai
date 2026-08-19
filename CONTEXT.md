@@ -139,7 +139,9 @@ individual source evidence. Archive rows are Linear-quiet: time, one source
 icon, a title, and at most one muted context line, with sticky dates under the
 filter toolbar. Impact stays in the inspector, not on the row. The archive
 pages older activity through infinite scroll and virtualizes mounted rows;
-Timeline has no inventory chip. Timeline lists should show compact signals for
+the sticky CollectionToolbar keeps Search timeline, Filters, and source
+presets, and paging continues after each loaded page. Timeline has no
+inventory chip. Timeline lists should show compact signals for
 extracted file representations; full transcripts, OCR text, and visual
 descriptions belong in event detail, citations, and agent tools. User-facing
 Moments chrome and digests count moments; All events, filters, and technical

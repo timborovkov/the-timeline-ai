@@ -48,12 +48,11 @@ export function InfiniteScroll({
     onLoadMoreRef.current();
   }
 
-  // The observer callback reads onLoadMore/loading through refs so attaching
-  // stays stable while those values change.
-  // react-doctor-disable-next-line react-doctor/exhaustive-deps
+  // Re-attach after loading finishes so a sentinel that is still in view can
+  // fetch the next page. onLoadMore stays in a ref.
   useEffect(() => {
     const node = sentinelRef.current;
-    if (!node || !hasMore || disabled) return;
+    if (!node || !hasMore || disabled || loading) return;
     // A passed-in root of null means the overflow parent is not mounted yet.
     // Do not fall back to #main — that auto-fetches every page from a nested list.
     if (root === null) return;
@@ -71,7 +70,7 @@ export function InfiniteScroll({
     return () => {
       observer.disconnect();
     };
-  }, [disabled, hasMore, root]);
+  }, [disabled, hasMore, loading, root]);
 
   if (error) {
     return (

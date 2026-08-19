@@ -225,16 +225,17 @@ describe('TimelineFeed', () => {
     );
 
     expect(html).toContain('Server bundled CI activity');
-    expect(fakes.timelineList).toHaveBeenCalledWith(
+    const listProps = fakes.timelineList.mock.calls.at(-1)?.[0] as {
+      onEndReached?: unknown;
+      serverMoments?: { title: string; rawEvents: TimelineEvent[] }[];
+    };
+    expect(listProps.serverMoments).toEqual([
       expect.objectContaining({
-        serverMoments: [
-          expect.objectContaining({
-            title: 'Server bundled CI activity',
-            rawEvents: [event],
-          }),
-        ],
+        title: 'Server bundled CI activity',
+        rawEvents: [event],
       }),
-    );
+    ]);
+    expect(typeof listProps.onEndReached).toBe('function');
   });
 
   it('passes source-event mode to fetching and the timeline list', () => {
