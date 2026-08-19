@@ -1,11 +1,12 @@
 import { withTeam } from '@timeline/shared/team-scope';
+import { ClipboardList } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
 import { integrationAuditSummary } from '@/app/app/team/integrations/audit/integration-audit-summary';
 import { Breadcrumb } from '@/components/breadcrumb';
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { IndexStrip } from '@/components/index-strip';
 import { TechnicalDetails } from '@/components/technical-details';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -68,7 +69,8 @@ export default async function IntegrationAuditPage() {
           Audit entries
         </h2>
         {rows.length === 0 ? (
-          <EmptyAction
+          <EmptyState
+            icon={ClipboardList}
             title="No integration audit entries yet"
             body="Connection and sync activity that creates an audit record will appear here."
             href="/app/team/integrations"

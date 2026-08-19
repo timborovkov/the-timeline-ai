@@ -1,8 +1,10 @@
 'use client';
 
 import { formatDigestDate, type DailyDigestPayload } from '@timeline/shared/messaging/format';
+import { Newspaper } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { EmptyState } from '@/components/empty-state';
 import { DigestBody } from '@/components/home/digest-body';
 import { cn } from '@/lib/utils';
 
@@ -35,7 +37,14 @@ export function DigestHistoryTable({
   }, [selectedId]);
 
   if (digests.length === 0) {
-    return <p className="text-sm text-fg-muted">No digests have been generated yet.</p>;
+    return (
+      <EmptyState
+        icon={Newspaper}
+        size="inset"
+        title="No digests yet"
+        body="Daily digests will appear here after Timeline has a window of team activity to summarize."
+      />
+    );
   }
 
   return (

@@ -1561,7 +1561,7 @@ test('agentic core capture-to-approval journey creates durable task state', asyn
   await expect(ownerPage.getByText(commitment).first()).toBeVisible();
   await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
   await ownerPage.getByRole('button', { name: `Accept ${expectedTask}` }).click();
-  await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
+  await expect(ownerPage.getByText('No proposals to review')).toBeVisible();
 
   await ownerPage.goto('/app/tasks');
   await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();
@@ -1589,7 +1589,7 @@ test('Telegram voice approval journey creates durable task state', async ({ brow
   await waitForPost(ownerPage, '/app/approvals', () =>
     approval.getByRole('button', { name: 'Accept' }).click(),
   );
-  await expect(ownerPage.getByText('No pending approvals')).toBeVisible();
+  await expect(ownerPage.getByText('No proposals to review')).toBeVisible();
 
   await ownerPage.goto('/app/tasks');
   await expect(ownerPage.getByText(expectedTask).first()).toBeVisible();

@@ -18,6 +18,7 @@ import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
 import { CopyButton } from '@/components/copy-button';
+import { EmptyState } from '@/components/empty-state';
 import { PageHeader } from '@/components/page-header';
 import { ItemActionGroup } from '@/components/ui/item-actions';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -322,7 +323,12 @@ function SourceGroup({
           ))}
         </CollectionGroup>
       ) : empty ? (
-        <p className="text-sm text-fg-muted">{empty}</p>
+        <EmptyState
+          icon={Plug}
+          size="inset"
+          title={empty.replace(/\.$/, '')}
+          body="New providers will appear here once they are configured for this workspace."
+        />
       ) : null}
     </section>
   );

@@ -1,7 +1,9 @@
+import { ShieldAlert } from 'lucide-react';
+
 import type * as jobRecovery from '@timeline/shared/job-recovery';
 import type { ReactNode } from 'react';
 
-import { EmptyAction } from '@/components/empty-action';
+import { EmptyState } from '@/components/empty-state';
 import { JobRecoveryList } from '@/components/job-recovery/job-recovery-list';
 import { JobsPageHeader } from '@/components/job-recovery/jobs-page-header';
 
@@ -33,7 +35,8 @@ export function JobsForbiddenView({ teamName }: { teamName: string }): ReactNode
   return (
     <div className="space-y-8">
       <JobsPageHeader teamName={teamName} />
-      <EmptyAction
+      <EmptyState
+        icon={ShieldAlert}
         title="Admins only"
         body="Job recovery is a team-admin queue. Ask an admin to retry or dismiss failed processing."
         href="/app"

@@ -1,10 +1,10 @@
-import Link from 'next/link';
+import { Users } from 'lucide-react';
 
 import type { TeamMemberMap, TeamMemberRow } from '@/components/team-member-types';
 
+import { EmptyState } from '@/components/empty-state';
 import { SectionHeading } from '@/components/section-heading';
 import { TeamMemberListItem } from '@/components/team-member-list-item';
-import { Button } from '@/components/ui/button';
 
 export function MembersCard({
   members,
@@ -23,12 +23,14 @@ export function MembersCard({
     <section className="space-y-2">
       <SectionHeading>Members</SectionHeading>
       {members.length === 0 ? (
-        <div className="space-y-3 px-1">
-          <p className="text-sm text-fg-muted">No members are available right now.</p>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/app/team?section=members">Refresh members</Link>
-          </Button>
-        </div>
+        <EmptyState
+          icon={Users}
+          size="inset"
+          title="No members are available right now"
+          body="Reload this list if a teammate was just added, or invite someone from the form on this page."
+          href="/app/team?section=members"
+          action="Refresh members"
+        />
       ) : (
         <ul className="border-x border-border">
           {members.map((member) => (

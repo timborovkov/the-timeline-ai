@@ -25,10 +25,15 @@ export const metadata: Metadata = {
 const STATUS_FILTERS = ['pending', 'failed', 'resolved', 'all'] as const;
 type ApprovalFilter = (typeof STATUS_FILTERS)[number];
 
-const EMPTY_STATES: Record<ApprovalFilter, { title: string; body: string }> = {
+const EMPTY_STATES: Record<
+  ApprovalFilter,
+  { title: string; body: string; href?: string; action?: string }
+> = {
   pending: {
-    title: 'No pending approvals',
-    body: 'When the agent proposes a workspace change, it will wait here before becoming canonical.',
+    title: 'No proposals to review',
+    body: 'The timeline is collecting events. Proposals will appear here when something needs a decision.',
+    href: '/app/timeline',
+    action: 'Open timeline',
   },
   failed: {
     title: 'No failed approvals',
@@ -39,8 +44,10 @@ const EMPTY_STATES: Record<ApprovalFilter, { title: string; body: string }> = {
     body: 'Accepted, rejected, and superseded approvals will appear here.',
   },
   all: {
-    title: 'No approvals',
-    body: 'Agent proposals will appear here as they move through review.',
+    title: 'No proposals to review',
+    body: 'The timeline is collecting events. Proposals will appear here when something needs a decision.',
+    href: '/app/timeline',
+    action: 'Open timeline',
   },
 };
 

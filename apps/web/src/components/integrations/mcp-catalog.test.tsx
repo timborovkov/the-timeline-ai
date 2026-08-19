@@ -151,8 +151,8 @@ describe('McpCatalog', () => {
 
     await user.type(screen.getByRole('searchbox', { name: 'Filter MCP servers' }), 'missing');
 
-    expect(screen.getByRole('status').textContent).toBe('0 of 4 MCP servers');
-    expect(screen.getByText('No MCP servers match this filter.')).toBeTruthy();
+    expect(screen.getByText('0 of 4 MCP servers')).toBeTruthy();
+    expect(screen.getByText('No MCP servers match this filter')).toBeTruthy();
 
     const clearFilters = screen.getByRole('button', { name: 'Clear filters' });
     expect(clearFilters.className).toContain('min-h-9');

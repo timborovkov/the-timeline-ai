@@ -3,6 +3,7 @@ import { ingestWebhookCredentials, ingestWebhooks, users } from '@timeline/db';
 import * as integrationsLib from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { Plug } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -12,6 +13,7 @@ import type { Metadata } from 'next';
 import { visibleConnectionAttentionStats } from '@/app/app/team/integrations/connection-attention';
 import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
+import { EmptyState } from '@/components/empty-state';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { ConnectedIntegrations } from '@/components/integrations/connected';
 import { IngestWebhooksUi } from '@/components/integrations/ingest-webhooks';
@@ -463,9 +465,12 @@ function IntegrationWorkflow({
       ) : hasActiveImports ? null : (
         <section className="space-y-3" aria-labelledby="active-team-sync">
           <SectionHeading id="active-team-sync">Active team sync</SectionHeading>
-          <p className="rounded-md border border-border bg-surface p-4 text-sm text-fg-muted">
-            No provider sources are actively syncing yet.
-          </p>
+          <EmptyState
+            icon={Plug}
+            size="inset"
+            title="No provider sources are actively syncing"
+            body="Shared sources appear here after a team admin activates them for timeline import."
+          />
         </section>
       )}
       {hasSharedSources || needsSharedSourceReview ? (
@@ -576,21 +581,18 @@ function AdvancedIntegrationSection({
 
 function NoSourcesState({ isAdmin }: { isAdmin: boolean }) {
   return (
-    <div className="rounded-md border border-border bg-surface p-6 text-sm text-fg-muted">
-      <p className="mb-1 font-medium text-fg">No sources connected yet.</p>
-      <p>
-        Connect a native provider to sync work into the timeline, or add an MCP-compatible server
-        for live agent tool access.
-      </p>
+    <EmptyState
+      icon={Plug}
+      title="No sources connected yet"
+      body="Connect a native provider to sync work into the timeline, or add an MCP-compatible server for live agent tool access."
+    >
       {isAdmin ? (
-        <p className="mt-2">
-          <Link className="text-signal underline" href="/docs/setup/integrations.html">
-            Read the setup guide
-          </Link>
-        </p>
+        <Button asChild variant="outline" size="sm">
+          <Link href="/docs/setup/integrations.html">Read the setup guide</Link>
+        </Button>
       ) : (
-        <p className="mt-2">Ask a team admin to enable a source to get started.</p>
+        <p className="text-sm text-fg-muted">Ask a team admin to enable a source to get started.</p>
       )}
-    </div>
+    </EmptyState>
   );
 }
