@@ -49,7 +49,7 @@ export async function loadBoardAddItemCandidates({
     types.map((type) => listObjects({ type, archived: false, limit: perType })),
   );
   const byId = new Map<string, ObjectRow>();
-  const typeRank = new Map(types.map((type, index) => [type, index] as const));
+  const typeRank = new Map<string, number>(types.map((type, index) => [type, index]));
   for (const group of groups) {
     for (const row of group) {
       if (!row.archivedAt) byId.set(row.id, row);
