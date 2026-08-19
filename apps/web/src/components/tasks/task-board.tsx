@@ -51,6 +51,7 @@ import { MetadataDateEditor } from '@/components/collections/metadata-date-edito
 import { SelectionBar } from '@/components/collections/selection-bar';
 import { VirtualList } from '@/components/collections/virtual-list';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { CompactKanbanCardSkeleton } from '@/components/loading-states';
 import { ObjectOrigin } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
@@ -513,6 +514,7 @@ function useTaskBoardController({
   const filterKey = `${filterParamsKey(filterParams)}\u0000${categoryFilterRefreshToken ?? ''}`;
   const [boardState, dispatchBoard] = useReducer(taskBoardReducer, INITIAL_TASK_BOARD_STATE);
   const [loadingMore, startLoadMore] = useTransition();
+  const loadMoreLockRef = useRef(false);
   const appendedRows =
     boardState.pagination.filterKey === filterKey
       ? boardState.pagination.appendedRows
@@ -866,22 +868,27 @@ function useTaskBoardController({
   }
 
   function loadMoreTasks(): void {
-    if (!cursor || loadingMore) return;
+    if (!cursor || loadingMore || loadMoreLockRef.current) return;
+    loadMoreLockRef.current = true;
     startLoadMore(async () => {
-      const page = await loadTaskRowsAction({
-        cursor,
-        ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
-      });
-      if (page.error) {
-        notifyError('tasks:load-more', 'Couldn’t load older tasks');
-        return;
+      try {
+        const page = await loadTaskRowsAction({
+          cursor,
+          ...(Object.keys(filterParams).length > 0 ? { filters: filterParams } : {}),
+        });
+        if (page.error) {
+          notifyError('tasks:load-more', 'Couldn’t load older tasks');
+          return;
+        }
+        dispatchBoard({
+          type: 'append-page',
+          rows: page.rows,
+          nextCursor: page.nextCursor,
+          filterKey,
+        });
+      } finally {
+        loadMoreLockRef.current = false;
       }
-      dispatchBoard({
-        type: 'append-page',
-        rows: page.rows,
-        nextCursor: page.nextCursor,
-        filterKey,
-      });
     });
   }
 
@@ -1811,15 +1818,24 @@ function TaskColumn({
             />
           )}
         />
-        <InfiniteScroll
-          hasMore={canLoadMore}
-          loading={loadingMore}
-          error={loadError}
-          onLoadMore={onLoadMore}
-          boundLabel="No more matching tasks"
-          hideBound
-          root={scrollEl}
-        />
+        {rows.length > 0 ? (
+          <InfiniteScroll
+            hasMore={canLoadMore}
+            loading={loadingMore}
+            error={loadError}
+            onLoadMore={onLoadMore}
+            boundLabel="No more matching tasks"
+            hideBound
+            root={scrollEl}
+            className="space-y-1.5 py-1.5"
+            loadingContent={
+              <>
+                <CompactKanbanCardSkeleton />
+                <CompactKanbanCardSkeleton />
+              </>
+            }
+          />
+        ) : null}
       </div>
     </section>
   );
@@ -1907,7 +1923,7 @@ function TaskCard({
           />
         </ItemActionGroup>
       </div>
-      <div className="mt-1 flex min-w-0 items-center gap-0.5 overflow-hidden text-[11px] leading-4">
+      <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
         {taskCategoriesEnabled ? (
           <EditableMetadata label={`Category for ${displayText(title)}`} density="compact">
             <EditableMetadata.Value>

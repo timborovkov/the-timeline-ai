@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.18 · Remaining settings and directory density (2026-08-19).
+**Version:** v3.19 · Board kanban/list and task load skeletons (2026-08-19).
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -534,18 +534,18 @@ puts pinned and team boards above the work queue so saved surfaces stay in reach
 before due and assigned items. Tasks default to the grouped list; the list table
 is full-bleed inside the work canvas, without extra page gutters around the rows.
 Kanban/List view controls sit on the CollectionToolbar row with search and
-filters, not on a second strip. Board kanban/table/list uses the same toolbar
+filters, not on a second strip. Board kanban/list uses the same toolbar
 slot. Add item is a compact toolbar action that opens a popover, not a
 full-width boxed header. Loading placeholders match the live CollectionToolbar
 (search, optional count, Filters, view toggle, and compact add on one row) and
 the requested view: Tasks default to list, boards default to kanban, and
-table/list/kanban each have a matching skeleton. Timeline loading uses the same
+list/kanban each have a matching skeleton. Timeline loading uses the same
 toolbar row without a page header or inventory chip, then Linear feed rows.
 Collection pages load as flat rows, not boxed card grids. Objects New object and
 Boards Create board use the same compact toolbar/header action as Add item, not a
 filled primary chip. Kanban cards stay compact: a clamped title plus one
 metadata row, with no redundant type label. Curated boards use the same
-full-bleed work canvas in kanban, table, and grouped list — no boxed inner
+full-bleed work canvas in kanban and grouped list — no boxed inner
 container around the collection. Board kanban cards stay compact: a clamped
 title, optional next-step line directly under the title, and one metadata row.
 Kanban lanes use a hairline divider, not boxed column chrome. Card title and
@@ -553,12 +553,14 @@ metadata share the same left edge: compact 20px chips, no extra type/metadata
 padding, and no wrapping priority row. The drag handle sits with the card
 actions on the right. Cards have no Move control; the drag handle is the
 on-card move path (Space or Enter, then arrow keys), and opening the card is
-the keyboard alternative.
+the keyboard alternative. Task kanban paging uses card skeletons in columns
+that already have cards; empty lanes stay empty instead of flashing
+Loading more labels.
 Grouped board list does not repeat the current lane name or add a Move row. Next
 step is the board-local immediate action on that card, not an object description
-and not a table column. It sits under the title in kanban, list, and table, and
-is edited in the open card. Table and card-detail keep the lane name because
-those views are not already organized by column. Board table and list checkboxes
+and not a spreadsheet column. It sits under the title in kanban and list, and
+is edited in the open card. Card-detail keeps the lane name because that view
+is not already organized by column. Board list checkboxes
 stay vertically centered with the row. Do not style board lanes as badges. Team
 settings render one URL-selected section at a time. Field validation stays on
 the edited form; pending, success, and server failures use the shared action
@@ -1073,3 +1075,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
 | 2026-08-19 | Remaining settings and directory density | Aligns Team settings, Connections, Meetings, Calendar, Slack, Telegram, and remaining timestamps with compact collection rows, NativeSelect, quiet icon actions, and relative age plus hover datetime. |
 | 2026-08-19 | Kanban card alignment and saved-meeting editor | Aligns board/task kanban title and metadata on one left edge with compact chips and hairline lanes, and makes Meetings Edit details open the editor instead of a nested Edit saved meeting control. |
+| 2026-08-19 | Board list replaces table; task kanban skeletons | Drops the legacy board Table spreadsheet so boards match Tasks with Kanban and grouped List, maps `?view=table` to list, and pages task kanban with card skeletons instead of flickering Loading more labels. |

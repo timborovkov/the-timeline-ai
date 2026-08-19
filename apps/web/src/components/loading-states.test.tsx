@@ -5,8 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   CollectionGroupSkeleton,
-  CollectionTableSkeleton,
   CollectionToolbarSkeleton,
+  CompactKanbanCardSkeleton,
   CompactKanbanSkeleton,
   PageHeaderSkeleton,
 } from '@/components/loading-states';
@@ -32,14 +32,14 @@ describe('collection loading skeletons', () => {
     expect(row?.querySelectorAll('.animate-pulse').length).toBe(3);
   });
 
-  it('renders compact kanban lanes and a full-bleed table', () => {
+  it('renders compact kanban lanes and matching card skeletons', () => {
     const kanban = render(<CompactKanbanSkeleton />);
     expect(kanban.container.querySelectorAll('[class*="min(280px"]').length).toBe(3);
+    expect(kanban.container.querySelectorAll('.rounded-sm.border').length).toBe(9);
     kanban.unmount();
 
-    const table = render(<CollectionTableSkeleton />);
-    expect(table.container.querySelectorAll('.min-h-11').length).toBeGreaterThan(0);
-    expect(table.container.querySelector('.overflow-auto')).toBeTruthy();
+    const card = render(<CompactKanbanCardSkeleton />);
+    expect(card.container.querySelectorAll('.animate-pulse').length).toBe(4);
   });
 
   it('can omit header metadata and show a compact header action', () => {

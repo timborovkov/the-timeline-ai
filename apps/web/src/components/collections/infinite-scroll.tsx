@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import { InlineError } from '@/components/inline-error';
 import { getAppMainScrollElement } from '@/lib/app-scroll';
@@ -18,6 +18,7 @@ interface InfiniteScrollProps {
   disabled?: boolean;
   hideBound?: boolean;
   className?: string;
+  loadingContent?: ReactNode;
 }
 
 /**
@@ -36,6 +37,7 @@ export function InfiniteScroll({
   disabled = false,
   hideBound = false,
   className,
+  loadingContent,
 }: InfiniteScrollProps) {
   const sentinelRef = useRef<HTMLButtonElement | null>(null);
   const onLoadMoreRef = useRef(onLoadMore);
@@ -45,6 +47,7 @@ export function InfiniteScroll({
 
   function requestMore(): void {
     if (disabled || loadingRef.current || !hasMore) return;
+    loadingRef.current = true;
     onLoadMoreRef.current();
   }
 
@@ -94,12 +97,23 @@ export function InfiniteScroll({
     );
   }
 
+  const customLoading = loading && loadingContent !== undefined;
+
   return (
-    <div className={cn('flex justify-center py-2', className)} aria-busy={loading || undefined}>
+    <div
+      className={cn(customLoading ? 'w-full' : 'flex justify-center py-2', className)}
+      aria-busy={loading || undefined}
+    >
       {loading ? (
-        <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
-          Loading more…
-        </p>
+        customLoading ? (
+          <div role="status" aria-label="Loading more" className="w-full">
+            {loadingContent}
+          </div>
+        ) : (
+          <p role="status" className="m-0 px-3 py-2 text-xs text-fg-dim">
+            Loading more…
+          </p>
+        )
       ) : (
         <button
           ref={sentinelRef}

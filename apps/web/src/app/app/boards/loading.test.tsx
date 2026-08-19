@@ -66,11 +66,12 @@ describe('Boards route states', () => {
     expect(document.querySelectorAll('.motion-reduce\\:animate-none')).not.toHaveLength(0);
   });
 
-  it('uses a table-shaped board loading fallback when that view is requested', () => {
+  it('uses a list-shaped board loading fallback for list and legacy table bookmarks', () => {
     fakes.searchParams = new URLSearchParams('view=table');
     const { container, unmount } = render(<BoardDetailLoading />);
-    expect(container.querySelector('[data-board-loading-view="table"]')).toBeTruthy();
+    expect(container.querySelector('[data-board-loading-view="list"]')).toBeTruthy();
     expect(container.querySelector('[data-board-loading-view="kanban"]')).toBeNull();
+    expect(container.querySelector('[data-board-loading-view="table"]')).toBeNull();
     expect(container.querySelector('[data-loading-toolbar="collection"]')).toBeTruthy();
     unmount();
 

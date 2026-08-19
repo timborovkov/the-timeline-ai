@@ -428,7 +428,7 @@ function KanbanCard({
           <GripVertical aria-hidden="true" className="size-3.5" />
         </button>
       </div>
-      <div className="mt-1 flex min-w-0 items-center gap-0.5 overflow-hidden text-[11px] leading-4">
+      <div className="mt-1 flex min-w-0 flex-nowrap items-center gap-0.5 overflow-hidden text-[11px] leading-4">
         <span className="shrink-0 text-fg-dim">{statusLabel(item.object.type)}</span>
         {item.object.type === 'task' ? (
           <LiveTaskCategoryBadge

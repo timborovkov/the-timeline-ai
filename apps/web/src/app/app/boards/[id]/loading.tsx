@@ -4,17 +4,16 @@ import { useSearchParams } from 'next/navigation';
 
 import {
   CollectionGroupSkeleton,
-  CollectionTableSkeleton,
   CollectionToolbarSkeleton,
   CompactKanbanSkeleton,
   PageHeaderSkeleton,
 } from '@/components/loading-states';
 import { WorkSubnav } from '@/components/work-subnav';
+import { normalizeBoardView } from '@/lib/board-links';
 
 export default function BoardDetailLoading() {
   const searchParams = useSearchParams();
-  const viewParam = searchParams.get('view');
-  const view = viewParam === 'table' || viewParam === 'list' ? viewParam : 'kanban';
+  const view = normalizeBoardView(searchParams.get('view'));
 
   return (
     <>
@@ -37,15 +36,9 @@ export default function BoardDetailLoading() {
           aria-label="Loading board"
           className="flex min-h-0 flex-1 flex-col"
         >
-          <CollectionToolbarSkeleton viewSegments={3} action />
+          <CollectionToolbarSkeleton viewSegments={2} action />
           <div data-board-loading-view={view} className="flex min-h-0 flex-1 flex-col">
-            {view === 'table' ? (
-              <CollectionTableSkeleton />
-            ) : view === 'list' ? (
-              <CollectionGroupSkeleton subtitle />
-            ) : (
-              <CompactKanbanSkeleton />
-            )}
+            {view === 'list' ? <CollectionGroupSkeleton subtitle /> : <CompactKanbanSkeleton />}
           </div>
         </div>
       </div>

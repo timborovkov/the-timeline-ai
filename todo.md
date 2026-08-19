@@ -204,14 +204,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       object Calendar sections link back to the focused event. Job recovery
       and Reconciliation reuse the same dense collection rows, with IDs and
       raw errors in Title/Context hover titles.
-- [x] U8b — Collection chrome: full-bleed board list/table, compact kanban
+- [x] U8b — Collection chrome: full-bleed board list, compact kanban
       cards with next step under the title and no on-card Move control, view
       toggles on the search/filter row, slim Add item / New object / Create
       board actions, matching collection loading skeletons, and `N of M`
       infinite-scroll counts. Board kanban mutations stay on `notifyAction`
       (no Saving/Saved chips). Board kanban and grouped list virtualize
-      against their inner scrollers; the board table stays a semantic table
-      with `content-visibility` row containment.
+      against their inner scrollers. The legacy board Table spreadsheet was
+      removed; `?view=table` maps to grouped list. Task kanban pages with
+      card skeletons instead of Loading more labels.
 - [x] U8c — Object and task detail density: Linear-style object page and
       task peek on one `DetailRail` surface panel, 8px section stack, why-this-exists
       lead copy, ghost pin, floating Ask binder, overflow Repair/Add task, list

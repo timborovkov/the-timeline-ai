@@ -136,13 +136,13 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
   {
     id: 'boards',
     title: 'Boards',
-    description: 'Curated kanban, table, and list surfaces over workspace objects.',
+    description: 'Curated kanban and list surfaces over workspace objects.',
     href: '/app/boards',
     group: 'dashboard',
     minRole: 'member',
-    intents: ['boards', 'kanban', 'pipeline', 'lanes', 'table view', 'workflow board'],
+    intents: ['boards', 'kanban', 'pipeline', 'lanes', 'list view', 'table view', 'workflow board'],
     guide:
-      'Use Boards for curated kanban, table, and list workflows over the same workspace objects shown elsewhere.',
+      'Use Boards for curated kanban and list workflows over the same workspace objects shown elsewhere.',
     relatedRouteIds: ['work', 'objects', 'tasks', 'help/boards'],
   },
   {
@@ -444,7 +444,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     minRole: 'member',
     intents: ['how boards work', 'kanban guide', 'board templates', 'workflow guide'],
     guide:
-      'Boards organize workspace objects into kanban, table, and list workflows. They do not create a second task system.',
+      'Boards organize workspace objects into kanban and list workflows. They do not create a second task system.',
     relatedRouteIds: ['boards', 'objects'],
   },
   {

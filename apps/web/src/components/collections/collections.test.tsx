@@ -93,13 +93,13 @@ describe('collection primitives', () => {
     render(
       <CollectionViewToggle
         label="Board view"
-        views={['kanban', 'table', 'list'] as const}
-        current="table"
+        views={['kanban', 'list'] as const}
+        current="list"
         hrefFor={(view) => `/app/boards/1?view=${view}`}
       />,
     );
 
-    expect(screen.getByRole('link', { name: 'table' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'list' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('link', { name: 'kanban' }).getAttribute('href')).toBe(
       '/app/boards/1?view=kanban',
     );

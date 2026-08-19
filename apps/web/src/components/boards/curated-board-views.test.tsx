@@ -38,7 +38,7 @@ vi.mock('@/components/collections/virtual-list', () => ({
     ),
 }));
 
-const { CuratedBoardList, CuratedBoardTable } = await import('./curated-board-views.js');
+const { CuratedBoardList } = await import('./curated-board-views.js');
 
 function boardItem(
   input: Partial<boards.BoardItemRow['object']> = {},
@@ -104,210 +104,6 @@ const LANES: boards.BoardLaneRow[] = [
     archivedAt: null,
   },
 ];
-
-describe('CuratedBoardTable', () => {
-  beforeEach(() => {
-    cleanup();
-    fakes.updateItem.mockReset();
-    fakes.updateItem.mockResolvedValue({ ok: true });
-    fakes.notifyAction.mockClear();
-  });
-
-  it('edits board item fields inline', async () => {
-    const user = userEvent.setup();
-    render(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={LANES}
-        items={[boardItem()]}
-        members={[{ id: 'user-1', label: 'Ada' }]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Responsible person for Launch review' }));
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Responsible person' }),
-      'user-1',
-    );
-    await waitFor(() => {
-      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
-        responsibleUserId: 'user-1',
-      });
-    });
-
-    await user.keyboard('{Escape}');
-    await user.click(screen.getByRole('button', { name: 'Lane for Launch review' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Lane' }), 'lane-2');
-    await waitFor(() => {
-      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { laneId: 'lane-2' });
-    });
-  });
-
-  it('uses the same date-only due timestamp as the detail panel', async () => {
-    const user = userEvent.setup();
-    render(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={[]}
-        items={[boardItem()]}
-        members={[]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Due date for Launch review' }));
-    fireEvent.change(screen.getByLabelText('Due date'), {
-      target: { value: '2026-07-04' },
-    });
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
-      dueAt: new Date('2026-07-04T00:00:00.000Z'),
-    });
-  });
-
-  it('uses source-tracked integration display titles in table rows', () => {
-    render(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={[]}
-        items={[
-          boardItem({
-            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
-            metadata: {
-              display_title: 'the-timeline-ai: Add cursor pagination',
-              display_title_canonical_name:
-                'timborovkov/the-timeline-ai#202: Add cursor pagination',
-            },
-          }),
-        ]}
-        members={[]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    expect(
-      screen.getByRole('link', { name: 'the-timeline-ai: Add cursor pagination' }),
-    ).toBeTruthy();
-    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
-  });
-
-  it('announces an inline save failure with the affected item name', async () => {
-    const user = userEvent.setup();
-    fakes.updateItem.mockResolvedValueOnce({ error: 'Connection lost' });
-    render(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={LANES}
-        items={[boardItem()]}
-        members={[{ id: 'user-1', label: 'Ada' }]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    await user.click(screen.getByRole('button', { name: 'Responsible person for Launch review' }));
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Responsible person' }),
-      'user-1',
-    );
-
-    await waitFor(() => {
-      expect(fakes.updateItem).toHaveBeenCalled();
-    });
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
-
-  it('reports bulk update failures through the shared toast', async () => {
-    const user = userEvent.setup();
-    fakes.updateItem.mockResolvedValueOnce({ error: 'Connection lost' });
-    render(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={LANES}
-        items={[boardItem()]}
-        members={[]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    await user.click(screen.getByRole('checkbox', { name: 'Select Launch review' }));
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    await waitFor(() => {
-      expect(fakes.notifyAction).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: 'board-items:bulk',
-          error: 'Couldn’t update items',
-        }),
-      );
-    });
-    expect(screen.queryByText('1 of 1 updates failed.')).toBeNull();
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
-
-  it('places next step under the name and keeps checkboxes vertically centered', () => {
-    const item = { ...boardItem(), nextStep: 'Call customer' };
-    render(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={LANES}
-        items={[item]}
-        members={[]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    expect(screen.queryByRole('columnheader', { name: 'Next step' })).toBeNull();
-    expect(screen.queryByText('No next step')).toBeNull();
-    const nameCell = screen.getByRole('link', { name: 'Launch review' }).closest('td');
-    expect(nameCell?.textContent).toContain('Call customer');
-    expect(nameCell?.className).toContain('align-middle');
-    expect(
-      screen.getByRole('checkbox', { name: 'Select Launch review' }).closest('td')?.className,
-    ).toContain('align-middle');
-  });
-
-  it('bulk assigns selected board items in table view', async () => {
-    const user = userEvent.setup();
-    render(
-      <CuratedBoardTable
-        boardId="board-1"
-        view="table"
-        lanes={LANES}
-        items={[
-          boardItem({ canonicalName: 'Launch review' }, { id: 'item-1', entityId: 'object-1' }),
-          boardItem(
-            { id: 'object-2', canonicalName: 'Security review' },
-            { id: 'item-2', entityId: 'object-2' },
-          ),
-        ]}
-        members={[{ id: 'user-1', label: 'Ada' }]}
-        onUpdateItem={fakes.updateItem}
-      />,
-    );
-
-    await user.click(screen.getByRole('checkbox', { name: 'Select Launch review' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Select Security review' }));
-    await user.selectOptions(screen.getByLabelText('Bulk responsible person'), 'user-1');
-    await user.click(screen.getByRole('button', { name: 'Apply' }));
-
-    await waitFor(() => {
-      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
-        responsibleUserId: 'user-1',
-      });
-      expect(fakes.updateItem).toHaveBeenCalledWith('item-2', {
-        responsibleUserId: 'user-1',
-      });
-    });
-  });
-});
 
 describe('CuratedBoardList', () => {
   beforeEach(() => {
@@ -437,5 +233,119 @@ describe('CuratedBoardList', () => {
     });
     expect(typeof options.undo?.run).toBe('function');
     expect(fakes.updateItem).toHaveBeenCalledWith('item-1', { priority: 2 });
+  });
+
+  it('uses source-tracked integration display titles in list rows', () => {
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[
+          boardItem({
+            canonicalName: 'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            metadata: {
+              display_title: 'the-timeline-ai: Add cursor pagination',
+              display_title_canonical_name:
+                'timborovkov/the-timeline-ai#202: Add cursor pagination',
+            },
+          }),
+        ]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    expect(
+      screen.getByRole('link', { name: 'the-timeline-ai: Add cursor pagination' }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/timborovkov\/the-timeline-ai#202/)).toBeNull();
+  });
+
+  it('uses the same date-only due timestamp as the detail panel', async () => {
+    const user = userEvent.setup();
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[boardItem()]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Due date for Launch review' }));
+    fireEvent.change(screen.getByLabelText('Due date'), {
+      target: { value: '2026-07-04' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
+      dueAt: new Date('2026-07-04T00:00:00.000Z'),
+    });
+  });
+
+  it('reports bulk update failures through the shared toast', async () => {
+    const user = userEvent.setup();
+    fakes.updateItem.mockResolvedValueOnce({ error: 'Connection lost' });
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[boardItem()]}
+        members={[]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Launch review' }));
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fakes.notifyAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: 'board-items:bulk',
+          error: 'Couldn’t update items',
+        }),
+      );
+    });
+    expect(screen.queryByText('1 of 1 updates failed.')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('bulk assigns selected board items in list view', async () => {
+    const user = userEvent.setup();
+    render(
+      <CuratedBoardList
+        boardId="board-1"
+        view="list"
+        lanes={LANES}
+        items={[
+          boardItem({ canonicalName: 'Launch review' }, { id: 'item-1', entityId: 'object-1' }),
+          boardItem(
+            { id: 'object-2', canonicalName: 'Security review' },
+            { id: 'item-2', entityId: 'object-2' },
+          ),
+        ]}
+        members={[{ id: 'user-1', label: 'Ada' }]}
+        onUpdateItem={fakes.updateItem}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select Launch review' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Security review' }));
+    await user.selectOptions(screen.getByLabelText('Bulk responsible person'), 'user-1');
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-1', {
+        responsibleUserId: 'user-1',
+      });
+      expect(fakes.updateItem).toHaveBeenCalledWith('item-2', {
+        responsibleUserId: 'user-1',
+      });
+    });
   });
 });
