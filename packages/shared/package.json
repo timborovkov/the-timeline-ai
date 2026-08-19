@@ -269,6 +269,12 @@
       "import": "./dist/objects/types.js",
       "default": "./dist/objects/types.js"
     },
+    "./objects/mentions": {
+      "types": "./src/objects/mentions.ts",
+      "development": "./src/objects/mentions.ts",
+      "import": "./dist/objects/mentions.js",
+      "default": "./dist/objects/mentions.js"
+    },
     "./task-categories": {
       "types": "./src/task-categories/index.ts",
       "development": "./src/task-categories/index.ts",

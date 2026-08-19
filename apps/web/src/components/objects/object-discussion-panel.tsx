@@ -1,6 +1,6 @@
 'use client';
 
-import { mentionInsertToken, type MentionMember } from '@timeline/shared/objects';
+import { mentionInsertToken, type MentionMember } from '@timeline/shared/objects/mentions';
 import Link from 'next/link';
 import {
   type Dispatch,

@@ -72,6 +72,19 @@ const checks = [
     },
   },
   {
+    name: '@timeline/shared object mention helpers',
+    run: async () => {
+      const mentions = await import('@timeline/shared/objects/mentions');
+      const token = mentions.mentionInsertToken(
+        { userId: '1', name: 'Casey Novak', email: 'casey@acme.test' },
+        [{ userId: '1', name: 'Casey Novak', email: 'casey@acme.test' }],
+      );
+      if (token !== 'Casey') {
+        throw new Error(`Unexpected mention insert token: ${token}`);
+      }
+    },
+  },
+  {
     name: '@timeline/shared reconciliation exports',
     run: async () => {
       const reconciliation = await import('@timeline/shared/reconciliation');
