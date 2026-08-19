@@ -17,15 +17,7 @@ import {
 import { GripVertical } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  useCallback,
-  useId,
-  useMemo,
-  useOptimistic,
-  useRef,
-  useState,
-  useTransition,
-} from 'react';
+import { useCallback, useId, useMemo, useOptimistic, useRef, useState, useTransition } from 'react';
 
 import type {
   BoardItemOptimisticPatch,
