@@ -358,7 +358,7 @@ function CandidateList({
         <ul className="divide-y divide-border">
           {candidates.map((row) => {
             const selected = row.id === entityId;
-            const visibleAliases = (row.aliases ?? [])
+            const visibleAliases = row.aliases
               .filter((alias) => !isInternalIdentifier(alias))
               .slice(0, 2);
             return (

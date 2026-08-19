@@ -10,11 +10,11 @@ import { BoardDetailClient } from '@/components/boards/board-detail-client';
 import { TaskCategoryFilterRefresh } from '@/components/tasks/task-category-filter-refresh';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
+import { loadBoardAddItemCandidates } from '@/lib/board-add-item-candidates';
 import { boardViewHref, normalizeBoardView, type BoardLayout } from '@/lib/board-links';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import { OBJECT_TYPE_LABELS } from '@/lib/object-type-labels';
-import { loadBoardAddItemCandidates } from '@/lib/board-add-item-candidates';
 import { loadProjectFilterRows } from '@/lib/project-filter-options';
 import {
   WORK_FILTER_PARAM_KEYS,

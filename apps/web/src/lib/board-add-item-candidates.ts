@@ -60,7 +60,7 @@ export async function loadBoardAddItemCandidates({
       const rankA = typeRank.get(a.type) ?? Number.MAX_SAFE_INTEGER;
       const rankB = typeRank.get(b.type) ?? Number.MAX_SAFE_INTEGER;
       if (rankA !== rankB) return rankA - rankB;
-      return (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0);
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
     })
     .slice(0, limit);
 }
