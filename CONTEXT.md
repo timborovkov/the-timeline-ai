@@ -1415,7 +1415,9 @@ values become an all-day local date span in the workspace calendar timezone
 when no explicit timezone is supplied. Instant aliases (`startsAt`, `startTime`,
 `start`) become `startAt` / `endAt`. Assignment fields that are not UUIDs are
 treated as `ownerName` / `assigneeName` and resolve only when they uniquely
-match an active member.
+match an active member. A relationship endpoint that locally-ref a pending
+sibling create in the same bundle accepts that sibling first; it does not wait
+for a separate Accept on the sibling item.
 
 ## Example Dialogue
 

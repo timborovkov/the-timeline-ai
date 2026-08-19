@@ -4029,11 +4029,17 @@ describe('processSuggestionJobForTests', () => {
       ),
     ).toEqual([]);
 
-    await expect(scope.suggestions.acceptSuggestionItem(task?.id ?? '')).resolves.toBe(true);
-    await expect(scope.suggestions.acceptSuggestionItem(calendar?.id ?? '')).resolves.toBe(true);
     await expect(scope.suggestions.acceptSuggestionItem(relationship?.id ?? '')).resolves.toBe(
       true,
     );
+    const [acceptedTask] = await db
+      .select({ status: agentSuggestionItems.status, resultId: agentSuggestionItems.resultId })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, task?.id ?? ''));
+    expect(acceptedTask).toEqual(
+      expect.objectContaining({ status: 'accepted', resultId: expect.any(String) }),
+    );
+    await expect(scope.suggestions.acceptSuggestionItem(calendar?.id ?? '')).resolves.toBe(true);
   });
 
   it('does not rewrite person creates from first-name prefixes or numbered handle variants', async () => {

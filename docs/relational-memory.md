@@ -512,10 +512,11 @@ relationship endpoints: a name stuffed into `assigneeUserId` becomes
 `endsAt` become `startAt` / `endAt`, and relationship `kind` aliases such as
 `associated_with` become `related`. Duplicate hub creates whose exact
 canonical name already exists anywhere on the team rewrite to updates even
-when that object is outside the 500-row recency matching window. Name-only
-relationship endpoints resolve to a unique existing object or a sibling
-create in the same bundle; ambiguous names still fail closed rather than
-guess. `canonicalProposalPayloadIssues` is the live-eval hygiene check for
+when that object is outside the 500-row recency matching window. Relationship
+endpoints that name or locally-ref a unique existing object or a pending
+sibling create in the same bundle resolve on accept, including when the
+relationship item is accepted first; ambiguous names still fail closed rather
+than guess. `canonicalProposalPayloadIssues` is the live-eval hygiene check for
 those shapes.
 
 ### Qualify vs recall vs invent

@@ -8421,7 +8421,7 @@ describe('suggestion scope', () => {
     expect(relationshipRows.rows[0]?.count).toBe('1');
   });
 
-  it('accepts bundled relationship proposals after sibling local-ref object creates', async () => {
+  it('accepts relationship items that locally-ref pending sibling object creates', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
@@ -8466,15 +8466,9 @@ describe('suggestion scope', () => {
     const relationshipItem = bundle.items.find((item) => item.targetKind === 'object_relationship');
     expect(relationshipItem).toBeDefined();
 
-    await expect(
-      scope.suggestions.acceptSuggestionItem(relationshipItem?.id ?? ''),
-    ).rejects.toThrow('has not been accepted yet');
-
-    await expect(scope.suggestions.acceptAll(bundle.id)).resolves.toEqual({
-      accepted: 3,
-      failed: 0,
-      failedItemIds: [],
-    });
+    await expect(scope.suggestions.acceptSuggestionItem(relationshipItem?.id ?? '')).resolves.toBe(
+      true,
+    );
 
     const itemRows = await db
       .select()
@@ -8482,6 +8476,16 @@ describe('suggestion scope', () => {
       .where(eq(agentSuggestionItems.suggestionId, bundle.id));
     expect(itemRows).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          targetKind: 'object',
+          title: 'Create John Doe',
+          status: 'accepted',
+        }),
+        expect.objectContaining({
+          targetKind: 'object',
+          title: 'Create Acme Corporation',
+          status: 'accepted',
+        }),
         expect.objectContaining({ targetKind: 'object_relationship', status: 'accepted' }),
       ]),
     );
