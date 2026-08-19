@@ -127,9 +127,12 @@ export function InfiniteScroll({
 
 export function CollectionBound({ label, className }: { label: string; className?: string }) {
   return (
-    <output className={cn('flex justify-center py-3 font-normal not-italic', className)}>
+    <output className={cn('block w-full py-4 font-normal not-italic', className)}>
       <span className="sr-only">{label}</span>
-      <span aria-hidden="true" className="block h-px w-[60%] bg-border/40" />
+      <span
+        aria-hidden="true"
+        className="mx-auto block h-px w-40 max-w-[70%] bg-gradient-to-r from-transparent via-border-strong to-transparent"
+      />
     </output>
   );
 }
