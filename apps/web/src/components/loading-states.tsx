@@ -117,7 +117,7 @@ export function CollectionRowSkeleton({
   metadata?: number;
 }) {
   return (
-    <div className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 last:border-b-0 sm:px-3">
+    <div className="flex min-h-11 items-center gap-3 border-b border-border/80 px-2 sm:px-3">
       {leading ? <Skeleton className="size-4 shrink-0" /> : null}
       <div className="min-w-0 flex-1 space-y-1">
         <Skeleton className="h-4 w-2/5" />

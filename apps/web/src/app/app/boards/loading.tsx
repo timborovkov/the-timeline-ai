@@ -10,7 +10,7 @@ export default function BoardsLoading() {
       <h1 className="sr-only">Boards</h1>
       <div className="space-y-6" aria-busy="true" aria-label="Loading boards">
         <div aria-hidden="true">
-          <PageHeaderSkeleton action />
+          <PageHeaderSkeleton variant="collection" action />
         </div>
         <WorkSubnav current="/app/boards" />
         <section aria-hidden="true" aria-label="Boards list loading placeholder">

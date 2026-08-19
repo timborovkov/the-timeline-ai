@@ -55,5 +55,7 @@ describe('collection loading skeletons', () => {
     const { container } = render(<CollectionGroupSkeleton groups={2} rows={3} subtitle />);
     expect(container.querySelectorAll('section')).toHaveLength(2);
     expect(container.querySelectorAll('.min-h-11').length).toBe(6);
+    expect(container.innerHTML).not.toContain('last:border-b-0');
+    expect(container.innerHTML).not.toContain('border-x');
   });
 });
