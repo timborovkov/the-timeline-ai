@@ -108,6 +108,23 @@ export function PinnedWorkspaceManager({
   initialPage: PinPage;
   filter: string;
 }) {
+  return (
+    <PinnedWorkspaceManagerState
+      key={`${filter}:${initialPage.items.map((item) => item.pinId).join('|') || 'empty'}`}
+      initialPage={initialPage}
+      filter={filter}
+    />
+  );
+}
+
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- keyed inner manager remounts when the server pin page changes
+function PinnedWorkspaceManagerState({
+  initialPage,
+  filter,
+}: {
+  initialPage: PinPage;
+  filter: string;
+}) {
   const [state, dispatch] = useReducer(
     managerReducer,
     initialPage,
@@ -279,6 +296,7 @@ export function PinnedWorkspaceManager({
   );
 }
 
+// react-doctor-disable-next-line react-doctor/no-multi-comp -- presentation split from keyed manager state
 function PinnedWorkspacePanel({
   items,
   nextCursor,

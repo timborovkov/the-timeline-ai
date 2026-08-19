@@ -17,11 +17,13 @@ export function PinMenuItem({
   title,
   initialPinned,
   onPinnedChange,
+  onOptimisticPinnedChange,
 }: {
   target: PinTargetRef;
   title: string;
   initialPinned: boolean;
   onPinnedChange?: (pinned: boolean) => void;
+  onOptimisticPinnedChange?: (pinned: boolean) => void;
 }) {
   return (
     <PinMenuItemControl
@@ -30,6 +32,7 @@ export function PinMenuItem({
       title={title}
       initialPinned={initialPinned}
       onPinnedChange={onPinnedChange}
+      onOptimisticPinnedChange={onOptimisticPinnedChange}
     />
   );
 }
@@ -40,11 +43,13 @@ function PinMenuItemControl({
   title,
   initialPinned,
   onPinnedChange,
+  onOptimisticPinnedChange,
 }: {
   target: PinTargetRef;
   title: string;
   initialPinned: boolean;
   onPinnedChange?: (pinned: boolean) => void;
+  onOptimisticPinnedChange?: (pinned: boolean) => void;
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   const [pending, setPending] = useState(false);
@@ -62,6 +67,7 @@ function PinMenuItemControl({
         const previous = pinned;
         const copy = pinNotifyCopy(next);
         setPinned(next);
+        onOptimisticPinnedChange?.(next);
         setPending(true);
         void notifyAction({
           id: `pin:${target.kind}:${target.key}`,
@@ -72,6 +78,7 @@ function PinMenuItemControl({
           undo: {
             run: async () => {
               setPinned(previous);
+              onOptimisticPinnedChange?.(previous);
               onPinnedChange?.(previous);
               const result = await mutatePin(target, previous);
               if (!result.error) router.refresh();
@@ -83,6 +90,7 @@ function PinMenuItemControl({
           .then((result) => {
             if (result.error) {
               setPinned(previous);
+              onOptimisticPinnedChange?.(previous);
             } else {
               onPinnedChange?.(next);
               router.refresh();
@@ -90,6 +98,7 @@ function PinMenuItemControl({
           })
           .catch(() => {
             setPinned(previous);
+            onOptimisticPinnedChange?.(previous);
           })
           .finally(() => {
             setPending(false);

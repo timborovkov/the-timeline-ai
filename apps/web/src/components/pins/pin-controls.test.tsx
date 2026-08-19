@@ -26,6 +26,7 @@ vi.mock('@/lib/notify', () => ({
 }));
 
 const { PinButton } = await import('@/components/pins/pin-button');
+const { PinOverflowMenu } = await import('@/components/pins/pin-overflow-menu');
 const { PinnedWorkspacePreview } = await import('@/components/pins/pinned-workspace-preview');
 
 const pinnedItem: PinnedItem = {
@@ -113,6 +114,25 @@ describe('shared pin controls', () => {
     await waitFor(() => {
       expect(screen.queryByLabelText('Pinned work')).toBeNull();
     });
+  });
+
+  it('shows the pinned glyph immediately while overflow pin is in flight', async () => {
+    const user = userEvent.setup();
+    let resolvePin: ((value: { ok: true }) => void) | undefined;
+    fakes.pinTargetAction.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePin = resolve;
+      }),
+    );
+    const { container } = render(
+      <PinOverflowMenu target={pinnedItem.target} title="Launch plan" initialPinned={false} />,
+    );
+
+    expect(container.querySelector('span.size-8')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Actions for Launch plan' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Pin to Home Launch plan' }));
+    expect(container.querySelector('span.size-8')).toBeTruthy();
+    resolvePin?.({ ok: true });
   });
 
   it('replaces the Home preview when the server pin set changes', () => {

@@ -1295,11 +1295,12 @@ function TimelineMomentRow({
             {title}
           </span>
         </Link>
-        <div className="absolute right-2 top-1.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <div className="absolute right-2 top-1.5 flex items-center">
           <PinOverflowMenu
             target={{ kind: 'timeline_moment', key: moment.id }}
             title={title}
             initialPinned={pinned}
+            overflowClassName="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
           />
         </div>
       </li>
@@ -1396,11 +1397,12 @@ function TimelineMomentRow({
           ) : null}
         </div>
       </div>
-      <div className="absolute right-2 top-2.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+      <div className="absolute right-2 top-2.5 flex items-center">
         <PinOverflowMenu
           target={{ kind: 'timeline_moment', key: moment.id }}
           title={title}
           initialPinned={pinned}
+          overflowClassName="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
         />
       </div>
     </div>

@@ -12,10 +12,12 @@ export function PinOverflowMenu({
   target,
   title,
   initialPinned,
+  overflowClassName,
 }: {
   target: PinTargetRef;
   title: string;
   initialPinned: boolean;
+  overflowClassName?: string;
 }) {
   return (
     <PinOverflowControls
@@ -23,6 +25,7 @@ export function PinOverflowMenu({
       target={target}
       title={title}
       initialPinned={initialPinned}
+      overflowClassName={overflowClassName}
     />
   );
 }
@@ -32,23 +35,27 @@ function PinOverflowControls({
   target,
   title,
   initialPinned,
+  overflowClassName,
 }: {
   target: PinTargetRef;
   title: string;
   initialPinned: boolean;
+  overflowClassName?: string;
 }) {
   const [pinned, setPinned] = useState(initialPinned);
   return (
-    <>
+    <span className="inline-flex items-center">
       {pinned ? <PinnedGlyph /> : null}
-      <ItemOverflowMenu targetLabel={title}>
-        <PinMenuItem
-          target={target}
-          title={title}
-          initialPinned={pinned}
-          onPinnedChange={setPinned}
-        />
-      </ItemOverflowMenu>
-    </>
+      <span className={overflowClassName}>
+        <ItemOverflowMenu targetLabel={title}>
+          <PinMenuItem
+            target={target}
+            title={title}
+            initialPinned={pinned}
+            onOptimisticPinnedChange={setPinned}
+          />
+        </ItemOverflowMenu>
+      </span>
+    </span>
   );
 }
