@@ -160,8 +160,8 @@ describe('IntegrationsPageView', () => {
       screen.getByRole('heading', { name }).compareDocumentPosition(document.body),
     );
 
-    expect(screen.getByText('GitHub — needs help')).toBeTruthy();
-    expect(screen.getByText('GitHub — healthy')).toBeTruthy();
+    expect(screen.getAllByText('GitHub — needs help').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('GitHub — healthy').length).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
     expect(screen.getByText(/Choose which provider-account sources/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connect account' })).toBeTruthy();

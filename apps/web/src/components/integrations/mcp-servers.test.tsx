@@ -83,7 +83,8 @@ describe('McpServersUi', () => {
 
     render(<McpServersUi ownership="personal" servers={[]} />);
 
-    expect(screen.getByRole('heading', { name: 'No personal MCP servers', level: 3 })).toBeTruthy();
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.getByText('No personal MCP servers')).toBeTruthy();
     expect(
       screen.getByText(
         'Add a custom server to use its tools in chats you start. Teammates cannot view or use it.',
