@@ -333,7 +333,7 @@ export default async function TimelinePage({ searchParams }: Props) {
     origin: originFilterValue || null,
   };
   return (
-    <div>
+    <div data-app-layout="flush-top" className="relative">
       <h1 className="sr-only">Timeline</h1>
       <TimelineBrowserSection
         sp={sp}

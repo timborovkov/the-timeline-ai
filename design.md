@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.17 · Object and task detail rails (2026-08-19). Replaces v3.16 Board kanban toast-only metadata.
+**Version:** v3.18 · Timeline flush sticky toolbar (2026-08-19). Replaces v3.17 Object and task detail rails.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -150,7 +150,9 @@ Ask, Work, Documents, Meetings, Connections, and Team.
 - Shell header: 48px.
 - Main page container: one shell-owned `max-w-6xl`; routes must not create a
   competing outer page width.
-- Full-canvas chat and boards may opt into full bleed.
+- Full-canvas chat and boards may opt into full bleed. Timeline opts into
+  flush-top so its sticky `CollectionToolbar` can sit under the 48px header;
+  do not hide main padding with a negative sticky `top`.
 - Provider-created chat sessions use a compact `TG`, `SL`, or neutral `EXT`
   badge in desktop and mobile history. Web-created sessions remain unbadged;
   provider identity must not replace the human-readable session title. Each
@@ -1047,3 +1049,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
 | 2026-08-19 | Object and task detail rails | Puts the object Properties column and task peek on one `--surface` hairline panel after merging collection chrome, floating Ask, and `notifyAction`. |
+| 2026-08-19 | Timeline flush sticky toolbar | Drops main top padding on Timeline (`flush-top`) so the sticky filter bar and `top-11` date labels sit under the 48px header without a negative `top`. |
