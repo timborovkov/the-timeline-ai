@@ -39,6 +39,7 @@ export function EditableMetadata({
   pending = false,
   disabled = false,
   error,
+  density = 'default',
   className,
   triggerRef,
 }: {
@@ -47,6 +48,7 @@ export function EditableMetadata({
   pending?: boolean;
   disabled?: boolean;
   error?: string | null;
+  density?: 'default' | 'compact';
   className?: string;
   triggerRef?: (node: HTMLButtonElement | null) => void;
 }) {
@@ -92,7 +94,10 @@ export function EditableMetadata({
             aria-describedby={error ? errorId : undefined}
             disabled={disabled || pending}
             className={cn(
-              'inline-flex min-h-10 min-w-0 items-center gap-1.5 rounded-sm px-2 text-xs text-fg-muted transition-[background-color,color,transform] duration-150 hover:bg-surface-2 hover:text-fg active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none motion-reduce:active:scale-100',
+              'inline-flex min-w-0 items-center rounded-sm text-fg-muted transition-[background-color,color,transform] duration-150 hover:bg-surface-2 hover:text-fg active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none motion-reduce:active:scale-100',
+              density === 'compact'
+                ? 'h-5 gap-1 px-1 text-[11px] leading-4'
+                : 'min-h-10 gap-1.5 px-2 text-xs',
               error && 'text-danger',
               className,
             )}

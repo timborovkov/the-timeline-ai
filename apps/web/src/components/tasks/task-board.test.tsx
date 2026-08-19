@@ -1191,6 +1191,14 @@ describe('TaskBoard', () => {
     expect(screen.queryByText('Task', { exact: true })).toBeNull();
     expect(screen.getByRole('button', { name: 'Project for Send proposal' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Send proposal' }).className).toContain('line-clamp-2');
+    const card = screen.getByRole('link', { name: 'Send proposal' }).closest('article');
+    const drag = screen.getByRole('button', { name: /Drag Send proposal/ });
+    const project = screen.getByRole('button', { name: 'Project for Send proposal' });
+    expect(
+      card?.firstElementChild?.contains(screen.getByRole('link', { name: 'Send proposal' })),
+    ).toBe(true);
+    expect(project.className).toContain('h-5');
+    expect(drag.className).toContain('size-6');
   });
 
   it('bulk assigns selected tasks from list view', async () => {

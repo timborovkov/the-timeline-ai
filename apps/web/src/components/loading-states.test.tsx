@@ -34,7 +34,7 @@ describe('collection loading skeletons', () => {
 
   it('renders compact kanban lanes and a full-bleed table', () => {
     const kanban = render(<CompactKanbanSkeleton />);
-    expect(kanban.container.querySelectorAll('[class*="min(290px"]').length).toBe(3);
+    expect(kanban.container.querySelectorAll('[class*="min(280px"]').length).toBe(3);
     kanban.unmount();
 
     const table = render(<CollectionTableSkeleton />);

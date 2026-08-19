@@ -362,4 +362,44 @@ describe('CuratedKanbanBoard', () => {
     expect(screen.queryByText('Saving…')).toBeNull();
     expect(screen.queryByText('Saved')).toBeNull();
   });
+
+  it('aligns compact card metadata with the title on one non-wrapping row', () => {
+    const item = boardItem('MyAuditor');
+    item.object.type = 'company';
+
+    render(
+      <CuratedKanbanBoard
+        boardId="board-1"
+        lanes={[lane('lane-1', 'New'), lane('lane-2', 'Qualified')]}
+        items={[item]}
+        selectedItemId={null}
+        members={[]}
+      />,
+    );
+
+    const card = screen.getByRole('link', { name: 'MyAuditor' }).closest('article');
+    if (!card) throw new Error('Expected the board card');
+    const title = screen.getByRole('link', { name: 'MyAuditor' });
+    const owner = screen.getByRole('button', { name: 'Responsible person for MyAuditor' });
+    const due = screen.getByRole('button', { name: 'Due date for MyAuditor' });
+    const priority = screen.getByRole('button', { name: 'Priority for MyAuditor' });
+    const metadataRow = card.querySelector('.mt-1');
+    expect(title.compareDocumentPosition(owner) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(metadataRow?.contains(owner)).toBe(true);
+    expect(metadataRow?.contains(due)).toBe(true);
+    expect(metadataRow?.contains(priority)).toBe(true);
+    expect(metadataRow?.className).toContain('items-center');
+    expect(metadataRow?.className).not.toContain('flex-wrap');
+    expect(owner.className).toContain('h-5');
+    expect(due.className).toContain('h-5');
+    expect(priority.className).toContain('h-5');
+    expect(priority.textContent).toContain('No priority');
+    expect(priority.querySelector('svg')).toBeNull();
+    expect(card.querySelector('.px-1\\.5')).toBeNull();
+
+    const newColumn = screen.getByRole('region', { name: 'New, board column 1' });
+    expect(newColumn.className).toContain('border-r');
+    expect(newColumn.className).not.toMatch(/(?:^|\s)p-2(?:\s|$)/);
+    expect(newColumn.querySelector('.justify-between')).toBeTruthy();
+  });
 });

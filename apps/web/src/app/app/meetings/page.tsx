@@ -100,7 +100,9 @@ export default async function MeetingsPage({
 
   const [list, savedMeetings, usedMinutes, settings, calendarSettings, defaultRow, members] =
     await Promise.all([
-      scope.meetings.listMeetings({ limit: MEETINGS_PAGE_SIZE + 1, cursor: null }),
+      tab === 'captures'
+        ? scope.meetings.listMeetings({ limit: MEETINGS_PAGE_SIZE + 1, cursor: null })
+        : Promise.resolve([]),
       tab === 'saved' ? scope.meetings.listSavedMeetings() : Promise.resolve([]),
       scope.meetings.getCurrentMonthMinutes(),
       scope.meetings.getMeetingSettings(),
@@ -206,25 +208,24 @@ export default async function MeetingsPage({
           timezone={calendarSettings.defaultTimezone}
           totalCount={savedMeetings.length}
         />
-      ) : null}
-
-      <MeetingCapturesSection
-        clearHref={clearCurrentViewHref}
-        filter={filter}
-        hasActiveFilters={hasCaptureFilters}
-        meetings={capturePage.items.map((meeting) => ({
-          id: meeting.id,
-          title: meeting.title,
-          platform: meeting.platform,
-          status: meeting.status,
-          createdAt: meeting.createdAt.toISOString(),
-          scheduledStartAt: meeting.scheduledStartAt?.toISOString() ?? null,
-          pinned: pinState[`meeting:${meeting.id}`] ?? false,
-        }))}
-        nextCursor={capturePage.nextCursor}
-        query={tab === 'captures' ? query : ''}
-        tab={tab}
-      />
+      ) : (
+        <MeetingCapturesSection
+          clearHref={clearCurrentViewHref}
+          filter={filter}
+          hasActiveFilters={hasCaptureFilters}
+          meetings={capturePage.items.map((meeting) => ({
+            id: meeting.id,
+            title: meeting.title,
+            platform: meeting.platform,
+            status: meeting.status,
+            createdAt: meeting.createdAt.toISOString(),
+            scheduledStartAt: meeting.scheduledStartAt?.toISOString() ?? null,
+            pinned: pinState[`meeting:${meeting.id}`] ?? false,
+          }))}
+          nextCursor={capturePage.nextCursor}
+          query={query}
+        />
+      )}
     </div>
   );
 }
@@ -407,8 +408,8 @@ function SavedMeetingsSection({
                   </ItemActionGroup>
                 </CollectionRow.Actions>
               </CollectionRow>
-              <details className="px-3 py-1.5">
-                <summary className="cursor-pointer text-xs text-fg-dim hover:text-fg">
+              <details className="px-3 pb-3">
+                <summary className="cursor-pointer py-1.5 text-xs text-fg-dim hover:text-fg">
                   Edit details
                 </summary>
                 <div className="pt-2">
@@ -434,7 +435,6 @@ function MeetingCapturesSection({
   meetings,
   nextCursor,
   query,
-  tab,
 }: {
   clearHref: string;
   filter: CaptureFilter;
@@ -450,21 +450,18 @@ function MeetingCapturesSection({
   }[];
   nextCursor: string | null;
   query: string;
-  tab: MeetingTab;
 }) {
   return (
     <section aria-labelledby="meeting-captures-heading" className="space-y-3">
-      <SectionHeading id="meeting-captures-heading">
-        {tab === 'saved' ? 'Scheduled and recent captures' : 'Recent captures'}
-      </SectionHeading>
+      <SectionHeading id="meeting-captures-heading">Recent captures</SectionHeading>
       <MeetingCapturesList
         clearHref={clearHref}
-        filter={tab === 'captures' ? filter : 'all'}
+        filter={filter}
         hasActiveFilters={hasActiveFilters}
         initialMeetings={meetings}
         nextCursor={nextCursor}
         query={query}
-        tab={tab}
+        tab="captures"
       />
     </section>
   );

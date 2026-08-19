@@ -89,7 +89,6 @@ describe('EditSavedMeetingForm', () => {
       />,
     );
 
-    await user.click(screen.getByText('Edit saved meeting'));
     await user.click(screen.getByRole('checkbox', { name: 'Add a recurring schedule' }));
     await user.type(screen.getByLabelText('Start times'), '09:00');
     for (const day of ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']) {
@@ -107,8 +106,7 @@ describe('EditSavedMeetingForm', () => {
     expect(fakes.updateSavedMeetingAction).not.toHaveBeenCalled();
   });
 
-  it('keeps compact schedule weekdays understandable to assistive technology', async () => {
-    const user = userEvent.setup();
+  it('keeps compact schedule weekdays understandable to assistive technology', () => {
     render(
       <EditSavedMeetingForm
         saved={{
@@ -143,8 +141,6 @@ describe('EditSavedMeetingForm', () => {
         }}
       />,
     );
-
-    await user.click(screen.getByText('Edit saved meeting'));
 
     expect(screen.getByRole('checkbox', { name: 'Sunday' }).getAttribute('name')).toBe('weekday-0');
     expect(screen.getByRole('checkbox', { name: 'Wednesday' }).getAttribute('name')).toBe(
@@ -184,7 +180,7 @@ describe('EditSavedMeetingForm', () => {
       />,
     );
 
-    await user.click(screen.getByText('Edit saved meeting'));
+    expect(screen.queryByText('Edit saved meeting')).toBeNull();
     const meetingUrl = screen.getByLabelText('Meeting URL');
     await user.clear(meetingUrl);
     await user.type(meetingUrl, 'https://zoom.us/j/987654321');

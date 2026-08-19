@@ -339,20 +339,31 @@ function ScheduleFields({
         className="space-y-2"
       >
         <legend className="text-sm font-medium">Repeat on</legend>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           {WEEKDAYS.map((label, index) => (
             <label
               key={label}
-              className="flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-sm border px-2 text-sm"
+              className={
+                compact
+                  ? 'cursor-pointer'
+                  : 'flex h-9 min-w-14 items-center justify-center gap-1.5 rounded-sm border px-2 text-sm'
+              }
             >
               <input
                 aria-label={compact ? WEEKDAY_NAMES[index] : undefined}
+                className={compact ? 'peer sr-only' : undefined}
                 name={`weekday-${index}`}
                 onChange={onScheduleFieldChange}
                 type="checkbox"
                 defaultChecked={weekdays?.includes(index) ?? (index > 0 && index < 6)}
               />
-              {compact ? label.slice(0, 1) : label}
+              {compact ? (
+                <span className="inline-flex size-8 items-center justify-center rounded-sm border border-border text-xs text-fg-muted transition-colors hover:bg-surface-2 peer-checked:border-signal peer-checked:bg-signal-soft peer-checked:text-fg peer-focus-visible:ring-2 peer-focus-visible:ring-signal/40">
+                  {label.slice(0, 1)}
+                </span>
+              ) : (
+                label
+              )}
             </label>
           ))}
         </div>
@@ -901,120 +912,110 @@ export function EditSavedMeetingForm({
   }
 
   return (
-    <details className="space-y-3 text-sm">
-      <summary className="inline-flex min-h-10 cursor-pointer items-center rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
-        Edit saved meeting
-      </summary>
-      <form aria-busy={pending} onSubmit={onSubmit} className="space-y-4 pt-3">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label size="sm" htmlFor={`saved-title-${saved.id}`}>
-              Meeting title
-            </Label>
-            <Input
-              id={`saved-title-${saved.id}`}
-              name="title"
-              required
-              defaultValue={saved.title}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label size="sm" htmlFor={`saved-aliases-${saved.id}`}>
-              Aliases
-            </Label>
-            <Input
-              id={`saved-aliases-${saved.id}`}
-              name="aliases"
-              defaultValue={saved.aliases.join(', ')}
-            />
-          </div>
+    <form aria-busy={pending} onSubmit={onSubmit} className="space-y-3">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label size="sm" htmlFor={`saved-title-${saved.id}`}>
+            Meeting title
+          </Label>
+          <Input id={`saved-title-${saved.id}`} name="title" required defaultValue={saved.title} />
         </div>
         <div className="space-y-2">
-          <Label size="sm" htmlFor={`saved-meeting-url-${saved.id}`}>
-            Meeting URL
+          <Label size="sm" htmlFor={`saved-aliases-${saved.id}`}>
+            Aliases
           </Label>
           <Input
-            id={`saved-meeting-url-${saved.id}`}
-            name="meetingUrl"
-            type="url"
-            required
-            defaultValue={saved.meetingUrl}
+            id={`saved-aliases-${saved.id}`}
+            name="aliases"
+            defaultValue={saved.aliases.join(', ')}
           />
         </div>
-        <div className="space-y-2">
-          <Label size="sm" htmlFor={`saved-description-${saved.id}`}>
-            Description
-          </Label>
-          <Input
-            id={`saved-description-${saved.id}`}
-            name="description"
-            defaultValue={saved.description ?? ''}
-          />
-        </div>
-        <VisibilityField
-          idPrefix={`edit-saved-meeting-${saved.id}`}
-          members={members}
-          onVisibilityChange={(nextVisibility) => {
-            dispatch({ type: 'visibility', visibility: nextVisibility });
-          }}
-          onVisibilityUserIdsChange={(nextVisibilityUserIds) => {
-            dispatch({ type: 'visibilityUserIds', visibilityUserIds: nextVisibilityUserIds });
-          }}
-          visibility={visibility}
-          visibilityUserIds={visibilityUserIds}
+      </div>
+      <div className="space-y-2">
+        <Label size="sm" htmlFor={`saved-meeting-url-${saved.id}`}>
+          Meeting URL
+        </Label>
+        <Input
+          id={`saved-meeting-url-${saved.id}`}
+          name="meetingUrl"
+          type="url"
+          required
+          defaultValue={saved.meetingUrl}
         />
-        <div className="space-y-3 border-y border-border py-3">
-          <label className="flex min-h-9 items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={scheduled}
-              onChange={(event) => {
-                onScheduleToggle(event.target.checked);
+      </div>
+      <div className="space-y-2">
+        <Label size="sm" htmlFor={`saved-description-${saved.id}`}>
+          Description
+        </Label>
+        <Input
+          id={`saved-description-${saved.id}`}
+          name="description"
+          defaultValue={saved.description ?? ''}
+        />
+      </div>
+      <VisibilityField
+        idPrefix={`edit-saved-meeting-${saved.id}`}
+        members={members}
+        onVisibilityChange={(nextVisibility) => {
+          dispatch({ type: 'visibility', visibility: nextVisibility });
+        }}
+        onVisibilityUserIdsChange={(nextVisibilityUserIds) => {
+          dispatch({ type: 'visibilityUserIds', visibilityUserIds: nextVisibilityUserIds });
+        }}
+        visibility={visibility}
+        visibilityUserIds={visibilityUserIds}
+      />
+      <div className="space-y-3 border-y border-border py-3">
+        <label className="flex min-h-9 items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={scheduled}
+            onChange={(event) => {
+              onScheduleToggle(event.target.checked);
+            }}
+            className="size-4 rounded-sm border-input accent-signal"
+          />
+          Add a recurring schedule
+        </label>
+        {scheduled ? (
+          <div className="space-y-4">
+            <ScheduleFields
+              idPrefix={`saved-${saved.id}`}
+              timezone={timezone}
+              onTimezoneChange={(next) => {
+                dispatch({ type: 'timezone', timezone: next });
               }}
-              className="size-4 rounded-sm border-input accent-signal"
+              times={schedule?.times}
+              weekdays={schedule?.weekdays}
+              durationMinutes={saved.durationMinutes}
+              joinOffsetMinutes={schedule?.joinOffsetMinutes ?? 2}
+              compact
+              timesInvalid={scheduleError === 'times' || scheduleError === 'both'}
+              weekdaysInvalid={scheduleError === 'weekdays' || scheduleError === 'both'}
+              errorId={errorId}
+              onScheduleFieldChange={() => {
+                dispatch({ type: 'error', error: null });
+                dispatch({ type: 'scheduleError', scheduleError: null });
+              }}
             />
-            Add a recurring schedule
-          </label>
-          {scheduled ? (
-            <div className="space-y-4">
-              <ScheduleFields
-                idPrefix={`saved-${saved.id}`}
-                timezone={timezone}
-                onTimezoneChange={(next) => {
-                  dispatch({ type: 'timezone', timezone: next });
-                }}
-                times={schedule?.times}
-                weekdays={schedule?.weekdays}
-                durationMinutes={saved.durationMinutes}
-                joinOffsetMinutes={schedule?.joinOffsetMinutes ?? 2}
-                compact
-                timesInvalid={scheduleError === 'times' || scheduleError === 'both'}
-                weekdaysInvalid={scheduleError === 'weekdays' || scheduleError === 'both'}
-                errorId={errorId}
-                onScheduleFieldChange={() => {
-                  dispatch({ type: 'error', error: null });
-                  dispatch({ type: 'scheduleError', scheduleError: null });
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={autoJoin}
+                onChange={(event) => {
+                  dispatch({ type: 'autoJoin', autoJoin: event.target.checked });
                 }}
               />
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={autoJoin}
-                  onChange={(event) => {
-                    dispatch({ type: 'autoJoin', autoJoin: event.target.checked });
-                  }}
-                />
-                Auto-join scheduled occurrences
-              </label>
-            </div>
-          ) : null}
-        </div>
-        <FormError errorRef={errorRef} id={errorId} message={error} />
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending ? 'Updating…' : 'Update meeting'}
-        </Button>
-      </form>
-    </details>
+              Auto-join scheduled occurrences
+            </label>
+          </div>
+        ) : null}
+      </div>
+      <FormError errorRef={errorRef} id={errorId} message={error} />
+      <Button type="submit" size="sm" disabled={pending}>
+        {pending ? 'Updating…' : 'Update meeting'}
+      </Button>
+    </form>
   );
 }
 

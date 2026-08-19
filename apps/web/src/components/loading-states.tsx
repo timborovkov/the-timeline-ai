@@ -162,7 +162,7 @@ export function CollectionGroupSkeleton({
 }
 
 const KANBAN_LANE_WIDTH = {
-  board: 'w-[min(290px,calc(100vw-4rem))]',
+  board: 'w-[min(280px,calc(100vw-3rem))]',
   task: 'w-[min(260px,calc(100vw-2.5rem))]',
 } as const;
 
@@ -174,16 +174,16 @@ export function CompactKanbanSkeleton({
   variant?: keyof typeof KANBAN_LANE_WIDTH;
 }) {
   return (
-    <section className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-2 pb-4 sm:px-3">
+    <section className="flex min-h-0 flex-1 overflow-x-auto px-2 pb-4 sm:px-3">
       {Array.from({ length: columns }).map((_, column) => (
         <div
           key={column}
           className={cn(
-            'flex shrink-0 flex-col rounded-sm border border-border bg-surface p-2',
+            'flex shrink-0 flex-col border-r border-border/80 px-2 py-1 last:border-r-0',
             KANBAN_LANE_WIDTH[variant],
           )}
         >
-          <div className="mb-2 flex items-center justify-between">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
             <Skeleton className="h-3 w-16" />
             <Skeleton className="h-3 w-6" />
           </div>
@@ -191,8 +191,7 @@ export function CompactKanbanSkeleton({
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="rounded-sm border border-border bg-bg px-2 py-1.5">
                 <Skeleton className="h-4 w-3/4" />
-                <Skeleton className="mt-1 h-3 w-1/2" />
-                <div className="mt-1.5 flex items-center gap-1.5">
+                <div className="mt-1 flex items-center gap-1">
                   <Skeleton className="h-3 w-10" />
                   <Skeleton className="h-3 w-14" />
                   <Skeleton className="h-3 w-12" />

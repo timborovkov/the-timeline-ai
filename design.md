@@ -548,8 +548,12 @@ metadata row, with no redundant type label. Curated boards use the same
 full-bleed work canvas in kanban, table, and grouped list — no boxed inner
 container around the collection. Board kanban cards stay compact: a clamped
 title, optional next-step line directly under the title, and one metadata row.
-Cards have no Move control; the drag handle is the on-card move path (Space or
-Enter, then arrow keys), and opening the card is the keyboard alternative.
+Kanban lanes use a hairline divider, not boxed column chrome. Card title and
+metadata share the same left edge: compact 20px chips, no extra type/metadata
+padding, and no wrapping priority row. The drag handle sits with the card
+actions on the right. Cards have no Move control; the drag handle is the
+on-card move path (Space or Enter, then arrow keys), and opening the card is
+the keyboard alternative.
 Grouped board list does not repeat the current lane name or add a Move row. Next
 step is the board-local immediate action on that card, not an object description
 and not a table column. It sits under the title in kanban, list, and table, and
@@ -576,11 +580,12 @@ Slack, Telegram, provider accounts, and connected integrations reuse the same
 row density.
 
 Meetings keep the collection header and rows. Capture and saved-meeting setup
-forms sit in a closed disclosure so the list is the default view. Saved
-meeting edit is a closed disclosure or dialog, never an always-open form
-under every row. Join, archive, and skip are tooltiped icon buttons. Capture
-times use relative age with a timestamp tooltip. Meeting mutations use the
-shared toast contract.
+forms sit in a closed disclosure so the list is the default view. The Saved tab
+lists saved meeting links only; captures stay on Captures. Saved meeting edit
+is one closed **Edit details** disclosure that opens the editor, never a nested
+second “Edit saved meeting” control. Join, archive, and skip are tooltiped icon
+buttons. Capture times use relative age with a timestamp tooltip. Meeting
+mutations use the shared toast contract.
 
 ### Calendar
 
@@ -1067,3 +1072,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Collection chrome with timeline search | Keeps compact board/task/object chrome after merging Linear collection rows, named toolbar slots, action toasts, floating Ask, and Timeline search paging. |
 | 2026-08-19 | Board kanban toast-only metadata | Restores EditableMetadata slots after the toolbar-slot merge and drops leftover Saving/Saved chrome so board card mutations stay on notifyAction. |
 | 2026-08-19 | Remaining settings and directory density | Aligns Team settings, Connections, Meetings, Calendar, Slack, Telegram, and remaining timestamps with compact collection rows, NativeSelect, quiet icon actions, and relative age plus hover datetime. |
+| 2026-08-19 | Kanban card alignment and saved-meeting editor | Aligns board/task kanban title and metadata on one left edge with compact chips and hairline lanes, and makes Meetings Edit details open the editor instead of a nested Edit saved meeting control. |
