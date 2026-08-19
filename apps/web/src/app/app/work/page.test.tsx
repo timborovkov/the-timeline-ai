@@ -12,7 +12,6 @@ const fakes = vi.hoisted(() => ({
   countObjects: vi.fn(),
   listWorkQueueItems: vi.fn(),
   listObjects: vi.fn(),
-  listPinnedBoards: vi.fn(),
   listPins: vi.fn(),
   isPinnedMany: vi.fn(),
   listBoards: vi.fn(),
@@ -32,6 +31,13 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/app/actions/objects', () => ({
   updateObjectAction: vi.fn(),
 }));
+vi.mock('@/components/pins/pin-overflow-menu', () => ({
+  PinOverflowMenu: ({ title, initialPinned }: { title: string; initialPinned: boolean }) => (
+    <button type="button">
+      {initialPinned ? `Unpin from Home ${title}` : `Pin to Home ${title}`}
+    </button>
+  ),
+}));
 vi.mock('@/components/ui/tooltip', () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
   TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -41,7 +47,6 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     boards: {
       listWorkQueueItems: fakes.listWorkQueueItems,
-      listPinnedBoards: fakes.listPinnedBoards,
       listBoards: fakes.listBoards,
     },
     pins: { list: fakes.listPins, isPinnedMany: fakes.isPinnedMany },
@@ -120,7 +125,6 @@ beforeEach(() => {
   fakes.countObjects.mockResolvedValue(0);
   fakes.listWorkQueueItems.mockResolvedValue([]);
   fakes.listObjects.mockResolvedValue([]);
-  fakes.listPinnedBoards.mockResolvedValue([]);
   fakes.listPins.mockResolvedValue({ items: [], nextCursor: null });
   fakes.isPinnedMany.mockResolvedValue({});
   fakes.listBoards.mockResolvedValue([]);
@@ -428,7 +432,7 @@ describe('WorkPage', () => {
     const html = renderToStaticMarkup(await WorkPage(pageProps()));
 
     expect(html).toContain('Pilot pipeline');
-    expect(html).toContain('Pinned');
+    expect(html).toContain('Unpin from Home Pilot pipeline');
     expect(html).not.toContain('Moved Revigo into scoping.');
   });
 
@@ -463,6 +467,7 @@ describe('WorkPage', () => {
     expect(html).toContain('aria-label="Pinned"');
     expect(html).toContain('Northstar pilot');
     expect(html).toContain('Pilot pipeline');
+    expect(html).toContain('Pin to Home Pilot pipeline');
     expect(html.indexOf('Northstar pilot')).toBeLessThan(html.indexOf('Pilot pipeline'));
     expect(html.indexOf('aria-label="Pinned"')).toBeLessThan(html.indexOf('Work queue'));
   });

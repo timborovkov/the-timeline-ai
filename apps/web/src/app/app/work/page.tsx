@@ -9,10 +9,11 @@ import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { EmptyAction } from '@/components/empty-action';
 import { PageHeader } from '@/components/page-header';
-import { PinnedGlyph } from '@/components/pins/pin-glyph';
+import { PinOverflowMenu } from '@/components/pins/pin-overflow-menu';
 import { PinnedWorkspaceManager } from '@/components/pins/pinned-workspace-manager';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TaskCategoryPollingProvider } from '@/components/tasks/task-category-badge';
+import { ItemActionGroup } from '@/components/ui/item-actions';
 import { WorkQueueRow } from '@/components/work/work-queue-row';
 import { WorkSubnav } from '@/components/work-subnav';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -171,13 +172,19 @@ export default async function WorkPage({ searchParams }: PageProps<'/app/work'>)
                   </CollectionRow.Title>
                   <CollectionRow.Context>{`Updated ${dateLabel(board.updatedAt, timezone)}`}</CollectionRow.Context>
                   <CollectionRow.Metadata>
-                    <>
-                      <span className="px-2 text-xs tabular-nums text-fg-dim">
-                        {board.itemCount} items
-                      </span>
-                      {board.pinned ? <PinnedGlyph className="size-7" /> : null}
-                    </>
+                    <span className="px-2 text-xs tabular-nums text-fg-dim">
+                      {board.itemCount} items
+                    </span>
                   </CollectionRow.Metadata>
+                  <CollectionRow.Actions>
+                    <ItemActionGroup label={`Actions for ${board.name}`}>
+                      <PinOverflowMenu
+                        target={{ kind: 'board', key: board.id }}
+                        title={board.name}
+                        initialPinned={board.pinned}
+                      />
+                    </ItemActionGroup>
+                  </CollectionRow.Actions>
                 </CollectionRow>
               ))}
             </div>

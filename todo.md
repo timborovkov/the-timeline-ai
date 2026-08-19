@@ -214,8 +214,14 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       with `content-visibility` row containment.
 - [x] U8c — Object and task detail density: Linear-style object page and
       task peek on one `DetailRail` surface panel, 8px section stack, why-this-exists
-      lead copy, ghost pin, floating Ask binder, overflow Repair/Add task, list
+      lead copy, Home-destination icon pin, floating Ask binder, overflow Repair/Add task, list
       `returnTo` + `scroll={false}`, and no empty memory theater cards.
+- [x] U8d — Personal pin controls: one `Pin` glyph with tooltip **Pin to Home** /
+      **Unpin from Home**, toast **Pinned to Home** / **Unpinned** (Undo only),
+      mixed Home and Work previews, dense-row overflow plus quiet pin glyph,
+      Work overview Boards kept separate from the mixed pin list, and Ask
+      object bindings labeled **About {name}** rather than Pin. Folders, Ask
+      chats, approvals, connections, and raw events stay unpinnable.
 - [x] Floating Ask: replace per-page Ask-about buttons with one context-aware
       float on every authenticated page except Home and full Ask. Close keeps
       the thread; New resets it. The agent sees the current view first and a

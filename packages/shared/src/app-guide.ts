@@ -131,7 +131,7 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
       'pinned work',
     ],
     guide:
-      'Use Work as the daily operating surface. Overview shows mixed pinned work, team boards, and the work queue. Work → Pinned is the full pin manager. Tasks, boards, objects, updates, digests, and handoffs stay current from captured evidence without a separate tracker.',
+      'Use Work as the daily operating surface. Overview shows mixed pinned work, team boards, and the work queue. Pin controls say Pin to Home; Work → Pinned is the full pin manager. Tasks, boards, objects, updates, digests, and handoffs stay current from captured evidence without a separate tracker.',
     relatedRouteIds: ['tasks', 'boards', 'objects', 'timeline', 'help/work'],
   },
   {

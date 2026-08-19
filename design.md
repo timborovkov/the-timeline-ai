@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.17 · Object and task detail rails (2026-08-19). Replaces v3.16 Board kanban toast-only metadata.
+**Version:** v3.18 · Standardized personal pins (2026-08-19). Replaces v3.17 Object and task detail rails.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -441,7 +441,8 @@ archived, or temporarily inaccessible targets do not become placeholders and
 do not consume a preview slot. Home never offers reordering; its Manage action
 opens Work → Pinned. Work overview repeats that same mixed preview (heading
 **Pinned**, omitted when empty) above a separate **Boards** list of team boards
-and the work queue. Pins are personal shortcuts, not a team-shared board set.
+and the work queue. Overview board rows use the same overflow **Pin to Home**
+control and quiet pin glyph as the Boards index. Pins are personal shortcuts, not a team-shared board set.
 
 Home recent moments have no visible heading. They show up to eight dense rows
 of time, source, and an underlined title, with quiet non-sticky date labels
