@@ -455,7 +455,14 @@ export const APP_GUIDE_ROUTES: readonly AppGuideRoute[] = [
     href: '/help/objects',
     group: 'help',
     minRole: 'member',
-    intents: ['how objects work', 'object discussion', 'object comments', 'relationships', 'duplicates', 'cleanup'],
+    intents: [
+      'how objects work',
+      'object discussion',
+      'object comments',
+      'relationships',
+      'duplicates',
+      'cleanup',
+    ],
     guide:
       'Objects are durable records resolved from activity. Use discussion comments, relationships, cleanup suggestions, and object pages to keep the operational record accurate.',
     relatedRouteIds: ['work', 'objects', 'tasks'],
