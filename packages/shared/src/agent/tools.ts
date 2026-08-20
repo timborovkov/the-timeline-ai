@@ -899,7 +899,10 @@ export async function buildMcpTools(
 ): Promise<ToolSet> {
   const db = options.db ?? getDb();
   const discovery = await getMcpManager()
-    .connectForTeam(db, scope.teamId, scope.userId)
+    .connectForTeam(db, scope.teamId, scope.userId, {
+      ...(options.abortSignal ? { signal: options.abortSignal } : {}),
+      agentDelegationDepth: (options.agentDelegationDepth ?? 0) + 1,
+    })
     .catch((err: unknown) => {
       const safeError = options.sanitizeError?.(err) ?? err;
       log.warn({ err: safeError }, 'mcp discovery failed during tool build');
@@ -2474,6 +2477,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: 'The chat conversation implies a concrete next action.',
             confidence: 'medium',
             dedupeKey,
+            ...(options.toolMode === 'proposal_only'
+              ? {
+                  visibility: 'team' as const,
+                  visibilityOwnerUserId: null,
+                  visibilityUserIds: null,
+                }
+              : {}),
             metadata: proposalMetadata(options, { tool: 'suggest_task' }),
             evidence: [],
             items: [
@@ -2524,6 +2534,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: 'The chat conversation implies a workspace object update.',
             confidence: 'medium',
             dedupeKey,
+            ...(options.toolMode === 'proposal_only'
+              ? {
+                  visibility: 'team' as const,
+                  visibilityOwnerUserId: null,
+                  visibilityUserIds: null,
+                }
+              : {}),
             metadata: proposalMetadata(options, { tool: 'propose_object_change' }),
             items: [
               {
@@ -2716,6 +2733,13 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: input.reason ?? null,
             confidence: input.confidence,
             dedupeKey: suggestionDedupeKey(['object-memory-bundle', input.title, items]),
+            ...(options.toolMode === 'proposal_only'
+              ? {
+                  visibility: 'team' as const,
+                  visibilityOwnerUserId: null,
+                  visibilityUserIds: null,
+                }
+              : {}),
             metadata: proposalMetadata(options, { tool: 'suggest_object_memory' }),
             items,
           };
@@ -3578,6 +3602,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             confidence: 'medium',
             dedupeKey,
             visibility,
+            ...(options.toolMode === 'proposal_only'
+              ? { visibilityOwnerUserId: null, visibilityUserIds: null }
+              : {}),
             metadata: proposalMetadata(options, { tool: 'suggest_calendar_event' }),
             items: [
               {
@@ -3671,9 +3698,11 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: input.reason ?? 'The chat conversation implies a calendar refinement.',
             confidence: 'medium',
             dedupeKey,
-            visibility: event.visibility,
-            visibilityOwnerUserId: event.createdByUserId,
-            visibilityUserIds: event.visibilityUserIds,
+            visibility: options.toolMode === 'proposal_only' ? 'team' : event.visibility,
+            visibilityOwnerUserId:
+              options.toolMode === 'proposal_only' ? null : event.createdByUserId,
+            visibilityUserIds:
+              options.toolMode === 'proposal_only' ? null : event.visibilityUserIds,
             metadata: proposalMetadata(options, { tool: 'propose_calendar_update' }),
             items: [
               {
@@ -3724,7 +3753,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
   }
   if (options.toolMode === 'proposal_only') {
     return Object.fromEntries(
-      Object.entries(tools).filter(([name]) => !directMutationToolNames.has(name)),
+      Object.entries(tools).filter(
+        ([name]) => name !== 'list_pins' && !directMutationToolNames.has(name),
+      ),
     );
   }
   if (!options.allowPinMutations) {

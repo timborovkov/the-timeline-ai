@@ -669,7 +669,9 @@ describe('askAgent', () => {
       answer: 'TIMELINE-AI-100 is unresolved at error level and affects 42 users.',
       truncated: false,
     });
-    expect(fakes.connectForTeam).toHaveBeenCalledWith(db, TEAM_ID, USER_ID);
+    expect(fakes.connectForTeam).toHaveBeenCalledWith(db, TEAM_ID, USER_ID, {
+      agentDelegationDepth: 1,
+    });
     expect(fakes.callTool).toHaveBeenCalledWith(
       db,
       TEAM_ID,

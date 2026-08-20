@@ -1157,4 +1157,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Board add-item people and companies | Add item keeps person and company type filters visible and searches beyond a recency window of recent tasks. |
 | 2026-08-19 | Object discussions | Replaces object custom notes with a Linear-style activity + comments thread, @mentions, The Timeline Bot pings, and quiet comment counts. |
 | 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |
-| 2026-08-16 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |
+| 2026-08-20 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |

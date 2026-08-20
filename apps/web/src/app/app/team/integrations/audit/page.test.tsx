@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { integrationAuditSummary } from '@/app/app/team/integrations/audit/integration-audit-summary';
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),
@@ -50,7 +51,11 @@ beforeEach(() => {
 
 describe('IntegrationAuditPage', () => {
   it('presents audit times in the team timezone with clear timezone context', async () => {
-    const html = renderToStaticMarkup(await IntegrationAuditPage());
+    const html = renderToStaticMarkup(
+      <WorkspaceTimezoneProvider timezone="America/Los_Angeles">
+        {await IntegrationAuditPage()}
+      </WorkspaceTimezoneProvider>,
+    );
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.integrationAuditList).toHaveBeenCalledWith(null, 200);

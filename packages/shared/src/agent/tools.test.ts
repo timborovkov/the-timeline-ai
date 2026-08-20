@@ -418,10 +418,25 @@ describe('buildAgentTools — team isolation', () => {
     expect(tools.suggest_object_memory).toBeDefined();
     expect(tools.suggest_calendar_event).toBeDefined();
     expect(tools.propose_calendar_update).toBeDefined();
-    expect(tools.revise_suggestion).toBeUndefined();
-    expect(tools.execute_object_create).toBeUndefined();
-    expect(tools.execute_calendar_create).toBeUndefined();
-    expect(tools.pin_item).toBeUndefined();
+    for (const excluded of [
+      'list_pins',
+      'pin_item',
+      'unpin_item',
+      'move_pin',
+      'revise_suggestion',
+      'execute_object_create',
+      'execute_object_update',
+      'execute_object_archive',
+      'execute_object_merge',
+      'execute_board_add_item',
+      'execute_board_update_item',
+      'execute_board_remove_item',
+      'execute_calendar_create',
+      'execute_calendar_update',
+      'execute_calendar_cancel',
+    ]) {
+      expect(Object.keys(tools)).not.toContain(excluded);
+    }
   });
 
   it('forces synthetic proposals to team visibility and records their origin', async () => {
@@ -443,6 +458,10 @@ describe('buildAgentTools — team isolation', () => {
       input: unknown,
       options: unknown,
     ) => Promise<unknown>;
+    const proposeCalendarUpdate = tools.propose_calendar_update?.execute as (
+      input: unknown,
+      options: unknown,
+    ) => Promise<unknown>;
 
     await suggestTask({ title: 'Send launch note' }, {});
     await suggestCalendar(
@@ -454,11 +473,24 @@ describe('buildAgentTools — team isolation', () => {
       },
       {},
     );
+    scope.calendar.getCalendarEvent.mockResolvedValue(calendarEventFixture());
+    await proposeCalendarUpdate(
+      {
+        id: CALENDAR_EVENT_ID,
+        patch: { title: 'Updated launch review' },
+      },
+      {},
+    );
 
     const taskInput = scope.suggestions.createOrMergeSuggestionBundle.mock.calls[0]?.[0] as unknown;
     const calendarInput = scope.suggestions.createOrMergeSuggestionBundle.mock
       .calls[1]?.[0] as unknown;
+    const calendarUpdateInput = scope.suggestions.createOrMergeSuggestionBundle.mock
+      .calls[2]?.[0] as unknown;
     expect(taskInput).toMatchObject({
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
       metadata: {
         tool: 'suggest_task',
         origin_surface: 'mcp',
@@ -470,6 +502,12 @@ describe('buildAgentTools — team isolation', () => {
       visibility: 'team',
       metadata: { origin_surface: 'mcp', origin_actor_kind: 'team_agent' },
       items: [{ proposedPayload: { visibility: 'team' } }],
+    });
+    expect(calendarUpdateInput).toMatchObject({
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      visibilityUserIds: null,
+      metadata: { origin_surface: 'mcp', origin_actor_kind: 'team_agent' },
     });
   });
 

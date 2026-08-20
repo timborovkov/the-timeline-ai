@@ -1012,6 +1012,7 @@ async function runAskInner(input: RunAskInput): Promise<void> {
       },
       {
         ...input.agentDeps,
+        ...(input.trustedTeamActor ? { includeMcpTools: true } : {}),
         onToolError: input.onAgentToolError,
         onAgentError: input.onAgentError,
         sanitizeError: redactConversationError,

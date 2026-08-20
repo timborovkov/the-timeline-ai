@@ -12,7 +12,8 @@ integrations/custom MCPs, Slack, onboarding, visibility controls, exports, job
 recovery, public help/legal, approval-backed object and board memory, and
 personal universal pinning across durable workspace content. Telegram and Slack
 direct text now share the durable agent runtime and web-visible private chat
-history; groups and channels remain ingestion-first.
+history; trusted groups and channels remain ingestion-first while also exposing
+the scoped, proposal-only team agent through explicit ask commands.
 
 This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped

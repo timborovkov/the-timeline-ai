@@ -12,7 +12,7 @@ describe('McpClientManager Timeline-agent delegation', () => {
     const namespacedName = 'mcp__11111111111141118111111111111111__ask_agent';
     const controller = new AbortController();
     const manager = new McpClientManager();
-    vi.spyOn(manager, 'connectForTeam').mockResolvedValue({
+    const connectForTeam = vi.spyOn(manager, 'connectForTeam').mockResolvedValue({
       tools: [],
       toolMap: new Map([[namespacedName, { serverId, toolName: 'timeline.ask_agent' }]]),
       fetchedAt: Date.now(),
@@ -50,6 +50,13 @@ describe('McpClientManager Timeline-agent delegation', () => {
       server.teamId,
       namespacedName,
       { question: 'What changed?' },
+      '00000000-0000-0000-0000-000000000000',
+      { signal: controller.signal, timeoutMs: 90_000, agentDelegationDepth: 1 },
+    );
+
+    expect(connectForTeam).toHaveBeenCalledWith(
+      db,
+      server.teamId,
       '00000000-0000-0000-0000-000000000000',
       { signal: controller.signal, timeoutMs: 90_000, agentDelegationDepth: 1 },
     );

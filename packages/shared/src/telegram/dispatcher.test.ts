@@ -1794,7 +1794,7 @@ describe('handleUpdate telegram edit visibility', () => {
         proposalOrigin: { surface: 'telegram', actorKind: 'team_agent' },
         question: 'when did DFK get back to us?',
       }),
-      expect.any(Object),
+      expect.objectContaining({ includeMcpTools: true }),
     );
   });
 

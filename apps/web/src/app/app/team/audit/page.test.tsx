@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+
 const fakes = vi.hoisted(() => ({
   auditList: vi.fn(),
   auth: vi.fn(),
@@ -54,7 +56,11 @@ beforeEach(() => {
 
 describe('TrustAuditPage', () => {
   it('presents audit times in the team timezone with clear timezone context', async () => {
-    const html = renderToStaticMarkup(await TrustAuditPage());
+    const html = renderToStaticMarkup(
+      <WorkspaceTimezoneProvider timezone="America/Los_Angeles">
+        {await TrustAuditPage()}
+      </WorkspaceTimezoneProvider>,
+    );
 
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(fakes.auditList).toHaveBeenCalledWith(200);

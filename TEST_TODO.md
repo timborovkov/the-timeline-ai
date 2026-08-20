@@ -6,12 +6,13 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: on 2026-07-19, `pnpm validate`,
-`pnpm run doctor`, `pnpm test`, `pnpm test:e2e-env`, `pnpm test:eval`,
-`pnpm test:reconciliation-eval`, `pnpm test:dist-imports`,
-`pnpm test:task-category-eval:live`, and the
-full strict local Playwright suite pass. React Doctor reported
-"No issues found!" with a 100/100 score. The Playwright suite passed 63 tests,
+Last checked in this branch: on 2026-08-20, `pnpm validate`,
+`pnpm run doctor`, `pnpm test`, `pnpm test:eval`,
+`pnpm test:reconciliation-eval`, and `pnpm test:dist-imports` pass. React Doctor
+reported "No issues found!" with a 100/100 score. The previous 2026-07-19
+verification also passed those gates plus `pnpm test:e2e-env`,
+`pnpm test:task-category-eval:live`, and the full strict local Playwright suite.
+That Playwright suite passed 63 tests,
 including curated Quiet Archive Linux visual baselines (not a full surface matrix),
 Home-to-Ask private prompt handoff, capture dialog, UUID suppression, one-heading
 route sweep, 320px no-overflow checks, and distinct task-category/primary-project

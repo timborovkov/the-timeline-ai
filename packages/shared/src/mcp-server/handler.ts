@@ -1592,10 +1592,19 @@ async function callTimelineAgent(
   const parsed = askAgentInput.safeParse(args);
   if (!parsed.success) return agentToolError('failed', { message: 'invalid_question' });
 
-  const limit = await (deps.checkRateLimit ?? checkRateLimit)({
-    key: rateLimitKey('mcp', 'agent_ask', resolved.keyId),
-    ...RATE_LIMITS.mcpAgentAsk,
-  });
+  let limit: Awaited<ReturnType<typeof checkRateLimit>>;
+  try {
+    limit = await (deps.checkRateLimit ?? checkRateLimit)({
+      key: rateLimitKey('mcp', 'agent_ask', resolved.keyId),
+      ...RATE_LIMITS.mcpAgentAsk,
+    });
+  } catch (err) {
+    log.warn(
+      { err, teamId: resolved.teamId, keyId: resolved.keyId },
+      'MCP agent rate-limit check failed',
+    );
+    return agentToolError('failed');
+  }
   if (!limit.ok) {
     return agentToolError('rate_limited', {
       retry_after_seconds: Math.max(1, Math.ceil(limit.retryAfterMs / 1000)),

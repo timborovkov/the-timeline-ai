@@ -434,6 +434,14 @@ describe('handleMcpRequest', () => {
     await expect(
       output(
         { db: db as never, bearer: AGENT_TOKEN },
+        {
+          checkRateLimit: vi.fn().mockRejectedValue(new Error('rate store unavailable')) as never,
+        },
+      ),
+    ).resolves.toMatchObject({ error: 'failed', isError: true });
+    await expect(
+      output(
+        { db: db as never, bearer: AGENT_TOKEN },
         {},
         {
           ...request,
@@ -497,6 +505,55 @@ describe('handleMcpRequest', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('propagates request cancellation into the agent turn', async () => {
+    const requestController = new AbortController();
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let turnSignal: AbortSignal | undefined;
+    const askAgent = vi.fn(
+      (_input: unknown, deps: { abortSignal?: AbortSignal }): Promise<never> => {
+        turnSignal = deps.abortSignal;
+        markStarted?.();
+        return new Promise((_resolve, reject) => {
+          deps.abortSignal?.addEventListener(
+            'abort',
+            () => {
+              reject(new Error('request aborted'));
+            },
+            { once: true },
+          );
+        });
+      },
+    );
+    const responsePromise = handleMcpRequest(
+      { db: db as never, bearer: AGENT_TOKEN, signal: requestController.signal },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'timeline.ask_agent',
+          arguments: { question: 'Summarize the launch.' },
+        },
+      },
+      {
+        askAgent: askAgent as never,
+        checkRateLimit: vi
+          .fn()
+          .mockResolvedValue({ ok: true, remaining: 9, retryAfterMs: 0 }) as never,
+      },
+    );
+
+    await started;
+    requestController.abort(new Error('client disconnected'));
+
+    await expect(responsePromise).resolves.toMatchObject({ result: { isError: true } });
+    expect(turnSignal?.aborted).toBe(true);
+    expect((turnSignal?.reason as Error).message).toBe('client disconnected');
   });
 
   it('lists bundled team-visible moments for outbound MCP callers', async () => {

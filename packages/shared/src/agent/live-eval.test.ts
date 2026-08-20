@@ -699,13 +699,16 @@ maybeDescribe('live agent chat evals', () => {
     );
 
     expect(toolErrors).toEqual([]);
-    expect(fakes.connectForTeam).toHaveBeenCalledWith(db, TEAM_ID, USER_ID);
+    expect(fakes.connectForTeam).toHaveBeenCalledWith(db, TEAM_ID, USER_ID, {
+      agentDelegationDepth: 1,
+    });
     expect(fakes.callTool).toHaveBeenCalledWith(
       db,
       TEAM_ID,
       MCP_TOOL_NAME,
       { accountId: 'northstar' },
       USER_ID,
+      { agentDelegationDepth: 1 },
     );
     expect(fakes.enqueueEmbedJob).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ ok: true, truncated: false });

@@ -17,6 +17,7 @@ const fakes = vi.hoisted(() => ({
   listBoards: vi.fn(),
   listEventsPage: vi.fn(),
   listMembers: vi.fn(),
+  listNotifications: vi.fn(),
   getCalendarSettings: vi.fn(),
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
@@ -50,7 +51,11 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listBoards: fakes.listBoards,
     },
     pins: { list: fakes.listPins, isPinnedMany: fakes.isPinnedMany },
-    objects: { countObjects: fakes.countObjects, listObjects: fakes.listObjects },
+    objects: {
+      countObjects: fakes.countObjects,
+      listObjects: fakes.listObjects,
+      listNotifications: fakes.listNotifications,
+    },
     suggestions: { getApprovalItemCounts: fakes.getApprovalItemCounts },
     timeline: { listEventsPage: fakes.listEventsPage, listMembers: fakes.listMembers },
     calendar: { getCalendarSettings: fakes.getCalendarSettings },
@@ -130,6 +135,7 @@ beforeEach(() => {
   fakes.listBoards.mockResolvedValue([]);
   fakes.listEventsPage.mockResolvedValue({ items: [], nextCursor: null });
   fakes.listMembers.mockResolvedValue([]);
+  fakes.listNotifications.mockResolvedValue([]);
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'America/Los_Angeles' });
 });
 

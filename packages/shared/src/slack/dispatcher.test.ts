@@ -980,7 +980,7 @@ describe('Slack dispatcher routing', () => {
         proposalOrigin: { surface: 'slack', actorKind: 'team_agent' },
         question: 'what changed?',
       }),
-      expect.any(Object),
+      expect.objectContaining({ includeMcpTools: true }),
     );
   });
 
@@ -1476,7 +1476,7 @@ describe('Slack dispatcher routing', () => {
         proposalOrigin: { surface: 'slack', actorKind: 'team_agent' },
         question: 'what changed?',
       }),
-      expect.any(Object),
+      expect.objectContaining({ includeMcpTools: true }),
     );
     expect(fetchBodyContaining(fetchMock, 'answer')).not.toBeNull();
   });

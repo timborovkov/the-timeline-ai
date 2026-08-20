@@ -80,7 +80,9 @@ describe('agent MCP safety evals', () => {
 
     const result = (await exec({ q: 'launch' }, {})) as { ok: boolean; content_text: string };
 
-    expect(fakes.connectForTeam).toHaveBeenCalledWith({}, TEAM_ID, USER_ID);
+    expect(fakes.connectForTeam).toHaveBeenCalledWith({}, TEAM_ID, USER_ID, {
+      agentDelegationDepth: 1,
+    });
     expect(fakes.callTool).toHaveBeenCalledWith({}, TEAM_ID, TOOL_NAME, { q: 'launch' }, USER_ID, {
       agentDelegationDepth: 1,
     });

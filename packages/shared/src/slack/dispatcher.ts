@@ -320,6 +320,7 @@ async function handleSlackAskCommand(
       },
       {
         ...deps.agentDeps,
+        ...(route.trustedTeamActor ? { includeMcpTools: true } : {}),
         onToolError: deps.onAgentToolError,
         onAgentError: deps.onAgentError,
         sanitizeError: redactConversationError,
@@ -999,6 +1000,7 @@ async function handleAppMention(
       },
       {
         ...deps.agentDeps,
+        ...(!route.linkedUserId && !route.isDm ? { includeMcpTools: true } : {}),
         onToolError: deps.onAgentToolError,
         onAgentError: deps.onAgentError,
         sanitizeError: redactConversationError,
