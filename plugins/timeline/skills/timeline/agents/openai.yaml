@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Timeline'
+  short_description: 'Use Timeline MCP with cited workspace evidence'
+  default_prompt: 'Use $timeline to answer this workspace question with cited Timeline evidence.'

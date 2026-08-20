@@ -21,6 +21,6 @@ peerDependencyRules:
 # (a drizzle peer) made pnpm install two parallel drizzle-orm@0.38.4
 # instances and the nominal types from @timeline/db stopped matching
 # the ones consumed by @timeline/shared.
-dedupe-peer-dependents: true
-public-hoist-pattern:
+dedupePeerDependents: true
+publicHoistPattern:
   - 'drizzle-orm'

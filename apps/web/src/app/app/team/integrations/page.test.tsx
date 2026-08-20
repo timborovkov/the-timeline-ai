@@ -165,6 +165,15 @@ describe('IntegrationsPageView', () => {
     expect(screen.getByRole('link', { name: 'Reconnect account' })).toBeTruthy();
     expect(screen.getByText(/Choose which provider-account sources/i)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Connect account' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Agent install guide' }).getAttribute('href')).toBe(
+      '/help/agents',
+    );
+    const agentSkillsLink = screen.getByRole('link', { name: 'Plugin source' });
+    expect(agentSkillsLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
+    );
+    expect(agentSkillsLink.getAttribute('target')).toBe('_blank');
+    expect(agentSkillsLink.getAttribute('rel')).toBe('noreferrer');
 
     expect(
       sectionNames.every((name, index) => {

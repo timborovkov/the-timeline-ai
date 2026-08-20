@@ -311,9 +311,15 @@
           delivery without internal Timeline ids. Group/channel invocations remain stateless and use
           the same external-chat profile. Unlinked senders in trusted bound groups/channels use a
           proposal-only team identity: it can read team-visible data, call team-shared custom MCP
-          tools, and propose work for human review. External agents can invoke the same identity
-          through an explicitly agent-enabled MCP key; those calls preserve citations and return
-          structured artifact and proposal references.
+          tools whose third-party actions may have external side effects, and propose work for human
+          review. External agents can invoke the same identity through an explicitly agent-enabled
+          MCP key; those calls preserve citations and return structured artifact and proposal
+          references. Codex users can install the repository's
+          <a href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills"
+            >Timeline plugin and skill</a
+          >
+          to add the hosted MCP connection and one general cited-workspace workflow that adapts to
+          search, status updates, incident analysis, and other Timeline questions.
         </li>
       </ul>
 

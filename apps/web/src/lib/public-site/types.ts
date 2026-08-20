@@ -51,6 +51,8 @@ export interface PublicLlmsContentSection {
   title: string;
   body: string;
   items?: readonly string[];
+  links?: readonly { label: string; href: string }[];
+  codeBlock?: { content: string; language?: string };
 }
 
 export interface PublicLlmsContent {

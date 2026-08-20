@@ -1,6 +1,7 @@
 'use client';
 
-import { KeyRound } from 'lucide-react';
+import { ExternalLink, KeyRound } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useId, useReducer, useRef, useState, type SyntheticEvent } from 'react';
 
@@ -45,9 +46,12 @@ function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey): string {
   );
 }
 
-function codexCommand(mcpUrl: string, mintedKey: MintedKey): string {
+function codexCommand(mcpUrl: string): string {
   return [
-    `export TIMELINE_MCP_KEY="${mintedKey.plaintext}"`,
+    "printf 'Timeline MCP key: '",
+    'IFS= read -r -s TIMELINE_MCP_KEY',
+    "printf '\\n'",
+    'export TIMELINE_MCP_KEY',
     `codex mcp add timeline --url "${mcpUrl}" --bearer-token-env-var TIMELINE_MCP_KEY`,
   ].join('\n');
 }
@@ -159,12 +163,7 @@ function McpRetrievalSummary() {
 }
 
 function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: MintedKey | null }) {
-  const codexSnippet = mintedKey
-    ? codexCommand(mcpUrl, mintedKey)
-    : [
-        'export TIMELINE_MCP_KEY="<create a key first>"',
-        `codex mcp add timeline --url "${mcpUrl}" --bearer-token-env-var TIMELINE_MCP_KEY`,
-      ].join('\n');
+  const codexSnippet = codexCommand(mcpUrl);
   const jsonSnippet = mintedKey
     ? remoteJsonConfig(mcpUrl, mintedKey)
     : JSON.stringify(
@@ -186,24 +185,34 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
       <div className="text-xs text-fg-muted">Connect from clients</div>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-fg">Codex CLI</h3>
+          <h3 className="text-sm font-semibold text-fg">Codex CLI (bash or zsh)</h3>
           <p className="text-sm text-fg-muted">
-            Codex supports Streamable HTTP MCP servers through <code>codex mcp add --url</code>.
-            Store the key in an environment variable so it is not written directly into shell
-            history.
+            Codex supports Streamable HTTP MCP servers through <code>codex mcp add --url</code>. The
+            command reads the key silently from the terminal, then passes only its environment
+            variable name to Codex. Run it in the terminal you will use to launch Codex; then fully
+            exit the current process, relaunch <code>codex</code> from that terminal, and start a
+            new task.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
-            <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
+            <pre translate="no" className="overflow-x-auto p-3 font-mono text-xs leading-5">
               <code>{codexSnippet}</code>
             </pre>
           </div>
-          {mintedKey ? (
-            <CopyButton value={codexSnippet} label="Copy command" />
-          ) : (
-            <p className="text-xs leading-5 text-fg-dim">
-              Create a new key to generate a copy-ready command with the real bearer token.
-            </p>
-          )}
+          <CopyButton value={codexSnippet} label="Copy command" />
+          <div className="flex flex-wrap gap-x-3 gap-y-1">
+            <Link href="/help/agents" className="text-xs font-medium text-signal hover:underline">
+              Copy-ready agent install guide
+            </Link>
+            <a
+              href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-signal hover:underline"
+            >
+              Plugin source on GitHub
+              <ExternalLink aria-hidden="true" className="size-3" />
+            </a>
+          </div>
         </div>
 
         <div className="space-y-3">
@@ -214,7 +223,7 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
             remote-MCP bridge and point the bridge at this same URL.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
-            <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
+            <pre translate="no" className="overflow-x-auto p-3 font-mono text-xs leading-5">
               <code>{jsonSnippet}</code>
             </pre>
           </div>
@@ -225,6 +234,11 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
               Create a new key to generate copy-ready JSON with the real Authorization header.
             </p>
           )}
+          <p className="text-xs leading-5 text-fg-dim">
+            Generated JSON contains the bearer key. Store it only in the client&apos;s protected
+            local configuration, keep it out of repositories and shared folders, and follow that
+            client&apos;s credential-storage guidance.
+          </p>
         </div>
 
         <div className="space-y-3">
@@ -377,11 +391,16 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
         <div className="space-y-3 border-y border-signal/40 py-4">
           <div>
             <div className="text-sm font-medium">
-              New key: copy now, you won&apos;t see it again
+              New key: keep this open until your client is connected
             </div>
             <p className="text-sm text-fg-muted">
               The plaintext for <span className="font-mono">{mintedKey.name}</span> is shown below
               once. We store only the hash; if you lose it you&apos;ll need to mint a new one.
+            </p>
+            <p className="mt-2 text-sm text-fg-muted">
+              For Codex CLI, copy and run the command above first. When the terminal asks for the
+              key, copy this value and paste it at the hidden prompt. Dismiss it only after Codex is
+              connected.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -397,7 +416,7 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
               patchState({ mintedKey: null });
             }}
           >
-            I&apos;ve copied it, dismiss
+            Connected — dismiss key
           </Button>
         </div>
       ) : null}

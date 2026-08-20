@@ -11,6 +11,7 @@
 <p align="center">
   <a href="https://thetimeline.cc">Website</a> ·
   <a href="https://thetimeline.cc/help">Help</a> ·
+  <a href="./plugins/timeline/skills/README.md">Agent skill</a> ·
   <a href="https://github.com/timborovkov/the-timeline-ai">GitHub</a> ·
   <a href="./docs/setup/local.html">Local setup</a> ·
   <a href="./docs/index.html">Developer docs</a>
@@ -32,6 +33,7 @@ durable workspace change.
 - Turns durable facts and decisions into approval-backed workspace changes.
 - Connects GitHub, Linear, Google Drive, Monday.com, Slack, Sentry, and custom MCP servers.
 - Lets external agents call a team-scoped Timeline agent through opt-in MCP keys; that actor can
+  call enabled team-shared tools, whose third-party actions may have external side effects, and
   create proposals for human review but cannot approve or apply them.
 - Enforces team isolation and per-event visibility at the data layer.
 
@@ -131,6 +133,8 @@ The Timeline is a pnpm/Turborepo monorepo:
 | `apps/worker` | BullMQ workers for capture, extraction, agents, sync, and maintenance |
 | `packages/db` | Drizzle schema, migrations, and database exports |
 | `packages/shared` | Team-scoped data access, inference, storage, integrations, and domain modules |
+| `.agents/plugins` | Codex marketplace catalog for repository plugins |
+| `plugins/timeline` | Codex plugin, hosted MCP connection, and general cited-workspace skill |
 | `docs` | Product, architecture, setup, and deployment documentation |
 
 The core services are Postgres, Redis, Qdrant, and S3-compatible object storage.
@@ -162,6 +166,7 @@ agent behavior, or reconciliation have additional gates documented in
 - [Operating memory engine](./docs/relational-memory.md)
 - [Local development](./docs/setup/local.html)
 - [Integrations and custom MCP servers](./docs/setup/integrations.html)
+- [Codex plugin and agent skill](./plugins/timeline/skills/README.md)
 - [Railway deployment](./docs/railway.html)
 - [Architecture decisions](./docs/adr/)
 - [Public document registry](./docs/public-site-registry.md)

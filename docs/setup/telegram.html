@@ -224,8 +224,9 @@ curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
         even before linking a personal Timeline identity. An unlinked sender runs as the synthetic
         team agent: it may use enabled team-shared custom MCP tools and create new team-visible
         approval proposals, but cannot revise/approve proposals, use personal tools, or mutate
-        canonical state. Linked members keep their normal member-level agent behavior. Unlinked
-        direct messages remain blocked.
+        canonical Timeline state. Enabled team-shared custom MCP tools can still cause external side
+        effects. Linked members keep their normal member-level agent behavior. Unlinked direct
+        messages remain blocked.
       </p>
       <p>
         Messages from Telegram users who have not linked yet are recorded with

@@ -1,0 +1,20 @@
+{
+  "name": "timeline",
+  "interface": {
+    "displayName": "The Timeline"
+  },
+  "plugins": [
+    {
+      "name": "timeline",
+      "source": {
+        "source": "local",
+        "path": "./plugins/timeline"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

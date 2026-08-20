@@ -150,6 +150,22 @@ function validateDocument(document: PublicDocument, sourceId: string): void {
     }
     for (const section of document.llms.sections ?? []) {
       validateSingleLine(section.title, 'LLM section title', context);
+      for (const sectionLink of section.links ?? []) {
+        validateSingleLine(sectionLink.label, 'LLM section resource link label', context);
+        validateAbsoluteHttpsUrl(sectionLink.href, context);
+      }
+      if (section.codeBlock) {
+        if (!section.codeBlock.content.trim()) {
+          throw new Error(`Public document LLM section code block must be non-empty: ${context}`);
+        }
+        if (section.codeBlock.language !== undefined) {
+          validateSingleLine(
+            section.codeBlock.language,
+            'LLM section code block language',
+            context,
+          );
+        }
+      }
     }
   }
   for (const input of document.structuredData) {
@@ -187,6 +203,30 @@ function validateDate(value: PublicIsoDate, field: string, context: string): voi
     new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) !== value
   ) {
     throw new Error(`Invalid public document ${field} in ${context}: ${value}`);
+  }
+}
+
+function validateAbsoluteHttpsUrl(value: string, context: string): void {
+  validateSingleLine(value, 'LLM section resource link destination', context);
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(
+      `Public document LLM section resource link must be an absolute HTTPS URL: ${context}`,
+    );
+  }
+
+  if (
+    value !== value.trim() ||
+    !/^https:\/\//iu.test(value) ||
+    parsed.protocol !== 'https:' ||
+    !parsed.hostname
+  ) {
+    throw new Error(
+      `Public document LLM section resource link must be an absolute HTTPS URL: ${context}`,
+    );
   }
 }
 

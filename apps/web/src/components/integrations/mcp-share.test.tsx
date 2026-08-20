@@ -62,6 +62,27 @@ describe('McpShareUi', () => {
     expect(screen.getByText('No active keys')).toBeTruthy();
     expect(screen.getByText(/Create a retrieval key, with optional access/)).toBeTruthy();
     expect(screen.getByText(/Bearer <create a key first>/)).toBeTruthy();
+    expect(screen.getByText(/Generated JSON contains the bearer key/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy command' })).toBeTruthy();
+    expect(screen.getByText(/IFS= read -r -s TIMELINE_MCP_KEY/)).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Codex CLI (bash or zsh)' }).parentElement?.textContent,
+    ).toMatch(/relaunch codex from that terminal/i);
+    expect(
+      screen
+        .getByRole('link', {
+          name: 'Copy-ready agent install guide',
+        })
+        .getAttribute('href'),
+    ).toBe('/help/agents');
+    const skillsLink = screen.getByRole('link', {
+      name: 'Plugin source on GitHub',
+    });
+    expect(skillsLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
+    );
+    expect(skillsLink.getAttribute('target')).toBe('_blank');
+    expect(skillsLink.getAttribute('rel')).toBe('noreferrer');
 
     await user.click(screen.getByRole('button', { name: 'New key' }));
     await user.type(screen.getByPlaceholderText('Claude Desktop · personal mac'), 'Claude Desktop');
@@ -76,13 +97,16 @@ describe('McpShareUi', () => {
     });
     expect(routerRefresh).toHaveBeenCalledOnce();
 
-    expect(await screen.findByText(/New key: copy now/)).toBeTruthy();
+    expect(await screen.findByText(/New key: keep this open/)).toBeTruthy();
+    expect(screen.getByText(/copy and run the command above first/i)).toBeTruthy();
+    expect(screen.getByText(/dismiss it only after Codex is connected/i)).toBeTruthy();
     expect(screen.getByText('tl_mcp_live_secret_123')).toBeTruthy();
-    expect(screen.getByText(/export TIMELINE_MCP_KEY="tl_mcp_live_secret_123"/)).toBeTruthy();
+    expect(screen.queryByText(/export TIMELINE_MCP_KEY="tl_mcp_live_secret_123"/)).toBeNull();
+    expect(screen.getByText(/IFS= read -r -s TIMELINE_MCP_KEY/)).toBeTruthy();
     expect(screen.getByText(new RegExp(`codex mcp add timeline --url "${MCP_URL}"`))).toBeTruthy();
     expect(screen.getByText(/"Authorization": "Bearer tl_mcp_live_secret_123"/)).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: "I've copied it, dismiss" }));
+    await user.click(screen.getByRole('button', { name: 'Connected — dismiss key' }));
     expect(screen.queryByText('tl_mcp_live_secret_123')).toBeNull();
   });
 
@@ -130,7 +154,7 @@ describe('McpShareUi', () => {
         body: JSON.stringify({ name: '   Claude Desktop', allowAgent: false }),
       });
     });
-    expect(await screen.findByText(/New key: copy now/)).toBeTruthy();
+    expect(await screen.findByText(/New key: keep this open/)).toBeTruthy();
   });
 
   it('requires an explicit opt-in before granting Timeline agent access', async () => {
@@ -202,7 +226,7 @@ describe('McpShareUi', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
-    expect(await screen.findByText(/New key: copy now/)).toBeTruthy();
+    expect(await screen.findByText(/New key: keep this open/)).toBeTruthy();
   });
 
   it('revokes active keys only after destructive confirmation', async () => {

@@ -1,10 +1,12 @@
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { AgentInstallGuide } from '@/components/help/agent-install-guide';
 import { HelpAppLink } from '@/components/help/app-link';
+import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
 import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
 import { publicMetadata } from '@/lib/public-metadata';
@@ -35,6 +37,15 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
 
   const session = await auth();
   const isSignedIn = Boolean(session?.user);
+
+  if (page.slug === 'agents') {
+    return (
+      <article className="space-y-14">
+        <AgentInstallGuide isSignedIn={isSignedIn} />
+        <RelatedGuides related={page.related} />
+      </article>
+    );
+  }
 
   return (
     <article className="space-y-10">
@@ -73,13 +84,23 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
                   </ul>
                 ) : null}
               </div>
-              {section.appLink ? (
-                <div className="lg:pt-11">
-                  <HelpAppLink
-                    href={section.appLink.href}
-                    label={section.appLink.label}
-                    isSignedIn={isSignedIn}
-                  />
+              {section.appLink || section.resourceLinks?.length ? (
+                <div className="flex flex-col items-start gap-2 lg:pt-11">
+                  {section.appLink ? (
+                    <HelpAppLink
+                      href={section.appLink.href}
+                      label={section.appLink.label}
+                      isSignedIn={isSignedIn}
+                    />
+                  ) : null}
+                  {section.resourceLinks?.map((link) => (
+                    <Button key={link.href} asChild size="sm" variant="outline">
+                      <a href={link.href} target="_blank" rel="noreferrer">
+                        {link.label}
+                        <ExternalLink aria-hidden="true" className="size-3.5" />
+                      </a>
+                    </Button>
+                  ))}
                 </div>
               ) : null}
             </div>
@@ -87,30 +108,36 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
         ))}
       </div>
 
-      <section className="border-t border-border pt-8">
-        <h2 className="mb-3 text-base font-semibold text-fg">Related</h2>
-        <div className="flex flex-wrap gap-2">
-          {page.related.map((relatedSlug) => {
-            const related = findHelpPage(relatedSlug);
-            if (!related) return null;
-            return (
-              <Link
-                key={related.slug}
-                href={`/help/${related.slug}`}
-                className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
-              >
-                {related.title}
-              </Link>
-            );
-          })}
-          <Link
-            href="/help/support"
-            className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
-          >
-            Contact support
-          </Link>
-        </div>
-      </section>
+      <RelatedGuides related={page.related} />
     </article>
+  );
+}
+
+function RelatedGuides({ related }: { related: string[] }) {
+  return (
+    <section className="border-t border-border pt-8">
+      <h2 className="mb-3 text-base font-semibold text-fg">Related</h2>
+      <div className="flex flex-wrap gap-2">
+        {related.map((relatedSlug) => {
+          const relatedPage = findHelpPage(relatedSlug);
+          if (!relatedPage) return null;
+          return (
+            <Link
+              key={relatedPage.slug}
+              href={`/help/${relatedPage.slug}`}
+              className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+            >
+              {relatedPage.title}
+            </Link>
+          );
+        })}
+        <Link
+          href="/help/support"
+          className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+        >
+          Contact support
+        </Link>
+      </div>
+    </section>
   );
 }

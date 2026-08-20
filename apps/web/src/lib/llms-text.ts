@@ -195,6 +195,11 @@ function renderSections(document: PublicDocument, headingLevel: 3 | 4): string[]
     `${'#'.repeat(headingLevel)} ${escapeHeading(section.title)}`,
     escapeInline(section.body),
     ...(section.items ?? []).map((item) => `- ${escapeInline(item)}`),
+    ...(section.links ?? []).map(
+      (sectionLink) =>
+        `- [${escapeLinkText(sectionLink.label)}](${escapeLinkDestination(sectionLink.href)})`,
+    ),
+    ...(section.codeBlock ? ['', ...renderCodeBlock(section.codeBlock)] : []),
     '',
   ]);
 }
@@ -213,6 +218,18 @@ function escapeLinkText(value: string): string {
 
 function escapeHeading(value: string): string {
   return escapeInline(value).replace(/^#+\s*/u, '');
+}
+
+function escapeLinkDestination(value: string): string {
+  return new URL(value)
+    .toString()
+    .replace(/[()]/gu, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function renderCodeBlock(codeBlock: { content: string; language?: string }): string[] {
+  const backtickRuns = [...codeBlock.content.matchAll(/`+/gu)].map((match) => match[0].length);
+  const fence = '`'.repeat(Math.max(3, ...backtickRuns.map((length) => length + 1)));
+  return [`${fence}${codeBlock.language ?? ''}`, codeBlock.content, fence];
 }
 
 function escapeInline(value: string): string {

@@ -3,7 +3,7 @@ import { ingestWebhookCredentials, ingestWebhooks, users } from '@timeline/db';
 import * as integrationsLib from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
-import { Plug } from 'lucide-react';
+import { ExternalLink, Plug } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
@@ -400,9 +400,24 @@ function McpEndpointSection() {
         endpoint. This is outbound access: external tools reading from Timeline, not Timeline
         reading from them.
       </p>
-      <Button asChild variant="outline" size="sm">
-        <Link href="/app/team/mcp-share">Manage MCP endpoint</Link>
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link href="/app/team/mcp-share">Manage MCP endpoint</Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <Link href="/help/agents">Agent install guide</Link>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <a
+            href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Plugin source
+            <ExternalLink aria-hidden="true" className="size-3.5" />
+          </a>
+        </Button>
+      </div>
     </section>
   );
 }

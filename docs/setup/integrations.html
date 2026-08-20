@@ -17,10 +17,11 @@
         then activate team sync from <code>/app/sources</code>. Native providers sync external
         activity into the timeline as <code>source='integration'</code>. Team MCP servers in the
         Advanced integration tools section of <code>/app/team/integrations</code> give the agent
-        live tool access; successful tool results are captured as private integration evidence for
-        reconciliation, while passive provider activity still needs a native sync adapter or custom
-        ingestion layer. For tools that only need to push arbitrary evidence into Timeline, admins
-        can also create named ingest webhooks from <code>/app/sources</code>.
+        live tool access; successful team-server results become immutable team-visible integration
+        evidence, while personal-server results stay private to their owner. Passive provider
+        activity still needs a native sync adapter or custom ingestion layer. For tools that only
+        need to push arbitrary evidence into Timeline, admins can also create named ingest webhooks
+        from <code>/app/sources</code>.
       </p>
 
       <h2 id="secrets">Encryption key (required first)</h2>
@@ -578,7 +579,8 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
           Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and choose
           whether to enable <em>Allow Timeline agent</em>. This option is off by default. Enabling
           it permits paid model turns, enabled team-shared custom MCP tools, and team-visible
-          proposal creation. Copy the one-time plaintext.
+          proposal creation. Those third-party tools may have external side effects. Copy the
+          one-time plaintext.
         </li>
         <li>
           In the consuming agent, add an MCP server with:
@@ -596,9 +598,31 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         <code>resources/list</code>, <code>resources/read</code>, <code>prompts/list</code>,
         <code>prompts/get</code>. Tools exposed:
       </p>
-      <p>Codex CLI users can connect it with an environment-backed bearer token:</p>
-      <pre><code>export TIMELINE_MCP_KEY="tla_..."
+      <p>
+        Codex users can install the hosted MCP connection together with the cited Timeline workflows
+        from the <a href="https://thetimeline.cc/help/agents">copy-ready agent install guide</a>.
+        The underlying files and self-hosted route are documented in the
+        <a
+          href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Timeline plugin and agent skill guide</a
+        >.
+      </p>
+      <p>For a direct MCP-only connection, use an environment-backed bearer token:</p>
+      <pre><code>printf 'Timeline MCP key: '
+IFS= read -r -s TIMELINE_MCP_KEY
+printf '\n'
+export TIMELINE_MCP_KEY
 codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-env-var TIMELINE_MCP_KEY</code></pre>
+      <p>
+        Run that command in the terminal you will use for Codex CLI. Fully exit the current Codex
+        process, relaunch <code>codex</code> from the same terminal, and start a new task. A new
+        task cannot import an environment variable added after its Codex host started. Codex app and
+        IDE users should store <code>TIMELINE_MCP_KEY=&lt;one-time key&gt;</code> in
+        <code>~/.codex/.env</code> outside any repository, restrict that file to their user account,
+        fully restart the app or extension, and then start a new task.
+      </p>
       <p>Remote-MCP JSON clients can use the same endpoint and bearer key:</p>
       <pre><code>{
   "mcpServers": {
@@ -611,6 +635,11 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
     }
   }
 }</code></pre>
+      <p>
+        This JSON contains the bearer key. Store it only in the client's protected local
+        configuration, keep it out of repositories and shared folders, and follow that client's
+        credential-storage guidance.
+      </p>
       <p>
         ChatGPT can create apps from remote MCP servers in Developer mode:
         <strong>Settings → Apps &amp; Connectors → Advanced settings → Developer mode</strong>, then
@@ -631,7 +660,10 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
           <code>timeline.retrieve_workspace_context</code> — broad read-only retrieval across
           objects, notes, events, tasks, boards, calendar, documents, and route guides
         </li>
-        <li><code>timeline.search_events</code> — semantic search across raw events</li>
+        <li>
+          <code>timeline.search_events</code> — semantic search across raw events with fenced
+          snippets and stable event citations
+        </li>
         <li>
           <code>timeline.search_moments</code>, <code>timeline.list_moments</code>,
           <code>timeline.get_moment</code> — retrieve bundled timeline moments first, then expand to
@@ -641,7 +673,8 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
           source-metadata lookup.
         </li>
         <li>
-          <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch + paginate
+          <code>timeline.get_event</code> / <code>timeline.list_events</code> — fetch one event or
+          list bounded fenced raw event content with stable event citations
         </li>
         <li><code>timeline.get_entity</code> — lookup person / company / project / topic</li>
         <li>
@@ -662,7 +695,8 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         <li>
           <code>timeline.list_integrations</code>, <code>timeline.search_integration_events</code>,
           <code>timeline.get_integration_resource</code> — inspect connected integrations and synced
-          external-resource history
+          external-resource history; integration-event results apply provider filtering and active
+          Monday.com source selections before semantic limiting, and include stable event citations
         </li>
       </ul>
       <p>
@@ -670,16 +704,18 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         queries with a pseudo-zero-UUID actor so events with <code>visibility=private</code> or
         <code>specific_users</code> stay invisible to outbound clients — only
         <code>visibility=team</code> events flow out. Keys are stored as SHA-256 hashes (plaintext
-        shown once at creation). Moment tools are built from that same visible event set and fence
-        raw snippets as external content before returning them. Revoke from the same page;
-        revocation is immediate.
+        shown once at creation). Search and moment tools fence raw snippets as external content;
+        direct event tools and the recent-events resource also fence raw content, and
+        <code>timeline.get_event</code> serializes and fences source metadata. Stable ids, sources,
+        and timestamps remain structured. Revoke from the same page; revocation is immediate.
       </p>
       <p>
         Existing keys and newly created default keys have only <code>read</code>; they neither list
         nor invoke <code>timeline.ask_agent</code>. Agent-enabled keys carry <code>read</code> plus
         <code>agent:ask</code>. Their synthetic actor can create task, object-memory, object-change,
         calendar-create, and calendar-update/cancellation proposals, but cannot revise proposals,
-        use personal pins, call approval-required mutation tools, or change canonical state. Every
+        use personal pins, call approval-required mutation tools, or change canonical Timeline
+        state. Enabled team-shared custom MCP tools can still cause external side effects. Every
         proposal still requires a teammate to accept it. Direct Timeline-agent delegation is bounded
         to one nested call, each turn has a 90-second deadline, and agent calls are limited to 10
         per minute per key in addition to the endpoint IP limit.
