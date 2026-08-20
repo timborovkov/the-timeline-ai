@@ -116,15 +116,22 @@ describe('/api/mcp/server', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('access-control-allow-origin')).toBe('*');
-    expect(fakes.handleMcpRequest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        db: { kind: 'db' },
-        bearer: 'tla_test_key',
-        agentDelegationDepth: 1,
-        signal: expect.any(AbortSignal),
-      }),
-      body,
-    );
+    const [context, requestBody] = fakes.handleMcpRequest.mock.calls[0] as unknown as [
+      {
+        agentDelegationDepth: number;
+        bearer: string;
+        db: { kind: string };
+        signal: AbortSignal;
+      },
+      unknown,
+    ];
+    expect(context).toMatchObject({
+      db: { kind: 'db' },
+      bearer: 'tla_test_key',
+      agentDelegationDepth: 1,
+    });
+    expect(context.signal).toBeInstanceOf(AbortSignal);
+    expect(requestBody).toEqual(body);
     await expect(response.json()).resolves.toEqual({
       jsonrpc: '2.0',
       id: 1,
