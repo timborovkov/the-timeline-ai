@@ -1,0 +1,31 @@
+{
+  "name": "timeline",
+  "version": "0.1.0",
+  "description": "Use The Timeline as cited workspace memory through one general agent skill and its hosted MCP connection.",
+  "author": {
+    "name": "The Timeline",
+    "url": "https://thetimeline.cc"
+  },
+  "homepage": "https://thetimeline.cc/help/agents",
+  "repository": "https://github.com/timborovkov/the-timeline-ai",
+  "keywords": ["timeline", "team-memory", "workspace-search", "citations", "mcp"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "The Timeline",
+    "shortDescription": "Cited answers from your Timeline workspace",
+    "longDescription": "Connect Codex to The Timeline's team-visible workspace memory. One general skill teaches agents how to choose MCP tools, expand source evidence, distinguish current state from activity, and adapt cited answers to the request. Standard keys are read-only; an admin-enabled agent key may create reviewable proposals and call enabled team-shared tools.",
+    "developerName": "The Timeline",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "websiteURL": "https://thetimeline.cc",
+    "privacyPolicyURL": "https://thetimeline.cc/privacy",
+    "termsOfServiceURL": "https://thetimeline.cc/terms",
+    "defaultPrompt": [
+      "Search Timeline for what changed on this project and cite the evidence.",
+      "Draft this week's project update from Timeline.",
+      "Build a cited incident chronology from Timeline."
+    ],
+    "brandColor": "#B5EA4A"
+  },
+  "mcpServers": "./.mcp.json"
+}

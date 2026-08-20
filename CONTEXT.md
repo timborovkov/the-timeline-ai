@@ -789,6 +789,8 @@ such as an agent-enabled outbound MCP key or an unlinked sender in a bound
 Telegram group or Slack channel. It sees only team-visible data and team-shared
 custom MCP tools. It may create new team-visible approval proposals, but cannot
 revise proposals, use personal tools, approve work, or mutate canonical state.
+This authority constrains Timeline state; an enabled third-party MCP tool may
+still perform its own externally visible action.
 _Avoid_: Service account, admin agent, autonomous approver
 
 **Proposal Generation Default**:

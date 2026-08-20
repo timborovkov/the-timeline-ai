@@ -41,7 +41,9 @@ unlinked trusted Telegram/Slack group actors use proposal-only authority:
 team-visible reads, team-shared MCP tools, and new approval proposals without
 proposal revision, personal pins, or canonical mutations. Successful
 team-server MCP results become immutable team-visible evidence; personal-server
-results stay private to their owner.
+results stay private to their owner. Proposal-only authority constrains Timeline
+state; enabled third-party MCP tools may still have their own external side
+effects.
 
 ## How to use
 

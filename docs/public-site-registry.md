@@ -93,8 +93,11 @@ without removing its entry.
   TechArticle, breadcrumbs, FAQ, and SoftwareApplication nodes. It does not
   accept arbitrary JSON-LD blobs.
 - `llms` supplies a discovery section, stable order, short summary, optional
-  full summary, and optional long-form sections. Set it to `false` when a
-  document should not appear in LLM-readable discovery.
+  full summary, and optional long-form sections with labeled links or fenced
+  code blocks. Help resource links flow into those sections automatically;
+  destinations must be absolute HTTPS URLs and are normalized before Markdown
+  serialization. Set `llms` to `false` when a document should not appear in
+  LLM-readable discovery.
 
 ## Verification
 

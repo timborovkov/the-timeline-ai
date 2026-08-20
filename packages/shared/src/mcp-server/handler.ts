@@ -57,6 +57,7 @@ type JsonRpcResponse = JsonRpcSuccess | JsonRpcError;
 const PROTOCOL_VERSION = '2024-11-05';
 const MAX_AGENT_DELEGATION_DEPTH = 1;
 const MCP_AGENT_TIMEOUT_MS = 90_000;
+const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const EVENT_SOURCE_VALUES = [
@@ -215,6 +216,13 @@ function fenceExternalContent(
   return `<external_content source="${fenceAttr(meta.source)}" event_id="${fenceAttr(
     meta.eventId,
   )}">${sanitized}</external_content>`;
+}
+
+function fenceExternalMetadata(
+  metadata: unknown,
+  meta: { source: string; eventId: string },
+): string {
+  return fenceExternalContent(JSON.stringify(metadata ?? {}), meta);
 }
 
 function fenceTimelineMomentText(
@@ -385,7 +393,7 @@ const TOOLS = [
   {
     name: 'timeline.search_events',
     description:
-      'Semantic search across the team timeline. Returns ranked events with event_id (cite as [ev:<id>]).',
+      'Semantic search across the team timeline. Returns ranked events with event_id and a stable [ev:<id>] citation.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -450,7 +458,8 @@ const TOOLS = [
   },
   {
     name: 'timeline.get_event',
-    description: 'Fetch one event by id (returns content, source, occurred_at, source_metadata).',
+    description:
+      'Fetch one event by id with a stable [ev:<id>] citation. Stable identifiers, source, and occurred_at remain structured; raw content and source_metadata are returned inside untrusted external-content fences.',
     inputSchema: {
       type: 'object',
       properties: { id: { type: 'string' } },
@@ -459,7 +468,8 @@ const TOOLS = [
   },
   {
     name: 'timeline.list_events',
-    description: 'Recent events for the team, optionally filtered by source and time range.',
+    description:
+      'Recent events for the team with stable [ev:<id>] citations, optionally filtered by source and time range. Raw content is returned inside an untrusted external-content fence.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -728,7 +738,7 @@ const TOOLS = [
   {
     name: 'timeline.search_integration_events',
     description:
-      'Semantic search restricted to events synced from connected integrations such as Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry.',
+      'Semantic search restricted to events synced from connected integrations such as Google Drive, Linear, GitHub, Monday.com, Slack, and Sentry. Returns stable [ev:<id>] citations.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -789,13 +799,13 @@ const RESOURCES = [
   {
     uri: 'timeline://events/recent',
     name: 'Recent events',
-    description: '50 most recent raw events visible to this key.',
+    description: '50 most recent raw events visible to this key, with stable [ev:<id>] citations.',
     mimeType: 'application/json',
   },
   {
     uri: 'timeline://entities',
-    name: 'Entities',
-    description: 'All entities visible to this key.',
+    name: 'Entity lookup guidance',
+    description: 'Hint for looking up a team-visible entity with timeline.get_entity.',
     mimeType: 'application/json',
   },
 ];
@@ -868,6 +878,7 @@ async function callTool(
         count: hits.length,
         results: hits.map((r) => ({
           event_id: r.eventId,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
           occurred_at: r.occurredAt,
           score: r.score,
           source: r.source,
@@ -1000,10 +1011,17 @@ async function callTool(
         found: true,
         event: {
           id: ev.id,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: ev.id }),
           source: ev.source,
           occurred_at: ev.occurredAt,
-          content_text: ev.contentText,
-          source_metadata: ev.sourceMetadata,
+          content_text: fenceExternalContent(ev.contentText, {
+            source: ev.source,
+            eventId: ev.id,
+          }),
+          source_metadata: fenceExternalMetadata(ev.sourceMetadata, {
+            source: ev.source,
+            eventId: ev.id,
+          }),
         },
       };
     }
@@ -1026,9 +1044,13 @@ async function callTool(
         count: rows.length,
         events: rows.map((r) => ({
           id: r.id,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: r.id }),
           source: r.source,
           occurred_at: r.occurredAt,
-          content_text: r.contentText,
+          content_text: fenceExternalContent(r.contentText, {
+            source: r.source,
+            eventId: r.id,
+          }),
         })),
       };
     }
@@ -1487,27 +1509,49 @@ async function callTool(
     }
     case 'timeline.search_integration_events': {
       const input = searchIntegrationEventsInput.parse(args);
+      const requestedLimit = input.limit ?? 10;
+      const selectedBoardIds = new Set<string>();
+      const selectedDocIds = new Set<string>();
+      if (!input.provider || input.provider === 'monday') {
+        const mondayIntegrations = (await scope.integrations.listIntegrations()).filter(
+          (integration) => integration.provider === 'monday' && integration.enabled,
+        );
+        const selections = (
+          await Promise.all(
+            mondayIntegrations.map((integration) =>
+              scope.integrations.listSelections(integration.id),
+            ),
+          )
+        ).flat();
+        for (const selection of selections) {
+          if (selection.selectionKind === 'monday.board') {
+            selectedBoardIds.add(selection.externalId);
+          } else if (selection.selectionKind === 'monday.doc') {
+            selectedDocIds.add(selection.externalId);
+          }
+        }
+      }
+      const candidates = await scope.timeline.listIntegrationSearchEventIds({
+        ...(input.provider ? { provider: input.provider } : {}),
+        mondayBoardIds: [...selectedBoardIds],
+        mondayDocIds: [...selectedDocIds],
+        limit: INTEGRATION_SEARCH_MAX_EVENT_IDS,
+      });
       const opts: Parameters<typeof scope.timeline.searchEvents>[0] = {
         query: input.query,
         source: 'integration',
-        ...(input.limit ? { limit: input.limit } : {}),
+        limit: requestedLimit,
+        eventIds: candidates.eventIds,
       };
-      const hits = await scope.timeline.searchEvents(opts);
-      let filtered = hits.filter((h) => h.source === 'integration');
-      if (input.provider && filtered.length > 0) {
-        const rows = await scope.timeline.getEventsByIds(filtered.map((r) => r.eventId));
-        const providerById = new Map<string, string | undefined>();
-        for (const row of rows) {
-          const md = row.sourceMetadata as Record<string, unknown> | null;
-          const provider = md && typeof md.provider === 'string' ? md.provider : undefined;
-          providerById.set(row.id, provider);
-        }
-        filtered = filtered.filter((r) => providerById.get(r.eventId) === input.provider);
-      }
+      const filtered = (await scope.timeline.searchEvents(opts)).filter(
+        (hit) => hit.source === 'integration',
+      );
       return {
         count: filtered.length,
-        results: filtered.slice(0, input.limit ?? 10).map((r) => ({
+        truncated: candidates.truncated,
+        results: filtered.map((r) => ({
           event_id: r.eventId,
+          citation: artifactRefCitation({ kind: 'timeline_event', id: r.eventId }),
           occurred_at: r.occurredAt,
           score: r.score,
           snippet: fenceExternalContent(r.snippet, { source: r.source, eventId: r.eventId }),
@@ -1783,9 +1827,13 @@ async function readResource(db: Db, teamId: string, uri: string): Promise<unknow
     const rows = await scope.timeline.listEvents({ limit: 50 });
     return rows.map((r) => ({
       id: r.id,
+      citation: artifactRefCitation({ kind: 'timeline_event', id: r.id }),
       source: r.source,
       occurred_at: r.occurredAt,
-      content_text: r.contentText,
+      content_text: fenceExternalContent(r.contentText, {
+        source: r.source,
+        eventId: r.id,
+      }),
     }));
   }
   if (uri === 'timeline://entities') {
@@ -1809,7 +1857,7 @@ function buildPrompt(
           role: 'user',
           content: {
             type: 'text',
-            text: 'Use timeline.list_events with a 7-day window, then timeline.search_events for any standout themes. Summarize what the team has been working on this week.',
+            text: 'Resolve “this week” with timeline.resolve_time_context. Use timeline.list_moments for that exact window, then timeline.search_moments for supplemental themes, discard semantic hits outside the resolved window, and expand material results with timeline.get_moment. Summarize current work from visible evidence, cite consequential claims, and disclose conflicts or coverage limits.',
           },
         },
       ],
@@ -1823,7 +1871,7 @@ function buildPrompt(
           role: 'user',
           content: {
             type: 'text',
-            text: `Look up ${target} with timeline.get_entity, then call timeline.search_events with the entity's name as the query. Summarize recent changes and decisions.`,
+            text: `Resolve “last week” with timeline.resolve_time_context and use timeline.retrieve_workspace_context for ${target} to establish current state. Call timeline.list_moments for the resolved window, use timeline.search_moments only for supplemental themes, discard semantic hits outside that window, and expand material results with timeline.get_moment. Distinguish canonical current state from discussion, cite visible evidence, and report gaps.`,
           },
         },
       ],

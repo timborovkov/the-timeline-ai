@@ -1,11 +1,45 @@
-import type { PublicDocument } from '@/lib/public-site/types';
+import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site/types';
 
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
+import {
+  TIMELINE_AGENT_ACCESS_FAQS,
+  TIMELINE_AGENT_INSTALL_STEPS,
+  TIMELINE_MCP_COMMAND,
+  TIMELINE_PLUGIN_INSTALL_PROMPT,
+  TIMELINE_SKILL_INSTALL_PROMPT,
+} from '@/lib/agent-install-content';
 import { HELP_PAGES } from '@/lib/help-content';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site/registry';
 
 const LAST_REVIEWED = '2026-08-12' as const;
+
+const AGENT_INSTALL_LLM_SECTIONS = [
+  {
+    title: 'Copy-ready plugin install prompt',
+    body: 'Paste this prompt into a Codex task to install the complete Timeline plugin.',
+    codeBlock: { content: TIMELINE_PLUGIN_INSTALL_PROMPT, language: 'text' },
+  },
+  {
+    title: 'Copy-ready skill-only prompt',
+    body: 'Use this narrower prompt when Timeline MCP is already connected or self-hosted.',
+    codeBlock: { content: TIMELINE_SKILL_INSTALL_PROMPT, language: 'text' },
+  },
+  {
+    title: 'Copy-ready MCP command',
+    body: 'Run this command after TIMELINE_MCP_KEY is available in the environment that will launch Codex.',
+    codeBlock: { content: TIMELINE_MCP_COMMAND, language: 'bash' },
+  },
+  {
+    title: 'Install and connect',
+    body: 'Complete these steps before asking Timeline-backed questions in Codex.',
+    items: TIMELINE_AGENT_INSTALL_STEPS.map((step) => `${step.title}: ${step.body}`),
+  },
+  ...TIMELINE_AGENT_ACCESS_FAQS.map((item) => ({
+    title: item.question,
+    body: item.answer,
+  })),
+] satisfies readonly PublicLlmsContentSection[];
 
 const LANDING_SECTIONS = [
   {
@@ -77,7 +111,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     title: 'Help',
     description: 'Public help docs for The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-08-05', reviewed: LAST_REVIEWED },
+    dates: { modified: '2026-08-20', reviewed: '2026-08-20' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.8 },
     structuredData: [{ type: 'collection-page' }],
@@ -100,7 +134,10 @@ const helpDocuments = definePublicDocuments(
       title: page.title,
       description: page.description,
       indexability: 'index',
-      dates: { modified: '2026-08-05', reviewed: LAST_REVIEWED },
+      dates: {
+        modified: page.updatedAt ?? '2026-08-05',
+        reviewed: page.updatedAt ?? LAST_REVIEWED,
+      },
       capability: { kind: 'current-product' },
       sitemap: { changeFrequency: 'monthly', priority: 0.7 },
       structuredData: [
@@ -117,11 +154,15 @@ const helpDocuments = definePublicDocuments(
         section: 'product-guides',
         order: index,
         summary: page.description,
-        sections: page.sections.map((section) => ({
-          title: section.title,
-          body: section.body,
-          items: section.items,
-        })),
+        sections: [
+          ...page.sections.map((section) => ({
+            title: section.title,
+            body: section.body,
+            items: section.items,
+            links: section.resourceLinks,
+          })),
+          ...(page.slug === 'agents' ? AGENT_INSTALL_LLM_SECTIONS : []),
+        ],
       },
     }),
   ),
@@ -185,7 +226,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-08-12', reviewed: LAST_REVIEWED },
+    dates: { modified: '2026-08-20', reviewed: '2026-08-20' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -201,7 +242,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'sitemap.xml',
     description: 'Machine-readable sitemap for public indexable pages.',
     indexability: 'index',
-    dates: { modified: '2026-08-12', reviewed: LAST_REVIEWED },
+    dates: { modified: '2026-08-20', reviewed: '2026-08-20' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

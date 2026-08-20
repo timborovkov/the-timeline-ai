@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,10 +24,18 @@ import HelpIndexPage from '@/app/help/page';
 import SupportError from '@/app/help/support/error';
 import SupportLoading from '@/app/help/support/loading';
 import { HelpShell } from '@/components/help/help-shell';
+import {
+  TIMELINE_PLUGIN_INSTALL_PROMPT,
+  TIMELINE_SKILL_INSTALL_PROMPT,
+} from '@/lib/agent-install-content';
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  fakes.pathname = '/help/documents';
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
 });
 
 describe('Help route states', () => {
@@ -85,6 +93,125 @@ describe('Help route states', () => {
     expect(screen.getByRole('link', { name: 'Overview' }).hasAttribute('aria-current')).toBe(false);
   });
 
+  it('centers the current guide horizontally without moving the document', () => {
+    window.history.replaceState(null, '', '#restored-section');
+    const restoredScrollY = window.scrollY;
+    const { rerender } = render(
+      <HelpShell isSignedIn={false}>
+        <article>Guide content</article>
+      </HelpShell>,
+    );
+
+    const guideNav = screen.getByRole('navigation', { name: 'Help guides' });
+    const agentGuide = screen.getByRole('link', { name: 'Timeline for agents' });
+    Object.defineProperties(guideNav, {
+      clientWidth: { configurable: true, value: 320 },
+      scrollLeft: { configurable: true, value: 40, writable: true },
+      scrollWidth: { configurable: true, value: 800 },
+    });
+    vi.spyOn(guideNav, 'getBoundingClientRect').mockReturnValue({
+      bottom: 60,
+      height: 40,
+      left: 20,
+      right: 340,
+      toJSON: () => ({}),
+      top: 20,
+      width: 320,
+      x: 20,
+      y: 20,
+    });
+    vi.spyOn(agentGuide, 'getBoundingClientRect').mockReturnValue({
+      bottom: 60,
+      height: 40,
+      left: 500,
+      right: 620,
+      toJSON: () => ({}),
+      top: 20,
+      width: 120,
+      x: 500,
+      y: 20,
+    });
+
+    fakes.pathname = '/help/agents';
+    rerender(
+      <HelpShell isSignedIn={false}>
+        <article>Guide content</article>
+      </HelpShell>,
+    );
+
+    expect(
+      screen.getByRole('link', { name: 'Timeline for agents' }).getAttribute('aria-current'),
+    ).toBe('page');
+    expect(guideNav.scrollLeft).toBe(420);
+    expect(window.location.hash).toBe('#restored-section');
+    expect(window.scrollY).toBe(restoredScrollY);
+  });
+
+  it('centers the current guide after its initial mobile layout becomes measurable', () => {
+    let notifyResize: (() => void) | undefined;
+
+    class ResizeObserverMock {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = () => {
+          callback([], this);
+        };
+      }
+
+      observe = vi.fn();
+      unobserve = vi.fn();
+      disconnect = vi.fn();
+      takeRecords = () => [];
+    }
+
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+    fakes.pathname = '/help/agents';
+    window.history.replaceState(null, '', '#restored-section');
+    const restoredScrollY = window.scrollY;
+
+    render(
+      <HelpShell isSignedIn={false}>
+        <article>Guide content</article>
+      </HelpShell>,
+    );
+
+    const guideNav = screen.getByRole('navigation', { name: 'Help guides' });
+    const agentGuide = screen.getByRole('link', { name: 'Timeline for agents' });
+    Object.defineProperties(guideNav, {
+      clientWidth: { configurable: true, value: 320 },
+      scrollLeft: { configurable: true, value: 0, writable: true },
+      scrollWidth: { configurable: true, value: 800 },
+    });
+    vi.spyOn(guideNav, 'getBoundingClientRect').mockReturnValue({
+      bottom: 60,
+      height: 40,
+      left: 20,
+      right: 340,
+      toJSON: () => ({}),
+      top: 20,
+      width: 320,
+      x: 20,
+      y: 20,
+    });
+    vi.spyOn(agentGuide, 'getBoundingClientRect').mockReturnValue({
+      bottom: 60,
+      height: 40,
+      left: 500,
+      right: 620,
+      toJSON: () => ({}),
+      top: 20,
+      width: 120,
+      x: 500,
+      y: 20,
+    });
+
+    expect(notifyResize).toBeTypeOf('function');
+    notifyResize?.();
+
+    expect(guideNav.scrollLeft).toBe(380);
+    expect(window.location.hash).toBe('#restored-section');
+    expect(window.scrollY).toBe(restoredScrollY);
+  });
+
   it('gives Help discovery links a visible keyboard focus treatment', async () => {
     render(<HelpIndexPage />);
 
@@ -108,6 +235,75 @@ describe('Help route states', () => {
     }
   });
 
+  it('provides a safe, copyable agent install prompt and public source links', async () => {
+    const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue();
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+
+    render(await HelpTopicPage({ params: Promise.resolve({ slug: 'agents' }) }));
+
+    expect(
+      screen.getByRole('heading', {
+        level: 1,
+        name: 'Connect your agent to what actually happened.',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'From install to first answer' }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Access, without surprises' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Timeline' })).toBeTruthy();
+    expect(screen.getByText('timeline')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy install prompt' }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(TIMELINE_PLUGIN_INSTALL_PROMPT);
+    });
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
+      'codex plugin marketplace add timborovkov/the-timeline-ai',
+    );
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('codex plugin add timeline@timeline');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
+      'Check only whether TIMELINE_MCP_KEY is present',
+    );
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
+      'do not print, echo, log, or inspect its value',
+    );
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('Never ask me to paste the key into chat');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
+      'A new task alone cannot import an environment variable',
+    );
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('relaunch codex from that same terminal');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('~/.codex/.env');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('the timeline skill is installed');
+    expect(screen.getByText('Relaunch, then start a task')).toBeTruthy();
+    expect(screen.getByText(/third-party tools may have external side effects/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy skill prompt' }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(TIMELINE_SKILL_INSTALL_PROMPT);
+    });
+    expect(TIMELINE_SKILL_INSTALL_PROMPT).toContain('/plugins/timeline/skills/timeline');
+    expect(TIMELINE_SKILL_INSTALL_PROMPT).not.toContain('timeline-weekly-update');
+
+    const skillLink = screen.getByRole('link', { name: 'View skill' });
+    expect(skillLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills/timeline',
+    );
+
+    const installLink = screen.getByRole('link', { name: 'Read the source guide' });
+    expect(installLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
+    );
+    expect(installLink.getAttribute('target')).toBe('_blank');
+    expect(installLink.getAttribute('rel')).toBe('noreferrer');
+    expect(screen.getByRole('link', { name: 'Sign in to open' })).toBeTruthy();
+  });
+
   it('searches full guide content and provides a clear empty state', async () => {
     const user = userEvent.setup();
     render(<HelpIndexPage />);
@@ -118,6 +314,13 @@ describe('Help route states', () => {
 
     expect(screen.getByRole('link', { name: /Boards/ })).toBeTruthy();
     expect(screen.queryByRole('link', { name: /Document drive/ })).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('1 guide found');
+
+    await user.clear(search);
+    await user.type(search, 'restart Codex');
+
+    expect(screen.getByRole('link', { name: /Timeline for agents/ })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: /Boards/ })).toBeNull();
     expect(screen.getByRole('status').textContent).toBe('1 guide found');
 
     await user.clear(search);

@@ -78,6 +78,58 @@ describe('public document registry', () => {
     ).toThrow('reviewed date precedes its modified date');
   });
 
+  it.each([
+    ['HTTP', 'http://docs.example.test/guide'],
+    ['protocol-relative', '//docs.example.test/guide'],
+    ['relative', '/guide'],
+    ['JavaScript', 'javascript:void(0)'],
+  ])('rejects %s LLM section resource links', (_kind, href) => {
+    expect(() =>
+      definePublicDocuments('unsafe-resource-link', [
+        document({
+          llms: {
+            section: 'primary',
+            order: 1,
+            summary: 'A useful guide.',
+            sections: [
+              {
+                title: 'Resources',
+                body: 'Read more.',
+                links: [{ label: 'Documentation', href }],
+              },
+            ],
+          },
+        }),
+      ]),
+    ).toThrow('resource link must be an absolute HTTPS URL');
+  });
+
+  it('accepts absolute HTTPS LLM section resource links with URL special characters', () => {
+    expect(() =>
+      definePublicDocuments('safe-resource-link', [
+        document({
+          llms: {
+            section: 'primary',
+            order: 1,
+            summary: 'A useful guide.',
+            sections: [
+              {
+                title: 'Resources',
+                body: 'Read more.',
+                links: [
+                  {
+                    label: 'Advanced documentation',
+                    href: 'https://docs.example.test/guides/r&d/(advanced)?source=agent setup',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ]),
+    ).not.toThrow();
+  });
+
   it('builds canonical URLs from an origin and preserves the root slash', () => {
     expect(canonicalPublicUrl('https://thetimeline.cc/deploy/path', '/')).toBe(
       'https://thetimeline.cc/',

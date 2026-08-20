@@ -5,13 +5,20 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { EmptyState } from '@/components/empty-state';
+import { TIMELINE_AGENT_HELP_SEARCH_TEXT } from '@/lib/agent-install-content';
 import { HELP_PAGES } from '@/lib/help-content';
 
 function searchableText(page: (typeof HELP_PAGES)[number]): string {
   return [
     page.title,
     page.description,
-    ...page.sections.flatMap((section) => [section.title, section.body, ...(section.items ?? [])]),
+    page.slug === 'agents' ? TIMELINE_AGENT_HELP_SEARCH_TEXT : '',
+    ...page.sections.flatMap((section) => [
+      section.title,
+      section.body,
+      ...(section.items ?? []),
+      ...(section.resourceLinks ?? []).flatMap((link) => [link.label, link.href]),
+    ]),
   ]
     .join(' ')
     .toLocaleLowerCase();
@@ -32,7 +39,7 @@ export function HelpGuideDirectory() {
             Guide directory
           </h2>
           <p className="max-w-[62ch] text-sm leading-6 text-fg-muted">
-            Search by a task, source, or part of the product. Results include the full guide text,
+            Search by a task, source, or part of the product. Results include guide setup details,
             not just titles.
           </p>
         </div>

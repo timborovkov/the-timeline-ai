@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "timeline": {
+      "type": "http",
+      "url": "https://thetimeline.cc/api/mcp/server",
+      "bearer_token_env_var": "TIMELINE_MCP_KEY"
+    }
+  }
+}

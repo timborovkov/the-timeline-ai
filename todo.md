@@ -368,6 +368,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reporting, team-shared MCP evidence, bounded delegation, and the same
       proposal-only identity for unlinked trusted Telegram groups and Slack
       channels.
+- [x] Ship the repository Codex plugin and marketplace entry with the hosted
+      Timeline MCP connection, one general cited-workspace skill,
+      standalone installation guidance, and links from public help and MCP setup.
 - [x] Let reviewers revise unresolved approval proposals with plain-language
       feedback while preserving their operation, target, evidence, source
       records, and bounded revision history. Route chat corrections between

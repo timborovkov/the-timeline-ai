@@ -247,7 +247,8 @@ Treat this file as an operating contract for agents, not a loose README.
   and unlinked trusted Telegram groups/Slack channels may read team-visible
   data, call team-shared custom MCP tools, and create new team-visible
   proposals. They may not revise proposals, use personal pins, invoke
-  approval-required `execute_*` tools, or mutate canonical state. Existing MCP
+  approval-required `execute_*` tools, or mutate canonical Timeline state.
+  Enabled third-party tools may still cause external side effects. Existing MCP
   keys remain read-only unless an admin explicitly grants `agent:ask`.
 - **No SSRF from user-supplied or discovered URLs.** `validateMcpUrl`
   in [`packages/shared/src/mcp/auth.ts`](packages/shared/src/mcp/auth.ts)
@@ -310,6 +311,10 @@ packages/
             retry/dismiss for failed product jobs), slack module (Phase 12 —
             OAuth install/user link, signed events/commands, conversation
             bindings, capture)
+.agents/
+  plugins/  Codex marketplace catalog for repository plugins
+plugins/
+  timeline/ Codex plugin manifest, hosted MCP connection, and general cited-workspace skill
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
             Slack, Recall.ai meeting bots, Sentry, Railway, local dev,

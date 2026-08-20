@@ -2,6 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { PublicDocument } from '@/lib/public-site';
 
+import {
+  TIMELINE_AGENT_ACCESS_FAQS,
+  TIMELINE_MCP_COMMAND,
+  TIMELINE_PLUGIN_INSTALL_PROMPT,
+  TIMELINE_SKILL_INSTALL_PROMPT,
+} from '@/lib/agent-install-content';
 import { HELP_PAGES } from '@/lib/help-content';
 import { buildLlmsFullTxt, buildLlmsTxt } from '@/lib/llms-text';
 import {
@@ -47,6 +53,27 @@ describe('llms text files', () => {
       expect(text).toContain(`URL: https://thetimeline.cc/help/${page.slug}`);
       expect(text).toContain(page.description);
     }
+    expect(text).toContain(
+      '[Open installation guide](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin)',
+    );
+    expect(text).toContain(TIMELINE_PLUGIN_INSTALL_PROMPT);
+    expect(text).toContain(TIMELINE_SKILL_INSTALL_PROMPT);
+    expect(text).toContain(TIMELINE_MCP_COMMAND);
+    for (const faq of TIMELINE_AGENT_ACCESS_FAQS) {
+      expect(text).toContain(`#### ${faq.question}`);
+      expect(text).toContain(faq.answer);
+    }
+  });
+
+  it('tracks machine-document changes in their registry dates', () => {
+    expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
+      modified: '2026-08-20',
+      reviewed: '2026-08-20',
+    });
+    expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
+      modified: '2026-08-20',
+      reviewed: '2026-08-20',
+    });
   });
 
   it('escapes contributed labels and summaries without reading the deployment environment', () => {
@@ -109,6 +136,41 @@ describe('llms text files', () => {
     expect(full).toContain('URL: https://thetimeline.cc/integrations/github');
     expect(full).toContain('## How Timeline works');
     expect(full).toContain('URL: https://thetimeline.cc/how-it-works/why-citations-matter');
+  });
+
+  it('renders absolute resource links with Markdown-safe destinations', () => {
+    const registry = createPublicDocumentRegistry(
+      definePublicDocuments('existing-public-documents', PUBLIC_DOCUMENT_REGISTRY.all()),
+      definePublicDocuments('special-character-resource', [
+        testDocument({
+          canonicalPath: '/how-it-works/resource-link-safety',
+          title: 'Resource link safety',
+          llms: {
+            section: 'how-it-works',
+            order: 1,
+            summary: 'A guide with a resource link.',
+            sections: [
+              {
+                title: 'Resource',
+                body: 'Follow the source.',
+                links: [
+                  {
+                    label: 'Reference [advanced]',
+                    href: 'https://docs.example.test/guides/r&d/(notes)?source=agent setup#read(me)',
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ]),
+    );
+
+    const full = buildLlmsFullTxt({ registry, siteUrl: 'https://thetimeline.cc' });
+
+    expect(full).toContain(
+      '[Reference \\[advanced\\]](https://docs.example.test/guides/r&d/%28notes%29?source=agent%20setup#read%28me%29)',
+    );
   });
 });
 

@@ -2,8 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 import { PublicShell } from '@/components/public-shell';
 import { HELP_NAV } from '@/lib/help-content';
@@ -16,12 +15,54 @@ interface HelpShellProps {
 
 export function HelpShell({ children, isSignedIn }: HelpShellProps) {
   const currentPath = usePathname();
+  const guideNavRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const guideNav = guideNavRef.current;
+
+    if (!guideNav) return;
+
+    const centerActiveGuide = () => {
+      const activeGuide = guideNav.querySelector<HTMLAnchorElement>('[aria-current="page"]');
+      if (!activeGuide) return;
+      if (guideNav.scrollWidth <= guideNav.clientWidth) return;
+
+      const activeRect = activeGuide.getBoundingClientRect();
+      const navRect = guideNav.getBoundingClientRect();
+      const centeredScrollLeft =
+        guideNav.scrollLeft +
+        activeRect.left -
+        navRect.left -
+        (guideNav.clientWidth - activeRect.width) / 2;
+      const maxScrollLeft = guideNav.scrollWidth - guideNav.clientWidth;
+
+      guideNav.scrollLeft = Math.min(maxScrollLeft, Math.max(0, centeredScrollLeft));
+    };
+
+    centerActiveGuide();
+    const frame = window.requestAnimationFrame(centerActiveGuide);
+    window.addEventListener('resize', centerActiveGuide);
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(centerActiveGuide);
+    if (resizeObserver) {
+      resizeObserver.observe(guideNav);
+      for (const guide of guideNav.children) resizeObserver.observe(guide);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', centerActiveGuide);
+      resizeObserver?.disconnect();
+    };
+  }, [currentPath]);
 
   return (
     <PublicShell isSignedIn={isSignedIn} footerLabel="The Timeline help" currentSection="help">
       <div className="mx-auto grid max-w-6xl min-w-0 gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[15rem_1fr]">
         <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
           <nav
+            ref={guideNavRef}
             aria-label="Help guides"
             className="flex w-full max-w-full gap-2 overflow-x-auto border-b border-border pb-3 lg:block lg:space-y-1 lg:overflow-visible lg:border-b-0 lg:pb-0"
           >

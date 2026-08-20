@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.22 · Object discussions (2026-08-19). Replaces v3.21 Remaining settings density, board list, task kanban skeletons, and standardized personal pins.
+**Version:** v3.23 · Copy-ready agent setup (2026-08-20). Replaces v3.22 Object discussions.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -587,7 +587,8 @@ requests for more detail may expand within the provider-safe reply limit.
 Outbound MCP agent calls use a third compact profile: citations remain inline
 for machine verification, while the response also exposes parsed artifact
 references and proposal IDs. Key creation keeps agent access visibly default-off
-and warns about model usage, enabled team MCP tools, and human-reviewed proposals.
+and warns about model usage, enabled team MCP tools and their possible external
+side effects, and human-reviewed proposals.
 
 ### Work and settings
 
@@ -946,6 +947,11 @@ is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
 provide a visible route back to all guides; article bodies may optionally
 constrain to a reading measure without forcing the shell narrow.
+Agent setup guides may use a bespoke copy-ready pattern: one recommended install
+prompt first, narrower skill-only and MCP-only fallbacks, then numbered setup,
+usage guidance, and an explicit access FAQ. Copy controls stay adjacent to
+their complete prompt or command, secrets never appear in those payloads, and
+the guide remains searchable from the Help directory.
 
 `/how-it-works` is the plain-language explanation of how Timeline works. It uses
 the same 82rem acquisition grid, 13–15rem indexed section rail, hero scale, footer, and
@@ -1158,3 +1164,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Object discussions | Replaces object custom notes with a Linear-style activity + comments thread, @mentions, The Timeline Bot pings, and quiet comment counts. |
 | 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |
 | 2026-08-20 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |
+| 2026-08-20 | Copy-ready agent setup | Gives public Help one recommended install prompt, narrower skill and MCP paths, searchable setup details, and explicit secret and authority boundaries. |
