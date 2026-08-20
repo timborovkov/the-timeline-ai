@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic';
 
 const createSchema = z.object({
   name: z.string().min(1).max(80),
+  allowAgent: z.boolean().optional().default(false),
 });
 
 const log = childLogger('web:mcp-keys');
@@ -79,6 +80,7 @@ export async function POST(req: Request): Promise<Response> {
           name: parsed.data.name,
           keyHash: minted.hash,
           keyPrefix: minted.prefix,
+          scopes: parsed.data.allowAgent ? ['read', 'agent:ask'] : ['read'],
         })
         .returning();
       const created = rows[0];
@@ -112,6 +114,7 @@ export async function POST(req: Request): Promise<Response> {
     name: row.name,
     prefix: row.keyPrefix,
     plaintext: minted.plaintext,
+    scopes: row.scopes,
     createdAt: row.createdAt,
   });
 }

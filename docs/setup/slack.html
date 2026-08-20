@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Slack conversations and capture setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-17</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-20</span></div>
       <p class="tldr">
         Slack is a first-party conversational surface like Telegram: direct text talks to the agent,
         files and explicit notes are captured, and channels stay ingestion-first unless someone
@@ -232,7 +232,10 @@ SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
         <li>
           In bound channels, <code>/ask</code> and <code>@Timeline</code> can answer for unlinked
           Slack senders through a team-scoped bot actor. That actor sees team-visible history but
-          not private or specific-user events.
+          not private or specific-user events. It may use enabled team-shared custom MCP tools and
+          create new team-visible approval proposals, but cannot revise/approve proposals, use
+          personal tools, or mutate canonical state. Linked members retain normal member-level
+          behavior, and unlinked direct messages remain blocked.
         </li>
         <li>
           Text-bearing Slack captures enqueue extraction, embeddings, and approval-suggestion work

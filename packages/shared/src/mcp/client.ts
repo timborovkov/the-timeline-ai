@@ -52,6 +52,8 @@ export interface McpTool {
 export interface DiscoveredTool extends McpTool {
   serverId: string;
   serverName: string;
+  /** NULL for team-shared servers; otherwise the owning Timeline user. */
+  serverUserId: string | null;
   /** `mcp__<serverIdCompact>__<toolName>`. */
   namespacedName: string;
 }
@@ -75,7 +77,11 @@ async function rpc(
   headers: Record<string, string>,
   method: string,
   params: unknown,
-  requestOptions: { signal?: AbortSignal; timeoutMs?: number } = {},
+  requestOptions: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    extraHeaders?: Record<string, string>;
+  } = {},
 ): Promise<unknown> {
   const id = Date.now() + Math.floor(Math.random() * 1000);
   const body: JsonRpcRequest = { jsonrpc: '2.0', id, method, params };
@@ -91,6 +97,7 @@ async function rpc(
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
         ...headers,
+        ...requestOptions.extraHeaders,
       },
       body: JSON.stringify(body),
       redirect: 'manual',
@@ -285,6 +292,26 @@ export interface CachedTeamTools {
   fetchedAt: number;
 }
 
+interface McpClientRequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  agentDelegationDepth?: number;
+}
+
+function rpcRequestOptions(options: McpClientRequestOptions) {
+  return {
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+    ...(options.agentDelegationDepth !== undefined
+      ? {
+          extraHeaders: {
+            'x-timeline-agent-depth': String(options.agentDelegationDepth),
+          },
+        }
+      : {}),
+  };
+}
+
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export class McpClientManager {
@@ -307,7 +334,12 @@ export class McpClientManager {
     this.pending.delete(cacheKey);
   }
 
-  async connectForTeam(db: Db, teamId: string, userId?: string): Promise<CachedTeamTools> {
+  async connectForTeam(
+    db: Db,
+    teamId: string,
+    userId?: string,
+    requestOptions: McpClientRequestOptions = {},
+  ): Promise<CachedTeamTools> {
     // Per-user cache key when userId is provided so two users on the same
     // team don't share each other's personal MCPs. Falls back to team-only
     // for callers that don't carry a user identity (worker pings, etc).
@@ -315,8 +347,12 @@ export class McpClientManager {
     const cached = this.cache.get(cacheKey);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached;
     const pending = this.pending.get(cacheKey);
-    if (pending) return pending;
-    const p = this.refresh(db, teamId, userId, cacheKey).finally(() => {
+    if (pending && !requestOptions.signal) return pending;
+    const refresh = this.refresh(db, teamId, userId, cacheKey, requestOptions);
+    // A request-bound refresh must be independently cancellable. Do not let
+    // its AbortSignal cancel a shared pending refresh used by other turns.
+    if (requestOptions.signal) return refresh;
+    const p = refresh.finally(() => {
       this.pending.delete(cacheKey);
     });
     this.pending.set(cacheKey, p);
@@ -328,6 +364,7 @@ export class McpClientManager {
     teamId: string,
     userId: string | undefined,
     cacheKey: string,
+    requestOptions: McpClientRequestOptions,
   ): Promise<CachedTeamTools> {
     // Team-shared rows (user_id IS NULL) plus the calling user's personal
     // rows when a userId is provided. Worker callers (no userId) get only
@@ -342,14 +379,16 @@ export class McpClientManager {
     const allTools: DiscoveredTool[] = [];
     const toolMap = new Map<string, { serverId: string; toolName: string }>();
     for (const server of servers) {
+      requestOptions.signal?.throwIfAborted();
       try {
-        const tools = await this.discoverTools(db, server);
+        const tools = await this.discoverTools(db, server, requestOptions);
         for (const t of tools) {
           const namespaced = namespaceToolName(server.id, t.name);
           const discovered: DiscoveredTool = {
             ...t,
             serverId: server.id,
             serverName: server.name,
+            serverUserId: server.userId,
             namespacedName: namespaced,
           };
           allTools.push(discovered);
@@ -367,6 +406,7 @@ export class McpClientManager {
           })
           .where(eq(mcpServers.id, server.id));
       } catch (err) {
+        requestOptions.signal?.throwIfAborted();
         const msg = err instanceof Error ? err.message : String(err);
         log.warn({ err, serverId: server.id }, 'MCP discovery failed');
         await db
@@ -375,6 +415,7 @@ export class McpClientManager {
           .where(eq(mcpServers.id, server.id));
       }
     }
+    requestOptions.signal?.throwIfAborted();
     const entry: CachedTeamTools = { tools: allTools, toolMap, fetchedAt: Date.now() };
     this.cache.set(cacheKey, entry);
     return entry;
@@ -383,7 +424,7 @@ export class McpClientManager {
   async discoverTools(
     db: Db,
     server: McpServerRow,
-    requestOptions: { signal?: AbortSignal; timeoutMs?: number } = {},
+    requestOptions: McpClientRequestOptions = {},
   ): Promise<McpTool[]> {
     const oauth =
       server.authType === 'oauth'
@@ -405,12 +446,18 @@ export class McpClientManager {
           capabilities: {},
           clientInfo: { name: 'timeline', version: '0.1.0' },
         },
-        requestOptions,
+        rpcRequestOptions(requestOptions),
       );
     } catch (err) {
       log.debug({ err }, 'initialize failed (non-fatal)');
     }
-    const result = (await rpc(url, headers, 'tools/list', {}, requestOptions)) as {
+    const result = (await rpc(
+      url,
+      headers,
+      'tools/list',
+      {},
+      rpcRequestOptions(requestOptions),
+    )) as {
       tools?: McpTool[];
     };
     return (result.tools ?? []).filter((t) => !disabled.has(t.name));
@@ -422,8 +469,9 @@ export class McpClientManager {
     namespacedName: string,
     args: Record<string, unknown>,
     userId?: string,
+    requestOptions: McpClientRequestOptions = {},
   ): Promise<unknown> {
-    const cached = await this.connectForTeam(db, teamId, userId);
+    const cached = await this.connectForTeam(db, teamId, userId, requestOptions);
     const mapping = cached.toolMap.get(namespacedName);
     if (!mapping) throw new Error(`MCP tool not found: ${namespacedName}`);
     // Defense in depth: even though discovery already filtered by visibility,
@@ -467,7 +515,13 @@ export class McpClientManager {
       throw new McpNeedsReauthError(server.id, server.name);
     }
     const { headers, url } = buildAuth(server, oauth);
-    return rpc(url, headers, 'tools/call', { name: mapping.toolName, arguments: args });
+    return rpc(
+      url,
+      headers,
+      'tools/call',
+      { name: mapping.toolName, arguments: args },
+      rpcRequestOptions(requestOptions),
+    );
   }
 }
 

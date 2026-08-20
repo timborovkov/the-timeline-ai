@@ -57,11 +57,20 @@ export interface AgentApprovalDecisionObservation {
 
 export type AgentApprovalDecisionReporter = (observation: AgentApprovalDecisionObservation) => void;
 
+export type AgentToolMode = 'full' | 'proposal_only' | 'read_only';
+
+export interface AgentProposalOrigin {
+  surface: string;
+  actorKind: 'team_agent';
+  mcpOutboundKeyId?: string;
+}
+
 export interface AgentToolOptions {
   onToolError?: AgentToolErrorReporter | undefined;
   onApprovalDecision?: AgentApprovalDecisionReporter | undefined;
   sanitizeError?: ((err: unknown) => unknown) | undefined;
-  readOnly?: boolean | undefined;
+  toolMode?: AgentToolMode | undefined;
+  proposalOrigin?: AgentProposalOrigin | undefined;
   db?: Db | undefined;
   classifyTaskCategories?: TaskProposalBatchClassifier | undefined;
   classifyTaskCategory?: TaskProposalClassifier | undefined;
@@ -69,6 +78,27 @@ export interface AgentToolOptions {
   allowPinMutations?: boolean | undefined;
   /** Trusted request clock used by relative calendar/time reads. */
   currentDate?: Date | undefined;
+  invocationSurface?: string | undefined;
+  mcpOutboundKeyId?: string | undefined;
+  agentDelegationDepth?: number | undefined;
+  abortSignal?: AbortSignal | undefined;
+}
+
+function proposalMetadata(
+  options: AgentToolOptions,
+  metadata: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const origin = options.proposalOrigin;
+  return {
+    ...metadata,
+    ...(origin
+      ? {
+          origin_surface: origin.surface,
+          origin_actor_kind: origin.actorKind,
+          ...(origin.mcpOutboundKeyId ? { mcp_outbound_key_id: origin.mcpOutboundKeyId } : {}),
+        }
+      : {}),
+  };
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -869,7 +899,10 @@ export async function buildMcpTools(
 ): Promise<ToolSet> {
   const db = options.db ?? getDb();
   const discovery = await getMcpManager()
-    .connectForTeam(db, scope.teamId, scope.userId)
+    .connectForTeam(db, scope.teamId, scope.userId, {
+      ...(options.abortSignal ? { signal: options.abortSignal } : {}),
+      agentDelegationDepth: (options.agentDelegationDepth ?? 0) + 1,
+    })
     .catch((err: unknown) => {
       const safeError = options.sanitizeError?.(err) ?? err;
       log.warn({ err: safeError }, 'mcp discovery failed during tool build');
@@ -897,17 +930,29 @@ export async function buildMcpTools(
             namespaced,
             (args ?? {}) as Record<string, unknown>,
             scope.userId,
+            {
+              ...(options.abortSignal ? { signal: options.abortSignal } : {}),
+              agentDelegationDepth: (options.agentDelegationDepth ?? 0) + 1,
+            },
           );
-          await recordMcpToolResultEvidence({
+          const capture = await recordMcpToolResultEvidence({
             db,
             teamId: scope.teamId,
-            userId: scope.userId,
+            actorUserId:
+              scope.userId === '00000000-0000-0000-0000-000000000000' ? null : scope.userId,
+            visibility: t.serverUserId ? 'private' : 'team',
+            visibilityOwnerUserId: t.serverUserId,
             serverId: t.serverId,
             serverName: t.serverName,
             toolName: t.name,
             namespacedToolName: namespaced,
             args: (args ?? {}) as Record<string, unknown>,
             result,
+            ...(options.invocationSurface ? { invocationSurface: options.invocationSurface } : {}),
+            ...(scope.userId === '00000000-0000-0000-0000-000000000000'
+              ? { syntheticActorKind: 'team_agent' as const }
+              : {}),
+            ...(options.mcpOutboundKeyId ? { mcpOutboundKeyId: options.mcpOutboundKeyId } : {}),
           }).catch((err: unknown) => {
             const safeError = options.sanitizeError?.(err) ?? err;
             log.warn(
@@ -915,13 +960,23 @@ export async function buildMcpTools(
               'mcp tool result evidence capture failed',
             );
             options.onToolError?.(safeError, { tool: namespaced });
+            return null;
           });
           const asText = JSON.stringify(result).slice(0, 8000);
           return {
             ok: true,
+            ...(capture
+              ? {
+                  event_id: capture.rawEventId,
+                  citation: artifactRefCitation({
+                    kind: 'timeline_event',
+                    id: capture.rawEventId,
+                  }),
+                }
+              : { evidence_capture: 'failed' }),
             content_text: fenceExternalContent(asText, {
               source: `mcp:${t.serverName}`,
-              eventId: t.serverId,
+              eventId: capture?.rawEventId ?? t.serverId,
             }),
           };
         } catch (err) {
@@ -2422,6 +2477,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: 'The chat conversation implies a concrete next action.',
             confidence: 'medium',
             dedupeKey,
+            ...(options.toolMode === 'proposal_only'
+              ? {
+                  visibility: 'team' as const,
+                  visibilityOwnerUserId: null,
+                  visibilityUserIds: null,
+                }
+              : {}),
+            metadata: proposalMetadata(options, { tool: 'suggest_task' }),
             evidence: [],
             items: [
               {
@@ -2471,6 +2534,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: 'The chat conversation implies a workspace object update.',
             confidence: 'medium',
             dedupeKey,
+            ...(options.toolMode === 'proposal_only'
+              ? {
+                  visibility: 'team' as const,
+                  visibilityOwnerUserId: null,
+                  visibilityUserIds: null,
+                }
+              : {}),
+            metadata: proposalMetadata(options, { tool: 'propose_object_change' }),
             items: [
               {
                 operation: 'update',
@@ -2662,7 +2733,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: input.reason ?? null,
             confidence: input.confidence,
             dedupeKey: suggestionDedupeKey(['object-memory-bundle', input.title, items]),
-            metadata: { tool: 'suggest_object_memory' },
+            ...(options.toolMode === 'proposal_only'
+              ? {
+                  visibility: 'team' as const,
+                  visibilityOwnerUserId: null,
+                  visibilityUserIds: null,
+                }
+              : {}),
+            metadata: proposalMetadata(options, { tool: 'suggest_object_memory' }),
             items,
           };
           const suggestion = await scope.suggestions.createOrMergeSuggestionBundle({
@@ -3499,7 +3577,8 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             startAt = range.from.toISOString();
             endAt = range.to.toISOString();
           }
-          const visibility = input.visibility ?? 'team';
+          const visibility =
+            options.toolMode === 'proposal_only' ? 'team' : (input.visibility ?? 'team');
           const dedupeKey = suggestionDedupeKey({
             tool: 'suggest_calendar_event',
             title: input.title,
@@ -3523,6 +3602,10 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             confidence: 'medium',
             dedupeKey,
             visibility,
+            ...(options.toolMode === 'proposal_only'
+              ? { visibilityOwnerUserId: null, visibilityUserIds: null }
+              : {}),
+            metadata: proposalMetadata(options, { tool: 'suggest_calendar_event' }),
             items: [
               {
                 operation: 'create',
@@ -3597,6 +3680,9 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             .parse(raw);
           const event = await scope.calendar.getCalendarEvent(input.id);
           if (!event) return { ok: false, message: 'Calendar event not found' };
+          if (options.toolMode === 'proposal_only' && input.patch?.visibility === 'private') {
+            return { ok: false, error: 'team_visibility_required' };
+          }
           const operation = input.cancel ? 'archive_or_cancel' : 'update';
           const payload = input.cancel ? {} : (input.patch ?? {});
           const dedupeKey = suggestionDedupeKey({
@@ -3612,9 +3698,12 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
             reason: input.reason ?? 'The chat conversation implies a calendar refinement.',
             confidence: 'medium',
             dedupeKey,
-            visibility: event.visibility,
-            visibilityOwnerUserId: event.createdByUserId,
-            visibilityUserIds: event.visibilityUserIds,
+            visibility: options.toolMode === 'proposal_only' ? 'team' : event.visibility,
+            visibilityOwnerUserId:
+              options.toolMode === 'proposal_only' ? null : event.createdByUserId,
+            visibilityUserIds:
+              options.toolMode === 'proposal_only' ? null : event.visibilityUserIds,
+            metadata: proposalMetadata(options, { tool: 'propose_calendar_update' }),
             items: [
               {
                 operation,
@@ -3635,29 +3724,39 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
         }),
     }),
   };
-  if (options.readOnly) {
-    const writeToolNames = new Set([
-      'execute_object_create',
-      'execute_object_update',
-      'execute_object_archive',
-      'execute_object_merge',
-      'execute_board_add_item',
-      'execute_board_update_item',
-      'execute_board_remove_item',
-      'suggest_task',
-      'revise_suggestion',
-      'propose_object_change',
-      'suggest_object_memory',
-      'execute_calendar_create',
-      'execute_calendar_update',
-      'execute_calendar_cancel',
-      'pin_item',
-      'unpin_item',
-      'move_pin',
-      'suggest_calendar_event',
-      'propose_calendar_update',
-    ]);
+  const directMutationToolNames = new Set([
+    'execute_object_create',
+    'execute_object_update',
+    'execute_object_archive',
+    'execute_object_merge',
+    'execute_board_add_item',
+    'execute_board_update_item',
+    'execute_board_remove_item',
+    'revise_suggestion',
+    'execute_calendar_create',
+    'execute_calendar_update',
+    'execute_calendar_cancel',
+    'pin_item',
+    'unpin_item',
+    'move_pin',
+  ]);
+  const proposalToolNames = new Set([
+    'suggest_task',
+    'propose_object_change',
+    'suggest_object_memory',
+    'suggest_calendar_event',
+    'propose_calendar_update',
+  ]);
+  if (options.toolMode === 'read_only') {
+    const writeToolNames = new Set([...directMutationToolNames, ...proposalToolNames]);
     return Object.fromEntries(Object.entries(tools).filter(([name]) => !writeToolNames.has(name)));
+  }
+  if (options.toolMode === 'proposal_only') {
+    return Object.fromEntries(
+      Object.entries(tools).filter(
+        ([name]) => name !== 'list_pins' && !directMutationToolNames.has(name),
+      ),
+    );
   }
   if (!options.allowPinMutations) {
     const pinMutationNames = new Set(['pin_item', 'unpin_item', 'move_pin']);

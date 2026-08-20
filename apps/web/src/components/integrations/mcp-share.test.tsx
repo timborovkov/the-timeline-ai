@@ -20,6 +20,7 @@ const ACTIVE_KEY = {
   id: 'key-1',
   name: 'CI agent',
   prefix: 'tl_mcp_abcd',
+  scopes: ['read'],
   createdAt: '2026-07-02T10:00:00.000Z',
   lastUsedAt: null,
 };
@@ -59,9 +60,7 @@ describe('McpShareUi', () => {
     expect(screen.getByText('Team-visible only')).toBeTruthy();
     expect(screen.getByText('Private and specific-user events stay out.')).toBeTruthy();
     expect(screen.getByText('No active keys')).toBeTruthy();
-    expect(
-      screen.getByText(/Create a key to let an external agent read this team's timeline/),
-    ).toBeTruthy();
+    expect(screen.getByText(/Create a retrieval key, with optional access/)).toBeTruthy();
     expect(screen.getByText(/Bearer <create a key first>/)).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'New key' }));
@@ -72,7 +71,7 @@ describe('McpShareUi', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Claude Desktop' }),
+        body: JSON.stringify({ name: 'Claude Desktop', allowAgent: false }),
       });
     });
     expect(routerRefresh).toHaveBeenCalledOnce();
@@ -128,10 +127,43 @@ describe('McpShareUi', () => {
       expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: '   Claude Desktop' }),
+        body: JSON.stringify({ name: '   Claude Desktop', allowAgent: false }),
       });
     });
     expect(await screen.findByText(/New key: copy now/)).toBeTruthy();
+  });
+
+  it('requires an explicit opt-in before granting Timeline agent access', async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ name: 'Operator', plaintext: 'tl_mcp_live_agent_secret' }), {
+          status: 200,
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<McpShareUi keys={[]} mcpUrl={MCP_URL} />);
+
+    await user.click(screen.getByRole('button', { name: 'New key' }));
+    const allowAgent = screen.getByRole<HTMLInputElement>('checkbox', {
+      name: /Allow Timeline agent/,
+    });
+    expect(allowAgent.checked).toBe(false);
+    expect(screen.getByText(/paid agent turns/)).toBeTruthy();
+
+    await user.type(screen.getByRole('textbox', { name: 'Label' }), 'Operator');
+    await user.click(allowAgent);
+    await user.click(screen.getByRole('button', { name: 'Create key' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/team/mcp-keys', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Operator', allowAgent: true }),
+      });
+    });
   });
 
   it('keeps a failed create form available for a keyboard retry', async () => {
@@ -184,6 +216,8 @@ describe('McpShareUi', () => {
     expect(within(row).getByText('CI agent')).toBeTruthy();
     expect(within(row).getAllByText(/tl_mcp_abcd/).length).toBeGreaterThan(0);
     expect(within(row).getAllByText(/never used/).length).toBeGreaterThan(0);
+    expect(within(row).getByText('Retrieval')).toBeTruthy();
+    expect(within(row).queryByText('Timeline agent')).toBeNull();
 
     await user.click(within(row).getByRole('button', { name: 'Revoke' }));
     expect(screen.getByText('"CI agent" will stop working for any agent using it.')).toBeTruthy();

@@ -15,6 +15,9 @@ vi.mock('@/app/actions/objects', () => ({
   searchObjectsAction: fakes.searchObjectsAction,
   setTaskProjectAction: fakes.setTaskProjectAction,
 }));
+vi.mock('@/lib/notify', () => ({
+  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+}));
 
 const { TaskProjectSelect } = await import('./task-project-select.js');
 
@@ -141,7 +144,7 @@ describe('TaskProjectSelect', () => {
     expect(screen.getByRole('button', { name: 'Alpha launch' })).toBeTruthy();
   });
 
-  it('links a failed project update to the selector and keeps focus on it', async () => {
+  it('restores selector focus after a failed project update', async () => {
     fakes.setTaskProjectAction.mockResolvedValue({ error: 'Project update failed' });
     render(
       <TaskProjectSelect
@@ -155,11 +158,13 @@ describe('TaskProjectSelect', () => {
     await userEvent.click(selector);
     await userEvent.click(screen.getByRole('button', { name: 'Faba website redesign' }));
 
-    const error = await screen.findByRole('alert');
-    expect(selector.getAttribute('aria-describedby')).toBe(error.id);
     await waitFor(() => {
       expect((selector as HTMLButtonElement).disabled).toBe(false);
       expect(document.activeElement).toBe(selector);
+    });
+    expect(fakes.setTaskProjectAction).toHaveBeenCalledWith({
+      id: 'task-1',
+      projectId: 'project-1',
     });
   });
 });

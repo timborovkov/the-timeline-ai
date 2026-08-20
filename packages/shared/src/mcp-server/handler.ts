@@ -3,12 +3,19 @@ import { z } from 'zod';
 
 import type * as boards from '#src/boards/index.js';
 
+import * as agent from '#src/agent/index.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
-import { artifactRefCitation } from '#src/citation.js';
+import {
+  artifactRefCitation,
+  citationPartToArtifactRef,
+  parseCitations,
+  type ArtifactRef,
+} from '#src/citation.js';
 import { childLogger } from '#src/logger.js';
 import { resolveBearerKey } from '#src/mcp-server/keys.js';
 import * as objects from '#src/objects/index.js';
 import { serializeObjectRowsWithProjects } from '#src/objects/tool-serialization.js';
+import { checkRateLimit, rateLimitKey, RATE_LIMITS } from '#src/rate-limit/index.js';
 import { TASK_CATEGORIES, taskCategorySchema } from '#src/task-categories/types.js';
 import { withTeam, type TeamScope } from '#src/team-scope.js';
 import { resolveTimePhrase, workspaceTimeContext } from '#src/time/index.js';
@@ -48,6 +55,8 @@ interface JsonRpcError {
 type JsonRpcResponse = JsonRpcSuccess | JsonRpcError;
 
 const PROTOCOL_VERSION = '2024-11-05';
+const MAX_AGENT_DELEGATION_DEPTH = 1;
+const MCP_AGENT_TIMEOUT_MS = 90_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
 const EVENT_SOURCE_VALUES = [
@@ -155,6 +164,10 @@ const searchIntegrationEventsInput = z.object({
   query: z.string().trim().min(1).max(500),
   provider: z.enum(['google_drive', 'linear', 'github', 'monday', 'slack', 'sentry']).optional(),
   limit: z.number().int().min(1).max(20).optional(),
+});
+
+const askAgentInput = z.object({
+  question: z.string().trim().min(1).max(8_000),
 });
 
 function withMcpScope(db: Db, teamId: string) {
@@ -748,6 +761,27 @@ const TOOLS = [
   },
 ];
 
+const ASK_AGENT_TOOL = {
+  name: 'timeline.ask_agent',
+  description:
+    'Ask the team-level Timeline agent a stateless question. The agent sees only team-visible data, may call team-shared custom MCP tools, and may create team-visible approval-queue proposals that still require human review.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      question: { type: 'string', minLength: 1, maxLength: 8_000 },
+    },
+    required: ['question'],
+  },
+} as const;
+
+function toolsForScopes(scopes: string[]) {
+  const tools: ((typeof TOOLS)[number] | typeof ASK_AGENT_TOOL)[] = scopes.includes('read')
+    ? [...TOOLS]
+    : [];
+  if (scopes.includes('agent:ask')) tools.push(ASK_AGENT_TOOL);
+  return tools;
+}
+
 // Resources surface a discovery view of stable URIs the client can read
 // with resources/read — for v1 we expose two collection URIs and a
 // pattern URI for individual events.
@@ -780,6 +814,13 @@ const PROMPTS = [
 interface HandleContext {
   db: Db;
   bearer: string | null;
+  signal?: AbortSignal;
+  agentDelegationDepth?: number;
+}
+
+export interface HandleMcpRequestDeps {
+  askAgent?: typeof agent.askAgent;
+  checkRateLimit?: typeof checkRateLimit;
 }
 
 function jsonRpcSuccess(id: number | string | null, result: unknown): JsonRpcSuccess {
@@ -1513,6 +1554,131 @@ async function callTool(
   }
 }
 
+interface McpToolExecutionResult {
+  output: Record<string, unknown>;
+  isError: boolean;
+}
+
+function agentToolError(
+  error: 'forbidden' | 'rate_limited' | 'agent_unavailable' | 'delegation_limit' | 'failed',
+  extra: Record<string, unknown> = {},
+): McpToolExecutionResult {
+  return { output: { ok: false, error, ...extra }, isError: true };
+}
+
+function citedArtifacts(answer: string): ArtifactRef[] {
+  const seen = new Set<string>();
+  const refs: ArtifactRef[] = [];
+  for (const part of parseCitations(answer)) {
+    if (part.type === 'text') continue;
+    const ref = citationPartToArtifactRef(part);
+    const key = JSON.stringify(ref);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    refs.push(ref);
+  }
+  return refs;
+}
+
+async function callTimelineAgent(
+  ctx: HandleContext,
+  resolved: { teamId: string; keyId: string; scopes: string[] },
+  args: CallToolArgs,
+  deps: HandleMcpRequestDeps,
+): Promise<McpToolExecutionResult> {
+  if (!resolved.scopes.includes('agent:ask')) return agentToolError('forbidden');
+  const depth = ctx.agentDelegationDepth ?? 0;
+  if (depth > MAX_AGENT_DELEGATION_DEPTH) return agentToolError('delegation_limit');
+  const parsed = askAgentInput.safeParse(args);
+  if (!parsed.success) return agentToolError('failed', { message: 'invalid_question' });
+
+  let limit: Awaited<ReturnType<typeof checkRateLimit>>;
+  try {
+    limit = await (deps.checkRateLimit ?? checkRateLimit)({
+      key: rateLimitKey('mcp', 'agent_ask', resolved.keyId),
+      ...RATE_LIMITS.mcpAgentAsk,
+    });
+  } catch (err) {
+    log.warn(
+      { err, teamId: resolved.teamId, keyId: resolved.keyId },
+      'MCP agent rate-limit check failed',
+    );
+    return agentToolError('failed');
+  }
+  if (!limit.ok) {
+    return agentToolError('rate_limited', {
+      retry_after_seconds: Math.max(1, Math.ceil(limit.retryAfterMs / 1000)),
+    });
+  }
+
+  const controller = new AbortController();
+  const abortFromRequest = () => {
+    controller.abort(ctx.signal?.reason);
+  };
+  if (ctx.signal?.aborted) abortFromRequest();
+  else ctx.signal?.addEventListener('abort', abortFromRequest, { once: true });
+  const timer = setTimeout(() => {
+    controller.abort(new Error('mcp_agent_timeout'));
+  }, MCP_AGENT_TIMEOUT_MS);
+  timer.unref();
+
+  let observability: agent.AgentTurnObservability | undefined;
+  try {
+    const result = await (deps.askAgent ?? agent.askAgent)(
+      {
+        db: ctx.db,
+        teamId: resolved.teamId,
+        userId: PSEUDO_USER,
+        deliverySurface: 'mcp',
+        userName: 'an external agent',
+        trustedTeamActor: true,
+        toolMode: 'proposal_only',
+        proposalOrigin: {
+          surface: 'mcp',
+          actorKind: 'team_agent',
+          mcpOutboundKeyId: resolved.keyId,
+        },
+        mcpOutboundKeyId: resolved.keyId,
+        agentDelegationDepth: depth,
+        question: parsed.data.question,
+      },
+      {
+        includeMcpTools: true,
+        abortSignal: controller.signal,
+        onTurnObservability: (value) => {
+          observability = value;
+        },
+      },
+    );
+    if (!result.ok) {
+      return result.error === 'unconfigured' || result.error === 'no_team'
+        ? agentToolError('agent_unavailable')
+        : agentToolError('failed');
+    }
+    return {
+      output: {
+        ok: true,
+        answer: result.answer,
+        citations: citedArtifacts(result.answer),
+        proposal_ids: observability?.proposalIds ?? [],
+        truncated: result.truncated,
+      },
+      isError: false,
+    };
+  } catch (err) {
+    log.warn({ err, teamId: resolved.teamId, keyId: resolved.keyId }, 'MCP agent turn failed');
+    const timedOut =
+      controller.signal.reason instanceof Error &&
+      controller.signal.reason.message === 'mcp_agent_timeout';
+    return agentToolError('failed', {
+      ...(timedOut ? { message: 'timeout' } : {}),
+    });
+  } finally {
+    clearTimeout(timer);
+    ctx.signal?.removeEventListener('abort', abortFromRequest);
+  }
+}
+
 /**
  * Handle one JSON-RPC request from an external MCP client. Returns the
  * full response object the route should serialize back. Notifications
@@ -1521,6 +1687,7 @@ async function callTool(
 export async function handleMcpRequest(
   ctx: HandleContext,
   raw: unknown,
+  deps: HandleMcpRequestDeps = {},
 ): Promise<JsonRpcResponse | null> {
   if (!raw || typeof raw !== 'object') {
     return { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'invalid_request' } };
@@ -1551,11 +1718,25 @@ export async function handleMcpRequest(
   try {
     switch (req.method) {
       case 'tools/list':
-        return jsonRpcSuccess(id, { tools: TOOLS });
+        return jsonRpcSuccess(id, { tools: toolsForScopes(resolved.scopes) });
       case 'tools/call': {
         const params = (req.params ?? {}) as { name?: unknown; arguments?: unknown };
         const name = typeof params.name === 'string' ? params.name : '';
         const args = (params.arguments ?? {}) as CallToolArgs;
+        if (name === ASK_AGENT_TOOL.name) {
+          const executed = await callTimelineAgent(ctx, resolved, args, deps);
+          return jsonRpcSuccess(id, {
+            content: [{ type: 'text', text: JSON.stringify(executed.output) }],
+            isError: executed.isError,
+          });
+        }
+        if (!resolved.scopes.includes('read')) {
+          const executed = agentToolError('forbidden');
+          return jsonRpcSuccess(id, {
+            content: [{ type: 'text', text: JSON.stringify(executed.output) }],
+            isError: true,
+          });
+        }
         const out = await callTool(ctx.db, resolved.teamId, name, args);
         return jsonRpcSuccess(id, {
           content: [{ type: 'text', text: JSON.stringify(out) }],

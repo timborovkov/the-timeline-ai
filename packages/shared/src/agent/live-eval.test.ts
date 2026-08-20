@@ -643,6 +643,7 @@ maybeDescribe('live agent chat evals', () => {
             'Fetch customer health from the connected success platform by account id. Use for customer-health, renewal-risk, and adoption questions.',
           serverId: MCP_SERVER_ID,
           serverName: 'Success MCP',
+          serverUserId: null,
           namespacedName: MCP_TOOL_NAME,
           inputSchema: {
             type: 'object',
@@ -698,13 +699,16 @@ maybeDescribe('live agent chat evals', () => {
     );
 
     expect(toolErrors).toEqual([]);
-    expect(fakes.connectForTeam).toHaveBeenCalledWith(db, TEAM_ID, USER_ID);
+    expect(fakes.connectForTeam).toHaveBeenCalledWith(db, TEAM_ID, USER_ID, {
+      agentDelegationDepth: 1,
+    });
     expect(fakes.callTool).toHaveBeenCalledWith(
       db,
       TEAM_ID,
       MCP_TOOL_NAME,
       { accountId: 'northstar' },
       USER_ID,
+      { agentDelegationDepth: 1 },
     );
     expect(fakes.enqueueEmbedJob).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ ok: true, truncated: false });

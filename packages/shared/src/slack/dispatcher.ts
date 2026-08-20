@@ -310,10 +310,17 @@ async function handleSlackAskCommand(
         deliverySurface: 'slack',
         userName: route.userName,
         trustedTeamActor: route.trustedTeamActor,
+        ...(route.trustedTeamActor
+          ? {
+              toolMode: 'proposal_only' as const,
+              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+            }
+          : {}),
         question,
       },
       {
         ...deps.agentDeps,
+        ...(route.trustedTeamActor ? { includeMcpTools: true } : {}),
         onToolError: deps.onAgentToolError,
         onAgentError: deps.onAgentError,
         sanitizeError: redactConversationError,
@@ -983,10 +990,17 @@ async function handleAppMention(
         deliverySurface: 'slack',
         userName: route.linkedUserName ?? 'a teammate',
         trustedTeamActor: !route.linkedUserId && !route.isDm,
+        ...(!route.linkedUserId && !route.isDm
+          ? {
+              toolMode: 'proposal_only' as const,
+              proposalOrigin: { surface: 'slack', actorKind: 'team_agent' as const },
+            }
+          : {}),
         question,
       },
       {
         ...deps.agentDeps,
+        ...(!route.linkedUserId && !route.isDm ? { includeMcpTools: true } : {}),
         onToolError: deps.onAgentToolError,
         onAgentError: deps.onAgentError,
         sanitizeError: redactConversationError,

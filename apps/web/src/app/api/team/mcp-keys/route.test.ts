@@ -106,7 +106,7 @@ beforeEach(() => {
     id: 'key-2',
     name: 'Cursor',
     keyPrefix: 'tla_cur',
-    scopes: [],
+    scopes: ['read'],
     createdAt: new Date('2026-06-02T00:00:00.000Z'),
   };
   fakes.insertValues = [];
@@ -168,6 +168,7 @@ describe('/api/team/mcp-keys', () => {
       name: 'Cursor',
       prefix: 'tla_cur',
       plaintext: 'tla_plaintext_once',
+      scopes: ['read'],
       createdAt: '2026-06-02T00:00:00.000Z',
     });
     expect(fakes.insertValues[0]).toMatchObject({
@@ -177,6 +178,7 @@ describe('/api/team/mcp-keys', () => {
         name: 'Cursor',
         keyHash: 'hashed',
         keyPrefix: 'tla_pref',
+        scopes: ['read'],
       },
     });
     expect(fakes.insertValues[1]).toMatchObject({
@@ -188,6 +190,23 @@ describe('/api/team/mcp-keys', () => {
         targetId: 'key-2',
         targetVisibility: 'team',
       },
+    });
+  });
+
+  it('grants agent access only when an admin explicitly opts in', async () => {
+    fakes.returningRow = {
+      ...fakes.returningRow,
+      scopes: ['read', 'agent:ask'],
+    };
+
+    const response = await POST(request({ name: 'Operator', allowAgent: true }));
+
+    expect(response.status).toBe(200);
+    expect(fakes.insertValues[0]).toMatchObject({
+      value: { scopes: ['read', 'agent:ask'] },
+    });
+    await expect(response.json()).resolves.toMatchObject({
+      scopes: ['read', 'agent:ask'],
     });
   });
 

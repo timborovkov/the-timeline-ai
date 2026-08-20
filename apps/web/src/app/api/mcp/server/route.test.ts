@@ -55,6 +55,9 @@ describe('/api/mcp/server', () => {
     expect(preflight.status).toBe(204);
     expect(preflight.headers.get('access-control-allow-origin')).toBe('*');
     expect(preflight.headers.get('access-control-allow-headers')).toContain('authorization');
+    expect(preflight.headers.get('access-control-allow-headers')).toContain(
+      'x-timeline-agent-depth',
+    );
 
     const response = GET();
     expect(response.status).toBe(200);
@@ -105,15 +108,30 @@ describe('/api/mcp/server', () => {
     const body = { jsonrpc: '2.0', id: 7, method: 'tools/list' };
 
     const response = await POST(
-      request(JSON.stringify(body), { authorization: 'Bearer tla_test_key' }),
+      request(JSON.stringify(body), {
+        authorization: 'Bearer tla_test_key',
+        'x-timeline-agent-depth': '1',
+      }),
     );
 
     expect(response.status).toBe(200);
     expect(response.headers.get('access-control-allow-origin')).toBe('*');
-    expect(fakes.handleMcpRequest).toHaveBeenCalledWith(
-      { db: { kind: 'db' }, bearer: 'tla_test_key' },
-      body,
-    );
+    const [context, requestBody] = fakes.handleMcpRequest.mock.calls[0] as unknown as [
+      {
+        agentDelegationDepth: number;
+        bearer: string;
+        db: { kind: string };
+        signal: AbortSignal;
+      },
+      unknown,
+    ];
+    expect(context).toMatchObject({
+      db: { kind: 'db' },
+      bearer: 'tla_test_key',
+      agentDelegationDepth: 1,
+    });
+    expect(context.signal).toBeInstanceOf(AbortSignal);
+    expect(requestBody).toEqual(body);
     await expect(response.json()).resolves.toEqual({
       jsonrpc: '2.0',
       id: 1,

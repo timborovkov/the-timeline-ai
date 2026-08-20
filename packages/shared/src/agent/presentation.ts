@@ -1,9 +1,11 @@
 import { parseCitations } from '#src/citation.js';
 
-export type AgentPresentationProfile = 'web_rich' | 'external_chat';
+export type AgentPresentationProfile = 'web_rich' | 'external_chat' | 'mcp_agent';
 
 export const EXTERNAL_CHAT_MAX_OUTPUT_TOKENS = 900;
 export const EXTERNAL_CHAT_MAX_CHARACTERS = 4096;
+export const MCP_AGENT_MAX_OUTPUT_TOKENS = 900;
+export const MCP_AGENT_MAX_CHARACTERS = 8192;
 const EXTERNAL_CHAT_LINE_BOUNDARY_WINDOW = 256;
 
 export interface AgentPresentationInstructions {
@@ -22,6 +24,9 @@ Lead with the answer. For a normal response, use one short paragraph or 3–5 bu
 
 const WEB_RICH_INSTRUCTIONS = `PRESENTATION FOR WEB CHAT:
 Give a complete, source-linked answer. Use clear sections, bullets, or tables when they materially improve comprehension, and do not omit important context merely to shorten the response. Keep Timeline citations inline so the web interface can render them as inspectable source links.`;
+
+const MCP_AGENT_INSTRUCTIONS = `PRESENTATION FOR AN EXTERNAL AGENT:
+Lead with the answer and keep it compact enough to use as tool output. Preserve every relevant inline Timeline citation so the calling agent can verify or expand the evidence. Clearly state when you created an approval-queue proposal; never imply that a proposal changed canonical workspace state. Do not add a separate sources section.`;
 
 const RESIDUAL_TIMELINE_REFERENCE_RE =
   /\[(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\]\r\n]{1,256}\]/gi;
@@ -48,18 +53,22 @@ const HOSTILE_INSTRUCTION_RE =
   /\b(ignore (?:prior|previous) instructions|act as|forget (?:the )?rules|reveal (?:your )?prompt|system prompt)\b/i;
 
 export function resolveAgentPresentation(deliverySurface: string): AgentPresentationProfile {
-  return deliverySurface === 'web' ? 'web_rich' : 'external_chat';
+  if (deliverySurface === 'web') return 'web_rich';
+  if (deliverySurface === 'mcp') return 'mcp_agent';
+  return 'external_chat';
 }
 
 export function presentationInstructions(
   presentation: AgentPresentationProfile,
 ): AgentPresentationInstructions {
-  return presentation === 'web_rich'
-    ? { system: WEB_RICH_INSTRUCTIONS }
-    : {
-        system: EXTERNAL_CHAT_INSTRUCTIONS,
-        maxOutputTokens: EXTERNAL_CHAT_MAX_OUTPUT_TOKENS,
-      };
+  if (presentation === 'web_rich') return { system: WEB_RICH_INSTRUCTIONS };
+  if (presentation === 'mcp_agent') {
+    return { system: MCP_AGENT_INSTRUCTIONS, maxOutputTokens: MCP_AGENT_MAX_OUTPUT_TOKENS };
+  }
+  return {
+    system: EXTERNAL_CHAT_INSTRUCTIONS,
+    maxOutputTokens: EXTERNAL_CHAT_MAX_OUTPUT_TOKENS,
+  };
 }
 
 function stripMarkdownEmphasis(text: string): string {
@@ -171,12 +180,27 @@ function truncateExternalAnswer(text: string): { text: string; truncated: boolea
   return { text: `${text.slice(0, cutAt).trimEnd()}…`, truncated: true };
 }
 
+function truncateMcpAgentAnswer(text: string): { text: string; truncated: boolean } {
+  if (text.length <= MCP_AGENT_MAX_CHARACTERS) return { text, truncated: false };
+  const end = MCP_AGENT_MAX_CHARACTERS - 1;
+  const lineBoundary = text.lastIndexOf('\n', end);
+  const cutAt = lineBoundary >= end - EXTERNAL_CHAT_LINE_BOUNDARY_WINDOW ? lineBoundary : end;
+  const bounded = text
+    .slice(0, cutAt)
+    .replace(/\[(?:board-item|ev|ent|note|cal|board|task|fact|rel|chg|doc|route):[^\]\r\n]*$/i, '')
+    .trimEnd();
+  return { text: `${bounded}…`, truncated: true };
+}
+
 export function formatAgentAnswerForPresentation(
   answer: string,
   presentation: AgentPresentationProfile,
 ): PresentedAgentAnswer {
   if (presentation === 'web_rich') {
     return { text: answer.trim(), truncated: false, removedReferences: 0 };
+  }
+  if (presentation === 'mcp_agent') {
+    return { ...truncateMcpAgentAnswer(answer.trim()), removedReferences: 0 };
   }
 
   const safeAnswer = removeExternalInstructionReferences(answer).trim();

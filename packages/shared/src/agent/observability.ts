@@ -32,6 +32,7 @@ export interface AgentToolObservation {
   retrievalRecipe: AgentRetrievalRecipe | null;
   resultCount: number | null;
   topArtifactRefs: ArtifactRef[];
+  proposalIds: string[];
   warningCodes: string[];
 }
 
@@ -49,6 +50,7 @@ export interface AgentTurnObservability {
   selection: AgentToolSelectionObservability | null;
   totalResultCount: number;
   topArtifactRefs: ArtifactRef[];
+  proposalIds: string[];
   warningCodes: string[];
 }
 
@@ -127,6 +129,7 @@ export function summarizeAgentToolObservations(input: {
     input.observations.flatMap((observation) => observation.topArtifactRefs),
   ).slice(0, 10);
   const warningCodes = [...new Set(input.observations.flatMap((row) => row.warningCodes))].sort();
+  const proposalIds = [...new Set(input.observations.flatMap((row) => row.proposalIds))];
   return {
     toolObservations: input.observations,
     selection: input.selection ?? null,
@@ -135,6 +138,7 @@ export function summarizeAgentToolObservations(input: {
       0,
     ),
     topArtifactRefs,
+    proposalIds,
     warningCodes,
   };
 }
@@ -170,8 +174,25 @@ function buildToolObservation(
     retrievalRecipe: retrievalRecipe(input),
     resultCount: resultCount(output),
     topArtifactRefs: extractArtifactRefs(output).slice(0, 10),
+    proposalIds: extractProposalIds(toolName, output),
     warningCodes: warningCodes(output),
   };
+}
+
+const PROPOSAL_TOOL_NAMES = new Set([
+  'suggest_task',
+  'propose_object_change',
+  'suggest_object_memory',
+  'suggest_calendar_event',
+  'propose_calendar_update',
+]);
+
+function extractProposalIds(toolName: string, output: unknown): string[] {
+  if (!PROPOSAL_TOOL_NAMES.has(toolName)) return [];
+  const row = objectRecord(output);
+  if (!row || row.ok === false) return [];
+  const id = typeof row.suggestion_id === 'string' ? row.suggestion_id : row.id;
+  return typeof id === 'string' ? [id] : [];
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {

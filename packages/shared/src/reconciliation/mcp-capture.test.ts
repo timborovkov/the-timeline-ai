@@ -45,7 +45,9 @@ describe('MCP reconciliation capture', () => {
     const result = await recordMcpToolResultEvidence({
       db: db as never,
       teamId: TEAM_ID,
-      userId: USER_ID,
+      actorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
       serverId: SERVER_ID,
       serverName: 'Research MCP',
       toolName: TOOL_NAME,
@@ -105,7 +107,7 @@ describe('MCP reconciliation capture', () => {
       source_snapshot?: { args?: unknown; result?: unknown };
       mcp_call_id?: string;
     };
-    expect(metadata.dedup_key).toMatch(/^mcp:/);
+    expect(metadata.dedup_key).toMatch(/^mcp:v2:private:/);
     expect(metadata.source_payload_ref).toMatch(/^inline:\/\/timeline\/mcp\//);
     expect(metadata.payload_digest).toMatch(/^sha256:/);
     expect(metadata.mcp_call_id).toMatch(/^sha256:/);
@@ -147,7 +149,9 @@ describe('MCP reconciliation capture', () => {
     const input = {
       db: db as never,
       teamId: TEAM_ID,
-      userId: USER_ID,
+      actorUserId: USER_ID,
+      visibility: 'private' as const,
+      visibilityOwnerUserId: USER_ID,
       serverId: SERVER_ID,
       serverName: 'Research MCP',
       toolName: TOOL_NAME,
@@ -168,11 +172,105 @@ describe('MCP reconciliation capture', () => {
     expect(evidenceRows).toHaveLength(1);
   });
 
+  it('captures team-shared results as team evidence without broadening private captures', async () => {
+    const common = {
+      db: db as never,
+      teamId: TEAM_ID,
+      serverId: SERVER_ID,
+      serverName: 'Research MCP',
+      toolName: TOOL_NAME,
+      namespacedToolName: NAMESPACED_TOOL_NAME,
+      args: { q: 'Acme rollout' },
+      result: { content: [{ type: 'text', text: 'same answer' }] },
+      occurredAt: new Date('2026-07-02T08:05:00.000Z'),
+    };
+    const privateCapture = await recordMcpToolResultEvidence({
+      ...common,
+      actorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+    });
+    const teamCapture = await recordMcpToolResultEvidence({
+      ...common,
+      actorUserId: null,
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      invocationSurface: 'mcp',
+      syntheticActorKind: 'team_agent',
+      mcpOutboundKeyId: '44444444-4444-4444-8444-444444444444',
+    });
+
+    expect(teamCapture.rawEventId).not.toBe(privateCapture.rawEventId);
+    const rows = await db.select().from(rawEvents);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.id === privateCapture.rawEventId)).toMatchObject({
+      authorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+    });
+    const teamRow = rows.find((row) => row.id === teamCapture.rawEventId);
+    expect(teamRow).toMatchObject({
+      authorUserId: null,
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+    });
+    expect(teamRow?.sourceMetadata).toMatchObject({
+      mcp_server_scope: 'team',
+      invocation_surface: 'mcp',
+      synthetic_actor_kind: 'team_agent',
+      mcp_outbound_key_id: '44444444-4444-4444-8444-444444444444',
+    });
+  });
+
+  it('never reuses or broadens a legacy private MCP capture', async () => {
+    const legacyId = '55555555-5555-4555-8555-555555555555';
+    await db.insert(rawEvents).values({
+      id: legacyId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'integration',
+      contentText: '{"content":"legacy private result"}',
+      occurredAt: new Date('2026-07-01T08:00:00.000Z'),
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {
+        provider: 'mcp',
+        event_type: 'mcp.tool_result',
+        dedup_key: `mcp:${SERVER_ID}:${NAMESPACED_TOOL_NAME}:legacy`,
+      },
+    });
+
+    const teamCapture = await recordMcpToolResultEvidence({
+      db: db as never,
+      teamId: TEAM_ID,
+      actorUserId: null,
+      visibility: 'team',
+      visibilityOwnerUserId: null,
+      serverId: SERVER_ID,
+      serverName: 'Research MCP',
+      toolName: TOOL_NAME,
+      namespacedToolName: NAMESPACED_TOOL_NAME,
+      args: { q: 'legacy' },
+      result: { content: 'legacy private result' },
+      occurredAt: new Date('2026-07-02T08:05:00.000Z'),
+    });
+
+    expect(teamCapture.rawEventId).not.toBe(legacyId);
+    const [legacy] = await db.select().from(rawEvents).where(eq(rawEvents.id, legacyId));
+    expect(legacy).toMatchObject({
+      authorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
+    });
+  });
+
   it('marks oversized MCP tool results as replay-degraded without inline payload refs', async () => {
     const result = await recordMcpToolResultEvidence({
       db: db as never,
       teamId: TEAM_ID,
-      userId: USER_ID,
+      actorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
       serverId: SERVER_ID,
       serverName: 'Research MCP',
       toolName: TOOL_NAME,
@@ -216,7 +314,9 @@ describe('MCP reconciliation capture', () => {
     const result = await recordMcpToolResultEvidence({
       db: db as never,
       teamId: TEAM_ID,
-      userId: USER_ID,
+      actorUserId: USER_ID,
+      visibility: 'private',
+      visibilityOwnerUserId: USER_ID,
       serverId: SERVER_ID,
       serverName: 'Ops MCP',
       toolName: 'get_issue',

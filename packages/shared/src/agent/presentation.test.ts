@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   EXTERNAL_CHAT_MAX_CHARACTERS,
   EXTERNAL_CHAT_MAX_OUTPUT_TOKENS,
+  MCP_AGENT_MAX_CHARACTERS,
+  MCP_AGENT_MAX_OUTPUT_TOKENS,
   formatAgentAnswerForPresentation,
   presentationInstructions,
   resolveAgentPresentation,
@@ -13,7 +15,34 @@ describe('agent presentation policy', () => {
     expect(resolveAgentPresentation('web')).toBe('web_rich');
     expect(resolveAgentPresentation('telegram')).toBe('external_chat');
     expect(resolveAgentPresentation('slack')).toBe('external_chat');
+    expect(resolveAgentPresentation('mcp')).toBe('mcp_agent');
     expect(resolveAgentPresentation('future-provider')).toBe('external_chat');
+  });
+
+  it('keeps MCP agent answers compact and cited', () => {
+    const policy = presentationInstructions('mcp_agent');
+    const answer = `Launch is ready [ev:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee].`;
+
+    expect(policy.system).toMatch(/external agent/i);
+    expect(policy.system).toContain('Preserve every relevant inline Timeline citation');
+    expect(policy.maxOutputTokens).toBe(MCP_AGENT_MAX_OUTPUT_TOKENS);
+    expect(MCP_AGENT_MAX_OUTPUT_TOKENS).toBe(900);
+    expect(MCP_AGENT_MAX_CHARACTERS).toBe(8192);
+    expect(formatAgentAnswerForPresentation(answer, 'mcp_agent')).toEqual({
+      text: answer,
+      truncated: false,
+      removedReferences: 0,
+    });
+  });
+
+  it('does not leave a partial Timeline citation at the MCP output boundary', () => {
+    const answer = `${'x'.repeat(MCP_AGENT_MAX_CHARACTERS - 5)} [ev:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee]`;
+    const presented = formatAgentAnswerForPresentation(answer, 'mcp_agent');
+
+    expect(presented.truncated).toBe(true);
+    expect(presented.text.length).toBeLessThanOrEqual(MCP_AGENT_MAX_CHARACTERS);
+    expect(presented.text).not.toContain('[ev:');
+    expect(presented.text.endsWith('…')).toBe(true);
   });
 
   it('gives web chat complete cited-answer guidance without an output cap', () => {

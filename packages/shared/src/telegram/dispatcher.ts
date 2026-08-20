@@ -999,10 +999,20 @@ async function runAskInner(input: RunAskInput): Promise<void> {
         deliverySurface: 'telegram',
         userName: input.userName,
         trustedTeamActor: input.trustedTeamActor,
+        ...(input.trustedTeamActor
+          ? {
+              toolMode: 'proposal_only' as const,
+              proposalOrigin: {
+                surface: 'telegram',
+                actorKind: 'team_agent' as const,
+              },
+            }
+          : {}),
         question,
       },
       {
         ...input.agentDeps,
+        ...(input.trustedTeamActor ? { includeMcpTools: true } : {}),
         onToolError: input.onAgentToolError,
         onAgentError: input.onAgentError,
         sanitizeError: redactConversationError,

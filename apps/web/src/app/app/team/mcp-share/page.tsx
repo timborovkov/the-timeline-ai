@@ -22,8 +22,9 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Timeline-as-MCP-server settings. Admins mint bearer keys that grant
- * outside agents (Claude Desktop, Cursor, etc.) read-only access
- * to the team's events / entities / documents via /api/mcp/server. The
+ * outside agents (Claude Desktop, Cursor, etc.) scoped access to the
+ * team's events / entities / documents and, when explicitly enabled, the
+ * team-level Timeline agent via /api/mcp/server. The
  * MCP endpoint URL is shown here so the agent operator can paste both
  * the URL and the key into their client.
  */
@@ -50,6 +51,7 @@ export default async function McpSharePage() {
     id: r.id,
     name: r.name,
     prefix: r.keyPrefix,
+    scopes: Array.isArray(r.scopes) ? (r.scopes as string[]) : ['read'],
     lastUsedAt: r.lastUsedAt ? r.lastUsedAt.toISOString() : null,
     createdAt: r.createdAt.toISOString(),
   }));
@@ -65,7 +67,7 @@ export default async function McpSharePage() {
       />
       <PageHeader
         title="Timeline as MCP server"
-        subtitle="Expose team-level workspace retrieval to external agents via a bearer-keyed MCP endpoint."
+        subtitle="Expose team-level workspace retrieval and optional Timeline agent access through a bearer-keyed MCP endpoint."
         srLabel={`Timeline as MCP server · ${String(keys.length)} active keys`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },

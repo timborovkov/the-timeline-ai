@@ -976,9 +976,11 @@ describe('Slack dispatcher routing', () => {
         userId: '00000000-0000-0000-0000-000000000000',
         deliverySurface: 'slack',
         trustedTeamActor: true,
+        toolMode: 'proposal_only',
+        proposalOrigin: { surface: 'slack', actorKind: 'team_agent' },
         question: 'what changed?',
       }),
-      expect.any(Object),
+      expect.objectContaining({ includeMcpTools: true }),
     );
   });
 
@@ -1470,9 +1472,11 @@ describe('Slack dispatcher routing', () => {
         userId: '00000000-0000-0000-0000-000000000000',
         deliverySurface: 'slack',
         trustedTeamActor: true,
+        toolMode: 'proposal_only',
+        proposalOrigin: { surface: 'slack', actorKind: 'team_agent' },
         question: 'what changed?',
       }),
-      expect.any(Object),
+      expect.objectContaining({ includeMcpTools: true }),
     );
     expect(fetchBodyContaining(fetchMock, 'answer')).not.toBeNull();
   });

@@ -11,7 +11,7 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-08-19</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-08-20</span>
       </div>
       <p class="tldr">
         Preserve deliberately routed work and selected provider records, then generate cited
@@ -199,8 +199,9 @@
           workspace history, and Sentry are implemented native sync paths into the shared event
           pipeline. Teams can also connect arbitrary <strong>custom MCP servers</strong> — their own
           internal tools or any third-party MCP — so Timeline can reach the long-tail systems that
-          matter to the team and capture successful tool results privately without treating MCP as
-          passive provider sync.
+          matter to the team without treating MCP as passive provider sync. Successful team-server
+          results become immutable team-visible evidence; personal-server results remain private to
+          their owner.
         </li>
       </ul>
 
@@ -308,7 +309,11 @@
           history, a 90-second deadline, and cached delivery; their sessions also appear in web chat
           history. Every current and future external chat provider inherits concise plain-text
           delivery without internal Timeline ids. Group/channel invocations remain stateless and use
-          the same external-chat profile.
+          the same external-chat profile. Unlinked senders in trusted bound groups/channels use a
+          proposal-only team identity: it can read team-visible data, call team-shared custom MCP
+          tools, and propose work for human review. External agents can invoke the same identity
+          through an explicitly agent-enabled MCP key; those calls preserve citations and return
+          structured artifact and proposal references.
         </li>
       </ul>
 

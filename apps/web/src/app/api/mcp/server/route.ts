@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 const CORS_HEADERS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-allow-headers': 'authorization, content-type',
+  'access-control-allow-headers': 'authorization, content-type, x-timeline-agent-depth',
   'access-control-max-age': '3600',
 } as const;
 
@@ -82,7 +82,13 @@ export async function POST(req: Request): Promise<Response> {
       ),
     );
   }
-  const response = await mcpServer.handleMcpRequest({ db, bearer }, body);
+  const requestedDepth = Number(req.headers.get('x-timeline-agent-depth') ?? '0');
+  const agentDelegationDepth =
+    Number.isInteger(requestedDepth) && requestedDepth >= 0 ? requestedDepth : 0;
+  const response = await mcpServer.handleMcpRequest(
+    { db, bearer, signal: req.signal, agentDelegationDepth },
+    body,
+  );
   if (!response) {
     // Notification: no response expected.
     return withCors(new Response(null, { status: 204 }));

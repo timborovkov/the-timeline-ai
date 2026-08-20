@@ -783,6 +783,14 @@ state. Generic ingest webhooks are evidence-only sources; only native
 integrations may become authoritative sources.
 _Avoid_: Untrusted source, read-only integration
 
+**Synthetic Team Agent**:
+A non-member, zero-UUID actor used by an explicitly trusted team-level surface,
+such as an agent-enabled outbound MCP key or an unlinked sender in a bound
+Telegram group or Slack channel. It sees only team-visible data and team-shared
+custom MCP tools. It may create new team-visible approval proposals, but cannot
+revise proposals, use personal tools, approve work, or mutate canonical state.
+_Avoid_: Service account, admin agent, autonomous approver
+
 **Proposal Generation Default**:
 The source-level setting that decides whether future source evidence should
 immediately ask the agent to propose approval-backed workspace changes. Turning

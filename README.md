@@ -31,6 +31,8 @@ durable workspace change.
 - Produces cited answers, status updates, daily digests, and handoff briefs.
 - Turns durable facts and decisions into approval-backed workspace changes.
 - Connects GitHub, Linear, Google Drive, Monday.com, Slack, Sentry, and custom MCP servers.
+- Lets external agents call a team-scoped Timeline agent through opt-in MCP keys; that actor can
+  create proposals for human review but cannot approve or apply them.
 - Enforces team isolation and per-event visibility at the data layer.
 
 The project is under active development. The full local stack works today, but

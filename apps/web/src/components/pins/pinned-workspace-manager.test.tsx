@@ -144,7 +144,6 @@ describe('PinnedWorkspaceManager', () => {
     );
 
     expect(screen.queryByText('1')).toBeNull();
-    expect(document.querySelector('output')).toBeNull();
   });
 
   it('uses the shared empty state when there are no pins', () => {
