@@ -542,6 +542,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Decide pricing model: per seat, per team, usage-based, or hybrid.
       V1: Free + PAYG (€0 platform) with native meters; optional Team (€49) /
       Business (€199) commitments; Enterprise custom. Polar MoR + shadow ledger.
+- [x] Billing foundation: entitlements catalog, Polar products/meters (sandbox),
+      `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
+      shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0017.
+- [ ] Wire central metering (LLM/embed/Recall/email/storage/ingest) through
+      billing reserve/settle; fail-closed admission when charges enabled.
+- [ ] Prepaid top-up / auto-reload / threshold charge; enable Polar webhook with
+      a real public URL; one shadow-billing month before `BILLING_CHARGES_ENABLED`.
 
 ## Standing Items
 
