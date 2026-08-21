@@ -83,7 +83,7 @@ function structuredDataNode(
     case 'software-application':
       return {
         '@type': 'SoftwareApplication',
-        name: document.title,
+        name: input.name,
         description: document.description,
         url: canonicalUrl,
         applicationCategory: input.applicationCategory,

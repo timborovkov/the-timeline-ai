@@ -67,13 +67,28 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-08-20',
-      reviewed: '2026-08-20',
+      modified: '2026-08-21',
+      reviewed: '2026-08-21',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
-      modified: '2026-08-20',
-      reviewed: '2026-08-20',
+      modified: '2026-08-21',
+      reviewed: '2026-08-21',
     });
+  });
+
+  it('uses the selected-work, cited-answer, and human-approval positioning hierarchy', () => {
+    const compact = buildLlmsTxt({ siteUrl: 'https://thetimeline.cc' });
+    const full = buildLlmsFullTxt({ siteUrl: 'https://thetimeline.cc' });
+
+    for (const text of [compact, full]) {
+      expect(text).toContain('AI team memory');
+      expect(text).toContain('selected work');
+      expect(text).toContain('chronological project history');
+      expect(text).toMatch(/citation|cite the source/iu);
+      expect(text).toContain('human approval');
+      expect(text).not.toContain('operations log your team can talk to');
+      expect(text).not.toContain('captures messy real-world work');
+    }
   });
 
   it('escapes contributed labels and summaries without reading the deployment environment', () => {

@@ -44,9 +44,27 @@ describe('landing route group', () => {
     expect(styles).toContain('--home-meta-size: 0.75rem');
     expect(Math.min(...remFontSizeMinimums)).toBeGreaterThanOrEqual(0.75);
     expect(styles).not.toContain('translateX(0.35rem)');
-    expect(styles).toContain('animation: evidencePath 4.8s ease-in-out infinite both');
+    expect(styles).toContain('animation: evidencePath 4.8s linear infinite both');
     expect(styles).toContain(
-      'animation: ingestPacket 5.4s var(--ingest-delay) cubic-bezier(0.45, 0, 0.55, 1) infinite',
+      'animation: evidenceCore 720ms 440ms cubic-bezier(0.22, 1, 0.36, 1) both',
+    );
+    expect(styles).toContain(
+      'animation: heroOutcomeIn 560ms 1.15s cubic-bezier(0.22, 1, 0.36, 1) both',
+    );
+    expect(styles).toContain('.observatory');
+    expect(styles).not.toContain('--diagram-size');
+    expect(styles).toContain('animation: flowPacketAcross 8s linear infinite');
+    expect(styles).toContain('animation: flowPacketDown 8s linear infinite');
+    expect(styles).toContain('@keyframes flowPacketAcross');
+    expect(styles).toContain('@keyframes flowPacketDown');
+    expect(styles).toMatch(
+      /@keyframes flowPacketAcross[\s\S]*translateX\(-100%\)[\s\S]*20%,[\s\S]*translateX\(0\)/u,
+    );
+    expect(styles).not.toContain('translateX(2.55rem)');
+    expect(styles).toContain('@container timeline-flow (min-width: 40rem) and (max-width: 64rem)');
+    expect(styles).toContain('@container timeline-flow (max-width: 39.999rem)');
+    expect(styles).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.flowPacketRunner\s*\{[\s\S]*display: none !important;/u,
     );
     expect(styles).toContain('animation: chronologyDraw 1.25s');
     expect(styles).toMatch(/\.timelineList li:nth-child\(5\)\s*\{\s*animation-delay: 820ms;/u);
@@ -55,15 +73,23 @@ describe('landing route group', () => {
     expect(styles).not.toContain('ambientSweep');
     expect(styles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(styles).toMatch(
-      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.ingestPackets circle,[\s\S]*animation: none !important;/u,
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.evidencePaths path,[\s\S]*animation: none !important;/u,
     );
-    expect(styles).not.toContain('stroke-dashoffset');
+    expect(styles).toMatch(
+      /@media \(max-width: 44rem\)[\s\S]*\.orbitSourceTime\s*\{\s*display:\s*none;/u,
+    );
+    expect(styles).toContain('stroke-dashoffset');
     expect(styles).not.toContain(':not(.visible)');
     expect(styles).not.toContain('.motionReady [data-home-diagram] {');
     expect(styles).toContain('.motionReady [data-home-reveal].visible {');
     expect(motion).toContain("'[data-home-diagram]'");
     expect(motion).not.toContain('data-home-ambient');
     expect(motion).toContain('classList.toggle(visibleClass, entry.isIntersecting)');
+    expect(motion).toContain("addEventListener('change', restartForPreference)");
+    expect(motion).toContain('setCurrentTime(0)');
+    expect(motion).toContain('pauseAnimations()');
+    expect(motion).toContain('unpauseAnimations()');
+    expect(motion).toContain("'[data-flow-motion]'");
     expect(styles).not.toContain('.ambientTrace');
     expect(styles).toMatch(
       /\.page::before\s*\{[^}]*opacity:\s*0\.055;[^}]*mix-blend-mode:\s*multiply;/s,

@@ -46,10 +46,11 @@ export const HELP_PAGES: HelpPage[] = [
       'Send raw work into Timeline from web, Slack, Telegram, email, meetings, and uploads.',
     icon: Inbox,
     related: ['work', 'integrations'],
+    updatedAt: '2026-08-21',
     sections: [
       {
         title: 'What gets captured',
-        body: 'Timeline accepts unstructured notes first and turns them into events, objects, facts, tasks, and searchable citations after capture.',
+        body: 'Timeline preserves selected notes and source records as events, extracts facts, and can propose objects or tasks for review. Every searchable citation stays linked to the captured source.',
         items: [
           'Text notes and audio uploads from the web app.',
           'Slack and Telegram messages, files, and voice memos from linked spaces.',

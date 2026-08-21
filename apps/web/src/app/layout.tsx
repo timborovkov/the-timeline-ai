@@ -54,20 +54,21 @@ const commitMono = localFont({
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
   title: {
-    default: 'The Timeline — The operations log your team can talk to',
+    default: 'AI Team Memory With Cited Answers · The Timeline',
     template: '%s · The Timeline',
   },
   description:
-    'Voice-, chat-, email-, meeting-, document-, and integration-first capture, agentically compiled into a searchable team history with auditable citations on every answer.',
+    'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
   keywords: [
-    'AI CRM',
+    'AI team memory',
+    'project memory',
+    'project history',
     'team memory',
-    'operations log',
-    'AI knowledge base',
+    'cross-tool knowledge base',
     'meeting transcript search',
     'Slack knowledge base',
-    'Telegram bot CRM',
     'cited AI answers',
+    'project status AI',
   ],
   applicationName: 'The Timeline',
   authors: [{ name: 'The Timeline' }],
@@ -91,9 +92,9 @@ export const metadata: Metadata = {
     statusBarStyle: 'black',
   },
   openGraph: {
-    title: 'The Timeline — The operations log your team can talk to',
+    title: 'AI Team Memory With Cited Answers · The Timeline',
     description:
-      'Capture voice notes, Slack threads, emails, meetings, documents, calendar events, and native integration activity into one searchable team history with cited AI answers.',
+      'Turn selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
     url: '/',
     siteName: 'The Timeline',
     images: [
@@ -101,7 +102,7 @@ export const metadata: Metadata = {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'The Timeline — the operations log your team can talk to',
+        alt: 'The Timeline — AI team memory with cited answers',
       },
     ],
     locale: 'en_US',
@@ -109,9 +110,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'The Timeline — The operations log your team can talk to',
+    title: 'AI Team Memory With Cited Answers · The Timeline',
     description:
-      'Capture work as it happens; the agent files it into a cited, searchable team history.',
+      'Turn selected team work into a searchable project history with cited answers you can verify.',
     images: ['/twitter-image'],
   },
   robots: {
