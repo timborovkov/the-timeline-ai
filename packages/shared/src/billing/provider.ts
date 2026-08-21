@@ -37,26 +37,27 @@ export function createFakeBillingProvider(): BillingProvider & {
   return {
     events,
     customers,
-    async ensureCustomer(input) {
+    ensureCustomer(input) {
       const existing = customers.get(input.externalId);
-      if (existing) return existing;
+      if (existing) return Promise.resolve(existing);
       const created = { id: `cus_fake_${input.externalId.slice(0, 8)}`, email: input.email };
       customers.set(input.externalId, created);
-      return created;
+      return Promise.resolve(created);
     },
-    async createCheckoutSession(input) {
-      return {
+    createCheckoutSession(input) {
+      return Promise.resolve({
         id: `chk_fake_${input.productId.slice(0, 8)}`,
         url: `https://sandbox.polar.sh/checkout/fake?product=${input.productId}`,
-      };
+      });
     },
-    async createCustomerPortalSession(input) {
-      return {
+    createCustomerPortalSession(input) {
+      return Promise.resolve({
         url: `https://sandbox.polar.sh/portal/fake?customer=${input.externalCustomerId}`,
-      };
+      });
     },
-    async ingestUsage(event) {
+    ingestUsage(event) {
       events.push(event);
+      return Promise.resolve();
     },
   };
 }

@@ -8,6 +8,9 @@ import {
 } from '@timeline/db';
 import { and, eq, sql } from 'drizzle-orm';
 
+import type { BillingProvider } from '#src/billing/provider.js';
+import type { TeamRole } from '#src/team-scope.js';
+
 import {
   BILLING_ENTITLEMENTS_VERSION,
   type BillingMeterId,
@@ -17,8 +20,6 @@ import {
   PLAN_CATALOG,
   polarEventNameForMeter,
 } from '#src/billing/catalog.js';
-import type { BillingProvider } from '#src/billing/provider.js';
-import type { TeamRole } from '#src/team-scope.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
 
@@ -86,9 +87,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const counters = await db
         .select()
         .from(billingUsageCounters)
-        .where(
-          and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
-        );
+        .where(and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)));
       const byMeter = Object.fromEntries(
         counters.map((row) => [
           row.meterId,
@@ -97,9 +96,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             customerChargeCents: row.customerChargeCents,
           },
         ]),
-      ) as Partial<
-        Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>
-      >;
+      ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
       const meteredSpendCents = counters.reduce((sum, row) => sum + row.customerChargeCents, 0);
       return {
         account,
@@ -127,7 +124,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
         .set({ spendCapCents, updatedAt: new Date() })
         .where(eq(teamBillingAccounts.teamId, teamId))
         .returning();
-      return row!;
+      if (!row) throw new Error('Failed to update spend cap');
+      return row;
     },
 
     /**
@@ -140,11 +138,17 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const existing = await db
         .select()
         .from(billingFreeGrants)
-        .where(and(eq(billingFreeGrants.userId, userId), sql`${billingFreeGrants.revokedAt} IS NULL`))
+        .where(
+          and(eq(billingFreeGrants.userId, userId), sql`${billingFreeGrants.revokedAt} IS NULL`),
+        )
         .limit(1);
       if (existing[0]) {
         if (existing[0].assignedTeamId && existing[0].assignedTeamId !== teamId) {
-          return { ok: false as const, reason: 'free_grant_elsewhere' as const, grant: existing[0] };
+          return {
+            ok: false as const,
+            reason: 'free_grant_elsewhere' as const,
+            grant: existing[0],
+          };
         }
         if (!existing[0].assignedTeamId) {
           const [updated] = await db
@@ -152,7 +156,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .set({ assignedTeamId: teamId })
             .where(eq(billingFreeGrants.id, existing[0].id))
             .returning();
-          return { ok: true as const, grant: updated! };
+          if (!updated) throw new Error('Failed to assign free grant');
+          return { ok: true as const, grant: updated };
         }
         return { ok: true as const, grant: existing[0] };
       }
@@ -160,7 +165,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
         .insert(billingFreeGrants)
         .values({ userId, assignedTeamId: teamId })
         .returning();
-      return { ok: true as const, grant: created! };
+      if (!created) throw new Error('Failed to create free grant');
+      return { ok: true as const, grant: created };
     },
 
     /**
@@ -205,7 +211,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .where(
               and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
             );
-          const periodSpend = Number(spent[0]?.total ?? 0) + input.reservedChargeCents;
+          const periodSpend = (spent[0]?.total ?? 0) + input.reservedChargeCents;
           if (periodSpend > account.spendCapCents) {
             return { ok: false as const, code: 'spend_cap_reached' as const };
           }
@@ -237,7 +243,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
             ),
           )
           .limit(1);
-        return { ok: true as const, reservation: existing[0]!, reused: true as const };
+        const reservation = existing[0];
+        if (!reservation) throw new Error('Reservation conflict without existing row');
+        return { ok: true as const, reservation, reused: true as const };
       }
 
       if (blocking && input.reservedChargeCents > 0) {
@@ -332,7 +340,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           },
         });
 
-      if (reservation[0] && reservation[0].state === 'reserved') {
+      if (reservation[0]?.state === 'reserved') {
         await db
           .update(billingUsageReservations)
           .set({ state: 'settled', updatedAt: new Date() })

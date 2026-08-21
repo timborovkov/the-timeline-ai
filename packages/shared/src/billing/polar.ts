@@ -1,7 +1,12 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+import type {
+  BillingProvider,
+  CreateCheckoutInput,
+  PolarUsageEvent,
+} from '#src/billing/provider.js';
+
 import { getEnv } from '#src/env.js';
-import type { BillingProvider, CreateCheckoutInput, PolarUsageEvent } from '#src/billing/provider.js';
 
 export type PolarServer = 'sandbox' | 'production';
 
@@ -21,18 +26,17 @@ export function createPolarBillingProvider(options?: {
   const env = getEnv();
   const accessToken = options?.accessToken ?? env.POLAR_ACCESS_TOKEN;
   if (!accessToken) return null;
-  const server = options?.server ?? env.POLAR_SERVER ?? 'sandbox';
+  const server = options?.server ?? env.POLAR_SERVER;
   const base = polarBaseUrl(server);
 
   async function polarFetch(path: string, init?: RequestInit): Promise<Response> {
+    const headers = new Headers(init?.headers);
+    headers.set('Authorization', `Bearer ${accessToken}`);
+    headers.set('Accept', 'application/json');
+    if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     return fetch(`${base}${path}`, {
       ...init,
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
+      headers,
     });
   }
 
@@ -42,7 +46,7 @@ export function createPolarBillingProvider(options?: {
         `/customers/?external_id=${encodeURIComponent(input.externalId)}&limit=1`,
       );
       if (list.ok) {
-        const body = (await list.json()) as { items?: Array<{ id: string }> };
+        const body = (await list.json()) as { items?: { id: string }[] };
         if (body.items?.[0]?.id) return { id: body.items[0].id };
       }
       const created = await polarFetch('/customers/', {
@@ -155,9 +159,7 @@ export function verifyPolarWebhookSignature(input: {
   });
 }
 
-export function polarProductIdForPlan(
-  plan: 'payg' | 'team' | 'business',
-): string | undefined {
+export function polarProductIdForPlan(plan: 'payg' | 'team' | 'business'): string | undefined {
   const env = getEnv();
   switch (plan) {
     case 'payg':

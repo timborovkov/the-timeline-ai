@@ -1,13 +1,13 @@
-import { getEnv } from '@timeline/shared/env';
-import { verifyPolarWebhookSignature } from '@timeline/shared/billing';
 import { teamBillingAccounts } from '@timeline/db';
+import { verifyPolarWebhookSignature } from '@timeline/shared/billing';
+import { getEnv } from '@timeline/shared/env';
 import { eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
-type PolarWebhookPayload = {
+interface PolarWebhookPayload {
   type?: string;
   data?: {
     id?: string;
@@ -17,11 +17,9 @@ type PolarWebhookPayload = {
     customer_id?: string;
     external_customer_id?: string;
   };
-};
+}
 
-function planFromProductId(
-  productId: string | undefined,
-): 'payg' | 'team' | 'business' | null {
+function planFromProductId(productId: string | undefined): 'payg' | 'team' | 'business' | null {
   const env = getEnv();
   if (!productId) return null;
   if (productId === env.POLAR_PRODUCT_ID_PAYG) return 'payg';
@@ -65,8 +63,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'invalid_json' }, { status: 400 });
   }
 
-  const teamId =
-    payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
+  const teamId = payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
   if (!teamId) {
     return Response.json({ ok: true, ignored: 'missing_external_customer' });
   }
@@ -81,12 +78,7 @@ export async function POST(req: Request): Promise<Response> {
     const plan = planFromProductId(payload.data?.product_id);
     if (plan) {
       const catalog = getEnv();
-      const included =
-        plan === 'team'
-          ? 6_000
-          : plan === 'business'
-            ? 25_000
-            : 0;
+      const included = plan === 'team' ? 6_000 : plan === 'business' ? 25_000 : 0;
       await db
         .insert(teamBillingAccounts)
         .values({
@@ -96,10 +88,9 @@ export async function POST(req: Request): Promise<Response> {
           polarCustomerId: payload.data?.customer?.id ?? payload.data?.customer_id ?? null,
           polarSubscriptionId: payload.data?.id ?? null,
           polarProductId: payload.data?.product_id ?? null,
-          spendCapCents:
-            plan === 'payg' ? 2_500 : plan === 'team' ? 10_000 : 50_000,
+          spendCapCents: plan === 'payg' ? 2_500 : plan === 'team' ? 10_000 : 50_000,
           includedDiscountRemainingCents: included,
-          shadowBilling: !(catalog.BILLING_CHARGES_ENABLED ?? false),
+          shadowBilling: !catalog.BILLING_CHARGES_ENABLED,
         })
         .onConflictDoUpdate({
           target: [teamBillingAccounts.teamId],

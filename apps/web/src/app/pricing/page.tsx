@@ -2,12 +2,12 @@ import Link from 'next/link';
 
 import type { Metadata } from 'next';
 
+import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import {
   PricingComparisonTable,
   PricingMetersExplainer,
   PricingPlanGrid,
 } from '@/components/marketing/pricing-blocks';
-import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 import { auth } from '@/lib/auth';
 import { publicMetadata } from '@/lib/public-metadata';

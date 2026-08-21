@@ -38,7 +38,7 @@ describe('billing scope', () => {
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
-      ensureMember: async () => 'owner',
+      ensureMember: () => Promise.resolve('owner'),
       provider,
     });
 
@@ -77,7 +77,7 @@ describe('billing scope', () => {
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
-      ensureMember: async () => 'owner',
+      ensureMember: () => Promise.resolve('owner'),
     });
     const first = await scope.claimFreeGrant();
     expect(first.ok).toBe(true);

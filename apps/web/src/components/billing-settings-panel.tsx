@@ -94,7 +94,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
             <button
               type="button"
               disabled={pending || !props.polarConfigured}
-              onClick={() => runCheckout('payg')}
+              onClick={() => {
+                runCheckout('payg');
+              }}
               className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
             >
               Pay as you go
@@ -102,7 +104,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
             <button
               type="button"
               disabled={pending || !props.polarConfigured}
-              onClick={() => runCheckout('team')}
+              onClick={() => {
+                runCheckout('team');
+              }}
               className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
             >
               Team · €49/mo
@@ -110,7 +114,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
             <button
               type="button"
               disabled={pending || !props.polarConfigured}
-              onClick={() => runCheckout('business')}
+              onClick={() => {
+                runCheckout('business');
+              }}
               className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
             >
               Business · €199/mo
@@ -154,7 +160,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
                 min={0}
                 step={1}
                 value={spendCapEuros}
-                onChange={(event) => setSpendCapEuros(event.target.value)}
+                onChange={(event) => {
+                  setSpendCapEuros(event.target.value);
+                }}
                 className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
               />
             </label>
@@ -175,15 +183,18 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           <p className="text-sm text-fg-muted">No metered usage recorded yet this month.</p>
         ) : (
           <ul className="divide-y divide-border border border-border text-sm">
-            {Object.entries(props.meters).map(([meter, row]) => (
-              <li key={meter} className="flex items-center justify-between gap-4 px-3 py-2">
-                <span className="font-mono text-fg">{meter}</span>
-                <span className="text-fg-muted">
-                  {row!.nativeUnits.toLocaleString()} units ·{' '}
-                  {formatEuroFromCents(row!.customerChargeCents)}
-                </span>
-              </li>
-            ))}
+            {Object.entries(props.meters).map(([meter, row]) => {
+              if (!row) return null;
+              return (
+                <li key={meter} className="flex items-center justify-between gap-4 px-3 py-2">
+                  <span className="font-mono text-fg">{meter}</span>
+                  <span className="text-fg-muted">
+                    {row.nativeUnits.toLocaleString()} units ·{' '}
+                    {formatEuroFromCents(row.customerChargeCents)}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </SettingsSection>

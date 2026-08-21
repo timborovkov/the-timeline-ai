@@ -42,6 +42,8 @@ import type { chatStructured } from '#src/llm/chat.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import { createAuditScope } from '#src/audit/scope.js';
+import { createPolarBillingProvider } from '#src/billing/polar.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
 import { createCalendarScope } from '#src/calendar/scope.js';
 import { createConversationSurfaceScope } from '#src/conversation-surfaces/scope.js';
@@ -58,8 +60,6 @@ import { createMcpScope } from '#src/mcp/scope.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
-import { createBillingScope } from '#src/billing/scope.js';
-import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 import { createPinScope } from '#src/pins/scope.js';

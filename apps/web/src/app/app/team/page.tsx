@@ -6,8 +6,8 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { getEnv } from '@timeline/shared/env';
 import { isPolarBillingConfigured, PLAN_CATALOG } from '@timeline/shared/billing';
+import { getEnv } from '@timeline/shared/env';
 import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -17,8 +17,8 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
-import { BillingSettingsPanel } from '@/components/billing-settings-panel';
 import { ActionChip } from '@/components/action-chip';
+import { BillingSettingsPanel } from '@/components/billing-settings-panel';
 import {
   DigestDestinationsForm,
   type DigestDestinationOption,

@@ -1,11 +1,11 @@
 'use server';
 
-import { getEnv } from '@timeline/shared/env';
 import {
   createPolarBillingProvider,
   isPolarBillingConfigured,
   polarProductIdForPlan,
 } from '@timeline/shared/billing';
+import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
 import { redirect } from 'next/navigation';
 
@@ -15,15 +15,18 @@ import { db } from '@/lib/db';
 
 async function requireBillingAdmin() {
   const session = await auth();
-  if (!session?.user?.id || !session.user.email) redirect('/sign-in');
-  const { active } = await resolveActiveTeam(session.user.id);
+  if (!session) redirect('/sign-in');
+  const userId = session.user.id;
+  const email = session.user.email;
+  if (!userId || !email) redirect('/sign-in');
+  const { active } = await resolveActiveTeam(userId);
   if (!active) redirect('/sign-in');
-  const scope = withTeam(db, active.teamId, session.user.id);
+  const scope = withTeam(db, active.teamId, userId);
   const role = await scope.requireMembership();
   if (role !== 'owner' && role !== 'admin') {
     return { ok: false as const, error: 'Only owners and admins can manage billing.' };
   }
-  return { ok: true as const, session, active, scope };
+  return { ok: true as const, email, active, scope };
 }
 
 export async function startBillingCheckout(input: {
@@ -44,17 +47,15 @@ export async function startBillingCheckout(input: {
   const env = getEnv();
   await provider.ensureCustomer({
     externalId: gate.active.teamId,
-    email: gate.session.user.email!,
+    email: gate.email,
     name: gate.active.teamName,
   });
   const checkout = await provider.createCheckoutSession({
     externalCustomerId: gate.active.teamId,
-    customerEmail: gate.session.user.email!,
+    customerEmail: gate.email,
     productId,
     successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
-    ...(env.POLAR_DISCOUNT_ID && input.discountCode
-      ? { discountId: env.POLAR_DISCOUNT_ID }
-      : {}),
+    ...(env.POLAR_DISCOUNT_ID && input.discountCode ? { discountId: env.POLAR_DISCOUNT_ID } : {}),
   });
   return { ok: true, url: checkout.url };
 }

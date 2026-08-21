@@ -186,7 +186,10 @@ export const billingUsageReservations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('billing_usage_reservations_team_operation_unq').on(table.teamId, table.operationId),
+    uniqueIndex('billing_usage_reservations_team_operation_unq').on(
+      table.teamId,
+      table.operationId,
+    ),
     index('billing_usage_reservations_team_state_idx').on(table.teamId, table.state),
   ],
 );

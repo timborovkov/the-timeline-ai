@@ -19,7 +19,8 @@ vi.mock('@timeline/shared/env', () => ({
 }));
 
 vi.mock('@timeline/shared/billing', () => ({
-  verifyPolarWebhookSignature: (...args: unknown[]) => verifyPolarWebhookSignature(...args),
+  verifyPolarWebhookSignature: (...args: unknown[]) =>
+    verifyPolarWebhookSignature(...args) as boolean,
 }));
 
 vi.mock('@/lib/db', () => ({
