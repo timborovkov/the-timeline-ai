@@ -1,9 +1,6 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
-import {
-  releaseBillingReservation,
-  reserveRecallMeetingMinutes,
-} from '@timeline/shared/billing';
+import { releaseBillingReservation, reserveRecallMeetingMinutes } from '@timeline/shared/billing';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 

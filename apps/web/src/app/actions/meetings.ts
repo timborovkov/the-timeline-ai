@@ -167,7 +167,9 @@ async function startMeetingBot(input: {
     return { ok: true, meetingId: claimed.id };
   } catch (err) {
     log.error({ err, meetingId: claimed.id }, 'recall_join_failed');
-    await releaseBillingReservation(input.scope.billing, admission.operationId).catch(() => undefined);
+    await releaseBillingReservation(input.scope.billing, admission.operationId).catch(
+      () => undefined,
+    );
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),

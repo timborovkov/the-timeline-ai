@@ -9,7 +9,14 @@ import {
   rawEvents,
   savedMeetings,
 } from '@timeline/db';
-import { childLogger, formatMeetingTranscript, getEnv, llm, queue, withTeam } from '@timeline/shared';
+import {
+  childLogger,
+  formatMeetingTranscript,
+  getEnv,
+  llm,
+  queue,
+  withTeam,
+} from '@timeline/shared';
 import { settleRecallMeetingMinutes } from '@timeline/shared/billing';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';

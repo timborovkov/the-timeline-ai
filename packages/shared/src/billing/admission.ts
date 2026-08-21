@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import type { FreeAllowanceRemaining } from '#src/billing/status.js';
+
 import {
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   ASK_AI_RESERVATION_TTL_MS,
@@ -9,7 +11,6 @@ import {
   recallChargeCents,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
-import type { FreeAllowanceRemaining } from '#src/billing/status.js';
 
 export type BillingReserveFailureCode =
   | 'security_blocked'
@@ -54,7 +55,7 @@ export interface BillingAdmissionScope {
   }>;
 }
 
-export function askOperationId(deliverySurface: string, turnId = randomUUID()): string {
+export function askOperationId(deliverySurface: string, turnId: string = randomUUID()): string {
   return `ask:${deliverySurface}:${turnId}`;
 }
 

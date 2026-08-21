@@ -85,12 +85,7 @@ export type AskAgentResult =
     }
   | {
       ok: false;
-      error:
-        | 'unconfigured'
-        | 'not_a_member'
-        | 'no_team'
-        | 'failed'
-        | AskBillingError;
+      error: 'unconfigured' | 'not_a_member' | 'no_team' | 'failed' | AskBillingError;
     };
 
 export interface AskAgentDeps extends ChatDeps {
@@ -424,7 +419,10 @@ export async function askAgent(
       });
     } catch (err) {
       const safeError = deps.sanitizeError?.(err) ?? err;
-      log.warn({ err: safeError, teamId: input.teamId, billingOperationId }, 'ask billing settle failed');
+      log.warn(
+        { err: safeError, teamId: input.teamId, billingOperationId },
+        'ask billing settle failed',
+      );
       await releaseBillingReservation(scope.billing, billingOperationId).catch(() => undefined);
     }
   };
@@ -433,7 +431,10 @@ export async function askAgent(
     billingFinalized = true;
     await releaseBillingReservation(scope.billing, billingOperationId).catch((err: unknown) => {
       const safeError = deps.sanitizeError?.(err) ?? err;
-      log.warn({ err: safeError, teamId: input.teamId, billingOperationId }, 'ask billing release failed');
+      log.warn(
+        { err: safeError, teamId: input.teamId, billingOperationId },
+        'ask billing release failed',
+      );
     });
   };
 

@@ -104,7 +104,7 @@ describe('billing admission helpers', () => {
     const reserved = await reserveRecallMeetingMinutes(billing, { meetingId });
     expect(reserved.ok).toBe(true);
     if (!reserved.ok) return;
-    expect(reserved.reservedMinutes).toBe(120);
+    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
 
     await settleRecallMeetingMinutes(billing, { meetingId, minutes: 12 });
     const dash = await billing.getDashboard();

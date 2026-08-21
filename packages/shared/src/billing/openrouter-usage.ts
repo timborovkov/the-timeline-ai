@@ -20,7 +20,12 @@ function costFromUsageLike(value: unknown): number {
     return row.cost;
   }
   const nested = asRecord(row.usage);
-  if (nested && typeof nested.cost === 'number' && Number.isFinite(nested.cost) && nested.cost >= 0) {
+  if (
+    nested &&
+    typeof nested.cost === 'number' &&
+    Number.isFinite(nested.cost) &&
+    nested.cost >= 0
+  ) {
     return nested.cost;
   }
   return 0;
@@ -48,7 +53,7 @@ export function openRouterUsdCostFromFinishEvent(event: {
   providerMetadata?: unknown;
   usage?: unknown;
   totalUsage?: unknown;
-  steps?: ReadonlyArray<{ providerMetadata?: unknown; usage?: unknown }> | undefined;
+  steps?: readonly { providerMetadata?: unknown; usage?: unknown }[] | undefined;
 }): number {
   const fromMeta = costFromProviderMetadata(event.providerMetadata);
   if (fromMeta > 0) return fromMeta;
