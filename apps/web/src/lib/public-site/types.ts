@@ -23,6 +23,7 @@ export const NATIVE_INGESTION_PROVIDERS = [
 export const PUBLIC_LLM_SECTIONS = [
   'primary',
   'product-guides',
+  'solutions',
   'integrations',
   'how-it-works',
   'companion',
@@ -79,6 +80,7 @@ export type PublicStructuredDataInput =
     }
   | {
       type: 'software-application';
+      name: string;
       applicationCategory: string;
       operatingSystem: string;
       features?: readonly string[];

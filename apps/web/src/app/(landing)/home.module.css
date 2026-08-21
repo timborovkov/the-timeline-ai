@@ -237,8 +237,10 @@
   position: relative;
   min-width: 0;
   aspect-ratio: 1;
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--home-line-strong);
+  background-color: var(--home-panel);
   background-image:
     linear-gradient(var(--home-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--home-line) 1px, transparent 1px);
@@ -250,6 +252,7 @@
 .orbitInner {
   position: absolute;
   inset: 13%;
+  z-index: 0;
   border: 1px solid var(--home-line-strong);
   border-radius: 50%;
 }
@@ -262,67 +265,39 @@
 .orbitLines {
   position: absolute;
   inset: 0;
+  z-index: 1;
   width: 100%;
   height: 100%;
 }
 
-.orbitLines path {
+.evidencePaths path,
+.outcomePath {
   fill: none;
   stroke: var(--home-signal);
-  stroke-dasharray: 7 12;
   stroke-width: 1.4;
-  opacity: 0.64;
-  transform-box: fill-box;
-  transform-origin: center;
+  vector-effect: non-scaling-stroke;
 }
 
-.orbitLines path:nth-child(n + 6) {
-  stroke: var(--home-line-strong);
-  stroke-dasharray: 3 12;
-  opacity: 0.3;
+.evidencePaths path {
+  opacity: 0.58;
+  stroke-dasharray: 7 12;
 }
 
-.ingestPackets circle {
+.outcomePath {
+  opacity: 0.52;
+  stroke-dasharray: 3 7;
+}
+
+.ingestPackets circle,
+.outcomePacket circle {
   fill: var(--home-signal);
   opacity: 0;
-  transform-box: view-box;
-  transform-origin: center;
 }
 
-.ingestPackets circle:nth-child(1) {
-  --ingest-x: 182px;
-  --ingest-y: 184px;
-  --ingest-delay: 0ms;
-}
-
-.ingestPackets circle:nth-child(2) {
-  --ingest-x: -186px;
-  --ingest-y: 158px;
-  --ingest-delay: 520ms;
-}
-
-.ingestPackets circle:nth-child(3) {
-  --ingest-x: 188px;
-  --ingest-y: -162px;
-  --ingest-delay: 1040ms;
-}
-
-.ingestPackets circle:nth-child(4) {
-  --ingest-x: -190px;
-  --ingest-y: -170px;
-  --ingest-delay: 1560ms;
-}
-
-.ingestPackets circle:nth-child(5) {
-  --ingest-x: 230px;
-  --ingest-y: 0px;
-  --ingest-delay: 2080ms;
-}
-
-.ingestPackets circle:nth-child(6) {
-  --ingest-x: -230px;
-  --ingest-y: -10px;
-  --ingest-delay: 2600ms;
+.orbitSources {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .memoryCore {
@@ -331,13 +306,11 @@
   left: 50%;
   z-index: 4;
   display: grid;
-  width: 29%;
+  width: 28%;
   aspect-ratio: 1;
   place-items: center;
-  padding: 1rem;
   border: 1px solid var(--home-signal);
-  background: color-mix(in oklch, var(--home-ink) 94%, transparent);
-  color: var(--home-signal);
+  background: color-mix(in oklch, var(--home-panel) 94%, transparent);
   transform: translate(-50%, -50%) rotate(45deg);
 }
 
@@ -345,23 +318,74 @@
   position: absolute;
   inset: -14%;
   z-index: -1;
-  border: 1px solid color-mix(in oklch, var(--home-signal) 48%, transparent);
+  border: 1px solid color-mix(in oklch, var(--home-signal) 45%, transparent);
   content: '';
 }
 
-.memoryCore svg {
-  width: 2rem;
+.memoryCoreInner {
+  display: grid;
+  width: 76%;
+  justify-items: center;
+  gap: 0.34rem;
+  text-align: center;
   transform: rotate(-45deg);
 }
 
+.memoryCoreMark {
+  width: 2rem;
+  height: 2rem;
+  color: var(--home-paper);
+  --signal: var(--home-signal);
+}
+
+.memoryCore strong {
+  color: var(--home-paper);
+  font-size: clamp(0.78rem, 1.3vw, 0.92rem);
+  font-weight: 650;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  white-space: nowrap;
+}
+
 .memoryCore span {
-  max-width: 9ch;
+  color: var(--home-dim);
   font-family: var(--font-mono);
-  font-size: clamp(var(--home-meta-size), 0.8vw, 0.82rem);
-  line-height: 1.4;
+  font-size: var(--home-meta-size);
+  line-height: 1.25;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.heroOutcome {
+  position: absolute;
+  top: 75.5%;
+  left: 50%;
+  z-index: 4;
+  display: grid;
+  width: min(44%, 15rem);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid color-mix(in oklch, var(--home-signal) 46%, var(--home-line));
+  background: color-mix(in oklch, var(--home-panel) 97%, transparent);
+  transform: translateX(-50%);
+}
+
+.heroOutcome span {
+  display: grid;
+  min-height: 2rem;
+  place-items: center;
+  padding: 0.3rem 0.4rem;
+  color: var(--home-muted);
+  font-family: var(--font-mono);
+  font-size: var(--home-meta-size);
+  line-height: 1.2;
+  letter-spacing: 0.045em;
   text-align: center;
   text-transform: uppercase;
-  transform: rotate(-45deg);
+}
+
+.heroOutcome span + span {
+  border-left: 1px solid var(--home-line);
+  color: var(--home-signal);
 }
 
 .orbitSource {
@@ -369,7 +393,7 @@
   z-index: 5;
   display: grid;
   min-width: 7.3rem;
-  padding: 0.65rem 0.75rem;
+  padding: 0.58rem 0.68rem;
   border: 1px solid var(--home-line-strong);
   background: color-mix(in oklch, var(--home-panel) 95%, transparent);
 }
@@ -383,9 +407,9 @@
 
 .orbitSourceIdentity {
   display: flex;
+  min-width: 0;
   gap: 0.42rem;
   align-items: center;
-  min-width: 0;
   margin-top: 0.18rem;
 }
 
@@ -397,33 +421,22 @@
   place-items: center;
   border: 1px solid color-mix(in oklch, var(--home-line-strong) 70%, transparent);
   background: oklch(0.98 0.005 95);
+  color: oklch(0.23 0.01 120);
 }
 
-.orbitSourceLogo img {
+.orbitSourceLogo img,
+.orbitSourceLogo svg {
   width: 0.9rem;
   height: 0.9rem;
 }
 
 .orbitSource strong {
+  overflow: hidden;
+  color: var(--home-paper);
   font-size: 0.78rem;
   font-weight: 550;
-}
-
-.orbitSource small {
-  max-width: 9.5rem;
-  margin-top: 0.18rem;
-  color: var(--home-dim);
-  font-family: var(--font-mono);
-  font-size: var(--home-meta-size);
-  line-height: 1.35;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.orbitSourceAux {
-  min-width: 8.4rem;
-  border-color: color-mix(in oklch, var(--home-signal) 38%, var(--home-line-strong));
-  background: var(--home-panel);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .orbitSource1 {
@@ -459,19 +472,619 @@
 .observatoryCaption {
   position: absolute;
   right: 1rem;
-  bottom: 0.8rem;
+  bottom: 0.65rem;
   left: 1rem;
-  color: var(--home-dim);
-  font-size: 0.75rem;
+  z-index: 6;
+  color: color-mix(in oklch, var(--home-dim) 78%, transparent);
+  font-size: var(--home-meta-size);
   text-align: center;
 }
 
-.observatoryCaption span {
-  display: block;
+.flowExplainer {
+  --flow-bg: var(--bg);
+  --flow-surface: var(--surface);
+  --flow-surface-2: var(--surface-2, var(--surface));
+  --flow-fg: var(--fg);
+  --flow-muted: var(--fg-muted);
+  --flow-dim: var(--fg-dim);
+  --flow-border: var(--border);
+  --flow-border-strong: var(--border-strong);
+  --flow-signal: var(--signal);
+  --flow-meta-size: 0.75rem;
+  --flow-signal-soft: var(--signal-soft, color-mix(in oklch, var(--flow-signal) 14%, transparent));
+  container: timeline-flow / inline-size;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--flow-border);
+  background: var(--flow-border);
+  color: var(--flow-fg);
 }
 
-.observatoryCaption span + span {
-  margin-top: 0.15rem;
+.flowExplainerHeader {
+  display: grid;
+  grid-template-columns: minmax(8rem, 0.24fr) minmax(0, 1fr);
+  gap: clamp(1rem, 2.4cqi, 2rem);
+  align-items: start;
+  padding: clamp(1rem, 2cqi, 1.5rem);
+  background: var(--flow-bg);
+}
+
+.flowExplainer .monoLabel {
+  color: var(--flow-signal);
+  font-size: var(--flow-meta-size);
+}
+
+.flowExplainerHeader h2 {
+  max-width: 29ch;
+  font-size: clamp(1.55rem, 2.4cqi, 2.3rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+
+.flowExplainerHeader p {
+  max-width: 48rem;
+  margin-top: 0.5rem;
+  color: var(--flow-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.flowSequence {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 0.96fr) 1.65rem minmax(0, 1fr) 1.65rem minmax(0, 1.08fr) 1.65rem
+    minmax(0, 1.08fr);
+  gap: 1px;
+  border-top: 1px solid var(--flow-border);
+  background: var(--flow-border);
+}
+
+.flowStage,
+.flowConnector {
+  background: var(--flow-surface);
+}
+
+.flowStage {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: clamp(0.9rem, 1.35cqi, 1.2rem);
+}
+
+.flowStageKicker {
+  display: flex;
+  gap: 0.42rem;
+  align-items: center;
+  color: var(--flow-signal);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.flowStageKicker i {
+  display: block;
+  width: 0.34rem;
+  height: 0.34rem;
+  background: var(--flow-signal);
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+.flowStageHeading h3 {
+  margin-top: 0.48rem;
+  font-size: clamp(1.04rem, 1.45cqi, 1.3rem);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.flowStageHeading p {
+  margin-top: 0.42rem;
+  color: var(--flow-dim);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.flowSourceList {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flowSourceList li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  min-height: 3.05rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem 0.45rem 0.48rem;
+  border: 1px solid var(--flow-border);
+  background: var(--flow-bg);
+  color: var(--flow-muted);
+  font-size: 0.75rem;
+}
+
+.flowSourceList li::after {
+  position: absolute;
+  top: calc(50% - 0.15rem);
+  right: 0.45rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  background: var(--flow-signal);
+  border-radius: 50%;
+  content: '';
+  opacity: 0.28;
+  transform: scale(0.78);
+}
+
+.flowSourceLogos {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.flowSourceLogo {
+  display: grid;
+  flex: 0 0 auto;
+  width: 1.48rem;
+  height: 1.48rem;
+  place-items: center;
+  border: 1px solid var(--flow-border-strong);
+  background: oklch(0.98 0.005 95);
+}
+
+.flowSourceLogo + .flowSourceLogo {
+  margin-left: -0.22rem;
+}
+
+.flowSourceLogo img,
+.flowSourceLogo svg {
+  width: 0.88rem;
+  height: 0.88rem;
+  color: oklch(0.16 0.012 135);
+}
+
+.flowSourceList li > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 0.12rem;
+}
+
+.flowSourceList strong {
+  color: var(--flow-fg);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.flowSourceList small {
+  overflow-wrap: anywhere;
+  color: var(--flow-dim);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.flowMoreSources {
+  margin-top: 0.6rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px dashed var(--flow-border-strong);
+  color: var(--flow-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.flowTimelineViewport {
+  position: relative;
+  flex: 1;
+  margin-top: 0.85rem;
+}
+
+.flowMiniTimeline {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0 0 0 1rem;
+  list-style: none;
+}
+
+.flowTimelineViewport > .flowPacketTrackVertical {
+  position: absolute;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  left: 0.24rem;
+  height: auto;
+}
+
+.flowMiniTimeline li {
+  position: relative;
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.flowMiniTimeline li::before {
+  position: absolute;
+  top: 0.3rem;
+  left: -0.98rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border: 1px solid var(--flow-surface);
+  background: var(--flow-signal);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--flow-signal);
+  content: '';
+  opacity: 0.68;
+}
+
+.flowTimelineMeta,
+.flowQuestion span,
+.flowAnswerText span {
+  color: var(--flow-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.flowTimelineMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.5rem;
+  align-items: baseline;
+}
+
+.flowTimelineMeta > span {
+  color: var(--flow-signal);
+}
+
+.flowTimelineMeta em {
+  margin-left: auto;
+  max-width: 48%;
+  overflow: hidden;
+  color: var(--flow-dim);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowMiniTimeline strong {
+  color: var(--flow-muted);
+  font-size: 0.75rem;
+  font-weight: 550;
+  line-height: 1.35;
+}
+
+.flowStageBoundary {
+  margin-top: auto;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--flow-border);
+  color: var(--flow-dim);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.flowRecordGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  border: 1px solid var(--flow-border);
+  background: var(--flow-border);
+  list-style: none;
+}
+
+.flowRecordGrid li {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.14rem;
+  padding: 0.55rem 0.55rem 0.55rem 0.75rem;
+  background: var(--flow-bg);
+}
+
+.flowRecordGrid li::before {
+  position: absolute;
+  top: 0.72rem;
+  left: 0.34rem;
+  width: 0.22rem;
+  height: 0.22rem;
+  background: var(--flow-signal);
+  border-radius: 50%;
+  content: '';
+  opacity: 0.35;
+}
+
+.flowRecordGrid li > span,
+.flowRecordGrid li > em,
+.flowWorkspaceViews small {
+  color: var(--flow-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.flowRecordGrid strong {
+  overflow-wrap: anywhere;
+  color: var(--flow-fg);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.flowRecordGrid li > small {
+  color: var(--flow-muted);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.flowRecordGrid li > em {
+  margin-top: 0.12rem;
+  color: var(--flow-signal);
+}
+
+.flowWorkspaceViews {
+  margin-top: 0.6rem;
+  padding: 0.55rem;
+  border: 1px solid var(--flow-border);
+}
+
+.flowWorkspaceViews p {
+  margin-top: 0.22rem;
+  color: var(--flow-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.flowAgentSurfaces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flowAgentSurfaces li {
+  padding: 0.22rem 0.36rem;
+  border: 1px solid var(--flow-border-strong);
+  color: var(--flow-muted);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.flowAgentExchange {
+  display: grid;
+  margin-top: 0.62rem;
+}
+
+.flowQuestion,
+.flowAnswerText {
+  padding: 0.58rem;
+  border: 1px solid var(--flow-border);
+  background: var(--flow-bg);
+}
+
+.flowQuestion p,
+.flowAnswerText p {
+  margin-top: 0.28rem;
+  color: var(--flow-muted);
+  font-size: 0.75rem;
+  line-height: 1.38;
+}
+
+.flowAgentTransit {
+  display: grid;
+  height: 1.45rem;
+  place-items: center;
+}
+
+.flowAnswerText {
+  border-color: color-mix(in oklch, var(--flow-signal) 42%, var(--flow-border));
+}
+
+.flowAnswerText span {
+  color: var(--flow-signal);
+}
+
+.flowAnswerText mark {
+  display: inline-block;
+  background: transparent;
+  color: var(--flow-signal);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.flowAnswerText small {
+  display: block;
+  margin-top: 0.42rem;
+  padding-top: 0.42rem;
+  border-top: 1px solid var(--flow-border);
+  color: var(--flow-muted);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.flowAgentContext {
+  margin-top: 0.55rem;
+  padding: 0.48rem 0.55rem;
+  border: 1px dashed var(--flow-border-strong);
+  color: var(--flow-dim);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.flowConnector {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  place-items: center;
+}
+
+.flowPacketTrack {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--flow-signal) 62%, var(--flow-border));
+}
+
+.flowPacketTrackHorizontal {
+  width: 100%;
+  height: 1px;
+}
+
+.flowPacketTrackVertical {
+  width: 1px;
+  height: 100%;
+}
+
+.flowPacketRunner {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: translateX(-100%);
+  will-change: transform, opacity;
+}
+
+.flowPacketRunner::after {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 0.42rem;
+  height: 0.42rem;
+  background: var(--flow-signal);
+  border-radius: 50%;
+  box-shadow: 0 0 0 0.2rem var(--flow-signal-soft);
+  content: '';
+  transform: translate(50%, -50%);
+}
+
+.flowPacketTrackVertical .flowPacketRunner {
+  transform: translateY(-100%);
+}
+
+.flowPacketTrackVertical .flowPacketRunner::after {
+  top: auto;
+  right: auto;
+  bottom: 0;
+  left: 50%;
+  transform: translate(-50%, 50%);
+}
+
+.flowConnector small {
+  position: absolute;
+  top: calc(50% + 0.55rem);
+  left: 50%;
+  color: var(--flow-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transform: translateX(-50%);
+  writing-mode: vertical-rl;
+}
+
+.flowExplainerFooter {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border-top: 1px solid var(--flow-border);
+  background: var(--flow-border);
+  color: var(--flow-dim);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.flowExplainerFooter span {
+  padding: 0.62rem 0.75rem;
+  background: var(--flow-bg);
+}
+
+@container timeline-flow (min-width: 40rem) and (max-width: 64rem) {
+  .flowSequence {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .flowConnector {
+    display: none;
+  }
+
+  .flowExplainerFooter {
+    grid-template-columns: 1fr;
+  }
+}
+
+@container timeline-flow (max-width: 39.999rem) {
+  .flowExplainerHeader {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+    padding: 1rem;
+  }
+
+  .flowSequence {
+    grid-template-columns: 1fr;
+  }
+
+  .flowStage {
+    padding: 1rem;
+  }
+
+  .flowConnector {
+    display: grid;
+    min-height: 2.75rem;
+  }
+
+  .flowConnector .flowPacketTrackHorizontal {
+    position: absolute;
+    top: 0.35rem;
+    bottom: 0.35rem;
+    left: 50%;
+    width: 1px;
+    height: auto;
+  }
+
+  .flowConnector .flowPacketRunner {
+    transform: translateY(-100%);
+  }
+
+  .flowConnector .flowPacketRunner::after {
+    top: auto;
+    right: auto;
+    bottom: 0;
+    left: 50%;
+    transform: translate(-50%, 50%);
+  }
+
+  .flowConnector small {
+    top: 50%;
+    left: calc(50% + 0.72rem);
+    transform: translateY(-50%);
+    writing-mode: horizontal-tb;
+  }
+
+  .flowTimelineMeta em {
+    flex-basis: 100%;
+    max-width: 100%;
+    margin-left: 0;
+  }
+
+  .flowExplainerFooter {
+    grid-template-columns: 1fr;
+  }
 }
 
 .sceneHeading {
@@ -866,7 +1479,7 @@
   line-height: 1.65;
 }
 
-.audienceRail article {
+.audienceRail a {
   display: grid;
   grid-template-columns: 2rem minmax(8rem, 0.45fr) minmax(14rem, 1fr) auto;
   gap: 1rem;
@@ -874,16 +1487,31 @@
   min-height: 7rem;
   padding: 1.25rem 1.5rem;
   background: var(--home-panel);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
 }
 
-.audienceRail article + article {
+.audienceRail a + a {
   border-top: 1px solid var(--home-line);
 }
 
-.audienceRail article > span {
+.audienceRail a > span {
   color: var(--home-signal);
   font-family: var(--font-mono);
   font-size: var(--home-meta-size);
+}
+
+.audienceRail a:hover,
+.audienceRail a:focus-visible {
+  background: color-mix(in oklch, var(--home-signal) 6%, var(--home-panel));
+}
+
+.audienceRail a:focus-visible {
+  outline: 2px solid var(--home-signal);
+  outline-offset: 2px;
 }
 
 .audienceRail h4 {
@@ -1448,60 +2076,60 @@
     transform: translateY(-2px);
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(-n + 5) {
-    animation: evidencePath 4.8s ease-in-out infinite both;
+  .motionReady .observatory.visible .evidencePaths path {
+    animation: evidencePath 4.8s linear infinite both;
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(2) {
-    animation-delay: 280ms;
+  .motionReady .observatory.visible .evidencePaths path:nth-child(2) {
+    animation-delay: -0.8s;
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(3) {
-    animation-delay: 560ms;
+  .motionReady .observatory.visible .evidencePaths path:nth-child(3) {
+    animation-delay: -1.6s;
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(4) {
-    animation-delay: 840ms;
+  .motionReady .observatory.visible .evidencePaths path:nth-child(4) {
+    animation-delay: -2.4s;
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(n + 6) {
-    animation: connectedPath 5.6s ease-in-out infinite both;
+  .motionReady .observatory.visible .evidencePaths path:nth-child(5) {
+    animation-delay: -3.2s;
   }
 
-  .motionReady .observatory.visible .orbitLines path:nth-child(6) {
-    animation-delay: 600ms;
+  .motionReady .observatory.visible .evidencePaths path:nth-child(6) {
+    animation-delay: -4s;
   }
 
-  .motionReady .observatory.visible .ingestPackets circle {
-    animation: ingestPacket 5.4s var(--ingest-delay) cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  .motionReady .observatory.visible .outcomePath {
+    animation: outcomePath 3.2s 1.1s ease-in-out infinite both;
   }
 
   .motionReady .observatory.visible .orbitSource {
-    animation: sourceResolve 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: sourceResolve 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   .motionReady .observatory.visible .orbitSource2 {
-    animation-delay: 140ms;
+    animation-delay: 100ms;
   }
 
   .motionReady .observatory.visible .orbitSource3 {
-    animation-delay: 280ms;
+    animation-delay: 200ms;
   }
 
   .motionReady .observatory.visible .orbitSource4 {
-    animation-delay: 420ms;
+    animation-delay: 300ms;
   }
 
   .motionReady .observatory.visible .orbitSource5 {
-    animation-delay: 560ms;
+    animation-delay: 400ms;
   }
 
   .motionReady .observatory.visible .orbitSource6 {
-    animation-delay: 700ms;
+    animation-delay: 500ms;
   }
 
   .motionReady .observatory.visible .memoryCore {
-    animation: evidenceCore 900ms 620ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: evidenceCore 720ms 440ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   .motionReady .observatory.visible .memoryCore::after,
@@ -1509,8 +2137,12 @@
     animation: evidencePulse 3.6s 1.1s ease-in-out infinite;
   }
 
+  .motionReady .observatory.visible .heroOutcome {
+    animation: heroOutcomeIn 560ms 1.15s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   .motionReady .observatory.visible .observatoryCaption {
-    animation: diagramItemIn 620ms 980ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: diagramItemIn 520ms 1.35s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
 
   .motionReady .timelineStage.visible .timelineHeader,
@@ -1520,7 +2152,7 @@
   .motionReady .connectorPanel.visible .connectorPath,
   .motionReady .connectorPanel.visible .connectorFooter,
   .motionReady .fitPanel.visible .fitPanelIntro,
-  .motionReady .fitPanel.visible .audienceRail article,
+  .motionReady .fitPanel.visible .audienceRail a,
   .motionReady .trustFlowPanel.visible > header,
   .motionReady .trustFlowPanel.visible .trustFlow li,
   .motionReady .trustFlowPanel.visible .trustFlowProof {
@@ -1632,15 +2264,15 @@
     animation-delay: 740ms;
   }
 
-  .motionReady .fitPanel.visible .audienceRail article:nth-child(1) {
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(1) {
     animation-delay: 140ms;
   }
 
-  .motionReady .fitPanel.visible .audienceRail article:nth-child(2) {
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(2) {
     animation-delay: 260ms;
   }
 
-  .motionReady .fitPanel.visible .audienceRail article:nth-child(3) {
+  .motionReady .fitPanel.visible .audienceRail a:nth-child(3) {
     animation-delay: 380ms;
   }
 
@@ -1670,6 +2302,122 @@
 
   .motionReady .trustFlowPanel.visible .trustFlowProof {
     animation-delay: 980ms;
+  }
+
+  .motionReady [data-flow-step].visible .flowPacketTrackHorizontal .flowPacketRunner {
+    animation: flowPacketAcross 8s linear infinite;
+  }
+
+  .motionReady [data-flow-step].visible .flowPacketTrackVertical .flowPacketRunner {
+    animation: flowPacketDown 8s linear infinite;
+  }
+
+  .motionReady [data-flow-connector='organize'].visible .flowPacketRunner {
+    animation-delay: 2.5s;
+  }
+
+  .motionReady [data-flow-connector='assist'].visible .flowPacketRunner {
+    animation-delay: 5s;
+  }
+
+  .motionReady [data-flow-step='timeline'].visible .flowPacketTrackVertical .flowPacketRunner {
+    animation-delay: 1.25s;
+  }
+
+  .motionReady [data-flow-step='assistant'].visible .flowPacketTrackVertical .flowPacketRunner {
+    animation-delay: 6.25s;
+  }
+
+  .motionReady [data-flow-step].visible .flowStageKicker i,
+  .motionReady [data-flow-step='evidence'].visible .flowSourceList li::after,
+  .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li::before,
+  .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li::before {
+    animation: flowLocalPulse 8s ease-in-out infinite;
+  }
+
+  .motionReady [data-flow-step='timeline'].visible .flowStageKicker i,
+  .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li::before {
+    animation-delay: 1.25s;
+  }
+
+  .motionReady [data-flow-step='workspace'].visible .flowStageKicker i,
+  .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li::before {
+    animation-delay: 3.75s;
+  }
+
+  .motionReady [data-flow-step='assistant'].visible .flowStageKicker i {
+    animation-delay: 6.25s;
+  }
+
+  .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(2)::before {
+    animation-delay: 1.5s;
+  }
+
+  .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(3)::before {
+    animation-delay: 1.75s;
+  }
+
+  .motionReady [data-flow-step='evidence'].visible .flowSourceList li:nth-child(2)::after {
+    animation-delay: 0.25s;
+  }
+
+  .motionReady [data-flow-step='evidence'].visible .flowSourceList li:nth-child(3)::after {
+    animation-delay: 0.5s;
+  }
+
+  .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(4)::before {
+    animation-delay: 2s;
+  }
+
+  .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(5)::before {
+    animation-delay: 2.25s;
+  }
+
+  .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li:nth-child(2)::before {
+    animation-delay: 4s;
+  }
+
+  .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li:nth-child(3)::before {
+    animation-delay: 4.25s;
+  }
+
+  .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li:nth-child(4)::before {
+    animation-delay: 4.5s;
+  }
+
+  @container timeline-flow (max-width: 39.999rem) {
+    .motionReady .flowConnector.visible .flowPacketRunner {
+      animation-name: flowPacketDown;
+    }
+
+    .motionReady [data-flow-step].visible .flowPacketRunner,
+    .motionReady [data-flow-step].visible .flowStageKicker i,
+    .motionReady [data-flow-step='evidence'].visible .flowSourceList li::after,
+    .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li::before,
+    .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li::before {
+      animation-delay: 0s;
+    }
+
+    .motionReady [data-flow-step='evidence'].visible .flowSourceList li:nth-child(2)::after,
+    .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(2)::before,
+    .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li:nth-child(2)::before {
+      animation-delay: 0.2s;
+    }
+
+    .motionReady [data-flow-step='evidence'].visible .flowSourceList li:nth-child(3)::after,
+    .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(3)::before,
+    .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li:nth-child(3)::before {
+      animation-delay: 0.4s;
+    }
+
+    .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(4)::before,
+    .motionReady [data-flow-step='workspace'].visible .flowRecordGrid li:nth-child(4)::before {
+      animation-delay: 0.6s;
+    }
+
+    .motionReady [data-flow-step='timeline'].visible .flowMiniTimeline li:nth-child(5)::before {
+      animation-delay: 0.8s;
+    }
   }
 
   .motionReady [data-home-reveal].visible {
@@ -1720,72 +2468,41 @@
 }
 
 @keyframes evidencePath {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: scale(0.96);
-  }
-
-  18%,
-  72% {
-    opacity: 0.72;
-    transform: scale(1);
-  }
-}
-
-@keyframes ingestPacket {
-  0%,
-  12% {
-    opacity: 0;
-    transform: translate(0, 0) scale(0.65);
-  }
-
-  20% {
-    opacity: 1;
-  }
-
-  78% {
-    opacity: 1;
-    transform: translate(var(--ingest-x), var(--ingest-y)) scale(1);
-  }
-
-  88%,
-  100% {
-    opacity: 0;
-    transform: translate(var(--ingest-x), var(--ingest-y)) scale(0.45);
-  }
-}
-
-@keyframes connectedPath {
-  0%,
-  100% {
-    opacity: 0.16;
-    transform: scale(0.98);
-  }
-
-  50% {
+  0% {
     opacity: 0.34;
-    transform: scale(1);
-  }
-}
-
-@keyframes evidencePulse {
-  0%,
-  100% {
-    opacity: 0.58;
-    transform: scale(1);
+    stroke-dashoffset: 0;
   }
 
   50% {
+    opacity: 0.72;
+  }
+
+  100% {
+    opacity: 0.34;
+    stroke-dashoffset: -38;
+  }
+}
+
+@keyframes outcomePath {
+  0% {
     opacity: 0.28;
-    transform: scale(1.06);
+    stroke-dashoffset: 0;
+  }
+
+  50% {
+    opacity: 0.72;
+  }
+
+  100% {
+    opacity: 0.28;
+    stroke-dashoffset: -20;
   }
 }
 
 @keyframes sourceResolve {
   from {
     opacity: 0;
-    transform: translateY(0.8rem);
+    transform: translateY(0.55rem);
   }
 
   to {
@@ -1797,12 +2514,92 @@
 @keyframes evidenceCore {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) rotate(45deg) scale(0.82);
+    transform: translate(-50%, -50%) rotate(45deg) scale(0.84);
   }
 
   to {
     opacity: 1;
     transform: translate(-50%, -50%) rotate(45deg) scale(1);
+  }
+}
+
+@keyframes evidencePulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.26;
+    transform: scale(1.045);
+  }
+}
+
+@keyframes heroOutcomeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0.4rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+@keyframes flowPacketAcross {
+  0% {
+    opacity: 0;
+    transform: translateX(-100%);
+  }
+
+  3%,
+  17% {
+    opacity: 1;
+  }
+
+  20%,
+  100% {
+    opacity: 0;
+    transform: translateX(0);
+  }
+}
+
+@keyframes flowPacketDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+
+  3%,
+  17% {
+    opacity: 1;
+  }
+
+  20%,
+  100% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+}
+
+@keyframes flowLocalPulse {
+  0%,
+  22%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.78);
+  }
+
+  7% {
+    opacity: 1;
+    transform: scale(1.28);
+  }
+
+  14% {
+    opacity: 0.6;
+    transform: scale(1);
   }
 }
 
@@ -1953,7 +2750,7 @@
 }
 
 @media (max-width: 48rem) {
-  .audienceRail article {
+  .audienceRail a {
     grid-template-columns: 2rem minmax(0, 1fr);
     gap: 0.5rem 0.9rem;
     align-items: start;
@@ -2061,39 +2858,47 @@
     font-size: clamp(3rem, 16.5vw, 5rem);
   }
 
-  .observatory {
-    min-height: 0;
-    aspect-ratio: 1;
-  }
-
   .memoryCore {
-    width: 34%;
-    padding: 0.6rem;
+    width: 30%;
   }
 
-  .memoryCore svg {
-    width: 1.35rem;
+  .memoryCoreInner {
+    width: 82%;
+    gap: 0.2rem;
   }
 
+  .memoryCoreMark {
+    width: 1.45rem;
+    height: 1.45rem;
+  }
+
+  .memoryCore strong,
   .memoryCore span {
     font-size: var(--home-meta-size);
   }
 
+  .heroOutcome {
+    top: 72%;
+    width: 42%;
+  }
+
+  .heroOutcome span {
+    min-height: 2.35rem;
+    padding: 0.2rem;
+  }
+
   .orbitSource {
-    min-width: 4.7rem;
+    min-width: 4.8rem;
     padding: 0.35rem 0.4rem;
   }
 
-  .orbitSource span {
-    font-size: var(--home-meta-size);
-  }
-
-  .orbitSource strong {
-    font-size: var(--home-meta-size);
+  .orbitSourceTime {
+    display: none;
   }
 
   .orbitSourceIdentity {
     gap: 0.25rem;
+    margin-top: 0;
   }
 
   .orbitSourceLogo {
@@ -2101,55 +2906,53 @@
     height: 1.05rem;
   }
 
-  .orbitSourceLogo img {
+  .orbitSourceLogo img,
+  .orbitSourceLogo svg {
     width: 0.72rem;
     height: 0.72rem;
   }
 
-  .orbitSourceAux {
-    min-width: 4.4rem;
-  }
-
-  .orbitSourceAux small {
-    display: none;
+  .orbitSource strong {
+    font-size: var(--home-meta-size);
   }
 
   .orbitSource1 {
-    top: 5%;
+    top: 6%;
     left: 3%;
   }
 
   .orbitSource2 {
-    top: 5%;
+    top: 10%;
     right: 3%;
   }
 
   .orbitSource3 {
-    bottom: 13%;
+    bottom: 15%;
     left: 3%;
   }
 
   .orbitSource4 {
     right: 3%;
-    bottom: 13%;
+    bottom: 9%;
   }
 
   .orbitSource5 {
-    top: 37%;
+    top: 43%;
     left: 1%;
   }
 
   .orbitSource6 {
-    top: 37%;
+    top: 46%;
     right: 1%;
   }
 
   .observatoryCaption {
-    right: 0.4rem;
-    bottom: 0.35rem;
-    left: 0.4rem;
-    font-size: var(--home-meta-size);
-    letter-spacing: 0.04em;
+    right: 0.35rem;
+    bottom: 0.25rem;
+    left: 0.35rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .timelineHeader {
@@ -2259,8 +3062,12 @@
     font-size: 3.8rem;
   }
 
-  .observatory {
-    min-height: 0;
+  .memoryCore span {
+    display: none;
+  }
+
+  .heroOutcome {
+    top: 73.5%;
   }
 }
 
@@ -2269,19 +3076,21 @@
     display: none;
   }
 
-  .orbitLines path,
-  .ingestPackets circle,
+  .evidencePaths path,
+  .outcomePath,
   .orbitInner,
   .orbitSource,
   .memoryCore,
   .memoryCore::after,
+  .heroOutcome,
+  .observatoryCaption,
   .timelineList::after,
   .timelineList li,
   .chronologyContract,
   .answerWindow,
   .receiptLedger,
   .citation,
-  .fitPanel article,
+  .fitPanel a,
   .trustFlow::before,
   .trustFlow li,
   .connectorPanel,
@@ -2289,12 +3098,31 @@
     animation: none !important;
     transition: none !important;
   }
+
+  .flowPacketRunner {
+    display: none !important;
+    animation: none !important;
+  }
+
+  .flowStageKicker i,
+  .flowSourceList li::after,
+  .flowMiniTimeline li::before,
+  .flowRecordGrid li::before {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .ingestPackets,
+  .outcomePacket {
+    display: none;
+  }
 }
 
 @media (forced-colors: active) {
   .timelineNode span,
   .trustFlow li > span,
-  .ingestPackets circle {
+  .ingestPackets circle,
+  .outcomePacket circle {
     forced-color-adjust: auto;
   }
 

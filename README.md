@@ -5,7 +5,7 @@
 <h1 align="center">The Timeline</h1>
 
 <p align="center">
-  An evidence-backed working history for every project.
+  AI team memory for real projects, with cited answers.
 </p>
 
 <p align="center">

@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'The Timeline — the operations log your team can talk to';
+export const alt = 'The Timeline — AI team memory with cited answers';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -31,7 +31,7 @@ export default function OpengraphImage() {
           textTransform: 'uppercase',
         }}
       >
-        <span>THE TIMELINE · OPERATIONAL ARCHIVE · v1</span>
+        <span>THE TIMELINE · AI TEAM MEMORY · v1</span>
         <span>thetimeline.cc</span>
       </div>
 
@@ -56,11 +56,9 @@ export default function OpengraphImage() {
               flexDirection: 'column',
             }}
           >
-            <span>Nobody updates</span>
-            <span>
-              the CRM. <span style={{ color: '#b5ea4a' }}>The Timeline</span>
-            </span>
-            <span>updates itself.</span>
+            <span>Scattered work.</span>
+            <span>One project history.</span>
+            <span style={{ color: '#b5ea4a' }}>Answers with receipts.</span>
           </div>
         </div>
       </div>
@@ -77,7 +75,7 @@ export default function OpengraphImage() {
           textTransform: 'uppercase',
         }}
       >
-        <span>INDEXED · CITED · NEVER FORGOTTEN</span>
+        <span>SOURCE-LINKED · CHRONOLOGICAL · CITED</span>
         <span>[ev:0001]</span>
       </div>
     </div>,

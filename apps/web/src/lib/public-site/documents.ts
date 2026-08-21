@@ -2,6 +2,7 @@ import type { PublicDocument, PublicLlmsContentSection } from '@/lib/public-site
 
 import { EDITORIAL_PUBLIC_DOCUMENTS } from '@/components/marketing/editorial/public-documents';
 import { CONNECTOR_PUBLIC_DOCUMENTS } from '@/components/marketing/integrations/connector-public-documents';
+import { SOLUTION_PUBLIC_DOCUMENTS } from '@/components/marketing/solutions/public-documents';
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_INSTALL_STEPS,
@@ -44,7 +45,7 @@ const AGENT_INSTALL_LLM_SECTIONS = [
 const LANDING_SECTIONS = [
   {
     title: 'What The Timeline does',
-    body: 'The Timeline is an evidence-backed working history. Teams deliberately send notes, files, emails, meeting transcripts, calendar events, and documents or select provider records to preserve in a chronological project record. The agent answers questions with citations back to source material.',
+    body: 'The Timeline is an AI team memory. Teams deliberately send notes, files, emails, meeting transcripts, calendar events, and documents or select provider records to preserve as chronological project history. The agent answers questions with citations back to the original source material.',
   },
   {
     title: 'Best-fit teams',
@@ -52,7 +53,7 @@ const LANDING_SECTIONS = [
   },
   {
     title: 'Core differentiator',
-    body: 'Capture is unstructured, but output is structured. Teams keep working in their existing tools while Timeline preserves source, time, and visibility. Cited answers remain inspectable, and durable workspace changes require human approval.',
+    body: 'Capture is unstructured, but output is structured. Teams keep working in their existing tools while Timeline preserves source, time, and visibility. Cited answers remain inspectable, and suggested durable workspace changes require human approval.',
   },
   {
     title: 'Trust model',
@@ -72,17 +73,18 @@ const coreDocuments = definePublicDocuments('public-core', [
   {
     canonicalPath: '/',
     kind: 'landing',
-    title: 'The Timeline | The work becomes the record',
+    title: 'AI Team Memory With Cited Answers',
     description:
-      'The Timeline preserves selected work from Telegram, Slack, meetings, documents, tickets, code, and email as an evidence-backed project history with cited answers.',
+      'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
     indexability: 'index',
-    dates: { modified: '2026-08-15', reviewed: '2026-08-15' },
+    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 1 },
     structuredData: [
       { type: 'web-page' },
       {
         type: 'software-application',
+        name: 'The Timeline',
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         features: [
@@ -91,7 +93,7 @@ const coreDocuments = definePublicDocuments('public-core', [
           'Cited status, handoffs, blockers, decisions, and commitments',
           'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
           'Source, time, and visibility preserved with captured evidence',
-          'Human approval before durable workspace changes',
+          'Human approval before inferred durable workspace changes',
         ],
       },
     ],
@@ -226,7 +228,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-08-20', reviewed: '2026-08-20' },
+    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -242,7 +244,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'sitemap.xml',
     description: 'Machine-readable sitemap for public indexable pages.',
     indexability: 'index',
-    dates: { modified: '2026-08-20', reviewed: '2026-08-20' },
+    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -261,4 +263,5 @@ export const PUBLIC_DOCUMENT_REGISTRY = createPublicDocumentRegistry(
   publicUtilityDocuments,
   CONNECTOR_PUBLIC_DOCUMENTS,
   EDITORIAL_PUBLIC_DOCUMENTS,
+  SOLUTION_PUBLIC_DOCUMENTS,
 );

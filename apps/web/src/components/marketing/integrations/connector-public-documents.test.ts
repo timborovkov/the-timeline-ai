@@ -49,7 +49,7 @@ describe('connector public documents', () => {
       expect(document.structuredData).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ type: 'faq', entries: connector.faqs }),
-          expect.objectContaining({ type: 'software-application' }),
+          expect.objectContaining({ type: 'software-application', name: 'The Timeline' }),
         ]),
       );
       expect(document.llms && document.llms.section).toBe('integrations');

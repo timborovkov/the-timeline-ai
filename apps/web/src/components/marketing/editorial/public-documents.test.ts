@@ -37,6 +37,20 @@ describe('editorial public documents', () => {
     );
   });
 
+  it('dates the refreshed how-it-works overview independently from unchanged guides', () => {
+    const firstGuide = EDITORIAL_GUIDES.at(0);
+    if (!firstGuide) throw new Error('Expected at least one editorial guide');
+
+    expect(findEditorialPublicDocument(HOW_IT_WORKS_ROUTE).dates).toEqual({
+      modified: '2026-08-21',
+      reviewed: '2026-08-21',
+    });
+    expect(findEditorialPublicDocument(firstGuide.route).dates).toEqual({
+      modified: '2026-08-15',
+      reviewed: '2026-08-15',
+    });
+  });
+
   it('publishes curated editorial summaries and source boundaries to both LLM documents', () => {
     const compact = buildLlmsTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });
     const full = buildLlmsFullTxt({ registry: PUBLIC_DOCUMENT_REGISTRY, siteUrl: SITE_URL });

@@ -39,7 +39,7 @@ describe('LandingPage', () => {
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('The work <em>becomes</em> the record.');
+    expect(html).toContain('Scattered work. <em>Cited answers.</em>');
 
     const scenes = ['01-claim', '02-chronology', '03-answer', '04-trust', '05-cta'];
     let previousIndex = -1;
@@ -51,18 +51,29 @@ describe('LandingPage', () => {
 
     expect(html).toContain('Acme rollout / Last 7 days');
     expect(html).toContain(
-      'Five cited Acme project sources form a chronological working history while connected Sentry evidence remains unused in this answer',
+      'aria-label="Work events stream from six sources into The Timeline, where project history becomes working records and cited answers."',
     );
     expect(html).toContain('Fictional Acme example, not customer data.');
-    expect(html).toContain('Working history');
-    expect(html).toContain('Connected, not used in this answer');
-    expect(html).toContain('5 cited sources. Sentry is connected, but unused in this answer.');
+    expect(html).toContain('The Timeline');
+    expect(html).toContain('Project history');
+    expect(html).toContain('Working records');
+    expect(html).toContain('Cited answers');
+    expect(html).not.toContain('How scattered work becomes useful context.');
+    expect(html).not.toContain('Connected, not used in this answer');
+    expect(html).not.toContain('Sentry is connected, but unused in this answer.');
+    expect(html).toContain('Every claim inspectable');
+    expect(html).not.toContain('5 of 6 sources used');
     expect(html).toContain('Telegram');
     expect(html).toContain('Linear');
     expect(html).toContain('Sentry');
     expect(html).toContain('/connectors/telegram.svg');
     expect(html).toContain('/connectors/google-meet.svg');
-    expect(html).toContain('data-ingest-packets="6"');
+    expect(html.match(/data-hero-flow-path="ingest"/g)).toHaveLength(6);
+    expect(html.match(/data-hero-flow-path="outcome"/g)).toHaveLength(1);
+    expect(html.match(/data-hero-flow-packet="ingest"/g)).toHaveLength(6);
+    expect(html.match(/data-hero-flow-packet="outcome"/g)).toHaveLength(1);
+    expect(html).toContain('data-flow-motion');
+    expect(html.match(/<animateMotion/g)).toHaveLength(7);
     expect(html).toContain('aria-label="Public navigation"');
     expect(html).toContain('href="/integrations"');
     expect(html).toContain('href="/how-it-works"');
@@ -70,8 +81,20 @@ describe('LandingPage', () => {
     expect(html).toContain('SSO blocks launch. Friday’s customer update is still due.');
     expect(html).toContain('Evidence behind this answer');
     expect(html).toContain('href="#acme-source-01"');
-    expect(html).toContain('Source 01: Telegram explicit note');
+    expect(html).toContain('Source 01: Telegram group message');
     expect(html).toContain('Teams that owe someone a reliable answer.');
+    expect(html).toContain('href="/solutions/crm-context-from-team-activity"');
+    expect(html).toContain('href="/solutions/client-project-handoffs"');
+    expect(html).toContain('href="/solutions/weekly-project-updates"');
+    expect(html).toContain(
+      '<a href="/solutions/client-project-handoffs"><span>01</span><h4>Client delivery</h4>',
+    );
+    expect(html).toContain(
+      '<a href="/solutions/crm-context-from-team-activity"><span>02</span><h4>Sales and account teams</h4>',
+    );
+    expect(html).toContain(
+      '<a href="/solutions/weekly-project-updates"><span>03</span><h4>Product and engineering</h4>',
+    );
     expect(html).toContain('Every answer carries its evidence chain.');
     expect(html).not.toContain('Northline');
     expect(html.match(/data-home-diagram/g)).toHaveLength(6);
@@ -89,21 +112,23 @@ describe('LandingPage', () => {
     const webPage = graph['@graph'].find((node) => node['@type'] === 'WebPage');
     const application = graph['@graph'].find((node) => node['@type'] === 'SoftwareApplication');
     expect(webPage).toMatchObject({
-      dateModified: '2026-08-15',
-      lastReviewed: '2026-08-15',
+      dateModified: '2026-08-21',
+      lastReviewed: '2026-08-21',
     });
     expect(application?.featureList).toContain(
       'Native ingestion for GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry',
     );
-    expect(application?.featureList).toContain('Human approval before durable workspace changes');
+    expect(application?.featureList).toContain(
+      'Human approval before inferred durable workspace changes',
+    );
     expect(metadata).toMatchObject({
-      title: 'The Timeline | The work becomes the record',
+      title: 'AI Team Memory With Cited Answers',
       description:
-        'The Timeline preserves selected work from Telegram, Slack, meetings, documents, tickets, code, and email as an evidence-backed project history with cited answers.',
+        'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
       alternates: { canonical: '/' },
       openGraph: {
         description:
-          'The Timeline preserves selected work from Telegram, Slack, meetings, documents, tickets, code, and email as an evidence-backed project history with cited answers.',
+          'Timeline turns selected chats, meetings, documents, tickets, and code into a searchable project history. Ask questions and verify every claim at the source.',
       },
     });
   });
@@ -123,7 +148,7 @@ describe('LandingPage', () => {
     expect(html).toContain('Sync selected records.');
     expect(html).toContain('Ready to connect');
     expect(html).toContain('Admin setup needed');
-    expect(html).toContain('look up approved tools when you ask a question');
+    expect(html).toContain('use enabled custom MCP tools when you ask a question');
     expect(html).not.toMatch(
       /Capture contract|Deliberate capture|Provider record sync|Available here|MCP is live approved access/u,
     );
@@ -146,25 +171,28 @@ describe('LandingPage', () => {
   it('renders the product, problem, workflow, and trust contract without implying passive capture', async () => {
     const html = renderToStaticMarkup(await LandingPage());
 
-    expect(html).toContain('Timeline is an evidence-backed working history for a project.');
-    expect(html).toContain('Telegram, Slack, meetings, documents, tickets, code, and email');
+    expect(html).toContain('Timeline is AI team memory for real projects.');
+    expect(html).toContain(
+      'Work can begin in a linked Telegram group or Slack channel, then spread through meetings, documents, tickets, code, automations, and email.',
+    );
     expect(html).toContain(
       'Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong.',
     );
-    expect(html).toContain('Your team keeps using');
-    expect(html).toContain('the provider records they select as one chronological record');
+    expect(html).toContain('documents, tickets, and code you choose in one chronological record');
+    expect(html).toContain('trace each claim back to the source');
     expect(html).toContain('preserves source, time, and visibility');
     expect(html).toContain(
       'Give me the current status, handoff, blockers, and customer commitments.',
     );
     expect(html).toContain('proposes it for human review instead of applying it on its own');
-    expect(html).toContain('Human-approved changes');
-    expect(html).toContain('Telegram / explicit note');
-    expect(html).toContain('saved an explicit note');
-    expect(html).toContain('Plain text in a Telegram DM asks Timeline; it does not become');
-    expect(html).toContain('team evidence unless you use /note.');
-    expect(html).toContain('Connected, not used in this answer');
-    expect(html).toContain('Sentry is connected, but unused in this answer.');
+    expect(html).toContain('Approval-backed suggestions');
+    expect(html).toContain('Telegram / linked launch group');
+    expect(html).toContain(
+      'Link a Telegram group or Slack channel, forward mail, add a meeting transcript or file, or post an authenticated webhook event.',
+    );
+    expect(html).toContain('A direct chat asks the agent; it is not passive history capture.');
+    expect(html).not.toContain('Connected, not used in this answer');
+    expect(html).not.toContain('Sentry is connected, but unused in this answer.');
     expect(html).not.toContain('Timeline watches the tools');
     expect(html).not.toMatch(/captures? (?:all|every) (?:chat|conversation|message)/iu);
   });

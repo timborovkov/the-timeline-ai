@@ -14,25 +14,11 @@ import {
   createHowItWorksMetadata,
 } from '@/components/marketing/editorial/metadata';
 import { ProvenanceDiagram } from '@/components/marketing/editorial/provenance-diagram';
+import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import { MarketingSectionIndex } from '@/components/marketing/section-index';
 
 export const metadata: Metadata = createHowItWorksMetadata();
-
-const HOW_IT_WORKS_STEPS = [
-  {
-    title: 'Choose what enters',
-    body: 'Send an explicit Telegram or Slack note, forward email, capture a meeting transcript, or select the provider records that belong in Timeline.',
-  },
-  {
-    title: 'Preserve the chronology',
-    body: 'Keep every captured record attached to its source, author, time, and visibility as one working history forms.',
-  },
-  {
-    title: 'Ask and inspect',
-    body: 'Ask for cited status, handoffs, blockers, decisions, or customer commitments, then inspect the evidence and any gaps.',
-  },
-] as const;
 
 export default function HowItWorksPage() {
   const featuredGuide = findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive);
@@ -48,56 +34,18 @@ export default function HowItWorksPage() {
               From scattered work to a cited answer.
             </h1>
             <p className="max-w-[44ch] text-base leading-relaxed text-fg-muted sm:text-lg">
-              Context is split across Telegram, Slack, meetings, documents, tickets, code, and
-              email, which makes status, handoffs, commitments, and decisions slow to rebuild and
-              easy to get wrong. Teams keep using those tools while Timeline preserves selected work
-              as a chronological project record.
+              See how selected work becomes source-linked history, working records, and
+              evidence-backed answers—without replacing the tools your team already uses.
             </p>
-          </div>
-
-          <ol
-            data-how-it-works-steps
-            className="mt-12 grid border-y border-border md:grid-cols-3 md:divide-x md:divide-border"
-          >
-            {HOW_IT_WORKS_STEPS.map((step, index) => (
-              <li key={step.title} className="py-6 md:px-7 md:py-8 md:first:pl-0 md:last:pr-0">
-                <div className="flex items-baseline gap-4">
-                  <span className="font-mono text-[0.68rem] tracking-[0.12em] text-signal">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <h2 className="text-xl font-semibold tracking-[-0.025em]">{step.title}</h2>
-                </div>
-                <p className="mt-3 max-w-sm pl-9 text-sm leading-6 text-fg-muted">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-
-          <div
-            data-how-it-works-trust
-            className="mt-8 grid gap-px border border-border bg-border sm:grid-cols-2"
-          >
-            <article className="bg-bg p-6 sm:p-7">
-              <h2 className="text-xl font-semibold tracking-[-0.025em]">
-                Connected does not mean cited.
-              </h2>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-fg-muted">
-                A connected tool does not give Timeline its whole history by default. An answer
-                cites only the evidence it used, so connected or captured sources can remain unused
-                in that answer.
-              </p>
-            </article>
-            <article className="bg-bg p-6 sm:p-7">
-              <h2 className="text-xl font-semibold tracking-[-0.025em]">
-                People approve durable changes.
-              </h2>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-fg-muted">
-                Cited answers remain answers. When evidence suggests a lasting workspace change,
-                Timeline creates a proposal and waits for a person to approve, change, or reject it.
-              </p>
-            </article>
           </div>
         </MarketingContainer>
       </section>
+
+      <div data-how-it-works-flow className="border-b border-border">
+        <MarketingContainer className="py-12 sm:py-16">
+          <TimelineFlowDiagram variant="expanded" id="how-it-works-platform-flow" />
+        </MarketingContainer>
+      </div>
 
       <section data-how-it-works-evidence className="border-b border-border bg-surface/45">
         <MarketingContainer className="py-16 sm:py-20">
@@ -105,11 +53,10 @@ export default function HowItWorksPage() {
             <MarketingSectionIndex index="02" label="Evidence path" />
             <div>
               <h2 className="max-w-[18ch] text-3xl font-semibold tracking-tight sm:text-4xl">
-                Watch three records become one answer.
+                Trace one answer to its evidence.
               </h2>
               <p className="mt-4 max-w-[64ch] text-base leading-relaxed text-fg-muted">
-                This illustrative example keeps every source distinct, places the records in time,
-                and cites the evidence behind the conclusion.
+                Three source records become one answer you can verify.
               </p>
               <div className="mt-10">
                 <ProvenanceDiagram diagram={featuredGuide.diagram} answerHeadingLevel={2} />

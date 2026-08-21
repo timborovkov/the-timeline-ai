@@ -63,6 +63,7 @@ const connectorDocuments = CONNECTORS.map(
       { type: 'faq', entries: connector.faqs },
       {
         type: 'software-application',
+        name: 'The Timeline',
         applicationCategory: 'BusinessApplication',
         operatingSystem: 'Web',
         features: connector.capturedRecords,

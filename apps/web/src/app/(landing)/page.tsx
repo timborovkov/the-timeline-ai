@@ -11,12 +11,14 @@ import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
 import { GitHubSourceLink } from '@/components/github-source-link';
 import { HomeMotion } from '@/components/marketing/home/home-motion';
+import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 import {
   PUBLIC_DEMO_DISCLOSURE,
   PUBLIC_DEMO_STORY,
 } from '@/components/marketing/public-demo-story';
+import { SOLUTION_ROUTES } from '@/components/marketing/solutions/content';
 import { PublicHeader } from '@/components/public-header';
 import { PublicNavigationItems } from '@/components/public-navigation';
 import { auth } from '@/lib/auth';
@@ -37,12 +39,13 @@ const HOME_DOCUMENT = getHomeDocument();
 export const metadata: Metadata = {
   ...metadataForPublicDocument(HOME_DOCUMENT),
   keywords: [
-    'operational memory',
+    'AI team memory',
+    'project memory',
     'project history',
     'cited AI answers',
-    'Slack knowledge base',
+    'cross-tool knowledge base',
     'meeting transcript search',
-    'team timeline',
+    'project status AI',
   ],
   robots: {
     index: true,
@@ -59,45 +62,27 @@ function getHomeDocument() {
 
 const ACME_EVENTS = PUBLIC_DEMO_STORY.landing.events;
 
-const HERO_SOURCES = [
-  ...ACME_EVENTS.map(({ time, shortSource }) => ({
-    time,
-    source: shortSource,
-    cited: true,
-  })),
-  ...PUBLIC_DEMO_STORY.landing.connectedSignals.map((signal) => ({
-    ...signal,
-    cited: false,
-  })),
-] as const;
-
-const HERO_SOURCE_LOGOS: Readonly<Record<string, string>> = {
-  Slack: '/connectors/slack.svg',
-  Meeting: '/connectors/google-meet.svg',
-  GitHub: '/connectors/github.svg',
-  Drive: '/connectors/google-drive.svg',
-  Telegram: '/connectors/telegram.svg',
-  Sentry: '/connectors/sentry.svg',
-};
-
 const AUDIENCES = [
   {
     index: '01',
     name: 'Client delivery',
-    outcome: 'Send a client-ready update with every claim attached to its source.',
-    result: 'Verifiable status',
+    outcome: 'Transfer the decisions, blockers, owners, and commitments with their sources.',
+    result: 'Current handoff',
+    href: SOLUTION_ROUTES.clientProjectHandoffs,
   },
   {
     index: '02',
-    name: 'Implementation',
-    outcome: 'Recover the handoff without replaying every meeting or chasing every owner.',
-    result: 'Current handoff',
+    name: 'Sales and account teams',
+    outcome: 'Keep people, company, deal, and follow-up context tied to the conversation.',
+    result: 'Cited account context',
+    href: SOLUTION_ROUTES.crmContextFromTeamActivity,
   },
   {
     index: '03',
-    name: 'Product and operations',
-    outcome: 'Connect decisions, blockers, owners, and delivery in one inspectable history.',
-    result: 'Decision trail',
+    name: 'Product and engineering',
+    outcome: 'Turn the week’s discussion, issue state, code, and releases into one update.',
+    result: 'Weekly status',
+    href: SOLUTION_ROUTES.weeklyProjectUpdates,
   },
 ] as const;
 
@@ -105,7 +90,7 @@ const TRUST_STEPS = [
   {
     index: '01',
     title: 'Evidence arrives',
-    detail: 'Telegram / explicit note',
+    detail: 'Telegram / linked launch group',
   },
   {
     index: '02',
@@ -119,7 +104,7 @@ const TRUST_STEPS = [
   },
   {
     index: '04',
-    title: 'Durable changes wait',
+    title: 'Suggested changes wait',
     detail: 'Human approval required',
   },
 ] as const;
@@ -241,15 +226,14 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
       data-scene="01-claim"
     >
       <div className={styles.heroCopy} data-home-reveal>
-        <SceneIndex number="01" label="Claim" />
+        <SceneIndex number="01" label="AI team memory" />
         <h1 id="claim-title" className={styles.heroTitle}>
-          The work <em>becomes</em> the record.
+          Scattered work. <em>Cited answers.</em>
         </h1>
         <p className={styles.heroIntro}>
-          Timeline is an evidence-backed working history for a project. Your team keeps using
-          Telegram, Slack, meetings, documents, tickets, code, and email; Timeline preserves the
-          work people deliberately send and the provider records they select as one chronological
-          record.
+          Timeline is AI team memory for real projects. It preserves the messages, meetings,
+          documents, tickets, and code you choose in one chronological record. Ask what happened,
+          what changed, and what comes next—then trace each claim back to the source.
         </p>
         <div className={styles.heroActions}>
           <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.primaryCta}>
@@ -264,55 +248,7 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
         </div>
       </div>
 
-      <div
-        className={styles.observatory}
-        data-home-diagram
-        aria-label="Five cited Acme project sources form a chronological working history while connected Sentry evidence remains unused in this answer"
-      >
-        <svg className={styles.orbitLines} viewBox="0 0 600 600" aria-hidden="true">
-          <path d="M118 116 C 205 150, 226 242, 300 300" />
-          <path d="M486 142 C 414 174, 390 244, 300 300" />
-          <path d="M112 462 C 188 412, 226 354, 300 300" />
-          <path d="M490 470 C 420 420, 388 354, 300 300" />
-          <path d="M70 300 C 170 300, 220 300, 300 300" />
-          <path d="M530 310 C 430 310, 380 304, 300 300" />
-          <g className={styles.ingestPackets} data-ingest-packets="6">
-            <circle cx="118" cy="116" r="4" />
-            <circle cx="486" cy="142" r="4" />
-            <circle cx="112" cy="462" r="4" />
-            <circle cx="490" cy="470" r="4" />
-            <circle cx="70" cy="300" r="4" />
-            <circle cx="530" cy="310" r="4" />
-          </g>
-        </svg>
-        <div className={styles.orbitOuter} aria-hidden="true" />
-        <div className={styles.orbitInner} aria-hidden="true" />
-        <div className={styles.memoryCore}>
-          <Logo ariaHidden />
-          <span>Working history</span>
-        </div>
-        {HERO_SOURCES.map((signal, index) => (
-          <div
-            key={signal.source}
-            className={cn(
-              styles.orbitSource,
-              styles[`orbitSource${index + 1}`],
-              !signal.cited && styles.orbitSourceAux,
-            )}
-          >
-            <span className={styles.orbitSourceTime}>{signal.time}</span>
-            <span className={styles.orbitSourceIdentity}>
-              <HeroSourceLogo source={signal.source} />
-              <strong>{signal.source}</strong>
-            </span>
-            {signal.cited ? null : <small>Connected, not used in this answer</small>}
-          </div>
-        ))}
-        <p className={styles.observatoryCaption}>
-          <span>5 cited sources. Sentry is connected, but unused in this answer.</span>
-          <span>{PUBLIC_DEMO_DISCLOSURE}</span>
-        </p>
-      </div>
+      <TimelineFlowDiagram variant="hero" disclosure={PUBLIC_DEMO_DISCLOSURE} />
     </section>
   );
 }
@@ -334,7 +270,7 @@ function ChronologyScene({ nativeConnectors }: { nativeConnectors: NativeConnect
             Status should not require an <em>investigation.</em>
           </>
         }
-        copy="Work can begin in an explicit Telegram note or a Slack conversation, then spread through meetings, documents, tickets, code, and email. Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong. Timeline preserves source, time, and visibility in the project record."
+        copy="Work can begin in a linked Telegram group or Slack channel, then spread through meetings, documents, tickets, code, automations, and email. Rebuilding status, handoffs, customer commitments, and decisions becomes slow—and the result is easy to get wrong. Timeline preserves source, time, and visibility in the project record."
       />
       <div className={styles.timelineStage} data-home-diagram>
         <div className={styles.timelineHeader}>
@@ -403,9 +339,9 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
           <span className={styles.monoLabel}>Messages and files</span>
           <h4>Send the work to Timeline.</h4>
           <p>
-            Send an explicit Telegram or Slack note, forward mail, add a meeting transcript, or post
-            an authenticated payload. Plain text in a Telegram DM asks Timeline; it does not become
-            team evidence unless you use /note.
+            Link a Telegram group or Slack channel, forward mail, add a meeting transcript or file,
+            or post an authenticated webhook event. A direct chat asks the agent; it is not passive
+            history capture.
           </p>
           <ul className={styles.captureSurfaceList} aria-label="Ways to send work to Timeline">
             {CAPTURE_SURFACES.map((surface) => (
@@ -451,25 +387,15 @@ function ConnectorRail({ nativeConnectors }: { nativeConnectors: NativeConnector
       </div>
       <div className={styles.connectorFooter}>
         <p>
-          Timeline can also look up approved tools when you ask a question without adding their
-          history to the record. Some local and upcoming connections are not available in the hosted
-          app yet.
+          Timeline can also use enabled custom MCP tools when you ask a question without adding
+          their history to the record. Some local and upcoming connections are not available in the
+          hosted app yet.
         </p>
         <Link href="/integrations" className={styles.textLink}>
           Explore integrations <span aria-hidden="true">→</span>
         </Link>
       </div>
     </aside>
-  );
-}
-
-function HeroSourceLogo({ source }: { source: string }) {
-  const logo = HERO_SOURCE_LOGOS[source];
-  if (!logo) return null;
-  return (
-    <span className={styles.orbitSourceLogo} aria-hidden="true">
-      <Image src={logo} alt="" width={18} height={18} />
-    </span>
   );
 }
 
@@ -523,17 +449,18 @@ function AnswerScene() {
             <h3>SSO blocks launch. Friday’s customer update is still due.</h3>
             <p>
               The customer expects an update by Friday{' '}
-              <Citation id="01" label="Telegram explicit note" />. Onboarding copy was approved{' '}
+              <Citation id="01" label="Telegram group message" />. Onboarding copy was approved{' '}
               <Citation id="02" label="Slack approval" /> and the migration callback merged{' '}
               <Citation id="04" label="GitHub pull request" />. SSO remains the launch blocker{' '}
               <Citation id="03" label="launch review meeting" />. Priya Shah owns the migration
-              checklist and its Friday review <Citation id="05" label="Google Drive checklist" />.
+              checklist and its Friday review{' '}
+              <Citation id="05" label="Timeline Document Drive checklist" />.
             </p>
           </div>
           <div className={styles.answerFooter}>
             <span>Draft answer / cited</span>
             <span>Visibility checked</span>
-            <span>5 of 6 sources used</span>
+            <span>Every claim inspectable</span>
           </div>
         </article>
 
@@ -578,7 +505,7 @@ function TrustScene() {
             When the work is scattered, the answer <em>should not be.</em>
           </>
         }
-        copy="Timeline gives client delivery, implementation, product, and operations teams one current account of what happened without asking everyone to maintain another system."
+        copy="Timeline gives client delivery, account, product, and engineering teams one current account of what happened without asking everyone to maintain another system."
       />
       <div className={styles.fitPanel} data-home-diagram>
         <div className={styles.fitPanelIntro}>
@@ -591,12 +518,15 @@ function TrustScene() {
         </div>
         <div className={styles.audienceRail} aria-label="Teams Timeline serves">
           {AUDIENCES.map((audience) => (
-            <article key={audience.name}>
+            <Link href={audience.href} key={audience.name}>
               <span>{audience.index}</span>
               <h4>{audience.name}</h4>
               <p>{audience.outcome}</p>
-              <small>{audience.result}</small>
-            </article>
+              <small>
+                {audience.result}
+                <span aria-hidden="true"> ↗</span>
+              </small>
+            </Link>
           ))}
         </div>
       </div>
@@ -625,7 +555,7 @@ function TrustScene() {
           <span>Team isolation</span>
           <span>Per-event privacy</span>
           <span>Inspectable citations</span>
-          <span>Human-approved changes</span>
+          <span>Approval-backed suggestions</span>
         </div>
       </div>
     </section>

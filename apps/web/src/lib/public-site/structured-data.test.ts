@@ -59,9 +59,32 @@ describe('public structured data', () => {
       text: '</script><script>globalThis.evil()</script>&\u2028next',
     });
   });
+
+  it('uses an explicit software application entity name instead of the page title', () => {
+    const graph = buildPublicStructuredData(
+      document({
+        title: 'AI Team Memory With Cited Answers',
+        structuredData: [
+          {
+            type: 'software-application',
+            name: 'The Timeline',
+            applicationCategory: 'BusinessApplication',
+            operatingSystem: 'Web',
+          },
+        ],
+      }),
+      'https://thetimeline.cc',
+    );
+
+    expect(graph['@graph'][0]).toMatchObject({
+      '@type': 'SoftwareApplication',
+      name: 'The Timeline',
+      description: 'Capture work into Timeline.',
+    });
+  });
 });
 
-function document(): PublicDocument {
+function document(overrides: Partial<PublicDocument> = {}): PublicDocument {
   return {
     canonicalPath: '/help/capture',
     kind: 'guide',
@@ -77,5 +100,6 @@ function document(): PublicDocument {
       { type: 'breadcrumbs', items: [{ name: 'Help', path: '/help' }] },
       { type: 'faq', entries: [{ question: 'Is it cited?', answer: 'Yes.' }] },
     ],
+    ...overrides,
   };
 }
