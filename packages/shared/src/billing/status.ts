@@ -241,3 +241,118 @@ export function freeAllowanceConsumedForMeter(
       return null;
   }
 }
+
+/** Retail euro value of the monthly Free native floor (for overage display). */
+export function freeAllowanceFloorCents(): number {
+  return (
+    FREE_ALLOWANCES.aiChargeCents +
+    FREE_ALLOWANCES.recallMinutes * 3 +
+    Math.round((FREE_ALLOWANCES.emailUnits * 250) / 1000) +
+    FREE_ALLOWANCES.storageGb * 25 +
+    Math.round((FREE_ALLOWANCES.acceptedSources * 50) / 1000)
+  );
+}
+
+export interface SidebarBillingSummary {
+  planId: BillingPlanId;
+  planName: string;
+  /** 0–100 for the progress bar (capped visually). */
+  progressPercent: number;
+  /** True when progress is at/over the commercial limit. */
+  atLimit: boolean;
+  /** Primary line under the plan name, e.g. "€12 of €25" or "48% of Free". */
+  detailLabel: string;
+  /** Optional overage line, e.g. "+€4.20 overage". Null when none. */
+  overageLabel: string | null;
+  overageCents: number;
+  href: string;
+  canManageBilling: boolean;
+}
+
+/**
+ * Compact sidebar view-model: plan name, usage progress, and overage hint.
+ */
+export function deriveSidebarBillingSummary(input: {
+  planId: BillingPlanId;
+  canManageBilling: boolean;
+  meteredSpendCents: number;
+  spendCapCents: number;
+  /** Reserved for future discount-remaining progress; included discount uses catalog. */
+  includedDiscountRemainingCents: number;
+  freeRemaining: FreeAllowanceRemaining;
+}): SidebarBillingSummary {
+  void input.includedDiscountRemainingCents;
+  const plan = PLAN_CATALOG[input.planId];
+  const href = input.canManageBilling ? '/app/team?section=billing' : '/app/usage';
+
+  if (input.planId === 'free') {
+    const fractions = [
+      1 - input.freeRemaining.aiChargeCents / FREE_ALLOWANCES.aiChargeCents,
+      1 - input.freeRemaining.recallMinutes / FREE_ALLOWANCES.recallMinutes,
+      1 - input.freeRemaining.emailUnits / FREE_ALLOWANCES.emailUnits,
+      1 - input.freeRemaining.storageGb / FREE_ALLOWANCES.storageGb,
+      1 - input.freeRemaining.acceptedSources / FREE_ALLOWANCES.acceptedSources,
+    ];
+    const worst = Math.max(0, ...fractions);
+    const progressPercent = Math.min(100, Math.round(worst * 100));
+    const atLimit = freeAllowanceExhausted(input.freeRemaining);
+    return {
+      planId: input.planId,
+      planName: plan.name,
+      progressPercent,
+      atLimit,
+      detailLabel: atLimit ? 'Allowance used up' : `${progressPercent}% of Free`,
+      overageLabel: null,
+      overageCents: 0,
+      href,
+      canManageBilling: input.canManageBilling,
+    };
+  }
+
+  const includedDiscount = plan.includedUsageDiscountCents;
+  const freeFloor = freeAllowanceFloorCents();
+  const overageCents =
+    input.planId === 'payg'
+      ? Math.max(0, input.meteredSpendCents - freeFloor)
+      : Math.max(0, input.meteredSpendCents - includedDiscount);
+
+  // Prefer spend-cap progress when a positive cap exists; otherwise show metered vs discount.
+  const utilization = spendCapUtilization(input.meteredSpendCents, input.spendCapCents);
+  let progressPercent: number;
+  let detailLabel: string;
+  let atLimit: boolean;
+
+  if (input.spendCapCents > 0) {
+    progressPercent = Math.min(100, utilization.percent ?? 0);
+    atLimit = (utilization.percent ?? 0) >= 100;
+    detailLabel = `${formatEuroFromCents(input.meteredSpendCents)} of ${formatEuroFromCents(input.spendCapCents)}`;
+  } else if (includedDiscount > 0) {
+    progressPercent = Math.min(100, Math.round((input.meteredSpendCents / includedDiscount) * 100));
+    atLimit = input.meteredSpendCents >= includedDiscount;
+    detailLabel = `${formatEuroFromCents(input.meteredSpendCents)} of ${formatEuroFromCents(includedDiscount)} included`;
+  } else {
+    progressPercent =
+      input.meteredSpendCents > 0
+        ? Math.min(100, 40 + Math.round(input.meteredSpendCents / 100))
+        : 0;
+    atLimit = false;
+    detailLabel =
+      input.meteredSpendCents > 0
+        ? `${formatEuroFromCents(input.meteredSpendCents)} metered`
+        : 'No usage yet';
+  }
+
+  const overageLabel = overageCents > 0 ? `+${formatEuroFromCents(overageCents)} overage` : null;
+
+  return {
+    planId: input.planId,
+    planName: plan.name,
+    progressPercent,
+    atLimit,
+    detailLabel,
+    overageLabel,
+    overageCents,
+    href,
+    canManageBilling: input.canManageBilling,
+  };
+}

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
+import type { SidebarBillingSummary } from '@timeline/shared/billing';
 
 import {
   formatNavBadge,
@@ -15,6 +16,7 @@ import {
   type NavBadgeMap,
   visibleNavGroups,
 } from '@/components/nav-items';
+import { SidebarBillingUsage } from '@/components/sidebar-billing-usage';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { cn } from '@/lib/utils';
 
@@ -23,13 +25,20 @@ interface Props {
   memberships: TeamMembership[];
   recipientInvites: RecipientInvite[];
   badges?: NavBadgeMap;
+  billingSummary?: SidebarBillingSummary | null;
 }
 
 const EMPTY_BADGES: NavBadgeMap = {};
 const MOBILE_NAV_DIALOG_ID = 'mobile-primary-navigation';
 const MOBILE_NAV_TITLE_ID = 'mobile-primary-navigation-title';
 
-export function MobileNav({ active, memberships, recipientInvites, badges = EMPTY_BADGES }: Props) {
+export function MobileNav({
+  active,
+  memberships,
+  recipientInvites,
+  badges = EMPTY_BADGES,
+  billingSummary = null,
+}: Props) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -206,6 +215,9 @@ export function MobileNav({ active, memberships, recipientInvites, badges = EMPT
               ))}
             </nav>
             <div className="mt-auto shrink-0 space-y-3 border-t border-border pt-4">
+              {billingSummary ? (
+                <SidebarBillingUsage summary={billingSummary} expanded className="mx-1" />
+              ) : null}
               <Link
                 href="/help"
                 target="_blank"

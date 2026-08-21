@@ -22,6 +22,7 @@ import {
 } from '#src/billing/catalog.js';
 import {
   deriveBillingNudge,
+  deriveSidebarBillingSummary,
   freeAllowanceConsumedForMeter,
   freeAllowanceRemaining,
   spendCapUtilization,
@@ -114,6 +115,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
         freeRemaining,
         meteredSpendCents,
       });
+      const sidebar = deriveSidebarBillingSummary({
+        planId: account.planId,
+        canManageBilling,
+        meteredSpendCents,
+        spendCapCents: account.spendCapCents,
+        includedDiscountRemainingCents: account.includedDiscountRemainingCents,
+        freeRemaining,
+      });
       return {
         account,
         plan,
@@ -122,6 +131,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         freeRemaining,
         utilization,
         nudge,
+        sidebar,
         periodYm: ym,
         meters: byMeter,
         meteredSpendCents,

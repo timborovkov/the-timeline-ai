@@ -7,9 +7,11 @@ import { useEffect, useState } from 'react';
 import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
+import type { SidebarBillingSummary } from '@timeline/shared/billing';
 
 import { Logo, Wordmark } from '@/components/brand/logo';
 import { RailNav } from '@/components/rail-nav';
+import { SidebarBillingUsage } from '@/components/sidebar-billing-usage';
 import { TeamSwitcher } from '@/components/team-switcher';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { persistSidebarExpanded, SIDEBAR_STORAGE_KEY } from '@/lib/sidebar-preference';
@@ -21,6 +23,7 @@ interface Props {
   recipientInvites: RecipientInvite[];
   badges?: NavBadgeMap;
   initialExpanded: boolean;
+  billingSummary?: SidebarBillingSummary | null;
 }
 
 const EMPTY_BADGES: NavBadgeMap = {};
@@ -31,6 +34,7 @@ export function DesktopSidebar({
   recipientInvites,
   badges = EMPTY_BADGES,
   initialExpanded,
+  billingSummary = null,
 }: Props) {
   const [expanded, setExpanded] = useState(initialExpanded);
 
@@ -119,6 +123,9 @@ export function DesktopSidebar({
       <div
         className={cn('flex shrink-0 flex-col gap-3 pt-3', expanded ? 'w-full' : 'items-center')}
       >
+        {billingSummary ? (
+          <SidebarBillingUsage summary={billingSummary} expanded={expanded} />
+        ) : null}
         <Tooltip>
           <TooltipTrigger asChild>
             <Link

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
+import type { SidebarBillingSummary } from '@timeline/shared/billing';
 import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
@@ -37,6 +38,7 @@ interface Props {
   };
   sidebarInitiallyExpanded: boolean;
   workspaceTimezone: string;
+  billingSummary?: SidebarBillingSummary | null;
   children: ReactNode;
 }
 
@@ -60,6 +62,7 @@ export function AppShell({
   inbox = EMPTY_INBOX,
   sidebarInitiallyExpanded,
   workspaceTimezone,
+  billingSummary = null,
   children,
 }: Props) {
   return (
@@ -77,6 +80,7 @@ export function AppShell({
                 recipientInvites={recipientInvites}
                 badges={badges}
                 initialExpanded={sidebarInitiallyExpanded}
+                billingSummary={billingSummary}
               />
             </TooltipProvider>
 
@@ -89,6 +93,7 @@ export function AppShell({
                     memberships={memberships}
                     recipientInvites={recipientInvites}
                     badges={badges}
+                    billingSummary={billingSummary}
                   />
                   <span className="text-sm font-semibold tracking-tight text-fg">The Timeline</span>
                 </div>
