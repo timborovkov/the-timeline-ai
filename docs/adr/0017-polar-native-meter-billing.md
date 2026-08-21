@@ -32,6 +32,10 @@ credit hides margin and confuses prospects.
    the `ai` meter, and Recall meeting bots (web schedule/quick-join + scheduler
    reserve, finalize settle) on `recall_minutes`. Email, storage, ingest, and
    background LLM jobs remain follow-ups.
+7. After successful `settle`, workspace **owners** get transactional email for
+   spend-cap 50/75/90/100% and Free near-limit / exhaustion
+   (`billing_usage_alert` intent + HTML template), deduped once per
+   team/period/threshold/owner. In-app nudges stay the primary product surface.
 
 ## Consequences
 
@@ -41,3 +45,5 @@ credit hides margin and confuses prospects.
   org is shared with other products.
 - Team and Business “included usage” is an invoice discount entitlement, not
   transferable customer credits.
+- Usage-alert email requires Postmark + `message_intent` value
+  `billing_usage_alert` (migration `0074_billing_usage_alert_intent`).

@@ -208,9 +208,10 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           </div>
         ) : null}
         <p className="mt-3 text-sm text-fg-muted">
-          At 50 / 75 / 90% we show in-app warnings on Home, Usage, and Billing. At 100% new
-          cost-bearing work pauses until you raise the cap or the period resets. Email threshold
-          reminders are not sent yet.{' '}
+          At 50 / 75 / 90% we show in-app warnings on Home, Usage, and Billing, and email workspace
+          owners once per threshold each billing period. At 100% new cost-bearing work pauses until
+          you raise the cap or the period resets (owners get a final notice). Free workspaces also
+          email owners when an allowance is near or used up.{' '}
           <Link href="/pricing" className="underline-offset-4 hover:underline">
             See pricing
           </Link>

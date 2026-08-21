@@ -252,4 +252,49 @@ describe('messaging templates', () => {
     expect(message.htmlBody).not.toContain('Reconnect GitHub <now>');
     expect(message.metadata).toMatchObject({ message_intent: 'connection_attention' });
   });
+
+  it('renders billing usage alerts with escaped detail and threshold metadata', () => {
+    const message = renderMessage('billing_usage_alert', {
+      to: 'owner@example.test',
+      ownerName: 'Alex <ops>',
+      teamName: 'Acme & Co',
+      kind: 'spend_cap_90',
+      periodYm: '2026-08',
+      planName: 'Pay as you go',
+      detailLine: 'Metered this period: €90 of €100.',
+      usageUrl: 'https://timeline.test/app/usage',
+      billingUrl: 'https://timeline.test/app/team?section=billing',
+    });
+
+    expect(message.subject).toBe('Acme & Co: 90% of spend cap used');
+    expect(message.textBody).toContain('Hi Alex <ops>,');
+    expect(message.textBody).toContain('Manage billing: https://timeline.test/app/team?section=billing');
+    expect(message.htmlBody).toContain('Hi Alex &lt;ops&gt;,');
+    expect(message.htmlBody).toContain('Acme &amp; Co');
+    expect(message.htmlBody).not.toContain('Alex <ops>');
+    expect(message.metadata).toMatchObject({
+      message_intent: 'billing_usage_alert',
+      billing_alert_kind: 'spend_cap_90',
+      period_ym: '2026-08',
+    });
+  });
+
+  it('routes Free exhaustion alerts to billing management', () => {
+    const message = renderMessage('billing_usage_alert', {
+      to: 'owner@example.test',
+      ownerName: null,
+      teamName: 'Free Workspace',
+      kind: 'free_exhausted',
+      periodYm: '2026-08',
+      planName: 'Free',
+      detailLine: 'Remaining Free floor — AI €0.',
+      usageUrl: 'https://timeline.test/app/usage',
+      billingUrl: 'https://timeline.test/app/team?section=billing',
+    });
+
+    expect(message.subject).toBe('Free Workspace: Free allowance used up');
+    expect(message.textBody).toContain('Hi there,');
+    expect(message.textBody).toContain('Add payment method: https://timeline.test/app/team?section=billing');
+    expect(message.metadata).toMatchObject({ billing_alert_kind: 'free_exhausted' });
+  });
 });

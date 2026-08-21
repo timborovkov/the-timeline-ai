@@ -6,7 +6,8 @@ export type MessageIntent =
   | 'welcome'
   | 'email_verification'
   | 'daily_digest'
-  | 'connection_attention';
+  | 'connection_attention'
+  | 'billing_usage_alert';
 
 export type MessageChannel = 'email' | 'in_app_digest' | 'slack' | 'telegram';
 
@@ -157,6 +158,26 @@ export interface ConnectionAttentionMessageInput {
   actionUrl: string;
 }
 
+export type BillingUsageAlertKind =
+  | 'spend_cap_50'
+  | 'spend_cap_75'
+  | 'spend_cap_90'
+  | 'spend_cap_100'
+  | 'free_near_limit'
+  | 'free_exhausted';
+
+export interface BillingUsageAlertMessageInput {
+  to: string;
+  ownerName: string | null;
+  teamName: string;
+  kind: BillingUsageAlertKind;
+  periodYm: string;
+  planName: string;
+  detailLine: string;
+  usageUrl: string;
+  billingUrl: string;
+}
+
 export interface MessageInputByIntent {
   team_invite: TeamInviteMessageInput;
   support_request: SupportRequestMessageInput;
@@ -164,6 +185,7 @@ export interface MessageInputByIntent {
   email_verification: EmailVerificationMessageInput;
   daily_digest: DailyDigestMessageInput;
   connection_attention: ConnectionAttentionMessageInput;
+  billing_usage_alert: BillingUsageAlertMessageInput;
 }
 
 export type MessageInput<TIntent extends MessageIntent = MessageIntent> =

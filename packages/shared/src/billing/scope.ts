@@ -11,6 +11,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { BillingProvider } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
 
+import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
 import {
   BILLING_ENTITLEMENTS_VERSION,
   type BillingMeterId,
@@ -27,6 +28,7 @@ import {
   freeAllowanceRemaining,
   spendCapUtilization,
 } from '#src/billing/status.js';
+import { childLogger } from '#src/logger.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
 
@@ -48,6 +50,7 @@ function defaultSpendCapForPlan(planId: BillingPlanId): number {
 
 export function createBillingScope(deps: BillingScopeDeps) {
   const { db, teamId, userId, ensureMember, provider } = deps;
+  const log = childLogger('billing:scope');
 
   async function ensureAccount() {
     const existing = await db
@@ -438,6 +441,39 @@ export function createBillingScope(deps: BillingScopeDeps) {
             charge_cents: input.customerChargeCents,
           },
         });
+      }
+
+      try {
+        const ymNow = periodYm();
+        const countersAfter = await db
+          .select()
+          .from(billingUsageCounters)
+          .where(
+            and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ymNow)),
+          );
+        const byMeter = Object.fromEntries(
+          countersAfter.map((row) => [
+            row.meterId,
+            {
+              nativeUnits: Number(row.nativeUnits),
+              customerChargeCents: row.customerChargeCents,
+            },
+          ]),
+        );
+        const meteredSpendCents = countersAfter.reduce(
+          (sum, row) => sum + row.customerChargeCents,
+          0,
+        );
+        await notifyBillingUsageAlerts({
+          db,
+          teamId,
+          planId: account.planId,
+          spendCapCents: account.spendCapCents,
+          meteredSpendCents,
+          meters: byMeter,
+        });
+      } catch (err) {
+        log.warn({ err, teamId }, 'billing usage alert notification failed');
       }
 
       return { ok: true as const, duplicate: false as const, ledger: ledgerRow };

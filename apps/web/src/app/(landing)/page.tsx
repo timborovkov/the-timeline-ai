@@ -15,7 +15,6 @@ import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-d
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
 import {
-  PUBLIC_DEMO_DISCLOSURE,
   PUBLIC_DEMO_STORY,
 } from '@/components/marketing/public-demo-story';
 import { SOLUTION_ROUTES } from '@/components/marketing/solutions/content';
@@ -256,7 +255,7 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
         </div>
       </div>
 
-      <TimelineFlowDiagram variant="hero" disclosure={PUBLIC_DEMO_DISCLOSURE} />
+      <TimelineFlowDiagram variant="hero" />
     </section>
   );
 }

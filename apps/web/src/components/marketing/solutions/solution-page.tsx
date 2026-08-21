@@ -293,13 +293,24 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
               </h2>
               <p className="mt-5 text-base leading-7 text-fg-muted">{solution.cta.body}</p>
             </div>
-            <Link
-              href={solution.cta.href}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-fg px-6 text-sm font-semibold text-bg outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            >
-              {solution.cta.label}
-              <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
+            <div className="flex flex-col items-start gap-3 lg:items-end">
+              <Link
+                href={solution.cta.href}
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-fg px-6 text-sm font-semibold text-bg outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                {solution.cta.label}
+                <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+              <p className="max-w-xs text-sm leading-6 text-fg-muted lg:text-right">
+                Free to start · no card required ·{' '}
+                <Link
+                  href="/pricing"
+                  className={`${focusLink} underline decoration-border-strong underline-offset-4 hover:decoration-fg`}
+                >
+                  See pricing
+                </Link>
+              </p>
+            </div>
           </div>
         </section>
       </article>
