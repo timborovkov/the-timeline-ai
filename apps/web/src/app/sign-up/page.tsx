@@ -37,7 +37,7 @@ export default async function SignUpPage({ searchParams }: Props) {
       subtitle={
         invite
           ? 'You’ve been invited to a team. Sign up to accept.'
-          : 'We’ll create your first team automatically.'
+          : 'Free for small teams — no card required. We’ll create your first team automatically.'
       }
       secondaryPrefix="Already have an account?"
       secondaryHref={

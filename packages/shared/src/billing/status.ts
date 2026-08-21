@@ -106,6 +106,7 @@ function freeAllowanceNearLimit(remaining: FreeAllowanceRemaining): boolean {
     remaining.aiChargeCents <= FREE_ALLOWANCES.aiChargeCents * 0.25 ||
     remaining.recallMinutes <= FREE_ALLOWANCES.recallMinutes * 0.25 ||
     remaining.emailUnits <= FREE_ALLOWANCES.emailUnits * 0.25 ||
+    remaining.storageGb <= FREE_ALLOWANCES.storageGb * 0.25 ||
     remaining.acceptedSources <= FREE_ALLOWANCES.acceptedSources * 0.25
   );
 }
@@ -191,7 +192,7 @@ export function deriveBillingNudge(input: {
         input.planId === 'payg'
           ? 'Team includes members and up to €60 metered usage on the invoice — never a mandatory upgrade.'
           : 'Business includes more members and up to €250 metered usage on the invoice.',
-      href: billingHref,
+      href: '/pricing',
       ctaLabel: `Compare ${target}`,
     };
   }

@@ -24,7 +24,7 @@ describe('PublicShell', () => {
     expect(html.match(/href="\/sign-in"/g)).toHaveLength(2);
     expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
     expect(html).toContain('href="/sign-up"');
-    expect(html).toContain('>Try one project</a>');
+    expect(html).toContain('>Start free</a>');
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
   });
 

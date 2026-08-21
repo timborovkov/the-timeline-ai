@@ -1846,6 +1846,18 @@
   font-size: 0.78rem;
 }
 
+.ctaFinePrint {
+  margin: 0.75rem 0 0;
+  color: var(--home-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.ctaFinePrint a {
+  color: inherit;
+  text-underline-offset: 0.25rem;
+}
+
 .ctaSignIn a {
   color: var(--home-paper);
   text-underline-offset: 0.25rem;

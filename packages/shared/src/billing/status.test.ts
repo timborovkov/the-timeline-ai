@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { FREE_ALLOWANCES } from '#src/billing/catalog.js';
+import { FREE_ALLOWANCES, PLAN_CATALOG } from '#src/billing/catalog.js';
 import {
   deriveBillingNudge,
   deriveSidebarBillingSummary,
@@ -56,6 +56,39 @@ describe('billing status', () => {
       meteredSpendCents: 500,
     });
     expect(exhausted?.kind).toBe('free_exhausted');
+  });
+
+  it('treats low Free storage as near-limit and points commitment CTAs at pricing', () => {
+    const nearStorage = deriveBillingNudge({
+      planId: 'free',
+      canManageBilling: true,
+      utilization: spendCapUtilization(0, 0),
+      freeRemaining: {
+        aiChargeCents: FREE_ALLOWANCES.aiChargeCents,
+        recallMinutes: FREE_ALLOWANCES.recallMinutes,
+        emailUnits: FREE_ALLOWANCES.emailUnits,
+        storageGb: 0,
+        acceptedSources: FREE_ALLOWANCES.acceptedSources,
+      },
+      meteredSpendCents: 0,
+    });
+    expect(nearStorage?.kind).toBe('free_exhausted');
+
+    const commitment = deriveBillingNudge({
+      planId: 'payg',
+      canManageBilling: true,
+      utilization: spendCapUtilization(100, 2_500),
+      freeRemaining: {
+        aiChargeCents: 0,
+        recallMinutes: 0,
+        emailUnits: 0,
+        storageGb: 0,
+        acceptedSources: 0,
+      },
+      meteredSpendCents: Math.ceil(PLAN_CATALOG.team.includedUsageDiscountCents * 0.7),
+    });
+    expect(commitment?.kind).toBe('suggest_commitment');
+    expect(commitment?.href).toBe('/pricing');
   });
 
   it('builds a sidebar summary with overage for PAYG', () => {

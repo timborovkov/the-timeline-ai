@@ -71,11 +71,11 @@ export function askBillingUserMessage(error: AskBillingError): string {
     case 'security_blocked':
       return 'This workspace cannot run paid AI right now. Contact support if that looks wrong.';
     case 'free_allowance_reached':
-      return 'Free AI allowance is used up for this period. Add a payment method on Usage to continue.';
+      return 'Free AI allowance is used up for this period. Add a payment method in Billing (or ask an admin) to continue.';
     case 'usage_limit_reached':
-      return 'Usage balance is too low for this Ask. Top up or raise the spend cap on Usage / Billing.';
+      return 'Usage balance is too low for this Ask. Top up or raise the spend cap in Billing.';
     case 'spend_cap_reached':
-      return 'This workspace hit its spend cap. Raise the cap on Billing to continue Ask.';
+      return 'This workspace hit its spend cap. Raise the cap in Billing to continue Ask.';
   }
 }
 
@@ -84,11 +84,11 @@ export function recallBillingUserMessage(code: BillingReserveFailureCode): strin
     case 'security_blocked':
       return 'This workspace cannot start meeting notetakers right now.';
     case 'free_allowance_reached':
-      return 'Free meeting minutes are used up for this period. Add a payment method on Usage to continue.';
+      return 'Free meeting minutes are used up for this period. Add a payment method in Billing (or ask an admin) to continue.';
     case 'usage_limit_reached':
-      return 'Usage balance is too low to start a meeting notetaker. Top up or raise the spend cap.';
+      return 'Usage balance is too low to start a meeting notetaker. Top up or raise the spend cap in Billing.';
     case 'spend_cap_reached':
-      return 'This workspace hit its spend cap. Raise the cap on Billing before inviting a notetaker.';
+      return 'This workspace hit its spend cap. Raise the cap in Billing before inviting a notetaker.';
   }
 }
 

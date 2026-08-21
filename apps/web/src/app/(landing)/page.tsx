@@ -243,6 +243,14 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
             See how Timeline works
           </Link>
         </div>
+        {isSignedIn ? null : (
+          <p className={styles.ctaFinePrint}>
+            Free to start · no card required ·{' '}
+            <Link href="/pricing" className={styles.textLink}>
+              See pricing
+            </Link>
+          </p>
+        )}
         <div className={styles.heroSourceLink}>
           <GitHubSourceLink />
         </div>
@@ -582,9 +590,17 @@ function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
           {isSignedIn ? 'Open your Timeline' : 'Try one real project'} <span aria-hidden>→</span>
         </Link>
         {isSignedIn ? null : (
-          <span className={styles.ctaSignIn}>
-            Already have a Timeline? <Link href="/sign-in">Sign in</Link>
-          </span>
+          <>
+            <p className={styles.ctaFinePrint}>
+              Free to start · no card required ·{' '}
+              <Link href="/pricing" className={styles.textLink}>
+                See pricing
+              </Link>
+            </p>
+            <span className={styles.ctaSignIn}>
+              Already have a Timeline? <Link href="/sign-in">Sign in</Link>
+            </span>
+          </>
         )}
         <div className={styles.ctaProof} aria-label="Timeline trust defaults">
           <span>Captured</span>

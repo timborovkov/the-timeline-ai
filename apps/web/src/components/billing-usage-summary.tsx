@@ -3,6 +3,7 @@ import {
   formatEuroFromCents,
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
+import Link from 'next/link';
 
 import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
 
@@ -161,6 +162,20 @@ export function BillingUsageSummary({
                 danger={freeRemaining.acceptedSources <= 0}
               />
             </li>
+            <li>
+              <div className="flex justify-between gap-2 text-fg-muted">
+                <span>Storage</span>
+                <span className="font-mono text-fg">{freeRemaining.storageGb} GB</span>
+              </div>
+              <ProgressBar
+                percent={
+                  ((FREE_ALLOWANCES.storageGb - freeRemaining.storageGb) /
+                    FREE_ALLOWANCES.storageGb) *
+                  100
+                }
+                danger={freeRemaining.storageGb <= 0}
+              />
+            </li>
           </ul>
         </div>
       ) : null}
@@ -168,7 +183,12 @@ export function BillingUsageSummary({
       <div>
         <p className="mb-2 text-sm font-medium text-fg">Meters this period</p>
         {Object.keys(meters).length === 0 ? (
-          <p className="text-sm text-fg-muted">No metered usage recorded yet this month.</p>
+          <p className="text-sm text-fg-muted">
+            No metered usage recorded yet this month.{' '}
+            <Link href="/pricing" className="underline-offset-4 hover:underline">
+              See pricing
+            </Link>
+          </p>
         ) : (
           <ul className="divide-y divide-border border border-border text-sm">
             {Object.entries(meters).map(([meter, row]) => {

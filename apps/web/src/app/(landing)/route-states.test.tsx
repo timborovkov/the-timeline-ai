@@ -64,6 +64,7 @@ describe('Landing route states', () => {
     );
     expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Try one project' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Start free' })).toBeNull();
     expect(
       screen.getByRole('heading', { level: 2, name: 'Unable to load The Timeline' }),
     ).toBeTruthy();

@@ -551,6 +551,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Wire Ask + meeting bots through billing reserve/settle (agent `askAgent`,
       web `/api/chat`, Recall join paths + finalize). Remaining: email, storage,
       ingest, and background LLM workers.
+- [ ] Owner email reminders at spend-cap 50/75/90/100% and Free exhaustion
+      (once per threshold/period); until then only in-app nudges.
 - [ ] Prepaid top-up / auto-reload / threshold charge; enable Polar webhook with
       a real public URL; one shadow-billing month before `BILLING_CHARGES_ENABLED`.
 
