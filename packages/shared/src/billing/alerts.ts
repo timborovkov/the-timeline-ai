@@ -1,7 +1,14 @@
 import { type Db, teamMembers, teams, users } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import { FREE_ALLOWANCES, PLAN_CATALOG, formatEuroFromCents, type BillingPlanId } from '#src/billing/catalog.js';
+import type { BillingUsageAlertKind } from '#src/messaging/types.js';
+
+import {
+  FREE_ALLOWANCES,
+  PLAN_CATALOG,
+  formatEuroFromCents,
+  type BillingPlanId,
+} from '#src/billing/catalog.js';
 import {
   freeAllowanceRemaining,
   spendCapUtilization,
@@ -9,14 +16,14 @@ import {
 } from '#src/billing/status.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
-import type { BillingUsageAlertKind } from '#src/messaging/types.js';
 
 const log = childLogger('billing:alerts');
 
 function appBaseUrl(): string {
-  return (
-    process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'
-  ).replace(/\/+$/u, '');
+  return (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc').replace(
+    /\/+$/u,
+    '',
+  );
 }
 
 function periodYm(date = new Date()): string {
@@ -99,9 +106,7 @@ export async function notifyBillingUsageAlerts(input: {
   planId: BillingPlanId;
   spendCapCents: number;
   meteredSpendCents: number;
-  meters: Partial<
-    Record<string, { nativeUnits: number; customerChargeCents: number } | undefined>
-  >;
+  meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number } | undefined>>;
 }): Promise<{ sent: number; skipped: number }> {
   const freeRemaining = freeAllowanceRemaining({
     ai: input.meters.ai ?? null,

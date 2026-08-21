@@ -10,6 +10,8 @@ import {
   type SolutionContent,
 } from '@/components/marketing/solutions/content';
 import { buildSolutionStructuredData } from '@/components/marketing/solutions/metadata';
+import { SolutionPageCta } from '@/components/marketing/solutions/solution-page-cta';
+import { SolutionPageRelated } from '@/components/marketing/solutions/solution-page-related';
 
 const focusLink =
   'rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
@@ -240,79 +242,11 @@ export function SolutionPage({ solution }: { solution: SolutionContent }) {
           </div>
         </section>
 
-        <section className="border-t border-border">
-          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <EditorialSectionHeading index="06 · Explore" title="Related solutions." />
-              {solution.furtherReading ? (
-                <Link
-                  href={solution.furtherReading.href}
-                  className={`${focusLink} inline-flex items-center gap-2 text-sm font-medium`}
-                >
-                  {solution.furtherReading.label}
-                  <ArrowRight aria-hidden="true" className="size-4" />
-                </Link>
-              ) : null}
-            </div>
-            <div className="mt-10 grid gap-px bg-border sm:grid-cols-2">
-              {relatedSolutions.map((related) => (
-                <Link
-                  key={related.route}
-                  href={related.route}
-                  className="group bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:p-8"
-                >
-                  <p className="font-mono text-[0.65rem] tracking-[0.12em] text-signal uppercase">
-                    {related.audienceLabel}
-                  </p>
-                  <h3 className="mt-5 text-xl font-semibold tracking-[-0.025em]">
-                    {related.shortTitle}
-                  </h3>
-                  <p className="mt-3 text-sm leading-7 text-fg-muted">{related.seoDescription}</p>
-                  <span className="mt-6 inline-flex items-center gap-2 text-sm font-medium">
-                    Read the solution
-                    <ArrowRight
-                      aria-hidden="true"
-                      className="size-4 motion-safe:transition-transform motion-safe:group-hover:translate-x-1"
-                    />
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="border-t border-border bg-surface" aria-labelledby="cta-title">
-          <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-14 sm:px-6 sm:py-20 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <EditorialKicker>Start small</EditorialKicker>
-              <h2
-                id="cta-title"
-                className="mt-5 text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"
-              >
-                {solution.cta.title}
-              </h2>
-              <p className="mt-5 text-base leading-7 text-fg-muted">{solution.cta.body}</p>
-            </div>
-            <div className="flex flex-col items-start gap-3 lg:items-end">
-              <Link
-                href={solution.cta.href}
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-sm bg-fg px-6 text-sm font-semibold text-bg outline-none hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                {solution.cta.label}
-                <ArrowRight aria-hidden="true" className="size-4" />
-              </Link>
-              <p className="max-w-xs text-sm leading-6 text-fg-muted lg:text-right">
-                Free to start · no card required ·{' '}
-                <Link
-                  href="/pricing"
-                  className={`${focusLink} underline decoration-border-strong underline-offset-4 hover:decoration-fg`}
-                >
-                  See pricing
-                </Link>
-              </p>
-            </div>
-          </div>
-        </section>
+        <SolutionPageRelated
+          relatedSolutions={relatedSolutions}
+          furtherReading={solution.furtherReading}
+        />
+        <SolutionPageCta cta={solution.cta} />
       </article>
     </main>
   );

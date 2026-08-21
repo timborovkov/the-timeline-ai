@@ -268,7 +268,9 @@ describe('messaging templates', () => {
 
     expect(message.subject).toBe('Acme & Co: 90% of spend cap used');
     expect(message.textBody).toContain('Hi Alex <ops>,');
-    expect(message.textBody).toContain('Manage billing: https://timeline.test/app/team?section=billing');
+    expect(message.textBody).toContain(
+      'Manage billing: https://timeline.test/app/team?section=billing',
+    );
     expect(message.htmlBody).toContain('Hi Alex &lt;ops&gt;,');
     expect(message.htmlBody).toContain('Acme &amp; Co');
     expect(message.htmlBody).not.toContain('Alex <ops>');
@@ -294,7 +296,9 @@ describe('messaging templates', () => {
 
     expect(message.subject).toBe('Free Workspace: Free allowance used up');
     expect(message.textBody).toContain('Hi there,');
-    expect(message.textBody).toContain('Add payment method: https://timeline.test/app/team?section=billing');
+    expect(message.textBody).toContain(
+      'Add payment method: https://timeline.test/app/team?section=billing',
+    );
     expect(message.metadata).toMatchObject({ billing_alert_kind: 'free_exhausted' });
   });
 });

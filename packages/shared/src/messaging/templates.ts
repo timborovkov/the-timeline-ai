@@ -518,7 +518,8 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
       return {
         subject: `${input.teamName}: 90% of spend cap used`,
         title: 'Spend cap nearly reached',
-        intro: 'Your workspace is close to its monthly spend cap. New cost-bearing work will pause at 100%.',
+        intro:
+          'Your workspace is close to its monthly spend cap. New cost-bearing work will pause at 100%.',
         ctaLabel: 'Manage billing',
         ctaHref: input.billingUrl,
       };
@@ -526,7 +527,8 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
       return {
         subject: `${input.teamName}: monthly spend cap reached`,
         title: 'Spend cap reached',
-        intro: 'New cost-bearing work is paused until you raise the spend cap or the period resets.',
+        intro:
+          'New cost-bearing work is paused until you raise the spend cap or the period resets.',
         ctaLabel: 'Manage billing',
         ctaHref: input.billingUrl,
       };
@@ -534,7 +536,8 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
       return {
         subject: `${input.teamName}: approaching Free allowance`,
         title: 'Approaching Free allowance',
-        intro: 'Your Free workspace is near one or more monthly allowances. Pay as you go keeps the Free floor and only charges measured overage under a spend cap.',
+        intro:
+          'Your Free workspace is near one or more monthly allowances. Pay as you go keeps the Free floor and only charges measured overage under a spend cap.',
         ctaLabel: 'Review billing',
         ctaHref: input.billingUrl,
       };
@@ -542,7 +545,8 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
       return {
         subject: `${input.teamName}: Free allowance used up`,
         title: 'Free allowance used up',
-        intro: 'A Free monthly allowance is used up. Reading, export, and billing stay available. Add a payment method to continue metered work under a spend cap.',
+        intro:
+          'A Free monthly allowance is used up. Reading, export, and billing stay available. Add a payment method to continue metered work under a spend cap.',
         ctaLabel: 'Add payment method',
         ctaHref: input.billingUrl,
       };
@@ -551,7 +555,7 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
 
 function renderBillingUsageAlert(input: BillingUsageAlertMessageInput): RenderedMessage {
   const copy = billingUsageAlertCopy(input);
-  const ownerName = input.ownerName?.trim() || 'there';
+  const ownerName = input.ownerName?.trim() ?? 'there';
   const preview = copy.intro;
   const textBody = [
     `Hi ${ownerName},`,

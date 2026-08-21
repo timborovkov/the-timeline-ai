@@ -14,9 +14,7 @@ import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
-import {
-  PUBLIC_DEMO_STORY,
-} from '@/components/marketing/public-demo-story';
+import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { SOLUTION_ROUTES } from '@/components/marketing/solutions/content';
 import { PublicHeader } from '@/components/public-header';
 import { PublicNavigationItems } from '@/components/public-navigation';

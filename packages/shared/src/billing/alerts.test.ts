@@ -9,22 +9,26 @@ describe('billingUsageAlertKindsForState', () => {
     const near = freeAllowanceRemaining({
       ai: { customerChargeCents: FREE_ALLOWANCES.aiChargeCents - 1 },
     });
-    expect(billingUsageAlertKindsForState({
-      planId: 'free',
-      spendCapCents: 0,
-      meteredSpendCents: FREE_ALLOWANCES.aiChargeCents - 1,
-      freeRemaining: near,
-    })).toEqual(['free_near_limit']);
+    expect(
+      billingUsageAlertKindsForState({
+        planId: 'free',
+        spendCapCents: 0,
+        meteredSpendCents: FREE_ALLOWANCES.aiChargeCents - 1,
+        freeRemaining: near,
+      }),
+    ).toEqual(['free_near_limit']);
 
     const exhausted = freeAllowanceRemaining({
       ai: { customerChargeCents: FREE_ALLOWANCES.aiChargeCents },
     });
-    expect(billingUsageAlertKindsForState({
-      planId: 'free',
-      spendCapCents: 0,
-      meteredSpendCents: FREE_ALLOWANCES.aiChargeCents,
-      freeRemaining: exhausted,
-    })).toEqual(['free_exhausted']);
+    expect(
+      billingUsageAlertKindsForState({
+        planId: 'free',
+        spendCapCents: 0,
+        meteredSpendCents: FREE_ALLOWANCES.aiChargeCents,
+        freeRemaining: exhausted,
+      }),
+    ).toEqual(['free_exhausted']);
   });
 
   it('stacks spend-cap thresholds through the current warn level', () => {
