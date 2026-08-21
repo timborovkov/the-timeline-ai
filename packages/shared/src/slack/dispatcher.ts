@@ -15,6 +15,7 @@ import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
+import { askBillingUserMessage } from '#src/billing/admission.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -329,7 +330,14 @@ async function handleSlackAskCommand(
     await replyToSlackCommand(
       api,
       input,
-      result.ok ? result.answer : 'Timeline could not answer that right now.',
+      result.ok
+        ? result.answer
+        : result.error === 'security_blocked' ||
+            result.error === 'free_allowance_reached' ||
+            result.error === 'usage_limit_reached' ||
+            result.error === 'spend_cap_reached'
+          ? askBillingUserMessage(result.error)
+          : 'Timeline could not answer that right now.',
     );
   } catch (err) {
     log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
@@ -1009,7 +1017,14 @@ async function handleAppMention(
     await api.postMessage({
       channel: event.channel,
       thread_ts: event.thread_ts ?? event.ts,
-      text: result.ok ? result.answer : 'Timeline could not answer that right now.',
+      text: result.ok
+        ? result.answer
+        : result.error === 'security_blocked' ||
+            result.error === 'free_allowance_reached' ||
+            result.error === 'usage_limit_reached' ||
+            result.error === 'spend_cap_reached'
+          ? askBillingUserMessage(result.error)
+          : 'Timeline could not answer that right now.',
     });
   } catch (err) {
     log.error({ err: redactConversationError(err) }, 'slack app mention answer failed');

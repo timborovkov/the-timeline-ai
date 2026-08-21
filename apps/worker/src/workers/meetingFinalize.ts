@@ -9,7 +9,8 @@ import {
   rawEvents,
   savedMeetings,
 } from '@timeline/db';
-import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
+import { childLogger, formatMeetingTranscript, getEnv, llm, queue, withTeam } from '@timeline/shared';
+import { settleRecallMeetingMinutes } from '@timeline/shared/billing';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
@@ -912,6 +913,21 @@ export async function processMeetingFinalizeJob(
           actionItems: summarized.actionItems.length,
         },
       );
+
+      try {
+        const billingScope = withTeam(
+          deps.db,
+          teamId,
+          meeting.createdByUserId ?? '00000000-0000-0000-0000-000000000000',
+          meeting.createdByUserId ? {} : { skipMembershipCheck: true },
+        );
+        await settleRecallMeetingMinutes(billingScope.billing, {
+          meetingId,
+          minutes: finalized.minutes,
+        });
+      } catch (err) {
+        log.warn({ err, meetingId, teamId }, 'meeting_billing_settle_failed');
+      }
 
       return {
         meetingId,

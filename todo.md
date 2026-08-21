@@ -548,8 +548,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` tracking; Home/Usage/Billing upgrade nudges;
       Free hard-stop + spend-cap admission in billing scope (`release` included).
-- [ ] Wire central metering (LLM/embed/Recall/email/storage/ingest) through
-      billing reserve/settle; fail-closed admission when charges enabled.
+- [x] Wire Ask + meeting bots through billing reserve/settle (agent `askAgent`,
+      web `/api/chat`, Recall join paths + finalize). Remaining: email, storage,
+      ingest, and background LLM workers.
 - [ ] Prepaid top-up / auto-reload / threshold charge; enable Polar webhook with
       a real public URL; one shadow-billing month before `BILLING_CHARGES_ENABLED`.
 

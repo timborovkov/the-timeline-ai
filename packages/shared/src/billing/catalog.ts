@@ -268,6 +268,27 @@ export function recallChargeCents(minutes: number): number {
   return Math.round(minutes * OVERAGE_RATES.recallCentsPerMinute);
 }
 
+/**
+ * Per-meeting active-bot duration ceiling (joining + waiting-room + call).
+ * Auto-leave / reservation uses the smaller of this and remaining Free minutes.
+ */
+export const MEETING_MAX_DURATION_MINUTES_BY_PLAN: Record<BillingPlanId, number> = {
+  free: 120,
+  payg: 240,
+  team: 360,
+  business: 360,
+  enterprise: 360,
+};
+
+/** Worst-case customer AI charge reserved before an Ask / web chat turn (€2.50). */
+export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 250;
+
+/** Reservation TTL for Ask turns (covers long tool loops + presentation pass). */
+export const ASK_AI_RESERVATION_TTL_MS = 30 * 60_000;
+
+/** Reservation TTL for Recall bots (max meeting duration + buffer). */
+export const RECALL_RESERVATION_TTL_MS = 8 * 60 * 60_000;
+
 export function emailChargeCents(units: number): number {
   return Math.round((units * OVERAGE_RATES.emailCentsPerThousandUnits) / 1000);
 }

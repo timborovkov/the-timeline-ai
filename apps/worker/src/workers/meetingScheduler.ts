@@ -1,5 +1,9 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
+import {
+  releaseBillingReservation,
+  reserveRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
@@ -194,21 +198,55 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         continue;
       }
 
-      const team = await scope.timeline.team();
-      const provider = meetingBots.getMeetingBotProvider(meeting.provider);
-      const join = await provider.joinMeeting({
+      const admission = await reserveRecallMeetingMinutes(scope.billing, {
         meetingId: meeting.id,
-        teamId: meeting.teamId,
-        meetingUrl: meeting.meetingUrl,
-        platform: meeting.platform,
-        botName: meetingBots.meetingBotDisplayName(team?.name),
-        transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
       });
-      await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
-        providerBotId: join.botId,
-        metadata: { provider_join_result: join.raw ?? {} },
-      });
-      joined += 1;
+      if (!admission.ok) {
+        await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+          metadata: {
+            join_failed_at: new Date().toISOString(),
+            join_error: admission.code,
+          },
+        });
+        await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
+        failed += 1;
+        continue;
+      }
+
+      try {
+        const team = await scope.timeline.team();
+        const provider = meetingBots.getMeetingBotProvider(meeting.provider);
+        const join = await provider.joinMeeting({
+          meetingId: meeting.id,
+          teamId: meeting.teamId,
+          meetingUrl: meeting.meetingUrl,
+          platform: meeting.platform,
+          botName: meetingBots.meetingBotDisplayName(team?.name),
+          transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
+        });
+        await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
+          providerBotId: join.botId,
+          metadata: {
+            provider_join_result: join.raw ?? {},
+            billing_operation_id: admission.operationId,
+            reserved_recall_minutes: admission.reservedMinutes,
+          },
+        });
+        joined += 1;
+      } catch (err) {
+        log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
+        await releaseBillingReservation(scope.billing, admission.operationId).catch(
+          () => undefined,
+        );
+        await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+          metadata: {
+            join_failed_at: new Date().toISOString(),
+            join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+          },
+        });
+        await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
+        failed += 1;
+      }
     } catch (err) {
       log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
       await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {

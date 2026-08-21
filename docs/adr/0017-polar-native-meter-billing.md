@@ -27,11 +27,16 @@ credit hides margin and confuses prospects.
    manage plan/spend cap at `/app/team?section=billing`. Free hard-stops apply
    even while `shadowBilling` is true; paid spend-cap / wallet blocking applies
    when charges are enabled.
+6. Costly product paths admit via `scope.billing.reserve` → work →
+   `settle`/`release`. Wired today: Agent Ask (`askAgent` + web `/api/chat`) on
+   the `ai` meter, and Recall meeting bots (web schedule/quick-join + scheduler
+   reserve, finalize settle) on `recall_minutes`. Email, storage, ingest, and
+   background LLM jobs remain follow-ups.
 
 ## Consequences
 
 - Enforcement of costly paths must call the billing admission API and fail
-  closed when charges are enabled.
+  closed when charges are enabled (Free allowances hard-stop even in shadow).
 - Polar product/meter IDs are env-configured and Timeline-specific even when an
   org is shared with other products.
 - Team and Business “included usage” is an invoice discount entitlement, not

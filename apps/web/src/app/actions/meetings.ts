@@ -1,4 +1,9 @@
 'use server';
+import {
+  recallBillingUserMessage,
+  releaseBillingReservation,
+  reserveRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
 import { detectMeetingPlatform } from '@timeline/shared/meetings';
@@ -120,6 +125,22 @@ async function startMeetingBot(input: {
     }
     return { ok: false, meetingId: input.meetingId, error: 'Meeting is no longer joinable.' };
   }
+  const admission = await reserveRecallMeetingMinutes(input.scope.billing, {
+    meetingId: claimed.id,
+  });
+  if (!admission.ok) {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
+      metadata: {
+        join_failed_at: new Date().toISOString(),
+        join_error: admission.code,
+      },
+    });
+    return {
+      ok: false,
+      meetingId: claimed.id,
+      error: recallBillingUserMessage(admission.code),
+    };
+  }
   const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
   try {
     // react-doctor-disable-next-line react-doctor/async-parallel -- Provider lookup and team load already run together; the later status update depends on the join result.
@@ -137,11 +158,16 @@ async function startMeetingBot(input: {
     });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
-      metadata: { provider_join_result: join.raw ?? {} },
+      metadata: {
+        provider_join_result: join.raw ?? {},
+        billing_operation_id: admission.operationId,
+        reserved_recall_minutes: admission.reservedMinutes,
+      },
     });
     return { ok: true, meetingId: claimed.id };
   } catch (err) {
     log.error({ err, meetingId: claimed.id }, 'recall_join_failed');
+    await releaseBillingReservation(input.scope.billing, admission.operationId).catch(() => undefined);
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),

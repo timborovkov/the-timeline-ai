@@ -14,6 +14,8 @@ import {
   emailChargeCents,
   formatEuroFromCents,
   polarEventNameForMeter,
+  ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
+  MEETING_MAX_DURATION_MINUTES_BY_PLAN,
   recallChargeCents,
   storageChargeCents,
 } from '#src/billing/catalog.js';
@@ -33,6 +35,9 @@ describe('billing catalog', () => {
     expect(PLAN_CATALOG.business.includedUsageDiscountCents).toBe(25_000);
     expect(FREE_ALLOWANCES.aiChargeCents).toBe(500);
     expect(FREE_ALLOWANCES.recallMinutes).toBe(60);
+    expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
+    expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
+    expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
   });
 
   it('prices native meters from the rate card', () => {

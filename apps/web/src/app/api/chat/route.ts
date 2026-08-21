@@ -1,5 +1,14 @@
 import * as agent from '@timeline/shared/agent';
 import {
+  askBillingUserMessage,
+  askOperationId,
+  mapAskBillingError,
+  openRouterUsdCostFromFinishEvent,
+  releaseBillingReservation,
+  reserveAskAi,
+  settleAskAiFromOpenRouterUsd,
+} from '@timeline/shared/billing';
+import {
   CHAT_CONTEXT_TRAIL_MAX,
   chatContextPrompt,
   contextIdsFromTrail,
@@ -938,13 +947,73 @@ export async function POST(req: Request): Promise<Response> {
 
   const messages = await convertToModelMessages(uiMessages);
   const modelId = llm.resolveAgentModelId();
-  const memory = await llm.compressMessagesForContext({
-    system,
-    messages,
-    model: () => llm.buildOpenRouterLanguageModel(llm.TIMELINE_MODELS.summarization.id),
-    modelId,
-    contextWindowTokens: llm.TIMELINE_MODELS.agent.contextWindowTokens,
+  const billingOperationId = askOperationId('web');
+  const reserved = await reserveAskAi(scope.billing, {
+    operationId: billingOperationId,
+    deliverySurface: 'web',
   });
+  if (!reserved.ok) {
+    const billingError = mapAskBillingError(reserved.code);
+    const status = billingError === 'security_blocked' ? 403 : 402;
+    return Response.json(
+      {
+        ok: false,
+        error: billingError,
+        message: askBillingUserMessage(billingError),
+      },
+      { status },
+    );
+  }
+
+  let openRouterUsd = 0;
+  let billingFinalized = false;
+  const settleChatBilling = async (responseModelId?: string) => {
+    if (billingFinalized) return;
+    billingFinalized = true;
+    try {
+      await settleAskAiFromOpenRouterUsd(scope.billing, {
+        operationId: billingOperationId,
+        openRouterUsd,
+        deliverySurface: 'web',
+        ...(responseModelId ? { model: responseModelId } : { model: modelId }),
+      });
+    } catch (err) {
+      log.warn({ err, teamId: active.teamId, billingOperationId }, 'chat billing settle failed');
+      await releaseBillingReservation(scope.billing, billingOperationId).catch(() => undefined);
+    }
+  };
+  const releaseChatBilling = async () => {
+    if (billingFinalized) return;
+    billingFinalized = true;
+    await releaseBillingReservation(scope.billing, billingOperationId).catch((err: unknown) => {
+      log.warn({ err, teamId: active.teamId, billingOperationId }, 'chat billing release failed');
+    });
+  };
+  if (req.signal.aborted) {
+    await releaseChatBilling();
+    return Response.json({ ok: false, error: 'aborted' }, { status: 499 });
+  }
+  req.signal.addEventListener(
+    'abort',
+    () => {
+      void releaseChatBilling();
+    },
+    { once: true },
+  );
+
+  let memory: Awaited<ReturnType<typeof llm.compressMessagesForContext>>;
+  try {
+    memory = await llm.compressMessagesForContext({
+      system,
+      messages,
+      model: () => llm.buildOpenRouterLanguageModel(llm.TIMELINE_MODELS.summarization.id),
+      modelId,
+      contextWindowTokens: llm.TIMELINE_MODELS.agent.contextWindowTokens,
+    });
+  } catch (err) {
+    await releaseChatBilling();
+    throw err;
+  }
   if (memory.compressed) {
     log.info(
       {
@@ -997,7 +1066,11 @@ export async function POST(req: Request): Promise<Response> {
     // stream still runs the model to completion.
     abortSignal: req.signal,
     onError: (e) => {
-      if (isAiStreamAbort(e.error)) return;
+      if (isAiStreamAbort(e.error)) {
+        void releaseChatBilling();
+        return;
+      }
+      void releaseChatBilling();
       reportHandledEvent({
         message: 'chat_stream_ai_provider_error',
         surface: 'api',
@@ -1011,6 +1084,8 @@ export async function POST(req: Request): Promise<Response> {
     },
     onFinish: (e) => {
       const modelAttribution = llm.streamChatModelAttribution(e, modelId);
+      openRouterUsd += openRouterUsdCostFromFinishEvent(e);
+      void settleChatBilling(modelAttribution.responseModelId);
       const answerText = 'text' in e && typeof e.text === 'string' ? e.text : '';
       const toolObservability = agent.summarizeAgentToolObservations({
         observations: toolObservations,
@@ -1036,6 +1111,7 @@ export async function POST(req: Request): Promise<Response> {
           removedReferences: 0,
           truncated: false,
           usage: e.usage,
+          openRouterUsd,
           toolObservability,
         },
         'chat completion',

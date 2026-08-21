@@ -19,6 +19,7 @@ import {
   resolveAgentPresentation,
 } from '#src/agent/presentation.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
+import { askBillingUserMessage } from '#src/billing/admission.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -1026,7 +1027,12 @@ async function runAskInner(input: RunAskInput): Promise<void> {
             ? 'Your linked workspace user is no longer a member of this team. Ask a teammate to re-invite you.'
             : result.error === 'no_team'
               ? 'Could not load that team. Try /whereami and /team to confirm the active team.'
-              : "Couldn't answer that — try again.";
+              : result.error === 'security_blocked' ||
+                  result.error === 'free_allowance_reached' ||
+                  result.error === 'usage_limit_reached' ||
+                  result.error === 'spend_cap_reached'
+                ? askBillingUserMessage(result.error)
+                : "Couldn't answer that — try again.";
       await sendWithRetry(input.tg, { chat_id: input.chatId, text });
       return;
     }
