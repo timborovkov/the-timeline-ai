@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-import type { BillingNudge } from '@timeline/shared/billing';
+import type { BillingNudge } from '@timeline/shared/billing/status';
 
 import { cn } from '@/lib/utils';
 

@@ -2,9 +2,9 @@ import {
   FREE_ALLOWANCES,
   formatEuroFromCents,
   type BillingMeterId,
-  type FreeAllowanceRemaining,
-  type SpendCapUtilization,
-} from '@timeline/shared/billing';
+} from '@timeline/shared/billing/catalog';
+
+import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
 
 import { cn } from '@/lib/utils';
 

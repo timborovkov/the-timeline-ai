@@ -1,4 +1,8 @@
-import { PLAN_CATALOG, SELF_SERVE_PLAN_ORDER, formatEuroFromCents } from '@timeline/shared/billing';
+import {
+  PLAN_CATALOG,
+  SELF_SERVE_PLAN_ORDER,
+  formatEuroFromCents,
+} from '@timeline/shared/billing/catalog';
 
 import { cn } from '@/lib/utils';
 

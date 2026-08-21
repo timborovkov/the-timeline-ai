@@ -1,15 +1,15 @@
 'use client';
 
-import {
-  formatEuroFromCents,
-  type BillingNudge,
-  type BillingPlanId,
-  type FreeAllowanceRemaining,
-  type SpendCapUtilization,
-} from '@timeline/shared/billing';
+import { formatEuroFromCents, type BillingPlanId } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+
+import type {
+  BillingNudge,
+  FreeAllowanceRemaining,
+  SpendCapUtilization,
+} from '@timeline/shared/billing/status';
 
 import { startBillingCheckout, updateBillingSpendCap } from '@/app/actions/billing';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';

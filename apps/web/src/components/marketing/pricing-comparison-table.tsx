@@ -3,7 +3,7 @@ import {
   SELF_SERVE_PLAN_ORDER,
   type BillingPlanId,
   formatEuroFromCents,
-} from '@timeline/shared/billing';
+} from '@timeline/shared/billing/catalog';
 
 import { cn } from '@/lib/utils';
 

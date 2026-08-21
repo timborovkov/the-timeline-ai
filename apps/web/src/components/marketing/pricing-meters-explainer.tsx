@@ -1,4 +1,8 @@
-import { FREE_ALLOWANCES, OVERAGE_RATES, formatEuroFromCents } from '@timeline/shared/billing';
+import {
+  FREE_ALLOWANCES,
+  OVERAGE_RATES,
+  formatEuroFromCents,
+} from '@timeline/shared/billing/catalog';
 
 import { cn } from '@/lib/utils';
 

@@ -263,6 +263,18 @@
       "import": "./dist/billing/index.js",
       "default": "./dist/billing/index.js"
     },
+    "./billing/catalog": {
+      "types": "./src/billing/catalog.ts",
+      "development": "./src/billing/catalog.ts",
+      "import": "./dist/billing/catalog.js",
+      "default": "./dist/billing/catalog.js"
+    },
+    "./billing/status": {
+      "types": "./src/billing/status.ts",
+      "development": "./src/billing/status.ts",
+      "import": "./dist/billing/status.js",
+      "default": "./dist/billing/status.js"
+    },
     "./objects": {
       "types": "./src/objects/index.ts",
       "development": "./src/objects/index.ts",

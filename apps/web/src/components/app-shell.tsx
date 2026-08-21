@@ -4,7 +4,7 @@ import Link from 'next/link';
 import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
-import type { SidebarBillingSummary } from '@timeline/shared/billing';
+import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 import type { ReactNode } from 'react';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';

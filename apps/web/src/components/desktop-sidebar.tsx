@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 import type { NavBadgeMap } from '@/components/nav-items';
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
-import type { SidebarBillingSummary } from '@timeline/shared/billing';
+import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 
 import { Logo, Wordmark } from '@/components/brand/logo';
 import { RailNav } from '@/components/rail-nav';

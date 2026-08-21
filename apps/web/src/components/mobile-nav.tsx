@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { RecipientInvite } from '@/components/team-switcher';
 import type { TeamMembership } from '@/lib/active-team';
-import type { SidebarBillingSummary } from '@timeline/shared/billing';
+import type { SidebarBillingSummary } from '@timeline/shared/billing/status';
 
 import {
   formatNavBadge,
