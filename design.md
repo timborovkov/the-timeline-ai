@@ -929,8 +929,8 @@ inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
-The masthead exposes the same four primary destinations in the same order:
-Product (`/`), Integrations (`/integrations`), How it works (`/how-it-works`), and
+The masthead exposes the same five primary destinations in the same order:
+Product (`/`), Integrations (`/integrations`), Pricing (`/pricing`), How it works (`/how-it-works`), and
 Help (`/help`). Desktop headers show them directly, compact widths use a native
 menu disclosure, and footers repeat them for recovery at the end of a page. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and

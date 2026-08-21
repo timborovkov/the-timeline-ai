@@ -512,6 +512,13 @@
       "when": 1795654680000,
       "tag": "0072_object_discussions",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795654740000,
+      "tag": "0073_billing_foundation",
+      "breakpoints": true
     }
   ]
 }

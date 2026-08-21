@@ -7,6 +7,7 @@ import {
   users,
 } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
+import { isPolarBillingConfigured, PLAN_CATALOG } from '@timeline/shared/billing';
 import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -16,6 +17,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
+import { BillingSettingsPanel } from '@/components/billing-settings-panel';
 import { ActionChip } from '@/components/action-chip';
 import {
   DigestDestinationsForm,
@@ -52,6 +54,7 @@ const SETTINGS_ITEMS = [
   { value: 'preferences', label: 'Preferences' },
   { value: 'visibility', label: 'Visibility' },
   { value: 'email', label: 'Email' },
+  { value: 'billing', label: 'Billing', adminOnly: true },
   { value: 'exports', label: 'Exports' },
   { value: 'advanced', label: 'Advanced', adminOnly: true },
 ] as const;
@@ -192,6 +195,7 @@ export default async function TeamSettingsPage({
     return { id: m.userId, label: displayMemberLabel(u) };
   });
   const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
+  const billingDashboard = isAdmin ? await scope.billing.getDashboard() : null;
 
   return (
     <div className="space-y-4">
@@ -277,6 +281,25 @@ export default async function TeamSettingsPage({
                 </p>
               )}
             </SettingsSection>
+          ) : null}
+          {section === 'billing' && isAdmin && billingDashboard ? (
+            <BillingSettingsPanel
+              planId={billingDashboard.account.planId}
+              planName={PLAN_CATALOG[billingDashboard.account.planId].name}
+              billingState={billingDashboard.account.billingState}
+              shadowBilling={billingDashboard.account.shadowBilling}
+              spendCapCents={billingDashboard.account.spendCapCents}
+              walletBalanceCents={billingDashboard.account.walletBalanceCents}
+              reservedBalanceCents={billingDashboard.account.reservedBalanceCents}
+              includedDiscountRemainingCents={
+                billingDashboard.account.includedDiscountRemainingCents
+              }
+              meteredSpendCents={billingDashboard.meteredSpendCents}
+              periodYm={billingDashboard.periodYm}
+              meters={billingDashboard.meters}
+              polarConfigured={isPolarBillingConfigured()}
+              canManage={isAdmin}
+            />
           ) : null}
           {section === 'exports' ? (
             <SettingsSection title="Team export">

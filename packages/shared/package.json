@@ -257,6 +257,12 @@
       "import": "./dist/meetings/index.js",
       "default": "./dist/meetings/index.js"
     },
+    "./billing": {
+      "types": "./src/billing/index.ts",
+      "development": "./src/billing/index.ts",
+      "import": "./dist/billing/index.js",
+      "default": "./dist/billing/index.js"
+    },
     "./objects": {
       "types": "./src/objects/index.ts",
       "development": "./src/objects/index.ts",

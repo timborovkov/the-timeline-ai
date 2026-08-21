@@ -1,0 +1,377 @@
+import {
+  type Db,
+  billingFreeGrants,
+  billingUsageCounters,
+  billingUsageLedger,
+  billingUsageReservations,
+  teamBillingAccounts,
+} from '@timeline/db';
+import { and, eq, sql } from 'drizzle-orm';
+
+import {
+  BILLING_ENTITLEMENTS_VERSION,
+  type BillingMeterId,
+  type BillingPlanId,
+  CAPACITY_BY_PLAN,
+  FREE_ALLOWANCES,
+  PLAN_CATALOG,
+  polarEventNameForMeter,
+} from '#src/billing/catalog.js';
+import type { BillingProvider } from '#src/billing/provider.js';
+import type { TeamRole } from '#src/team-scope.js';
+
+export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
+
+export interface BillingScopeDeps {
+  db: Db;
+  teamId: string;
+  userId: string;
+  ensureMember: EnsureMember;
+  provider?: BillingProvider;
+}
+
+function periodYm(date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+function defaultSpendCapForPlan(planId: BillingPlanId): number {
+  return PLAN_CATALOG[planId].defaultSpendCapCents;
+}
+
+export function createBillingScope(deps: BillingScopeDeps) {
+  const { db, teamId, userId, ensureMember, provider } = deps;
+
+  async function ensureAccount() {
+    const existing = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, teamId))
+      .limit(1);
+    if (existing[0]) return existing[0];
+    const [created] = await db
+      .insert(teamBillingAccounts)
+      .values({
+        teamId,
+        planId: 'free',
+        billingState: 'free',
+        securityState: 'normal',
+        entitlementsVersion: BILLING_ENTITLEMENTS_VERSION,
+        spendCapCents: defaultSpendCapForPlan('free'),
+        shadowBilling: true,
+      })
+      .onConflictDoNothing()
+      .returning();
+    if (created) return created;
+    const again = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, teamId))
+      .limit(1);
+    if (!again[0]) throw new Error('Failed to ensure team billing account');
+    return again[0];
+  }
+
+  return {
+    async getAccount() {
+      await ensureMember();
+      return ensureAccount();
+    },
+
+    async getDashboard() {
+      await ensureMember();
+      const account = await ensureAccount();
+      const plan = PLAN_CATALOG[account.planId];
+      const capacity = CAPACITY_BY_PLAN[account.planId];
+      const ym = periodYm();
+      const counters = await db
+        .select()
+        .from(billingUsageCounters)
+        .where(
+          and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
+        );
+      const byMeter = Object.fromEntries(
+        counters.map((row) => [
+          row.meterId,
+          {
+            nativeUnits: Number(row.nativeUnits),
+            customerChargeCents: row.customerChargeCents,
+          },
+        ]),
+      ) as Partial<
+        Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>
+      >;
+      const meteredSpendCents = counters.reduce((sum, row) => sum + row.customerChargeCents, 0);
+      return {
+        account,
+        plan,
+        capacity,
+        freeAllowances: FREE_ALLOWANCES,
+        periodYm: ym,
+        meters: byMeter,
+        meteredSpendCents,
+        availableWalletCents: Math.max(
+          0,
+          account.walletBalanceCents - account.reservedBalanceCents,
+        ),
+      };
+    },
+
+    async setSpendCap(spendCapCents: number) {
+      await ensureMember('admin');
+      if (!Number.isInteger(spendCapCents) || spendCapCents < 0) {
+        throw new Error('spendCapCents must be a non-negative integer');
+      }
+      await ensureAccount();
+      const [row] = await db
+        .update(teamBillingAccounts)
+        .set({ spendCapCents, updatedAt: new Date() })
+        .where(eq(teamBillingAccounts.teamId, teamId))
+        .returning();
+      return row!;
+    },
+
+    /**
+     * Claim the person-level Free grant for this team (idempotent). Extra
+     * workspaces created by the same user do not receive a second grant.
+     */
+    async claimFreeGrant() {
+      await ensureMember('owner');
+      await ensureAccount();
+      const existing = await db
+        .select()
+        .from(billingFreeGrants)
+        .where(and(eq(billingFreeGrants.userId, userId), sql`${billingFreeGrants.revokedAt} IS NULL`))
+        .limit(1);
+      if (existing[0]) {
+        if (existing[0].assignedTeamId && existing[0].assignedTeamId !== teamId) {
+          return { ok: false as const, reason: 'free_grant_elsewhere' as const, grant: existing[0] };
+        }
+        if (!existing[0].assignedTeamId) {
+          const [updated] = await db
+            .update(billingFreeGrants)
+            .set({ assignedTeamId: teamId })
+            .where(eq(billingFreeGrants.id, existing[0].id))
+            .returning();
+          return { ok: true as const, grant: updated! };
+        }
+        return { ok: true as const, grant: existing[0] };
+      }
+      const [created] = await db
+        .insert(billingFreeGrants)
+        .values({ userId, assignedTeamId: teamId })
+        .returning();
+      return { ok: true as const, grant: created! };
+    },
+
+    /**
+     * Reserve worst-case customer charge before provider work. Fail-closed for
+     * costly paths when the account cannot afford the reservation (unless
+     * shadow billing is on — then we record but do not block).
+     */
+    async reserve(input: {
+      operationId: string;
+      meterId: BillingMeterId;
+      reservedNativeUnits: number;
+      reservedChargeCents: number;
+      ttlMs?: number;
+      metadata?: Record<string, unknown>;
+    }) {
+      await ensureMember();
+      const account = await ensureAccount();
+      if (account.securityState === 'suspended' || account.securityState === 'terminated') {
+        return { ok: false as const, code: 'security_blocked' as const };
+      }
+      const expiresAt = new Date(Date.now() + (input.ttlMs ?? 15 * 60_000));
+      const blocking =
+        !account.shadowBilling &&
+        account.billingState !== 'enterprise_active' &&
+        input.reservedChargeCents > 0;
+
+      if (blocking) {
+        const available = account.walletBalanceCents - account.reservedBalanceCents;
+        const discount = account.includedDiscountRemainingCents;
+        const coveredByDiscount = Math.min(discount, input.reservedChargeCents);
+        const needsWallet = input.reservedChargeCents - coveredByDiscount;
+        if (needsWallet > available) {
+          return { ok: false as const, code: 'usage_limit_reached' as const };
+        }
+        if (account.spendCapCents > 0) {
+          const ym = periodYm();
+          const spent = await db
+            .select({
+              total: sql<number>`COALESCE(SUM(${billingUsageCounters.customerChargeCents}), 0)::int`,
+            })
+            .from(billingUsageCounters)
+            .where(
+              and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
+            );
+          const periodSpend = Number(spent[0]?.total ?? 0) + input.reservedChargeCents;
+          if (periodSpend > account.spendCapCents) {
+            return { ok: false as const, code: 'spend_cap_reached' as const };
+          }
+        }
+      }
+
+      const [row] = await db
+        .insert(billingUsageReservations)
+        .values({
+          teamId,
+          operationId: input.operationId,
+          meterId: input.meterId,
+          reservedNativeUnits: String(input.reservedNativeUnits),
+          reservedChargeCents: input.reservedChargeCents,
+          expiresAt,
+          metadata: input.metadata ?? {},
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (!row) {
+        const existing = await db
+          .select()
+          .from(billingUsageReservations)
+          .where(
+            and(
+              eq(billingUsageReservations.teamId, teamId),
+              eq(billingUsageReservations.operationId, input.operationId),
+            ),
+          )
+          .limit(1);
+        return { ok: true as const, reservation: existing[0]!, reused: true as const };
+      }
+
+      if (blocking && input.reservedChargeCents > 0) {
+        await db
+          .update(teamBillingAccounts)
+          .set({
+            reservedBalanceCents: sql`${teamBillingAccounts.reservedBalanceCents} + ${input.reservedChargeCents}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(teamBillingAccounts.teamId, teamId));
+      }
+
+      return { ok: true as const, reservation: row, reused: false as const };
+    },
+
+    async settle(input: {
+      operationId: string;
+      meterId: BillingMeterId;
+      nativeUnits: number;
+      customerChargeCents: number;
+      providerCostCents?: number;
+      billable?: boolean;
+      nonBillableReason?: string;
+      operationClass?: string;
+      provider?: string;
+      model?: string;
+      source?: string;
+      deliverySurface?: string;
+      metadata?: Record<string, unknown>;
+    }) {
+      await ensureMember();
+      const account = await ensureAccount();
+      const reservation = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(
+          and(
+            eq(billingUsageReservations.teamId, teamId),
+            eq(billingUsageReservations.operationId, input.operationId),
+          ),
+        )
+        .limit(1);
+
+      const [ledgerRow] = await db
+        .insert(billingUsageLedger)
+        .values({
+          teamId,
+          operationId: input.operationId,
+          kind: 'settlement',
+          meterId: input.meterId,
+          nativeUnits: String(input.nativeUnits),
+          providerCostCents: input.providerCostCents ?? null,
+          customerChargeCents: input.customerChargeCents,
+          billable: input.billable ?? true,
+          nonBillableReason: input.nonBillableReason ?? null,
+          operationClass: input.operationClass ?? null,
+          provider: input.provider ?? null,
+          model: input.model ?? null,
+          actorUserId: userId,
+          source: input.source ?? null,
+          deliverySurface: input.deliverySurface ?? null,
+          reservationId: reservation[0]?.id ?? null,
+          metadata: input.metadata ?? {},
+        })
+        .onConflictDoNothing()
+        .returning();
+
+      if (!ledgerRow) {
+        return { ok: true as const, duplicate: true as const };
+      }
+
+      const ym = periodYm();
+      await db
+        .insert(billingUsageCounters)
+        .values({
+          teamId,
+          periodYm: ym,
+          meterId: input.meterId,
+          nativeUnits: String(input.nativeUnits),
+          customerChargeCents: input.customerChargeCents,
+        })
+        .onConflictDoUpdate({
+          target: [
+            billingUsageCounters.teamId,
+            billingUsageCounters.periodYm,
+            billingUsageCounters.meterId,
+          ],
+          set: {
+            nativeUnits: sql`${billingUsageCounters.nativeUnits} + ${String(input.nativeUnits)}`,
+            customerChargeCents: sql`${billingUsageCounters.customerChargeCents} + ${input.customerChargeCents}`,
+            updatedAt: new Date(),
+          },
+        });
+
+      if (reservation[0] && reservation[0].state === 'reserved') {
+        await db
+          .update(billingUsageReservations)
+          .set({ state: 'settled', updatedAt: new Date() })
+          .where(eq(billingUsageReservations.id, reservation[0].id));
+        if (!account.shadowBilling && reservation[0].reservedChargeCents > 0) {
+          await db
+            .update(teamBillingAccounts)
+            .set({
+              reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${reservation[0].reservedChargeCents})`,
+              walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${input.customerChargeCents})`,
+              includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${input.customerChargeCents})`,
+              updatedAt: new Date(),
+            })
+            .where(eq(teamBillingAccounts.teamId, teamId));
+        }
+      }
+
+      const eventName = polarEventNameForMeter(input.meterId);
+      if (
+        provider &&
+        eventName &&
+        account.polarCustomerId &&
+        !account.shadowBilling &&
+        input.billable !== false
+      ) {
+        await provider.ingestUsage({
+          externalCustomerId: teamId,
+          name: eventName,
+          units: input.nativeUnits,
+          metadata: {
+            operation_id: input.operationId,
+            charge_cents: input.customerChargeCents,
+          },
+        });
+      }
+
+      return { ok: true as const, duplicate: false as const, ledger: ledgerRow };
+    },
+  };
+}
+
+export type BillingScope = ReturnType<typeof createBillingScope>;

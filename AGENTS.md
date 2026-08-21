@@ -297,11 +297,13 @@ packages/
             mcp module (Phase 11 — JSON-RPC client, OAuth client + state JWT, SSRF guard,
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
             JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),
-            calendar module (Phase 11 — event scope, raw-event audit rows,
-            entity links, settings, team calendar subscriptions, and calendar
-            embedding enqueue/delete),
-            conversation-review module (bounded Slack/Telegram evidence
-            windows for proposal generation),
+  calendar module (Phase 11 — event scope, raw-event audit rows,
+  entity links, settings, team calendar subscriptions, and calendar
+  embedding enqueue/delete),
+  billing module (Polar MoR, native usage meters, shadow ledger,
+  plan catalog, team billing scope),
+  conversation-review module (bounded Slack/Telegram evidence
+  windows for proposal generation),
             conversation-surfaces module (provider-neutral direct-chat
             sessions, durable turn ledger, bounded history, Telegram/Slack
             delivery adapters, shared web-rich/external-chat agent presentation,

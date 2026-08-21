@@ -539,7 +539,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       return cited answers from the correct document version.
 - [ ] Iterate on extraction prompts based on misses, then re-extract historical
       events as prompts improve.
-- [ ] Decide pricing model: per seat, per team, usage-based, or hybrid.
+- [x] Decide pricing model: per seat, per team, usage-based, or hybrid.
+      V1: Free + PAYG (€0 platform) with native meters; optional Team (€49) /
+      Business (€199) commitments; Enterprise custom. Polar MoR + shadow ledger.
 
 ## Standing Items
 

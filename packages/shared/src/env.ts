@@ -355,6 +355,24 @@ const baseSchema = z.object({
    */
   RECALL_BOT_DISPLAY_NAME: z.string().default('Timeline'),
 
+  // Polar usage billing (sandbox or production). Blank = billing UI + ledger
+  // still work in shadow mode; checkout/portal/ingest stay disabled.
+  POLAR_ACCESS_TOKEN: z.string().optional(),
+  POLAR_SERVER: z.preprocess(
+    emptyStringAsUnset,
+    z.enum(['sandbox', 'production']).default('sandbox'),
+  ),
+  POLAR_ORGANIZATION_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_WEBHOOK_SECRET: z.string().optional(),
+  POLAR_WEBHOOK_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_PRODUCT_ID_PAYG: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_PRODUCT_ID_TEAM: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_PRODUCT_ID_BUSINESS: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_DISCOUNT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_DISCOUNT_CODE: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /** When true, wallet/spend-cap gates block costly work. Default shadow = record only. */
+  BILLING_CHARGES_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+
   // Phase 11 — Third-party integrations + custom MCPs.
   //
   // AES-256-GCM key (32 bytes, base64) used by

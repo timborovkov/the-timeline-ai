@@ -58,6 +58,8 @@ import { createMcpScope } from '#src/mcp/scope.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
+import { createBillingScope } from '#src/billing/scope.js';
+import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { decodeCursor, encodeCursor, pageWindow } from '#src/pagination.js';
 import { createPinScope } from '#src/pins/scope.js';
@@ -1697,6 +1699,15 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     teamId,
     userId,
     ensureMember,
+  });
+
+  const billingProvider = createPolarBillingProvider() ?? undefined;
+  const billingScope = createBillingScope({
+    db,
+    teamId,
+    userId,
+    ensureMember,
+    ...(billingProvider ? { provider: billingProvider } : {}),
   });
 
   const jobRecoveryScope = createJobRecoveryScope({
@@ -4171,6 +4182,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     integrations: integrationScope,
     mcp: mcpScope,
     onboarding: onboardingScope,
+    billing: billingScope,
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     audit: auditScope,

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polar billing setup</title>
+    <link rel="stylesheet" href="../docs.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Polar billing setup</h1>
+      <p>
+        Timeline uses <a href="https://polar.sh">Polar</a> as merchant of record for optional Team /
+        Business subscriptions, pay-as-you-go checkout, and native usage meters. Customer charges stay
+        in <strong>shadow billing</strong> until <code>BILLING_CHARGES_ENABLED=true</code>.
+      </p>
+
+      <h2>Environments</h2>
+      <ul>
+        <li>
+          Sandbox dashboard: <a href="https://sandbox.polar.sh">sandbox.polar.sh</a> · API
+          <code>https://sandbox-api.polar.sh/v1</code>
+        </li>
+        <li>
+          Production dashboard: <a href="https://polar.sh">polar.sh</a> · API
+          <code>https://api.polar.sh/v1</code>
+        </li>
+      </ul>
+      <p>
+        Sandbox accounts, tokens, products, and meters are fully isolated from production. Create a
+        Timeline-specific access token; do not reuse Vernix / Irmin product or webhook IDs even when
+        they share a Polar organization.
+      </p>
+
+      <h2>Environment variables</h2>
+      <pre><code>POLAR_ACCESS_TOKEN=
+POLAR_SERVER=sandbox
+POLAR_ORGANIZATION_ID=
+POLAR_WEBHOOK_SECRET=
+POLAR_WEBHOOK_ID=
+POLAR_PRODUCT_ID_PAYG=
+POLAR_PRODUCT_ID_TEAM=
+POLAR_PRODUCT_ID_BUSINESS=
+POLAR_DISCOUNT_ID=
+POLAR_DISCOUNT_CODE=
+BILLING_CHARGES_ENABLED=false
+</code></pre>
+
+      <h2>Products and meters (v1)</h2>
+      <ul>
+        <li><strong>Timeline Pay as you go</strong> — €0 platform fee + metered overage</li>
+        <li><strong>Timeline Team</strong> — €49/mo + up to €60 included usage discount</li>
+        <li><strong>Timeline Business</strong> — €199/mo + up to €250 included usage discount</li>
+      </ul>
+      <p>Native Polar meters (event name → sum <code>units</code>):</p>
+      <ul>
+        <li><code>timeline_ai_eur_cents</code> — customer AI charge in euro cents</li>
+        <li><code>timeline_recall_minutes</code></li>
+        <li><code>timeline_email_units</code></li>
+        <li><code>timeline_storage_gb_month</code></li>
+        <li><code>timeline_accepted_sources</code></li>
+      </ul>
+
+      <h2>Webhook</h2>
+      <p>
+        Point a Polar webhook at <code>POST /api/webhooks/polar</code> with Standard Webhooks /
+        <code>whsec_</code> signing. Subscribe at least to subscription and order events. Keep the
+        endpoint disabled until the URL is publicly reachable (local tunnel or deploy).
+      </p>
+
+      <h2>Public and app surfaces</h2>
+      <ul>
+        <li>Public catalog: <code>/pricing</code></li>
+        <li>Team settings: <code>/app/team?section=billing</code> (owner/admin)</li>
+      </ul>
+    </main>
+  </body>
+</html>
