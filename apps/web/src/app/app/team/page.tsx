@@ -195,7 +195,9 @@ export default async function TeamSettingsPage({
     return { id: m.userId, label: displayMemberLabel(u) };
   });
   const destinationOptions = isAdmin ? await digestDestinationOptions(active.teamId) : [];
-  const billingDashboard = isAdmin ? await scope.billing.getDashboard() : null;
+  const billingDashboard = isAdmin
+    ? await scope.billing.getDashboard({ canManageBilling: true })
+    : null;
 
   return (
     <div className="space-y-4">
@@ -297,6 +299,10 @@ export default async function TeamSettingsPage({
               meteredSpendCents={billingDashboard.meteredSpendCents}
               periodYm={billingDashboard.periodYm}
               meters={billingDashboard.meters}
+              utilization={billingDashboard.utilization}
+              freeRemaining={billingDashboard.freeRemaining}
+              nudge={billingDashboard.nudge}
+              costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
               canManage={isAdmin}
             />

@@ -22,8 +22,11 @@ credit hides margin and confuses prospects.
 4. **Shadow billing** is the default (`BILLING_CHARGES_ENABLED=false`): record
    usage and expose UI, but do not block or charge until reconciliation proves
    the ledger.
-5. Public catalog lives at `/pricing`; team admins manage plan/spend cap at
-   `/app/team?section=billing`.
+5. Public catalog lives at `/pricing` (self-serve Free/PAYG/Team/Business columns;
+   Enterprise is a quiet contact nudge). Team usage is at `/app/usage`; admins
+   manage plan/spend cap at `/app/team?section=billing`. Free hard-stops apply
+   even while `shadowBilling` is true; paid spend-cap / wallet blocking applies
+   when charges are enabled.
 
 ## Consequences
 

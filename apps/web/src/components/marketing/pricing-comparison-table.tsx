@@ -1,6 +1,6 @@
 import {
   PLAN_CATALOG,
-  PUBLIC_PLAN_ORDER,
+  SELF_SERVE_PLAN_ORDER,
   type BillingPlanId,
   formatEuroFromCents,
 } from '@timeline/shared/billing';
@@ -40,7 +40,6 @@ const COMPARISON_ROWS: {
     value: (id) => {
       const discount = PLAN_CATALOG[id].includedUsageDiscountCents;
       if (id === 'free') return 'Native Free allowances';
-      if (id === 'enterprise') return 'Contract';
       if (discount > 0) return `Up to ${formatEuroFromCents(discount)} on invoice, then overage`;
       return 'Free allowance, then native overage';
     },
@@ -49,7 +48,6 @@ const COMPARISON_ROWS: {
     label: 'Default spend cap',
     value: (id) => {
       const cap = PLAN_CATALOG[id].defaultSpendCapCents;
-      if (id === 'enterprise') return 'Negotiated';
       if (cap === 0) return '€0 (hard stop)';
       return `${formatEuroFromCents(cap)}/mo`;
     },
@@ -63,11 +61,11 @@ const COMPARISON_ROWS: {
 export function PricingComparisonTable({ className }: { className?: string }) {
   return (
     <div className={cn('overflow-x-auto border border-border', className)}>
-      <table className="w-full min-w-[52rem] border-collapse text-left text-sm">
+      <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
         <thead>
           <tr className="border-b border-border bg-surface">
             <th className="px-4 py-3 font-medium text-fg-muted">Limit</th>
-            {PUBLIC_PLAN_ORDER.map((planId) => (
+            {SELF_SERVE_PLAN_ORDER.map((planId) => (
               <th key={planId} className="px-4 py-3 font-semibold text-fg">
                 {PLAN_CATALOG[planId].name}
               </th>
@@ -78,7 +76,7 @@ export function PricingComparisonTable({ className }: { className?: string }) {
           {COMPARISON_ROWS.map((row) => (
             <tr key={row.label} className="border-b border-border last:border-b-0">
               <th className="px-4 py-3 font-medium text-fg-muted">{row.label}</th>
-              {PUBLIC_PLAN_ORDER.map((planId) => (
+              {SELF_SERVE_PLAN_ORDER.map((planId) => (
                 <td key={planId} className="px-4 py-3 text-fg">
                   {row.value(planId)}
                 </td>

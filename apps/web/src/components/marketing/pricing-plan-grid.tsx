@@ -1,5 +1,4 @@
-import { PLAN_CATALOG, PUBLIC_PLAN_ORDER } from '@timeline/shared/billing';
-import { formatEuroFromCents } from '@timeline/shared/billing';
+import { PLAN_CATALOG, SELF_SERVE_PLAN_ORDER, formatEuroFromCents } from '@timeline/shared/billing';
 
 import { cn } from '@/lib/utils';
 
@@ -11,17 +10,15 @@ export function PricingPlanGrid({
   signedIn?: boolean;
 }) {
   return (
-    <div className={cn('grid gap-px border border-border bg-border lg:grid-cols-5', className)}>
-      {PUBLIC_PLAN_ORDER.map((planId) => {
+    <div className={cn('grid gap-px border border-border bg-border lg:grid-cols-4', className)}>
+      {SELF_SERVE_PLAN_ORDER.map((planId) => {
         const plan = PLAN_CATALOG[planId];
-        const href =
-          signedIn && planId !== 'enterprise' ? '/app/team?section=billing' : plan.cta.href;
-        const label =
-          signedIn && planId !== 'enterprise'
-            ? planId === 'free'
-              ? 'Open billing'
-              : 'Manage plan'
-            : plan.cta.label;
+        const href = signedIn ? '/app/team?section=billing' : plan.cta.href;
+        const label = signedIn
+          ? planId === 'free'
+            ? 'Open billing'
+            : 'Manage plan'
+          : plan.cta.label;
         return (
           <article
             key={plan.id}
@@ -37,11 +34,7 @@ export function PricingPlanGrid({
             <h2 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-fg">{plan.name}</h2>
             <p className="mt-2 min-h-[4.5rem] text-sm leading-6 text-fg-muted">{plan.tagline}</p>
             <p className="mt-4 font-mono text-3xl font-semibold tracking-[-0.04em] text-fg">
-              {plan.platformFeeCents === null
-                ? 'Custom'
-                : plan.platformFeeCents === 0
-                  ? '€0'
-                  : formatEuroFromCents(plan.platformFeeCents)}
+              {plan.platformFeeCents === 0 ? '€0' : formatEuroFromCents(plan.platformFeeCents ?? 0)}
               {plan.platformFeeCents !== null && plan.platformFeeCents > 0 ? (
                 <span className="text-base font-normal text-fg-muted">/mo</span>
               ) : null}

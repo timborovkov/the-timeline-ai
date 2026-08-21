@@ -135,6 +135,7 @@ export const PLAN_CATALOG: Record<BillingPlanId, PlanCommercial> = {
   },
 };
 
+/** All commercial offers including Enterprise (catalog / internal). */
 export const PUBLIC_PLAN_ORDER: BillingPlanId[] = [
   'free',
   'payg',
@@ -142,6 +143,12 @@ export const PUBLIC_PLAN_ORDER: BillingPlanId[] = [
   'business',
   'enterprise',
 ];
+
+/** Self-serve columns on the public pricing grid/table. Enterprise is a contact nudge. */
+export const SELF_SERVE_PLAN_ORDER: BillingPlanId[] = ['free', 'payg', 'team', 'business'];
+
+/** Spend-cap warning thresholds (percent of monthly cap). */
+export const SPEND_CAP_WARN_THRESHOLDS = [50, 75, 90, 100] as const;
 
 export interface CapacityEntitlements {
   agentTurnsPerMonth: number | null;

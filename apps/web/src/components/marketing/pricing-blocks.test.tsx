@@ -3,18 +3,25 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PricingComparisonTable,
+  PricingEnterpriseNudge,
   PricingMetersExplainer,
   PricingPlanGrid,
 } from '@/components/marketing/pricing-blocks';
 
 describe('pricing blocks', () => {
-  it('renders Free, PAYG, Team, Business, and Enterprise plans', () => {
-    const html = renderToStaticMarkup(<PricingPlanGrid />);
+  it('renders self-serve plans and an enterprise contact nudge', () => {
+    const html = renderToStaticMarkup(
+      <>
+        <PricingPlanGrid />
+        <PricingEnterpriseNudge />
+      </>,
+    );
     expect(html).toContain('data-pricing-plan="free"');
     expect(html).toContain('data-pricing-plan="payg"');
     expect(html).toContain('data-pricing-plan="team"');
     expect(html).toContain('data-pricing-plan="business"');
-    expect(html).toContain('data-pricing-plan="enterprise"');
+    expect(html).not.toContain('data-pricing-plan="enterprise"');
+    expect(html).toContain('data-pricing-enterprise-nudge');
     expect(html).toContain('Pay as you go');
   });
 

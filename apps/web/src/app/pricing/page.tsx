@@ -1,10 +1,9 @@
-import Link from 'next/link';
-
 import type { Metadata } from 'next';
 
 import { MarketingContainer, MarketingSectionGrid } from '@/components/marketing/marketing-layout';
 import {
   PricingComparisonTable,
+  PricingEnterpriseNudge,
   PricingMetersExplainer,
   PricingPlanGrid,
 } from '@/components/marketing/pricing-blocks';
@@ -54,6 +53,7 @@ export default async function PricingPage() {
                 charges stay in shadow mode until provider reconciliation completes.
               </p>
               <PricingPlanGrid className="mt-10" signedIn={signedIn} />
+              <PricingEnterpriseNudge className="mt-4" />
             </div>
           </MarketingSectionGrid>
         </MarketingContainer>
@@ -112,13 +112,6 @@ export default async function PricingPage() {
                 <li>
                   Reading, deletion, billing management, and export stay available when a spend cap
                   or balance is exhausted.
-                </li>
-                <li>
-                  Enterprise, SSO, or procurement:{' '}
-                  <Link href="/help/support" className="text-fg underline-offset-4 hover:underline">
-                    contact support
-                  </Link>
-                  .
                 </li>
               </ul>
             </div>

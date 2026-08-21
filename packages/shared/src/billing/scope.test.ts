@@ -84,4 +84,46 @@ describe('billing scope', () => {
     const second = await scope.claimFreeGrant();
     expect(second.ok).toBe(true);
   });
+
+  it('hard-stops Free AI allowance even while shadow billing is on', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.settle({
+      operationId: 'op-ai-fill',
+      meterId: 'ai',
+      nativeUnits: 1,
+      customerChargeCents: 500,
+    });
+    const blocked = await scope.reserve({
+      operationId: 'op-ai-over',
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.code).toBe('free_allowance_reached');
+  });
+
+  it('releases unused reservations', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const reserved = await scope.reserve({
+      operationId: 'op-release',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 0,
+    });
+    expect(reserved.ok).toBe(true);
+    const released = await scope.release('op-release');
+    expect(released.ok).toBe(true);
+    expect(released.missing).toBe(false);
+  });
 });

@@ -138,11 +138,11 @@ for long-form prose. Article text is limited to 65–70ch.
 ## Layout and navigation
 
 The authenticated product keeps eight primary destinations: Home, Timeline,
-Ask, Work, Documents, Meetings, Connections, and Team.
+Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 
 - Desktop and mobile primary navigation keep that destination order in three
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
-  Meetings), and Manage (Connections, Team). Collapsed rails retain the same
+  Meetings), and Manage (Connections, Usage, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
 - Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
   same 12px inset as primary destinations and links to Home (`/app`). Fold and
@@ -1165,3 +1165,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |
 | 2026-08-20 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |
 | 2026-08-20 | Copy-ready agent setup | Gives public Help one recommended install prompt, narrower skill and MCP paths, searchable setup details, and explicit secret and authority boundaries. |
+| 2026-08-21 | Usage nav and billing nudges | Adds Manage → Usage, keeps Enterprise off the public plan grid as a gray contact nudge, and surfaces quiet spend-cap / Free-allowance nudges on Home, Usage, and Billing. |

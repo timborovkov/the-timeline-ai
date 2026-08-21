@@ -8,6 +8,7 @@ import {
   OVERAGE_RATES,
   PLAN_CATALOG,
   PUBLIC_PLAN_ORDER,
+  SELF_SERVE_PLAN_ORDER,
   acceptedSourcesChargeCents,
   customerAiChargeCentsFromOpenRouterUsd,
   emailChargeCents,
@@ -23,6 +24,7 @@ describe('billing catalog', () => {
   it('exposes the v1 commercial journey in public order', () => {
     expect(BILLING_ENTITLEMENTS_VERSION).toBe('v1');
     expect(PUBLIC_PLAN_ORDER).toEqual(['free', 'payg', 'team', 'business', 'enterprise']);
+    expect(SELF_SERVE_PLAN_ORDER).toEqual(['free', 'payg', 'team', 'business']);
     expect(PLAN_CATALOG.free.platformFeeCents).toBe(0);
     expect(PLAN_CATALOG.payg.platformFeeCents).toBe(0);
     expect(PLAN_CATALOG.team.platformFeeCents).toBe(4_900);
