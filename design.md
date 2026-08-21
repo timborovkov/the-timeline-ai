@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.23 · Copy-ready agent setup (2026-08-20). Replaces v3.22 Object discussions.
+**Version:** v3.26 · Dedicated animated platform flow (2026-08-21). Replaces v3.25 Restored hero observatory.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -856,15 +856,18 @@ follows the shared due-date vocabulary above.
 
 The public landing page is an editorial, five-scene acquisition narrative:
 claim, evidence and chronology, cited answer, audience fit with trust, and a
-one-project CTA. The claim defines Timeline as an evidence-backed working
-history. The chronology scene names the cost of rebuilding status, handoffs,
+one-project CTA. The claim defines Timeline as AI team memory: selected work
+becomes a chronological, source-linked project history that can answer questions
+with citations. The chronology scene names the cost of rebuilding status, handoffs,
 customer commitments, and decisions across Telegram, Slack, meetings,
 documents, tickets, code, and email before showing how selected work becomes an
 inspectable record. Its signature example project, Acme rollout, shows five
-cited work sources converging into one project history, with Telegram as the
-first explicit note. A sixth connected Sentry source is visibly marked as
-unused in that answer. Captured work then settles onto a chronological rail and
-resolves into an answer with tangible source links. Acme rollout is the
+cited work sources converging into one project history, with a linked Telegram
+group as the first source. Captured work settles onto a chronological rail,
+connects to project, person, task, and calendar context, and resolves into an
+answer with tangible source links. Suggested durable workspace
+changes remain approval-backed; the diagram never implies that evidence silently
+rewrites canonical objects. Acme rollout is the
 canonical fictional public demo corpus across landing, connector, and guide
 examples; every rendered example states that it is illustrative and not
 customer data. Provider pages may show distinct slices, but people, identifiers,
@@ -878,16 +881,46 @@ diagram and must explain provenance or hierarchy. The shared public canvas uses
 the same subtle fixed grain in both themes, with theme-specific blending so
 cream reads like paper and near-black retains its tactile texture.
 
-The landing observatory identifies every source with its provider mark, includes
-Telegram alongside Slack, meeting, code, document, and monitoring signals,
-and distinguishes evidence cited in the example answer from a connected source
-that the answer did not use. It uses small inward-moving packets to explain
-ingestion. Those packets use only
-transform and opacity, run only while the diagram is visible, and disappear in
-the complete reduced-motion state. The evidence-entry summary below chronology
-compresses the directory into two honest paths—work people send to Timeline and
-selected history from connected tools. More technical distinctions remain in
-the underlying content model, not as customer-facing taxonomy.
+The landing hero keeps the observatory composition: six compact source cards sit
+around a square grid and stream packets along visible curved paths into the
+official Timeline mark. The centered diamond is labelled **The Timeline** and
+**Project history**; one quiet rail then resolves into **Working records** and
+**Cited answers**. It does not reproduce the expanded timeline, record cards, or
+assistant exchange. Every moving packet reuses the exact path drawn behind it,
+the animation restarts only when the diagram enters view, and reduced motion
+hides the packets while preserving the complete static explanation. Mobile
+retains the same topology and removes secondary metadata so cards and labels do
+not overlap.
+
+The landing page moves directly from the compact observatory into its chronology,
+connector, cited-answer, and trust scenes. The complete four-stage product loop
+lives on `/how-it-works`, where it has enough room to explain the platform without
+turning the home page into a second hero. The reusable expanded diagram groups
+inputs into conversations, meetings and documents, and delivery and incidents;
+keeps five representative source-linked events; shows four useful record types;
+and closes with one compact assistant exchange across Web, Slack, Telegram, and
+an own MCP agent. Permitted live CRM context, approval-backed Timeline changes,
+and enabled MCP tool effects remain explicit.
+
+Motion in the expanded diagram explains causality rather than introducing whole
+columns. Signal packets repeatedly traverse the exact responsive track between
+stages and through the local timeline and answer exchange, while nearby nodes
+briefly acknowledge their arrival. Each stage activates independently as it
+enters view. Wide layouts use one four-stage row, medium containers use a 2 × 2
+grid without decorative connectors, and narrow containers stack stages with
+vertical packet tracks. Reduced-motion mode hides packets and preserves the
+complete static story.
+
+Outcome-led solution pages extend this story for distinct search intents without
+joining the primary navigation. `/solutions/client-project-handoffs`,
+`/solutions/weekly-project-updates`, and
+`/solutions/crm-context-from-team-activity` each own a concrete job, workflow,
+example, evidence boundary, and next step. They are substantive public pages,
+not title-swapped landing variants: the home audience rail links to them, they
+cross-link where useful, and the public registry exposes them to the sitemap,
+structured data, and machine-readable discovery files. Their visible copy must
+stay consistent with deliberate capture, source-linked claims, and human review
+before inferred durable workspace changes.
 
 Public pages may use oversized Switzer display type, denser Commit Mono source
 metadata, a near-black evidence-instrument canvas, and more cinematic spacing
@@ -954,17 +987,15 @@ their complete prompt or command, secrets never appear in those payloads, and
 the guide remains searchable from the Help directory.
 
 `/how-it-works` is the plain-language explanation of how Timeline works. It uses
-the same 82rem acquisition grid, 13–15rem indexed section rail, hero scale, footer, and
-section rhythm as the integration directory. It shows the
-source-to-chronology-to-answer loop once, then links to a small set of
-substantive cross-tool walkthroughs. Its first viewport explains the three-step
-model at a glance: choose what enters, preserve the chronology, then ask and
-inspect. It also states two trust boundaries directly: connected does not mean
-cited, and durable workspace changes wait for human approval. The complete
-evidence diagram follows in its own indexed section and is never squeezed beside
-the hero copy. Walkthroughs remain indexable for specific questions, but public
-navigation and page copy do not ask visitors to learn an editorial publication,
-edition, playbook, or dossier taxonomy.
+the same 82rem acquisition grid, 13–15rem indexed section rail, hero scale,
+footer, and section rhythm as the integration directory. A short hero leads
+directly into the full-width animated platform flow; separate introductory step
+cards and trust cards do not repeat that story. The diagram states the capture,
+approval, citation, and enabled-MCP boundaries in context, then the next section
+zooms into one source-to-answer provenance path. Practical walkthroughs remain
+indexable for specific questions, but public navigation and page copy do not ask
+visitors to learn an editorial publication, edition, playbook, or dossier
+taxonomy.
 The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
 
@@ -1165,5 +1196,8 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |
 | 2026-08-20 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |
 | 2026-08-20 | Copy-ready agent setup | Gives public Help one recommended install prompt, narrower skill and MCP paths, searchable setup details, and explicit secret and authority boundaries. |
+| 2026-08-21 | Evidence-flow acquisition story | Reframes Timeline as AI team memory, introduces the reusable evidence-to-workspace-to-assistant explainer, and adds three substantive outcome-led solution pages. |
+| 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
+| 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
 | 2026-08-21 | Usage nav and billing nudges | Adds Manage → Usage, keeps Enterprise off the public plan grid as a gray contact nudge, and surfaces quiet spend-cap / Free-allowance nudges on Home, Usage, and Billing. |
 | 2026-08-21 | Sidebar plan usage meter | Puts plan name, usage progress, and overage under Help in the app sidebar (and mobile nav), linking to Billing or Usage. |

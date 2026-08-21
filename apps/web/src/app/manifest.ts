@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'The Timeline',
     short_name: 'Timeline',
     description:
-      'The operations log your team can talk to: capture work as it happens and query a cited team history.',
+      'AI team memory that turns selected work into a searchable project history with cited answers.',
     // Stable identity for existing installs; browsers fall back to start_url when id is absent.
     id: '/',
     start_url: '/app',

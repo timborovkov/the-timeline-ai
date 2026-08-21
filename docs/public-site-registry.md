@@ -54,9 +54,16 @@ composition edit is the integration seam for sitemap and LLM discovery. Route
 modules can resolve their document by canonical path and pass it to
 `metadataForPublicDocument` and `buildPublicStructuredData`; serialize JSON-LD
 with `stringifyJsonLdForHtml` before embedding it in a script element.
-`integrations` and `how-it-works` contributions receive their own stable sections
-in both LLM files. Empty contribution sections are omitted, so adding the first
-document is what makes its section appear.
+`solutions`, `integrations`, and `how-it-works` contributions receive their own
+stable sections in both LLM files. Empty contribution sections are omitted, so
+adding the first document is what makes its section appear.
+
+Outcome-led solution documents live beside their shared page content under
+[`components/marketing/solutions`](../apps/web/src/components/marketing/solutions).
+They stay out of the four-item primary navigation, but must remain reachable from
+relevant public-page context, carry distinct workflows and evidence boundaries,
+and cross-link to related solutions. Do not create title-swapped or orphaned
+search variants.
 
 Do not register speculative routes. A registry entry asserts that its canonical
 route and curated content exist. Tests should fail if a feature removes a route
@@ -90,8 +97,10 @@ without removing its entry.
   indexable HTML documents, or is `false` for machine documents and noindex
   pages.
 - `structuredData` contains typed inputs for WebPage, CollectionPage,
-  TechArticle, breadcrumbs, FAQ, and SoftwareApplication nodes. It does not
-  accept arbitrary JSON-LD blobs.
+  TechArticle, breadcrumbs, FAQ, and SoftwareApplication nodes. Set the
+  SoftwareApplication `name` to the product entity (`The Timeline`) when a
+  document's discovery title describes a page or solution. The registry does
+  not accept arbitrary JSON-LD blobs.
 - `llms` supplies a discovery section, stable order, short summary, optional
   full summary, and optional long-form sections with labeled links or fenced
   code blocks. Help resource links flow into those sections automatically;

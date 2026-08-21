@@ -9,6 +9,7 @@ import {
 import { definePublicDocuments } from '@/lib/public-site/registry';
 
 const EDITORIAL_REVIEW_DATE = '2026-08-15' as const;
+const HOW_IT_WORKS_REVIEW_DATE = '2026-08-21' as const;
 
 const howItWorksDocument = {
   canonicalPath: HOW_IT_WORKS_ROUTE,
@@ -17,7 +18,7 @@ const howItWorksDocument = {
   description:
     'See how Timeline preserves selected work as an evidence-backed chronology, answers with citations, and keeps durable changes human-approved.',
   indexability: 'index',
-  dates: { modified: EDITORIAL_REVIEW_DATE, reviewed: EDITORIAL_REVIEW_DATE },
+  dates: { modified: HOW_IT_WORKS_REVIEW_DATE, reviewed: HOW_IT_WORKS_REVIEW_DATE },
   capability: { kind: 'current-product' },
   sitemap: { changeFrequency: 'weekly', priority: 0.8 },
   structuredData: [
@@ -44,7 +45,7 @@ const howItWorksDocument = {
       },
       {
         title: 'Method',
-        body: 'Choose what enters, preserve source, time, and visibility, ask a bounded question, inspect the cited evidence, and require human approval for durable workspace changes.',
+        body: 'Choose what enters, preserve source, time, and visibility, ask a bounded question, inspect the cited evidence, and require human approval for suggested durable workspace changes.',
       },
     ],
   },

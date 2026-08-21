@@ -5,6 +5,6 @@
 // be declared inline; Next's metadata analyzer can't follow re-exports.
 export { default } from '@/app/opengraph-image';
 
-export const alt = 'The Timeline — the operations log your team can talk to';
+export const alt = 'The Timeline — AI team memory with cited answers';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';

@@ -36,12 +36,12 @@ describe('how-it-works and guide routes', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('From scattered work to a cited answer.');
     expect(html).toContain('data-how-it-works-hero="true"');
-    expect(html).toContain('data-how-it-works-steps="true"');
+    expect(html).toContain('data-how-it-works-flow="true"');
     expect(html).toContain('data-how-it-works-evidence="true"');
     expect(html.indexOf('data-how-it-works-hero="true"')).toBeLessThan(
-      html.indexOf('data-how-it-works-evidence="true"'),
+      html.indexOf('data-how-it-works-flow="true"'),
     );
-    expect(html.indexOf('data-how-it-works-steps="true"')).toBeLessThan(
+    expect(html.indexOf('data-how-it-works-flow="true"')).toBeLessThan(
       html.indexOf('data-how-it-works-evidence="true"'),
     );
     expect(html).toContain('max-w-[82rem]');
@@ -51,17 +51,11 @@ describe('how-it-works and guide routes', () => {
     expect(html).toContain('How Timeline works');
     expect(html).not.toContain('Last reviewed');
     expect(html).not.toContain('product overview');
-    for (const label of ['Choose what enters', 'Preserve the chronology', 'Ask and inspect']) {
-      expect(html).toMatch(new RegExp(`<h2[^>]*>${label}<\\/h2>`));
-    }
-    expect(html).toContain('Telegram, Slack, meetings, documents, tickets, code, and');
-    expect(html).toContain('status, handoffs, commitments, and decisions slow to rebuild');
-    expect(html).toContain('Teams keep using those tools');
-    expect(html).toContain('data-how-it-works-trust="true"');
-    expect(html).toContain('Connected does not mean cited.');
-    expect(html).toContain('does not give Timeline its whole history by default');
-    expect(html).toContain('People approve durable changes.');
-    expect(html).toContain('waits for a person to approve, change, or reject it');
+    expect(html).toContain('See how selected work becomes source-linked history');
+    expect(html).toContain('without replacing the tools your team already uses');
+    expect(html).toContain('How scattered work becomes useful context.');
+    expect(html).toContain('Trace one answer to its evidence.');
+    expect(html).toContain('Three source records become one answer you can verify.');
     expect(html).toMatch(
       /<h2[^>]*>The review date and owner are set; pricing is still unresolved\.<\/h2>/,
     );
