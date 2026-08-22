@@ -283,11 +283,24 @@ export const MEETING_MAX_DURATION_MINUTES_BY_PLAN: Record<BillingPlanId, number>
 /** Worst-case customer AI charge reserved before an Ask / web chat turn (€2.50). */
 export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 250;
 
+/** Worst-case reservation for background LLM (extract, embed, digest, vision). */
+export const BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
+
+/** First PAYG prepaid top-up (strategy §3). */
+export const PREPAID_TOPUP_CENTS = 1_000;
+
 /** Reservation TTL for Ask turns (covers long tool loops + presentation pass). */
 export const ASK_AI_RESERVATION_TTL_MS = 30 * 60_000;
 
 /** Reservation TTL for Recall bots (max meeting duration + buffer). */
 export const RECALL_RESERVATION_TTL_MS = 8 * 60 * 60_000;
+
+export function emailRecipientCount(toHeader: string): number {
+  return toHeader
+    .split(/[,;]/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0).length;
+}
 
 export function emailChargeCents(units: number): number {
   return Math.round((units * OVERAGE_RATES.emailCentsPerThousandUnits) / 1000);

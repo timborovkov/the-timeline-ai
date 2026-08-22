@@ -1,5 +1,6 @@
 import { type TranscriptionModel } from 'ai';
 
+import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -102,29 +103,35 @@ export async function transcribeAudio(
 ): Promise<TranscribeResult> {
   const modelId = resolveModelId();
   return wrapAiFailure({ operation: 'llm.transcribeAudio', model: modelId }, async () => {
-    if (!deps.model) {
-      return transcribeWithOpenRouterJson(input, {
-        modelId,
-        fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
-      });
-    }
-    const model = deps.model;
-    const result = await tracedTranscribe(
-      {
-        model,
-        audio: input.audio,
-        ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
-      },
-      {
-        name: 'llm.transcribeAudio',
-        model: modelId,
-        metadata: {
-          operation: 'transcribe_audio',
-          audio_bytes: input.audio.byteLength,
-          language_hint: Boolean(input.language),
+    return withAiMetering({ operationClass: 'transcription', model: modelId }, async () => {
+      if (!deps.model) {
+        const value = await transcribeWithOpenRouterJson(input, {
+          modelId,
+          fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
+        });
+        return { value };
+      }
+      const model = deps.model;
+      const result = await tracedTranscribe(
+        {
+          model,
+          audio: input.audio,
+          ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
         },
-      },
-    );
-    return { text: result.text, model: modelId };
+        {
+          name: 'llm.transcribeAudio',
+          model: modelId,
+          metadata: {
+            operation: 'transcribe_audio',
+            audio_bytes: input.audio.byteLength,
+            language_hint: Boolean(input.language),
+          },
+        },
+      );
+      return {
+        value: { text: result.text, model: modelId },
+        finish: { usage: result.usage, providerMetadata: result.providerMetadata },
+      };
+    });
   });
 }

@@ -4,6 +4,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { generateAndStoreTimelineMomentPresentation } from '@timeline/shared/timeline-moments/generation';
 import { Worker, type Job } from 'bullmq';
 
+import { withWorkerAiBilling } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
@@ -43,7 +44,9 @@ export function startTimelineMomentPresentationWorker(
   const worker = new Worker<queue.TimelineMomentPresentationJobData>(
     queue.QUEUE_NAMES.timelineMomentPresentation,
     async (job: Job<queue.TimelineMomentPresentationJobData>) =>
-      processTimelineMomentPresentationJobForTests(deps, job.data),
+      withWorkerAiBilling(deps.db, job.data.teamId, 'presentation', () =>
+        processTimelineMomentPresentationJobForTests(deps, job.data),
+      ),
     {
       connection: queue.getRedisConnection(),
       concurrency: 2,

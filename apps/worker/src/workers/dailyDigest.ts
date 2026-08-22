@@ -2,6 +2,7 @@ import { type Db } from '@timeline/db';
 import { childLogger, messaging, queue } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
 
+import { withWorkerAiBilling } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:daily-digest');
@@ -132,7 +133,12 @@ export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDige
     queue.QUEUE_NAMES.dailyDigest,
     async (job: Job<queue.DailyDigestJobData>) => {
       const startedAt = Date.now();
-      const result = await processDailyDigestJob(deps, job.data);
+      const result =
+        job.data.kind === 'tick'
+          ? await processDailyDigestJob(deps, job.data)
+          : await withWorkerAiBilling(deps.db, job.data.teamId, 'digest', () =>
+              processDailyDigestJob(deps, job.data),
+            );
       log.info(
         { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
         'digest job complete',

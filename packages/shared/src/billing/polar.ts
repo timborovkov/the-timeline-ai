@@ -170,3 +170,11 @@ export function polarProductIdForPlan(plan: 'payg' | 'team' | 'business'): strin
       return env.POLAR_PRODUCT_ID_BUSINESS;
   }
 }
+
+export function polarTopUpProductId(): string | undefined {
+  return getEnv().POLAR_PRODUCT_ID_TOPUP;
+}
+
+export function isPolarTopUpConfigured(): boolean {
+  return Boolean(getEnv().POLAR_ACCESS_TOKEN && polarTopUpProductId());
+}

@@ -22,6 +22,7 @@ import type {
   SendMessageResult,
 } from '#src/messaging/types.js';
 
+import { emailRecipientCount } from '#src/billing/catalog.js';
 import { getEnv } from '#src/env.js';
 import {
   digestDestinationDedupeKey,
@@ -356,6 +357,24 @@ export async function sendMessage<TIntent extends MessageIntent>(
       ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
       ...(result.error ? { error: result.error } : {}),
     });
+  }
+  if (result.ok && options.db && options.teamId && intent !== 'billing_usage_alert') {
+    try {
+      const { meterEmailUnits } = await import('#src/billing/runtime.js');
+      const units = Math.max(1, emailRecipientCount(rendered.to));
+      const operationKey =
+        result.providerMessageId ?? options.dedupeKey ?? `${intent}:${rendered.to}`;
+      await meterEmailUnits({
+        db: options.db,
+        teamId: options.teamId,
+        userId: options.userId ?? undefined,
+        operationId: `email_out:${operationKey}`,
+        units,
+        operationClass: `email_outbound:${intent}`,
+      });
+    } catch {
+      // Delivery already succeeded; metering must not reverse the send.
+    }
   }
   return {
     ok: result.ok,

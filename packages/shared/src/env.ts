@@ -368,6 +368,8 @@ const baseSchema = z.object({
   POLAR_PRODUCT_ID_PAYG: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_PRODUCT_ID_TEAM: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_PRODUCT_ID_BUSINESS: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /** One-time €10 prepaid top-up product (PAYG first collection). */
+  POLAR_PRODUCT_ID_TOPUP: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_DISCOUNT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_DISCOUNT_CODE: z.preprocess(emptyStringAsUnset, z.string().optional()),
   /** When true, wallet/spend-cap gates block costly work. Default shadow = record only. */

@@ -24,6 +24,7 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
+import { meterAcceptedSources } from '#src/billing/runtime.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import {
   reconcileLinkArtifactsForRawEvent,
@@ -338,10 +339,27 @@ export async function writeIntegrationEvents(deps: {
   const activeInserted = inserted.filter(
     (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
   );
-
   const eventByDedupKey = new Map(writableEvents.map((event) => [event.dedupKey, event]));
+  const billableInserted: typeof activeInserted = [];
+  for (const row of activeInserted) {
+    const metered = await meterAcceptedSources({
+      db: deps.db,
+      teamId,
+      userId: authorUserId ?? undefined,
+      rawEventIds: [row.id],
+    });
+    if (!metered.ok) {
+      log.warn(
+        { teamId, code: metered.code, rawEventId: row.id },
+        'accepted-source billing admission failed; storing raw event without AI enrichment',
+      );
+      continue;
+    }
+    billableInserted.push(row);
+  }
+
   await Promise.all(
-    activeInserted.flatMap((row) => {
+    billableInserted.flatMap((row) => {
       const matchingEvent = eventByDedupKey.get(row.dedupKey);
       const jobs = [
         enqueueIntegrationProcessingJob(deps.db, row.id, 'embedding', () =>

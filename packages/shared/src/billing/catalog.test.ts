@@ -12,10 +12,13 @@ import {
   acceptedSourcesChargeCents,
   customerAiChargeCentsFromOpenRouterUsd,
   emailChargeCents,
+  emailRecipientCount,
   formatEuroFromCents,
   polarEventNameForMeter,
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
+  BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   MEETING_MAX_DURATION_MINUTES_BY_PLAN,
+  PREPAID_TOPUP_CENTS,
   recallChargeCents,
   storageChargeCents,
 } from '#src/billing/catalog.js';
@@ -43,6 +46,9 @@ describe('billing catalog', () => {
   it('prices native meters from the rate card', () => {
     expect(recallChargeCents(10)).toBe(30);
     expect(emailChargeCents(1_000)).toBe(250);
+    expect(emailRecipientCount('a@x.test, b@y.test')).toBe(2);
+    expect(PREPAID_TOPUP_CENTS).toBe(1_000);
+    expect(BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
     expect(storageChargeCents(2)).toBe(50);
     expect(acceptedSourcesChargeCents(2_000)).toBe(100);
     expect(OVERAGE_RATES.aiCustomerMultiplier).toBe(4);

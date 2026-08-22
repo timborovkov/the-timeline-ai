@@ -1,6 +1,11 @@
 'use client';
 
-import { formatEuroFromCents, type BillingPlanId } from '@timeline/shared/billing/catalog';
+import {
+  formatEuroFromCents,
+  PREPAID_TOPUP_CENTS,
+  type BillingPlanId,
+} from '@timeline/shared/billing/catalog';
+import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -11,7 +16,13 @@ import type {
   SpendCapUtilization,
 } from '@timeline/shared/billing/status';
 
-import { startBillingCheckout, updateBillingSpendCap } from '@/app/actions/billing';
+import {
+  startBillingCheckout,
+  startWalletTopUp,
+  updateBillingAutoReload,
+  updateBillingSpendCap,
+} from '@/app/actions/billing';
+import { BillingPlanPreview } from '@/components/billing-plan-preview';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
 import { SettingsSection } from '@/components/section-heading';
@@ -33,13 +44,23 @@ export interface BillingSettingsPanelProps {
   nudge: BillingNudge | null;
   costBearingPaused: boolean;
   polarConfigured: boolean;
+  polarTopUpConfigured: boolean;
   canManage: boolean;
+  autoReloadEnabled: boolean;
+  autoReloadThresholdCents: number | null;
+  autoReloadAmountCents: number | null;
+  planPreview: CheapestPlanPreview;
+  activeMemberCount: number;
 }
 
 export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [spendCapEuros, setSpendCapEuros] = useState(String(props.spendCapCents / 100));
+  const [autoReloadEnabled, setAutoReloadEnabled] = useState(props.autoReloadEnabled);
+  const [autoReloadThresholdEuros, setAutoReloadThresholdEuros] = useState(
+    String((props.autoReloadThresholdCents ?? 500) / 100),
+  );
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -73,6 +94,42 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         return;
       }
       setMessage('Spend cap updated.');
+      router.refresh();
+    });
+  }
+
+  function buyTopUp() {
+    setError(null);
+    setMessage(null);
+    startTransition(async () => {
+      const result = await startWalletTopUp();
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      window.location.href = result.url;
+    });
+  }
+
+  function saveAutoReload() {
+    setError(null);
+    setMessage(null);
+    const thresholdEuros = Number(autoReloadThresholdEuros);
+    if (autoReloadEnabled && (!Number.isFinite(thresholdEuros) || thresholdEuros < 0)) {
+      setError('Enter a non-negative auto-reload threshold in euros.');
+      return;
+    }
+    startTransition(async () => {
+      const result = await updateBillingAutoReload({
+        enabled: autoReloadEnabled,
+        thresholdCents: Math.round(thresholdEuros * 100),
+        amountCents: PREPAID_TOPUP_CENTS,
+      });
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setMessage('Auto-reload updated.');
       router.refresh();
     });
   }
@@ -163,6 +220,14 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         </p>
       </SettingsSection>
 
+      <SettingsSection title="Cheapest plan this period">
+        <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />
+        <p className="mt-3 text-sm text-fg-muted">
+          Preview uses {props.activeMemberCount} active members and metered usage so far this
+          period. Extra members are €2 per member-month on paid self-serve plans.
+        </p>
+      </SettingsSection>
+
       <SettingsSection title="Wallet and spend cap">
         <dl className="grid gap-3 text-sm sm:grid-cols-3">
           <div>
@@ -204,6 +269,52 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
               className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg disabled:opacity-50"
             >
               Save cap
+            </button>
+            <button
+              type="button"
+              disabled={pending || !props.polarTopUpConfigured}
+              onClick={buyTopUp}
+              className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
+            >
+              Add €10
+            </button>
+          </div>
+        ) : null}
+        {props.canManage ? (
+          <div className="mt-4 space-y-3">
+            <label className="flex items-center gap-2 text-sm text-fg">
+              <input
+                type="checkbox"
+                checked={autoReloadEnabled}
+                onChange={(event) => {
+                  setAutoReloadEnabled(event.target.checked);
+                }}
+                className="size-4 rounded-sm border-border"
+              />
+              Auto-reload {formatEuroFromCents(PREPAID_TOPUP_CENTS)} when the wallet is low
+            </label>
+            {autoReloadEnabled ? (
+              <label className="block text-sm">
+                <span className="text-fg-muted">Reload when wallet falls below (EUR)</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={autoReloadThresholdEuros}
+                  onChange={(event) => {
+                    setAutoReloadThresholdEuros(event.target.value);
+                  }}
+                  className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
+                />
+              </label>
+            ) : null}
+            <button
+              type="button"
+              disabled={pending}
+              onClick={saveAutoReload}
+              className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
+            >
+              Save auto-reload
             </button>
           </div>
         ) : null}

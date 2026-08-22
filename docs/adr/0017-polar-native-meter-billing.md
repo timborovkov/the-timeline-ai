@@ -28,11 +28,23 @@ credit hides margin and confuses prospects.
    even while `shadowBilling` is true; paid spend-cap / wallet blocking applies
    when charges are enabled.
 6. Costly product paths admit via `scope.billing.reserve` → work →
-   `settle`/`release`. Wired today: Agent Ask (`askAgent` + web `/api/chat`) on
-   the `ai` meter, and Recall meeting bots (web schedule/quick-join + scheduler
-   reserve, finalize settle) on `recall_minutes`. Email, storage, ingest, and
-   background LLM jobs remain follow-ups.
-7. After successful `settle`, workspace **owners** get transactional email for
+   `settle`/`release`. Native meters wired today:
+   - `ai` — Agent Ask plus background LLM (extract, embed, digest, vision,
+     transcription, suggestions, summaries) when worker ALS is set.
+   - `recall_minutes` — meeting bots.
+   - `email_units` — inbound unique messages and outbound Postmark recipients.
+   - `accepted_sources` — unique ingested source items (raw row is kept; AI
+     enrichment pauses when the meter is exhausted).
+   - `storage_gb_month` — daily GB-month snapshot from original document bytes.
+   - `member_days` — extra active-member proration on paid plans (invoice line,
+     not a Polar meter).
+   Capacity limits (agent turns, webhooks, MCP, search) are not billed meters.
+7. Prepaid PAYG collection is a €10 Polar top-up (`POLAR_PRODUCT_ID_TOPUP`)
+   credited to `walletBalanceCents`. Owners can enable auto-reload settings;
+   the amount cannot exceed the workspace spend cap. Team/Business included
+   usage is an invoice discount that resets each billing period. Billing
+   settings show a cheapest-plan preview and never auto-switch.
+8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion
    (`billing_usage_alert` intent + HTML template), deduped once per
    team/period/threshold/owner. In-app nudges stay the primary product surface.

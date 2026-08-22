@@ -12,6 +12,7 @@ import {
   rawEvents,
 } from '@timeline/db';
 import { getEnv, qdrant } from '@timeline/shared';
+import { runWorkerBilling } from '@timeline/shared/billing';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import {
@@ -114,20 +115,22 @@ async function main(): Promise<void> {
     assertExpectedDemoVectorSources(rows);
     const pointIds: string[] = [];
     const models = new Set<string>();
-    for (const job of buildDemoVectorJobs(args.teamId, rows)) {
-      const result = await processEmbedJob({ db }, job);
-      if (
-        result.skipped ||
-        !('pointIds' in result) ||
-        result.pointIds.length === 0 ||
-        typeof result.model !== 'string' ||
-        !result.model
-      ) {
-        throw new Error(`Demo embedding unexpectedly skipped ${JSON.stringify(job)}`);
+    await runWorkerBilling(db, args.teamId, 'embedding', async () => {
+      for (const job of buildDemoVectorJobs(args.teamId, rows)) {
+        const result = await processEmbedJob({ db }, job);
+        if (
+          result.skipped ||
+          !('pointIds' in result) ||
+          result.pointIds.length === 0 ||
+          typeof result.model !== 'string' ||
+          !result.model
+        ) {
+          throw new Error(`Demo embedding unexpectedly skipped ${JSON.stringify(job)}`);
+        }
+        pointIds.push(...result.pointIds);
+        models.add(result.model);
       }
-      pointIds.push(...result.pointIds);
-      models.add(result.model);
-    }
+    });
     if (models.size !== 1) {
       throw new Error(`Demo embeddings used inconsistent models: ${[...models].join(', ')}`);
     }

@@ -11,6 +11,7 @@ import {
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
+import { assertTeamWriteCapacity } from '#src/billing/runtime.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
@@ -1208,6 +1209,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
      */
     async createDocument(input: CreateDocumentInput): Promise<CreateDocumentResult> {
       await ensureMember();
+      await assertTeamWriteCapacity({ db, teamId, additionalDocuments: 1 });
       if (input.folderId) await assertFolderInTeam(input.folderId);
       const visibility = input.visibility ?? 'team';
       const visibilityUserIds = await normalizeDocumentVisibilityUserIds({
@@ -1498,6 +1500,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
           return { document, version, eventId: version.sourceEventId, action };
         }
+
+        await assertTeamWriteCapacity({
+          db,
+          teamId,
+          additionalBytes: input.byteSize,
+        });
 
         const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
         const summary =

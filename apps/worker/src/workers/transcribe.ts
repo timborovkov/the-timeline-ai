@@ -20,6 +20,7 @@ import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 import ffmpegPath from 'ffmpeg-static';
 
+import { withWorkerAiBilling } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:transcribe');
@@ -422,7 +423,10 @@ export async function markTranscribeFailureForTests(
 export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.TranscribeJobData> {
   const worker = new Worker<queue.TranscribeJobData>(
     queue.QUEUE_NAMES.transcribe,
-    async (job: Job<queue.TranscribeJobData>) => processTranscribeJobForTests(deps, job.data),
+    async (job: Job<queue.TranscribeJobData>) =>
+      withWorkerAiBilling(deps.db, job.data.teamId, 'transcription', () =>
+        processTranscribeJobForTests(deps, job.data),
+      ),
     {
       connection: queue.getRedisConnection(),
       // Phase 3: one in-flight transcription per worker process. Bump once

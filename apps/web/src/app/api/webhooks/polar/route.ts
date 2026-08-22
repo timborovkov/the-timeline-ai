@@ -1,5 +1,9 @@
 import { teamBillingAccounts } from '@timeline/db';
-import { verifyPolarWebhookSignature } from '@timeline/shared/billing';
+import {
+  PREPAID_TOPUP_CENTS,
+  creditWalletFromPolarOrder,
+  verifyPolarWebhookSignature,
+} from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { eq } from 'drizzle-orm';
 
@@ -13,6 +17,7 @@ interface PolarWebhookPayload {
     id?: string;
     status?: string;
     product_id?: string;
+    amount?: number;
     customer?: { external_id?: string; id?: string };
     customer_id?: string;
     external_customer_id?: string;
@@ -105,6 +110,20 @@ export async function POST(req: Request): Promise<Response> {
           },
         });
     }
+  }
+
+  if (type === 'order.paid' && payload.data?.product_id === env.POLAR_PRODUCT_ID_TOPUP) {
+    const cents =
+      typeof payload.data.amount === 'number' && payload.data.amount > 0
+        ? payload.data.amount
+        : PREPAID_TOPUP_CENTS;
+    const orderId = payload.data.id ?? `anon:${teamId}:${cents}`;
+    await creditWalletFromPolarOrder({
+      db,
+      teamId,
+      orderId,
+      cents,
+    });
   }
 
   if (type === 'subscription.canceled' || type === 'subscription.revoked') {

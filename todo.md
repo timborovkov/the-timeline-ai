@@ -548,14 +548,21 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` tracking; Home/Usage/Billing upgrade nudges;
       Free hard-stop + spend-cap admission in billing scope (`release` included).
-- [x] Wire Ask + meeting bots through billing reserve/settle (agent `askAgent`,
-      web `/api/chat`, Recall join paths + finalize). Remaining: email, storage,
-      ingest, and background LLM workers.
+- [x] Wire native v1 meters at production call sites: Ask + Recall (existing),
+      background LLM workers via ALS (`withAiMetering` in the OpenRouter wrappers),
+      accepted unique sources at ingest, inbound/outbound email units, daily
+      storage GB-month + member-day janitor, document write capacity.
+      Agent turns, webhooks, MCP, and search stay capacity/abuse limits — not
+      extra billed Polar meters.
+- [x] Prepaid €10 top-up checkout, auto-reload settings (capped by spend cap),
+      cheapest-plan preview (informational, never auto-switch), Team/Business
+      included-discount period reset.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).
-- [ ] Prepaid top-up / auto-reload / threshold charge; enable Polar webhook with
-      a real public URL; one shadow-billing month before `BILLING_CHARGES_ENABLED`.
+- [ ] Enable Polar webhook with a real public URL; one shadow-billing month
+      before `BILLING_CHARGES_ENABLED`. Silent Polar auto-charge still needs a
+      saved payment method after that month.
 
 ## Standing Items
 

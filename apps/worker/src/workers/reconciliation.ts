@@ -29,6 +29,7 @@ import { rawEventVisibleToUser } from '@timeline/shared/visibility';
 import { Worker, type Job } from 'bullmq';
 import { and, count, desc, eq, gte, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 
+import { withWorkerAiBilling } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:reconciliation');
@@ -1483,7 +1484,9 @@ export function startReconciliationWorker(deps: { db: Db }): Worker<queue.Reconc
     queue.QUEUE_NAMES.reconciliation,
     async (job: Job<queue.ReconciliationJobData>) => {
       const startedAt = Date.now();
-      const result = await processReconciliationJob(deps.db, job.data);
+      const result = await withWorkerAiBilling(deps.db, job.data.teamId, 'reconciliation', () =>
+        processReconciliationJob(deps.db, job.data),
+      );
       const durationMs = Date.now() - startedAt;
       log.info(
         {

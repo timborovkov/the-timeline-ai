@@ -9,6 +9,7 @@ import {
 } from '@timeline/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { meterEmailUnits } from '#src/billing/runtime.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import {
   chooseContentText,
@@ -712,6 +713,21 @@ async function ingestForTeam(
   }
 
   const parentEventId = createResult.id;
+  const emailMeter = await meterEmailUnits({
+    db: deps.db,
+    teamId: team.id,
+    userId: authorUserId ?? undefined,
+    operationId: `email_in:${messageId}`,
+    units: 1,
+    operationClass: 'email_inbound',
+  });
+  const allowEnrichment = emailMeter.ok;
+  if (!allowEnrichment) {
+    log.warn(
+      { teamId: team.id, code: emailMeter.code, messageId },
+      'inbound email stored without AI enrichment; email meter admission failed',
+    );
+  }
   let parentAttachmentsDirty = false;
 
   parentAttachmentsDirty = await processEmailDocumentCandidates(deps, {
@@ -778,11 +794,13 @@ async function ingestForTeam(
       parentAttachmentsDirty = true;
 
       try {
-        await deps.attachments.enqueueTranscribe({
-          rawEventId: child.id,
-          teamId: team.id,
-          audioKey: key,
-        });
+        if (allowEnrichment) {
+          await deps.attachments.enqueueTranscribe({
+            rawEventId: child.id,
+            teamId: team.id,
+            audioKey: key,
+          });
+        }
       } catch (err) {
         log.error({ teamId: team.id, err }, 'transcribe enqueue failed');
         const failurePatch = JSON.stringify({
@@ -829,9 +847,11 @@ async function ingestForTeam(
   // Enqueue extract + embed for the parent email event. Audio children's
   // extract/embed runs after the transcribe worker completes (Phase 3
   // cascade), so we don't enqueue them here.
-  await maybeEnqueueExtract(deps, parentEventId, team.id);
-  await maybeEnqueueEmbed(deps, parentEventId, team.id);
-  if (contentText.trim()) await maybeEnqueueSuggestion(deps, parentEventId, team.id);
+  if (allowEnrichment) {
+    await maybeEnqueueExtract(deps, parentEventId, team.id);
+    await maybeEnqueueEmbed(deps, parentEventId, team.id);
+    if (contentText.trim()) await maybeEnqueueSuggestion(deps, parentEventId, team.id);
+  }
 
   return true;
 }

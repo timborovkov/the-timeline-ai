@@ -30,6 +30,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
+import { withWorkerAiBilling } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:meeting-finalize');
@@ -955,7 +956,10 @@ export function startMeetingFinalizeWorker(
 ): Worker<queue.MeetingFinalizeJobData> {
   const worker = new Worker<queue.MeetingFinalizeJobData>(
     queue.QUEUE_NAMES.meetingFinalize,
-    async (job: Job<queue.MeetingFinalizeJobData>) => processMeetingFinalizeJob(deps, job.data),
+    async (job: Job<queue.MeetingFinalizeJobData>) =>
+      withWorkerAiBilling(deps.db, job.data.teamId, 'meeting_finalize', () =>
+        processMeetingFinalizeJob(deps, job.data),
+      ),
     {
       connection: queue.getRedisConnection(),
       // Single concurrency per process — meeting summarisation is rare

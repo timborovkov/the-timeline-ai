@@ -6,3 +6,7 @@ export * from '#src/billing/status.js';
 export * from '#src/billing/openrouter-usage.js';
 export * from '#src/billing/admission.js';
 export * from '#src/billing/alerts.js';
+export * from '#src/billing/context.js';
+export * from '#src/billing/errors.js';
+export * from '#src/billing/runtime.js';
+export * from '#src/billing/preview.js';

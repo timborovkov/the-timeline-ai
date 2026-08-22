@@ -3,7 +3,10 @@
 import {
   createPolarBillingProvider,
   isPolarBillingConfigured,
+  isPolarTopUpConfigured,
   polarProductIdForPlan,
+  polarTopUpProductId,
+  PREPAID_TOPUP_CENTS,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -72,6 +75,68 @@ export async function updateBillingSpendCap(input: {
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Failed to update spend cap.',
+    };
+  }
+}
+
+export async function startWalletTopUp(): Promise<
+  { ok: true; url: string } | { ok: false; error: string }
+> {
+  const gate = await requireBillingAdmin();
+  if (!gate.ok) return gate;
+  if (!isPolarTopUpConfigured()) {
+    return { ok: false, error: 'Prepaid top-up is not configured.' };
+  }
+  const productId = polarTopUpProductId();
+  if (!productId) return { ok: false, error: 'Missing Polar top-up product id.' };
+
+  const provider = createPolarBillingProvider();
+  if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
+
+  const env = getEnv();
+  await provider.ensureCustomer({
+    externalId: gate.active.teamId,
+    email: gate.email,
+    name: gate.active.teamName,
+  });
+  const checkout = await provider.createCheckoutSession({
+    externalCustomerId: gate.active.teamId,
+    customerEmail: gate.email,
+    productId,
+    successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=topup`,
+  });
+  return { ok: true, url: checkout.url };
+}
+
+export async function updateBillingAutoReload(input: {
+  enabled: boolean;
+  thresholdCents?: number;
+  amountCents?: number;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const gate = await requireBillingAdmin();
+  if (!gate.ok) return gate;
+  try {
+    const amountCents = input.amountCents ?? PREPAID_TOPUP_CENTS;
+    if (input.enabled && (!Number.isInteger(amountCents) || amountCents <= 0)) {
+      return { ok: false, error: 'Auto-reload amount must be a positive euro amount.' };
+    }
+    const account = await gate.scope.billing.getAccount();
+    if (input.enabled && account.spendCapCents > 0 && amountCents > account.spendCapCents) {
+      return {
+        ok: false,
+        error: 'Auto-reload cannot exceed the workspace monthly spend cap.',
+      };
+    }
+    await gate.scope.billing.setAutoReload({
+      enabled: input.enabled,
+      thresholdCents: input.thresholdCents ?? 500,
+      amountCents,
+    });
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Failed to update auto-reload.',
     };
   }
 }

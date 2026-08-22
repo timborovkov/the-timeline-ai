@@ -126,4 +126,23 @@ describe('billing scope', () => {
     expect(released.ok).toBe(true);
     expect(released.missing).toBe(false);
   });
+
+  it('stores auto-reload settings and returns a plan preview', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const row = await scope.setAutoReload({
+      enabled: true,
+      thresholdCents: 500,
+      amountCents: 1_000,
+    });
+    expect(row.autoReloadEnabled).toBe(true);
+    expect(row.autoReloadAmountCents).toBe(1_000);
+    const dash = await scope.getDashboard();
+    expect(dash.planPreview.recommended).toBe('payg');
+    expect(dash.activeMemberCount).toBe(1);
+  });
 });

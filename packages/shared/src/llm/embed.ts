@@ -6,6 +6,7 @@ import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
+import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -172,8 +173,13 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
       return { vector: deterministicEmbeddingVector(text), model: modelId };
     }
     const model = deps.model ?? buildDefaultModel(modelId);
-    const result = await aiEmbed({ model, value: text, maxRetries: deps.maxRetries ?? 2 });
-    return { vector: Array.from(result.embedding), model: modelId };
+    return withAiMetering({ operationClass: 'embedding', model: modelId }, async () => {
+      const result = await aiEmbed({ model, value: text, maxRetries: deps.maxRetries ?? 2 });
+      return {
+        value: { vector: Array.from(result.embedding), model: modelId },
+        finish: { usage: result.usage, providerMetadata: result.providerMetadata },
+      };
+    });
   });
 }
 
@@ -191,15 +197,23 @@ export async function embedMany(
       return { vectors: texts.map(deterministicEmbeddingVector), model: modelId };
     }
     const model = deps.model ?? buildDefaultModel(modelId);
-    const result = await aiEmbedMany({
-      model,
-      values: texts,
-      maxRetries: deps.maxRetries ?? 2,
+    return withAiMetering({ operationClass: 'embedding', model: modelId }, async () => {
+      const result = await aiEmbedMany({
+        model,
+        values: texts,
+        maxRetries: deps.maxRetries ?? 2,
+      });
+      assertEmbeddingCount(texts.length, result.embeddings.length);
+      result.embeddings.forEach((embedding, index) => {
+        assertEmbeddingVector(embedding, index);
+      });
+      return {
+        value: {
+          vectors: result.embeddings.map((embedding) => Array.from(embedding)),
+          model: modelId,
+        },
+        finish: { usage: result.usage, providerMetadata: result.providerMetadata },
+      };
     });
-    assertEmbeddingCount(texts.length, result.embeddings.length);
-    result.embeddings.forEach((embedding, index) => {
-      assertEmbeddingVector(embedding, index);
-    });
-    return { vectors: result.embeddings.map((embedding) => Array.from(embedding)), model: modelId };
   });
 }

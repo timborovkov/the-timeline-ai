@@ -41,6 +41,7 @@ POLAR_WEBHOOK_ID=
 POLAR_PRODUCT_ID_PAYG=
 POLAR_PRODUCT_ID_TEAM=
 POLAR_PRODUCT_ID_BUSINESS=
+POLAR_PRODUCT_ID_TOPUP=
 POLAR_DISCOUNT_ID=
 POLAR_DISCOUNT_CODE=
 BILLING_CHARGES_ENABLED=false
@@ -51,6 +52,10 @@ BILLING_CHARGES_ENABLED=false
         <li><strong>Timeline Pay as you go</strong> — €0 platform fee + metered overage</li>
         <li><strong>Timeline Team</strong> — €49/mo + up to €60 included usage discount</li>
         <li><strong>Timeline Business</strong> — €199/mo + up to €250 included usage discount</li>
+        <li>
+          <strong>Timeline prepaid top-up</strong> — one-time €10 wallet credit (first PAYG
+          collection)
+        </li>
       </ul>
       <p>Native Polar meters (event name → sum <code>units</code>):</p>
       <ul>
@@ -60,6 +65,15 @@ BILLING_CHARGES_ENABLED=false
         <li><code>timeline_storage_gb_month</code></li>
         <li><code>timeline_accepted_sources</code></li>
       </ul>
+      <p>
+        Extra active members are billed as <code>member_days</code> on the workspace invoice (€2 per
+        member-month, prorated). That meter is not ingested to Polar.
+      </p>
+      <p>
+        Background workers attach a billing context so OpenRouter wrappers settle the
+        <code>ai</code> meter from exact <code>usage.cost</code>. Ask and Recall keep their own
+        reserve/settle path and skip the wrapper meter to avoid double-counting.
+      </p>
 
       <h2>Webhook</h2>
       <p>
@@ -72,7 +86,10 @@ BILLING_CHARGES_ENABLED=false
       <ul>
         <li>Public catalog: <code>/pricing</code></li>
         <li>Team usage: <code>/app/usage</code></li>
-        <li>Team settings: <code>/app/team?section=billing</code> (owner/admin)</li>
+        <li>
+          Team settings: <code>/app/team?section=billing</code> (owner/admin) — plan, €10 top-up,
+          auto-reload, cheapest-plan preview, spend cap
+        </li>
         <li>
           Owner emails: spend-cap 50/75/90/100% and Free near-limit / exhaustion (<code
             >billing_usage_alert</code

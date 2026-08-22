@@ -6,7 +6,11 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { isPolarBillingConfigured, PLAN_CATALOG } from '@timeline/shared/billing';
+import {
+  isPolarBillingConfigured,
+  isPolarTopUpConfigured,
+  PLAN_CATALOG,
+} from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { listTeamDigestDestinations, getDigestPreference } from '@timeline/shared/messaging';
 import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline/shared/slack';
@@ -304,7 +308,13 @@ export default async function TeamSettingsPage({
               nudge={billingDashboard.nudge}
               costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
+              polarTopUpConfigured={isPolarTopUpConfigured()}
               canManage={isAdmin}
+              autoReloadEnabled={billingDashboard.account.autoReloadEnabled}
+              autoReloadThresholdCents={billingDashboard.account.autoReloadThresholdCents}
+              autoReloadAmountCents={billingDashboard.account.autoReloadAmountCents}
+              planPreview={billingDashboard.planPreview}
+              activeMemberCount={billingDashboard.activeMemberCount}
             />
           ) : null}
           {section === 'exports' ? (

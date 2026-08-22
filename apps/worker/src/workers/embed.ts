@@ -14,6 +14,7 @@ import {
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
+import { withWorkerAiBilling } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:embed');
@@ -552,14 +553,16 @@ export function startEmbedWorker(deps: EmbedWorkerDeps): Worker<queue.EmbedJobDa
   const worker = new Worker<queue.EmbedJobData>(
     queue.QUEUE_NAMES.embed,
     async (job: Job<queue.EmbedJobData>, token?: string) => {
-      const result = await processEmbedJob(
-        deps,
-        job.data,
-        {},
-        {
-          attemptsMade: job.attemptsMade,
-          maxAttempts: job.opts.attempts ?? 1,
-        },
+      const result = await withWorkerAiBilling(deps.db, job.data.teamId, 'embedding', () =>
+        processEmbedJob(
+          deps,
+          job.data,
+          {},
+          {
+            attemptsMade: job.attemptsMade,
+            maxAttempts: job.opts.attempts ?? 1,
+          },
+        ),
       );
       if (integrations.isDelayedIngestResult(result)) {
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);

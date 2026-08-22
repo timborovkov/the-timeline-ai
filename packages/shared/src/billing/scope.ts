@@ -5,8 +5,9 @@ import {
   billingUsageLedger,
   billingUsageReservations,
   teamBillingAccounts,
+  teamMembers,
 } from '@timeline/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
@@ -19,8 +20,11 @@ import {
   CAPACITY_BY_PLAN,
   FREE_ALLOWANCES,
   PLAN_CATALOG,
+  PREPAID_TOPUP_CENTS,
   polarEventNameForMeter,
 } from '#src/billing/catalog.js';
+import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
+import { cheapestPlanPreview } from '#src/billing/preview.js';
 import {
   deriveBillingNudge,
   deriveSidebarBillingSummary,
@@ -126,6 +130,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
         includedDiscountRemainingCents: account.includedDiscountRemainingCents,
         freeRemaining,
       });
+      const [{ activeMemberCount }] = await db
+        .select({
+          activeMemberCount: sql<number>`count(*)::int`,
+        })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
+      const planPreview = cheapestPlanPreview({
+        activeMembers: Number(activeMemberCount ?? 0),
+        meteredSpendCents,
+      });
       return {
         account,
         plan,
@@ -138,6 +152,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
         periodYm: ym,
         meters: byMeter,
         meteredSpendCents,
+        activeMemberCount: Number(activeMemberCount ?? 0),
+        planPreview,
         availableWalletCents: Math.max(
           0,
           account.walletBalanceCents - account.reservedBalanceCents,
@@ -370,7 +386,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           operationClass: input.operationClass ?? null,
           provider: input.provider ?? null,
           model: input.model ?? null,
-          actorUserId: userId,
+          actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
           source: input.source ?? null,
           deliverySurface: input.deliverySurface ?? null,
           reservationId: reservation[0]?.id ?? null,
@@ -512,6 +528,66 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .where(eq(teamBillingAccounts.teamId, teamId));
       }
       return { ok: true as const, missing: false as const, alreadyFinal: false as const };
+    },
+
+    async creditWallet(input: { operationId: string; cents: number; source?: string }) {
+      await ensureMember('admin');
+      if (!Number.isInteger(input.cents) || input.cents <= 0) {
+        throw new Error('top-up amount must be a positive integer (euro cents)');
+      }
+      await ensureAccount();
+      const [ledgerRow] = await db
+        .insert(billingUsageLedger)
+        .values({
+          teamId,
+          operationId: input.operationId,
+          kind: 'top_up',
+          meterId: 'ai',
+          nativeUnits: '0',
+          customerChargeCents: 0,
+          billable: false,
+          nonBillableReason: 'wallet_top_up',
+          operationClass: 'wallet_top_up',
+          source: input.source ?? 'polar',
+          actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
+          metadata: { cents: input.cents },
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!ledgerRow) return { ok: true as const, duplicate: true as const };
+      const account = await ensureAccount();
+      const nextState =
+        account.billingState === 'balance_exhausted' ? 'payg_active' : account.billingState;
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          walletBalanceCents: sql`${teamBillingAccounts.walletBalanceCents} + ${input.cents}`,
+          billingState: nextState,
+          updatedAt: new Date(),
+        })
+        .where(eq(teamBillingAccounts.teamId, teamId));
+      return { ok: true as const, duplicate: false as const };
+    },
+
+    async setAutoReload(input: {
+      enabled: boolean;
+      thresholdCents?: number | null;
+      amountCents?: number | null;
+    }) {
+      await ensureMember('admin');
+      await ensureAccount();
+      const [row] = await db
+        .update(teamBillingAccounts)
+        .set({
+          autoReloadEnabled: input.enabled,
+          autoReloadThresholdCents: input.enabled ? (input.thresholdCents ?? 500) : null,
+          autoReloadAmountCents: input.enabled ? (input.amountCents ?? PREPAID_TOPUP_CENTS) : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(teamBillingAccounts.teamId, teamId))
+        .returning();
+      if (!row) throw new Error('Failed to update auto-reload');
+      return row;
     },
   };
 }
