@@ -9,6 +9,7 @@ import {
   assertTeamCustomMcpCapacity,
   assertTeamMemberSeatCapacity,
   assertTeamWriteCapacity,
+  getTeamCapacityUsage,
 } from '#src/billing/capacity.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { createBillingScope } from '#src/billing/scope.js';
@@ -94,5 +95,22 @@ describe('billing capacity (not Polar meters)', () => {
       reservedChargeCents: 1,
     });
     expect(blocked.ok).toBe(false);
+  });
+
+  it('reports live used/limit for enforced plan stock', async () => {
+    await pg.exec(`
+      INSERT INTO meetings (team_id, platform, meeting_url, status)
+      VALUES ('${TEAM_ID}', 'meet', 'https://meet.google.com/aaa-bbbb-ccc', 'joining');
+      INSERT INTO billing_usage_reservations
+        (team_id, operation_id, meter_id, reserved_native_units, reserved_charge_cents, expires_at)
+      VALUES ('${TEAM_ID}', 'ask:web:1', 'ai', 1, 1, now() + interval '1 hour');
+    `);
+    const rows = await getTeamCapacityUsage({ db, teamId: TEAM_ID, planId: 'free' });
+    const byKind = Object.fromEntries(rows.map((row) => [row.kind, row]));
+    expect(byKind.concurrent_recall_bots).toMatchObject({ used: 1, limit: 1 });
+    expect(byKind.agent_turns).toMatchObject({ used: 1, limit: 100 });
+    expect(byKind.active_members).toMatchObject({ used: 1, limit: 3 });
+    expect(byKind.custom_mcp_servers).toMatchObject({ used: 0, limit: 0 });
+    expect(byKind.documents).toMatchObject({ used: 0, limit: 100 });
   });
 });

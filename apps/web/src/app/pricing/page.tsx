@@ -106,8 +106,9 @@ export default async function PricingPage() {
                   provisional, not permanent product walls.
                 </li>
                 <li>
-                  Capacity ceilings (turns, webhooks, storage) are abuse and infrastructure
-                  controls; the AI euro budget remains the financial ceiling.
+                  Capacity ceilings (Ask turns, concurrent meeting notetakers, documents, storage)
+                  are abuse and infrastructure controls; the AI euro budget remains the financial
+                  ceiling. Usage shows live used/limit for those gates.
                 </li>
                 <li>
                   Reading, deletion, billing management, and export stay available when a spend cap

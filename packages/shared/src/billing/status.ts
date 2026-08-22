@@ -29,6 +29,24 @@ export interface FreeAllowanceRemaining {
   acceptedSources: number;
 }
 
+/** Live used/limit for catalog capacity that product gates actually enforce. */
+export type PlanCapacityKind =
+  | 'agent_turns'
+  | 'concurrent_recall_bots'
+  | 'custom_mcp_servers'
+  | 'documents'
+  | 'storage_gb'
+  | 'indexed_chunks'
+  | 'active_members';
+
+export interface PlanCapacityUsageRow {
+  kind: PlanCapacityKind;
+  label: string;
+  used: number;
+  /** Null means no self-serve ceiling (Enterprise). */
+  limit: number | null;
+}
+
 export type BillingNudgeKind =
   | 'none'
   | 'approaching_cap'

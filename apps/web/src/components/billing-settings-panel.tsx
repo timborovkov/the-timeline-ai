@@ -13,6 +13,7 @@ import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import type {
   BillingNudge,
   FreeAllowanceRemaining,
+  PlanCapacityUsageRow,
   SpendCapUtilization,
 } from '@timeline/shared/billing/status';
 
@@ -39,6 +40,7 @@ export interface BillingSettingsPanelProps {
   meteredSpendCents: number;
   periodYm: string;
   meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number }>>;
+  capacityUsage: PlanCapacityUsageRow[];
   utilization: SpendCapUtilization;
   freeRemaining: FreeAllowanceRemaining;
   nudge: BillingNudge | null;
@@ -173,6 +175,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           freeRemaining={props.freeRemaining}
           meteredSpendCents={props.meteredSpendCents}
           meters={props.meters}
+          capacityUsage={props.capacityUsage}
           costBearingPaused={props.costBearingPaused}
         />
       </SettingsSection>

@@ -7,6 +7,7 @@ import {
   users,
 } from '@timeline/db';
 import {
+  getTeamCapacityUsage,
   isPolarBillingConfigured,
   isPolarTopUpConfigured,
   PLAN_CATALOG,
@@ -202,6 +203,13 @@ export default async function TeamSettingsPage({
   const billingDashboard = isAdmin
     ? await scope.billing.getDashboard({ canManageBilling: true })
     : null;
+  const capacityUsage = billingDashboard
+    ? await getTeamCapacityUsage({
+        db,
+        teamId: active.teamId,
+        planId: billingDashboard.account.planId,
+      })
+    : [];
 
   return (
     <div className="space-y-4">
@@ -303,6 +311,7 @@ export default async function TeamSettingsPage({
               meteredSpendCents={billingDashboard.meteredSpendCents}
               periodYm={billingDashboard.periodYm}
               meters={billingDashboard.meters}
+              capacityUsage={capacityUsage}
               utilization={billingDashboard.utilization}
               freeRemaining={billingDashboard.freeRemaining}
               nudge={billingDashboard.nudge}

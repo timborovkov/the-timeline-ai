@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.26 · Dedicated animated platform flow (2026-08-21). Replaces v3.25 Restored hero observatory.
+**Version:** v3.27 · Usage plan limits (2026-08-22). Replaces v3.26 Dedicated animated platform flow.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1202,3 +1202,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Usage nav and billing nudges | Adds Manage → Usage, keeps Enterprise off the public plan grid as a gray contact nudge, and surfaces quiet spend-cap / Free-allowance nudges on Home, Usage, and Billing. |
 | 2026-08-21 | Sidebar plan usage meter | Puts plan name, usage progress, and overage under Help in the app sidebar (and mobile nav), linking to Billing or Usage. |
 | 2026-08-21 | Free CTA honesty | Header CTA is `Start free`; landing and sign-up say free / no card; upgrade nudges link to `/pricing`. |
+| 2026-08-22 | Usage plan limits | Usage and Billing show live used/limit for Ask turns, concurrent meeting notetakers, custom MCP servers, documents, storage, indexed chunks, and member seats — not Polar meters. |

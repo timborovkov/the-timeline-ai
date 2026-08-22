@@ -1,4 +1,4 @@
-import { PLAN_CATALOG } from '@timeline/shared/billing';
+import { getTeamCapacityUsage, PLAN_CATALOG } from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -14,7 +14,8 @@ import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Usage',
-  description: 'Metered usage, Free allowances, and spend-cap utilization for this workspace.',
+  description:
+    'Metered usage, Free allowances, plan limits, and spend-cap utilization for this workspace.',
 };
 
 export default async function UsagePage() {
@@ -28,13 +29,18 @@ export default async function UsagePage() {
   const canManage = role === 'owner' || role === 'admin';
   const dashboard = await scope.billing.getDashboard({ canManageBilling: canManage });
   const planName = PLAN_CATALOG[dashboard.account.planId].name;
+  const capacityUsage = await getTeamCapacityUsage({
+    db,
+    teamId: active.teamId,
+    planId: dashboard.account.planId,
+  });
 
   return (
     <div className="space-y-5">
       <PageHeader
         variant="collection"
         title="Usage"
-        subtitle="Native meters and euro values for this billing period."
+        subtitle="Native meters, plan limits, and euro values for this billing period."
         metadata={[
           { label: 'Plan', value: planName },
           { label: 'Period', value: dashboard.periodYm, mono: true },
@@ -62,6 +68,7 @@ export default async function UsagePage() {
         freeRemaining={dashboard.freeRemaining}
         meteredSpendCents={dashboard.meteredSpendCents}
         meters={dashboard.meters}
+        capacityUsage={capacityUsage}
         costBearingPaused={dashboard.costBearingPaused}
       />
     </div>

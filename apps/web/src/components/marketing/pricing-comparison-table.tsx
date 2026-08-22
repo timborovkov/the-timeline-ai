@@ -1,4 +1,5 @@
 import {
+  CAPACITY_BY_PLAN,
   PLAN_CATALOG,
   SELF_SERVE_PLAN_ORDER,
   type BillingPlanId,
@@ -6,6 +7,15 @@ import {
 } from '@timeline/shared/billing/catalog';
 
 import { cn } from '@/lib/utils';
+
+function formatStock(n: number | null, options?: { unit: string } | { zero: string }): string {
+  if (n === null) return 'Custom';
+  if (n === 0) {
+    return options && 'zero' in options ? options.zero : 'Not included';
+  }
+  const formatted = n.toLocaleString('en-IE');
+  return options && 'unit' in options ? `${formatted} ${options.unit}` : formatted;
+}
 
 const COMPARISON_ROWS: {
   label: string;
@@ -34,6 +44,26 @@ const COMPARISON_ROWS: {
       if (n === null) return 'Custom';
       return `${formatEuroFromCents(n)}/member/mo`;
     },
+  },
+  {
+    label: 'Ask turns / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].agentTurnsPerMonth),
+  },
+  {
+    label: 'Concurrent meeting notetakers',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].concurrentRecallBots),
+  },
+  {
+    label: 'Custom MCP servers',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].customMcpServers, { zero: 'Not included' }),
+  },
+  {
+    label: 'Documents',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].documents),
+  },
+  {
+    label: 'File storage',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].storageGb, { unit: 'GB' }),
   },
   {
     label: 'Metered usage',

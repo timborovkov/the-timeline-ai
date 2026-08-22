@@ -5,7 +5,12 @@ import {
 } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
 
-import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
+import type {
+  FreeAllowanceRemaining,
+  PlanCapacityKind,
+  PlanCapacityUsageRow,
+  SpendCapUtilization,
+} from '@timeline/shared/billing/status';
 
 import { cn } from '@/lib/utils';
 
@@ -30,6 +35,32 @@ function ProgressBar({ percent, danger }: { percent: number; danger?: boolean })
   );
 }
 
+function formatCapacityNumber(kind: PlanCapacityKind, value: number): string {
+  if (kind === 'storage_gb') {
+    const rounded = value >= 10 ? value.toFixed(0) : value.toFixed(2);
+    return `${Number(rounded).toLocaleString('en-IE')} GB`;
+  }
+  return Math.round(value).toLocaleString('en-IE');
+}
+
+function formatCapacityValue(row: PlanCapacityUsageRow): string {
+  if (row.limit === null) {
+    return `${formatCapacityNumber(row.kind, row.used)} · Custom`;
+  }
+  if (row.limit === 0) {
+    return row.used > 0
+      ? `${formatCapacityNumber(row.kind, row.used)} · Not included`
+      : 'Not included';
+  }
+  return `${formatCapacityNumber(row.kind, row.used)} of ${formatCapacityNumber(row.kind, row.limit)}`;
+}
+
+function capacityPercent(row: PlanCapacityUsageRow): number | null {
+  if (row.limit === null) return null;
+  if (row.limit <= 0) return row.used > 0 ? 100 : 0;
+  return (row.used / row.limit) * 100;
+}
+
 export function BillingUsageSummary({
   periodYm,
   planName,
@@ -38,6 +69,7 @@ export function BillingUsageSummary({
   planId,
   meteredSpendCents,
   meters,
+  capacityUsage,
   costBearingPaused,
   className,
 }: {
@@ -48,6 +80,7 @@ export function BillingUsageSummary({
   freeRemaining: FreeAllowanceRemaining;
   meteredSpendCents: number;
   meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number }>>;
+  capacityUsage: PlanCapacityUsageRow[];
   costBearingPaused: boolean;
   className?: string;
 }) {
@@ -176,6 +209,31 @@ export function BillingUsageSummary({
                 danger={freeRemaining.storageGb <= 0}
               />
             </li>
+          </ul>
+        </div>
+      ) : null}
+
+      {capacityUsage.length > 0 ? (
+        <div data-billing-capacity className="space-y-3 border border-border bg-bg p-4">
+          <p className="text-sm font-medium text-fg">Plan limits</p>
+          <p className="text-sm text-fg-muted">
+            Stock ceilings for this plan — not Polar meters. Hitting one pauses that action until
+            the next period, a bot ends, or you change plan.
+          </p>
+          <ul className="grid gap-3 text-sm sm:grid-cols-2">
+            {capacityUsage.map((row) => {
+              const percent = capacityPercent(row);
+              const atLimit = row.limit !== null && row.used >= row.limit;
+              return (
+                <li key={row.kind} data-capacity-kind={row.kind}>
+                  <div className="flex justify-between gap-2 text-fg-muted">
+                    <span>{row.label}</span>
+                    <span className="font-mono text-fg">{formatCapacityValue(row)}</span>
+                  </div>
+                  {percent === null ? null : <ProgressBar percent={percent} danger={atLimit} />}
+                </li>
+              );
+            })}
           </ul>
         </div>
       ) : null}

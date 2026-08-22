@@ -32,9 +32,14 @@ describe('pricing blocks', () => {
     expect(html).toMatch(/provider token cost/i);
   });
 
-  it('compares platform fees across plans', () => {
+  it('compares platform fees and plan stock across plans', () => {
     const html = renderToStaticMarkup(<PricingComparisonTable />);
     expect(html).toContain('€49/mo');
     expect(html).toContain('€199/mo');
+    expect(html).toContain('Ask turns / month');
+    expect(html).toContain('Concurrent meeting notetakers');
+    expect(html).toContain('Custom MCP servers');
+    expect(html).toContain('Not included');
+    expect(html).toContain('1 GB');
   });
 });

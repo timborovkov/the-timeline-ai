@@ -1,4 +1,5 @@
 import {
+  billingUsageReservations,
   documentChunks,
   documentVersions,
   documents,
@@ -9,11 +10,12 @@ import {
   teamMembers,
   type Db,
 } from '@timeline/db';
-import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
+import type { PlanCapacityUsageRow } from '#src/billing/status.js';
 
-import { CAPACITY_BY_PLAN, PLAN_CATALOG } from '#src/billing/catalog.js';
+import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { createBillingScope } from '#src/billing/scope.js';
@@ -158,6 +160,144 @@ export async function assertTeamCustomMcpCapacity(input: {
       'Custom MCP server limit reached for this plan',
     );
   }
+}
+
+function utcMonthStart(date = new Date()): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function countOrZero(row: { n?: number } | undefined): number {
+  return row?.n ?? 0;
+}
+
+/**
+ * Live used/limit for stock the product actually gates. Does not invent Polar
+ * meters, and omits catalog fields that stay on Redis burst buckets (webhook /
+ * search) or billed native meters (inbound email, accepted sources, Recall minutes).
+ */
+export async function getTeamCapacityUsage(input: {
+  db: Db;
+  teamId: string;
+  planId: BillingPlanId;
+}): Promise<PlanCapacityUsageRow[]> {
+  const cap = CAPACITY_BY_PLAN[input.planId];
+  const maxMembers = PLAN_CATALOG[input.planId].maxActiveMembers;
+  const periodStart = utcMonthStart();
+  const [documentRow, storageRow, chunkRow, memberRow, inviteRow, mcpRow, recallRow, turnRow] =
+    await Promise.all([
+      input.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(documents)
+        .where(and(eq(documents.teamId, input.teamId), isNull(documents.deletedAt)))
+        .then((rows) => rows[0]),
+      input.db
+        .select({
+          bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize}), 0)`,
+        })
+        .from(documentVersions)
+        .innerJoin(documents, eq(documents.id, documentVersions.documentId))
+        .where(
+          and(
+            eq(documentVersions.teamId, input.teamId),
+            isNull(documents.deletedAt),
+            sql`${documentVersions.byteSize} IS NOT NULL`,
+          ),
+        )
+        .then((rows) => rows[0]),
+      input.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(documentChunks)
+        .where(eq(documentChunks.teamId, input.teamId))
+        .then((rows) => rows[0]),
+      input.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, input.teamId), isNull(teamMembers.removedAt)))
+        .then((rows) => rows[0]),
+      input.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(teamInvites)
+        .where(
+          and(
+            eq(teamInvites.teamId, input.teamId),
+            isNull(teamInvites.acceptedAt),
+            isNull(teamInvites.revokedAt),
+            sql`${teamInvites.expiresAt} > now()`,
+          ),
+        )
+        .then((rows) => rows[0]),
+      input.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(mcpServers)
+        .where(eq(mcpServers.teamId, input.teamId))
+        .then((rows) => rows[0]),
+      input.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(meetings)
+        .where(
+          and(eq(meetings.teamId, input.teamId), inArray(meetings.status, ['joining', 'active'])),
+        )
+        .then((rows) => rows[0]),
+      input.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(billingUsageReservations)
+        .where(
+          and(
+            eq(billingUsageReservations.teamId, input.teamId),
+            sql`${billingUsageReservations.operationId} LIKE 'ask:%'`,
+            gte(billingUsageReservations.createdAt, periodStart),
+          ),
+        )
+        .then((rows) => rows[0]),
+    ]);
+
+  const storageGbUsed = (storageRow?.bytes ?? 0) / GIB;
+  const memberSeatsUsed = countOrZero(memberRow) + countOrZero(inviteRow);
+
+  return [
+    {
+      kind: 'agent_turns',
+      label: 'Ask turns',
+      used: countOrZero(turnRow),
+      limit: cap.agentTurnsPerMonth,
+    },
+    {
+      kind: 'concurrent_recall_bots',
+      label: 'Concurrent meeting notetakers',
+      used: countOrZero(recallRow),
+      limit: cap.concurrentRecallBots,
+    },
+    {
+      kind: 'custom_mcp_servers',
+      label: 'Custom MCP servers',
+      used: countOrZero(mcpRow),
+      limit: cap.customMcpServers,
+    },
+    {
+      kind: 'documents',
+      label: 'Documents',
+      used: countOrZero(documentRow),
+      limit: cap.documents,
+    },
+    {
+      kind: 'storage_gb',
+      label: 'Storage',
+      used: storageGbUsed,
+      limit: cap.storageGb,
+    },
+    {
+      kind: 'indexed_chunks',
+      label: 'Indexed chunks',
+      used: countOrZero(chunkRow),
+      limit: cap.indexedChunks,
+    },
+    {
+      kind: 'active_members',
+      label: 'Active members',
+      used: memberSeatsUsed,
+      limit: maxMembers,
+    },
+  ];
 }
 
 /**
