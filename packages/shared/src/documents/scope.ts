@@ -11,7 +11,7 @@ import {
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
-import { assertTeamWriteCapacity } from '#src/billing/runtime.js';
+import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
@@ -1468,6 +1468,24 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       action: 'upload' | 'new_version';
     }> {
       await ensureMember();
+      const peekedRows = await db
+        .select()
+        .from(documentVersions)
+        .where(and(eq(documentVersions.id, input.versionId), eq(documentVersions.teamId, teamId)))
+        .limit(1);
+      const peeked = peekedRows[0] as DocumentVersionRow | undefined;
+      if (!peeked) throw new Error('Document version not found');
+      // Capacity must run outside the finalize transaction. Using the outer
+      // `db` client while a transaction is open deadlocks PGlite / a single
+      // Postgres connection. Skip the check on idempotent replays so already
+      // stamped bytes are not counted twice.
+      if (!peeked.sourceEventId) {
+        await assertTeamWriteCapacity({
+          db,
+          teamId,
+          additionalBytes: input.byteSize,
+        });
+      }
       return db.transaction(async (tx) => {
         const vrows = await tx
           .select()
@@ -1500,12 +1518,6 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
           return { document, version, eventId: version.sourceEventId, action };
         }
-
-        await assertTeamWriteCapacity({
-          db,
-          teamId,
-          additionalBytes: input.byteSize,
-        });
 
         const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
         const summary =

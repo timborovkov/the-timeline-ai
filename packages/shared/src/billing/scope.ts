@@ -7,7 +7,7 @@ import {
   teamBillingAccounts,
   teamMembers,
 } from '@timeline/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
@@ -246,6 +246,31 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const account = await ensureAccount();
       if (account.securityState === 'suspended' || account.securityState === 'terminated') {
         return { ok: false as const, code: 'security_blocked' as const };
+      }
+      if (account.billingState === 'restricted') {
+        return { ok: false as const, code: 'usage_limit_reached' as const };
+      }
+      const agentTurnCap = CAPACITY_BY_PLAN[account.planId].agentTurnsPerMonth;
+      if (
+        agentTurnCap != null &&
+        (input.operationId.startsWith('ask:') || input.metadata?.operation_class === 'agent_ask')
+      ) {
+        const periodStart = new Date(
+          Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1),
+        );
+        const [turnRow] = await db
+          .select({ n: sql<number>`count(*)::int` })
+          .from(billingUsageReservations)
+          .where(
+            and(
+              eq(billingUsageReservations.teamId, teamId),
+              sql`${billingUsageReservations.operationId} LIKE 'ask:%'`,
+              gte(billingUsageReservations.createdAt, periodStart),
+            ),
+          );
+        if (Number(turnRow?.n ?? 0) >= agentTurnCap) {
+          return { ok: false as const, code: 'usage_limit_reached' as const };
+        }
       }
       const expiresAt = new Date(Date.now() + (input.ttlMs ?? 15 * 60_000));
       const ym = periodYm();

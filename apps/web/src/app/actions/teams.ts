@@ -20,6 +20,11 @@ import {
   telegramUserTeams,
   users,
 } from '@timeline/db';
+import {
+  applyOwnedTeamFreeGrant,
+  assertTeamMemberSeatCapacity,
+  isBillingAdmissionError,
+} from '@timeline/shared/billing';
 import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
 import { getEnv } from '@timeline/shared/env';
 import * as integrationsLib from '@timeline/shared/integrations';
@@ -111,6 +116,16 @@ export async function createTeamAction(
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'create_team' });
       return { error: 'Failed to create team' };
+    }
+
+    try {
+      await applyOwnedTeamFreeGrant({
+        db,
+        teamId,
+        userId: session.user.id,
+      });
+    } catch (err) {
+      reportCaughtError(err, { surface: 'server_action', operation: 'create_team_free_grant' });
     }
 
     const cookieStore = await cookies();
@@ -715,6 +730,11 @@ export async function inviteMemberAction(
         if (existing?.role === 'admin' && callerRole !== 'owner') {
           throw new Error('admin-invite-owned-by-owner');
         }
+        await assertTeamMemberSeatCapacity({
+          db: tx as unknown as typeof db,
+          teamId: active.teamId,
+          additionalSeats: existing ? 0 : 1,
+        });
         const rows = existing
           ? await tx
               .update(teamInvites)
@@ -776,6 +796,12 @@ export async function inviteMemberAction(
       }
       if (err instanceof Error && err.message === 'admin-invite-owned-by-owner') {
         return { error: 'Only owners can change an admin invite for this email.' };
+      }
+      if (isBillingAdmissionError(err)) {
+        return {
+          error:
+            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+        };
       }
       reportCaughtError(err, { surface: 'server_action', operation: 'invite_member' });
       return { error: 'Failed to create invite' };

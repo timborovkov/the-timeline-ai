@@ -70,6 +70,13 @@ BILLING_CHARGES_ENABLED=false
         member-month, prorated). That meter is not ingested to Polar.
       </p>
       <p>
+        Agent turns, custom MCP servers, documents, storage, indexed chunks, and active-member
+        ceilings are plan capacity enforced in product code. Do not add Polar meters for them.
+        Webhook and search bursts stay on Redis token buckets; unique ingest volume is
+        <code>accepted_sources</code>. A person may claim one Free grant; extra owned workspaces are
+        restricted until a payment method is added.
+      </p>
+      <p>
         Background workers attach a billing context so OpenRouter wrappers settle the
         <code>ai</code> meter from exact <code>usage.cost</code>. Ask and Recall keep their own
         reserve/settle path and skip the wrapper meter to avoid double-counting.

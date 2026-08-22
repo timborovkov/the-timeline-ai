@@ -15,7 +15,6 @@ import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
-  CAPACITY_BY_PLAN,
   PLAN_CATALOG,
   acceptedSourcesChargeCents,
   customerAiChargeCentsFromOpenRouterUsd,
@@ -322,53 +321,6 @@ export async function accrueTeamMemberDays(input: {
     source: 'janitor',
   });
   return { extraMembers, chargeCents };
-}
-
-export async function assertTeamWriteCapacity(input: {
-  db: Db;
-  teamId: string;
-  additionalBytes?: number;
-  additionalDocuments?: number;
-}): Promise<void> {
-  const billing = billingScope({
-    db: input.db,
-    teamId: input.teamId,
-    userId: BILLING_SYSTEM_USER_ID,
-  });
-  const account = await billing.getAccount();
-  const cap = CAPACITY_BY_PLAN[account.planId];
-  const code: BillingReserveFailureCode =
-    account.planId === 'free' ? 'free_allowance_reached' : 'usage_limit_reached';
-
-  if (cap.documents != null && (input.additionalDocuments ?? 0) > 0) {
-    const [row] = await input.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(documents)
-      .where(and(eq(documents.teamId, input.teamId), isNull(documents.deletedAt)));
-    if (Number(row?.n ?? 0) + (input.additionalDocuments ?? 0) > cap.documents) {
-      throw new BillingAdmissionError(code, 'Document limit reached for this plan');
-    }
-  }
-
-  if (cap.storageGb != null) {
-    const [row] = await input.db
-      .select({
-        bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize}), 0)`,
-      })
-      .from(documentVersions)
-      .innerJoin(documents, eq(documents.id, documentVersions.documentId))
-      .where(
-        and(
-          eq(documentVersions.teamId, input.teamId),
-          isNull(documents.deletedAt),
-          sql`${documentVersions.byteSize} IS NOT NULL`,
-        ),
-      );
-    const gb = (Number(row?.bytes ?? 0) + (input.additionalBytes ?? 0)) / GIB;
-    if (gb > cap.storageGb) {
-      throw new BillingAdmissionError(code, 'Storage limit reached for this plan');
-    }
-  }
 }
 
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {

@@ -11,6 +11,7 @@ import {
   normalizeSuggestedTitle,
   queue,
 } from '@timeline/shared';
+import { assertTeamWriteCapacity } from '@timeline/shared/billing';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -274,6 +275,12 @@ export async function processDocumentExtractJob(
             byteSize: version.byteSize,
             reason: 'Deep extraction deferred because the file exceeds the current extraction cap.',
           });
+    await assertTeamWriteCapacity({
+      db: deps.db,
+      teamId,
+      additionalChunks: 1,
+      excludeDocumentVersionId: version.id,
+    });
     const insertedIds = await deps.db.transaction(async (tx) => {
       await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
       const inserted = await tx
@@ -405,6 +412,13 @@ export async function processDocumentExtractJob(
       .where(eq(documentVersions.id, version.id));
     throw new UnrecoverableError(reason);
   }
+
+  await assertTeamWriteCapacity({
+    db: deps.db,
+    teamId,
+    additionalChunks: chunks.length,
+    excludeDocumentVersionId: version.id,
+  });
 
   // Single transaction: replace any existing chunks for this version
   // (re-extract case) and stamp status. The unique index on

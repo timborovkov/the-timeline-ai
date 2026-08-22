@@ -1,6 +1,7 @@
 import { type Db, auditLog, mcpOauthTokens, mcpServers } from '@timeline/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
 
+import { assertTeamCustomMcpCapacity } from '#src/billing/capacity.js';
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { validateMcpUrl, type McpAuthConfig } from '#src/mcp/auth.js';
 import { getMcpManager } from '#src/mcp/client.js';
@@ -85,6 +86,7 @@ export function createMcpScope(deps: {
     }
     const urlErr = validateMcpUrl(input.url);
     if (urlErr) throw new Error(urlErr);
+    await assertTeamCustomMcpCapacity({ db, teamId });
     let enc: ReturnType<typeof encryptJson> | undefined;
     if (input.authConfig && input.authType !== 'none' && input.authType !== 'oauth') {
       enc = encryptJson(input.authConfig);

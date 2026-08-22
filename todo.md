@@ -552,8 +552,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       background LLM workers via ALS (`withAiMetering` in the OpenRouter wrappers),
       accepted unique sources at ingest, inbound/outbound email units, daily
       storage GB-month + member-day janitor, document write capacity.
-      Agent turns, webhooks, MCP, and search stay capacity/abuse limits — not
-      extra billed Polar meters.
+      Agent turns, custom MCP servers, indexed chunks, and active-member
+      ceilings are catalog capacity — not extra billed Polar meters. Extra
+      owned workspaces claim at most one person-level Free grant.
 - [x] Prepaid €10 top-up checkout, auto-reload settings (capped by spend cap),
       cheapest-plan preview (informational, never auto-switch), Team/Business
       included-discount period reset.

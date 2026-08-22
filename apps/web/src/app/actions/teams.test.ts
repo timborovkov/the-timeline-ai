@@ -50,6 +50,11 @@ vi.mock('@/lib/db', () => ({
     insert: fakes.fakeDbInsert,
   },
 }));
+vi.mock('@timeline/shared/billing', () => ({
+  applyOwnedTeamFreeGrant: vi.fn().mockResolvedValue({ ok: true }),
+  assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+  isBillingAdmissionError: () => false,
+}));
 vi.mock('@timeline/shared/integrations', () => ({
   adminRecordConnectionAttention: fakes.fakeAdminRecordConnectionAttention,
 }));

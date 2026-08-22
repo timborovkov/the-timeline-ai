@@ -4,6 +4,7 @@ import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { BillingAdmissionError } from '#src/billing/errors.js';
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
@@ -718,6 +719,10 @@ describe('document scope — visibility filter', () => {
   });
 
   it('listDocumentsWithProvenancePage can target one document outside the first page', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, spend_cap_cents, shadow_billing)
+      VALUES ('${TEAM_ID}', 'payg', 'payg_active', 2500, true);
+    `);
     const A = withTeam(db, TEAM_ID, USER_A).documents;
     const target = await A.createDocument({
       name: 'older-target.pdf',
@@ -749,6 +754,22 @@ describe('document scope — visibility filter', () => {
     });
     expect(targeted.items).toHaveLength(1);
     expect(targeted.items[0]?.id).toBe(target.document.id);
+  });
+
+  it('refuses a 101st document on the Free plan', async () => {
+    await pg.exec(`
+      INSERT INTO documents (team_id, name)
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 100) AS g;
+    `);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    await expect(
+      scope.createDocument({
+        name: 'one-too-many.pdf',
+        folderId: null,
+        filename: 'one-too-many.pdf',
+        contentType: 'application/pdf',
+      }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
   });
 
   it('specific_users visibility honors the visibility_user_ids array', async () => {
