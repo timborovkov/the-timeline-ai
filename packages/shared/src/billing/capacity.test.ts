@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   applyOwnedTeamFreeGrant,
+  assertTeamConcurrentRecallCapacity,
   assertTeamCustomMcpCapacity,
   assertTeamMemberSeatCapacity,
   assertTeamWriteCapacity,
@@ -39,7 +40,7 @@ afterEach(async () => {
 });
 
 describe('billing capacity (not Polar meters)', () => {
-  it('enforces Free document, member, and MCP stock limits', async () => {
+  it('enforces Free document, member, MCP, and concurrent Recall stock limits', async () => {
     await pg.exec(`
       INSERT INTO documents (team_id, name)
       SELECT '${TEAM_ID}', 'doc-' || g FROM generate_series(1, 100) AS g;
@@ -56,6 +57,14 @@ describe('billing capacity (not Polar meters)', () => {
     await expect(assertTeamCustomMcpCapacity({ db, teamId: TEAM_ID })).rejects.toBeInstanceOf(
       BillingAdmissionError,
     );
+
+    await pg.exec(`
+      INSERT INTO meetings (team_id, platform, meeting_url, status)
+      VALUES ('${TEAM_ID}', 'meet', 'https://meet.google.com/aaa-bbbb-ccc', 'joining');
+    `);
+    await expect(
+      assertTeamConcurrentRecallCapacity({ db, teamId: TEAM_ID }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
   });
 
   it('does not mint a second Free grant for an extra owned workspace', async () => {

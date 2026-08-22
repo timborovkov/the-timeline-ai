@@ -303,6 +303,31 @@ describe('processMeetingSchedulerTick', () => {
     expect(row?.status).toBe('scheduled');
   });
 
+  it('leaves a due capture scheduled when another live Recall bot is already at the plan cap', async () => {
+    const { meeting } = await insertSavedAndScheduled(db, {
+      url: 'https://meet.google.com/due-second',
+    });
+    await db.insert(meetings).values({
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      provider: 'recall',
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/already-live',
+      title: 'Live notetaker',
+      status: 'active',
+      defaultVisibility: 'team',
+      metadata: {},
+    });
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.joined).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(row?.status).toBe('scheduled');
+  });
+
   it('does not start pre-materialized rows after auto-join is disabled, paused, or archived', async () => {
     for (const input of [
       { autoJoinEnabled: false },

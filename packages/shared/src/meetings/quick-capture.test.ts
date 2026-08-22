@@ -139,6 +139,36 @@ describe('quick meeting capture', () => {
     expect(confirmation?.meetingId).toBeNull();
   });
 
+  it('rejects a new join when another Recall bot is already live on Free', async () => {
+    await pg.exec(`
+      INSERT INTO meetings (team_id, platform, meeting_url, status)
+      VALUES ('${TEAM_ID}', 'meet', 'https://meet.google.com/already-live', 'active');
+    `);
+
+    const prompt = await createRawUrlQuickJoinConfirmation({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      source: 'slack',
+      meetingUrl: 'https://meet.google.com/second-bot',
+    });
+    const confirmationId = prompt.confirmationId;
+    if (!confirmationId) throw new Error('expected confirmation id');
+
+    const result = await confirmRawUrlQuickJoin({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      confirmationId,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'Concurrent meeting notetaker limit reached for this plan',
+    });
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+  });
+
   it('marks the capture failed and links the confirmation when the provider join fails', async () => {
     joinMeetingMock.mockRejectedValue(new Error('provider unavailable'));
     const prompt = await createRawUrlQuickJoinConfirmation({

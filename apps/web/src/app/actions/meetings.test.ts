@@ -56,6 +56,17 @@ vi.mock('@timeline/shared/rate-limit', async () => {
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
 }));
+vi.mock('@timeline/shared/billing', () => ({
+  assertTeamConcurrentRecallCapacity: vi.fn().mockResolvedValue(undefined),
+  isBillingAdmissionError: () => false,
+  recallBillingUserMessage: (code: string) => code,
+  releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
+  reserveRecallMeetingMinutes: vi.fn().mockResolvedValue({
+    ok: true,
+    operationId: 'recall:test',
+    reservedMinutes: 60,
+  }),
+}));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';

@@ -5,6 +5,8 @@ import {
   releaseBillingReservation,
   reserveRecallMeetingMinutes,
 } from '#src/billing/admission.js';
+import { assertTeamConcurrentRecallCapacity } from '#src/billing/capacity.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import * as meetingBots from '#src/meeting-bots/index.js';
 import { detectMeetingPlatform, type MeetingRow } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
@@ -28,7 +30,11 @@ function joinOffsetMs(scheduleConfig: unknown): number {
     : DEFAULT_JOIN_OFFSET_MS;
 }
 
-async function ensureCapacity(scope: ReturnType<typeof withTeam>): Promise<string | null> {
+async function ensureCapacity(
+  db: Db,
+  teamId: string,
+  scope: ReturnType<typeof withTeam>,
+): Promise<string | null> {
   const settings = await scope.meetings.getMeetingSettings();
   const cap = settings.meetingMinutesCap;
   if (cap !== null && cap === 0 && !settings.meetingMinutesAdminOverride) {
@@ -37,6 +43,12 @@ async function ensureCapacity(scope: ReturnType<typeof withTeam>): Promise<strin
   if (cap !== null && cap > 0 && !settings.meetingMinutesAdminOverride) {
     const used = await scope.meetings.getCurrentMonthMinutes();
     if (used >= cap) return 'Monthly meeting cap reached for this team.';
+  }
+  try {
+    await assertTeamConcurrentRecallCapacity({ db, teamId });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) return err.message;
+    throw err;
   }
   return null;
 }
@@ -130,7 +142,7 @@ export async function joinSavedMeetingByCommand(input: {
   if (resolved.kind === 'many') {
     return { ok: false, error: 'More than one saved meeting matched. Use a more specific alias.' };
   }
-  const capacityError = await ensureCapacity(scope);
+  const capacityError = await ensureCapacity(input.db, input.teamId, scope);
   if (capacityError) return { ok: false, error: capacityError };
 
   const active = await scope.meetings.findActiveMeetingForUrl(resolved.savedMeeting.meetingUrl);
@@ -211,7 +223,7 @@ export async function confirmRawUrlQuickJoin(input: {
     return { ok: false, error: 'Confirmation expired.' };
   }
 
-  const capacityError = await ensureCapacity(scope);
+  const capacityError = await ensureCapacity(input.db, input.teamId, scope);
   if (capacityError) return { ok: false, error: capacityError };
   const confirmation = await scope.meetings.claimPendingMeetingCaptureConfirmation(
     input.confirmationId,

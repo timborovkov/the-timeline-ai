@@ -3,12 +3,13 @@ import {
   documentVersions,
   documents,
   mcpServers,
+  meetings,
   teamBillingAccounts,
   teamInvites,
   teamMembers,
   type Db,
 } from '@timeline/db';
-import { and, eq, isNull, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 
@@ -155,6 +156,39 @@ export async function assertTeamCustomMcpCapacity(input: {
     throw new BillingAdmissionError(
       admissionCodeForPlan(account.planId),
       'Custom MCP server limit reached for this plan',
+    );
+  }
+}
+
+/**
+ * Live Recall bots in `joining` / `active`. Catalog capacity, not a Polar meter.
+ * Call before claiming a new bot so the current join is not already in the count.
+ */
+export async function assertTeamConcurrentRecallCapacity(input: {
+  db: Db;
+  teamId: string;
+  additionalBots?: number;
+}): Promise<void> {
+  const additionalBots = input.additionalBots ?? 1;
+  if (additionalBots <= 0) return;
+  const billing = billingScopeForDb(input.db, input.teamId);
+  const account = await billing.getAccount();
+  if (account.billingState === 'restricted') {
+    throw new BillingAdmissionError(
+      'usage_limit_reached',
+      'This extra workspace has no Free allowance. Add a payment method in Billing to start a notetaker.',
+    );
+  }
+  const cap = CAPACITY_BY_PLAN[account.planId].concurrentRecallBots;
+  if (cap === null) return;
+  const [row] = await input.db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(meetings)
+    .where(and(eq(meetings.teamId, input.teamId), inArray(meetings.status, ['joining', 'active'])));
+  if ((row?.n ?? 0) + additionalBots > cap) {
+    throw new BillingAdmissionError(
+      admissionCodeForPlan(account.planId),
+      'Concurrent meeting notetaker limit reached for this plan',
     );
   }
 }

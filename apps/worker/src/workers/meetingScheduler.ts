@@ -1,6 +1,11 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
-import { releaseBillingReservation, reserveRecallMeetingMinutes } from '@timeline/shared/billing';
+import {
+  assertTeamConcurrentRecallCapacity,
+  isBillingAdmissionError,
+  releaseBillingReservation,
+  reserveRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
@@ -160,6 +165,14 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
       await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
       failed += 1;
       continue;
+    }
+    try {
+      await assertTeamConcurrentRecallCapacity({ db: deps.db, teamId: meeting.teamId });
+    } catch (err) {
+      if (isBillingAdmissionError(err)) {
+        continue;
+      }
+      throw err;
     }
 
     try {
