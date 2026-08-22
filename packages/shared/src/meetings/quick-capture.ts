@@ -30,11 +30,7 @@ function joinOffsetMs(scheduleConfig: unknown): number {
     : DEFAULT_JOIN_OFFSET_MS;
 }
 
-async function ensureCapacity(
-  db: Db,
-  teamId: string,
-  scope: ReturnType<typeof withTeam>,
-): Promise<string | null> {
+async function ensureCapacity(scope: ReturnType<typeof withTeam>): Promise<string | null> {
   const settings = await scope.meetings.getMeetingSettings();
   const cap = settings.meetingMinutesCap;
   if (cap !== null && cap === 0 && !settings.meetingMinutesAdminOverride) {
@@ -44,20 +40,32 @@ async function ensureCapacity(
     const used = await scope.meetings.getCurrentMonthMinutes();
     if (used >= cap) return 'Monthly meeting cap reached for this team.';
   }
-  try {
-    await assertTeamConcurrentRecallCapacity({ db, teamId });
-  } catch (err) {
-    if (isBillingAdmissionError(err)) return err.message;
-    throw err;
-  }
   return null;
 }
 
 async function startBot(input: {
+  db: Db;
   scope: ReturnType<typeof withTeam>;
   teamId: string;
   meeting: MeetingRow;
 }): Promise<QuickJoinResult> {
+  const live = await input.scope.meetings.findActiveMeetingForUrl(input.meeting.meetingUrl);
+  if (live && (live.status === 'joining' || live.status === 'active')) {
+    const team = await input.scope.timeline.team();
+    return {
+      ok: true,
+      meetingId: live.id,
+      botName: meetingBots.meetingBotDisplayName(team?.name),
+    };
+  }
+  try {
+    await assertTeamConcurrentRecallCapacity({ db: input.db, teamId: input.teamId });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      return { ok: false, meetingId: input.meeting.id, error: err.message };
+    }
+    throw err;
+  }
   const claimed = await input.scope.meetings.claimMeetingForJoin(input.meeting.id);
   if (!claimed) {
     const active = await input.scope.meetings.findActiveMeetingForUrl(input.meeting.meetingUrl);
@@ -142,7 +150,7 @@ export async function joinSavedMeetingByCommand(input: {
   if (resolved.kind === 'many') {
     return { ok: false, error: 'More than one saved meeting matched. Use a more specific alias.' };
   }
-  const capacityError = await ensureCapacity(input.db, input.teamId, scope);
+  const capacityError = await ensureCapacity(scope);
   if (capacityError) return { ok: false, error: capacityError };
 
   const active = await scope.meetings.findActiveMeetingForUrl(resolved.savedMeeting.meetingUrl);
@@ -174,7 +182,7 @@ export async function joinSavedMeetingByCommand(input: {
         saved_meeting_id: resolved.savedMeeting.id,
       },
     }));
-  return startBot({ scope, teamId: input.teamId, meeting });
+  return startBot({ db: input.db, scope, teamId: input.teamId, meeting });
 }
 
 export async function createRawUrlQuickJoinConfirmation(input: {
@@ -223,7 +231,7 @@ export async function confirmRawUrlQuickJoin(input: {
     return { ok: false, error: 'Confirmation expired.' };
   }
 
-  const capacityError = await ensureCapacity(input.db, input.teamId, scope);
+  const capacityError = await ensureCapacity(scope);
   if (capacityError) return { ok: false, error: capacityError };
   const confirmation = await scope.meetings.claimPendingMeetingCaptureConfirmation(
     input.confirmationId,
@@ -265,6 +273,6 @@ export async function confirmRawUrlQuickJoin(input: {
       },
     }));
   await scope.meetings.markMeetingCaptureConfirmation(confirmation.id, 'confirmed', meeting.id);
-  const joined = await startBot({ scope, teamId: input.teamId, meeting });
+  const joined = await startBot({ db: input.db, scope, teamId: input.teamId, meeting });
   return joined;
 }

@@ -93,7 +93,6 @@ async function withScopeOrError() {
 
 async function ensureMeetingCapacity(
   scope: ReturnType<typeof withTeam>,
-  teamId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const settings = await scope.meetings.getMeetingSettings();
   const cap = settings.meetingMinutesCap;
@@ -109,14 +108,6 @@ async function ensureMeetingCapacity(
       };
     }
   }
-  try {
-    await assertTeamConcurrentRecallCapacity({ db, teamId });
-  } catch (err) {
-    if (isBillingAdmissionError(err)) {
-      return { ok: false, error: err.message };
-    }
-    throw err;
-  }
   return { ok: true };
 }
 
@@ -128,6 +119,18 @@ async function startMeetingBot(input: {
   platform: 'meet' | 'teams' | 'zoom';
   provider?: string;
 }): Promise<Result> {
+  const live = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
+  if (live && (live.status === 'joining' || live.status === 'active')) {
+    return { ok: true, meetingId: live.id };
+  }
+  try {
+    await assertTeamConcurrentRecallCapacity({ db, teamId: input.teamId });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      return { ok: false, meetingId: input.meetingId, error: err.message };
+    }
+    throw err;
+  }
   const claimed = await input.scope.meetings.claimMeetingForJoin(input.meetingId);
   if (!claimed) {
     const active = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
@@ -240,7 +243,7 @@ export async function scheduleMeetingBotAction(
       };
     }
 
-    const capacity = await ensureMeetingCapacity(scope, teamId);
+    const capacity = await ensureMeetingCapacity(scope);
     if (!capacity.ok) return capacity;
 
     // 1. Create meeting row in `pending` status so we have an id to round
@@ -394,7 +397,7 @@ export async function joinSavedMeetingAction(
         error: 'More than one saved meeting matched. Use a more specific alias.',
       };
     }
-    const capacity = await ensureMeetingCapacity(scope, teamId);
+    const capacity = await ensureMeetingCapacity(scope);
     if (!capacity.ok) return capacity;
 
     const active = await scope.meetings.findActiveMeetingForUrl(resolved.savedMeeting.meetingUrl);
