@@ -41,17 +41,21 @@ afterEach(async () => {
 
 describe('billing runtime', () => {
   it('no-ops AI metering without ALS and settles when context is set', async () => {
-    const unmetered = await withAiMetering({ operationClass: 'embedding' }, async () => ({
-      value: 7,
-      finish: { usage: { cost: 0 } },
-    }));
+    const unmetered = await withAiMetering({ operationClass: 'embedding' }, () =>
+      Promise.resolve({
+        value: 7,
+        finish: { usage: { cost: 0 } },
+      }),
+    );
     expect(unmetered).toBe(7);
 
-    const scoped = await runWorkerBilling(db, TEAM_ID, 'embedding', async () =>
-      withAiMetering({ operationClass: 'embedding' }, async () => ({
-        value: 9,
-        finish: { usage: { cost: 0 } },
-      })),
+    const scoped = await runWorkerBilling(db, TEAM_ID, 'embedding', () =>
+      withAiMetering({ operationClass: 'embedding' }, () =>
+        Promise.resolve({
+          value: 9,
+          finish: { usage: { cost: 0 } },
+        }),
+      ),
     );
     expect(scoped).toBe(9);
     const billing = createBillingScope({
@@ -159,11 +163,13 @@ describe('billing runtime', () => {
         operationClass: 'agent_ask',
         skipMeters: new Set(['ai']),
       },
-      async () =>
-        withAiMetering({ operationClass: 'agent_ask' }, async () => ({
-          value: 1,
-          finish: { usage: { cost: 1 } },
-        })),
+      () =>
+        withAiMetering({ operationClass: 'agent_ask' }, () =>
+          Promise.resolve({
+            value: 1,
+            finish: { usage: { cost: 1 } },
+          }),
+        ),
     );
     expect(value).toBe(1);
     const billing = createBillingScope({

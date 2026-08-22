@@ -12,6 +12,7 @@ import {
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
+
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
@@ -53,7 +54,7 @@ function billingScope(ctx: Pick<BillingAlsContext, 'db' | 'teamId' | 'userId'>) 
     db: ctx.db,
     teamId: ctx.teamId,
     userId: ctx.userId,
-    ensureMember: async () => 'owner',
+    ensureMember: () => Promise.resolve('owner'),
   });
 }
 
@@ -251,7 +252,7 @@ export async function snapshotTeamStorageGbMonth(input: {
         sql`${documentVersions.byteSize} IS NOT NULL`,
       ),
     );
-  const gb = Number(row?.bytes ?? 0) / GIB;
+  const gb = (row?.bytes ?? 0) / GIB;
   if (gb <= 0) return { gb: 0, settled: false };
   const day = utcDay();
   const gbMonthSlice = gb / daysInUtcMonth();
@@ -308,7 +309,7 @@ export async function accrueTeamMemberDays(input: {
   }
   const extraMembers = Math.max(0, members.length - included);
   const chargeCents = Math.round(
-    (extraMembers * (PLAN_CATALOG[planId].additionalMemberCents ?? 0)) / daysInUtcMonth(),
+    (extraMembers * PLAN_CATALOG[planId].additionalMemberCents) / daysInUtcMonth(),
   );
   if (extraMembers === 0 || chargeCents <= 0) {
     return { extraMembers, chargeCents: 0 };

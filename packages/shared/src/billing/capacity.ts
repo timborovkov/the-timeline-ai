@@ -11,6 +11,7 @@ import {
 import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
+
 import { CAPACITY_BY_PLAN, PLAN_CATALOG } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
@@ -27,7 +28,7 @@ function billingScopeForDb(db: Db, teamId: string) {
     db,
     teamId,
     userId: BILLING_SYSTEM_USER_ID,
-    ensureMember: async () => 'owner',
+    ensureMember: () => Promise.resolve('owner'),
   });
 }
 
@@ -56,17 +57,17 @@ export async function assertTeamWriteCapacity(input: {
   const cap = CAPACITY_BY_PLAN[account.planId];
   const code = admissionCodeForPlan(account.planId);
 
-  if (cap.documents != null && (input.additionalDocuments ?? 0) > 0) {
+  if (cap.documents !== null && (input.additionalDocuments ?? 0) > 0) {
     const [row] = await input.db
       .select({ n: sql<number>`count(*)::int` })
       .from(documents)
       .where(and(eq(documents.teamId, input.teamId), isNull(documents.deletedAt)));
-    if (Number(row?.n ?? 0) + (input.additionalDocuments ?? 0) > cap.documents) {
+    if ((row?.n ?? 0) + (input.additionalDocuments ?? 0) > cap.documents) {
       throw new BillingAdmissionError(code, 'Document limit reached for this plan');
     }
   }
 
-  if (cap.storageGb != null) {
+  if (cap.storageGb !== null) {
     const [row] = await input.db
       .select({
         bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize}), 0)`,
@@ -80,13 +81,13 @@ export async function assertTeamWriteCapacity(input: {
           sql`${documentVersions.byteSize} IS NOT NULL`,
         ),
       );
-    const gb = (Number(row?.bytes ?? 0) + (input.additionalBytes ?? 0)) / GIB;
+    const gb = ((row?.bytes ?? 0) + (input.additionalBytes ?? 0)) / GIB;
     if (gb > cap.storageGb) {
       throw new BillingAdmissionError(code, 'Storage limit reached for this plan');
     }
   }
 
-  if (cap.indexedChunks != null && (input.additionalChunks ?? 0) > 0) {
+  if (cap.indexedChunks !== null && (input.additionalChunks ?? 0) > 0) {
     const filters = [eq(documentChunks.teamId, input.teamId)];
     if (input.excludeDocumentVersionId) {
       filters.push(ne(documentChunks.documentVersionId, input.excludeDocumentVersionId));
@@ -95,7 +96,7 @@ export async function assertTeamWriteCapacity(input: {
       .select({ n: sql<number>`count(*)::int` })
       .from(documentChunks)
       .where(and(...filters));
-    if (Number(row?.n ?? 0) + (input.additionalChunks ?? 0) > cap.indexedChunks) {
+    if ((row?.n ?? 0) + (input.additionalChunks ?? 0) > cap.indexedChunks) {
       throw new BillingAdmissionError(code, 'Indexed chunk limit reached for this plan');
     }
   }
@@ -111,7 +112,7 @@ export async function assertTeamMemberSeatCapacity(input: {
   const billing = billingScopeForDb(input.db, input.teamId);
   const account = await billing.getAccount();
   const max = PLAN_CATALOG[account.planId].maxActiveMembers;
-  if (max == null) return;
+  if (max === null) return;
   const [memberRow] = await input.db
     .select({ n: sql<number>`count(*)::int` })
     .from(teamMembers)
@@ -127,7 +128,7 @@ export async function assertTeamMemberSeatCapacity(input: {
         sql`${teamInvites.expiresAt} > now()`,
       ),
     );
-  if (Number(memberRow?.n ?? 0) + Number(inviteRow?.n ?? 0) + additionalSeats > max) {
+  if ((memberRow?.n ?? 0) + (inviteRow?.n ?? 0) + additionalSeats > max) {
     throw new BillingAdmissionError(
       admissionCodeForPlan(account.planId),
       'Active member limit reached for this plan',
@@ -145,12 +146,12 @@ export async function assertTeamCustomMcpCapacity(input: {
   const billing = billingScopeForDb(input.db, input.teamId);
   const account = await billing.getAccount();
   const cap = CAPACITY_BY_PLAN[account.planId].customMcpServers;
-  if (cap == null) return;
+  if (cap === null) return;
   const [row] = await input.db
     .select({ n: sql<number>`count(*)::int` })
     .from(mcpServers)
     .where(eq(mcpServers.teamId, input.teamId));
-  if (Number(row?.n ?? 0) + additionalServers > cap) {
+  if ((row?.n ?? 0) + additionalServers > cap) {
     throw new BillingAdmissionError(
       admissionCodeForPlan(account.planId),
       'Custom MCP server limit reached for this plan',
@@ -171,7 +172,7 @@ export async function applyOwnedTeamFreeGrant(input: {
     db: input.db,
     teamId: input.teamId,
     userId: input.userId,
-    ensureMember: async () => 'owner',
+    ensureMember: () => Promise.resolve('owner'),
   });
   const grant = await billing.claimFreeGrant();
   if (grant.ok) return { ok: true };

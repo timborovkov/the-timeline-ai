@@ -181,6 +181,7 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
         finish: openRouterFinishFromAiResult({
           usage: result.usage,
           providerMetadata: result.providerMetadata,
+          totalUsage: undefined,
         }),
       };
     });
@@ -219,6 +220,7 @@ export async function embedMany(
         finish: openRouterFinishFromAiResult({
           usage: result.usage,
           providerMetadata: result.providerMetadata,
+          totalUsage: undefined,
         }),
       };
     });

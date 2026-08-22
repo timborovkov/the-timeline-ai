@@ -5,11 +5,11 @@ import {
   PREPAID_TOPUP_CENTS,
   type BillingPlanId,
 } from '@timeline/shared/billing/catalog';
-import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useReducer, useTransition } from 'react';
 
+import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import type {
   BillingNudge,
   FreeAllowanceRemaining,
@@ -53,26 +53,51 @@ export interface BillingSettingsPanelProps {
   activeMemberCount: number;
 }
 
+interface BillingFormState {
+  spendCapDraft: string | null;
+  autoReloadEnabledDraft: boolean | null;
+  autoReloadThresholdDraft: string | null;
+  error: string | null;
+  message: string | null;
+}
+
+const INITIAL_BILLING_FORM: BillingFormState = {
+  spendCapDraft: null,
+  autoReloadEnabledDraft: null,
+  autoReloadThresholdDraft: null,
+  error: null,
+  message: null,
+};
+
+function billingFormReducer(
+  state: BillingFormState,
+  patch: Partial<BillingFormState>,
+): BillingFormState {
+  return { ...state, ...patch };
+}
+
+function clearNotices(): Partial<BillingFormState> {
+  return { error: null, message: null };
+}
+
 export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [spendCapEuros, setSpendCapEuros] = useState(String(props.spendCapCents / 100));
-  const [autoReloadEnabled, setAutoReloadEnabled] = useState(props.autoReloadEnabled);
-  const [autoReloadThresholdEuros, setAutoReloadThresholdEuros] = useState(
-    String((props.autoReloadThresholdCents ?? 500) / 100),
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [form, updateForm] = useReducer(billingFormReducer, INITIAL_BILLING_FORM);
+  const spendCapEuros = form.spendCapDraft ?? String(props.spendCapCents / 100);
+  const autoReloadEnabled = form.autoReloadEnabledDraft ?? props.autoReloadEnabled;
+  const autoReloadThresholdEuros =
+    form.autoReloadThresholdDraft ?? String((props.autoReloadThresholdCents ?? 500) / 100);
+  const { error, message } = form;
 
   const available = Math.max(0, props.walletBalanceCents - props.reservedBalanceCents);
 
   function runCheckout(plan: 'payg' | 'team' | 'business') {
-    setError(null);
-    setMessage(null);
+    updateForm(clearNotices());
     startTransition(async () => {
       const result = await startBillingCheckout({ plan });
       if (!result.ok) {
-        setError(result.error);
+        updateForm({ error: result.error });
         return;
       }
       window.location.href = result.url;
@@ -80,31 +105,29 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   }
 
   function saveSpendCap() {
-    setError(null);
-    setMessage(null);
+    updateForm(clearNotices());
     const euros = Number(spendCapEuros);
     if (!Number.isFinite(euros) || euros < 0) {
-      setError('Enter a non-negative spend cap in euros.');
+      updateForm({ error: 'Enter a non-negative spend cap in euros.' });
       return;
     }
     startTransition(async () => {
       const result = await updateBillingSpendCap({ spendCapCents: Math.round(euros * 100) });
       if (!result.ok) {
-        setError(result.error);
+        updateForm({ error: result.error });
         return;
       }
-      setMessage('Spend cap updated.');
+      updateForm({ message: 'Spend cap updated.', spendCapDraft: null });
       router.refresh();
     });
   }
 
   function buyTopUp() {
-    setError(null);
-    setMessage(null);
+    updateForm(clearNotices());
     startTransition(async () => {
       const result = await startWalletTopUp();
       if (!result.ok) {
-        setError(result.error);
+        updateForm({ error: result.error });
         return;
       }
       window.location.href = result.url;
@@ -112,11 +135,10 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   }
 
   function saveAutoReload() {
-    setError(null);
-    setMessage(null);
+    updateForm(clearNotices());
     const thresholdEuros = Number(autoReloadThresholdEuros);
     if (autoReloadEnabled && (!Number.isFinite(thresholdEuros) || thresholdEuros < 0)) {
-      setError('Enter a non-negative auto-reload threshold in euros.');
+      updateForm({ error: 'Enter a non-negative auto-reload threshold in euros.' });
       return;
     }
     startTransition(async () => {
@@ -126,10 +148,14 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         amountCents: PREPAID_TOPUP_CENTS,
       });
       if (!result.ok) {
-        setError(result.error);
+        updateForm({ error: result.error });
         return;
       }
-      setMessage('Auto-reload updated.');
+      updateForm({
+        message: 'Auto-reload updated.',
+        autoReloadEnabledDraft: null,
+        autoReloadThresholdDraft: null,
+      });
       router.refresh();
     });
   }
@@ -257,7 +283,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
                 step={1}
                 value={spendCapEuros}
                 onChange={(event) => {
-                  setSpendCapEuros(event.target.value);
+                  updateForm({ spendCapDraft: event.target.value });
                 }}
                 className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
               />
@@ -287,7 +313,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
                 type="checkbox"
                 checked={autoReloadEnabled}
                 onChange={(event) => {
-                  setAutoReloadEnabled(event.target.checked);
+                  updateForm({ autoReloadEnabledDraft: event.target.checked });
                 }}
                 className="size-4 rounded-sm border-border"
               />
@@ -302,7 +328,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
                   step={1}
                   value={autoReloadThresholdEuros}
                   onChange={(event) => {
-                    setAutoReloadThresholdEuros(event.target.value);
+                    updateForm({ autoReloadThresholdDraft: event.target.value });
                   }}
                   className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
                 />

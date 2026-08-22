@@ -136,7 +136,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         })
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
-      const activeMemberCount = Number(memberCountRow?.activeMemberCount ?? 0);
+      const activeMemberCount = memberCountRow?.activeMemberCount ?? 0;
       const planPreview = cheapestPlanPreview({
         activeMembers: activeMemberCount,
         meteredSpendCents,
@@ -253,7 +253,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
       }
       const agentTurnCap = CAPACITY_BY_PLAN[account.planId].agentTurnsPerMonth;
       if (
-        agentTurnCap != null &&
+        agentTurnCap !== null &&
         (input.operationId.startsWith('ask:') || input.metadata?.operation_class === 'agent_ask')
       ) {
         const periodStart = new Date(
@@ -269,7 +269,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               gte(billingUsageReservations.createdAt, periodStart),
             ),
           );
-        if (Number(turnRow?.n ?? 0) >= agentTurnCap) {
+        if ((turnRow?.n ?? 0) >= agentTurnCap) {
           return { ok: false as const, code: 'usage_limit_reached' as const };
         }
       }

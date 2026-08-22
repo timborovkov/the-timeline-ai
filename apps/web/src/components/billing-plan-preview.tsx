@@ -1,6 +1,7 @@
 'use client';
 
 import { formatEuroFromCents } from '@timeline/shared/billing/catalog';
+
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 
 const PLAN_LABEL: Record<CheapestPlanPreview['recommended'], string> = {

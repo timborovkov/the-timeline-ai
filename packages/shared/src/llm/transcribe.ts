@@ -132,7 +132,9 @@ export async function transcribeAudio(
       return {
         value: { text: result.text, model: modelId },
         finish: openRouterFinishFromAiResult({
+          usage: undefined,
           providerMetadata: result.providerMetadata,
+          totalUsage: undefined,
         }),
       };
     });

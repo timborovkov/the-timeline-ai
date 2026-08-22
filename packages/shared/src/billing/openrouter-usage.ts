@@ -45,18 +45,18 @@ function costFromUsageField(usage: unknown): number {
   return costFromUsageLike(row.raw) + costFromUsageLike(row);
 }
 
-export type OpenRouterFinishEvent = {
+export interface OpenRouterFinishEvent {
   providerMetadata?: unknown;
   usage?: unknown;
   totalUsage?: unknown;
   steps?: readonly { providerMetadata?: unknown; usage?: unknown }[];
-};
+}
 
 /** Omit undefined optional keys so `exactOptionalPropertyTypes` stays satisfied. */
 export function openRouterFinishFromAiResult(result: {
-  usage?: unknown | undefined;
-  providerMetadata?: unknown | undefined;
-  totalUsage?: unknown | undefined;
+  usage: unknown;
+  providerMetadata: unknown;
+  totalUsage: unknown;
 }): OpenRouterFinishEvent {
   return {
     ...(result.usage !== undefined ? { usage: result.usage } : {}),
