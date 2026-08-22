@@ -28,7 +28,10 @@ import {
   type BillingAlsContext,
 } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
-import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
+import {
+  openRouterUsdCostFromFinishEvent,
+  type OpenRouterFinishEvent,
+} from '#src/billing/openrouter-usage.js';
 import { createBillingScope } from '#src/billing/scope.js';
 
 const GIB = 1024 ** 3;
@@ -121,10 +124,10 @@ export async function settleTeamMeter(input: {
     meterId: input.meterId,
     nativeUnits: input.nativeUnits,
     customerChargeCents: input.customerChargeCents,
-    operationClass: input.operationClass,
-    provider: input.provider,
-    source: input.source,
-    billable: input.billable,
+    ...(input.operationClass ? { operationClass: input.operationClass } : {}),
+    ...(input.provider ? { provider: input.provider } : {}),
+    ...(input.source ? { source: input.source } : {}),
+    ...(input.billable !== undefined ? { billable: input.billable } : {}),
   });
   return { ok: true, duplicate: false };
 }
@@ -140,7 +143,7 @@ export async function meterAcceptedSources(input: {
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
-      userId: input.userId,
+      ...(input.userId ? { userId: input.userId } : {}),
       operationId: `accepted_source:${rawEventId}`,
       meterId: 'accepted_sources',
       nativeUnits: 1,
@@ -166,7 +169,7 @@ export async function meterEmailUnits(input: {
   return settleTeamMeter({
     db: input.db,
     teamId: input.teamId,
-    userId: input.userId,
+    ...(input.userId ? { userId: input.userId } : {}),
     operationId: input.operationId,
     meterId: 'email_units',
     nativeUnits: units,
@@ -187,7 +190,7 @@ export async function withAiMetering<T>(
     model?: string;
     reservedChargeCents?: number;
   },
-  fn: () => Promise<{ value: T; finish?: Parameters<typeof openRouterUsdCostFromFinishEvent>[0] }>,
+  fn: () => Promise<{ value: T; finish?: OpenRouterFinishEvent }>,
 ): Promise<T> {
   const ctx = getBillingContext();
   if (!ctx || ctx.skipMeters?.has('ai')) {
@@ -218,9 +221,9 @@ export async function withAiMetering<T>(
       providerCostCents,
       operationClass,
       provider: 'openrouter',
-      model: input.model,
-      source: ctx.source,
-      deliverySurface: ctx.deliverySurface,
+      ...(input.model ? { model: input.model } : {}),
+      ...(ctx.source ? { source: ctx.source } : {}),
+      ...(ctx.deliverySurface ? { deliverySurface: ctx.deliverySurface } : {}),
       billable: ctx.billable !== false,
       metadata: { openrouter_usd: usd },
     });

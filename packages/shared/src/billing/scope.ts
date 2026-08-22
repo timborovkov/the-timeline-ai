@@ -130,14 +130,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
         includedDiscountRemainingCents: account.includedDiscountRemainingCents,
         freeRemaining,
       });
-      const [{ activeMemberCount }] = await db
+      const [memberCountRow] = await db
         .select({
           activeMemberCount: sql<number>`count(*)::int`,
         })
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
+      const activeMemberCount = Number(memberCountRow?.activeMemberCount ?? 0);
       const planPreview = cheapestPlanPreview({
-        activeMembers: Number(activeMemberCount ?? 0),
+        activeMembers: activeMemberCount,
         meteredSpendCents,
       });
       return {
@@ -152,7 +153,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         periodYm: ym,
         meters: byMeter,
         meteredSpendCents,
-        activeMemberCount: Number(activeMemberCount ?? 0),
+        activeMemberCount,
         planPreview,
         availableWalletCents: Math.max(
           0,

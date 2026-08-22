@@ -6,6 +6,7 @@ import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
+import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
@@ -177,7 +178,10 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
       const result = await aiEmbed({ model, value: text, maxRetries: deps.maxRetries ?? 2 });
       return {
         value: { vector: Array.from(result.embedding), model: modelId },
-        finish: { usage: result.usage, providerMetadata: result.providerMetadata },
+        finish: openRouterFinishFromAiResult({
+          usage: result.usage,
+          providerMetadata: result.providerMetadata,
+        }),
       };
     });
   });
@@ -212,7 +216,10 @@ export async function embedMany(
           vectors: result.embeddings.map((embedding) => Array.from(embedding)),
           model: modelId,
         },
-        finish: { usage: result.usage, providerMetadata: result.providerMetadata },
+        finish: openRouterFinishFromAiResult({
+          usage: result.usage,
+          providerMetadata: result.providerMetadata,
+        }),
       };
     });
   });

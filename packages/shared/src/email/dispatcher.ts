@@ -716,7 +716,7 @@ async function ingestForTeam(
   const emailMeter = await meterEmailUnits({
     db: deps.db,
     teamId: team.id,
-    userId: authorUserId ?? undefined,
+    ...(authorUserId ? { userId: authorUserId } : {}),
     operationId: `email_in:${messageId}`,
     units: 1,
     operationClass: 'email_inbound',

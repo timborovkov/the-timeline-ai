@@ -345,7 +345,7 @@ export async function writeIntegrationEvents(deps: {
     const metered = await meterAcceptedSources({
       db: deps.db,
       teamId,
-      userId: authorUserId ?? undefined,
+      ...(authorUserId ? { userId: authorUserId } : {}),
       rawEventIds: [row.id],
     });
     if (!metered.ok) {

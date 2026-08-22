@@ -4,7 +4,7 @@ import { UnrecoverableError } from 'bullmq';
 
 /** Sentinel team ids used by tick / fan-out jobs that are not a real workspace. */
 function isRealTeamId(teamId: string | undefined): teamId is string {
-  return Boolean(teamId) && !teamId.startsWith('__');
+  return typeof teamId === 'string' && teamId.length > 0 && !teamId.startsWith('__');
 }
 
 /**

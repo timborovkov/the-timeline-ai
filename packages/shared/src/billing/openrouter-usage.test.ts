@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
+import {
+  openRouterFinishFromAiResult,
+  openRouterUsdCostFromFinishEvent,
+} from '#src/billing/openrouter-usage.js';
 
 describe('openRouterUsdCostFromFinishEvent', () => {
   it('reads cost from OpenRouter provider metadata', () => {
@@ -32,5 +35,15 @@ describe('openRouterUsdCostFromFinishEvent', () => {
 
   it('returns 0 when cost is absent', () => {
     expect(openRouterUsdCostFromFinishEvent({ usage: { inputTokens: 10 } })).toBe(0);
+  });
+
+  it('omits undefined optional finish keys', () => {
+    expect(
+      openRouterFinishFromAiResult({
+        usage: { inputTokens: 10 },
+        providerMetadata: undefined,
+        totalUsage: undefined,
+      }),
+    ).toEqual({ usage: { inputTokens: 10 } });
   });
 });

@@ -128,17 +128,21 @@ export async function processDailyDigestJob(
   };
 }
 
+function digestBillingTeamId(job: queue.DailyDigestJobData): string | undefined {
+  return job.kind === 'recipient' || job.kind === 'workspace-send' ? job.teamId : undefined;
+}
+
 export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDigestJobData> {
   const worker = new Worker<queue.DailyDigestJobData>(
     queue.QUEUE_NAMES.dailyDigest,
     async (job: Job<queue.DailyDigestJobData>) => {
       const startedAt = Date.now();
-      const result =
-        job.data.kind === 'tick'
-          ? await processDailyDigestJob(deps, job.data)
-          : await withWorkerAiBilling(deps.db, job.data.teamId, 'digest', () =>
-              processDailyDigestJob(deps, job.data),
-            );
+      const result = await withWorkerAiBilling(
+        deps.db,
+        digestBillingTeamId(job.data),
+        'digest',
+        () => processDailyDigestJob(deps, job.data),
+      );
       log.info(
         { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
         'digest job complete',

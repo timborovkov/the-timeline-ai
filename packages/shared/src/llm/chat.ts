@@ -11,6 +11,7 @@ import {
 } from 'ai';
 import { z } from 'zod';
 
+import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import {
@@ -380,7 +381,12 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
     throw new JsonObjectFallbackParseError(err);
   }
   const object: z.infer<TSchema> = schema.parse(parsed);
-  return { object };
+  return {
+    object,
+    usage: result.usage,
+    providerMetadata: result.providerMetadata,
+    totalUsage: result.totalUsage,
+  };
 }
 
 /**
@@ -400,7 +406,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
   const maxOutputTokens = input.maxOutputTokens ?? DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS;
   return wrapAiFailure({ operation: 'llm.chatStructured', model: modelId }, async () => {
     return withAiMetering({ operationClass: 'chat_structured', model: modelId }, async () => {
-      let finish: { usage?: unknown; providerMetadata?: unknown; totalUsage?: unknown } | undefined;
+      let finish: ReturnType<typeof openRouterFinishFromAiResult> | undefined;
       const runModel = async (candidateModelId: string): Promise<ChatStructuredResult<TSchema>> => {
         const model = deps.model ?? buildOpenRouterLanguageModel(candidateModelId, deps);
         try {
@@ -414,11 +420,11 @@ export async function chatStructured<TSchema extends z.ZodType>(
             maxOutputTokens,
             ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
           });
-          finish = {
+          finish = openRouterFinishFromAiResult({
             usage: result.usage,
             providerMetadata: result.providerMetadata,
             totalUsage: result.usage,
-          };
+          });
           const object: z.infer<TSchema> = input.schema.parse(result.object);
           return { object, model: candidateModelId };
         } catch (err) {
@@ -440,18 +446,18 @@ export async function chatStructured<TSchema extends z.ZodType>(
               'llm.chatStructured failed with json_schema and json_object response formats',
             );
           });
-          finish = {
+          finish = openRouterFinishFromAiResult({
             usage: result.usage,
             providerMetadata: result.providerMetadata,
-            totalUsage: result.totalUsage ?? result.usage,
-          };
+            totalUsage: result.totalUsage,
+          });
           return { object: result.object, model: candidateModelId };
         }
       };
 
       try {
         const value = await runModel(modelId);
-        return { value, finish };
+        return finish ? { value, finish } : { value };
       } catch (err) {
         const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
         if (deps.model || fallbackModelId === modelId || !shouldFallbackToAlternateModel(err)) {
@@ -459,7 +465,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
         }
         try {
           const value = await runModel(fallbackModelId);
-          return { value, finish };
+          return finish ? { value, finish } : { value };
         } catch (fallbackErr: unknown) {
           throw new AggregateError(
             [err, fallbackErr],

@@ -112,18 +112,20 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  if (type === 'order.paid' && payload.data?.product_id === env.POLAR_PRODUCT_ID_TOPUP) {
-    const cents =
-      typeof payload.data.amount === 'number' && payload.data.amount > 0
-        ? payload.data.amount
-        : PREPAID_TOPUP_CENTS;
-    const orderId = payload.data.id ?? `anon:${teamId}:${cents}`;
-    await creditWalletFromPolarOrder({
-      db,
-      teamId,
-      orderId,
-      cents,
-    });
+  if (type === 'order.paid') {
+    const data = payload.data;
+    const topupProductId = env.POLAR_PRODUCT_ID_TOPUP;
+    if (data && topupProductId && data.product_id === topupProductId) {
+      const cents =
+        typeof data.amount === 'number' && data.amount > 0 ? data.amount : PREPAID_TOPUP_CENTS;
+      const orderId = data.id ?? `anon:${teamId}:${cents}`;
+      await creditWalletFromPolarOrder({
+        db,
+        teamId,
+        orderId,
+        cents,
+      });
+    }
   }
 
   if (type === 'subscription.canceled' || type === 'subscription.revoked') {

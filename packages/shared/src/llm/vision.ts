@@ -1,6 +1,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
 
+import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
@@ -187,11 +188,11 @@ export async function extractTextFromMedia(
         });
         return {
           value: generated,
-          finish: {
+          finish: openRouterFinishFromAiResult({
             usage: generated.usage,
             providerMetadata: generated.providerMetadata,
-            totalUsage: generated.totalUsage ?? generated.usage,
-          },
+            totalUsage: generated.totalUsage,
+          }),
         };
       });
     },

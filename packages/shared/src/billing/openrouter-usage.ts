@@ -45,16 +45,31 @@ function costFromUsageField(usage: unknown): number {
   return costFromUsageLike(row.raw) + costFromUsageLike(row);
 }
 
+export type OpenRouterFinishEvent = {
+  providerMetadata?: unknown;
+  usage?: unknown;
+  totalUsage?: unknown;
+  steps?: readonly { providerMetadata?: unknown; usage?: unknown }[];
+};
+
+/** Omit undefined optional keys so `exactOptionalPropertyTypes` stays satisfied. */
+export function openRouterFinishFromAiResult(result: {
+  usage?: unknown | undefined;
+  providerMetadata?: unknown | undefined;
+  totalUsage?: unknown | undefined;
+}): OpenRouterFinishEvent {
+  return {
+    ...(result.usage !== undefined ? { usage: result.usage } : {}),
+    ...(result.providerMetadata !== undefined ? { providerMetadata: result.providerMetadata } : {}),
+    ...(result.totalUsage !== undefined ? { totalUsage: result.totalUsage } : {}),
+  };
+}
+
 /**
  * Best-effort OpenRouter USD cost for one finish / step event.
  * Prefers explicit OpenRouter metadata, then raw usage, then summed steps.
  */
-export function openRouterUsdCostFromFinishEvent(event: {
-  providerMetadata?: unknown;
-  usage?: unknown;
-  totalUsage?: unknown;
-  steps?: readonly { providerMetadata?: unknown; usage?: unknown }[] | undefined;
-}): number {
+export function openRouterUsdCostFromFinishEvent(event: OpenRouterFinishEvent): number {
   const fromMeta = costFromProviderMetadata(event.providerMetadata);
   if (fromMeta > 0) return fromMeta;
 

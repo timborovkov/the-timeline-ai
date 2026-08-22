@@ -1,5 +1,6 @@
 import { type TranscriptionModel } from 'ai';
 
+import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
@@ -130,7 +131,9 @@ export async function transcribeAudio(
       );
       return {
         value: { text: result.text, model: modelId },
-        finish: { usage: result.usage, providerMetadata: result.providerMetadata },
+        finish: openRouterFinishFromAiResult({
+          providerMetadata: result.providerMetadata,
+        }),
       };
     });
   });

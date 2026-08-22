@@ -367,7 +367,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
       await meterEmailUnits({
         db: options.db,
         teamId: options.teamId,
-        userId: options.userId ?? undefined,
+        ...(options.userId ? { userId: options.userId } : {}),
         operationId: `email_out:${operationKey}`,
         units,
         operationClass: `email_outbound:${intent}`,
