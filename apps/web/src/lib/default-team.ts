@@ -42,6 +42,7 @@ export async function ensureSoloTeam(
       .returning({ id: teams.id });
     const id = inserted[0]?.id;
     if (!id) throw new Error('Failed to create default team');
+    // react-doctor-disable-next-line react-doctor/async-parallel -- Restricted billing insert must precede the Free grant on this transaction client.
     await tx.insert(teamMembers).values({ teamId: id, userId, role: 'owner' });
     await insertDefaultDigestDestination(tx, id);
     await insertRestrictedFreeBillingAccount({ db: tx, teamId: id });

@@ -102,6 +102,7 @@ export async function createTeamAction(
           .returning({ id: teams.id });
         const id = inserted[0]?.id;
         if (!id) throw new Error('insert teams returned nothing');
+        // react-doctor-disable-next-line react-doctor/async-parallel -- Restricted billing insert must precede the Free grant on this transaction client.
         await tx.insert(teamMembers).values({
           teamId: id,
           userId: session.user.id,

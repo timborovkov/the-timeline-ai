@@ -189,6 +189,7 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           .returning({ id: teams.id });
         const teamId = teamRows[0]?.id;
         if (!teamId) throw new Error('Failed to create team');
+        // react-doctor-disable-next-line react-doctor/async-parallel -- Restricted billing insert must precede the Free grant on this transaction client.
         await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
         await insertDefaultDigestDestination(tx, teamId);
         await insertRestrictedFreeBillingAccount({ db: tx, teamId });

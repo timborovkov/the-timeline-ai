@@ -563,8 +563,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).
 - [ ] Enable Polar webhook with a real public URL; one shadow-billing month
-      before `BILLING_CHARGES_ENABLED`. Silent Polar auto-charge still needs a
-      saved payment method after that month.
+      before `BILLING_CHARGES_ENABLED`. Auto-reload emails a Polar checkout URL
+      (Polar has no silent saved-PM charge in v1).
 
 ## Standing Items
 
