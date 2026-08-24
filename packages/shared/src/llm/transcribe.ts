@@ -88,10 +88,7 @@ async function transcribeWithOpenRouterJson(
       ? json.text
       : null;
   if (text === null) throw new Error('OpenRouter transcription response did not include text');
-  const usage =
-    json && typeof json === 'object' && 'usage' in json
-      ? (json as { usage: unknown }).usage
-      : undefined;
+  const usage = json && typeof json === 'object' && 'usage' in json ? json.usage : undefined;
   return {
     value: { text, model: opts.modelId },
     finish: openRouterFinishFromAiResult({

@@ -13,6 +13,7 @@ import type { BillingProvider } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
+import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
 import {
   BILLING_ENTITLEMENTS_VERSION,
   type BillingMeterId,
@@ -33,7 +34,6 @@ import {
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { cheapestPlanPreview } from '#src/billing/preview.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
-import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
 import {
   costBearingPausedFromAccount,
   deriveBillingNudge,

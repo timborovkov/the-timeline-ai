@@ -14,6 +14,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 
+import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
@@ -21,9 +22,6 @@ import {
   customerAiChargeCentsFromOpenRouterUsd,
 } from '#src/billing/catalog.js';
 import { cumulativeChargeDeltaCents } from '#src/billing/charge.js';
-import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
-import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
-import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import {
   BILLING_SYSTEM_USER_ID,
   getBillingContext,
@@ -35,6 +33,8 @@ import {
   openRouterUsdCostFromFinishEvent,
   type OpenRouterFinishEvent,
 } from '#src/billing/openrouter-usage.js';
+import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
+import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import { createBillingScope } from '#src/billing/scope.js';
 
 const GIB = 1024 ** 3;

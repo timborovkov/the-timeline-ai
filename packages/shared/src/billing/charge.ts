@@ -99,10 +99,5 @@ export function walletReservedCentsFromMetadata(
 }
 
 export function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code: unknown }).code === '23505'
-  );
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
 }
