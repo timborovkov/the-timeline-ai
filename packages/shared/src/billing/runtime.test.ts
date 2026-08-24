@@ -7,6 +7,7 @@ import { runWithBillingContext } from '#src/billing/context.js';
 import {
   accrueTeamMemberDays,
   creditWalletFromPolarOrder,
+  meterAcceptedSources,
   meterEmailUnits,
   resetIncludedDiscountIfPeriodElapsed,
   runWorkerBilling,
@@ -95,6 +96,29 @@ describe('billing runtime', () => {
     });
     const dash = await billing.getDashboard();
     expect(dash.meters.email_units?.nativeUnits).toBe(2);
+  });
+
+  it('settles accepted sources on the cumulative cent boundary', async () => {
+    const ids = Array.from(
+      { length: 10 },
+      (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    );
+    const result = await meterAcceptedSources({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      rawEventIds: ids,
+    });
+    expect(result.ok).toBe(true);
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.accepted_sources?.nativeUnits).toBe(10);
+    expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
   });
 
   it('credits a Polar top-up once per order id', async () => {

@@ -23,6 +23,7 @@ import {
 import {
   applyOwnedTeamFreeGrant,
   assertTeamMemberSeatCapacity,
+  insertRestrictedFreeBillingAccount,
   isBillingAdmissionError,
 } from '@timeline/shared/billing';
 import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
@@ -111,21 +112,17 @@ export async function createTeamAction(
           defaultTimezone,
         });
         await insertDefaultDigestDestination(tx, id);
+        await insertRestrictedFreeBillingAccount({ db: tx, teamId: id });
+        await applyOwnedTeamFreeGrant({
+          db: tx,
+          teamId: id,
+          userId: session.user.id,
+        });
         return id;
       });
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'create_team' });
       return { error: 'Failed to create team' };
-    }
-
-    try {
-      await applyOwnedTeamFreeGrant({
-        db,
-        teamId,
-        userId: session.user.id,
-      });
-    } catch (err) {
-      reportCaughtError(err, { surface: 'server_action', operation: 'create_team_free_grant' });
     }
 
     const cookieStore = await cookies();

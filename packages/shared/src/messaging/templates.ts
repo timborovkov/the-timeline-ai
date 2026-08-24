@@ -550,6 +550,15 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
         ctaLabel: 'Add payment method',
         ctaHref: input.billingUrl,
       };
+    case 'wallet_auto_reload':
+      return {
+        subject: `${input.teamName}: wallet auto-reload ready`,
+        title: 'Wallet auto-reload',
+        intro:
+          'Your prepaid wallet is at or below the auto-reload threshold. Complete this Polar top-up to credit the wallet; Timeline cannot charge Polar without a checkout.',
+        ctaLabel: 'Complete Polar top-up',
+        ctaHref: input.billingUrl,
+      };
   }
 }
 

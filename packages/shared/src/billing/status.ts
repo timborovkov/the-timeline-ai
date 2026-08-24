@@ -119,6 +119,39 @@ function freeAllowanceExhausted(remaining: FreeAllowanceRemaining): boolean {
   );
 }
 
+/** True only when every Free native floor is gone — not a single exhausted meter. */
+export function allFreeAllowancesExhausted(remaining: FreeAllowanceRemaining): boolean {
+  return (
+    remaining.aiChargeCents <= 0 &&
+    remaining.recallMinutes <= 0 &&
+    remaining.emailUnits <= 0 &&
+    remaining.storageGb <= 0 &&
+    remaining.acceptedSources <= 0
+  );
+}
+
+export function costBearingPausedFromAccount(input: {
+  planId: BillingPlanId;
+  billingState: string;
+  shadowBilling: boolean;
+  spendCapCents: number;
+  meteredSpendCents: number;
+  walletBalanceCents: number;
+  reservedBalanceCents: number;
+  includedDiscountRemainingCents: number;
+  freeRemaining: FreeAllowanceRemaining;
+}): boolean {
+  if (input.billingState === 'restricted') return true;
+  const allFreeGone = allFreeAllowancesExhausted(input.freeRemaining);
+  if (input.planId === 'free') return allFreeGone;
+  if (input.shadowBilling || input.billingState === 'enterprise_active') return false;
+  if (input.spendCapCents > 0 && input.meteredSpendCents >= input.spendCapCents) return true;
+  const availableWallet = input.walletBalanceCents - input.reservedBalanceCents;
+  if (availableWallet > 0 || input.includedDiscountRemainingCents > 0) return false;
+  if (input.planId === 'payg' && !allFreeGone) return false;
+  return true;
+}
+
 function freeAllowanceNearLimit(remaining: FreeAllowanceRemaining): boolean {
   return (
     remaining.aiChargeCents <= FREE_ALLOWANCES.aiChargeCents * 0.25 ||

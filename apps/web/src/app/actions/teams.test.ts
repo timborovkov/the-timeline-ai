@@ -52,6 +52,7 @@ vi.mock('@/lib/db', () => ({
 }));
 vi.mock('@timeline/shared/billing', () => ({
   applyOwnedTeamFreeGrant: vi.fn().mockResolvedValue({ ok: true }),
+  insertRestrictedFreeBillingAccount: vi.fn().mockResolvedValue(undefined),
   assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
   isBillingAdmissionError: () => false,
 }));

@@ -52,7 +52,10 @@ function inferAudioFormat(audio: Buffer): AudioFormat {
 async function transcribeWithOpenRouterJson(
   input: TranscribeInput,
   opts: { modelId: string; fetch: typeof globalThis.fetch },
-): Promise<TranscribeResult> {
+): Promise<{
+  value: TranscribeResult;
+  finish: ReturnType<typeof openRouterFinishFromAiResult>;
+}> {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for transcription');
@@ -85,7 +88,18 @@ async function transcribeWithOpenRouterJson(
       ? json.text
       : null;
   if (text === null) throw new Error('OpenRouter transcription response did not include text');
-  return { text, model: opts.modelId };
+  const usage =
+    json && typeof json === 'object' && 'usage' in json
+      ? (json as { usage: unknown }).usage
+      : undefined;
+  return {
+    value: { text, model: opts.modelId },
+    finish: openRouterFinishFromAiResult({
+      usage,
+      providerMetadata: json,
+      totalUsage: undefined,
+    }),
+  };
 }
 
 /**
@@ -106,11 +120,10 @@ export async function transcribeAudio(
   return wrapAiFailure({ operation: 'llm.transcribeAudio', model: modelId }, async () => {
     return withAiMetering({ operationClass: 'transcription', model: modelId }, async () => {
       if (!deps.model) {
-        const value = await transcribeWithOpenRouterJson(input, {
+        return transcribeWithOpenRouterJson(input, {
           modelId,
           fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
         });
-        return { value };
       }
       const model = deps.model;
       const result = await tracedTranscribe(

@@ -164,7 +164,8 @@ export type BillingUsageAlertKind =
   | 'spend_cap_90'
   | 'spend_cap_100'
   | 'free_near_limit'
-  | 'free_exhausted';
+  | 'free_exhausted'
+  | 'wallet_auto_reload';
 
 export interface BillingUsageAlertMessageInput {
   to: string;

@@ -1,6 +1,6 @@
 'use server';
 import {
-  assertTeamConcurrentRecallCapacity,
+  claimMeetingJoinUnderRecallCap,
   isBillingAdmissionError,
   recallBillingUserMessage,
   releaseBillingReservation,
@@ -123,15 +123,19 @@ async function startMeetingBot(input: {
   if (live && (live.status === 'joining' || live.status === 'active')) {
     return { ok: true, meetingId: live.id };
   }
+  let claimed;
   try {
-    await assertTeamConcurrentRecallCapacity({ db, teamId: input.teamId });
+    claimed = await claimMeetingJoinUnderRecallCap({
+      db,
+      teamId: input.teamId,
+      meetingId: input.meetingId,
+    });
   } catch (err) {
     if (isBillingAdmissionError(err)) {
       return { ok: false, meetingId: input.meetingId, error: err.message };
     }
     throw err;
   }
-  const claimed = await input.scope.meetings.claimMeetingForJoin(input.meetingId);
   if (!claimed) {
     const active = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
     if (active && (active.status === 'joining' || active.status === 'active')) {
@@ -169,6 +173,7 @@ async function startMeetingBot(input: {
       platform: claimed.platform,
       botName: meetingBots.meetingBotDisplayName(team?.name),
       transcriptWebhookUrl,
+      maxRecordingDurationSeconds: admission.reservedMinutes * 60,
     });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,

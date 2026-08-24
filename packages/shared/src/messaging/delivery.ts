@@ -348,6 +348,73 @@ export async function sendMessage<TIntent extends MessageIntent>(
     return { ok: true, ...(deliveryId ? { deliveryId } : {}) };
   }
 
+  const shouldMeterEmail =
+    Boolean(options.db && options.teamId) && intent !== 'billing_usage_alert';
+  const units = Math.max(1, emailRecipientCount(rendered.to));
+  const operationKey = options.dedupeKey ?? `${intent}:${rendered.to}`;
+  const emailOperationId = `email_out:${operationKey}`;
+  if (shouldMeterEmail && options.db && options.teamId) {
+    const { reserveEmailUnits, releaseEmailUnits, settleEmailUnits } =
+      await import('#src/billing/runtime.js');
+    const reserved = await reserveEmailUnits({
+      db: options.db,
+      teamId: options.teamId,
+      ...(options.userId ? { userId: options.userId } : {}),
+      operationId: emailOperationId,
+      units,
+    });
+    if (!reserved.ok) {
+      if (deliveryId) {
+        await markDeliveryResult({
+          db: options.db,
+          deliveryId,
+          status: 'failed',
+          error: 'email_meter_admission_failed',
+        });
+      }
+      return {
+        ok: false,
+        ...(deliveryId ? { deliveryId } : {}),
+        error: 'Email usage limit reached for this workspace.',
+        retryable: false,
+      };
+    }
+    const result = await sendPostmarkEmail(rendered, options.fetch);
+    if (result.ok) {
+      await settleEmailUnits({
+        db: options.db,
+        teamId: options.teamId,
+        ...(options.userId ? { userId: options.userId } : {}),
+        operationId: emailOperationId,
+        units,
+        operationClass: `email_outbound:${intent}`,
+      });
+    } else {
+      await releaseEmailUnits({
+        db: options.db,
+        teamId: options.teamId,
+        ...(options.userId ? { userId: options.userId } : {}),
+        operationId: emailOperationId,
+      });
+    }
+    if (deliveryId) {
+      await markDeliveryResult({
+        db: options.db,
+        deliveryId,
+        status: result.ok ? 'sent' : 'failed',
+        ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      });
+    }
+    return {
+      ok: result.ok,
+      ...(deliveryId ? { deliveryId } : {}),
+      ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
+      ...(result.error ? { error: result.error } : {}),
+      ...(result.ok ? {} : { retryable: result.retryable ?? true }),
+    };
+  }
+
   const result = await sendPostmarkEmail(rendered, options.fetch);
   if (deliveryId && options.db) {
     await markDeliveryResult({
@@ -357,24 +424,6 @@ export async function sendMessage<TIntent extends MessageIntent>(
       ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
       ...(result.error ? { error: result.error } : {}),
     });
-  }
-  if (result.ok && options.db && options.teamId && intent !== 'billing_usage_alert') {
-    try {
-      const { meterEmailUnits } = await import('#src/billing/runtime.js');
-      const units = Math.max(1, emailRecipientCount(rendered.to));
-      const operationKey =
-        result.providerMessageId ?? options.dedupeKey ?? `${intent}:${rendered.to}`;
-      await meterEmailUnits({
-        db: options.db,
-        teamId: options.teamId,
-        ...(options.userId ? { userId: options.userId } : {}),
-        operationId: `email_out:${operationKey}`,
-        units,
-        operationClass: `email_outbound:${intent}`,
-      });
-    } catch {
-      // Delivery already succeeded; metering must not reverse the send.
-    }
   }
   return {
     ok: result.ok,

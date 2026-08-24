@@ -323,19 +323,26 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
               Auto-reload {formatEuroFromCents(PREPAID_TOPUP_CENTS)} when the wallet is low
             </label>
             {autoReloadEnabled ? (
-              <label className="block text-sm">
-                <span className="text-fg-muted">Reload when wallet falls below (EUR)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={autoReloadThresholdEuros}
-                  onChange={(event) => {
-                    updateForm({ autoReloadThresholdDraft: event.target.value });
-                  }}
-                  className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
-                />
-              </label>
+              <>
+                <p className="text-sm text-fg-muted">
+                  Timeline emails owners a Polar €10 checkout when available wallet is at or below
+                  this threshold. The wallet credits after Polar <code>order.paid</code>, same as
+                  Add €10. The amount cannot exceed remaining spend-cap headroom.
+                </p>
+                <label className="block text-sm">
+                  <span className="text-fg-muted">Reload when wallet falls below (EUR)</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={autoReloadThresholdEuros}
+                    onChange={(event) => {
+                      updateForm({ autoReloadThresholdDraft: event.target.value });
+                    }}
+                    className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
+                  />
+                </label>
+              </>
             ) : null}
             <button
               type="button"

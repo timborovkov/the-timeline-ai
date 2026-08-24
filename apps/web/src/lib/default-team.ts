@@ -1,5 +1,8 @@
 import { teamMembers, teams } from '@timeline/db';
-import { applyOwnedTeamFreeGrant } from '@timeline/shared/billing';
+import {
+  applyOwnedTeamFreeGrant,
+  insertRestrictedFreeBillingAccount,
+} from '@timeline/shared/billing';
 import { insertDefaultDigestDestination } from '@timeline/shared/messaging';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -41,8 +44,9 @@ export async function ensureSoloTeam(
     if (!id) throw new Error('Failed to create default team');
     await tx.insert(teamMembers).values({ teamId: id, userId, role: 'owner' });
     await insertDefaultDigestDestination(tx, id);
+    await insertRestrictedFreeBillingAccount({ db: tx, teamId: id });
+    await applyOwnedTeamFreeGrant({ db: tx, teamId: id, userId });
     return id;
   });
-  await applyOwnedTeamFreeGrant({ db, teamId, userId });
   return teamId;
 }

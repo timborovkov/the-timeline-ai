@@ -36,8 +36,8 @@ credit hides margin and confuses prospects.
    - `accepted_sources` — unique ingested source items (raw row is kept; AI
      enrichment pauses when the meter is exhausted).
    - `storage_gb_month` — daily GB-month snapshot from original document bytes.
-   - `member_days` — extra active-member proration on paid plans (invoice line,
-     not a Polar meter).
+   - `member_days` — extra active-member proration on paid plans (wallet ledger
+     line, not a Polar meter or Polar invoice line).
    Capacity limits (agent turns, concurrent Recall bots, custom MCP servers,
    documents/storage/chunks, active members) are enforced at product gates
    from `CAPACITY_BY_PLAN` / `PLAN_CATALOG.maxActiveMembers`. They are **not**
@@ -48,10 +48,16 @@ credit hides margin and confuses prospects.
    `accepted_sources` meter. Extra owned workspaces do not mint a second Free
    grant (`billing_free_grants` + `restricted` state).
 7. Prepaid PAYG collection is a €10 Polar top-up (`POLAR_PRODUCT_ID_TOPUP`)
-   credited to `walletBalanceCents`. Owners can enable auto-reload settings;
-   the amount cannot exceed the workspace spend cap. Team/Business included
-   usage is an invoice discount that resets each billing period. Billing
-   settings show a cheapest-plan preview and never auto-switch.
+   credited to `walletBalanceCents`. Owners can enable auto-reload: when the
+   wallet is at/below the threshold, Timeline opens a Polar top-up checkout
+   (capped by remaining spend-cap headroom) and emails owners the URL. Credit
+   still lands on Polar `order.paid`. Polar subscription webhooks apply
+   `shadowBilling` from `BILLING_CHARGES_ENABLED`, map Polar `status`, reset
+   Team/Business included discount only on a new period or plan/subscription
+   change, and cancel only the matching `polarSubscriptionId`. Reservations
+   lock the wallet-funded remainder after the PAYG Free floor and included
+   discount, expire on TTL, and Free pause copy follows admission (not a
+   single exhausted meter).
 8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion
    (`billing_usage_alert` intent + HTML template), deduped once per

@@ -36,6 +36,71 @@ function billingScopeForDb(db: Db, teamId: string) {
 }
 
 /**
+ * Serialize concurrent Recall count+claim on one DB client. Same-URL live-bot
+ * reuse must happen before this lock.
+ */
+export async function runWithConcurrentRecallJoinLock<T>(
+  db: Db,
+  teamId: string,
+  fn: (tx: Db) => Promise<T>,
+): Promise<T> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 0))`);
+    return fn(tx as unknown as Db);
+  });
+}
+
+/** Count + claim a joinable meeting under one advisory lock. */
+export async function claimMeetingJoinUnderRecallCap(input: {
+  db: Db;
+  teamId: string;
+  meetingId: string;
+}): Promise<typeof meetings.$inferSelect | null> {
+  return runWithConcurrentRecallJoinLock(input.db, input.teamId, async (tx) => {
+    await assertTeamConcurrentRecallCapacity({ db: tx, teamId: input.teamId });
+    const rows = await tx
+      .update(meetings)
+      .set({
+        status: 'joining',
+        updatedAt: new Date(),
+        metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"manual_join_claimed":true}'::jsonb`,
+      })
+      .where(
+        and(
+          eq(meetings.id, input.meetingId),
+          eq(meetings.teamId, input.teamId),
+          inArray(meetings.status, ['pending', 'scheduled']),
+          sql`NOT EXISTS (
+            SELECT 1 FROM meetings active
+            WHERE active.team_id = ${meetings.teamId}
+              AND active.meeting_url = ${meetings.meetingUrl}
+              AND active.status IN ('joining', 'active')
+              AND active.id <> ${meetings.id}
+          )`,
+        ),
+      )
+      .returning();
+    return rows[0] ?? null;
+  });
+}
+
+export async function insertRestrictedFreeBillingAccount(input: {
+  db: Db;
+  teamId: string;
+}): Promise<void> {
+  await input.db
+    .insert(teamBillingAccounts)
+    .values({
+      teamId: input.teamId,
+      planId: 'free',
+      billingState: 'restricted',
+      spendCapCents: 0,
+      shadowBilling: true,
+    })
+    .onConflictDoNothing();
+}
+
+/**
  * Stock entitlements from the commercial table — not Polar meters.
  * Call this on the same DB client the caller is using, and never from
  * inside an open transaction that still uses a different client (PGlite
@@ -349,7 +414,23 @@ export async function applyOwnedTeamFreeGrant(input: {
     ensureMember: () => Promise.resolve('owner'),
   });
   const grant = await billing.claimFreeGrant();
-  if (grant.ok) return { ok: true };
+  if (grant.ok) {
+    await input.db
+      .update(teamBillingAccounts)
+      .set({
+        billingState: 'free',
+        spendCapCents: PLAN_CATALOG.free.defaultSpendCapCents,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(teamBillingAccounts.teamId, input.teamId),
+          eq(teamBillingAccounts.planId, 'free'),
+          eq(teamBillingAccounts.billingState, 'restricted'),
+        ),
+      );
+    return { ok: true };
+  }
   await input.db
     .update(teamBillingAccounts)
     .set({
@@ -357,6 +438,13 @@ export async function applyOwnedTeamFreeGrant(input: {
       spendCapCents: 0,
       updatedAt: new Date(),
     })
-    .where(eq(teamBillingAccounts.teamId, input.teamId));
+    .where(
+      and(
+        eq(teamBillingAccounts.teamId, input.teamId),
+        eq(teamBillingAccounts.planId, 'free'),
+        sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
+      ),
+    );
+  await insertRestrictedFreeBillingAccount({ db: input.db, teamId: input.teamId });
   return { ok: false, reason: 'free_grant_elsewhere' };
 }

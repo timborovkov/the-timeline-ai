@@ -1,13 +1,9 @@
 import { createHmac } from 'node:crypto';
 
-import { creditWalletFromPolarOrder } from '@timeline/shared/billing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const verifyPolarWebhookSignature = vi.fn();
-const insertValues = vi.fn();
-const onConflictDoUpdate = vi.fn();
-const updateSet = vi.fn();
-const updateWhere = vi.fn();
+const handlePolarWebhookEvent = vi.fn();
 
 vi.mock('@timeline/shared/env', () => ({
   getEnv: () => ({
@@ -23,41 +19,18 @@ vi.mock('@timeline/shared/env', () => ({
 vi.mock('@timeline/shared/billing', () => ({
   verifyPolarWebhookSignature: (...args: unknown[]) =>
     verifyPolarWebhookSignature(...args) as boolean,
-  PREPAID_TOPUP_CENTS: 1000,
-  creditWalletFromPolarOrder: vi.fn().mockResolvedValue({ duplicate: false }),
+  handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
 }));
 
 vi.mock('@/lib/db', () => ({
-  db: {
-    insert: () => ({
-      values: (...args: unknown[]) => {
-        insertValues(...args);
-        return { onConflictDoUpdate };
-      },
-    }),
-    update: () => ({
-      set: (...args: unknown[]) => {
-        updateSet(...args);
-        return { where: updateWhere };
-      },
-    }),
-  },
-}));
-
-vi.mock('@timeline/db', () => ({
-  teamBillingAccounts: { teamId: 'team_id' },
-}));
-
-vi.mock('drizzle-orm', () => ({
-  eq: (a: unknown, b: unknown) => ({ a, b }),
+  db: { id: 'db' },
 }));
 
 describe('POST /api/webhooks/polar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     verifyPolarWebhookSignature.mockReturnValue(true);
-    onConflictDoUpdate.mockResolvedValue(undefined);
-    updateWhere.mockResolvedValue(undefined);
+    handlePolarWebhookEvent.mockResolvedValue({ ok: true });
   });
 
   it('rejects invalid signatures', async () => {
@@ -72,7 +45,7 @@ describe('POST /api/webhooks/polar', () => {
     expect(res.status).toBe(401);
   });
 
-  it('upserts team billing on subscription.active', async () => {
+  it('forwards a verified payload to the Polar webhook handler', async () => {
     const { POST } = await import('./route');
     const body = JSON.stringify({
       type: 'subscription.active',
@@ -90,34 +63,13 @@ describe('POST /api/webhooks/polar', () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(insertValues).toHaveBeenCalled();
-    expect(onConflictDoUpdate).toHaveBeenCalled();
-  });
-
-  it('credits the prepaid wallet on order.paid for the top-up product', async () => {
-    const { POST } = await import('./route');
-    const body = JSON.stringify({
-      type: 'order.paid',
-      data: {
-        id: 'ord_1',
-        product_id: 'prod_topup',
-        amount: 1000,
-        customer: { id: 'cus_1', external_id: 'team-uuid' },
-      },
-    });
-    const res = await POST(
-      new Request('http://localhost/api/webhooks/polar', {
-        method: 'POST',
-        body,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    expect(res.status).toBe(200);
-    expect(creditWalletFromPolarOrder).toHaveBeenCalledWith(
+    expect(handlePolarWebhookEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        teamId: 'team-uuid',
-        orderId: 'ord_1',
-        cents: 1000,
+        chargesEnabled: false,
+        products: expect.objectContaining({
+          team: 'prod_team',
+          topup: 'prod_topup',
+        }),
       }),
     );
   });

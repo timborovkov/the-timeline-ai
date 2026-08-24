@@ -5,6 +5,7 @@ import {
   isBillingAdmissionError,
   releaseBillingReservation,
   reserveRecallMeetingMinutes,
+  runWithConcurrentRecallJoinLock,
 } from '@timeline/shared/billing';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
@@ -167,42 +168,40 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
       continue;
     }
     try {
-      await assertTeamConcurrentRecallCapacity({ db: deps.db, teamId: meeting.teamId });
-    } catch (err) {
-      if (isBillingAdmissionError(err)) {
-        continue;
-      }
-      throw err;
-    }
-
-    try {
-      const claimed = await deps.db
-        .update(meetings)
-        .set({
-          status: 'joining',
-          updatedAt: new Date(),
-          metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"scheduler_claimed":true}'::jsonb`,
-        })
-        .where(
-          and(
-            eq(meetings.id, meeting.id),
-            eq(meetings.teamId, meeting.teamId),
-            eq(meetings.status, 'scheduled'),
-            sql`(
+      const claimed = await runWithConcurrentRecallJoinLock(
+        deps.db,
+        meeting.teamId,
+        async (tx) => {
+          await assertTeamConcurrentRecallCapacity({ db: tx, teamId: meeting.teamId });
+          return tx
+            .update(meetings)
+            .set({
+              status: 'joining',
+              updatedAt: new Date(),
+              metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"scheduler_claimed":true}'::jsonb`,
+            })
+            .where(
+              and(
+                eq(meetings.id, meeting.id),
+                eq(meetings.teamId, meeting.teamId),
+                eq(meetings.status, 'scheduled'),
+                sql`(
               COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') <> '1'
               OR ${meetings.scheduledEndAt} IS NULL
               OR ${meetings.scheduledEndAt} > now()
             )`,
-            sql`NOT EXISTS (
+                sql`NOT EXISTS (
               SELECT 1 FROM meetings active
               WHERE active.team_id = ${meetings.teamId}
                 AND active.meeting_url = ${meetings.meetingUrl}
                 AND active.status IN ('joining', 'active')
                 AND active.id <> ${meetings.id}
             )`,
-          ),
-        )
-        .returning({ id: meetings.id });
+              ),
+            )
+            .returning({ id: meetings.id });
+        },
+      );
       if (!claimed[0]) {
         failed += await scope.meetings.expireSavedMeetingNoShowRetries(new Date());
         continue;
@@ -233,6 +232,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
           platform: meeting.platform,
           botName: meetingBots.meetingBotDisplayName(team?.name),
           transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
+          maxRecordingDurationSeconds: admission.reservedMinutes * 60,
         });
         await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
           providerBotId: join.botId,
@@ -258,6 +258,9 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         failed += 1;
       }
     } catch (err) {
+      if (isBillingAdmissionError(err)) {
+        continue;
+      }
       log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
       await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
         metadata: {

@@ -66,8 +66,9 @@ BILLING_CHARGES_ENABLED=false
         <li><code>timeline_accepted_sources</code></li>
       </ul>
       <p>
-        Extra active members are billed as <code>member_days</code> on the workspace invoice (€2 per
-        member-month, prorated). That meter is not ingested to Polar.
+        Extra active members accrue as <code>member_days</code> on the prepaid wallet
+        ledger (€2 per member-month, prorated). That meter is not ingested to Polar
+        and is not a Polar invoice line.
       </p>
       <p>
         Agent turns, concurrent Recall bots, custom MCP servers, documents, storage, indexed chunks,
@@ -97,7 +98,7 @@ BILLING_CHARGES_ENABLED=false
         <li>Team usage: <code>/app/usage</code></li>
         <li>
           Team settings: <code>/app/team?section=billing</code> (owner/admin) — plan, €10 top-up,
-          auto-reload, cheapest-plan preview, spend cap
+          auto-reload Polar checkout email, cheapest-plan preview, spend cap
         </li>
         <li>
           Owner emails: spend-cap 50/75/90/100% and Free near-limit / exhaustion (<code

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   billingMemberDayLedger,
+  billingUsageCounters,
   documentVersions,
   documents,
   teamBillingAccounts,
@@ -17,11 +18,12 @@ import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
   PLAN_CATALOG,
-  acceptedSourcesChargeCents,
   customerAiChargeCentsFromOpenRouterUsd,
-  emailChargeCents,
-  storageChargeCents,
 } from '#src/billing/catalog.js';
+import { cumulativeChargeDeltaCents } from '#src/billing/charge.js';
+import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
+import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
+import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import {
   BILLING_SYSTEM_USER_ID,
   getBillingContext,
@@ -56,6 +58,25 @@ function billingScope(ctx: Pick<BillingAlsContext, 'db' | 'teamId' | 'userId'>) 
     userId: ctx.userId,
     ensureMember: () => Promise.resolve('owner'),
   });
+}
+
+async function currentMeterNativeUnits(
+  db: Db,
+  teamId: string,
+  meterId: BillingMeterId,
+): Promise<number> {
+  const [row] = await db
+    .select()
+    .from(billingUsageCounters)
+    .where(
+      and(
+        eq(billingUsageCounters.teamId, teamId),
+        eq(billingUsageCounters.periodYm, periodYm()),
+        eq(billingUsageCounters.meterId, meterId),
+      ),
+    )
+    .limit(1);
+  return row ? Number(row.nativeUnits) : 0;
 }
 
 export async function runWorkerBilling<T>(
@@ -140,7 +161,9 @@ export async function meterAcceptedSources(input: {
   rawEventIds: string[];
 }): Promise<{ ok: true } | { ok: false; code: BillingReserveFailureCode }> {
   if (input.rawEventIds.length === 0) return { ok: true };
+  let previous = await currentMeterNativeUnits(input.db, input.teamId, 'accepted_sources');
   for (const rawEventId of input.rawEventIds) {
+    const next = previous + 1;
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
@@ -148,13 +171,93 @@ export async function meterAcceptedSources(input: {
       operationId: `accepted_source:${rawEventId}`,
       meterId: 'accepted_sources',
       nativeUnits: 1,
-      customerChargeCents: acceptedSourcesChargeCents(1),
+      customerChargeCents: cumulativeChargeDeltaCents({
+        meterId: 'accepted_sources',
+        previousNativeUnits: previous,
+        nextNativeUnits: next,
+      }),
       operationClass: 'ingest',
       source: 'event_writer',
     });
     if (!result.ok) return result;
+    previous = next;
   }
   return { ok: true };
+}
+
+export async function reserveEmailUnits(input: {
+  db: Db;
+  teamId: string;
+  userId?: string;
+  operationId: string;
+  units: number;
+}): Promise<{ ok: true } | { ok: false; code: BillingReserveFailureCode }> {
+  const units = Math.max(0, Math.trunc(input.units));
+  if (units === 0) return { ok: true };
+  const previous = await currentMeterNativeUnits(input.db, input.teamId, 'email_units');
+  const billing = billingScope({
+    db: input.db,
+    teamId: input.teamId,
+    userId: input.userId ?? BILLING_SYSTEM_USER_ID,
+  });
+  const reserved = await billing.reserve({
+    operationId: input.operationId,
+    meterId: 'email_units',
+    reservedNativeUnits: units,
+    reservedChargeCents: cumulativeChargeDeltaCents({
+      meterId: 'email_units',
+      previousNativeUnits: previous,
+      nextNativeUnits: previous + units,
+    }),
+  });
+  if (!reserved.ok) return reserved;
+  return { ok: true };
+}
+
+export async function settleEmailUnits(input: {
+  db: Db;
+  teamId: string;
+  userId?: string;
+  operationId: string;
+  units: number;
+  operationClass: string;
+}): Promise<{ ok: true } | { ok: false; code: BillingReserveFailureCode }> {
+  const units = Math.max(0, Math.trunc(input.units));
+  if (units === 0) return { ok: true };
+  const previous = await currentMeterNativeUnits(input.db, input.teamId, 'email_units');
+  const billing = billingScope({
+    db: input.db,
+    teamId: input.teamId,
+    userId: input.userId ?? BILLING_SYSTEM_USER_ID,
+  });
+  await billing.settle({
+    operationId: input.operationId,
+    meterId: 'email_units',
+    nativeUnits: units,
+    customerChargeCents: cumulativeChargeDeltaCents({
+      meterId: 'email_units',
+      previousNativeUnits: previous,
+      nextNativeUnits: previous + units,
+    }),
+    operationClass: input.operationClass,
+    provider: 'postmark',
+    source: 'email',
+  });
+  return { ok: true };
+}
+
+export async function releaseEmailUnits(input: {
+  db: Db;
+  teamId: string;
+  userId?: string;
+  operationId: string;
+}): Promise<void> {
+  const billing = billingScope({
+    db: input.db,
+    teamId: input.teamId,
+    userId: input.userId ?? BILLING_SYSTEM_USER_ID,
+  });
+  await billing.release(input.operationId);
 }
 
 export async function meterEmailUnits(input: {
@@ -167,18 +270,9 @@ export async function meterEmailUnits(input: {
 }): Promise<{ ok: true } | { ok: false; code: BillingReserveFailureCode }> {
   const units = Math.max(0, Math.trunc(input.units));
   if (units === 0) return { ok: true };
-  return settleTeamMeter({
-    db: input.db,
-    teamId: input.teamId,
-    ...(input.userId ? { userId: input.userId } : {}),
-    operationId: input.operationId,
-    meterId: 'email_units',
-    nativeUnits: units,
-    customerChargeCents: emailChargeCents(units),
-    operationClass: input.operationClass,
-    provider: 'postmark',
-    source: 'email',
-  });
+  const reserved = await reserveEmailUnits(input);
+  if (!reserved.ok) return reserved;
+  return settleEmailUnits(input);
 }
 
 /**
@@ -256,13 +350,18 @@ export async function snapshotTeamStorageGbMonth(input: {
   if (gb <= 0) return { gb: 0, settled: false };
   const day = utcDay();
   const gbMonthSlice = gb / daysInUtcMonth();
+  const previous = await currentMeterNativeUnits(input.db, input.teamId, 'storage_gb_month');
   const result = await settleTeamMeter({
     db: input.db,
     teamId: input.teamId,
     operationId: `storage_gb:${input.teamId}:${day}`,
     meterId: 'storage_gb_month',
     nativeUnits: gbMonthSlice,
-    customerChargeCents: storageChargeCents(gbMonthSlice),
+    customerChargeCents: cumulativeChargeDeltaCents({
+      meterId: 'storage_gb_month',
+      previousNativeUnits: previous,
+      nextNativeUnits: previous + gbMonthSlice,
+    }),
     operationClass: 'storage_snapshot',
     source: 'janitor',
   });
@@ -323,17 +422,42 @@ export async function accrueTeamMemberDays(input: {
     customerChargeCents: chargeCents,
     operationClass: 'member_day',
     source: 'janitor',
+    billable: true,
   });
   return { extraMembers, chargeCents };
 }
 
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {
+  await expireStaleBillingReservations({ db });
+  await leaveOverdueRecallBots(db);
   const rows = await db.select({ id: teams.id }).from(teams);
   for (const team of rows) {
     try {
       await resetIncludedDiscountIfPeriodElapsed({ db, teamId: team.id });
       await snapshotTeamStorageGbMonth({ db, teamId: team.id });
       await accrueTeamMemberDays({ db, teamId: team.id });
+      const [account] = await db
+        .select()
+        .from(teamBillingAccounts)
+        .where(eq(teamBillingAccounts.teamId, team.id))
+        .limit(1);
+      if (account) {
+        const counters = await db
+          .select()
+          .from(billingUsageCounters)
+          .where(
+            and(
+              eq(billingUsageCounters.teamId, team.id),
+              eq(billingUsageCounters.periodYm, periodYm()),
+            ),
+          );
+        await maybeTriggerWalletAutoReload({
+          db,
+          teamId: team.id,
+          account,
+          meteredSpendCents: counters.reduce((sum, row) => sum + row.customerChargeCents, 0),
+        });
+      }
     } catch {
       // Keep the janitor tick alive if one workspace's ledger fails.
     }

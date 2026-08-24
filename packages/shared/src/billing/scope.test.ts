@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeBillingProvider } from '#src/billing/provider.js';
+import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -144,5 +145,95 @@ describe('billing scope', () => {
     const dash = await scope.getDashboard();
     expect(dash.planPreview.recommended).toBe('payg');
     expect(dash.activeMemberCount).toBe(1);
+  });
+
+  it('locks only the wallet remainder after included discount and settles that split', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 50, wallet_balance_cents = 1000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-discount',
+      meterId: 'ai',
+      reservedNativeUnits: 80,
+      reservedChargeCents: 80,
+    });
+    expect(reserved.ok).toBe(true);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(30);
+
+    const settled = await scope.settle({
+      operationId: 'op-discount',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    const after = await scope.getAccount();
+    expect(after.reservedBalanceCents).toBe(0);
+    expect(after.walletBalanceCents).toBe(970);
+    expect(after.includedDiscountRemainingCents).toBe(0);
+  });
+
+  it('does not lock PAYG wallet for usage still inside the Free floor', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          wallet_balance_cents = 10
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-payg-floor',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 30,
+    });
+    expect(reserved.ok).toBe(true);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
+  });
+
+  it('expires stale reservations and releases the wallet lock', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 500, included_discount_remaining_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-expire',
+      meterId: 'ai',
+      reservedNativeUnits: 80,
+      reservedChargeCents: 80,
+      ttlMs: 1,
+    });
+    expect(reserved.ok).toBe(true);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 5);
+    });
+    const expired = await expireStaleBillingReservations({ db, teamId: TEAM_ID });
+    expect(expired).toBe(1);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
   });
 });

@@ -301,4 +301,22 @@ describe('messaging templates', () => {
     );
     expect(message.metadata).toMatchObject({ billing_alert_kind: 'free_exhausted' });
   });
+
+  it('renders wallet auto-reload Polar checkout copy', () => {
+    const message = renderMessage('billing_usage_alert', {
+      to: 'owner@example.test',
+      ownerName: 'Alex',
+      teamName: 'Acme',
+      kind: 'wallet_auto_reload',
+      periodYm: '2026-08',
+      planName: 'payg',
+      detailLine: 'Wallet available €4 is at or below €5.',
+      usageUrl: 'https://timeline.test/app/usage',
+      billingUrl: 'https://sandbox.polar.sh/checkout/fake',
+    });
+
+    expect(message.subject).toBe('Acme: wallet auto-reload ready');
+    expect(message.textBody).toContain('Complete Polar top-up: https://sandbox.polar.sh/checkout/fake');
+    expect(message.metadata).toMatchObject({ billing_alert_kind: 'wallet_auto_reload' });
+  });
 });

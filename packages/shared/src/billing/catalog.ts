@@ -327,6 +327,8 @@ export function polarEventNameForMeter(meter: BillingMeterId): string | null {
     case 'accepted_sources':
       return 'timeline_accepted_sources';
     case 'member_days':
+      // Extra seats settle through the prepaid wallet ledger. Not a Polar meter
+      // and not a Polar invoice line — Polar has no native seat meter in v1.
       return null;
   }
 }

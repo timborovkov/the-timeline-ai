@@ -1,48 +1,9 @@
-import { teamBillingAccounts } from '@timeline/db';
-import {
-  PREPAID_TOPUP_CENTS,
-  creditWalletFromPolarOrder,
-  verifyPolarWebhookSignature,
-} from '@timeline/shared/billing';
+import { handlePolarWebhookEvent, verifyPolarWebhookSignature } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
-import { eq } from 'drizzle-orm';
 
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
-
-interface PolarWebhookPayload {
-  type?: string;
-  data?: {
-    id?: string;
-    status?: string;
-    product_id?: string;
-    amount?: number;
-    customer?: { external_id?: string; id?: string };
-    customer_id?: string;
-    external_customer_id?: string;
-  };
-}
-
-function planFromProductId(productId: string | undefined): 'payg' | 'team' | 'business' | null {
-  const env = getEnv();
-  if (!productId) return null;
-  if (productId === env.POLAR_PRODUCT_ID_PAYG) return 'payg';
-  if (productId === env.POLAR_PRODUCT_ID_TEAM) return 'team';
-  if (productId === env.POLAR_PRODUCT_ID_BUSINESS) return 'business';
-  return null;
-}
-
-function billingStateForPlan(plan: 'payg' | 'team' | 'business') {
-  switch (plan) {
-    case 'payg':
-      return 'payg_active' as const;
-    case 'team':
-      return 'team_active' as const;
-    case 'business':
-      return 'business_active' as const;
-  }
-}
 
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
@@ -61,83 +22,23 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'invalid_signature' }, { status: 401 });
   }
 
-  let payload: PolarWebhookPayload;
+  let payload: unknown;
   try {
-    payload = JSON.parse(body) as PolarWebhookPayload;
+    payload = JSON.parse(body) as unknown;
   } catch {
     return Response.json({ error: 'invalid_json' }, { status: 400 });
   }
 
-  const teamId = payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
-  if (!teamId) {
-    return Response.json({ ok: true, ignored: 'missing_external_customer' });
-  }
-
-  const type = payload.type ?? '';
-  if (
-    type === 'subscription.created' ||
-    type === 'subscription.active' ||
-    type === 'subscription.updated' ||
-    type === 'order.paid'
-  ) {
-    const plan = planFromProductId(payload.data?.product_id);
-    if (plan) {
-      const catalog = getEnv();
-      const included = plan === 'team' ? 6_000 : plan === 'business' ? 25_000 : 0;
-      await db
-        .insert(teamBillingAccounts)
-        .values({
-          teamId,
-          planId: plan,
-          billingState: billingStateForPlan(plan),
-          polarCustomerId: payload.data?.customer?.id ?? payload.data?.customer_id ?? null,
-          polarSubscriptionId: payload.data?.id ?? null,
-          polarProductId: payload.data?.product_id ?? null,
-          spendCapCents: plan === 'payg' ? 2_500 : plan === 'team' ? 10_000 : 50_000,
-          includedDiscountRemainingCents: included,
-          shadowBilling: !catalog.BILLING_CHARGES_ENABLED,
-        })
-        .onConflictDoUpdate({
-          target: [teamBillingAccounts.teamId],
-          set: {
-            planId: plan,
-            billingState: billingStateForPlan(plan),
-            polarCustomerId: payload.data?.customer?.id ?? payload.data?.customer_id ?? null,
-            polarSubscriptionId: payload.data?.id ?? null,
-            polarProductId: payload.data?.product_id ?? null,
-            includedDiscountRemainingCents: included,
-            updatedAt: new Date(),
-          },
-        });
-    }
-  }
-
-  if (type === 'order.paid') {
-    const data = payload.data;
-    const topupProductId = env.POLAR_PRODUCT_ID_TOPUP;
-    if (data && topupProductId && data.product_id === topupProductId) {
-      const cents =
-        typeof data.amount === 'number' && data.amount > 0 ? data.amount : PREPAID_TOPUP_CENTS;
-      const orderId = data.id ?? `anon:${teamId}:${cents}`;
-      await creditWalletFromPolarOrder({
-        db,
-        teamId,
-        orderId,
-        cents,
-      });
-    }
-  }
-
-  if (type === 'subscription.canceled' || type === 'subscription.revoked') {
-    await db
-      .update(teamBillingAccounts)
-      .set({
-        billingState: 'canceled',
-        planId: 'free',
-        updatedAt: new Date(),
-      })
-      .where(eq(teamBillingAccounts.teamId, teamId));
-  }
-
-  return Response.json({ ok: true });
+  const result = await handlePolarWebhookEvent({
+    db,
+    payload: payload as Parameters<typeof handlePolarWebhookEvent>[0]['payload'],
+    chargesEnabled: env.BILLING_CHARGES_ENABLED,
+    products: {
+      ...(env.POLAR_PRODUCT_ID_PAYG ? { payg: env.POLAR_PRODUCT_ID_PAYG } : {}),
+      ...(env.POLAR_PRODUCT_ID_TEAM ? { team: env.POLAR_PRODUCT_ID_TEAM } : {}),
+      ...(env.POLAR_PRODUCT_ID_BUSINESS ? { business: env.POLAR_PRODUCT_ID_BUSINESS } : {}),
+      ...(env.POLAR_PRODUCT_ID_TOPUP ? { topup: env.POLAR_PRODUCT_ID_TOPUP } : {}),
+    },
+  });
+  return Response.json(result);
 }

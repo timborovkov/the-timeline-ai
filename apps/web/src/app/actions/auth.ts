@@ -1,7 +1,10 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
-import { applyOwnedTeamFreeGrant } from '@timeline/shared/billing';
+import {
+  applyOwnedTeamFreeGrant,
+  insertRestrictedFreeBillingAccount,
+} from '@timeline/shared/billing';
 import { insertDefaultDigestDestination, sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -188,6 +191,8 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         if (!teamId) throw new Error('Failed to create team');
         await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
         await insertDefaultDigestDestination(tx, teamId);
+        await insertRestrictedFreeBillingAccount({ db: tx, teamId });
+        await applyOwnedTeamFreeGrant({ db: tx, teamId, userId });
         return { activeTeamId: teamId, userId, event: 'team_created' as const };
       });
     } catch (e) {
@@ -216,15 +221,6 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     });
 
     if (createdAccount.event === 'team_created') {
-      try {
-        await applyOwnedTeamFreeGrant({
-          db,
-          teamId: createdAccount.activeTeamId,
-          userId: createdAccount.userId,
-        });
-      } catch (err) {
-        reportCaughtError(err, { surface: 'server_action', operation: 'sign_up_free_grant' });
-      }
       trackProductEventBestEffort(createdAccount.userId, 'team_created', {
         teamId: createdAccount.activeTeamId,
         userId: createdAccount.userId,

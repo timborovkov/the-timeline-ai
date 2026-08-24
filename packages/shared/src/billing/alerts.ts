@@ -93,6 +93,8 @@ function detailLineForKind(
     case 'free_near_limit':
     case 'free_exhausted':
       return `Remaining Free floor — AI ${formatEuroFromCents(input.freeRemaining.aiChargeCents)}, meetings ${String(input.freeRemaining.recallMinutes)} min, email ${String(input.freeRemaining.emailUnits)}, storage ${String(input.freeRemaining.storageGb)} GB, sources ${String(input.freeRemaining.acceptedSources)}.`;
+    case 'wallet_auto_reload':
+      return '';
   }
 }
 
