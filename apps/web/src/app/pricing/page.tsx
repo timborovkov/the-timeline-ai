@@ -108,7 +108,7 @@ export default async function PricingPage() {
                 <li>
                   Capacity ceilings (Ask turns, concurrent meeting notetakers, documents, storage)
                   are abuse and infrastructure controls; the AI euro budget remains the financial
-                  ceiling. Usage shows live used/limit for those gates.
+                  ceiling. They live under Infrastructure limits, not the billed default view.
                 </li>
                 <li>
                   Reading, deletion, billing management, and export stay available when a spend cap

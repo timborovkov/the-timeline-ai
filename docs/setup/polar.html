@@ -72,8 +72,9 @@ BILLING_CHARGES_ENABLED=false
       <p>
         Agent turns, concurrent Recall bots, custom MCP servers, documents, storage, indexed chunks,
         and active-member ceilings are plan capacity enforced in product code. Do not add Polar
-        meters for them. <code>/app/usage</code> and Billing settings show live used/limit for those
-        gates. Webhook and search bursts stay on Redis token buckets; unique ingest volume is
+        meters for them. <code>/app/usage</code>, Billing settings, and <code>/pricing</code> keep
+        those ceilings in a closed Infrastructure limits disclosure rather than the default billed
+        view. Webhook and search bursts stay on Redis token buckets; unique ingest volume is
         <code>accepted_sources</code>. A person may claim one Free grant; extra owned workspaces are
         restricted until a payment method is added.
       </p>

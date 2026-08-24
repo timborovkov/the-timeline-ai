@@ -14,8 +14,7 @@ import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Usage',
-  description:
-    'Metered usage, Free allowances, plan limits, and spend-cap utilization for this workspace.',
+  description: 'Metered usage, Free allowances, and spend-cap utilization for this workspace.',
 };
 
 export default async function UsagePage() {
@@ -40,7 +39,7 @@ export default async function UsagePage() {
       <PageHeader
         variant="collection"
         title="Usage"
-        subtitle="Native meters, plan limits, and euro values for this billing period."
+        subtitle="Native meters and euro values for this billing period."
         metadata={[
           { label: 'Plan', value: planName },
           { label: 'Period', value: dashboard.periodYm, mono: true },

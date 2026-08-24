@@ -17,7 +17,7 @@ function formatStock(n: number | null, options?: { unit: string } | { zero: stri
   return options && 'unit' in options ? `${formatted} ${options.unit}` : formatted;
 }
 
-const COMPARISON_ROWS: {
+const COMMERCIAL_ROWS: {
   label: string;
   value: (planId: BillingPlanId) => string;
 }[] = [
@@ -46,26 +46,6 @@ const COMPARISON_ROWS: {
     },
   },
   {
-    label: 'Ask turns / month',
-    value: (id) => formatStock(CAPACITY_BY_PLAN[id].agentTurnsPerMonth),
-  },
-  {
-    label: 'Concurrent meeting notetakers',
-    value: (id) => formatStock(CAPACITY_BY_PLAN[id].concurrentRecallBots),
-  },
-  {
-    label: 'Custom MCP servers',
-    value: (id) => formatStock(CAPACITY_BY_PLAN[id].customMcpServers, { zero: 'Not included' }),
-  },
-  {
-    label: 'Documents',
-    value: (id) => formatStock(CAPACITY_BY_PLAN[id].documents),
-  },
-  {
-    label: 'File storage',
-    value: (id) => formatStock(CAPACITY_BY_PLAN[id].storageGb, { unit: 'GB' }),
-  },
-  {
     label: 'Metered usage',
     value: (id) => {
       const discount = PLAN_CATALOG[id].includedUsageDiscountCents;
@@ -88,10 +68,43 @@ const COMPARISON_ROWS: {
   },
 ];
 
-export function PricingComparisonTable({ className }: { className?: string }) {
+const INFRASTRUCTURE_ROWS: {
+  label: string;
+  value: (planId: BillingPlanId) => string;
+}[] = [
+  {
+    label: 'Ask turns / month',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].agentTurnsPerMonth),
+  },
+  {
+    label: 'Concurrent meeting notetakers',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].concurrentRecallBots),
+  },
+  {
+    label: 'Custom MCP servers',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].customMcpServers, { zero: 'Not included' }),
+  },
+  {
+    label: 'Documents',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].documents),
+  },
+  {
+    label: 'File storage',
+    value: (id) => formatStock(CAPACITY_BY_PLAN[id].storageGb, { unit: 'GB' }),
+  },
+];
+
+function ComparisonTable({
+  rows,
+  caption,
+}: {
+  rows: { label: string; value: (planId: BillingPlanId) => string }[];
+  caption?: string;
+}) {
   return (
-    <div className={cn('overflow-x-auto border border-border', className)}>
+    <div className="overflow-x-auto border border-border">
       <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
+        {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead>
           <tr className="border-b border-border bg-surface">
             <th className="px-4 py-3 font-medium text-fg-muted">Limit</th>
@@ -103,7 +116,7 @@ export function PricingComparisonTable({ className }: { className?: string }) {
           </tr>
         </thead>
         <tbody>
-          {COMPARISON_ROWS.map((row) => (
+          {rows.map((row) => (
             <tr key={row.label} className="border-b border-border last:border-b-0">
               <th className="px-4 py-3 font-medium text-fg-muted">{row.label}</th>
               {SELF_SERVE_PLAN_ORDER.map((planId) => (
@@ -115,6 +128,26 @@ export function PricingComparisonTable({ className }: { className?: string }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+export function PricingComparisonTable({ className }: { className?: string }) {
+  return (
+    <div className={cn('space-y-4', className)}>
+      <ComparisonTable rows={COMMERCIAL_ROWS} caption="Commercial plan comparison" />
+      <details data-pricing-infrastructure className="border border-border bg-bg">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
+          Infrastructure limits
+        </summary>
+        <div className="space-y-3 border-t border-border px-4 py-3">
+          <p className="max-w-[64ch] text-sm leading-6 text-fg-muted">
+            Plan capacity ceilings, not billed usage. They keep the service healthy and can pause
+            one action without charging extra.
+          </p>
+          <ComparisonTable rows={INFRASTRUCTURE_ROWS} caption="Infrastructure plan limits" />
+        </div>
+      </details>
     </div>
   );
 }

@@ -32,10 +32,13 @@ describe('pricing blocks', () => {
     expect(html).toMatch(/provider token cost/i);
   });
 
-  it('compares platform fees and plan stock across plans', () => {
+  it('folds infrastructure ceilings behind a closed disclosure', () => {
     const html = renderToStaticMarkup(<PricingComparisonTable />);
     expect(html).toContain('€49/mo');
     expect(html).toContain('€199/mo');
+    expect(html).toContain('data-pricing-infrastructure');
+    expect(html).toContain('Infrastructure limits');
+    expect(html).not.toMatch(/<details[^>]*\sopen/);
     expect(html).toContain('Ask turns / month');
     expect(html).toContain('Concurrent meeting notetakers');
     expect(html).toContain('Custom MCP servers');

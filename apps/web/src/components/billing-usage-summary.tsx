@@ -61,6 +61,12 @@ function capacityPercent(row: PlanCapacityUsageRow): number | null {
   return (row.used / row.limit) * 100;
 }
 
+function isCapacityExhausted(row: PlanCapacityUsageRow): boolean {
+  if (row.limit === null) return false;
+  if (row.limit <= 0) return row.used > 0;
+  return row.used >= row.limit;
+}
+
 export function BillingUsageSummary({
   periodYm,
   planName,
@@ -214,28 +220,32 @@ export function BillingUsageSummary({
       ) : null}
 
       {capacityUsage.length > 0 ? (
-        <div data-billing-capacity className="space-y-3 border border-border bg-bg p-4">
-          <p className="text-sm font-medium text-fg">Plan limits</p>
-          <p className="text-sm text-fg-muted">
-            Stock ceilings for this plan — not Polar meters. Hitting one pauses that action until
-            the next period, a bot ends, or you change plan.
-          </p>
-          <ul className="grid gap-3 text-sm sm:grid-cols-2">
-            {capacityUsage.map((row) => {
-              const percent = capacityPercent(row);
-              const atLimit = row.limit !== null && row.used >= row.limit;
-              return (
-                <li key={row.kind} data-capacity-kind={row.kind}>
-                  <div className="flex justify-between gap-2 text-fg-muted">
-                    <span>{row.label}</span>
-                    <span className="font-mono text-fg">{formatCapacityValue(row)}</span>
-                  </div>
-                  {percent === null ? null : <ProgressBar percent={percent} danger={atLimit} />}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+        <details data-billing-capacity className="border border-border bg-bg">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
+            Infrastructure limits
+          </summary>
+          <div className="space-y-3 border-t border-border px-4 py-3">
+            <p className="text-sm text-fg-muted">
+              Plan capacity ceilings, not billed usage. They keep the service healthy. Hitting one
+              pauses that action until the next period, a bot ends, or you change plan.
+            </p>
+            <ul className="grid gap-3 text-sm sm:grid-cols-2">
+              {capacityUsage.map((row) => {
+                const percent = capacityPercent(row);
+                const exhausted = isCapacityExhausted(row);
+                return (
+                  <li key={row.kind} data-capacity-kind={row.kind}>
+                    <div className="flex justify-between gap-2 text-fg-muted">
+                      <span>{row.label}</span>
+                      <span className="font-mono text-fg">{formatCapacityValue(row)}</span>
+                    </div>
+                    {percent === null ? null : <ProgressBar percent={percent} danger={exhausted} />}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </details>
       ) : null}
 
       <div>

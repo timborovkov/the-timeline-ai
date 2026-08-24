@@ -41,11 +41,12 @@ credit hides margin and confuses prospects.
    Capacity limits (agent turns, concurrent Recall bots, custom MCP servers,
    documents/storage/chunks, active members) are enforced at product gates
    from `CAPACITY_BY_PLAN` / `PLAN_CATALOG.maxActiveMembers`. They are **not**
-   Polar meters and must not grow the `billing_meter_id` enum. `/app/usage` and
-   Billing settings show live used/limit for those gates. Webhook burst
-   and semantic-search burst stay on the existing Redis token buckets; unique
-   ingest volume is the `accepted_sources` meter. Extra owned workspaces do
-   not mint a second Free grant (`billing_free_grants` + `restricted` state).
+   Polar meters and must not grow the `billing_meter_id` enum. `/app/usage`,
+   Billing settings, and `/pricing` keep live used/limit for those gates in a
+   closed Infrastructure limits disclosure. Webhook burst and semantic-search
+   burst stay on the existing Redis token buckets; unique ingest volume is the
+   `accepted_sources` meter. Extra owned workspaces do not mint a second Free
+   grant (`billing_free_grants` + `restricted` state).
 7. Prepaid PAYG collection is a €10 Polar top-up (`POLAR_PRODUCT_ID_TOPUP`)
    credited to `walletBalanceCents`. Owners can enable auto-reload settings;
    the amount cannot exceed the workspace spend cap. Team/Business included

@@ -22,17 +22,12 @@ const freeRemaining = {
 
 const capacityUsage: PlanCapacityUsageRow[] = [
   { kind: 'agent_turns', label: 'Ask turns', used: 12, limit: 100 },
-  {
-    kind: 'concurrent_recall_bots',
-    label: 'Concurrent meeting notetakers',
-    used: 1,
-    limit: 1,
-  },
+  { kind: 'indexed_chunks', label: 'Indexed chunks', used: 23, limit: 50_000 },
   { kind: 'custom_mcp_servers', label: 'Custom MCP servers', used: 0, limit: 0 },
 ];
 
 describe('BillingUsageSummary', () => {
-  it('renders live plan stock next to meters', () => {
+  it('keeps infrastructure ceilings in a closed disclosure', () => {
     const html = renderToStaticMarkup(
       <BillingUsageSummary
         periodYm="2026-08"
@@ -47,10 +42,11 @@ describe('BillingUsageSummary', () => {
       />,
     );
     expect(html).toContain('data-billing-capacity');
-    expect(html).toContain('data-capacity-kind="concurrent_recall_bots"');
-    expect(html).toContain('12 of 100');
-    expect(html).toContain('1 of 1');
+    expect(html).toContain('Infrastructure limits');
+    expect(html).not.toMatch(/<details[^>]*\sopen/);
+    expect(html).toContain('data-capacity-kind="indexed_chunks"');
+    expect(html).toContain('23 of 50,000');
     expect(html).toContain('Not included');
-    expect(html).toContain('Plan limits');
+    expect(html).not.toContain('Plan limits');
   });
 });
