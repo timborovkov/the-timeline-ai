@@ -31,7 +31,10 @@ credit hides margin and confuses prospects.
    `settle`/`release`. Native meters wired today:
    - `ai` — Agent Ask plus background LLM (extract, embed, digest, vision,
      transcription, suggestions, summaries) when worker ALS is set.
-   - `recall_minutes` — meeting bots.
+   - `recall_minutes` — meeting bots. Reserved minutes are passed to Recall
+     `automatic_leave.in_call_recording_timeout` and stamped as
+     `reserved_recall_started_at` so the janitor cannot treat a scheduled
+     meeting's `createdAt` as the recording clock.
    - `email_units` — inbound unique messages and outbound Postmark recipients.
    - `accepted_sources` — unique ingested source items (raw row is kept; AI
      enrichment pauses when the meter is exhausted).

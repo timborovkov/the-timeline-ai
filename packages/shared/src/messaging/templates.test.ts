@@ -316,7 +316,9 @@ describe('messaging templates', () => {
     });
 
     expect(message.subject).toBe('Acme: wallet auto-reload ready');
-    expect(message.textBody).toContain('Complete Polar top-up: https://sandbox.polar.sh/checkout/fake');
+    expect(message.textBody).toContain(
+      'Complete Polar top-up: https://sandbox.polar.sh/checkout/fake',
+    );
     expect(message.metadata).toMatchObject({ billing_alert_kind: 'wallet_auto_reload' });
   });
 });

@@ -120,6 +120,7 @@ async function startBot(input: {
         source: 'quick_join',
         billing_operation_id: admission.operationId,
         reserved_recall_minutes: admission.reservedMinutes,
+        reserved_recall_started_at: new Date().toISOString(),
       },
     });
     return { ok: true, meetingId: claimed.id, botName };

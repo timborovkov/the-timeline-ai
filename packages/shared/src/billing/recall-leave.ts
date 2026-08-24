@@ -17,19 +17,40 @@ function reservedMinutesFromMetadata(metadata: unknown): number | null {
   return null;
 }
 
+/**
+ * Clock for the reserved Recall duration. Prefer the join stamp so a
+ * scheduled meeting's `createdAt` (days earlier) cannot force an immediate leave.
+ * `startedAt` covers bots that became active before this stamp existed.
+ */
+export function recallLeaveAnchorAt(input: {
+  startedAt: Date | null;
+  metadata: unknown;
+}): Date | null {
+  if (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata)) {
+    const raw = (input.metadata as Record<string, unknown>).reserved_recall_started_at;
+    if (typeof raw === 'string' && raw.trim() !== '') {
+      const parsed = new Date(raw);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+  }
+  return input.startedAt;
+}
+
 /** Durable fallback if Recall ignores in_call_recording_timeout. */
 export async function leaveOverdueRecallBots(db: Db): Promise<number> {
   const rows = await db
     .select()
     .from(meetings)
-    .where(
-      and(inArray(meetings.status, ['joining', 'active']), isNotNull(meetings.providerBotId)),
-    );
+    .where(and(inArray(meetings.status, ['joining', 'active']), isNotNull(meetings.providerBotId)));
   let left = 0;
   for (const meeting of rows) {
     const reservedMinutes = reservedMinutesFromMetadata(meeting.metadata);
     if (reservedMinutes === null || !meeting.providerBotId) continue;
-    const started = meeting.startedAt ?? meeting.createdAt;
+    const started = recallLeaveAnchorAt({
+      startedAt: meeting.startedAt,
+      metadata: meeting.metadata,
+    });
+    if (!started) continue;
     if (Date.now() - started.getTime() < reservedMinutes * 60_000) continue;
     try {
       const provider = getMeetingBotProvider(meeting.provider);

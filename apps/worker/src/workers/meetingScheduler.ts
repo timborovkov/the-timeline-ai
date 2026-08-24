@@ -168,40 +168,36 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
       continue;
     }
     try {
-      const claimed = await runWithConcurrentRecallJoinLock(
-        deps.db,
-        meeting.teamId,
-        async (tx) => {
-          await assertTeamConcurrentRecallCapacity({ db: tx, teamId: meeting.teamId });
-          return tx
-            .update(meetings)
-            .set({
-              status: 'joining',
-              updatedAt: new Date(),
-              metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"scheduler_claimed":true}'::jsonb`,
-            })
-            .where(
-              and(
-                eq(meetings.id, meeting.id),
-                eq(meetings.teamId, meeting.teamId),
-                eq(meetings.status, 'scheduled'),
-                sql`(
+      const claimed = await runWithConcurrentRecallJoinLock(deps.db, meeting.teamId, async (tx) => {
+        await assertTeamConcurrentRecallCapacity({ db: tx, teamId: meeting.teamId });
+        return tx
+          .update(meetings)
+          .set({
+            status: 'joining',
+            updatedAt: new Date(),
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"scheduler_claimed":true}'::jsonb`,
+          })
+          .where(
+            and(
+              eq(meetings.id, meeting.id),
+              eq(meetings.teamId, meeting.teamId),
+              eq(meetings.status, 'scheduled'),
+              sql`(
               COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') <> '1'
               OR ${meetings.scheduledEndAt} IS NULL
               OR ${meetings.scheduledEndAt} > now()
             )`,
-                sql`NOT EXISTS (
+              sql`NOT EXISTS (
               SELECT 1 FROM meetings active
               WHERE active.team_id = ${meetings.teamId}
                 AND active.meeting_url = ${meetings.meetingUrl}
                 AND active.status IN ('joining', 'active')
                 AND active.id <> ${meetings.id}
             )`,
-              ),
-            )
-            .returning({ id: meetings.id });
-        },
-      );
+            ),
+          )
+          .returning({ id: meetings.id });
+      });
       if (!claimed[0]) {
         failed += await scope.meetings.expireSavedMeetingNoShowRetries(new Date());
         continue;
@@ -240,6 +236,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
             provider_join_result: join.raw ?? {},
             billing_operation_id: admission.operationId,
             reserved_recall_minutes: admission.reservedMinutes,
+            reserved_recall_started_at: new Date().toISOString(),
           },
         });
         joined += 1;

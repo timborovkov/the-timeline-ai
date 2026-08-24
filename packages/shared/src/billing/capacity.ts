@@ -85,7 +85,7 @@ export async function claimMeetingJoinUnderRecallCap(input: {
 }
 
 export async function insertRestrictedFreeBillingAccount(input: {
-  db: Db;
+  db: Pick<Db, 'insert' | 'update' | 'select'>;
   teamId: string;
 }): Promise<void> {
   await input.db
@@ -403,12 +403,13 @@ export async function assertTeamConcurrentRecallCapacity(input: {
  * stay readable but do not mint another Free allowance (strategy §6).
  */
 export async function applyOwnedTeamFreeGrant(input: {
-  db: Db;
+  db: Pick<Db, 'select' | 'insert' | 'update'>;
   teamId: string;
   userId: string;
 }): Promise<{ ok: true } | { ok: false; reason: 'free_grant_elsewhere' }> {
   const billing = createBillingScope({
-    db: input.db,
+    // Transaction clients are not assignable to Db (`$client` is pool-only).
+    db: input.db as unknown as Db,
     teamId: input.teamId,
     userId: input.userId,
     ensureMember: () => Promise.resolve('owner'),

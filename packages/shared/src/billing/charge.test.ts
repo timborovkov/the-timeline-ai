@@ -9,12 +9,12 @@ import { allFreeAllowancesExhausted, costBearingPausedFromAccount } from '#src/b
 
 describe('billing charge split', () => {
   it('covers Team/Business included discount before the wallet', () => {
-    expect(
-      splitDiscountAndWallet({ chargeCents: 80, includedDiscountRemainingCents: 60 }),
-    ).toEqual({ discountCents: 60, walletCents: 20 });
-    expect(
-      splitDiscountAndWallet({ chargeCents: 40, includedDiscountRemainingCents: 60 }),
-    ).toEqual({ discountCents: 40, walletCents: 0 });
+    expect(splitDiscountAndWallet({ chargeCents: 80, includedDiscountRemainingCents: 60 })).toEqual(
+      { discountCents: 60, walletCents: 20 },
+    );
+    expect(splitDiscountAndWallet({ chargeCents: 40, includedDiscountRemainingCents: 60 })).toEqual(
+      { discountCents: 40, walletCents: 0 },
+    );
   });
 
   it('keeps the PAYG Free floor off the wallet', () => {
