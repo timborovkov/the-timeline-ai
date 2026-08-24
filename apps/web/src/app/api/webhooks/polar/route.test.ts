@@ -66,10 +66,12 @@ describe('POST /api/webhooks/polar', () => {
     expect(handlePolarWebhookEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         chargesEnabled: false,
-        products: expect.objectContaining({
+        products: {
+          payg: 'prod_payg',
           team: 'prod_team',
+          business: 'prod_business',
           topup: 'prod_topup',
-        }),
+        },
       }),
     );
   });
