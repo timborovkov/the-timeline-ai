@@ -25,6 +25,7 @@ const fakes = vi.hoisted(() => ({
   fakeCheckRateLimit: vi.fn(),
   fakeJoinMeeting: vi.fn(),
   fakeRequireRedisQueue: vi.fn(),
+  fakeClaimMeetingJoinUnderRecallCap: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -58,6 +59,7 @@ vi.mock('@timeline/shared/logger', () => ({
 }));
 vi.mock('@timeline/shared/billing', () => ({
   assertTeamConcurrentRecallCapacity: vi.fn().mockResolvedValue(undefined),
+  claimMeetingJoinUnderRecallCap: fakes.fakeClaimMeetingJoinUnderRecallCap,
   isBillingAdmissionError: () => false,
   recallBillingUserMessage: (code: string) => code,
   releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
@@ -97,6 +99,12 @@ beforeEach(() => {
   fakes.fakeMeetings.updateSavedMeeting.mockResolvedValue({ id: MEETING_ID });
   fakes.fakeJoinMeeting.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
   fakes.fakeRequireRedisQueue.mockResolvedValue({ enqueueMeetingFinalizeJob: vi.fn() });
+  fakes.fakeClaimMeetingJoinUnderRecallCap.mockResolvedValue({
+    id: MEETING_ID,
+    provider: 'recall',
+    platform: 'meet',
+    meetingUrl: 'https://meet.google.com/abc-defg-hij',
+  });
 });
 
 describe('scheduleMeetingBotAction', () => {
