@@ -51,16 +51,24 @@ credit hides margin and confuses prospects.
    `accepted_sources` meter. Extra owned workspaces do not mint a second Free
    grant (`billing_free_grants` + `restricted` state).
 7. Prepaid PAYG collection is a €10 Polar top-up (`POLAR_PRODUCT_ID_TOPUP`)
-   credited to `walletBalanceCents`. Owners can enable auto-reload: when the
-   wallet is at/below the threshold, Timeline opens a Polar top-up checkout
-   (capped by remaining spend-cap headroom) and emails owners the URL. Credit
-   still lands on Polar `order.paid`. Polar subscription webhooks apply
-   `shadowBilling` from `BILLING_CHARGES_ENABLED`, map Polar `status`, reset
-   Team/Business included discount only on a new period or plan/subscription
-   change, and cancel only the matching `polarSubscriptionId`. Reservations
-   lock the wallet-funded remainder after the PAYG Free floor and included
-   discount, expire on TTL, and Free pause copy follows admission (not a
-   single exhausted meter).
+   credited to `walletBalanceCents` on wallet-backed plans (PAYG/Team/Business/
+   Enterprise). Free workspaces hard-stop on native allowances and cannot buy
+   unusable top-ups. Owners can enable auto-reload: when the wallet is at/below
+   the threshold **and** remaining spend-cap headroom covers the full €10 Polar
+   product, Timeline opens a Polar top-up checkout and emails owners the URL.
+   Credit still lands on Polar `order.paid`. Polar subscription webhooks apply
+   `shadowBilling` from `BILLING_CHARGES_ENABLED`, map Polar `status`, ignore
+   stale activations (older Polar `modified_at` or an older subscription period),
+   reset Team/Business included discount only on a new period or plan/subscription
+   change, and cancel only the matching `polarSubscriptionId`. A canceled paid
+   plan becomes `free` if this team holds the person-level Free grant, otherwise
+   `restricted`. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted
+   code matches `POLAR_DISCOUNT_CODE`. Reservations lock the wallet-funded
+   remainder after the PAYG Free floor and included discount, include pending
+   reservation charges in the spend cap, expire on TTL, and Free pause copy
+   follows admission (not a single exhausted meter). Extra member-days accrue
+   with a cumulative monthly cent delta so daily rounding still totals €2 per
+   extra member-month.
 8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion
    (`billing_usage_alert` intent + HTML template), deduped once per

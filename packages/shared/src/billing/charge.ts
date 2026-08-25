@@ -49,11 +49,30 @@ export function paygOverageCustomerChargeCents(input: {
   return listChargeCentsForMeter(input.meterId, overageUnits);
 }
 
+/** Cumulative extra-member-day charge so daily rounding still totals €2/member-month. */
+export function memberDaysChargeCents(input: {
+  extraMemberDays: number;
+  centsPerMemberMonth: number;
+  daysInMonth: number;
+}): number {
+  if (input.extraMemberDays <= 0 || input.centsPerMemberMonth <= 0 || input.daysInMonth <= 0) {
+    return 0;
+  }
+  return Math.round((input.extraMemberDays * input.centsPerMemberMonth) / input.daysInMonth);
+}
+
 export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: number): number {
   switch (meterId) {
     case 'ai':
-    case 'member_days':
       return Math.max(0, Math.round(nativeUnits));
+    case 'member_days':
+      return memberDaysChargeCents({
+        extraMemberDays: nativeUnits,
+        centsPerMemberMonth: 200,
+        daysInMonth: new Date(
+          Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 0),
+        ).getUTCDate(),
+      });
     case 'recall_minutes':
       return recallChargeCents(nativeUnits);
     case 'email_units':

@@ -135,6 +135,12 @@ describe('billing scope', () => {
       userId: USER_ID,
       ensureMember: () => Promise.resolve('owner'),
     });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
     const row = await scope.setAutoReload({
       enabled: true,
       thresholdCents: 500,
@@ -235,5 +241,61 @@ describe('billing scope', () => {
     const expired = await expireStaleBillingReservations({ db, teamId: TEAM_ID });
     expect(expired).toBe(1);
     expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
+  });
+
+  it('counts pending reservations against the spend cap', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 5000, included_discount_remaining_cents = 0,
+          spend_cap_cents = 1000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const first = await scope.reserve({
+      operationId: 'op-cap-a',
+      meterId: 'ai',
+      reservedNativeUnits: 600,
+      reservedChargeCents: 600,
+    });
+    expect(first.ok).toBe(true);
+    const second = await scope.reserve({
+      operationId: 'op-cap-b',
+      meterId: 'ai',
+      reservedNativeUnits: 600,
+      reservedChargeCents: 600,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('spend_cap_reached');
+  });
+
+  it('blocks reservation when billing state is past_due', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'past_due',
+          wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-past-due',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(reserved.ok).toBe(false);
+    if (!reserved.ok) expect(reserved.code).toBe('usage_limit_reached');
   });
 });

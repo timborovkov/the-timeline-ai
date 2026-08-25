@@ -55,6 +55,32 @@ describe('billing capacity (not Polar meters)', () => {
       assertTeamMemberSeatCapacity({ db, teamId: TEAM_ID, additionalSeats: 3 }),
     ).rejects.toBeInstanceOf(BillingAdmissionError);
 
+    await pg.exec(`
+      INSERT INTO team_invites (team_id, email, role, token, invited_by_user_id, expires_at)
+      VALUES (
+        '${TEAM_ID}',
+        'pending@example.test',
+        'member',
+        'pending-invite-token',
+        '${USER_ID}',
+        NOW() + INTERVAL '7 days'
+      );
+    `);
+    await expect(
+      assertTeamMemberSeatCapacity({
+        db,
+        teamId: TEAM_ID,
+        additionalSeats: 2,
+        includePendingInvites: true,
+      }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+    await assertTeamMemberSeatCapacity({
+      db,
+      teamId: TEAM_ID,
+      additionalSeats: 2,
+      includePendingInvites: false,
+    });
+
     await expect(assertTeamCustomMcpCapacity({ db, teamId: TEAM_ID })).rejects.toBeInstanceOf(
       BillingAdmissionError,
     );

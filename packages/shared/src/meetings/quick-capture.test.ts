@@ -20,7 +20,11 @@ vi.mock('#src/meeting-bots/index.js', async () => {
   return {
     ...actual,
     isMeetingBotConfigured: vi.fn(() => true),
-    getMeetingBotProvider: vi.fn(() => ({ name: 'recall', joinMeeting: joinMeetingMock })),
+    getMeetingBotProvider: vi.fn(() => ({
+      name: 'recall',
+      joinMeeting: joinMeetingMock,
+      leaveMeeting: vi.fn().mockResolvedValue(undefined),
+    })),
     resolveTranscriptWebhookUrl: vi.fn(
       () => 'https://timeline.test/api/webhooks/recall/transcript',
     ),

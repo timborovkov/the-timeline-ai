@@ -21,7 +21,7 @@ import {
   PLAN_CATALOG,
   customerAiChargeCentsFromOpenRouterUsd,
 } from '#src/billing/catalog.js';
-import { cumulativeChargeDeltaCents } from '#src/billing/charge.js';
+import { cumulativeChargeDeltaCents, memberDaysChargeCents } from '#src/billing/charge.js';
 import {
   BILLING_SYSTEM_USER_ID,
   getBillingContext,
@@ -407,12 +407,23 @@ export async function accrueTeamMemberDays(input: {
     return { extraMembers: 0, chargeCents: 0 };
   }
   const extraMembers = Math.max(0, members.length - included);
-  const chargeCents = Math.round(
-    (extraMembers * PLAN_CATALOG[planId].additionalMemberCents) / daysInUtcMonth(),
-  );
-  if (extraMembers === 0 || chargeCents <= 0) {
-    return { extraMembers, chargeCents: 0 };
+  if (extraMembers === 0) {
+    return { extraMembers: 0, chargeCents: 0 };
   }
+  const previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days');
+  const daysInMonth = daysInUtcMonth();
+  const centsPerMemberMonth = PLAN_CATALOG[planId].additionalMemberCents ?? 0;
+  const chargeCents =
+    memberDaysChargeCents({
+      extraMemberDays: previousNative + extraMembers,
+      centsPerMemberMonth,
+      daysInMonth,
+    }) -
+    memberDaysChargeCents({
+      extraMemberDays: previousNative,
+      centsPerMemberMonth,
+      daysInMonth,
+    });
   await settleTeamMeter({
     db: input.db,
     teamId: input.teamId,

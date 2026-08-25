@@ -3,7 +3,9 @@
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
 import {
   applyOwnedTeamFreeGrant,
+  assertTeamMemberSeatCapacity,
   insertRestrictedFreeBillingAccount,
+  isBillingAdmissionError,
 } from '@timeline/shared/billing';
 import { insertDefaultDigestDestination, sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
@@ -151,6 +153,12 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           if (invite.email.toLowerCase() !== email) {
             throw new Error(INVITE_WRONG_EMAIL);
           }
+          await assertTeamMemberSeatCapacity({
+            db: tx as unknown as typeof db,
+            teamId: invite.teamId,
+            additionalSeats: 1,
+            includePendingInvites: false,
+          });
           await tx.insert(teamMembers).values({
             teamId: invite.teamId,
             userId,
@@ -207,6 +215,13 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         return {
           error:
             'This invite was sent to a different email. Sign up with the email it was sent to.',
+        };
+      }
+      if (isBillingAdmissionError(e)) {
+        reportCaughtError(e, { surface: 'server_action', operation: 'sign_up_invite_member_limit' });
+        return {
+          error:
+            'This plan’s member limit is reached. Ask an owner to upgrade before you join with this invite.',
         };
       }
       reportCaughtError(e, { surface: 'server_action', operation: 'sign_up' });

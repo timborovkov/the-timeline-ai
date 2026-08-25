@@ -174,6 +174,7 @@ export async function assertTeamMemberSeatCapacity(input: {
   db: Db;
   teamId: string;
   additionalSeats?: number;
+  includePendingInvites?: boolean;
 }): Promise<void> {
   const additionalSeats = input.additionalSeats ?? 1;
   if (additionalSeats <= 0) return;
@@ -185,18 +186,23 @@ export async function assertTeamMemberSeatCapacity(input: {
     .select({ n: sql<number>`count(*)::int` })
     .from(teamMembers)
     .where(and(eq(teamMembers.teamId, input.teamId), isNull(teamMembers.removedAt)));
-  const [inviteRow] = await input.db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(teamInvites)
-    .where(
-      and(
-        eq(teamInvites.teamId, input.teamId),
-        isNull(teamInvites.acceptedAt),
-        isNull(teamInvites.revokedAt),
-        sql`${teamInvites.expiresAt} > now()`,
-      ),
-    );
-  if ((memberRow?.n ?? 0) + (inviteRow?.n ?? 0) + additionalSeats > max) {
+  const includePendingInvites = input.includePendingInvites ?? true;
+  let pendingInvites = 0;
+  if (includePendingInvites) {
+    const [inviteRow] = await input.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(teamInvites)
+      .where(
+        and(
+          eq(teamInvites.teamId, input.teamId),
+          isNull(teamInvites.acceptedAt),
+          isNull(teamInvites.revokedAt),
+          sql`${teamInvites.expiresAt} > now()`,
+        ),
+      );
+    pendingInvites = inviteRow?.n ?? 0;
+  }
+  if ((memberRow?.n ?? 0) + pendingInvites + additionalSeats > max) {
     throw new BillingAdmissionError(
       admissionCodeForPlan(account.planId),
       'Active member limit reached for this plan',

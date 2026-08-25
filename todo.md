@@ -555,10 +555,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Agent turns, concurrent Recall bots, custom MCP servers, indexed chunks, and active-member
       ceilings are catalog capacity — not extra billed Polar meters. Extra
       owned workspaces claim at most one person-level Free grant.
-- [x] Prepaid €10 top-up checkout, auto-reload Polar checkout email when the
-      wallet is at/below the threshold (capped by remaining spend cap),
-      cheapest-plan preview (informational, never auto-switch), Team/Business
-      included-discount period reset (webhook + janitor; not every Polar retry).
+- [x] Prepaid €10 top-up checkout on wallet-backed plans, auto-reload Polar checkout
+      email when the wallet is at/below the threshold and remaining spend-cap
+      headroom covers the full €10 product, cheapest-plan preview from gross native
+      usage (informational, never auto-switch), Team/Business included-discount
+      period reset (webhook + janitor; not every Polar retry). Stale Polar
+      activations are ignored; canceled paid plans become restricted unless the
+      team holds the Free grant.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

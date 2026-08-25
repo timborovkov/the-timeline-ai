@@ -1,5 +1,5 @@
-import { teamBillingAccounts, type Db } from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
+import { billingFreeGrants, teamBillingAccounts, type Db } from '@timeline/db';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { PLAN_CATALOG, PREPAID_TOPUP_CENTS, type BillingPlanId } from '#src/billing/catalog.js';
 import { creditWalletFromPolarOrder } from '#src/billing/runtime.js';
@@ -17,6 +17,10 @@ export interface PolarWebhookPayload {
     current_period_end?: string | number;
     currentPeriodStart?: string | number;
     currentPeriodEnd?: string | number;
+    modified_at?: string | number;
+    updated_at?: string | number;
+    modifiedAt?: string | number;
+    updatedAt?: string | number;
     customer?: { external_id?: string; id?: string };
     customer_id?: string;
     external_customer_id?: string;
@@ -115,6 +119,45 @@ export function shouldResetIncludedDiscount(input: {
   return input.periodEndsAt.getTime() > input.existing.periodEndsAt.getTime();
 }
 
+export function polarEventModifiedAt(data: PolarWebhookPayload['data']): Date | null {
+  return parsePolarTimestamp(
+    data?.modified_at ?? data?.updated_at ?? data?.modifiedAt ?? data?.updatedAt,
+  );
+}
+
+/**
+ * Ignore delayed activations of an older subscription after a newer one is
+ * stored, and ignore stale active events whose Polar timestamp is older than
+ * the local row (canceled, then a retried `subscription.active`).
+ */
+export function shouldApplyPaidSubscriptionUpdate(input: {
+  existing: typeof teamBillingAccounts.$inferSelect | undefined;
+  incomingSubscriptionId: string | null;
+  incomingPeriodStartedAt: Date | null;
+  incomingModifiedAt: Date | null;
+}): boolean {
+  if (!input.existing) return true;
+  const incomingId = input.incomingSubscriptionId;
+  if (!incomingId) return true;
+  const existingId = input.existing.polarSubscriptionId;
+  if (input.incomingModifiedAt && input.existing.updatedAt) {
+    if (input.incomingModifiedAt.getTime() < input.existing.updatedAt.getTime()) {
+      return false;
+    }
+  }
+  if (!existingId || existingId === incomingId) return true;
+  const existingStart = input.existing.periodStartedAt?.getTime() ?? 0;
+  const incomingStart = input.incomingPeriodStartedAt?.getTime() ?? 0;
+  if (incomingStart > 0 && existingStart > 0) {
+    return incomingStart >= existingStart;
+  }
+  return (
+    input.existing.planId === 'free' ||
+    input.existing.billingState === 'restricted' ||
+    input.existing.billingState === 'canceled'
+  );
+}
+
 function polarCustomerId(data: PolarWebhookPayload['data']): string | null {
   return data?.customer?.id ?? data?.customer_id ?? null;
 }
@@ -143,6 +186,16 @@ async function upsertPaidSubscription(input: {
   const existing = await loadAccount(input.db, input.teamId);
   const polarSubscriptionId = input.data?.id ?? null;
   const period = polarSubscriptionPeriod(input.data);
+  if (
+    !shouldApplyPaidSubscriptionUpdate({
+      existing,
+      incomingSubscriptionId: polarSubscriptionId,
+      incomingPeriodStartedAt: period.periodStartedAt,
+      incomingModifiedAt: polarEventModifiedAt(input.data),
+    })
+  ) {
+    return;
+  }
   const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
   const resetDiscount = shouldResetIncludedDiscount({
     existing,
@@ -196,11 +249,22 @@ async function cancelMatchingSubscription(input: {
   subscriptionId: string | undefined;
 }): Promise<void> {
   if (!input.subscriptionId) return;
+  const [grant] = await input.db
+    .select({ id: billingFreeGrants.id })
+    .from(billingFreeGrants)
+    .where(
+      and(
+        eq(billingFreeGrants.assignedTeamId, input.teamId),
+        isNull(billingFreeGrants.revokedAt),
+      ),
+    )
+    .limit(1);
   await input.db
     .update(teamBillingAccounts)
     .set({
-      billingState: 'canceled',
+      billingState: grant ? 'free' : 'restricted',
       planId: 'free',
+      spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
       updatedAt: new Date(),
     })
     .where(

@@ -1,8 +1,8 @@
 import type { Db } from '@timeline/db';
 
 import {
+  abortRecallJoinAfterProviderAccept,
   recallBillingUserMessage,
-  releaseBillingReservation,
   reserveRecallMeetingMinutes,
 } from '#src/billing/admission.js';
 import { claimMeetingJoinUnderRecallCap } from '#src/billing/capacity.js';
@@ -103,6 +103,7 @@ async function startBot(input: {
   const team = await input.scope.timeline.team();
   const botName = meetingBots.meetingBotDisplayName(team?.name);
   const provider = meetingBots.getMeetingBotProvider(claimed.provider);
+  let joinedBotId: string | undefined;
   try {
     const join = await provider.joinMeeting({
       meetingId: claimed.id,
@@ -113,6 +114,7 @@ async function startBot(input: {
       transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
       maxRecordingDurationSeconds: admission.reservedMinutes * 60,
     });
+    joinedBotId = join.botId;
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
       metadata: {
@@ -125,9 +127,12 @@ async function startBot(input: {
     });
     return { ok: true, meetingId: claimed.id, botName };
   } catch (err) {
-    await releaseBillingReservation(input.scope.billing, admission.operationId).catch(
-      () => undefined,
-    );
+    await abortRecallJoinAfterProviderAccept({
+      billing: input.scope.billing,
+      operationId: admission.operationId,
+      leaveMeeting: (botId) => provider.leaveMeeting(botId),
+      ...(joinedBotId ? { botId: joinedBotId } : {}),
+    });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),

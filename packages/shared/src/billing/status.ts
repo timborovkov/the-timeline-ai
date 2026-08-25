@@ -130,6 +130,18 @@ export function allFreeAllowancesExhausted(remaining: FreeAllowanceRemaining): b
   );
 }
 
+/** States that may reserve usage. Past-due / canceled / restricted stay blocked. */
+export function billingStateAllowsReservation(billingState: string): boolean {
+  return (
+    billingState === 'free' ||
+    billingState === 'payg_active' ||
+    billingState === 'team_active' ||
+    billingState === 'business_active' ||
+    billingState === 'enterprise_active' ||
+    billingState === 'grace'
+  );
+}
+
 export function costBearingPausedFromAccount(input: {
   planId: BillingPlanId;
   billingState: string;
@@ -141,7 +153,7 @@ export function costBearingPausedFromAccount(input: {
   includedDiscountRemainingCents: number;
   freeRemaining: FreeAllowanceRemaining;
 }): boolean {
-  if (input.billingState === 'restricted') return true;
+  if (!billingStateAllowsReservation(input.billingState)) return true;
   const allFreeGone = allFreeAllowancesExhausted(input.freeRemaining);
   if (input.planId === 'free') return allFreeGone;
   if (input.shadowBilling || input.billingState === 'enterprise_active') return false;
@@ -362,10 +374,9 @@ export function deriveSidebarBillingSummary(input: {
   }
 
   const includedDiscount = plan.includedUsageDiscountCents;
-  const freeFloor = freeAllowanceFloorCents();
   const overageCents =
     input.planId === 'payg'
-      ? Math.max(0, input.meteredSpendCents - freeFloor)
+      ? Math.max(0, input.meteredSpendCents)
       : Math.max(0, input.meteredSpendCents - includedDiscount);
 
   // Prefer spend-cap progress when a positive cap exists; otherwise show metered vs discount.

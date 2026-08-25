@@ -48,6 +48,10 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/active-team', () => ({ ACTIVE_TEAM_COOKIE: 'timeline_active_team' }));
 vi.mock('@/lib/default-team', () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }));
 vi.mock('@/lib/pending-invite', () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }));
+vi.mock('@timeline/shared/billing', () => ({
+  assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+  isBillingAdmissionError: () => false,
+}));
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: fakes.fakeLoggerError }),
 }));

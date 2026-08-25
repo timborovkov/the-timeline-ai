@@ -627,6 +627,25 @@ async function summarizeTranscript(
   }
 }
 
+async function settleRecallForFinalizedMeeting(input: {
+  db: Db;
+  teamId: string;
+  meetingId: string;
+  actorUserId: string | null;
+  minutes: number;
+}): Promise<void> {
+  const billingScope = withTeam(
+    input.db,
+    input.teamId,
+    input.actorUserId ?? '00000000-0000-0000-0000-000000000000',
+    input.actorUserId ? {} : { skipMembershipCheck: true },
+  );
+  await settleRecallMeetingMinutes(billingScope.billing, {
+    meetingId: input.meetingId,
+    minutes: input.minutes,
+  });
+}
+
 /**
  * Pure processing function. Exported separately from the BullMQ worker so
  * tests can call it directly with an injected DB + LLM stub.
@@ -655,7 +674,8 @@ export async function processMeetingFinalizeJob(
     // Already finalised. A previous attempt may have committed the DB
     // transaction and then died before enqueueing the post-commit pipeline,
     // so recover the consolidated event and enqueue again. Extract/embed are
-    // worker-idempotent.
+    // worker-idempotent. Billing settle is also retried here because a
+    // transient settle failure after completion would otherwise skip forever.
     const rawEventId = await findFinalizedRawEventId(deps.db, meetingId, teamId);
     const calendarEventId = await findMeetingCalendarEventId(deps.db, meetingId, teamId);
     if (rawEventId) {
@@ -673,6 +693,18 @@ export async function processMeetingFinalizeJob(
           : Promise.resolve(),
       ]);
     }
+    const [usage] = await deps.db
+      .select({ minutes: meetingUsage.minutes })
+      .from(meetingUsage)
+      .where(eq(meetingUsage.meetingId, meetingId))
+      .limit(1);
+    await settleRecallForFinalizedMeeting({
+      db: deps.db,
+      teamId,
+      meetingId,
+      actorUserId: meeting.createdByUserId,
+      minutes: usage?.minutes ?? 0,
+    });
     return { skipped: 'already_completed', meetingId };
   }
   if (['failed', 'cancelled', 'skipped', 'no_show'].includes(meeting.status)) {
@@ -935,6 +967,7 @@ export async function processMeetingFinalizeJob(
         });
       } catch (err) {
         log.warn({ err, meetingId, teamId }, 'meeting_billing_settle_failed');
+        throw err;
       }
 
       return {

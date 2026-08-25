@@ -7,6 +7,7 @@ import {
   polarProductIdForPlan,
   polarTopUpProductId,
   PREPAID_TOPUP_CENTS,
+  planUsesPrepaidWallet,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -48,6 +49,17 @@ export async function startBillingCheckout(input: {
   if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
 
   const env = getEnv();
+  const submittedCode = input.discountCode?.trim();
+  if (submittedCode) {
+    const expected = env.POLAR_DISCOUNT_CODE?.trim();
+    if (
+      !expected ||
+      !env.POLAR_DISCOUNT_ID ||
+      submittedCode.toLowerCase() !== expected.toLowerCase()
+    ) {
+      return { ok: false, error: 'That discount code is not valid.' };
+    }
+  }
   await provider.ensureCustomer({
     externalId: gate.active.teamId,
     email: gate.email,
@@ -58,7 +70,7 @@ export async function startBillingCheckout(input: {
     customerEmail: gate.email,
     productId,
     successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
-    ...(env.POLAR_DISCOUNT_ID && input.discountCode ? { discountId: env.POLAR_DISCOUNT_ID } : {}),
+    ...(submittedCode && env.POLAR_DISCOUNT_ID ? { discountId: env.POLAR_DISCOUNT_ID } : {}),
   });
   return { ok: true, url: checkout.url };
 }
@@ -89,6 +101,14 @@ export async function startWalletTopUp(): Promise<
   }
   const productId = polarTopUpProductId();
   if (!productId) return { ok: false, error: 'Missing Polar top-up product id.' };
+
+  const account = await gate.scope.billing.getAccount();
+  if (!planUsesPrepaidWallet(account.planId)) {
+    return {
+      ok: false,
+      error: 'Prepaid top-up is available on paid plans. Free workspaces stop at native allowances.',
+    };
+  }
 
   const provider = createPolarBillingProvider();
   if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
@@ -121,6 +141,12 @@ export async function updateBillingAutoReload(input: {
       return { ok: false, error: 'Auto-reload amount must be a positive euro amount.' };
     }
     const account = await gate.scope.billing.getAccount();
+    if (input.enabled && !planUsesPrepaidWallet(account.planId)) {
+      return {
+        ok: false,
+        error: 'Auto-reload is available on paid plans that spend the prepaid wallet.',
+      };
+    }
     if (input.enabled && account.spendCapCents > 0 && amountCents > account.spendCapCents) {
       return {
         ok: false,

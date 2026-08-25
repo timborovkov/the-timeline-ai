@@ -3,7 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 
-import { PREPAID_TOPUP_CENTS, formatEuroFromCents } from '#src/billing/catalog.js';
+import { PREPAID_TOPUP_CENTS, formatEuroFromCents, planUsesPrepaidWallet } from '#src/billing/catalog.js';
 import { createPolarBillingProvider, polarTopUpProductId } from '#src/billing/polar.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
@@ -50,14 +50,18 @@ export async function maybeTriggerWalletAutoReload(input: {
   const account = input.account;
   if (!account.autoReloadEnabled) return { triggered: false, reason: 'disabled' };
   if (account.shadowBilling) return { triggered: false, reason: 'shadow' };
+  if (!planUsesPrepaidWallet(account.planId)) return { triggered: false, reason: 'plan' };
   const threshold = account.autoReloadThresholdCents ?? 500;
   const available = account.walletBalanceCents - account.reservedBalanceCents;
   if (available > threshold) return { triggered: false, reason: 'above_threshold' };
 
   let amount = account.autoReloadAmountCents ?? PREPAID_TOPUP_CENTS;
+  if (amount !== PREPAID_TOPUP_CENTS) {
+    amount = PREPAID_TOPUP_CENTS;
+  }
   if (account.spendCapCents > 0) {
     const headroom = Math.max(0, account.spendCapCents - input.meteredSpendCents);
-    amount = Math.min(amount, headroom);
+    if (headroom < PREPAID_TOPUP_CENTS) return { triggered: false, reason: 'spend_cap' };
   }
   if (amount <= 0) return { triggered: false, reason: 'spend_cap' };
 

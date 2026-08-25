@@ -1,4 +1,10 @@
-import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import { PLAN_CATALOG, type BillingMeterId, type BillingPlanId } from '#src/billing/catalog.js';
+import {
+  listChargeCentsForMeter,
+  paygOverageCustomerChargeCents,
+  type MeterTotals,
+} from '#src/billing/charge.js';
+import { freeAllowanceFloorCents } from '#src/billing/status.js';
 
 export type SelfServePaidPlanId = 'payg' | 'team' | 'business';
 
@@ -18,6 +24,32 @@ export interface CheapestPlanPreview {
 function extraMembers(activeMembers: number, included: number | null): number {
   if (included === null) return 0;
   return Math.max(0, activeMembers - included);
+}
+
+export function grossListChargeCentsFromMeters(meters: MeterTotals): number {
+  let sum = 0;
+  for (const [meterId, row] of Object.entries(meters)) {
+    if (!row) continue;
+    sum += listChargeCentsForMeter(meterId as BillingMeterId, row.nativeUnits);
+  }
+  return sum;
+}
+
+function paygOverageFromMeters(meters: MeterTotals): number {
+  let sum = 0;
+  for (const [meterId, row] of Object.entries(meters)) {
+    if (!row) continue;
+    const id = meterId as BillingMeterId;
+    const listChargeCents = listChargeCentsForMeter(id, row.nativeUnits);
+    sum += paygOverageCustomerChargeCents({
+      planId: 'payg',
+      meterId: id,
+      nativeUnits: row.nativeUnits,
+      listChargeCents,
+      meters: {},
+    });
+  }
+  return sum;
 }
 
 function billForPlan(input: {
@@ -45,15 +77,37 @@ function billForPlan(input: {
 /**
  * Invoice preview for PAYG vs Team vs Business from the same member-day
  * and native-usage totals. Recommendation is informational — never auto-switch.
+ *
+ * Prefer `meters` (period native totals). `meteredSpendCents` is treated as
+ * gross list charge when meters are omitted (tests / fallback).
  */
 export function cheapestPlanPreview(input: {
   activeMembers: number;
-  meteredSpendCents: number;
+  meters?: MeterTotals;
+  meteredSpendCents?: number;
 }): CheapestPlanPreview {
+  const gross = input.meters
+    ? grossListChargeCentsFromMeters(input.meters)
+    : Math.max(0, input.meteredSpendCents ?? 0);
+  const paygMetered = input.meters
+    ? paygOverageFromMeters(input.meters)
+    : Math.max(0, gross - freeAllowanceFloorCents());
   const bills = {
-    payg: billForPlan({ planId: 'payg', ...input }),
-    team: billForPlan({ planId: 'team', ...input }),
-    business: billForPlan({ planId: 'business', ...input }),
+    payg: billForPlan({
+      planId: 'payg',
+      activeMembers: input.activeMembers,
+      meteredSpendCents: paygMetered,
+    }),
+    team: billForPlan({
+      planId: 'team',
+      activeMembers: input.activeMembers,
+      meteredSpendCents: gross,
+    }),
+    business: billForPlan({
+      planId: 'business',
+      activeMembers: input.activeMembers,
+      meteredSpendCents: gross,
+    }),
   };
   let recommended: SelfServePaidPlanId = 'payg';
   for (const id of ['team', 'business'] as const) {

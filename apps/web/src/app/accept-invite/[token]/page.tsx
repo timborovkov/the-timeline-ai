@@ -124,6 +124,11 @@ export default async function AcceptInvitePage({ params, searchParams }: Props) 
           Something went wrong while joining. Please try again.
         </p>
       ) : null}
+      {error === 'member-limit' ? (
+        <p className="text-sm text-destructive">
+          This plan’s member limit is reached. Ask an owner to upgrade before you join.
+        </p>
+      ) : null}
       <form action={acceptInviteAction} className="flex items-center gap-3">
         <input type="hidden" name="token" value={token} />
         <Button type="submit">Join team</Button>

@@ -121,6 +121,15 @@ vi.mock('@timeline/shared/llm', () => ({
   }),
   streamChat: fakes.fakeStreamChat,
 }));
+vi.mock('@timeline/shared/billing', () => ({
+  askBillingUserMessage: (error: string) => error,
+  askOperationId: () => 'ask:web:test',
+  mapAskBillingError: (code: string) => code,
+  openRouterUsdCostFromFinishEvent: () => 0,
+  releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
+  reserveAskAi: vi.fn().mockResolvedValue({ ok: true }),
+  settleAskAiFromOpenRouterUsd: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('@/lib/sentry-report', () => ({
   reportCaughtError: fakes.fakeReportCaughtError,
   reportHandledEvent: fakes.fakeReportHandledEvent,
@@ -145,7 +154,7 @@ const followUpMessage = {
   role: 'user',
   parts: [{ type: 'text', text: 'What changed since then?' }],
 };
-let capturedOnFinish: ((event: Record<string, unknown>) => void) | null = null;
+let capturedOnFinish: ((event: Record<string, unknown>) => void | Promise<void>) | null = null;
 let capturedOnError: ((event: { error: unknown }) => void) | null = null;
 
 function request(body: unknown, url = 'https://timeline.test/api/chat'): Request {
@@ -268,15 +277,16 @@ beforeEach(() => {
   fakes.fakeConvertToModelMessages.mockResolvedValue([{ role: 'user', content: 'What happened?' }]);
   fakes.fakeResolveAgentModelId.mockReturnValue('agent-model');
   fakes.fakeBuildOpenRouterLanguageModel.mockReturnValue({ model: 'summarizer' });
-  fakes.fakeCompressMessagesForContext.mockResolvedValue({
+  fakeCompressMessagesForContext.mockResolvedValue({
     compressed: false,
     messages: [{ role: 'user', content: 'What happened?' }],
+    openRouterUsd: 0,
   });
   fakes.fakeChatStructured.mockResolvedValue({ object: { title: 'Generated chat title' } });
   fakes.fakeStreamChat.mockImplementation(
     (input: {
       onError?: (event: { error: unknown }) => void;
-      onFinish?: (event: Record<string, unknown>) => void;
+      onFinish?: (event: Record<string, unknown>) => void | Promise<void>;
     }) => {
       capturedOnError = input.onError ?? null;
       capturedOnFinish = input.onFinish ?? null;
@@ -739,7 +749,7 @@ describe('POST /api/chat', () => {
       suggest_task: { type: 'native' },
     });
 
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'I can update this once you confirm the exact status.',
       toolCalls: [],
       finishReason: 'stop',
@@ -938,7 +948,7 @@ describe('POST /api/chat', () => {
     const response = await POST(request(validBody({ startNewSession: true })));
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -962,7 +972,7 @@ describe('POST /api/chat', () => {
 
     fakes.fakeSetUniqueChatSessionTitle.mockClear();
     await POST(request(validBody({ sessionId: SESSION_ID })));
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -984,7 +994,7 @@ describe('POST /api/chat', () => {
     );
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1021,7 +1031,7 @@ describe('POST /api/chat', () => {
     );
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1044,7 +1054,7 @@ describe('POST /api/chat', () => {
     fakes.fakeChatStructured.mockRejectedValue(new Error('title model down'));
 
     await POST(request(validBody({ startNewSession: true })));
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1077,7 +1087,7 @@ describe('POST /api/chat', () => {
     fakes.fakeChatStructured.mockRejectedValue(new Error('title model down'));
 
     await POST(request(validBody({ messages: [longMessage], startNewSession: true })));
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1097,7 +1107,7 @@ describe('POST /api/chat', () => {
     const response = await POST(request(validBody({ startNewSession: true })));
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1185,7 +1195,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     expect(capturedOnFinish).toBeTypeOf('function');
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [{ toolName: 'search_timeline' }],
       finishReason: 'stop',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cumulativeChargeDeltaCents,
+  memberDaysChargeCents,
   paygOverageCustomerChargeCents,
   splitDiscountAndWallet,
 } from '#src/billing/charge.js';
@@ -62,6 +63,26 @@ describe('billing charge split', () => {
         nextNativeUnits: 10,
       }),
     ).toBe(1);
+  });
+});
+
+describe('memberDaysChargeCents', () => {
+  it('totals €2 over a 31-day month without daily rounding drift', () => {
+    let charged = 0;
+    for (let day = 1; day <= 31; day += 1) {
+      charged +=
+        memberDaysChargeCents({
+          extraMemberDays: day,
+          centsPerMemberMonth: 200,
+          daysInMonth: 31,
+        }) -
+        memberDaysChargeCents({
+          extraMemberDays: day - 1,
+          centsPerMemberMonth: 200,
+          daysInMonth: 31,
+        });
+    }
+    expect(charged).toBe(200);
   });
 });
 

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   billingStateFromPolarSubscriptionStatus,
   handlePolarWebhookEvent,
+  shouldApplyPaidSubscriptionUpdate,
   shouldResetIncludedDiscount,
 } from '#src/billing/polar-webhook.js';
 import { createBillingScope } from '#src/billing/scope.js';
@@ -233,6 +234,56 @@ describe('handlePolarWebhookEvent', () => {
     });
     const canceled = await billing.getAccount();
     expect(canceled.planId).toBe('free');
-    expect(canceled.billingState).toBe('canceled');
+    expect(canceled.billingState).toBe('restricted');
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_new',
+          status: 'active',
+          product_id: 'prod_business',
+          modified_at: '2020-01-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const ignoredStale = await billing.getAccount();
+    expect(ignoredStale.billingState).toBe('restricted');
+    expect(ignoredStale.planId).toBe('free');
+  });
+
+  it('rejects a delayed older subscription after a newer one is stored', () => {
+    expect(
+      shouldApplyPaidSubscriptionUpdate({
+        existing: {
+          polarSubscriptionId: 'sub_new',
+          periodStartedAt: new Date('2026-08-01T00:00:00Z'),
+          updatedAt: new Date('2026-08-20T00:00:00Z'),
+          planId: 'business',
+          billingState: 'business_active',
+        } as never,
+        incomingSubscriptionId: 'sub_old',
+        incomingPeriodStartedAt: new Date('2026-07-01T00:00:00Z'),
+        incomingModifiedAt: new Date('2026-08-21T00:00:00Z'),
+      }),
+    ).toBe(false);
+    expect(
+      shouldApplyPaidSubscriptionUpdate({
+        existing: {
+          polarSubscriptionId: 'sub_1',
+          periodStartedAt: new Date('2026-08-01T00:00:00Z'),
+          updatedAt: new Date('2026-08-20T00:00:00Z'),
+          planId: 'free',
+          billingState: 'restricted',
+        } as never,
+        incomingSubscriptionId: 'sub_1',
+        incomingPeriodStartedAt: new Date('2026-08-01T00:00:00Z'),
+        incomingModifiedAt: new Date('2026-08-01T00:00:00Z'),
+      }),
+    ).toBe(false);
   });
 });

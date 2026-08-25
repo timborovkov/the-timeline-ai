@@ -27,7 +27,11 @@ vi.mock('@timeline/shared', async () => {
     childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
     meetingBots: {
       ...actual.meetingBots,
-      getMeetingBotProvider: vi.fn(() => ({ name: 'recall', joinMeeting: joinMeetingMock })),
+      getMeetingBotProvider: vi.fn(() => ({
+        name: 'recall',
+        joinMeeting: joinMeetingMock,
+        leaveMeeting: vi.fn().mockResolvedValue(undefined),
+      })),
       resolveTranscriptWebhookUrl: vi.fn(
         () => 'https://timeline.test/api/webhooks/recall/transcript',
       ),

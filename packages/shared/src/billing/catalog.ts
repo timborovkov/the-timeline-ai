@@ -314,6 +314,11 @@ export function acceptedSourcesChargeCents(items: number): number {
   return Math.round((items * OVERAGE_RATES.acceptedSourcesCentsPerThousand) / 1000);
 }
 
+/** Wallet-backed plans can spend prepaid top-ups; Free hard-stops on native floors. */
+export function planUsesPrepaidWallet(planId: string): boolean {
+  return planId === 'payg' || planId === 'team' || planId === 'business' || planId === 'enterprise';
+}
+
 export function polarEventNameForMeter(meter: BillingMeterId): string | null {
   switch (meter) {
     case 'ai':

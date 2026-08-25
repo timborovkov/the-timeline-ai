@@ -3,6 +3,7 @@
 import {
   formatEuroFromCents,
   PREPAID_TOPUP_CENTS,
+  planUsesPrepaidWallet,
   type BillingPlanId,
 } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
@@ -93,6 +94,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   const { error, message } = form;
 
   const available = Math.max(0, props.walletBalanceCents - props.reservedBalanceCents);
+  const walletPlan = planUsesPrepaidWallet(props.planId);
 
   function runCheckout(plan: 'payg' | 'team' | 'business') {
     updateForm(clearNotices());
@@ -299,17 +301,19 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
             >
               Save cap
             </button>
-            <button
-              type="button"
-              disabled={pending || !props.polarTopUpConfigured}
-              onClick={buyTopUp}
-              className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
-            >
-              Add €10
-            </button>
+            {walletPlan ? (
+              <button
+                type="button"
+                disabled={pending || !props.polarTopUpConfigured}
+                onClick={buyTopUp}
+                className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
+              >
+                Add €10
+              </button>
+            ) : null}
           </div>
         ) : null}
-        {props.canManage ? (
+        {props.canManage && walletPlan ? (
           <div className="mt-4 space-y-3">
             <label className="flex items-center gap-2 text-sm text-fg">
               <input
@@ -326,8 +330,8 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
               <>
                 <p className="text-sm text-fg-muted">
                   Timeline emails owners a Polar €10 checkout when available wallet is at or below
-                  this threshold. The wallet credits after Polar <code>order.paid</code>, same as
-                  Add €10. The amount cannot exceed remaining spend-cap headroom.
+                  this threshold, and only if remaining spend-cap headroom covers the full €10
+                  product. The wallet credits after Polar <code>order.paid</code>, same as Add €10.
                 </p>
                 <label className="block text-sm">
                   <span className="text-fg-muted">Reload when wallet falls below (EUR)</span>

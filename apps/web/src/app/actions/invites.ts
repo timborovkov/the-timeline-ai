@@ -1,6 +1,10 @@
 'use server';
 
 import { teamInvites, teamMembers, users } from '@timeline/db';
+import {
+  assertTeamMemberSeatCapacity,
+  isBillingAdmissionError,
+} from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -70,6 +74,12 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
         if (membership && !membership.removedAt) {
           throw new Error('already-member');
         }
+        await assertTeamMemberSeatCapacity({
+          db: tx as unknown as typeof db,
+          teamId: invite.teamId,
+          additionalSeats: 1,
+          includePendingInvites: false,
+        });
         await tx
           .insert(teamMembers)
           .values({
@@ -104,7 +114,14 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
       // collapses to 'failed' so we never emit an unbounded error string.
       const raw = e instanceof Error ? e.message : '';
       const reason =
-        raw === 'invalid' || raw === 'wrong-account' || raw === 'already-member' ? raw : 'failed';
+        raw === 'invalid' ||
+        raw === 'wrong-account' ||
+        raw === 'already-member' ||
+        raw === 'member-limit'
+          ? raw
+          : isBillingAdmissionError(e)
+            ? 'member-limit'
+            : 'failed';
       reportCaughtError(e, {
         surface: 'server_action',
         operation: 'accept_invite',
@@ -243,6 +260,13 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
         if (membership && !membership.removedAt) {
           throw new Error('already-member');
         }
+
+        await assertTeamMemberSeatCapacity({
+          db: tx as unknown as typeof db,
+          teamId: invite.teamId,
+          additionalSeats: 1,
+          includePendingInvites: false,
+        });
 
         await tx
           .insert(teamMembers)

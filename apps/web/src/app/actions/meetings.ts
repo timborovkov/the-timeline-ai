@@ -1,9 +1,9 @@
 'use server';
 import {
+  abortRecallJoinAfterProviderAccept,
   claimMeetingJoinUnderRecallCap,
   isBillingAdmissionError,
   recallBillingUserMessage,
-  releaseBillingReservation,
   reserveRecallMeetingMinutes,
 } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
@@ -160,12 +160,15 @@ async function startMeetingBot(input: {
     };
   }
   const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
+  let joinedBotId: string | undefined;
+  let leaveMeeting: ((botId: string) => Promise<void>) | undefined;
   try {
     // react-doctor-disable-next-line react-doctor/async-parallel -- Provider lookup and team load already run together; the later status update depends on the join result.
     const [provider, team] = await Promise.all([
       Promise.resolve(meetingBots.getMeetingBotProvider(claimed.provider)),
       input.scope.timeline.team(),
     ]);
+    leaveMeeting = (botId) => provider.leaveMeeting(botId);
     const join = await provider.joinMeeting({
       meetingId: claimed.id,
       teamId: input.teamId,
@@ -175,6 +178,7 @@ async function startMeetingBot(input: {
       transcriptWebhookUrl,
       maxRecordingDurationSeconds: admission.reservedMinutes * 60,
     });
+    joinedBotId = join.botId;
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
       metadata: {
@@ -187,9 +191,12 @@ async function startMeetingBot(input: {
     return { ok: true, meetingId: claimed.id };
   } catch (err) {
     log.error({ err, meetingId: claimed.id }, 'recall_join_failed');
-    await releaseBillingReservation(input.scope.billing, admission.operationId).catch(
-      () => undefined,
-    );
+    await abortRecallJoinAfterProviderAccept({
+      billing: input.scope.billing,
+      operationId: admission.operationId,
+      ...(leaveMeeting ? { leaveMeeting } : {}),
+      ...(joinedBotId ? { botId: joinedBotId } : {}),
+    });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),

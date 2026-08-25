@@ -67,8 +67,8 @@ BILLING_CHARGES_ENABLED=false
       </ul>
       <p>
         Extra active members accrue as <code>member_days</code> on the prepaid wallet ledger (€2 per
-        member-month, prorated). That meter is not ingested to Polar and is not a Polar invoice
-        line.
+        member-month). Daily janitor charges use a cumulative monthly cent delta so rounding still
+        totals €2. That meter is not ingested to Polar and is not a Polar invoice line.
       </p>
       <p>
         Agent turns, concurrent Recall bots, custom MCP servers, documents, storage, indexed chunks,
@@ -97,8 +97,11 @@ BILLING_CHARGES_ENABLED=false
         <li>Public catalog: <code>/pricing</code></li>
         <li>Team usage: <code>/app/usage</code></li>
         <li>
-          Team settings: <code>/app/team?section=billing</code> (owner/admin) — plan, €10 top-up,
-          auto-reload Polar checkout email, cheapest-plan preview, spend cap
+          Team settings: <code>/app/team?section=billing</code> (owner/admin) — plan, €10 top-up on
+          wallet-backed plans, auto-reload Polar checkout email (skipped unless remaining spend-cap
+          headroom covers the full €10 product), cheapest-plan preview, spend cap. Submitted Polar
+          discount codes must match <code>POLAR_DISCOUNT_CODE</code> before
+          <code>POLAR_DISCOUNT_ID</code> is attached.
         </li>
         <li>
           Owner emails: spend-cap 50/75/90/100% and Free near-limit / exhaustion (<code

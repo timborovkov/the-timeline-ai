@@ -1,9 +1,9 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
 import {
+  abortRecallJoinAfterProviderAccept,
   assertTeamConcurrentRecallCapacity,
   isBillingAdmissionError,
-  releaseBillingReservation,
   reserveRecallMeetingMinutes,
   runWithConcurrentRecallJoinLock,
 } from '@timeline/shared/billing';
@@ -218,9 +218,10 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         continue;
       }
 
+      const provider = meetingBots.getMeetingBotProvider(meeting.provider);
+      let joinedBotId: string | undefined;
       try {
         const team = await scope.timeline.team();
-        const provider = meetingBots.getMeetingBotProvider(meeting.provider);
         const join = await provider.joinMeeting({
           meetingId: meeting.id,
           teamId: meeting.teamId,
@@ -230,6 +231,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
           transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
           maxRecordingDurationSeconds: admission.reservedMinutes * 60,
         });
+        joinedBotId = join.botId;
         await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
           providerBotId: join.botId,
           metadata: {
@@ -242,9 +244,12 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         joined += 1;
       } catch (err) {
         log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
-        await releaseBillingReservation(scope.billing, admission.operationId).catch(
-          () => undefined,
-        );
+        await abortRecallJoinAfterProviderAccept({
+          billing: scope.billing,
+          operationId: admission.operationId,
+          leaveMeeting: (botId) => provider.leaveMeeting(botId),
+          ...(joinedBotId ? { botId: joinedBotId } : {}),
+        });
         await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
           metadata: {
             join_failed_at: new Date().toISOString(),

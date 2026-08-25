@@ -151,6 +151,19 @@ export async function releaseBillingReservation(
   await billing.release(operationId);
 }
 
+/** Leave a Recall bot that joined, then release the reservation. */
+export async function abortRecallJoinAfterProviderAccept(input: {
+  billing: BillingAdmissionScope;
+  operationId: string;
+  leaveMeeting?: (botId: string) => Promise<void>;
+  botId?: string;
+}): Promise<void> {
+  if (input.botId && input.leaveMeeting) {
+    await input.leaveMeeting(input.botId).catch(() => undefined);
+  }
+  await releaseBillingReservation(input.billing, input.operationId).catch(() => undefined);
+}
+
 export function meetingReserveMinutesForPlan(
   planId: BillingPlanId,
   freeRemaining: FreeAllowanceRemaining,

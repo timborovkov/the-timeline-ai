@@ -48,6 +48,7 @@ vi.mock('@timeline/shared/meeting-bots', () => ({
   ),
   getMeetingBotProvider: vi.fn(() => ({
     joinMeeting: fakes.fakeJoinMeeting,
+    leaveMeeting: vi.fn().mockResolvedValue(undefined),
   })),
 }));
 vi.mock('@timeline/shared/rate-limit', async () => {
@@ -62,7 +63,7 @@ vi.mock('@timeline/shared/billing', () => ({
   claimMeetingJoinUnderRecallCap: fakes.fakeClaimMeetingJoinUnderRecallCap,
   isBillingAdmissionError: () => false,
   recallBillingUserMessage: (code: string) => code,
-  releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
+  abortRecallJoinAfterProviderAccept: vi.fn().mockResolvedValue(undefined),
   reserveRecallMeetingMinutes: vi.fn().mockResolvedValue({
     ok: true,
     operationId: 'recall:test',

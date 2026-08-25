@@ -965,7 +965,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  let openRouterUsd = 0;
+  let openRouterUsd = memory.openRouterUsd ?? 0;
   let billingFinalized = false;
   const settleChatBilling = async (responseModelId?: string) => {
     if (billingFinalized) return;
@@ -1082,10 +1082,10 @@ export async function POST(req: Request): Promise<Response> {
         },
       });
     },
-    onFinish: (e) => {
+    onFinish: async (e) => {
       const modelAttribution = llm.streamChatModelAttribution(e, modelId);
       openRouterUsd += openRouterUsdCostFromFinishEvent(e);
-      void settleChatBilling(modelAttribution.responseModelId);
+      await settleChatBilling(modelAttribution.responseModelId);
       const answerText = 'text' in e && typeof e.text === 'string' ? e.text : '';
       const toolObservability = agent.summarizeAgentToolObservations({
         observations: toolObservations,
