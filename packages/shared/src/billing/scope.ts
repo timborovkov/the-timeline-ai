@@ -503,6 +503,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
       metadata?: Record<string, unknown>;
     }) {
       await ensureMember();
+      await ensureAccount();
       const ym = periodYm();
       const settled = await db.transaction(async (tx) => {
         const [account] = await tx
