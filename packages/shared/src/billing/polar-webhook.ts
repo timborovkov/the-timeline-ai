@@ -140,7 +140,7 @@ export function shouldApplyPaidSubscriptionUpdate(input: {
   const incomingId = input.incomingSubscriptionId;
   if (!incomingId) return true;
   const existingId = input.existing.polarSubscriptionId;
-  if (input.incomingModifiedAt && input.existing.updatedAt) {
+  if (input.incomingModifiedAt) {
     if (input.incomingModifiedAt.getTime() < input.existing.updatedAt.getTime()) {
       return false;
     }

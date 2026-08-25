@@ -403,7 +403,8 @@ export async function accrueTeamMemberDays(input: {
       .onConflictDoNothing();
   }
 
-  if (planId === 'free' || PLAN_CATALOG[planId].additionalMemberCents === null) {
+  const additionalMemberCents = PLAN_CATALOG[planId].additionalMemberCents;
+  if (planId === 'free' || additionalMemberCents === null) {
     return { extraMembers: 0, chargeCents: 0 };
   }
   const extraMembers = Math.max(0, members.length - included);
@@ -412,16 +413,15 @@ export async function accrueTeamMemberDays(input: {
   }
   const previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days');
   const daysInMonth = daysInUtcMonth();
-  const centsPerMemberMonth = PLAN_CATALOG[planId].additionalMemberCents ?? 0;
   const chargeCents =
     memberDaysChargeCents({
       extraMemberDays: previousNative + extraMembers,
-      centsPerMemberMonth,
+      centsPerMemberMonth: additionalMemberCents,
       daysInMonth,
     }) -
     memberDaysChargeCents({
       extraMemberDays: previousNative,
-      centsPerMemberMonth,
+      centsPerMemberMonth: additionalMemberCents,
       daysInMonth,
     });
   await settleTeamMeter({

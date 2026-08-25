@@ -413,7 +413,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 ),
               );
             const pendingBillable = pending.reduce((sum, row) => {
-              const raw = row.metadata?.billable_charge_cents;
+              const raw = row.metadata.billable_charge_cents;
               const cents =
                 typeof raw === 'number' && Number.isInteger(raw) && raw >= 0
                   ? raw
