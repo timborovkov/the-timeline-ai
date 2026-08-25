@@ -253,10 +253,7 @@ async function cancelMatchingSubscription(input: {
     .select({ id: billingFreeGrants.id })
     .from(billingFreeGrants)
     .where(
-      and(
-        eq(billingFreeGrants.assignedTeamId, input.teamId),
-        isNull(billingFreeGrants.revokedAt),
-      ),
+      and(eq(billingFreeGrants.assignedTeamId, input.teamId), isNull(billingFreeGrants.revokedAt)),
     )
     .limit(1);
   await input.db

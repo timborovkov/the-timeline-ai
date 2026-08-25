@@ -3,7 +3,11 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 
-import { PREPAID_TOPUP_CENTS, formatEuroFromCents, planUsesPrepaidWallet } from '#src/billing/catalog.js';
+import {
+  PREPAID_TOPUP_CENTS,
+  formatEuroFromCents,
+  planUsesPrepaidWallet,
+} from '#src/billing/catalog.js';
 import { createPolarBillingProvider, polarTopUpProductId } from '#src/billing/polar.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';

@@ -106,7 +106,8 @@ export async function startWalletTopUp(): Promise<
   if (!planUsesPrepaidWallet(account.planId)) {
     return {
       ok: false,
-      error: 'Prepaid top-up is available on paid plans. Free workspaces stop at native allowances.',
+      error:
+        'Prepaid top-up is available on paid plans. Free workspaces stop at native allowances.',
     };
   }
 

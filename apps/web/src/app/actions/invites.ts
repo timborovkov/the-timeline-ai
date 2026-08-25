@@ -1,10 +1,7 @@
 'use server';
 
 import { teamInvites, teamMembers, users } from '@timeline/db';
-import {
-  assertTeamMemberSeatCapacity,
-  isBillingAdmissionError,
-} from '@timeline/shared/billing';
+import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';

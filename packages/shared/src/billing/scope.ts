@@ -228,7 +228,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .update(billingFreeGrants)
             .set({ assignedTeamId: teamId })
             .where(
-              and(eq(billingFreeGrants.id, existing[0].id), isNull(billingFreeGrants.assignedTeamId)),
+              and(
+                eq(billingFreeGrants.id, existing[0].id),
+                isNull(billingFreeGrants.assignedTeamId),
+              ),
             )
             .returning();
           if (!updated) {

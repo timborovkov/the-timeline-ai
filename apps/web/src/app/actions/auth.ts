@@ -218,7 +218,10 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         };
       }
       if (isBillingAdmissionError(e)) {
-        reportCaughtError(e, { surface: 'server_action', operation: 'sign_up_invite_member_limit' });
+        reportCaughtError(e, {
+          surface: 'server_action',
+          operation: 'sign_up_invite_member_limit',
+        });
         return {
           error:
             'This plan’s member limit is reached. Ask an owner to upgrade before you join with this invite.',

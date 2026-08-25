@@ -7,7 +7,9 @@ describe('cheapestPlanPreview', () => {
   it('recommends PAYG for a small team with modest usage', () => {
     const preview = cheapestPlanPreview({ activeMembers: 5, meteredSpendCents: 1_500 });
     expect(preview.recommended).toBe('payg');
-    expect(preview.bills.payg.totalCents).toBe(400 + Math.max(0, 1_500 - freeAllowanceFloorCents()));
+    expect(preview.bills.payg.totalCents).toBe(
+      400 + Math.max(0, 1_500 - freeAllowanceFloorCents()),
+    );
     expect(preview.bills.team.totalCents).toBe(4_900);
   });
 
