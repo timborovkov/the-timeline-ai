@@ -277,7 +277,7 @@ beforeEach(() => {
   fakes.fakeConvertToModelMessages.mockResolvedValue([{ role: 'user', content: 'What happened?' }]);
   fakes.fakeResolveAgentModelId.mockReturnValue('agent-model');
   fakes.fakeBuildOpenRouterLanguageModel.mockReturnValue({ model: 'summarizer' });
-  fakeCompressMessagesForContext.mockResolvedValue({
+  fakes.fakeCompressMessagesForContext.mockResolvedValue({
     compressed: false,
     messages: [{ role: 'user', content: 'What happened?' }],
     openRouterUsd: 0,

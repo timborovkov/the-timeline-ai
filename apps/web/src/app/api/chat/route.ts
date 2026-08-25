@@ -965,7 +965,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  let openRouterUsd = memory.openRouterUsd ?? 0;
+  let openRouterUsd = 0;
   let billingFinalized = false;
   const settleChatBilling = async (responseModelId?: string) => {
     if (billingFinalized) return;
@@ -1015,6 +1015,7 @@ export async function POST(req: Request): Promise<Response> {
     throw err;
   }
   if (memory.compressed) {
+    openRouterUsd += memory.openRouterUsd;
     log.info(
       {
         teamId: active.teamId,
