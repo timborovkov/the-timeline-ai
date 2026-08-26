@@ -1,6 +1,5 @@
 'use client';
 
-import { textHasContacts } from '@timeline/shared/conversational/contact-artifacts';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
@@ -13,6 +12,14 @@ import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
+
+// Simple client-safe contact detection (email or phone patterns)
+function textHasContacts(text: string | null | undefined): boolean {
+  if (!text) return false;
+  return (
+    /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text) || /\d{3}[-.]\d{3}[-.]\d{4}/.test(text)
+  );
+}
 
 export function ObjectBoardContextSection({
   rows,

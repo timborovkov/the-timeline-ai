@@ -1,6 +1,6 @@
 'use client';
 
-import { readableMetadataEntries } from '@timeline/shared/objects';
+import { readableMetadataEntries } from '@timeline/shared/objects/metadata-schemas';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
