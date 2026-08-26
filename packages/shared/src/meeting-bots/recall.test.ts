@@ -61,12 +61,14 @@ describe('createRecallProvider', () => {
     );
 
     await expect(listRecallBotsForCanary({ fetcher })).rejects.toThrow(
-      'Recall GET /bot/ failed: 401',
+      'Recall GET /bot/ failed with HTTP 401',
     );
   });
 
-  it('joinMeeting posts to /bot with Token auth, metadata round-trip, minimal retention, and silent config', async () => {
-    const { fetcher, calls } = makeFetcher(() => Response.json({ id: 'bot-123' }));
+  it('joinMeeting posts the accuracy-first one-hour silent config without internal metadata', async () => {
+    const { fetcher, calls } = makeFetcher(() =>
+      Response.json({ id: 'bot-123', meeting_url: { meeting_id: 'provider-meeting' } }),
+    );
     const provider = createRecallProvider({ fetcher });
     const result = await provider.joinMeeting({
       meetingId: 'm-1',
@@ -76,7 +78,7 @@ describe('createRecallProvider', () => {
       botName: "Acme's thetimeline.cc bot",
       transcriptWebhookUrl: 'https://example.com/webhook',
     });
-    expect(result.botId).toBe('bot-123');
+    expect(result).toEqual({ botId: 'bot-123' });
     expect(calls).toHaveLength(1);
     const call = calls[0];
     if (!call) throw new Error('no call');
@@ -93,10 +95,7 @@ describe('createRecallProvider', () => {
       everyone_left_timeout: { timeout: 2, activate_after: 1 },
       recording_permission_denied_timeout: 30,
     });
-    const meta = body.metadata as Record<string, string>;
-    expect(meta.meeting_id).toBe('m-1');
-    expect(meta.team_id).toBe('t-1');
-    expect(meta.platform).toBe('meet');
+    expect(body.metadata).toBeUndefined();
     expect(body.recording_config).toMatchObject({
       retention: { type: 'timed', hours: 1 },
       transcript: {
@@ -109,6 +108,28 @@ describe('createRecallProvider', () => {
       },
     });
     expect(body.output_media).toBeUndefined();
+  });
+
+  it('never exposes a failed Create Bot response body through the thrown error', async () => {
+    const privateResponse = {
+      error: 'invalid meeting',
+      meeting_url: 'https://meet.google.com/private-customer-call',
+      echoed_secret: 'do-not-persist',
+    };
+    const { fetcher } = makeFetcher(() => Response.json(privateResponse, { status: 422 }));
+    const provider = createRecallProvider({ fetcher });
+
+    const promise = provider.joinMeeting({
+      meetingId: 'm-private',
+      teamId: 't-private',
+      meetingUrl: 'https://meet.google.com/private-customer-call',
+      platform: 'meet',
+      transcriptWebhookUrl: 'https://example.com/webhook',
+    });
+
+    await expect(promise).rejects.toThrow('Recall POST /bot failed with HTTP 422');
+    await expect(promise).rejects.not.toThrow('private-customer-call');
+    await expect(promise).rejects.not.toThrow('do-not-persist');
   });
 
   it('joinMeeting uses configured timed retention for multilingual meetings', async () => {

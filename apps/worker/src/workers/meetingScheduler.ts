@@ -206,15 +206,15 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
       });
       await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
         providerBotId: join.botId,
-        metadata: { provider_join_result: join.raw ?? {} },
       });
       joined += 1;
     } catch (err) {
-      log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
+      const joinErrorCode = meetingBots.meetingBotErrorCode(err);
+      log.warn({ joinErrorCode, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
       await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
         metadata: {
           join_failed_at: new Date().toISOString(),
-          join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+          join_error: joinErrorCode,
         },
       });
       await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);

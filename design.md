@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.27 · Installed-app splash (2026-08-26). Replaces v3.26 Dedicated animated platform flow.
+**Version:** v3.28 · Privacy, trust, and installed-app splash (2026-08-26). Replaces v3.27 Installed-app splash.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1010,6 +1010,27 @@ taxonomy.
 The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
 
+`/trust` is the concise public assurance surface. It follows the expanded
+editorial grid, leads with the training-data boundary, then shows the data path,
+AI routing, storage and access, processor roles, permissions, current assurance
+status, and private vulnerability-reporting route. It must distinguish controls
+enforced in code from production-account, contract, and certification evidence;
+unverified badges and absolute “nothing leaves our servers” claims are
+prohibited. Privacy and Terms remain the detailed legal surfaces and cross-link
+Trust. `/legal/accept` is an authenticated blocking interstitial: one explicit
+acceptance covers the current Terms and Privacy versions for that person, and
+protected product access does not continue until it succeeds.
+
+`/cookies` uses the same legal-page reading surface for the exact cookie and
+browser-storage inventory. It separates current necessary storage from the
+not-yet-deployed optional analytics target. The notice must never impersonate a
+consent control: until analytics ships a working choice, it says so plainly.
+Future consent UX gives Accept analytics and Reject equal weight, keeps
+identifier-free aggregate public request counts separate, and never loads
+browser analytics inside private workspace routes. Every public footer links
+the notice; a real Cookie settings control replaces or supplements that link
+only when withdrawal is functional.
+
 ### Administrator dashboards
 
 Jobs and Reconciliation list rows show status, a human label, and relative time.
@@ -1207,6 +1228,8 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |
 | 2026-08-20 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |
 | 2026-08-20 | Copy-ready agent setup | Gives public Help one recommended install prompt, narrower skill and MCP paths, searchable setup details, and explicit secret and authority boundaries. |
+| 2026-08-21 | Evidence-gated Trust and legal acceptance | Adds a candid public Trust center, detailed legal surfaces, and a blocking per-user versioned acceptance path without presenting external account settings or future certifications as verified. |
+| 2026-08-21 | Privacy and analytics boundary | Adds an exact Cookies and similar technologies notice, separates notice from consent, and defines public-only optional browser analytics without weakening identifier-free aggregate traffic counts or private workspace routes. |
 | 2026-08-21 | Evidence-flow acquisition story | Reframes Timeline as AI team memory, introduces the reusable evidence-to-workspace-to-assistant explainer, and adds three substantive outcome-led solution pages. |
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |

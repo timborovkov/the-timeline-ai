@@ -10,7 +10,10 @@ surfaces, workers, extraction, embeddings, agent chat, objects, curated boards,
 tasks, documents, meeting bots, calendar basics/subscriptions,
 integrations/custom MCPs, Slack, onboarding, visibility controls, exports, job
 recovery, public help/legal, approval-backed object and board memory, and
-personal universal pinning across durable workspace content. Telegram and Slack
+personal universal pinning across durable workspace content. Public Trust,
+detailed Terms and Privacy surfaces, immutable per-user legal acceptance
+evidence, and current-version gates across human product routes are also shipped.
+Telegram and Slack
 direct text now share the durable agent runtime and web-visible private chat
 history; trusted groups and channels remain ingestion-first while also exposing
 the scoped, proposal-only team agent through explicit ask commands.
@@ -511,6 +514,54 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       individual in-app notifications stay inbox-only.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
+
+## Trust, Privacy, And Legal
+
+- [x] Add the public Trust, Privacy, Terms, and Cookies surfaces; per-user
+      versioned legal acceptance with immutable acceptance history; and
+      non-analytics browser-storage hardening. The Cookies notice explicitly
+      marks optional browser analytics and its settings control as a pending
+      target rather than deployed behavior.
+- [ ] Land the analytics-owned runtime against
+      [`docs/privacy-analytics-interface.md`](./docs/privacy-analytics-interface.md):
+      identifier-free aggregate public counts, affirmative-consent-only public
+      PostHog, no browser analytics in private routes, minimized authenticated
+      server/worker events, working withdrawal, and removal/investigation of the
+      legacy Convex tracker. Do not deploy the privacy branch alone before that
+      merge.
+- [ ] Choose and commit a repository license and contribution terms after
+      founder/counsel review. Until then, describe the repository as public
+      source—not open source—and do not promise unrestricted self-hosting.
+- [x] Add the code-owned OpenRouter model/privacy registry, fail-closed
+      no-collection/ZDR routing for required roles, explicit cache disablement,
+      official-origin enforcement, key/guardrail/catalog/policy-bound production
+      attestation, all-pin ZDR canary, and the aggregate-only multilingual
+      transcription bake-off.
+      Keep GPT-4o Transcribe as the disclosed quality exception until that gate
+      produces a passing locked artifact. Recall remains separate: signed raw-body
+      webhooks, no outbound internal ids or stored Create Bot response, accuracy
+      mode, auto language detection, and requested one-hour retention.
+- [ ] Run and lock the non-customer 24-language transcription evaluation, then
+      capture production OpenRouter evidence: exact key model allowlist,
+      generated privacy-policy attestation, operator-only management-key proof of
+      the exact guardrail assignment and settings, all applicable ZDR guardrails,
+      prompt logging, input/output sharing, Broadcast, response caching, current
+      DPA and subprocessors. Never deploy the management key to app runtime.
+      Schedule the all-pin registry and synthetic route canaries.
+      Capture a synthetic Recall meeting request/lifecycle and one-hour provider
+      behavior before publishing verified deletion claims.
+- [ ] Have qualified counsel review the published Terms and Privacy Policy, and
+      bind future acceptance events to an immutable rendered legal-text snapshot
+      or digest in addition to the version, timestamp, source, IP, and user agent.
+- [ ] Draft and counsel-review a GDPR Article 28 customer DPA plus an
+      organization-level execution/acceptance path. Per-user Terms acceptance
+      and Privacy notice acknowledgement do not replace that processor contract.
+- [ ] Close the operating gaps tracked in
+      [`docs/security-privacy-trust.md`](./docs/security-privacy-trust.md):
+      provider DPAs/regions/settings, Railway backup and restore evidence,
+      end-to-end deletion verification, operator-access logging and break-glass
+      controls, and investigation/deletion of any data collected by the legacy
+      Convex analytics script.
 
 ## Backup And Operations
 

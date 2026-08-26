@@ -1,5 +1,48 @@
 const checks = [
   {
+    name: '@timeline/shared OpenRouter privacy attestation',
+    run: async () => {
+      const attestation = await import('@timeline/shared/llm/privacy-attestation');
+      const syntheticKey = 'sk-or-dist-import-synthetic-only';
+      const guardrailId = 'dist-import-guardrail';
+      const token = attestation.buildOpenRouterPrivacyAttestationToken({
+        apiKey: syntheticKey,
+        guardrailId,
+      });
+      const payload = attestation.parseOpenRouterPrivacyAttestationToken(token);
+
+      if (!/^[0-9a-f]{64}$/.test(attestation.OPENROUTER_MODEL_CATALOG_SHA256)) {
+        throw new Error('OpenRouter model-catalog digest export is missing or invalid');
+      }
+      if (
+        payload?.catalogSha256 !== attestation.OPENROUTER_MODEL_CATALOG_SHA256 ||
+        payload.guardrailId !== guardrailId ||
+        !attestation.isCurrentOpenRouterPrivacyAttestation(token, {
+          apiKey: syntheticKey,
+          guardrailId,
+        })
+      ) {
+        throw new Error('OpenRouter privacy-attestation compiled export is invalid');
+      }
+      if (token.includes(syntheticKey)) {
+        throw new Error('OpenRouter privacy attestation leaked the inference key');
+      }
+    },
+  },
+  {
+    name: '@timeline/shared legal versions',
+    run: async () => {
+      const legalVersions = await import('@timeline/shared/legal-versions');
+      const versionPattern = /^\d{4}-\d{2}-\d{2}$/;
+      if (
+        !versionPattern.test(legalVersions.TERMS_VERSION) ||
+        !versionPattern.test(legalVersions.PRIVACY_VERSION)
+      ) {
+        throw new Error('Legal-version exports are missing or are not date-versioned');
+      }
+    },
+  },
+  {
     name: '@timeline/shared evidence pack',
     run: async () => {
       const evidencePack = await import('@timeline/shared/evidence-pack');

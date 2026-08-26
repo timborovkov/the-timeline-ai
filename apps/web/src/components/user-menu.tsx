@@ -16,6 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { clearAllFloatingChatSessionIds } from '@/lib/floating-chat-session-storage';
 
 interface Props {
   user: { name?: string | null; email?: string | null; emailVerified?: Date | string | null };
@@ -84,6 +85,7 @@ export function UserMenu({ user }: Props) {
           <button
             type="button"
             onClick={() => {
+              clearAllFloatingChatSessionIds(window.localStorage);
               void signOut({ redirect: false, redirectTo: '/sign-in' }).then(() => {
                 window.location.assign('/sign-in');
               });

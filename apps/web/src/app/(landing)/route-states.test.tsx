@@ -33,6 +33,7 @@ describe('Landing route states', () => {
     expect(html).toContain('aria-label="The Timeline loading placeholder"');
     expect(html).toContain('href="/help"');
     expect(html).toContain('href="/help/support"');
+    expect(html).toContain('href="/cookies"');
 
     render(<LandingLoading />);
 

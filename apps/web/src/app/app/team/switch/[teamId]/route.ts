@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-import { ACTIVE_TEAM_COOKIE, verifyMembership } from '@/lib/active-team';
+import { ACTIVE_TEAM_COOKIE, activeTeamCookieOptions, verifyMembership } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -24,11 +24,6 @@ export async function POST(
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
-    httpOnly: true,
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 365,
-  });
+  cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, activeTeamCookieOptions());
   return appRedirect('/app');
 }

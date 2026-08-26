@@ -41,6 +41,7 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({
   ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+  activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
   resolveActiveTeam: fakes.fakeResolveActiveTeam,
 }));
 vi.mock('@/lib/db', () => ({

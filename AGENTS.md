@@ -39,6 +39,12 @@ After **any** code, configuration, or documentation change:
    - Run `pnpm test:task-category-eval:live` with
      `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
      taxonomy, classifier packet, prompt, schema, or pinned model changes.
+   - Run `pnpm eval:transcription-quality:live -- --manifest=/path/to/manifest.json
+     --out=/path/to/new-evidence.json --candidate=<model-id>` before changing the
+     non-meeting transcription pin. The approved corpus must contain no customer
+     data and satisfy the 24-language quality gate documented in
+     [docs/research/transcription-quality-eval.md](docs/research/transcription-quality-eval.md).
+     A live registry entry or single-language smoke test is not promotion evidence.
    - Run `pnpm test:reconciliation-eval` when a change touches reconciliation
      schema, source refs, evidence associations, visibility floors, authority
      policy, or reconciliation output planning. Run
@@ -125,6 +131,21 @@ Treat this file as an operating contract for agents, not a loose README.
 
 ## Project-specific guardrails
 
+- **Privacy and trust changes follow the operating standard.** Before changing
+  an AI model or route, provider, outbound data flow, telemetry, cookie, storage,
+  permission, human-access path, retention/deletion behavior, or public
+  security/legal claim, read and apply
+  [docs/security-privacy-trust.md](docs/security-privacy-trust.md). Keep provider
+  evidence and open gaps current; a public claim may be no stronger than the
+  weakest evidenced code, deployment, account, or contract state.
+- **Model privacy is role-based and code-owned.** Keep every exact OpenRouter pin
+  and its `zdr_required` or `retained_no_training_exception` class in
+  `packages/shared/src/llm/models.ts`. ZDR-required roles must fail closed and
+  may use any eligible ZDR upstream, never a weaker-retention fallback. Do not
+  change the voice-note transcription pin until the non-customer, 24-language
+  quality evaluation in [docs/security-privacy-trust.md](docs/security-privacy-trust.md)
+  passes and its aggregate-only evidence artifact is locked. Recall meeting
+  transcription is a separate pipeline.
 - **Team isolation is sacred.** Every Postgres query goes through
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
@@ -167,7 +188,8 @@ Treat this file as an operating contract for agents, not a loose README.
   boards, documents, meetings, Ask history, pending proposals, digest history, and the
   deterministic fictional Northstar evidence corpus with encrypted fake integration credentials after
   migrations. `pnpm demo:reset` is `pnpm dev:wipe && pnpm demo:seed`. `pnpm demo:verify` fails closed on all eight login identities, active memberships,
-  password usability, downloaded document-byte checksums, scoped Qdrant
+  password usability, current legal-version snapshots with matching immutable acceptance evidence,
+  downloaded document-byte checksums, scoped Qdrant
   discoverability for Northstar raw events/facts/document chunks/meeting chunks, expanded-corpus
   document `embedded` status and chunk vectors, fixture chronology,
   visibility, source links, canonical support drift, or expanded-corpus volume floors. The commands refuse production and

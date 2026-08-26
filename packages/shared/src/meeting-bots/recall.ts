@@ -9,8 +9,9 @@ import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 
 // Recall.ai adapter: single bot per meeting, silent mode (no audio/video
-// output), realtime webhooks for transcript + status, metadata round-trip
-// of meetingId so webhooks can locate the meeting without trusting URLs.
+// output), realtime webhooks for transcript + status, and provider-bot-id
+// correlation. Internal meeting/team ids are never disclosed as custom
+// provider metadata.
 //
 // Design notes for this phase:
 //   * Single-team Qdrant collection (handled at the embed worker, not here).
@@ -115,8 +116,9 @@ export async function listRecallBotsForCanary(
     }
   }
   if (!res.ok) {
-    const detail = typeof data === 'string' ? data : JSON.stringify(data);
-    throw new Error(`Recall GET /bot/ failed: ${String(res.status)} ${detail}`);
+    const err = new Error(`Recall GET /bot/ failed with HTTP ${String(res.status)}`);
+    (err as { status?: number }).status = res.status;
+    throw err;
   }
   const record = data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
   const results = Array.isArray(record.results) ? record.results : null;
@@ -157,8 +159,9 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
     // 404 on leaveMeeting is tolerated by the caller; bubble status so the
     // wrapper can decide. Anything else non-2xx throws.
     if (!res.ok && res.status !== 404) {
-      const detail = typeof data === 'string' ? data : JSON.stringify(data);
-      const err = new Error(`Recall ${method} ${path} failed: ${String(res.status)} ${detail}`);
+      // Do not attach the response body. Provider errors can echo the meeting
+      // URL or request fields, and callers persist a content-free error code.
+      const err = new Error(`Recall ${method} ${path} failed with HTTP ${String(res.status)}`);
       (err as { status?: number }).status = res.status;
       throw err;
     }
@@ -193,11 +196,6 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
           everyone_left_timeout: { timeout: 2, activate_after: 1 },
           recording_permission_denied_timeout: 30,
         },
-        metadata: {
-          meeting_id: input.meetingId,
-          team_id: input.teamId,
-          platform: input.platform,
-        },
         realtime_endpoints: [
           {
             type: 'webhook',
@@ -223,7 +221,7 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
         { meetingId: input.meetingId, botId: data.id, platform: input.platform },
         'recall_bot_created',
       );
-      return { botId: data.id, raw: data as unknown as Record<string, unknown> };
+      return { botId: data.id };
     },
 
     async leaveMeeting(botId: string): Promise<void> {

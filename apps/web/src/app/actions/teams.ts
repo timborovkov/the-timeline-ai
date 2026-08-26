@@ -41,7 +41,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { ACTIVE_TEAM_COOKIE, resolveActiveTeam } from '@/lib/active-team';
+import { ACTIVE_TEAM_COOKIE, activeTeamCookieOptions, resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -114,12 +114,7 @@ export async function createTeamAction(
     }
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 365,
-    });
+    cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, activeTeamCookieOptions());
     revalidatePath('/app');
     redirect('/app/timeline');
   });

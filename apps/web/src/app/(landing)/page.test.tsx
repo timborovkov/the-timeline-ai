@@ -38,6 +38,7 @@ describe('LandingPage', () => {
     expect(html).toContain('https://github.com/timborovkov/the-timeline-ai');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
+    expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Scattered work. <em>Cited answers.</em>');
 

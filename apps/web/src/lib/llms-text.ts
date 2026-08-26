@@ -90,7 +90,7 @@ export function buildLlmsFullTxt(options: LlmsTextOptions = {}): string {
   const guides = registry.forLlms('product-guides');
   const supportAndLegal = registry
     .forLlms('primary')
-    .filter((document) => ['support', 'legal'].includes(document.kind));
+    .filter((document) => ['support', 'legal', 'trust'].includes(document.kind));
   const contributedSections = CONTRIBUTED_LLM_SECTIONS.flatMap(({ section, heading }) =>
     renderFullDocumentSection(heading, registry.forLlms(section), siteUrl),
   );
@@ -127,9 +127,26 @@ export function buildLlmsFullTxt(options: LlmsTextOptions = {}): string {
     ]),
     '',
     ...contributedSections,
-    '## Public support and legal pages',
-    ...supportAndLegal.map((document) =>
-      link(document, llmsContent(document).fullSummary ?? llmsContent(document).summary, siteUrl),
+    '## Public trust, support, and legal pages',
+    ...supportAndLegal.flatMap((document) =>
+      document.kind === 'trust'
+        ? [
+            '',
+            `### ${escapeHeading(document.title)}`,
+            '',
+            `URL: ${canonicalPublicUrl(siteUrl, document.canonicalPath)}`,
+            '',
+            escapeInline(llmsContent(document).fullSummary ?? llmsContent(document).summary),
+            '',
+            ...renderSections(document, 4),
+          ]
+        : [
+            link(
+              document,
+              llmsContent(document).fullSummary ?? llmsContent(document).summary,
+              siteUrl,
+            ),
+          ],
     ),
     '',
     '## Search and citation guidance for AI systems',

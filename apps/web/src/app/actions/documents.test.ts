@@ -1,4 +1,5 @@
 import { resetEnvForTests } from '@timeline/shared/env';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as RateLimitModule from '@timeline/shared/rate-limit';
@@ -126,7 +127,14 @@ beforeEach(() => {
   resetEnvForTests();
   Object.assign(process.env, { NODE_ENV: 'test' });
   delete process.env.S3_PUBLIC_ENDPOINT;
-  fakeAuth.mockResolvedValue({ user: { id: USER_ID } });
+  fakeAuth.mockResolvedValue({
+    user: {
+      id: USER_ID,
+      legalTermsVersion: TERMS_VERSION,
+      legalPrivacyVersion: PRIVACY_VERSION,
+      legalAcceptedAt: '2026-08-21T00:00:00.000Z',
+    },
+  });
   fakeResolveActiveTeam.mockResolvedValue({ active: { teamId: TEAM_ID } });
   fakeCheckRateLimit.mockResolvedValue({ ok: true, remaining: 10 });
   fakeSafeMarkOnboardingStep.mockResolvedValue(false);

@@ -6,6 +6,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     fileParallelism: false,
     hookTimeout: 60_000,
+    testTimeout: 60_000,
     env: {
       LOG_LEVEL: 'silent',
       DATABASE_URL: 'postgres://test:test@localhost:5432/test',

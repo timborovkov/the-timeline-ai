@@ -75,9 +75,11 @@ describe('DesktopSidebar', () => {
 
   it('migrates the existing local preference before rendering and reloads only once', () => {
     let cookie = '';
+    const cookieWrites: string[] = [];
     const document = Object.defineProperty({}, 'cookie', {
       get: () => cookie,
       set: (value: string) => {
+        cookieWrites.push(value);
         cookie = value.split(';')[0] ?? '';
       },
     });
@@ -85,13 +87,15 @@ describe('DesktopSidebar', () => {
     const context = {
       document,
       localStorage: { getItem: () => 'false' },
-      location: { protocol: 'https:', reload },
+      location: { pathname: '/app/timeline', protocol: 'https:', reload },
     };
 
     runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, context);
     runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, context);
 
     expect(cookie).toBe('timeline_sidebar_expanded=false');
+    expect(cookieWrites[0]).toContain('Path=/app');
+    expect(cookieWrites[0]).toContain('Secure');
     expect(reload).toHaveBeenCalledOnce();
   });
 
@@ -108,10 +112,22 @@ describe('DesktopSidebar', () => {
     runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, {
       document,
       localStorage: { getItem: () => 'false' },
-      location: { protocol: 'https:', reload },
+      location: { pathname: '/app/timeline', protocol: 'https:', reload },
     });
 
     expect(cookie).toBe('timeline_sidebar_expanded=true');
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it('does not inspect sidebar storage on public routes', () => {
+    const getItem = vi.fn(() => 'false');
+
+    runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, {
+      document: { cookie: '' },
+      localStorage: { getItem },
+      location: { pathname: '/', protocol: 'https:', reload: vi.fn() },
+    });
+
+    expect(getItem).not.toHaveBeenCalled();
   });
 });

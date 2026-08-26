@@ -30,6 +30,26 @@ export default function HelpIndexPage() {
 
       <section className="grid gap-5 border-y border-border py-7 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div>
+          <h2 className="text-base font-semibold text-fg">Security and data privacy</h2>
+          <p className="mt-1 max-w-[62ch] text-sm leading-6 text-fg-muted">
+            Review AI training and retention, infrastructure, permissions, meeting media, analytics,
+            human access, processors, and current assurance status.
+          </p>
+        </div>
+        <Link
+          href="/trust"
+          className="group inline-flex min-h-10 items-center gap-2 rounded-sm text-sm font-semibold text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+        >
+          Read the Trust page
+          <ArrowRight
+            aria-hidden="true"
+            className="size-4 transition-transform group-hover:translate-x-1"
+          />
+        </Link>
+      </section>
+
+      <section className="grid gap-5 border-y border-border py-7 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div>
           <h2 className="text-base font-semibold text-fg">Still stuck?</h2>
           <p className="mt-1 max-w-[62ch] text-sm leading-6 text-fg-muted">
             Send the route, what you expected, and what happened. Signed-in requests include team

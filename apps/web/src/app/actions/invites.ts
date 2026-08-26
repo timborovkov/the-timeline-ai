@@ -8,11 +8,12 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
+import { ACTIVE_TEAM_COOKIE, activeTeamCookieOptions } from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { ensureSoloTeam } from '@/lib/default-team';
+import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
 
@@ -20,6 +21,13 @@ const log = childLogger('web:actions:invites');
 
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
 const recipientInviteSchema = z.object({ inviteId: z.uuid() });
+
+async function requireCurrentLegalAcceptance(userId: string, returnTo: string): Promise<void> {
+  const legal = await getUserLegalAcceptance(userId);
+  if (!legal || !hasCurrentLegalAcceptance(legal)) {
+    redirect(`/legal/accept?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+}
 
 export async function acceptInviteAction(formData: FormData): Promise<void> {
   return runSentryServerAction('accept_invite', async () => {
@@ -35,6 +43,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     const { token } = parsed.data;
     const userId = session.user.id;
     const sessionEmail = session.user.email?.toLowerCase();
+    await requireCurrentLegalAcceptance(userId, `/accept-invite/${encodeURIComponent(token)}`);
 
     let accepted: { teamId: string; role: 'admin' | 'member' } | null = null;
     let failedInviteRedirect: string | null = null;
@@ -147,12 +156,7 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     await clearPendingInvite();
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 365,
-    });
+    cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, activeTeamCookieOptions());
     trackProductEventBestEffort(userId, 'invite_accepted', {
       teamId: accepted.teamId,
       userId,
@@ -201,6 +205,7 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
     const parsed = recipientInviteSchema.safeParse({ inviteId: formData.get('inviteId') });
     if (!parsed.success) return;
     const userId = session.user.id;
+    await requireCurrentLegalAcceptance(userId, '/app');
 
     let accepted: { teamId: string; role: 'admin' | 'member' };
     try {
@@ -280,12 +285,7 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
     }
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 365,
-    });
+    cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, activeTeamCookieOptions());
     trackProductEventBestEffort(userId, 'invite_accepted', {
       teamId: accepted.teamId,
       userId,

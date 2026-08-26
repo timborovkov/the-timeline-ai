@@ -85,6 +85,36 @@ const nextAuth = NextAuth({
     authenticatorsTable: authenticators,
   }),
   providers,
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt({ token, user, trigger }) {
+      // Auth.js' callback union types make `user` look required here, but the
+      // runtime only supplies it during sign-in/sign-up, not normal refreshes.
+      const callbackUser = user as typeof user | undefined;
+      if (callbackUser) token.sub = callbackUser.id;
+
+      // Never trust fields supplied to unstable_update(). A successful legal
+      // acceptance refreshes the JWT by re-reading the server-side snapshot;
+      // sign-in does the same so the signed claims always originate in the DB.
+      if ((callbackUser || trigger === 'update') && token.sub) {
+        const legalRows = await db
+          .select({
+            legalTermsVersion: users.legalTermsVersion,
+            legalPrivacyVersion: users.legalPrivacyVersion,
+            legalAcceptedAt: users.legalAcceptedAt,
+          })
+          .from(users)
+          .where(eq(users.id, token.sub))
+          .limit(1);
+        const legal = legalRows[0];
+        token.legalTermsVersion = legal?.legalTermsVersion ?? null;
+        token.legalPrivacyVersion = legal?.legalPrivacyVersion ?? null;
+        token.legalAcceptedAt = legal?.legalAcceptedAt?.toISOString() ?? null;
+      }
+
+      return token;
+    },
+  },
   events: {
     // OAuth signups land here after the adapter inserts the user. Credentials
     // signups handle their own team creation in signUpAction, so this only
@@ -161,3 +191,4 @@ const nextAuth = NextAuth({
 export const handlers = nextAuth.handlers;
 export const auth = nextAuth.auth;
 export const signIn = nextAuth.signIn;
+export const updateSession = nextAuth.unstable_update;

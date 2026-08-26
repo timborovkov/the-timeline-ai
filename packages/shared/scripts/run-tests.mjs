@@ -13,6 +13,7 @@ const pgliteChunks = [
     'src/calendar/raw-events.test.ts',
     'src/calendar/scope.test.ts',
     'src/conversation-surfaces/scope.test.ts',
+    'src/documents/related-chunks.test.ts',
     'src/documents/scope.test.ts',
     'src/email/dispatcher.test.ts',
     'src/embedding/sources.test.ts',
@@ -33,6 +34,7 @@ const pgliteChunks = [
   ['src/objects/index.test.ts'],
   ['src/task-categories/state.test.ts', 'src/task-categories/evals.test.ts'],
   ['src/suggestions/index.test.ts'],
+  ['src/suggestions/linked-hubs.test.ts'],
   [
     'src/reconciliation/backfill.test.ts',
     'src/reconciliation/dashboard.test.ts',

@@ -62,6 +62,29 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
                 </p>
               </details>
             ))}
+            <details className="group border-b border-border">
+              <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-5 rounded-sm py-4 text-base font-semibold outline-none marker:content-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
+                Does Timeline train AI models on team data?
+                <span
+                  aria-hidden="true"
+                  className="font-mono text-lg text-signal group-open:rotate-45 motion-safe:transition-transform motion-safe:duration-200"
+                >
+                  +
+                </span>
+              </summary>
+              <p className="max-w-3xl pb-6 text-sm leading-7 text-fg-muted sm:text-base">
+                Timeline does not train or fine-tune models on team content. Hosted inference may be
+                enabled only after the production key, exact model allowlist, and account privacy
+                settings match the code-owned policy. Core AI roles require zero-data-retention
+                routes and reject weaker fallback. Non-meeting voice transcription is a disclosed
+                no-training but retained quality exception while multilingual alternatives are
+                evaluated. The{' '}
+                <Link className="text-fg underline underline-offset-4" href="/trust">
+                  Trust page
+                </Link>{' '}
+                explains the boundary, providers, and what “private” does and does not mean.
+              </p>
+            </details>
           </div>
         </div>
       </section>
@@ -93,6 +116,21 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
               </Link>
             );
           })}
+          <Link
+            href="/trust"
+            className="group bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:p-8"
+          >
+            <p className="font-mono text-[0.62rem] tracking-[0.12em] text-signal uppercase">
+              Trust and data privacy
+            </p>
+            <h3 className="mt-5 max-w-xl text-xl font-semibold tracking-[-0.025em] sm:text-2xl">
+              See where data goes, who can access it, and how AI routing stays private.
+            </h3>
+            <span className="mt-7 inline-flex items-center gap-2 text-sm font-semibold">
+              Review the trust model
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </span>
+          </Link>
           <Link
             href={HOW_IT_WORKS_ROUTE}
             className="group bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:p-8"

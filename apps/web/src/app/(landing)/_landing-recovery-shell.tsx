@@ -30,8 +30,10 @@ export function LandingRecoveryShell({ children }: { children: ReactNode }) {
         </div>
         <nav aria-label="Landing footer">
           <Link href="/help">Help</Link>
+          <Link href="/trust">Trust</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
+          <Link href="/cookies">Cookies</Link>
           <Link href={CONTACT_HREF}>Contact</Link>
         </nav>
       </footer>

@@ -13,13 +13,15 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { detectMeetingPlatform } from '#src/meetings/scope.js';
+import { detectMeetingPlatform, lookupMeetingByBotId } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const TEAM_ID_B = '22222222-2222-2222-2222-222222222222';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const USER_B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const USER_C = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 function nextUtcWeekday(from: Date, weekday: number): Date {
   const day = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
@@ -148,7 +150,142 @@ describe('meetings scope', () => {
     expect(chunkRows).toHaveLength(1);
   });
 
-  it('appendMeetingChunk links late chunks to an existing finalized meeting event', async () => {
+  it('appendMeetingChunk rejects a new chunk when cancellation wins after webhook lookup', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const meeting = await scope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/terminal-race',
+    });
+    await scope.updateMeetingStatus(meeting.id, 'active', { providerBotId: 'bot-terminal-race' });
+
+    const staleLookup = await lookupMeetingByBotId(db as never, 'bot-terminal-race');
+    expect(staleLookup).toMatchObject({ id: meeting.id, status: 'active' });
+    await scope.updateMeetingStatus(meeting.id, 'cancelled');
+
+    const result = await scope.appendMeetingChunk({
+      meetingId: staleLookup?.id ?? meeting.id,
+      speaker: 'Alice',
+      text: 'must not persist',
+      startMs: 1000,
+      endMs: 2000,
+      providerChunkId: 'msg-after-cancel',
+    });
+
+    expect(result).toBeNull();
+    const rows = await db
+      .select()
+      .from(meetingTranscriptChunks)
+      .where(eq(meetingTranscriptChunks.meetingId, meeting.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('fails Recall webhook lookup closed when a bot id is ambiguous across teams', async () => {
+    const firstScope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const firstMeeting = await firstScope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/ambiguous-first',
+    });
+    await firstScope.updateMeetingStatus(firstMeeting.id, 'active', {
+      providerBotId: 'bot-cross-team-duplicate',
+    });
+
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${TEAM_ID_B}', 't-b', 'Test B');
+      INSERT INTO users (id, email)
+      VALUES ('${USER_C}', 'c@x');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID_B}', '${USER_C}', 'owner');
+    `);
+    const secondScope = withTeam(db as never, TEAM_ID_B, USER_C).meetings;
+    const secondMeeting = await secondScope.createMeeting({
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/amb-igu-ous',
+    });
+    await secondScope.updateMeetingStatus(secondMeeting.id, 'active', {
+      providerBotId: 'bot-cross-team-duplicate',
+    });
+
+    await expect(lookupMeetingByBotId(db as never, 'bot-cross-team-duplicate')).resolves.toBeNull();
+  });
+
+  it('cancelMeetingCapture atomically chooses cancelled or partial processing', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const emptyMeeting = await scope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/atomic-empty-cancel',
+    });
+    await scope.updateMeetingStatus(emptyMeeting.id, 'active');
+
+    await expect(
+      scope.cancelMeetingCapture(emptyMeeting.id, { allowPartialProcessing: false }),
+    ).resolves.toEqual({ outcome: 'cancelled' });
+    await expect(scope.getMeeting(emptyMeeting.id)).resolves.toMatchObject({ status: 'cancelled' });
+
+    const partialMeeting = await scope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/atomic-partial-cancel',
+    });
+    await scope.updateMeetingStatus(partialMeeting.id, 'active');
+    await scope.appendMeetingChunk({
+      meetingId: partialMeeting.id,
+      speaker: 'Alice',
+      text: 'partial capture',
+      startMs: 0,
+      endMs: 1000,
+      providerChunkId: 'partial-before-cancel',
+    });
+
+    await expect(
+      scope.cancelMeetingCapture(partialMeeting.id, { allowPartialProcessing: false }),
+    ).resolves.toEqual({ outcome: 'requires_finalize_queue' });
+    await expect(scope.getMeeting(partialMeeting.id)).resolves.toMatchObject({ status: 'active' });
+    await expect(
+      scope.cancelMeetingCapture(partialMeeting.id, { allowPartialProcessing: true }),
+    ).resolves.toEqual({ outcome: 'processing' });
+    const transitioned = await scope.getMeeting(partialMeeting.id);
+    expect(transitioned?.status).toBe('processing');
+    expect(transitioned?.endedAt).toBeInstanceOf(Date);
+    expect(transitioned?.metadata).toMatchObject({
+      partial_capture: true,
+      capture_status: 'completed_partial',
+    });
+  });
+
+  it('serializes cancellation against a concurrent transcript append', async () => {
+    const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+    const meeting = await scope.createMeeting({
+      platform: 'zoom',
+      meetingUrl: 'https://zoom.us/j/atomic-cancel-append-race',
+    });
+    await scope.updateMeetingStatus(meeting.id, 'active');
+
+    const [cancelResult] = await Promise.all([
+      scope.cancelMeetingCapture(meeting.id, { allowPartialProcessing: true }),
+      scope.appendMeetingChunk({
+        meetingId: meeting.id,
+        speaker: 'Alice',
+        text: 'racing transcript',
+        startMs: 0,
+        endMs: 1000,
+        providerChunkId: 'racing-delivery',
+      }),
+    ]);
+    const storedMeeting = await scope.getMeeting(meeting.id);
+    const chunks = await scope.listChunks(meeting.id);
+
+    expect(cancelResult.outcome === 'cancelled' || cancelResult.outcome === 'processing').toBe(
+      true,
+    );
+    if (storedMeeting?.status === 'cancelled') {
+      expect(chunks).toHaveLength(0);
+    } else {
+      expect(storedMeeting?.status).toBe('processing');
+      expect(chunks).toHaveLength(1);
+    }
+  });
+
+  it('appendMeetingChunk links a chunk to an existing consolidated event while processing', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({
       platform: 'zoom',
@@ -163,7 +300,7 @@ describe('meetings scope', () => {
       .update(meetings)
       .set({ participants: [{ name: 'Alice' }, { name: 'Bob', email: 'bob@example.com' }] })
       .where(eq(meetings.id, m.id));
-    await scope.updateMeetingStatus(m.id, 'completed');
+    await scope.updateMeetingStatus(m.id, 'processing');
     const eventRows = await db
       .insert(rawEvents)
       .values({

@@ -661,8 +661,10 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
         </nav>
         <nav aria-label="Support and legal">
           <GitHubSourceLink compact className={styles.footerGithub} />
+          <Link href="/trust">Trust</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
+          <Link href="/cookies">Cookies</Link>
           <Link href={CONTACT_HREF}>Contact</Link>
           <Link href={isSignedIn ? '/app' : '/sign-in'}>
             {isSignedIn ? 'Dashboard' : 'Sign in'}

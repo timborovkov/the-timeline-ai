@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+import {
+  isCurrentOpenRouterPrivacyAttestation,
+  isValidOpenRouterGuardrailId,
+} from '#src/llm/privacy-attestation.js';
+import { OPENROUTER_OFFICIAL_BASE_URL, isOfficialOpenRouterBaseUrl } from '#src/llm/privacy.js';
+import { isValidRecallWebhookSecret } from '#src/meeting-bots/svix.js';
+
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
@@ -14,6 +21,17 @@ function booleanString(value: unknown): boolean | undefined {
 function emptyStringAsUnset(value: unknown): unknown {
   return value === '' ? undefined : value;
 }
+
+const recallWebhookSecretSchema = z.preprocess(
+  emptyStringAsUnset,
+  z
+    .string()
+    .refine(
+      isValidRecallWebhookSecret,
+      'Recall webhook secrets must use a whsec_ prefix and canonical base64 encoding of at least 24 secret bytes',
+    )
+    .optional(),
+);
 
 function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
@@ -46,6 +64,8 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'REDIS_URL',
   'OPENROUTER_API_KEY',
   'OPENROUTER_BASE_URL',
+  'OPENROUTER_GUARDRAIL_ID',
+  'OPENROUTER_PRIVACY_POLICY_ATTESTATION',
   'S3_ENDPOINT',
   'S3_PUBLIC_ENDPOINT',
   'S3_REGION',
@@ -226,6 +246,24 @@ const baseSchema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
+  /**
+   * OpenRouter's official guardrail id assigned to the shared inference key.
+   * The application uses it only to bind deployment intent; a separate
+   * management-key canary must verify the provider-side assignment/settings.
+   */
+  OPENROUTER_GUARDRAIL_ID: z.preprocess(
+    emptyStringAsUnset,
+    z
+      .string()
+      .refine(isValidOpenRouterGuardrailId, 'OPENROUTER_GUARDRAIL_ID is not a valid opaque id')
+      .optional(),
+  ),
+  /**
+   * Generated non-secret drift token for the shared production inference key.
+   * It binds policy version, model-catalog digest, inference-key fingerprint,
+   * and guardrail id. It does not prove the provider-side guardrail assignment.
+   */
+  OPENROUTER_PRIVACY_POLICY_ATTESTATION: z.preprocess(emptyStringAsUnset, z.string().optional()),
   TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
@@ -330,21 +368,23 @@ const baseSchema = z.object({
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.url().default('https://eu.i.posthog.com'),
 
-  // Phase 10 — Meeting bots. Provider defaults to Recall.ai. Set
-  // RECALL_API_KEY + RECALL_STATUS_WEBHOOK_SECRET (Svix-signed status
-  // events) to enable. RECALL_TRANSCRIPT_WEBHOOK_URL is passed to the
-  // provider when starting a bot so transcripts stream back to us.
+  // Phase 10 — Meeting bots. The workspace verification secret signs both
+  // status and realtime transcript deliveries. Accounts created before
+  // 2025-12-15 may additionally need the legacy endpoint-specific status
+  // secret. RECALL_TRANSCRIPT_WEBHOOK_URL is passed to the provider when
+  // starting a bot so transcripts stream back to us.
   RECALL_API_KEY: z.string().optional(),
   RECALL_BASE_URL: z.url().default('https://us-west-2.recall.ai/api/v1'),
-  RECALL_STATUS_WEBHOOK_SECRET: z.string().optional(),
+  RECALL_WORKSPACE_VERIFICATION_SECRET: recallWebhookSecretSchema,
+  RECALL_STATUS_WEBHOOK_SECRET: recallWebhookSecretSchema,
   RECALL_TRANSCRIPT_WEBHOOK_URL: z.preprocess(emptyStringAsUnset, z.url().optional()),
   /**
    * Recall recording-media retention for meeting bots.
    *
-   * Unset / empty => timed retention for 1 hour. A positive integer is
-   * interpreted as timed retention in hours. "forever" asks Recall to retain
-   * indefinitely. Zero retention is intentionally unsupported because Recall's
-   * zero-retention mode is incompatible with prioritize_accuracy transcription.
+   * Unset / empty => timed retention for 1 hour. Development and self-managed
+   * non-production environments can choose another positive hour count or
+   * "forever". Hosted production is constrained below to one hour because
+   * Recall's zero-retention mode is incompatible with prioritize_accuracy.
    */
   RECALL_RETENTION: z.preprocess(emptyStringAsUnset, z.string().optional()),
   /**
@@ -401,6 +441,80 @@ const schema = baseSchema
         code: 'custom',
         path: ['LANGSMITH_API_KEY'],
         message: 'LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.LANGSMITH_TRACING) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LANGSMITH_TRACING'],
+        message:
+          'LANGSMITH_TRACING must be false in production because traces may contain customer content',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.OPENROUTER_API_KEY) {
+      if (!env.OPENROUTER_GUARDRAIL_ID) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['OPENROUTER_GUARDRAIL_ID'],
+          message: 'OPENROUTER_GUARDRAIL_ID is required with OPENROUTER_API_KEY in production',
+        });
+      } else {
+        let currentAttestation = false;
+        try {
+          currentAttestation = isCurrentOpenRouterPrivacyAttestation(
+            env.OPENROUTER_PRIVACY_POLICY_ATTESTATION,
+            {
+              apiKey: env.OPENROUTER_API_KEY,
+              guardrailId: env.OPENROUTER_GUARDRAIL_ID,
+            },
+          );
+        } catch {
+          // Keep validation errors generic so neither the key nor its fingerprint
+          // can be copied into process logs.
+        }
+        if (!currentAttestation) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['OPENROUTER_PRIVACY_POLICY_ATTESTATION'],
+            message:
+              'OPENROUTER_PRIVACY_POLICY_ATTESTATION must be regenerated for the current inference key, guardrail id, model catalog, and privacy policy',
+          });
+        }
+      }
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.OPENROUTER_API_KEY &&
+      !isOfficialOpenRouterBaseUrl(env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['OPENROUTER_BASE_URL'],
+        message: `OPENROUTER_BASE_URL must use ${OPENROUTER_OFFICIAL_BASE_URL} in production`,
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.RECALL_API_KEY &&
+      env.RECALL_RETENTION !== undefined &&
+      env.RECALL_RETENTION.trim() !== '1'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_RETENTION'],
+        message: 'RECALL_RETENTION must be unset or 1 in hosted production',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.RECALL_API_KEY &&
+      !env.RECALL_WORKSPACE_VERIFICATION_SECRET
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_WORKSPACE_VERIFICATION_SECRET'],
+        message:
+          'RECALL_WORKSPACE_VERIFICATION_SECRET is required with RECALL_API_KEY in production so status and transcript webhooks authenticate before processing',
       });
     }
     // Web + full worker still need Auth.js secrets. The credential-thin

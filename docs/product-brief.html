@@ -215,7 +215,8 @@
         <li>
           <strong>Transcription</strong> (if audio). OpenRouter
           <code>/audio/transcriptions</code> for short memos; larger stored audio is transcoded into
-          provider-sized speech chunks before transcription.
+          provider-sized speech chunks before transcription. This voice-note path is separate from
+          Recall.ai meeting transcription.
         </li>
         <li>
           <strong>File processing</strong> (if file/document). Store immutable file versions in
@@ -481,7 +482,7 @@
       </ul>
 
       <h2 id="ai-provider-strategy">AI provider strategy</h2>
-      <p>Single inference layer through OpenRouter wherever possible:</p>
+      <p>Single inference layer through OpenRouter:</p>
       <ul>
         <li>
           <strong>Chat / summarization / extraction</strong>: OpenRouter via Vercel AI SDK. Model
@@ -496,14 +497,29 @@
         </li>
         <li>
           <strong>Transcription</strong>: OpenRouter speech-to-text via its JSON/base64 audio API.
-          The model id is pinned in the same catalog; output is text and remains auditable on the
-          raw event.
-        </li>
-        <li>
-          <strong>Fallback</strong>: direct provider access only for limitations OpenRouter hasn't
-          yet covered.
+          The quality baseline is <code>openai/gpt-4o-transcribe</code>, pinned in the same catalog;
+          output is text and remains auditable on the raw event. It stays pinned until a ZDR
+          candidate passes the documented broad-multilingual non-inferiority evaluation.
         </li>
       </ul>
+      <p>
+        Timeline does not use Customer Content to train or fine-tune any model. The code-owned
+        registry classifies generation, extraction, summarization, multimodal, and embedding roles
+        as <code>zdr_required</code>; those requests fail rather than use weaker retention. The
+        current voice-note transcription route is the disclosed
+        <code>retained_no_training_exception</code>: OpenRouter lists OpenAI as no-training but
+        prompt-retaining, and OpenAI documents default API abuse-monitoring retention up to 30 days.
+        The required hosted configuration restricts one OpenRouter key to the exact catalog, keeps
+        prompt logging, input/output sharing, Broadcast, and persistent response caching off, and
+        requires a generated attestation bound to the policy version, catalog digest, inference-key
+        fingerprint, and official guardrail id. Provider-side key assignment and settings evidence
+        is still pending. The attestation is a fail-closed local drift gate, not proof of those
+        provider controls; operators must verify them with a separate operator-only management-key
+        deployment check, preserve dated evidence, and never place the management key in app
+        runtime. See the
+        <a href="./security-privacy-trust.md">security, privacy, and trust standard</a> for the
+        control and its open evidence gaps.
+      </p>
       <p>
         Internal abstraction: <code>llm.chatStructured()</code>, <code>llm.streamChat()</code>,
         <code>llm.embed()</code>, <code>llm.embedMany()</code>, <code>llm.transcribeAudio()</code>,
@@ -533,8 +549,8 @@
           embeddings, direct conversation agents, meetings, integrations, maintenance, and exports.
           Runs from <code>apps/worker/railway.json</code>.
         </li>
-        <li><strong>Postgres</strong> — Railway managed plugin.</li>
-        <li><strong>Redis</strong> — Railway managed plugin.</li>
+        <li><strong>PostgreSQL</strong> — Railway database template; operated by Timeline.</li>
+        <li><strong>Redis</strong> — Railway database template; operated by Timeline.</li>
         <li>
           <strong>Qdrant</strong> — custom service from <code>qdrant/qdrant</code> image, persistent
           volume.
@@ -545,9 +561,12 @@
         </li>
       </ul>
       <p>
-        Service-to-service references in Railway connect everything via private networking; no
-        public endpoints for infra services. See <a href="./railway.html">docs/railway.html</a> for
-        the full deployment guide.
+        The required hosted topology uses Railway private networking for service-to-service
+        references, gives Qdrant no public endpoint, and keeps RustFS buckets non-public. RustFS
+        additionally needs an external HTTPS endpoint for team-authorized, short-lived signed
+        browser uploads and downloads. Production evidence for that network and bucket configuration
+        is still pending; see <a href="./railway.html">docs/railway.html</a> for the deployment
+        guide.
       </p>
 
       <h2 id="out-of-scope">What's out of scope for v1</h2>
@@ -629,8 +648,9 @@
       <ul>
         <li>
           <strong>RustFS maturity.</strong> Young storage layer holding customer voice memos and
-          emails. Versioning enabled day one; nightly <code>rclone sync</code> to secondary store
-          (Backblaze B2 or similar) from Railway cron; periodic restore drills.
+          emails. Versioning is configured in the deployment guide, while secondary backups and
+          restore drills remain operating work that must be implemented and evidenced before being
+          presented as a production guarantee.
         </li>
         <li>
           <strong>Qdrant scaling.</strong> Vectors live in RAM. Monitor RAM usage from day one; plan

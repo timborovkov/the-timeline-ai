@@ -138,7 +138,10 @@ The Timeline is a pnpm/Turborepo monorepo:
 | `docs` | Product, architecture, setup, and deployment documentation |
 
 The core services are Postgres, Redis, Qdrant, and S3-compatible object storage.
-Model calls go through OpenRouter behind a shared inference layer.
+Model calls go through OpenRouter behind a shared inference layer. Exact pins and
+their `zdr_required` or `retained_no_training_exception` policy live together in
+`packages/shared/src/llm/models.ts`; Recall.ai meeting transcription is a separate
+pipeline from OpenRouter voice-note transcription.
 
 Two boundaries are non-negotiable:
 
@@ -160,6 +163,12 @@ agent behavior, or reconciliation have additional gates documented in
 
 ## Documentation
 
+- [Public Trust center](https://thetimeline.cc/trust)
+- [Privacy Policy](https://thetimeline.cc/privacy)
+- [Cookies and similar technologies](https://thetimeline.cc/cookies)
+- [Security, privacy, and trust operating standard](./docs/security-privacy-trust.md)
+- [Privacy and analytics implementation interface](./docs/privacy-analytics-interface.md)
+- [Report a security vulnerability](./SECURITY.md)
 - [Demo corpus](./docs/demo-corpus.md)
 - [Documentation index](./docs/index.html)
 - [Product brief](./docs/product-brief.html)
@@ -175,6 +184,17 @@ agent behavior, or reconciliation have additional gates documented in
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep changes team-scoped,
-preserve raw evidence, update affected docs, and run `pnpm validate`,
-`pnpm run doctor`, and the relevant tests before opening a pull request.
+Non-sensitive issues are welcome; suspected vulnerabilities belong in the
+private process in [SECURITY.md](./SECURITY.md). Because the repository does not
+yet publish a license or contribution terms, contact us before submitting code
+or documentation. Approved contributions must keep changes team-scoped,
+preserve raw evidence, update affected docs, and pass `pnpm validate`,
+`pnpm run doctor`, and the relevant tests.
+
+## Source availability
+
+The source is public for inspection and contribution, but this repository does
+not yet contain an open-source license. Until a license is added, public source
+does not grant general permission to copy, modify, redistribute, or self-host
+Timeline. The license and contribution terms require a founder and counsel
+decision before broader rights can be promised.

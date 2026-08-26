@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as ReactModule from 'react';
 
+import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
+
 const fakes = vi.hoisted(() => ({
   action: vi.fn(),
   useActionState: vi.fn(),
@@ -58,6 +60,17 @@ describe('auth forms', () => {
     render(<SignUpForm requiresTurnstile={false} />);
     expect(screen.getByRole('alert').textContent).toBe(
       'Choose a password with at least 8 characters.',
+    );
+  });
+
+  it('binds credential acceptance to the legal versions rendered in the form', () => {
+    render(<SignUpForm requiresTurnstile={false} />);
+
+    expect(document.querySelector<HTMLInputElement>('input[name="termsVersion"]')?.value).toBe(
+      TERMS_VERSION,
+    );
+    expect(document.querySelector<HTMLInputElement>('input[name="privacyVersion"]')?.value).toBe(
+      PRIVACY_VERSION,
     );
   });
 });

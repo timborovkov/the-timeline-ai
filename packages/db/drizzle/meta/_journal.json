@@ -512,6 +512,20 @@
       "when": 1795654680000,
       "tag": "0072_object_discussions",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795654740000,
+      "tag": "0073_legal_acceptance_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795654800000,
+      "tag": "0074_recall_join_metadata_minimization",
+      "breakpoints": true
     }
   ]
 }
