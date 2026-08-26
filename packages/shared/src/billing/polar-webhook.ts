@@ -297,7 +297,8 @@ async function cancelMatchingSubscription(input: {
       billingState: grant ? 'free' : 'restricted',
       planId: 'free',
       spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
-      polarEventModifiedAt: input.incomingModifiedAt ?? existing?.polarEventModifiedAt ?? new Date(),
+      polarEventModifiedAt:
+        input.incomingModifiedAt ?? existing?.polarEventModifiedAt ?? new Date(),
       updatedAt: new Date(),
     })
     .where(

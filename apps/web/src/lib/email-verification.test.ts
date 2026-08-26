@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { claimOwnedTeamFreeGrantsForVerifiedUser } from '@timeline/shared/billing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { verifyEmailToken, retryOwnedTeamFreeGrantsAfterSignIn } from '@/lib/email-verification';
+import { retryOwnedTeamFreeGrantsAfterSignIn, verifyEmailToken } from '@/lib/email-verification';
 
 vi.mock('@timeline/shared/billing', () => ({
   claimOwnedTeamFreeGrantsForVerifiedUser: vi.fn().mockResolvedValue(undefined),
