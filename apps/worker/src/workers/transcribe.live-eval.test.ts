@@ -66,18 +66,18 @@ maybeDescribe('live transcribe worker evals', () => {
       io,
     );
 
-    expect(result.model).toBe('openai/gpt-4o-transcribe');
+    expect(result.model).toBe('openai/whisper-large-v3');
     const [event] = await db.select().from(rawEvents).where(eq(rawEvents.id, RAW_EVENT_ID));
     expect(event?.contentText).toEqual(expect.any(String));
     expect(isExpectedSpeechTranscriptionCanaryText(event?.contentText ?? '')).toBe(true);
     expect(event?.sourceMetadata).toMatchObject({
-      transcription_model: 'openai/gpt-4o-transcribe',
+      transcription_model: 'openai/whisper-large-v3',
       source_payload_ref: `s3://timeline-audio/${AUDIO_KEY}`,
       source_snapshot_kind: 'transcribed_audio_event',
       source_snapshot_version: 'transcribe-source-snapshot-2026-06',
       source_snapshot: {
         audio_key: AUDIO_KEY,
-        transcription_model: 'openai/gpt-4o-transcribe',
+        transcription_model: 'openai/whisper-large-v3',
         transcription_language: 'en',
         transcript_text: event?.contentText,
       },

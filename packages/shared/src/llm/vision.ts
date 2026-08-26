@@ -4,6 +4,7 @@ import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
 import {
   generateText,
   sanitizeAiSdkInputs,
@@ -168,7 +169,7 @@ export async function extractTextFromMedia(
           },
         ],
         maxOutputTokens: input.maxOutputTokens ?? 8000,
-        providerOptions: withLangSmithProviderOptions(undefined, {
+        providerOptions: withLangSmithProviderOptions(openRouterPrivateProviderOptions(), {
           name: 'llm.extractTextFromMedia',
           model: modelId,
           processInputs: sanitizeAiSdkInputs,

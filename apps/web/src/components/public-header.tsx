@@ -43,13 +43,21 @@ export function PublicHeader({
         />
         <GitHubSourceLink compact className={styles.githubLink} />
         {showAccountActions && !isSignedIn ? (
-          <Link href="/sign-in" className={cn(styles.navLink, styles.signInLink)}>
+          <Link
+            href="/sign-in"
+            data-public-analytics-cta="sign_in"
+            className={cn(styles.navLink, styles.signInLink)}
+          >
             Sign in
           </Link>
         ) : null}
         <ThemeToggle className={styles.themeToggle} />
         {showAccountActions ? (
-          <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.navCta}>
+          <Link
+            href={isSignedIn ? '/app' : '/sign-up'}
+            data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
+            className={styles.navCta}
+          >
             {isSignedIn ? 'Dashboard' : 'Try one project'}
           </Link>
         ) : null}

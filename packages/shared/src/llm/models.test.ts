@@ -55,7 +55,7 @@ describe('TIMELINE_MODELS', () => {
       capabilities: ['embedding'],
     });
     expect(TIMELINE_MODELS.transcription).toMatchObject({
-      id: 'openai/gpt-4o-transcribe',
+      id: 'openai/whisper-large-v3',
       provider: 'openrouter',
       capabilities: ['transcription'],
     });

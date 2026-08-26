@@ -30,7 +30,7 @@ interface TimelinePageData {
   diagnostics: TimelinePageDiagnostics;
 }
 
-export interface TimelinePageDiagnostics {
+interface TimelinePageDiagnostics {
   mode: 'moments' | 'events';
   scannedPageCount: number;
   scannedRawEventCount: number;
@@ -198,17 +198,6 @@ export async function applyCachedTimelineMomentPresentations(
   input.onCacheStats?.(stats);
   if (missingJobs.length > 0) void Promise.all(missingJobs).catch(() => undefined);
   return presented;
-}
-
-export function emptyTimelineMomentPresentationCacheStats(): TimelineMomentPresentationCacheStats {
-  return {
-    hitCount: 0,
-    missCount: 0,
-    staleCount: 0,
-    eligibleMissCount: 0,
-    queuedMissingCount: 0,
-    visibilityPartitionCount: 0,
-  };
 }
 
 export async function collectTimelinePage({

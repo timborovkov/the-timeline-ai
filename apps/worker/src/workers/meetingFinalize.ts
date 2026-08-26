@@ -10,6 +10,7 @@ import {
   savedMeetings,
 } from '@timeline/db';
 import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
+import { bucketAnalyticsCount, bucketMeetingDuration } from '@timeline/shared/analytics';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
@@ -902,14 +903,13 @@ export async function processMeetingFinalizeJob(
       }
 
       trackProductEventBestEffort(
-        meeting.createdByUserId ?? `team:${teamId}`,
+        meeting.createdByUserId
+          ? { kind: 'user', userId: meeting.createdByUserId, teamId }
+          : { kind: 'team', teamId },
         'meeting_finalized',
         {
-          teamId,
-          userId: meeting.createdByUserId,
-          meetingId,
-          minutes: finalized.minutes,
-          actionItems: summarized.actionItems.length,
+          durationBucket: bucketMeetingDuration(finalized.minutes),
+          actionItemCountBucket: bucketAnalyticsCount(summarized.actionItems.length),
         },
       );
 

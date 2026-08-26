@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Meeting bot setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-16</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-21</span></div>
       <p class="tldr">
         Paste a Google Meet, Microsoft Teams, or Zoom link into
         <code>/app/meetings</code>, save a reusable meeting link, or use a Slack/Telegram join
@@ -108,16 +108,26 @@ RECALL_RETENTION=
       <p>
         <code>RECALL_RETENTION</code> defaults to <strong>1 hour</strong> when unset or empty. The
         bot request sends <code>recording_config.retention = { type: "timed", hours: 1 }</code>,
-        which keeps Recall recording media only briefly after the meeting completes. Set a positive
-        integer only when you intentionally want longer timed Recall storage in hours, for example
-        <code>RECALL_RETENTION=24</code>. Set <code>RECALL_RETENTION=forever</code> only for a
-        deliberately retained environment. Zero retention values are rejected.
+        which keeps Recall recording media only briefly after the meeting completes. Hosted
+        production env validation accepts only unset/empty or <code>1</code>. Development and
+        separately operated non-production environments can set a positive integer for longer timed
+        storage or <code>forever</code>, but those settings must never be copied into hosted
+        production. Zero retention values are rejected.
       </p>
       <p>
         Timeline always uses Recall's accuracy-prioritised multilingual transcription path with auto
         language detection. Recall's zero-retention mode is intentionally not exposed because it is
         incompatible with <code>prioritize_accuracy</code> and would downgrade mixed-language
         meetings to the low-latency English path.
+      </p>
+      <p>
+        The one-hour request setting does not make Recall a zero-retention service.
+        <a href="https://docs.recall.ai/docs/storage-and-playback"
+          >Recall documents that operational logs remain for 7 days and that the meeting URL is
+          removed 14 days after the bot terminates</a
+        >. Record the production region, DPA/subprocessor snapshot, account-level defaults, and a
+        sample bot request showing the intended one-hour retention before relying on this
+        configuration in customer-facing claims.
       </p>
 
       <h2 id="live-canary">2. Live canary</h2>
@@ -204,11 +214,12 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
         a meeting row.
       </p>
       <p>
-        We do <strong>not</strong> retain the raw audio. By default, the Recall bot request keeps
-        recording media for one hour after the meeting completes so the high-quality multilingual
-        transcript path remains available. We explicitly do not copy audio or video to our S3.
-        Transcript text lands on the timeline; summary metadata is attached when OpenRouter
-        generation succeeds. Audio and video do not.
+        Timeline does <strong>not</strong> copy raw meeting audio or video into Timeline-managed
+        object storage. Recall temporarily processes and retains that recording media for one hour
+        after the meeting completes so the high-quality multilingual transcript path remains
+        available. Recall separately keeps operational logs for 7 days and removes the meeting URL
+        14 days after the bot terminates. Transcript text lands on the timeline; summary metadata is
+        attached when OpenRouter generation succeeds.
       </p>
 
       <h2 id="local-dev">Local development</h2>

@@ -201,7 +201,7 @@ export const HELP_PAGES: HelpPage[] = [
         body: 'External agents can connect to Timeline through the outbound MCP endpoint. The GitHub plugin bundles that hosted connection with one general skill for choosing Timeline tools, expanding source evidence, and citing claims.',
         items: [
           'An administrator creates a bearer key on the Timeline MCP endpoint page; its plaintext is shown once.',
-          'Codex users can install the full plugin or the standalone Timeline skill for a self-hosted Timeline.',
+          'Codex users can install the full plugin or, for a separately licensed customer-controlled deployment, the standalone Timeline skill.',
           'Default keys are read-only. Timeline agent access is a separate, optional scope for paid, proposal-only turns.',
         ],
         appLink: { href: '/app/team/mcp-share', label: 'Manage Timeline MCP' },
@@ -245,7 +245,7 @@ export const HELP_PAGES: HelpPage[] = [
         items: [
           'The plaintext key is shown once; Timeline stores only its hash.',
           'Every outbound key sees team-visible data only. Private and specific-user evidence stays unavailable.',
-          'Self-hosted users install the standalone Timeline skill and point Codex at their own Timeline origin.',
+          'Operators of separately licensed customer-controlled deployments install the standalone Timeline skill and point Codex at their own Timeline origin.',
         ],
         appLink: { href: '/app/team/mcp-share', label: 'Create an MCP key' },
         resourceLinks: [

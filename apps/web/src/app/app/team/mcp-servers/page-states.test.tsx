@@ -68,7 +68,7 @@ describe('Team MCP servers route states', () => {
       '/app/team/integrations?connected=server-1&error=retry',
     );
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     expect(document.activeElement).toBe(retry);
     await user.keyboard('{Enter}');

@@ -203,6 +203,7 @@ beforeEach(() => {
   fakes.fakeObjects.unarchiveObject.mockResolvedValue({
     id: OBJECT_ID,
     type: 'task',
+    changedFields: ['archivedAt'],
   });
   fakes.fakePins.pin.mockResolvedValue({ pinId: 'pin-1', title: 'Current Object' });
   fakes.fakePins.unpin.mockResolvedValue(true);
@@ -635,6 +636,25 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'update' },
+    );
+  });
+
+  it('does not emit an object update event when canonical state is unchanged', async () => {
+    fakes.fakeObjects.updateObject.mockResolvedValueOnce({
+      object: { id: OBJECT_ID, type: 'task' },
+      changedFields: [],
+    });
+
+    await expect(updateObjectAction({ id: OBJECT_ID, status: 'doing' })).resolves.toEqual({
+      ok: true,
+      id: OBJECT_ID,
+    });
+
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('reports manual summary requests that are already queued', async () => {
@@ -686,6 +706,11 @@ describe('object CRUD actions', () => {
       operation: 'reconcile_object_update_after_update',
     });
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'update' },
+    );
   });
 
   it('archives an object and refreshes surfaces that hide archived rows', async () => {
@@ -704,6 +729,11 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'archive' },
+    );
   });
 
   it('unarchives an object and refreshes the same surfaces as an update', async () => {
@@ -722,6 +752,23 @@ describe('object CRUD actions', () => {
     });
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'unarchive' },
+    );
+  });
+
+  it('does not emit an unarchive event when the object is already active', async () => {
+    fakes.fakeObjects.unarchiveObject.mockResolvedValueOnce({
+      id: OBJECT_ID,
+      type: 'task',
+      changedFields: [],
+    });
+
+    await expect(unarchiveObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('pins and unpins objects and refreshes Home plus object detail', async () => {
@@ -772,6 +819,7 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('bulk archives selected objects and refreshes cleanup surfaces', async () => {
@@ -807,6 +855,11 @@ describe('object CRUD actions', () => {
     expectWorkRevalidated();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'bulk_archive' },
+    );
   });
 
   it('returns success when one bulk post-archive reconciliation fails after archive commits', async () => {
@@ -896,13 +949,15 @@ describe('object CRUD actions', () => {
     });
     expect(fakes.fakeSuggestions.reconcileObjectMerge).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
-      'approval_decision_submitted',
       {
+        kind: 'user',
         teamId: '11111111-1111-4111-8111-111111111111',
         userId: USER_ID,
+      },
+      'approval_decision_submitted',
+      {
         decision: 'accepted',
-        itemCount: 1,
+        itemCountBucket: 'one',
         isBulk: false,
       },
     );
@@ -1148,25 +1203,29 @@ describe('object relationship, note, notification, and suggestion actions', () =
     expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
     expect(fakes.trackProductEventBestEffort).toHaveBeenNthCalledWith(
       1,
-      USER_ID,
-      'approval_decision_submitted',
       {
+        kind: 'user',
         teamId: '11111111-1111-4111-8111-111111111111',
         userId: USER_ID,
+      },
+      'approval_decision_submitted',
+      {
         decision: 'accepted',
-        itemCount: 1,
+        itemCountBucket: 'one',
         isBulk: false,
       },
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenNthCalledWith(
       2,
-      USER_ID,
-      'approval_decision_submitted',
       {
+        kind: 'user',
         teamId: '11111111-1111-4111-8111-111111111111',
         userId: USER_ID,
+      },
+      'approval_decision_submitted',
+      {
         decision: 'rejected',
-        itemCount: 1,
+        itemCountBucket: 'one',
         isBulk: false,
       },
     );

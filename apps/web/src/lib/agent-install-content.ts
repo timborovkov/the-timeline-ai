@@ -67,9 +67,9 @@ export const TIMELINE_AGENT_ACCESS_FAQS = [
       'Not by default. Standard keys are read-only. An admin can separately enable paid, stateless Timeline agent turns, which may call enabled team-shared custom MCP tools and create proposals for human review but cannot write canonical state directly. Those third-party tools may have external side effects.',
   },
   {
-    question: 'What about self-hosted Timeline?',
+    question: 'What about a customer-controlled Timeline deployment?',
     answer:
-      'Install the standalone Timeline skill, then use the MCP-only command with your own origin followed by /api/mcp/server.',
+      'For a separately licensed customer-controlled deployment, install the standalone Timeline skill, then use the MCP-only command with your own origin followed by /api/mcp/server.',
   },
   {
     question: 'Why do I need a new task?',
@@ -83,7 +83,7 @@ export const TIMELINE_AGENT_HELP_SEARCH_TEXT = [
   'Install one general Timeline skill that teaches agents how to retrieve, verify, and cite team-visible workspace evidence.',
   'Install The Timeline plugin. One bundle adds the Timeline skill and the hosted Timeline MCP connection.',
   'Prefer a narrower setup? Install only the skill, or connect the MCP endpoint without the plugin.',
-  'Skill only. Best for self-hosted Timeline or agents that already have an MCP connection.',
+  'Skill only. Best for separately licensed customer-controlled Timeline deployments or agents that already have an MCP connection.',
   'MCP only. Set TIMELINE_MCP_KEY in the terminal that will launch Codex, connect hosted Timeline, and relaunch Codex from that terminal.',
   'One skill, the whole workspace. It routes each request to the relevant Timeline tools and preserves citations, uncertainty, visibility, and evidence boundaries.',
   'Access, without surprises. The install path and access boundary are intentionally separate.',

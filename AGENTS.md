@@ -125,6 +125,13 @@ Treat this file as an operating contract for agents, not a loose README.
 
 ## Project-specific guardrails
 
+- **Privacy and trust changes follow the operating standard.** Before changing
+  an AI model or route, provider, outbound data flow, telemetry, cookie, storage,
+  permission, human-access path, retention/deletion behavior, or public
+  security/legal claim, read and apply
+  [docs/security-privacy-trust.md](docs/security-privacy-trust.md). Keep provider
+  evidence and open gaps current; a public claim may be no stronger than the
+  weakest evidenced code, deployment, account, or contract state.
 - **Team isolation is sacred.** Every Postgres query goes through
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
@@ -167,7 +174,8 @@ Treat this file as an operating contract for agents, not a loose README.
   boards, documents, meetings, Ask history, pending proposals, digest history, and the
   deterministic fictional Northstar evidence corpus with encrypted fake integration credentials after
   migrations. `pnpm demo:reset` is `pnpm dev:wipe && pnpm demo:seed`. `pnpm demo:verify` fails closed on all eight login identities, active memberships,
-  password usability, downloaded document-byte checksums, scoped Qdrant
+  password usability, current legal-version snapshots with matching immutable acceptance evidence,
+  downloaded document-byte checksums, scoped Qdrant
   discoverability for Northstar raw events/facts/document chunks/meeting chunks, expanded-corpus
   document `embedded` status and chunk vectors, fixture chronology,
   visibility, source links, canonical support drift, or expanded-corpus volume floors. The commands refuse production and

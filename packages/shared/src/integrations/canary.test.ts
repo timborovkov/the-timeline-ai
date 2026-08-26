@@ -9,6 +9,7 @@ import {
   buildTranscriptionCanaryWav,
   completeLiveIntegrationCanaryCleanup,
   formatLiveIntegrationCanaryReport,
+  inspectOpenRouterZdrRegistry,
   isExpectedSpeechTranscriptionCanaryText,
   redactLiveIntegrationCanaryText,
   signSlackCanaryRequest,
@@ -16,6 +17,59 @@ import {
   validateSlackEventCaptureCanaryUrl,
   validateTelegramCaptureCanaryUrl,
 } from '#src/integrations/canary.js';
+
+describe('inspectOpenRouterZdrRegistry', () => {
+  it('counts the endpoints registered for the exact pinned model id', () => {
+    expect(
+      inspectOpenRouterZdrRegistry(
+        {
+          data: [
+            { model_id: 'openai/whisper-large-v3', provider_name: 'Groq' },
+            { model_id: 'openai/gpt-4.1', provider_name: 'OpenAI' },
+            { model_id: 'openai/whisper-large-v3', provider_name: 'Together' },
+          ],
+        },
+        'openai/whisper-large-v3',
+      ),
+    ).toEqual({
+      ok: true,
+      endpointCount: 2,
+      modelId: 'openai/whisper-large-v3',
+    });
+  });
+
+  it('reports a valid registry that no longer lists the pinned model', () => {
+    expect(
+      inspectOpenRouterZdrRegistry(
+        { data: [{ model_id: 'openai/gpt-4.1', provider_name: 'OpenAI' }] },
+        'openai/whisper-large-v3',
+      ),
+    ).toEqual({
+      ok: false,
+      reason: 'model_absent',
+      detail: 'openai/whisper-large-v3 has no endpoint in the public ZDR registry',
+    });
+  });
+
+  it.each([
+    { payload: null, detail: 'ZDR registry response is not an object' },
+    { payload: {}, detail: 'ZDR registry response.data is not an array' },
+    {
+      payload: { data: [null] },
+      detail: 'ZDR registry response.data[0] is not an object',
+    },
+    {
+      payload: { data: [{ model_id: '' }] },
+      detail: 'ZDR registry response.data[0].model_id is not a non-empty string',
+    },
+  ])('rejects a malformed registry payload: $detail', ({ payload, detail }) => {
+    expect(inspectOpenRouterZdrRegistry(payload, 'openai/whisper-large-v3')).toEqual({
+      ok: false,
+      reason: 'invalid_response',
+      detail,
+    });
+  });
+});
 
 describe('live integration canary report formatting', () => {
   it('prints status rows and actionable next steps without exposing secrets', () => {

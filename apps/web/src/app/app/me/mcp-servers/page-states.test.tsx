@@ -54,7 +54,7 @@ describe('Personal MCP servers route states', () => {
       ),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     expect(document.activeElement).toBe(retry);
     await user.keyboard('{Enter}');

@@ -57,7 +57,7 @@ describe('legacy entity route states', () => {
         expect(screen.getByRole('heading', { level: 2, name: errorHeading })).toBeTruthy();
         expect(screen.getByText(description)).toBeTruthy();
 
-        const retry = screen.getByRole('button', { name: 'Try again' });
+        const retry = screen.getByRole('button', { name: 'Retry' });
         retry.focus();
         await user.keyboard(keys);
 

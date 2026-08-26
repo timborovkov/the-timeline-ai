@@ -3,6 +3,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
+import { bucketCaptureDuration } from '@timeline/shared/analytics';
 import { cacheKey, deleteCacheKey } from '@timeline/shared/cache';
 import { childLogger } from '@timeline/shared/logger';
 import { getAudioBucket, getS3PresignClient, getSignedPutObjectUrl } from '@timeline/shared/s3';
@@ -103,17 +104,17 @@ export async function createTextEventAction(
     });
     const completedFirstNote = await safeMarkOnboardingStep(scope, 'first_note');
     await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
-    trackProductEventBestEffort(session.user.id, 'capture_created', {
-      teamId: active.teamId,
+    const analyticsActor = {
+      kind: 'user' as const,
       userId: session.user.id,
-      rawEventId: event.id,
+      teamId: active.teamId,
+    };
+    trackProductEventBestEffort(analyticsActor, 'capture_created', {
       captureType: 'text',
       visibility: parsed.data.visibility,
     });
     if (completedFirstNote) {
-      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-        teamId: active.teamId,
-        userId: session.user.id,
+      trackProductEventBestEffort(analyticsActor, 'onboarding_step_completed', {
         step: 'first_note',
         source: 'automatic',
       });
@@ -370,18 +371,20 @@ export async function createAudioEventAction(
     });
     const completedFirstNote = await safeMarkOnboardingStep(scope, 'first_note');
     await deleteCacheKey(cacheKey(['onboarding', active.teamId, session.user.id]));
-    trackProductEventBestEffort(session.user.id, 'capture_created', {
-      teamId: active.teamId,
+    const analyticsActor = {
+      kind: 'user' as const,
       userId: session.user.id,
-      rawEventId: event.id,
+      teamId: active.teamId,
+    };
+    trackProductEventBestEffort(analyticsActor, 'capture_created', {
       captureType: 'audio',
       visibility: parsed.data.visibility,
-      durationSec: parsed.data.durationSec,
+      ...(parsed.data.durationSec === undefined
+        ? {}
+        : { durationBucket: bucketCaptureDuration(parsed.data.durationSec) }),
     });
     if (completedFirstNote) {
-      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-        teamId: active.teamId,
-        userId: session.user.id,
+      trackProductEventBestEffort(analyticsActor, 'onboarding_step_completed', {
         step: 'first_note',
         source: 'automatic',
       });

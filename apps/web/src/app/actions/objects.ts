@@ -1,4 +1,5 @@
 'use server';
+import { bucketAnalyticsCount, bucketSearchResultCount } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
 import * as objects from '@timeline/shared/objects';
 import { enqueueSuggestionJob } from '@timeline/shared/queue';
@@ -195,6 +196,15 @@ export async function searchObjectsAction(input: unknown): Promise<{
       });
       if (results.length >= OBJECT_SEARCH_RESULT_LIMIT) break;
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: r.userId, teamId: r.teamId },
+      'search_performed',
+      {
+        surface: 'objects',
+        hasFilters: parsed.data.type !== undefined || parsed.data.exclude !== undefined,
+        resultCountBucket: bucketSearchResultCount(results.length),
+      },
+    );
     return { results };
   });
 }
@@ -222,7 +232,17 @@ export async function searchAddableObjectsAction(input: unknown): Promise<{
           archived: false,
           limit: ADDABLE_OBJECT_SEARCH_LIMIT + 1,
         });
-    return { results: rows.slice(0, ADDABLE_OBJECT_SEARCH_LIMIT) };
+    const results = rows.slice(0, ADDABLE_OBJECT_SEARCH_LIMIT);
+    trackProductEventBestEffort(
+      { kind: 'user', userId: r.userId, teamId: r.teamId },
+      'search_performed',
+      {
+        surface: 'board_add',
+        hasFilters: Boolean(parsed.data.type),
+        resultCountBucket: bucketSearchResultCount(results.length),
+      },
+    );
+    return { results };
   });
 }
 
@@ -360,13 +380,14 @@ export async function createObjectAction(input: unknown): Promise<ActionState> {
           'revalidate_object_create',
         );
       }
-      trackProductEventBestEffort(r.userId, 'object_created', {
-        teamId: r.teamId,
-        userId: r.userId,
-        objectId: obj.id,
-        objectType: parsed.data.type,
-        hasParent: Boolean(parsed.data.parentObjectId),
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'object_created',
+        {
+          objectType: parsed.data.type,
+          hasParent: Boolean(parsed.data.parentObjectId),
+        },
+      );
       return { ok: true, id: obj.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to create object') };
@@ -411,6 +432,13 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
         }),
       );
       revalidateObjectMutationSurfaces(id);
+      if (result.changedFields.length > 0) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'update' },
+        );
+      }
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update object') };
@@ -431,13 +459,14 @@ export async function setTaskCategoryAction(input: unknown): Promise<ActionState
         kind: 'user',
         userId: r.userId,
       });
-      trackProductEventBestEffort(r.userId, 'task_category_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        category: parsed.data.category,
-        mode: 'manual',
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_category_changed',
+        {
+          category: parsed.data.category,
+          mode: 'manual',
+        },
+      );
       revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true, id: parsed.data.id, undoChangeId: result.changeId };
     } catch (err) {
@@ -461,12 +490,13 @@ export async function undoTaskCategoryChangeAction(input: unknown): Promise<Acti
           userId: r.userId,
         },
       );
-      trackProductEventBestEffort(r.userId, 'task_category_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_category_changed',
+        {
+          mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
+        },
+      );
       revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -486,12 +516,13 @@ export async function resetTaskCategoryAction(input: unknown): Promise<ActionSta
         kind: 'user',
         userId: r.userId,
       });
-      trackProductEventBestEffort(r.userId, 'task_category_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        mode: 'automatic',
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_category_changed',
+        {
+          mode: 'automatic',
+        },
+      );
       revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -530,12 +561,13 @@ export async function setTaskProjectAction(input: unknown): Promise<ActionState>
         kind: 'user',
         userId: r.userId,
       });
-      trackProductEventBestEffort(r.userId, 'task_project_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        hasProject: parsed.data.projectId !== null,
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_project_changed',
+        {
+          hasProject: parsed.data.projectId !== null,
+        },
+      );
       revalidateObjectMutationSurfaces(
         [
           parsed.data.id,
@@ -660,18 +692,25 @@ export async function unarchiveObjectAction(input: unknown): Promise<ActionState
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const object = await r.scope.objects.unarchiveObject(parsed.data.id, {
+      const result = await r.scope.objects.unarchiveObject(parsed.data.id, {
         kind: 'user',
         userId: r.userId,
       });
       await reconcileCanonicalChangeBestEffort('reconcile_object_update_after_unarchive', () =>
         reconcileObjectUpdate(r.scope.suggestions, {
           id: parsed.data.id,
-          type: object.type,
-          changedFields: ['archivedAt'],
+          type: result.type,
+          changedFields: result.changedFields,
         }),
       );
       revalidateObjectMutationSurfaces(parsed.data.id);
+      if (result.changedFields.includes('archivedAt')) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'unarchive' },
+        );
+      }
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to unarchive') };
@@ -694,6 +733,13 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
         reconcileArchivedObject(r.scope.suggestions, archived),
       );
       revalidateObjectMutationSurfaces(parsed.data.id);
+      if (archived.changedFields.includes('archivedAt')) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'archive' },
+        );
+      }
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive') };
@@ -767,6 +813,13 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
         ),
       );
       revalidateObjectMutationSurfaces(ids);
+      if (archivedObjects.some((object) => object.changedFields.includes('archivedAt'))) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'bulk_archive' },
+        );
+      }
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive selected objects') };
@@ -801,13 +854,15 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
       if (!result) return { error: 'Merge suggestion is no longer pending.' };
       const survivorId = 'survivor' in result ? result.survivor.id : result.survivorId;
       if (parsed.data.suggestionItemId) {
-        trackProductEventBestEffort(r.userId, 'approval_decision_submitted', {
-          teamId: r.teamId,
-          userId: r.userId,
-          decision: 'accepted',
-          itemCount: 1,
-          isBulk: false,
-        });
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'approval_decision_submitted',
+          {
+            decision: 'accepted',
+            itemCountBucket: bucketAnalyticsCount(1),
+            isBulk: false,
+          },
+        );
       } else {
         await reconcileCanonicalChangeBestEffort('reconcile_object_merge', async () => {
           await r.scope.suggestions.reconcileObjectMerge({
@@ -1115,13 +1170,15 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
         userId: r.userId,
       });
       if (!ok) return { error: 'Suggestion no longer pending' };
-      trackProductEventBestEffort(r.userId, 'approval_decision_submitted', {
-        teamId: r.teamId,
-        userId: r.userId,
-        decision: 'accepted',
-        itemCount: 1,
-        isBulk: false,
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'approval_decision_submitted',
+        {
+          decision: 'accepted',
+          itemCountBucket: bucketAnalyticsCount(1),
+          isBulk: false,
+        },
+      );
       bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_accept');
       bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_accept');
       // Accepting may change status / stage / priority — same revalidation
@@ -1151,13 +1208,15 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
     try {
       const ok = await r.scope.objects.rejectObjectChange(parsed.data.changeId);
       if (!ok) return { error: 'Suggestion no longer pending' };
-      trackProductEventBestEffort(r.userId, 'approval_decision_submitted', {
-        teamId: r.teamId,
-        userId: r.userId,
-        decision: 'rejected',
-        itemCount: 1,
-        isBulk: false,
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'approval_decision_submitted',
+        {
+          decision: 'rejected',
+          itemCountBucket: bucketAnalyticsCount(1),
+          isBulk: false,
+        },
+      );
       bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_reject');
       bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_reject');
       return { ok: true };

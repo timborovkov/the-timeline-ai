@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { publicApiErrorResponse } from '@/lib/public-error';
@@ -19,7 +20,7 @@ const patchSchema = z.object({
 async function resolveScope(userId: string) {
   const { active } = await resolveActiveTeam(userId);
   if (!active) return null;
-  return withTeam(db, active.teamId, userId);
+  return { scope: withTeam(db, active.teamId, userId), teamId: active.teamId };
 }
 
 export async function PATCH(
@@ -29,8 +30,8 @@ export async function PATCH(
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { id } = await ctx.params;
-  const scope = await resolveScope(session.user.id);
-  if (!scope) return NextResponse.json({ error: 'no_team' }, { status: 400 });
+  const resolved = await resolveScope(session.user.id);
+  if (!resolved) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   const body: unknown = await req.json();
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
@@ -40,7 +41,7 @@ export async function PATCH(
     );
   }
   try {
-    await scope.mcp.updateServer(id, parsed.data);
+    await resolved.scope.mcp.updateServer(id, parsed.data);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return publicApiErrorResponse(err, {
@@ -57,10 +58,15 @@ export async function DELETE(
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { id } = await ctx.params;
-  const scope = await resolveScope(session.user.id);
-  if (!scope) return NextResponse.json({ error: 'no_team' }, { status: 400 });
+  const resolved = await resolveScope(session.user.id);
+  if (!resolved) return NextResponse.json({ error: 'no_team' }, { status: 400 });
   try {
-    await scope.mcp.deleteServer(id);
+    await resolved.scope.mcp.deleteServer(id);
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: resolved.teamId },
+      'integration_management_action_completed',
+      { action: 'mcp_server_remove', kind: 'mcp_inbound' },
+    );
     return NextResponse.json({ ok: true });
   } catch (err) {
     return publicApiErrorResponse(err, {

@@ -9,6 +9,7 @@ import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { OPENROUTER_PRIVATE_PROVIDER_ROUTING } from '#src/llm/privacy.js';
 
 export interface EmbedInput {
   text: string;
@@ -31,6 +32,8 @@ export interface EmbedManyResult {
 export interface EmbedDeps {
   /** Inject a pre-built EmbeddingModel — used by tests with a mock. */
   model?: EmbeddingModel;
+  /** Inject transport for boundary tests. */
+  fetch?: typeof globalThis.fetch;
   /** Override SDK-level retries. Workers set this to 0 so BullMQ owns backoff. */
   maxRetries?: number;
 }
@@ -93,7 +96,44 @@ export function truncateEmbeddingTextToTokenBudget(text: string, maxTokens: numb
   return truncated;
 }
 
-function buildDefaultModel(modelId: string): EmbeddingModel {
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function privateEmbeddingFetch(fetchImpl: typeof globalThis.fetch): typeof globalThis.fetch {
+  return async (input, init) => {
+    if (typeof init?.body !== 'string') {
+      throw new Error('OpenRouter embedding request did not serialize a JSON body');
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(init.body) as unknown;
+    } catch {
+      throw new Error('OpenRouter embedding request body was not valid JSON');
+    }
+    if (!isJsonObject(parsed)) {
+      throw new Error('OpenRouter embedding request body was not a JSON object');
+    }
+
+    const existingProvider = isJsonObject(parsed.provider) ? parsed.provider : {};
+    return fetchImpl(input, {
+      ...init,
+      body: JSON.stringify({
+        ...parsed,
+        provider: {
+          ...existingProvider,
+          ...OPENROUTER_PRIVATE_PROVIDER_ROUTING,
+        },
+      }),
+    });
+  };
+}
+
+function buildDefaultModel(
+  modelId: string,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+): EmbeddingModel {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.embed');
@@ -103,6 +143,10 @@ function buildDefaultModel(modelId: string): EmbeddingModel {
     name: 'openrouter',
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
+    // The installed compatible adapter only serializes `dimensions` and
+    // `user` for embeddings. Inject the OpenRouter routing policy at the HTTP
+    // boundary and fail closed if that request shape changes.
+    fetch: privateEmbeddingFetch(fetchImpl),
   });
   return provider.embeddingModel(modelId);
 }
@@ -171,8 +215,12 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
     if (!deps.model && deterministicEmbeddingsEnabled()) {
       return { vector: deterministicEmbeddingVector(text), model: modelId };
     }
-    const model = deps.model ?? buildDefaultModel(modelId);
-    const result = await aiEmbed({ model, value: text, maxRetries: deps.maxRetries ?? 2 });
+    const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
+    const result = await aiEmbed({
+      model,
+      value: text,
+      maxRetries: deps.maxRetries ?? 2,
+    });
     return { vector: Array.from(result.embedding), model: modelId };
   });
 }
@@ -190,7 +238,7 @@ export async function embedMany(
     if (!deps.model && deterministicEmbeddingsEnabled()) {
       return { vectors: texts.map(deterministicEmbeddingVector), model: modelId };
     }
-    const model = deps.model ?? buildDefaultModel(modelId);
+    const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
     const result = await aiEmbedMany({
       model,
       values: texts,

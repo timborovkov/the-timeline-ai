@@ -31,6 +31,7 @@ function setExtractProductionEnv(overrides: Record<string, string | undefined> =
     REDIS_URL: 'redis://localhost:6379',
     DAYTONA_API_KEY: 'dtn_test',
     OPENROUTER_API_KEY: 'sk-or-test',
+    OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: 'true',
     S3_ENDPOINT: 'http://localhost:9000',
     S3_REGION: 'us-east-1',
     S3_ACCESS_KEY_ID: 'key',
@@ -63,7 +64,28 @@ describe('getEnv', () => {
       VISION_MODEL: undefined,
     });
 
-    expect(getEnv().OPENROUTER_API_KEY).toBeUndefined();
+    const env = getEnv();
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
+    expect(env).toMatchObject({
+      OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: false,
+    });
+  });
+
+  it('requires acknowledgement of ZDR coverage for every used model group in production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: 'sk-or-test',
+      OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: undefined,
+    });
+
+    expect(() => getEnv()).toThrow(/OPENROUTER_ZDR_GUARDRAIL_CONFIRMED/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: 'sk-or-test',
+      OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: 'true',
+    });
+    expect(getEnv().OPENROUTER_ZDR_GUARDRAIL_CONFIRMED).toBe(true);
   });
 
   it('ignores legacy model env vars because model config is code-owned', () => {
@@ -93,6 +115,52 @@ describe('getEnv', () => {
     setBaseEnv({ RECALL_TRANSCRIPT_WEBHOOK_URL: '' });
 
     expect(getEnv().RECALL_TRANSCRIPT_WEBHOOK_URL).toBeUndefined();
+  });
+
+  it('keeps server analytics credentials separate and validates the pseudonymization key', () => {
+    setBaseEnv({
+      POSTHOG_PROJECT_KEY: 'ph-server',
+      POSTHOG_HOST: 'https://eu.i.posthog.com',
+      ANALYTICS_PSEUDONYMIZATION_KEY: 'a'.repeat(32),
+      NEXT_PUBLIC_POSTHOG_KEY: 'ph-browser',
+    });
+    expect(getEnv()).toMatchObject({
+      POSTHOG_PROJECT_KEY: 'ph-server',
+      POSTHOG_HOST: 'https://eu.i.posthog.com',
+      ANALYTICS_PSEUDONYMIZATION_KEY: 'a'.repeat(32),
+      NEXT_PUBLIC_POSTHOG_KEY: 'ph-browser',
+    });
+
+    setBaseEnv({ ANALYTICS_PSEUDONYMIZATION_KEY: 'too-short' });
+    expect(() => getEnv()).toThrow(/ANALYTICS_PSEUDONYMIZATION_KEY/);
+
+    setBaseEnv({
+      POSTHOG_PROJECT_KEY: '',
+      POSTHOG_HOST: '',
+      ANALYTICS_PSEUDONYMIZATION_KEY: '',
+    });
+    expect(getEnv()).toMatchObject({ POSTHOG_HOST: 'https://eu.i.posthog.com' });
+    expect(getEnv().POSTHOG_PROJECT_KEY).toBeUndefined();
+    expect(getEnv().ANALYTICS_PSEUDONYMIZATION_KEY).toBeUndefined();
+
+    setBaseEnv({ POSTHOG_HOST: 'https://us.i.posthog.com' });
+    expect(() => getEnv()).toThrow(/reviewed EU PostHog ingestion origin/);
+  });
+
+  it('limits configured Recall media retention to one hour in production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_RETENTION: '24',
+    });
+    expect(() => getEnv()).toThrow(/RECALL_RETENTION must be unset or 1/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_RETENTION: '1',
+    });
+    expect(getEnv().RECALL_RETENTION).toBe('1');
   });
 
   it('keeps the legacy invite sender env var available for transactional email fallback', () => {
@@ -158,7 +226,7 @@ describe('getEnv', () => {
     expect(() => getEnv()).toThrow(/LANGSMITH_API_KEY/);
   });
 
-  it('accepts LangSmith production config', () => {
+  it('rejects LangSmith tracing in production', () => {
     setBaseEnv({
       NODE_ENV: 'production',
       LANGSMITH_TRACING: 'true',
@@ -169,14 +237,7 @@ describe('getEnv', () => {
       LANGSMITH_WORKSPACE_ID: 'workspace-id',
     });
 
-    expect(getEnv()).toMatchObject({
-      LANGSMITH_TRACING: true,
-      LANGSMITH_TRACING_SAMPLING_RATE: 0.05,
-      LANGSMITH_API_KEY: 'lsv2_test_key',
-      LANGSMITH_PROJECT: 'timeline-production',
-      LANGSMITH_ENDPOINT: 'https://eu.api.smith.langchain.com',
-      LANGSMITH_WORKSPACE_ID: 'workspace-id',
-    });
+    expect(() => getEnv()).toThrow(/LANGSMITH_TRACING must be false in production/);
   });
 
   it('treats a blank LangSmith endpoint as unset', () => {
@@ -369,6 +430,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_API_KEY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_SNAPSHOT_ENSURE')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('S3_SECRET_ACCESS_KEY')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('OPENROUTER_ZDR_GUARDRAIL_CONFIRMED')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_VERSION')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_BUILT_AT')).toBe(true);

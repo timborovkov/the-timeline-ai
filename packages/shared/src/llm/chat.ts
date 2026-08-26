@@ -19,6 +19,7 @@ import {
   type TimelineAiErrorMetadata,
 } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
 import {
   generateObject,
   generateText,
@@ -110,24 +111,16 @@ ${jsonSchema}`;
 }
 
 function openRouterRequireParametersOptions(): GenerateObjectProviderOptions {
-  return {
-    openrouter: {
-      provider: {
-        require_parameters: true,
-      },
-    },
-  };
+  return openRouterPrivateProviderOptions({
+    provider: { require_parameters: true },
+  });
 }
 
 function openRouterJsonObjectOptions(): GenerateObjectProviderOptions {
-  return {
-    openrouter: {
-      provider: {
-        require_parameters: true,
-      },
-      response_format: { type: 'json_object' },
-    },
-  };
+  return openRouterPrivateProviderOptions({
+    provider: { require_parameters: true },
+    response_format: { type: 'json_object' },
+  });
 }
 
 export function streamChatFallbackModelIds(modelId: string): string[] {
@@ -150,12 +143,9 @@ function openRouterModelFallbackOptions(
   modelId: string,
 ): GenerateObjectProviderOptions | undefined {
   const fallbackModelIds = streamChatFallbackModelIds(modelId);
-  if (fallbackModelIds.length === 0) return undefined;
-  return {
-    openrouter: {
-      models: [modelId, ...fallbackModelIds],
-    },
-  };
+  return openRouterPrivateProviderOptions({
+    ...(fallbackModelIds.length > 0 ? { models: [modelId, ...fallbackModelIds] } : {}),
+  });
 }
 
 function errorMessage(err: unknown): string {

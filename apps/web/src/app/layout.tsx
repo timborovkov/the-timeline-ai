@@ -5,6 +5,7 @@ import Script from 'next/script';
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
+import { PublicAnalyticsBoundary } from '@/components/public-analytics';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
 import { appleWebApp, pwaViewport } from '@/lib/pwa-splash';
@@ -141,12 +142,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Script id="sidebar-preference" strategy="beforeInteractive">
           {SIDEBAR_PREFERENCE_BOOTSTRAP}
         </Script>
-        <Script
-          src="https://aromatic-caribou-889.convex.site/api/a/am_7eCe5quSdP7W1Kx7"
-          strategy="afterInteractive"
-        />
         <ThemeProvider>
-          {children}
+          <PublicAnalyticsBoundary>{children}</PublicAnalyticsBoundary>
           <Toaster />
         </ThemeProvider>
       </body>

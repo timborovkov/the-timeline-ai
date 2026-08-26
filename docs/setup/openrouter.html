@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-05</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-21</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -18,6 +18,7 @@
         OpenRouter is the single provider for chat, embeddings, and transcription. Chat, embeddings,
         and vision OCR route through the Vercel AI SDK OpenAI-compatible provider; production
         transcription calls OpenRouter's JSON audio endpoint through the same internal LLM wrapper.
+        Production keys must enforce zero data retention across every model group Timeline uses.
       </p>
 
       <nav class="toc" aria-label="On this page">
@@ -38,20 +39,45 @@
       <ol>
         <li>Sign up at <a href="https://openrouter.ai">https://openrouter.ai</a>.</li>
         <li>Add credits (test with $5).</li>
-        <li>Create an API key (Settings → Keys).</li>
+        <li>
+          In Settings → Privacy, create a guardrail with zero data retention enabled for every model
+          group Timeline uses. Keep prompt logging and model-improvement input/output sharing
+          disabled, and verify that
+          <a href="https://openrouter.ai/docs/guides/features/response-caching">response caching</a>
+          or presets have not been enabled for the production key. Prefer account-level ZDR as an
+          additional fail-closed control.
+        </li>
+        <li>Create an API key (Settings → Keys) and assign that guardrail directly to the key.</li>
+        <li>
+          Record a dated export or screenshot of the privacy settings and key-to-guardrail mapping.
+          Execute the applicable DPA and retain the current subprocessor/model-provider evidence for
+          the deployed tier.
+        </li>
       </ol>
       <p>Set in <code>.env</code>:</p>
       <pre><code>OPENROUTER_API_KEY=sk-or-v1-...
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true
 </code></pre>
+      <p>
+        Set <code>OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true</code> only after checking the key's
+        assignment. Production env validation fails when a key is present without that explicit
+        acknowledgement. Chat, media, and embedding requests also send
+        <code>provider.data_collection=deny</code> and <code>provider.zdr=true</code> per request.
+        The account/key guardrail is still mandatory because the speech-to-text API does not expose
+        the same routing contract. OpenRouter's
+        <a href="https://openrouter.ai/docs/guides/features/zdr">ZDR documentation</a> says those
+        endpoints cannot train on request data, although transient processing and in-memory prompt
+        caching can still occur. Recheck the guardrail whenever the key or model catalog changes.
+      </p>
 
       <h2 id="model-pins">2. Model pins</h2>
       <p>
         Model selection is code-owned in <code>packages/shared/src/llm/models.ts</code>. Keep
         extraction, agent, summarization, vision, embedding, and transcription model ids there
-        together with their context windows, capabilities, and embedding dimensions. Chat-style
-        roles prefer OSS models from Qwen and DeepSeek; the environment only supplies the OpenRouter
-        key/base URL.
+        together with their context windows, capabilities, and embedding dimensions. The environment
+        supplies the OpenRouter key/base URL and the production ZDR-guardrail acknowledgement; model
+        choice remains code-owned.
       </p>
       <p>
         Structured extraction calls use DeepSeek V4 Flash 0731 as the primary route. If the provider
@@ -79,8 +105,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         structured fallback when the primary route fails. The vision/OCR route uses a model that
         advertises image and file input because sparse PDF page images and image uploads are sent as
         image or file parts; dense text PDFs and office files extract inside Daytona sandboxes
-        (anydoc) and do not call OpenRouter. Transcription uses a dedicated audio-to-transcription
-        model through OpenRouter's JSON audio endpoint.
+        (anydoc) and do not call OpenRouter. Transcription uses
+        <code>openai/whisper-large-v3</code> through OpenRouter's JSON audio endpoint. Its current
+        DeepInfra, Together, and Groq endpoints are all present in OpenRouter's live ZDR registry;
+        the production key guardrail prevents later non-ZDR endpoints from becoming a fallback.
       </p>
       <p>
         The embedding model remains special: changing it or its dimensions invalidates the current
@@ -105,8 +133,14 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"deepseek/deepseek-v4-flash-0731","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"deepseek/deepseek-v4-flash-0731","messages":[{"role":"user","content":"ping"}],"provider":{"data_collection":"deny","zdr":true}}'
 </code></pre>
+      <p>
+        This synthetic request exercises the same no-collection and ZDR routing preferences as
+        Timeline's chat requests. A successful response proves that an eligible endpoint was
+        available for this request; it does not prove the production key's guardrail assignment,
+        account logging/sharing/cache settings, contract terms, or every other pinned model route.
+      </p>
       <p>
         The normal test suite mocks OpenRouter. To run the optional live structured-extraction smoke
         test, export <code>OPENROUTER_API_KEY</code> and <code>OPENROUTER_LIVE_TESTS=1</code>, then
@@ -149,6 +183,15 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         <code>llm.transcribeAudio()</code> and verifies the pinned OpenRouter transcription endpoint
         returns the expected canary words. This proves provider/model access and real speech
         decoding without requiring operator-recorded sample files.
+      </p>
+      <p>
+        The same canary also fetches OpenRouter's public
+        <a href="https://openrouter.ai/api/v1/endpoints/zdr"><code>/api/v1/endpoints/zdr</code></a>
+        registry without an API key and warns when the pinned
+        <code>TIMELINE_MODELS.transcription</code> model has no listed ZDR endpoint or the registry
+        response cannot be validated. This is a defense-in-depth drift signal, not a replacement for
+        assigning a guardrail that covers every model group Timeline uses to the production key and
+        keeping <code>OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true</code> truthful.
       </p>
       <p>After setting <code>OPENROUTER_API_KEY</code> and starting <code>pnpm dev</code>:</p>
       <ol>

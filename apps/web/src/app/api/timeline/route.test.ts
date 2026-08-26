@@ -27,7 +27,6 @@ const fakes = vi.hoisted(() => ({
   fakeGetAudioBucket: vi.fn(),
   fakeGetSignedGetObjectUrl: vi.fn(),
   fakeListTimelineCapturedFilesByEventId: vi.fn(),
-  fakeTrackTimelineMomentsViewed: vi.fn(),
   fakeIsPinnedMany: vi.fn(),
   fakeDbSelect: vi.fn(),
 }));
@@ -38,9 +37,6 @@ vi.mock('@/lib/db', () => ({ db: { select: fakes.fakeDbSelect } }));
 vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }));
 vi.mock('@/lib/timeline-captured-files', () => ({
   listTimelineCapturedFilesByEventId: fakes.fakeListTimelineCapturedFilesByEventId,
-}));
-vi.mock('@/lib/timeline-observability', () => ({
-  trackTimelineMomentsViewed: fakes.fakeTrackTimelineMomentsViewed,
 }));
 vi.mock('@timeline/shared/cache', () => ({
   cacheKey: fakes.fakeCacheKey,
@@ -234,29 +230,6 @@ describe('GET /api/timeline', () => {
       artifactClusters: {},
       capturedFiles: {},
       audioUrls: { 'event-1': 'https://signed-audio.test/event-1' },
-    });
-    expect(body).not.toHaveProperty('__timelineObservability');
-    expect(fakes.fakeTrackTimelineMomentsViewed).toHaveBeenCalledOnce();
-    expect(fakes.fakeTrackTimelineMomentsViewed.mock.calls[0]?.[0]).toMatchObject({
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      surface: 'api',
-      filters: {
-        author: AUTHOR_ID,
-        source: 'integrations',
-        origin: 'monday:board-42',
-        impact: 'task',
-        cursor: 'abc',
-      },
-      diagnostics: {
-        mode: 'moments',
-        returnedRawEventCount: 1,
-        returnedMomentCount: 1,
-      },
-      presentationCacheStats: {
-        missCount: 1,
-        visibilityPartitionCount: 1,
-      },
     });
     expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
       expect.objectContaining({

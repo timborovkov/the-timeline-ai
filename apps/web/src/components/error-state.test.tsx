@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 
@@ -10,6 +10,10 @@ vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtErr
 
 import { ErrorState } from '@/components/error-state';
 import { resetStaleServerActionReloadGuardForTests } from '@/lib/stale-server-action';
+
+beforeEach(() => {
+  window.history.replaceState({}, '', '/app/boards/secret-board-id');
+});
 
 afterEach(() => {
   cleanup();
@@ -41,6 +45,12 @@ describe('ErrorState', () => {
     expect(screen.getByText('Error reference').closest('details')?.hasAttribute('open')).toBe(
       false,
     );
+    const support = screen.getByRole('link', { name: 'Get support' });
+    expect(support.getAttribute('href')).toBe(
+      '/help/support?surface=board_detail&error=error-reference',
+    );
+    expect(support.getAttribute('href')).not.toContain('secret-board-id');
+    expect(support.getAttribute('target')).toBe('_blank');
   });
 
   it.each([
@@ -52,7 +62,7 @@ describe('ErrorState', () => {
 
     render(<ErrorState error={new Error('route failed')} reset={reset} />);
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard(keys);
 

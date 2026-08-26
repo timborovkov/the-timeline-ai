@@ -74,6 +74,7 @@ beforeEach(() => {
     provider: 'github',
     providerConnectionId: CONNECTION_ID,
     addedSelectionCount: 1,
+    removedSelectionCount: 0,
   });
   fakes.recordAudit.mockResolvedValue(undefined);
   fakes.recordConnectionAttention.mockResolvedValue(undefined);
@@ -141,18 +142,19 @@ describe('POST /api/team/integrations/activate', () => {
       'first_integration',
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'integration_connected',
-      expect.objectContaining({
-        teamId: TEAM_ID,
-        integrationId: INTEGRATION_ID,
-        provider: 'github',
-      }),
+      { provider: 'github' },
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'activate', kind: 'native', provider: 'github' },
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'onboarding_step_completed',
-      expect.objectContaining({ step: 'first_integration', source: 'automatic' }),
+      { step: 'first_integration', source: 'automatic' },
     );
   });
 
@@ -162,6 +164,7 @@ describe('POST /api/team/integrations/activate', () => {
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 1,
+      removedSelectionCount: 0,
     });
     fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
       new Error('MONDAY_WEBHOOK_SECRET not configured'),
@@ -200,7 +203,9 @@ describe('POST /api/team/integrations/activate', () => {
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 0,
+      removedSelectionCount: 0,
     });
+    fakes.safeMarkOnboardingStep.mockResolvedValueOnce(false);
 
     const response = await POST(
       request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
@@ -214,6 +219,30 @@ describe('POST /api/team/integrations/activate', () => {
       syncQueued: false,
     });
     expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+  });
+
+  it('records source deactivation only when a saved selection is removed', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+      addedSelectionCount: 0,
+      removedSelectionCount: 1,
+    });
+    fakes.safeMarkOnboardingStep.mockResolvedValueOnce(false);
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [] }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledOnce();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'deactivate', kind: 'native', provider: 'monday' },
+    );
   });
 
   it('keeps saved sources retryable when the initial backfill cannot be queued', async () => {
@@ -222,6 +251,7 @@ describe('POST /api/team/integrations/activate', () => {
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 1,
+      removedSelectionCount: 0,
     });
     fakes.enqueueIntegrationSyncJob.mockRejectedValueOnce(new Error('redis unavailable'));
 
@@ -258,6 +288,7 @@ describe('POST /api/team/integrations/activate', () => {
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 0,
+      removedSelectionCount: 0,
     });
     fakes.listConnectionAttention.mockResolvedValueOnce([
       { integrationId: INTEGRATION_ID, category: 'sync_error' },

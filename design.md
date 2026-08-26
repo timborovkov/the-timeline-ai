@@ -1,6 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.27 · Installed-app splash (2026-08-26). Replaces v3.26 Dedicated animated platform flow.
+**Version:** v3.28 · Privacy-conscious analytics and support (2026-08-26).
+Replaces v3.27 Installed-app splash.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -1010,6 +1011,40 @@ taxonomy.
 The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
 
+`/trust` is the concise public assurance surface. It follows the expanded
+editorial grid, leads with the training-data boundary, then shows the data path,
+AI routing, storage and access, processor roles, permissions, current assurance
+status, and private vulnerability-reporting route. It must distinguish controls
+enforced in code from production-account, contract, and certification evidence;
+unverified badges and absolute “nothing leaves our servers” claims are
+prohibited. Privacy and Terms remain the detailed legal surfaces and cross-link
+Trust. `/legal/accept` is an authenticated blocking interstitial: one explicit
+acceptance covers the current Terms and Privacy versions for that person, and
+protected product access does not continue until it succeeds.
+
+`/cookies` uses the same legal-page reading surface for the exact cookie and
+browser-storage inventory. It separates necessary storage, always-on personless
+surface-request counts, optional public browser analytics, pseudonymous product
+analytics, and reliability monitoring. The working consent UI gives Accept
+analytics and Reject equal weight, never initializes PostHog before acceptance,
+and never loads browser analytics inside private workspace routes. Withdrawal
+stops capture and clears the public PostHog and attribution state while keeping
+only the necessary consent-choice record. Every public footer links the notice
+and exposes the persistent Cookie settings control. Public copy calls the
+fixed-stream totals surface requests, not visitors or sessions, and notes that
+bots and retries can contribute.
+
+`/help/support` is both a channel router and the private support form. It sends
+account-specific or sensitive requests to the private form/email, reproducible
+non-sensitive defects to the structured public issue form, vulnerabilities to
+the private security policy, and proposed contributions to the issue-first
+contribution guide. Signed-in support context is disclosed and limited to
+server-resolved account/team identifiers and role, a normalized app surface,
+release, optional error reference, and bounded browser diagnostics. Never put
+that context or workspace content in a GitHub issue. Dashboard desktop and
+mobile footers use the same “Help & support” label; shared error states pair
+Retry with a contextual Get support action.
+
 ### Administrator dashboards
 
 Jobs and Reconciliation list rows show status, a human label, and relative time.
@@ -1210,4 +1245,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Evidence-flow acquisition story | Reframes Timeline as AI team memory, introduces the reusable evidence-to-workspace-to-assistant explainer, and adds three substantive outcome-led solution pages. |
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
+| 2026-08-21 | Evidence-gated Trust and legal acceptance | Adds a candid public Trust center, detailed legal surfaces, and a blocking per-user versioned acceptance path without presenting external account settings or future certifications as verified. |
+| 2026-08-21 | Privacy and analytics boundary | Adds an exact Cookies and similar technologies notice, separates notice from consent, and defines a narrow public-only browser-analytics boundary without extending it into private workspace routes. |
+| 2026-08-21 | Privacy-conscious analytics and support | Implements equal-choice public analytics consent and withdrawal, personless surface-request totals, HMAC-pseudonymous product events, a private support-context boundary, safe public bug routing, and aligned desktop/mobile help actions. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |

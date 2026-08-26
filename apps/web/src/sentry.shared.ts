@@ -61,6 +61,12 @@ export function scrubSentryEvent(event: ErrorEvent, hint?: EventHint): ErrorEven
   return scrubSentryRequestEvent(event);
 }
 
+export function scrubSentryTransactionEvent<
+  Event extends Parameters<typeof scrubSentryRequestEvent>[0],
+>(event: Event): Event {
+  return scrubSentryRequestEvent(event);
+}
+
 export function scrubSentryBreadcrumbEvent(breadcrumb: Breadcrumb): Breadcrumb {
   return scrubSentryBreadcrumb(breadcrumb);
 }
