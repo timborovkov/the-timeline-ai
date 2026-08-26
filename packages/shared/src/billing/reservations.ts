@@ -1,7 +1,7 @@
 import { billingUsageReservations, teamBillingAccounts, type Db } from '@timeline/db';
 import { and, eq, lt, sql } from 'drizzle-orm';
 
-import { walletReservedCentsFromMetadata } from '#src/billing/charge.js';
+import { walletLockCentsFromMetadata } from '#src/billing/charge.js';
 
 export async function expireStaleBillingReservations(input: {
   db: Db;
@@ -22,7 +22,7 @@ export async function expireStaleBillingReservations(input: {
 
     const byTeam = new Map<string, number>();
     for (const row of expired) {
-      const cents = walletReservedCentsFromMetadata(row.metadata, row.reservedChargeCents);
+      const cents = walletLockCentsFromMetadata(row.metadata);
       if (cents <= 0) continue;
       byTeam.set(row.teamId, (byTeam.get(row.teamId) ?? 0) + cents);
     }

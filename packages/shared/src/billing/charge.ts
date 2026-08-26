@@ -84,12 +84,16 @@ export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: nu
   }
 }
 
-/** Discount covers first; wallet funds the remainder. */
+/** Discount covers first; wallet funds the remainder. Extra member-days are wallet-only. */
 export function splitDiscountAndWallet(input: {
   chargeCents: number;
   includedDiscountRemainingCents: number;
+  meterId?: BillingMeterId;
 }): { discountCents: number; walletCents: number } {
   const chargeCents = Math.max(0, input.chargeCents);
+  if (input.meterId === 'member_days') {
+    return { discountCents: 0, walletCents: chargeCents };
+  }
   const discountCents = Math.min(Math.max(0, input.includedDiscountRemainingCents), chargeCents);
   return { discountCents, walletCents: chargeCents - discountCents };
 }
@@ -118,11 +122,11 @@ export function metadataNonNegativeInteger(
   return Math.max(0, fallback);
 }
 
-export function walletReservedCentsFromMetadata(
+/** Cents actually added to `reservedBalanceCents` when this reservation was created. */
+export function walletLockCentsFromMetadata(
   metadata: Record<string, unknown> | null | undefined,
-  fallbackChargeCents: number,
 ): number {
-  return metadataNonNegativeInteger(metadata, 'wallet_reserved_cents', fallbackChargeCents);
+  return metadataNonNegativeInteger(metadata, 'wallet_lock_cents', 0);
 }
 
 export function pendingListChargeCents(

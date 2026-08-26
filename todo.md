@@ -564,9 +564,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       every Polar retry). Paid-plan changes update the existing Polar subscription.
       Prepaid wallet/included-discount collection is not ingested to Polar meters.
       Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
-      Stale Polar activations are ignored; canceled paid plans become restricted unless the
-      team holds the Free grant. Polar refunds claw back prepaid top-ups; Polar
-      usage ingest retries from a claimed ledger outbox after local settlement.
+      Stale Polar activations are ignored against `polar_event_modified_at`; canceled paid
+      plans become restricted unless the team holds the Free grant. Polar refunds serialize remaining
+      clawback then debit prepaid top-ups; Polar usage ingest retries from a claimed ledger outbox
+      after local settlement. A paid spend cap of €0 is a hard stop. Extra member-days skip included
+      usage discount and accrue members added after the first daily tick.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

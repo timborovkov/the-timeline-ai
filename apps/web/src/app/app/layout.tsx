@@ -14,6 +14,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { appMetadataForTeam } from '@/lib/app-metadata';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { retryOwnedTeamFreeGrantsAfterSignIn } from '@/lib/email-verification';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -57,6 +58,17 @@ export default async function AppLayout({
   const { active, memberships } = activeTeam;
   const currentUser = currentUsers[0];
   const currentEmail = currentUser?.email ? currentUser.email.toLowerCase() : null;
+  if (currentUser?.emailVerified) {
+    try {
+      await retryOwnedTeamFreeGrantsAfterSignIn({
+        db,
+        userId: session.user.id,
+        emailVerified: currentUser.emailVerified,
+      });
+    } catch (err) {
+      reportCaughtError(err, { surface: 'layout', operation: 'free_grant_claim' });
+    }
+  }
   const recipientInvites = currentEmail
     ? await db
         .select({

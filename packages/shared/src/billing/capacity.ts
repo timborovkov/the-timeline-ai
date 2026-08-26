@@ -174,6 +174,12 @@ export async function assertTeamWriteCapacity(input: {
   }
 }
 
+/**
+ * Serialize concurrent member-seat count+claim on one DB client.
+ * Callers must invoke this inside the membership/invite write transaction so
+ * the advisory lock covers the subsequent insert. Hash key 4 is reserved for
+ * member seats (0 Recall, 1 storage, 2 chunks, 3 MCP).
+ */
 export async function assertTeamMemberSeatCapacity(input: {
   db: Db;
   teamId: string;
@@ -182,6 +188,7 @@ export async function assertTeamMemberSeatCapacity(input: {
 }): Promise<void> {
   const additionalSeats = input.additionalSeats ?? 1;
   if (additionalSeats <= 0) return;
+  await input.db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 4))`);
   const billing = billingScopeForDb(input.db, input.teamId);
   const account = await billing.getAccount();
   const max = PLAN_CATALOG[account.planId].maxActiveMembers;

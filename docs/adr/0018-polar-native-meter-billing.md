@@ -60,10 +60,22 @@ credit hides margin and confuses prospects.
    product, Timeline opens a Polar top-up checkout and emails owners the URL.
    Credit still lands on Polar `order.paid`. Polar subscription webhooks apply
    `shadowBilling` from `BILLING_CHARGES_ENABLED`, map Polar `status`, ignore
-   stale activations (older Polar `modified_at` or an older subscription period),
-   reset Team/Business included discount only on a new period start or
-   plan/subscription change, and cancel only the matching `polarSubscriptionId`.
-   Janitor fallback refills that discount by advancing the stored Polar
+   stale activations (older Polar `modified_at` vs `polar_event_modified_at`,
+   or an older subscription period), reject Polar webhooks whose Standard
+   Webhooks timestamp is outside a 5-minute window, reset Team/Business included
+   discount only on a new period start or plan/subscription change, and cancel
+   only the matching `polarSubscriptionId`. Wallet, spend-cap, and shadow writes
+   bump `updated_at` and must not hide newer Polar events. A paid spend cap of
+   €0 is a hard stop (Free still uses native allowances). Extra member-days skip
+   the included-usage discount, settle per extra member per day, and accrue a
+   member added after the first daily tick. Reservations stamp `wallet_lock_cents`
+   when the wallet lock is applied and unwind that amount on settle/release/expire
+   even if the live/shadow toggle flipped. Concurrent Polar refunds serialize
+   remaining clawback under an account lock. Concurrent invite accepts serialize
+   member-seat claims with advisory lock key 4. Ask chat titles settle inside
+   the Ask reservation. Failed post-verification Free-grant claims retry on the
+   next signed-in load. Polar webhook HMAC timestamps follow the same 5-minute
+   replay window as Svix. Janitor fallback refills that discount by advancing the stored Polar
    renewal window, not by snapping to UTC calendar months. Paid-plan changes
    PATCH the existing Polar subscription (or open the customer portal) instead
    of creating a second checkout. Prepaid wallet and included-discount collection
@@ -76,9 +88,10 @@ credit hides margin and confuses prospects.
    reservation charges in the spend cap **and** Free native allowances, count
    in-flight included-discount claims against `includedDiscountRemainingCents`,
    expire on TTL, and Free pause copy follows admission (not a single exhausted
-   meter). Released or expired reservations may be replaced for the same
-   operation id; settled rows are reused as already-final rather than a fresh
-   lock. Extra member-days accrue with a cumulative monthly cent delta so daily
+   meter). Released or expired reservations unwind the stamped wallet lock and
+   may be replaced for the same operation id; settled rows are reused as
+   already-final rather than a fresh lock. Extra member-days accrue with a
+   per-extra-member operation id and a cumulative monthly cent delta so daily
    rounding still totals €2 per extra member-month. AI customer charges keep
    fractional cents on `nativeUnits` and round the cumulative delta, so
    sub-cent embeddings still consume the Free/PAYG floor. Email, accepted-source,
@@ -87,11 +100,14 @@ credit hides margin and confuses prospects.
    and sends a stable Polar event `id` so settle and the janitor cannot
    double-ingest; a failed ingest returns the row to `pending`. Paid-plan
    activation writes the catalog default spend cap when the row is still Free
-   (or cap 0). Polar `refund.created` / `order.refunded` claw back prepaid
-   top-ups, persist out-of-order refunds until `order.paid`, and freeze the
+   (or cap 0, which is a hard stop on paid plans). Polar `refund.created` /
+   `order.refunded` claw back prepaid top-ups under a serialized remaining-total
+   lock, persist out-of-order refunds until `order.paid`, and freeze the
    workspace if the credit was already spent. Auto-reload checkout markers stay
-   retryable until Polar checkout succeeds. Credentials signup keeps the
-   workspace restricted until the owner email is verified; `email_verification`
+   retryable until Polar checkout succeeds and skip when spend-cap headroom
+   cannot cover the €10 product, including a €0 cap. Credentials signup keeps the
+   workspace restricted until the owner email is verified; unverified owners are
+   excluded from the Free-grant backfill; `email_verification`
    mail is not metered against that restricted workspace. OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
 8. After successful `settle`, workspace **owners** get transactional email for

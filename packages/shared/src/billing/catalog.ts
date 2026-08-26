@@ -29,7 +29,7 @@ export interface PlanCommercial {
   maxActiveMembers: number | null;
   /** Monthly invoice discount against eligible meters, euro cents. */
   includedUsageDiscountCents: number;
-  /** Default overage spend cap, euro cents. */
+  /** Default overage spend cap, euro cents. 0 is a hard stop on paid plans. */
   defaultSpendCapCents: number;
   paymentMethodRequired: boolean;
   supportLabel: string;

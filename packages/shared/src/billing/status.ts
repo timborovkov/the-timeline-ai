@@ -145,10 +145,10 @@ export function costBearingPausedFromAccount(input: {
   const allFreeGone = allFreeAllowancesExhausted(input.freeRemaining);
   if (input.planId === 'free') return allFreeGone;
   if (input.shadowBilling || input.billingState === 'enterprise_active') return false;
-  if (input.spendCapCents > 0 && input.meteredSpendCents >= input.spendCapCents) return true;
+  if (input.planId === 'payg' && !allFreeGone) return false;
+  if (input.spendCapCents <= 0 || input.meteredSpendCents >= input.spendCapCents) return true;
   const availableWallet = input.walletBalanceCents - input.reservedBalanceCents;
   if (availableWallet > 0 || input.includedDiscountRemainingCents > 0) return false;
-  if (input.planId === 'payg' && !allFreeGone) return false;
   return true;
 }
 

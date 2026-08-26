@@ -11,7 +11,7 @@ import {
   teams,
   type Db,
 } from '@timeline/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 
@@ -188,83 +188,92 @@ export async function debitWalletFromPolarRefund(input: {
   refundKey: string;
   cents: number;
 }): Promise<{ duplicate: boolean; reversed: boolean; shortfallCents: number }> {
-  const [original] = await input.db
-    .select({
-      metadata: billingUsageLedger.metadata,
-    })
-    .from(billingUsageLedger)
-    .where(
-      and(
-        eq(billingUsageLedger.teamId, input.teamId),
-        eq(billingUsageLedger.operationId, `polar_topup:${input.orderId}`),
-      ),
-    )
-    .limit(1);
-  if (!original) {
-    await input.db
-      .insert(billingUsageLedger)
-      .values({
-        teamId: input.teamId,
-        operationId: `polar_refund_pending:${input.refundKey}`,
-        kind: 'adjustment',
-        meterId: 'ai',
-        nativeUnits: '0',
-        customerChargeCents: 0,
-        billable: false,
-        nonBillableReason: 'polar_refund_pending',
-        operationClass: 'wallet_refund',
-        source: 'polar_refund',
-        metadata: {
-          pending: true,
-          order_id: input.orderId,
-          cents: input.cents > 0 ? input.cents : PREPAID_TOPUP_CENTS,
-        },
+  return input.db.transaction(async (tx) => {
+    await tx
+      .select({ teamId: teamBillingAccounts.teamId })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, input.teamId))
+      .limit(1)
+      .for('update');
+    const [original] = await tx
+      .select({
+        metadata: billingUsageLedger.metadata,
       })
-      .onConflictDoNothing();
-    return { duplicate: false, reversed: false, shortfallCents: 0 };
-  }
-  const originalCentsRaw = original.metadata.cents;
-  const originalCents =
-    typeof originalCentsRaw === 'number' && originalCentsRaw > 0
-      ? originalCentsRaw
-      : PREPAID_TOPUP_CENTS;
-  const priorReversals = await input.db
-    .select({ metadata: billingUsageLedger.metadata })
-    .from(billingUsageLedger)
-    .where(
-      and(
-        eq(billingUsageLedger.teamId, input.teamId),
-        eq(billingUsageLedger.kind, 'reversal'),
-        sql`${billingUsageLedger.metadata}->>'order_id' = ${input.orderId}`,
-      ),
-    );
-  const alreadyReversed = priorReversals.reduce((sum, row) => {
-    const cents = row.metadata.cents;
-    return sum + (typeof cents === 'number' && cents > 0 ? cents : 0);
-  }, 0);
-  const remaining = Math.max(0, originalCents - alreadyReversed);
-  const requested = input.cents > 0 ? input.cents : remaining;
-  const debitCents = Math.min(remaining, requested);
-  if (debitCents <= 0) {
-    return { duplicate: true, reversed: false, shortfallCents: 0 };
-  }
-  const billing = billingScope({
-    db: input.db,
-    teamId: input.teamId,
-    userId: BILLING_SYSTEM_USER_ID,
+      .from(billingUsageLedger)
+      .where(
+        and(
+          eq(billingUsageLedger.teamId, input.teamId),
+          eq(billingUsageLedger.operationId, `polar_topup:${input.orderId}`),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!original) {
+      await tx
+        .insert(billingUsageLedger)
+        .values({
+          teamId: input.teamId,
+          operationId: `polar_refund_pending:${input.refundKey}`,
+          kind: 'adjustment',
+          meterId: 'ai',
+          nativeUnits: '0',
+          customerChargeCents: 0,
+          billable: false,
+          nonBillableReason: 'polar_refund_pending',
+          operationClass: 'wallet_refund',
+          source: 'polar_refund',
+          metadata: {
+            pending: true,
+            order_id: input.orderId,
+            cents: input.cents > 0 ? input.cents : PREPAID_TOPUP_CENTS,
+          },
+        })
+        .onConflictDoNothing();
+      return { duplicate: false, reversed: false, shortfallCents: 0 };
+    }
+    const originalCentsRaw = original.metadata.cents;
+    const originalCents =
+      typeof originalCentsRaw === 'number' && originalCentsRaw > 0
+        ? originalCentsRaw
+        : PREPAID_TOPUP_CENTS;
+    const priorReversals = await tx
+      .select({ metadata: billingUsageLedger.metadata })
+      .from(billingUsageLedger)
+      .where(
+        and(
+          eq(billingUsageLedger.teamId, input.teamId),
+          eq(billingUsageLedger.kind, 'reversal'),
+          sql`${billingUsageLedger.metadata}->>'order_id' = ${input.orderId}`,
+        ),
+      );
+    const alreadyReversed = priorReversals.reduce((sum, row) => {
+      const cents = row.metadata.cents;
+      return sum + (typeof cents === 'number' && cents > 0 ? cents : 0);
+    }, 0);
+    const remaining = Math.max(0, originalCents - alreadyReversed);
+    const requested = input.cents > 0 ? input.cents : remaining;
+    const debitCents = Math.min(remaining, requested);
+    if (debitCents <= 0) {
+      return { duplicate: true, reversed: false, shortfallCents: 0 };
+    }
+    const billing = billingScope({
+      db: tx as unknown as Db,
+      teamId: input.teamId,
+      userId: BILLING_SYSTEM_USER_ID,
+    });
+    const result = await billing.debitWallet({
+      operationId: `polar_refund:${input.refundKey}`,
+      cents: debitCents,
+      source: 'polar_refund',
+      freezeOnShortfall: true,
+      metadata: { order_id: input.orderId, cents: debitCents },
+    });
+    return {
+      duplicate: result.duplicate,
+      reversed: !result.duplicate,
+      shortfallCents: result.shortfallCents,
+    };
   });
-  const result = await billing.debitWallet({
-    operationId: `polar_refund:${input.refundKey}`,
-    cents: debitCents,
-    source: 'polar_refund',
-    freezeOnShortfall: true,
-    metadata: { order_id: input.orderId, cents: debitCents },
-  });
-  return {
-    duplicate: result.duplicate,
-    reversed: !result.duplicate,
-    shortfallCents: result.shortfallCents,
-  };
 }
 
 export async function settleTeamMeter(input: {
@@ -289,7 +298,8 @@ export async function settleTeamMeter(input: {
     reservedChargeCents: input.customerChargeCents,
   });
   if (!reserved.ok) return reserved;
-  await billing.settle({
+  if (reserved.alreadySettled) return { ok: true, duplicate: true };
+  const settled = await billing.settle({
     operationId: input.operationId,
     meterId: input.meterId,
     nativeUnits: input.nativeUnits,
@@ -299,7 +309,7 @@ export async function settleTeamMeter(input: {
     ...(input.source ? { source: input.source } : {}),
     ...(input.billable !== undefined ? { billable: input.billable } : {}),
   });
-  return { ok: true, duplicate: false };
+  return { ok: true, duplicate: settled.duplicate };
 }
 
 export async function meterAcceptedSources(input: {
@@ -558,35 +568,53 @@ export async function accrueTeamMemberDays(input: {
   if (planId === 'free' || additionalMemberCents === null) {
     return { extraMembers: 0, chargeCents: 0 };
   }
-  const extraMembers = Math.max(0, members.length - included);
-  if (extraMembers === 0) {
+  const billableRows = await input.db
+    .select({ userId: billingMemberDayLedger.userId })
+    .from(billingMemberDayLedger)
+    .where(
+      and(
+        eq(billingMemberDayLedger.teamId, input.teamId),
+        eq(billingMemberDayLedger.day, day),
+        eq(billingMemberDayLedger.billable, true),
+      ),
+    )
+    .orderBy(asc(billingMemberDayLedger.userId));
+  const extraRows = billableRows.slice(included);
+  if (extraRows.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
   }
-  const previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days');
+  let previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days');
   const daysInMonth = daysInUtcMonth();
-  const chargeCents =
-    memberDaysChargeCents({
-      extraMemberDays: previousNative + extraMembers,
-      centsPerMemberMonth: additionalMemberCents,
-      daysInMonth,
-    }) -
-    memberDaysChargeCents({
-      extraMemberDays: previousNative,
-      centsPerMemberMonth: additionalMemberCents,
-      daysInMonth,
+  let chargeCents = 0;
+  for (const extra of extraRows) {
+    const nextChargeCents =
+      memberDaysChargeCents({
+        extraMemberDays: previousNative + 1,
+        centsPerMemberMonth: additionalMemberCents,
+        daysInMonth,
+      }) -
+      memberDaysChargeCents({
+        extraMemberDays: previousNative,
+        centsPerMemberMonth: additionalMemberCents,
+        daysInMonth,
+      });
+    const result = await settleTeamMeter({
+      db: input.db,
+      teamId: input.teamId,
+      operationId: `member_days:${input.teamId}:${day}:${extra.userId}`,
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: nextChargeCents,
+      operationClass: 'member_day',
+      source: 'janitor',
+      billable: true,
     });
-  await settleTeamMeter({
-    db: input.db,
-    teamId: input.teamId,
-    operationId: `member_days:${input.teamId}:${day}`,
-    meterId: 'member_days',
-    nativeUnits: extraMembers,
-    customerChargeCents: chargeCents,
-    operationClass: 'member_day',
-    source: 'janitor',
-    billable: true,
-  });
-  return { extraMembers, chargeCents };
+    if (result.ok && !result.duplicate) {
+      previousNative += 1;
+      chargeCents += nextChargeCents;
+    }
+  }
+  return { extraMembers: extraRows.length, chargeCents };
 }
 
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {

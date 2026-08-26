@@ -20,6 +20,16 @@ describe('billing charge split', () => {
     );
   });
 
+  it('keeps extra member-days on the wallet instead of the included-usage discount', () => {
+    expect(
+      splitDiscountAndWallet({
+        chargeCents: 80,
+        includedDiscountRemainingCents: 60,
+        meterId: 'member_days',
+      }),
+    ).toEqual({ discountCents: 0, walletCents: 80 });
+  });
+
   it('keeps the PAYG Free floor off the wallet', () => {
     expect(
       paygOverageCustomerChargeCents({
@@ -200,5 +210,21 @@ describe('costBearingPausedFromAccount', () => {
         freeRemaining,
       }),
     ).toBe(false);
+  });
+
+  it('treats a paid spend cap of 0 as a hard stop', () => {
+    expect(
+      costBearingPausedFromAccount({
+        planId: 'team',
+        billingState: 'team_active',
+        shadowBilling: false,
+        spendCapCents: 0,
+        meteredSpendCents: 0,
+        walletBalanceCents: 5_000,
+        reservedBalanceCents: 0,
+        includedDiscountRemainingCents: 6_000,
+        freeRemaining,
+      }),
+    ).toBe(true);
   });
 });

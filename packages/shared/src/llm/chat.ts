@@ -76,6 +76,8 @@ export interface ChatStructuredResult<TSchema extends z.ZodType> {
   object: z.infer<TSchema>;
   /** Identifier of the model that produced the response — persisted for audits. */
   model: string;
+  /** OpenRouter USD from this call when the provider reported `usage.cost`. */
+  openRouterUsd?: number;
 }
 
 type StreamFinishEvent = Parameters<StreamTextOnFinishCallback<ToolSet>>[0];
@@ -474,7 +476,8 @@ export async function chatStructured<TSchema extends z.ZodType>(
       try {
         const value = await runModel(modelId);
         const finish = finishEvent();
-        return finish ? { value, finish } : { value };
+        const titled = { ...value, openRouterUsd: accumulatedUsd };
+        return finish ? { value: titled, finish } : { value: titled };
       } catch (err) {
         const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
         if (deps.model || fallbackModelId === modelId || !shouldFallbackToAlternateModel(err)) {
@@ -483,7 +486,8 @@ export async function chatStructured<TSchema extends z.ZodType>(
         try {
           const value = await runModel(fallbackModelId);
           const finish = finishEvent();
-          return finish ? { value, finish } : { value };
+          const titled = { ...value, openRouterUsd: accumulatedUsd };
+          return finish ? { value: titled, finish } : { value: titled };
         } catch (fallbackErr: unknown) {
           throw new AggregateError(
             [err, fallbackErr],

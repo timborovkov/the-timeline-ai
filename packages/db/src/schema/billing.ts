@@ -103,6 +103,11 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   includedDiscountRemainingCents: integer('included_discount_remaining_cents').notNull().default(0),
   periodStartedAt: timestamp('period_started_at', { withTimezone: true }),
   periodEndsAt: timestamp('period_ends_at', { withTimezone: true }),
+  /**
+   * Polar subscription `modified_at` last applied to this row. Wallet, spend-cap,
+   * and shadow writes bump `updated_at` and must not hide newer Polar events.
+   */
+  polarEventModifiedAt: timestamp('polar_event_modified_at', { withTimezone: true }),
   shadowBilling: boolean('shadow_billing').notNull().default(true),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

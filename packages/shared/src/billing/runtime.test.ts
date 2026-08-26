@@ -178,6 +178,44 @@ describe('billing runtime', () => {
     expect(dash.planPreview.recommended).toBe('payg');
   });
 
+  it('accrues a member added after the first daily settlement', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
+        ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
+        ('41111111-2222-4333-8444-555555555555', 'm4@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '41111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const first = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
+    expect(first.extraMembers).toBe(1);
+    expect(first.chargeCents).toBeGreaterThan(0);
+    await pg.exec(`
+      INSERT INTO users (id, email)
+      VALUES ('51111111-2222-4333-8444-555555555555', 'm5@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '51111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const second = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
+    expect(second.extraMembers).toBe(2);
+    expect(second.chargeCents).toBeGreaterThan(0);
+    const third = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
+    expect(third.extraMembers).toBe(2);
+    expect(third.chargeCents).toBe(0);
+  });
+
   it('skips AI metering when the caller already reserved the meter', async () => {
     const value = await runWithBillingContext(
       {

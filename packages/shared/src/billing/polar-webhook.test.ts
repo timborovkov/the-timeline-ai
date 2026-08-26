@@ -348,6 +348,62 @@ describe('handlePolarWebhookEvent', () => {
     expect((await billing.getAccount()).walletBalanceCents).toBe(0);
   });
 
+  it('does not double-debit concurrent refund.created and order.refunded', async () => {
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_race',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(1000);
+    await Promise.all([
+      handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: PRODUCTS,
+        payload: {
+          type: 'refund.created',
+          data: {
+            id: 'ref_race',
+            order_id: 'ord_race',
+            amount: 1000,
+            status: 'succeeded',
+            customer: { id: 'cus_1', external_id: TEAM_ID },
+          },
+        },
+      }),
+      handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: PRODUCTS,
+        payload: {
+          type: 'order.refunded',
+          data: {
+            id: 'ord_race',
+            product_id: 'prod_topup',
+            amount: 1000,
+            customer: { id: 'cus_1', external_id: TEAM_ID },
+          },
+        },
+      }),
+    ]);
+    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+  });
+
   it('applies an out-of-order top-up refund when the paid event arrives later', async () => {
     await handlePolarWebhookEvent({
       db,
@@ -394,6 +450,7 @@ describe('handlePolarWebhookEvent', () => {
         existing: {
           polarSubscriptionId: 'sub_new',
           periodStartedAt: new Date('2026-08-01T00:00:00Z'),
+          polarEventModifiedAt: new Date('2026-08-20T00:00:00Z'),
           updatedAt: new Date('2026-08-20T00:00:00Z'),
           planId: 'business',
           billingState: 'business_active',
@@ -403,14 +460,33 @@ describe('handlePolarWebhookEvent', () => {
         incomingModifiedAt: new Date('2026-08-21T00:00:00Z'),
       }),
     ).toBe(false);
+  });
+
+  it('compares Polar events against the provider clock, not local updatedAt', () => {
     expect(
       shouldApplyPaidSubscriptionUpdate({
         existing: {
           polarSubscriptionId: 'sub_1',
           periodStartedAt: new Date('2026-08-01T00:00:00Z'),
+          polarEventModifiedAt: new Date('2026-07-01T00:00:00Z'),
           updatedAt: new Date('2026-08-20T00:00:00Z'),
-          planId: 'free',
-          billingState: 'restricted',
+          planId: 'payg',
+          billingState: 'payg_active',
+        } as never,
+        incomingSubscriptionId: 'sub_1',
+        incomingPeriodStartedAt: new Date('2026-08-01T00:00:00Z'),
+        incomingModifiedAt: new Date('2026-08-01T00:00:00Z'),
+      }),
+    ).toBe(true);
+    expect(
+      shouldApplyPaidSubscriptionUpdate({
+        existing: {
+          polarSubscriptionId: 'sub_1',
+          periodStartedAt: new Date('2026-08-01T00:00:00Z'),
+          polarEventModifiedAt: new Date('2026-08-20T00:00:00Z'),
+          updatedAt: new Date('2026-07-01T00:00:00Z'),
+          planId: 'payg',
+          billingState: 'payg_active',
         } as never,
         incomingSubscriptionId: 'sub_1',
         incomingPeriodStartedAt: new Date('2026-08-01T00:00:00Z'),

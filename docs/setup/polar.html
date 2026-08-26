@@ -67,8 +67,9 @@ BILLING_CHARGES_ENABLED=false
       </ul>
       <p>
         Extra active members accrue as <code>member_days</code> on the prepaid wallet ledger (€2 per
-        member-month). Daily janitor charges use a cumulative monthly cent delta so rounding still
-        totals €2. That meter is not ingested to Polar and is not a Polar invoice line.
+        member-month) and do not consume Team/Business included-usage discount. Daily janitor charges
+        settle each extra member once per day and use a cumulative monthly cent delta so rounding
+        still totals €2. That meter is not ingested to Polar and is not a Polar invoice line.
       </p>
       <p>
         Agent turns, concurrent Recall bots, custom MCP servers, documents, storage, indexed chunks,
@@ -77,7 +78,9 @@ BILLING_CHARGES_ENABLED=false
         those ceilings in a closed Infrastructure limits disclosure rather than the default billed
         view. Webhook and search bursts stay on Redis token buckets; unique ingest volume is
         <code>accepted_sources</code>. A person may claim one Free grant after email verification;
-        extra owned workspaces are restricted until a payment method is added.
+        failed claims retry on the next signed-in load. Extra owned workspaces are restricted until
+        a payment method is added. Unverified owners are not granted Free by the backfill
+        migration.
       </p>
       <p>
         Background workers attach a billing context so OpenRouter wrappers settle the
@@ -91,9 +94,13 @@ BILLING_CHARGES_ENABLED=false
         <code>whsec_</code> signing. Subscribe at least to subscription, order, and refund events
         (<code>order.paid</code>, <code>order.refunded</code>, <code>refund.created</code>,
         <code>refund.updated</code>). Keep the endpoint disabled until the URL is publicly reachable
-        (local tunnel or deploy). Paid-plan activation writes the catalog default spend cap
-        (€25/€100/€500) when the workspace is still on Free. Refunds of the €10 top-up debit the
-        prepaid wallet (and freeze the workspace if that credit was already spent). Refunds that
+        (local tunnel or deploy). Webhook signatures require a timestamp within five minutes.
+        Subscription events compare Polar <code>modified_at</code> to
+        <code>polar_event_modified_at</code>, not local <code>updated_at</code>. Paid-plan activation
+        writes the catalog default spend cap (€25/€100/€500) when the workspace is still on Free. A
+        paid spend cap of €0 is a hard stop. Refunds of the €10 top-up debit the prepaid wallet,
+        serialize concurrent <code>refund.created</code> / <code>order.refunded</code> totals, and
+        freeze the workspace if that credit was already spent. Refunds that
         arrive before <code>order.paid</code> are stored and applied when the top-up credits. Local
         usage settlement is independent of Polar ingest: prepaid wallet and included discount
         already collect locally, so those units are not sent to Polar meters. Remaining Polar ingest
@@ -108,7 +115,8 @@ BILLING_CHARGES_ENABLED=false
         <li>
           Team settings: <code>/app/team?section=billing</code> (owner/admin) — plan, €10 top-up on
           wallet-backed plans, auto-reload Polar checkout email (skipped unless remaining spend-cap
-          headroom covers the full €10 product), cheapest-plan preview, spend cap. Selecting another
+          headroom covers the full €10 product, including a €0 spend cap), cheapest-plan preview,
+          spend cap. Selecting another
           paid plan updates the existing Polar subscription (or the customer portal) instead of
           opening a second checkout. Submitted Polar discount codes must match
           <code>POLAR_DISCOUNT_CODE</code> before <code>POLAR_DISCOUNT_ID</code> is attached.

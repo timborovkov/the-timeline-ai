@@ -53,6 +53,15 @@ export async function sendEmailVerification(input: {
   return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
+export async function retryOwnedTeamFreeGrantsAfterSignIn(input: {
+  db: Db;
+  userId: string;
+  emailVerified: Date | string | null | undefined;
+}): Promise<void> {
+  if (!input.emailVerified) return;
+  await claimOwnedTeamFreeGrantsForVerifiedUser({ db: input.db, userId: input.userId });
+}
+
 export async function verifyEmailToken(input: {
   db: Db;
   email: string;

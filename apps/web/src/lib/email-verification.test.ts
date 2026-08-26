@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { claimOwnedTeamFreeGrantsForVerifiedUser } from '@timeline/shared/billing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { verifyEmailToken } from '@/lib/email-verification';
+import { verifyEmailToken, retryOwnedTeamFreeGrantsAfterSignIn } from '@/lib/email-verification';
 
 vi.mock('@timeline/shared/billing', () => ({
   claimOwnedTeamFreeGrantsForVerifiedUser: vi.fn().mockResolvedValue(undefined),
@@ -127,6 +127,27 @@ describe('verifyEmailToken', () => {
         now,
       }),
     ).resolves.toBe('invalid');
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
+  });
+
+  it('retries Free-grant claims on signed-in load after verification', async () => {
+    await retryOwnedTeamFreeGrantsAfterSignIn({
+      db: {} as never,
+      userId: 'user-1',
+      emailVerified: new Date('2026-08-26T00:00:00.000Z'),
+    });
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).toHaveBeenCalledWith({
+      db: {},
+      userId: 'user-1',
+    });
+  });
+
+  it('skips grant retry when the signed-in email is unverified', async () => {
+    await retryOwnedTeamFreeGrantsAfterSignIn({
+      db: {} as never,
+      userId: 'user-1',
+      emailVerified: null,
+    });
     expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
   });
 });

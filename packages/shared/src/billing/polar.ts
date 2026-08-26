@@ -142,12 +142,15 @@ export function createPolarBillingProvider(options?: {
 
 /**
  * Verify Polar webhook signatures (Standard Webhooks / whsec_ prefix).
- * Returns false on any mismatch — fail closed.
+ * Rejects missing headers, malformed timestamps, and timestamps outside a
+ * 5-minute tolerance (replay / clock-skew), then fail-closes on HMAC mismatch.
  */
 export function verifyPolarWebhookSignature(input: {
   body: string;
   headers: Headers | Record<string, string | null | undefined>;
   secret: string;
+  now?: Date;
+  toleranceSec?: number;
 }): boolean {
   const get = (name: string): string | null => {
     if (input.headers instanceof Headers) return input.headers.get(name);
@@ -158,6 +161,12 @@ export function verifyPolarWebhookSignature(input: {
   const timestamp = get('webhook-timestamp') ?? get('svix-timestamp');
   const signatureHeader = get('webhook-signature') ?? get('svix-signature');
   if (!webhookId || !timestamp || !signatureHeader) return false;
+
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return false;
+  const nowSec = (input.now ?? new Date()).getTime() / 1000;
+  const tolerance = input.toleranceSec ?? 5 * 60;
+  if (Math.abs(nowSec - ts) > tolerance) return false;
 
   const secret = input.secret.startsWith('whsec_')
     ? Buffer.from(input.secret.slice('whsec_'.length), 'base64')

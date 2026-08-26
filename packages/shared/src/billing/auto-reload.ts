@@ -64,10 +64,8 @@ export async function maybeTriggerWalletAutoReload(input: {
   if (amount !== PREPAID_TOPUP_CENTS) {
     amount = PREPAID_TOPUP_CENTS;
   }
-  if (account.spendCapCents > 0) {
-    const headroom = Math.max(0, account.spendCapCents - input.meteredSpendCents);
-    if (headroom < PREPAID_TOPUP_CENTS) return { triggered: false, reason: 'spend_cap' };
-  }
+  const headroom = Math.max(0, account.spendCapCents - input.meteredSpendCents);
+  if (headroom < PREPAID_TOPUP_CENTS) return { triggered: false, reason: 'spend_cap' };
   if (amount <= 0) return { triggered: false, reason: 'spend_cap' };
 
   const productId = polarTopUpProductId();

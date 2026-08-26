@@ -35,7 +35,7 @@ import {
   pendingDiscountReservedCents,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
-  walletReservedCentsFromMetadata,
+  walletLockCentsFromMetadata,
 } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { cheapestPlanPreview } from '#src/billing/preview.js';
@@ -537,25 +537,28 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const { walletCents, discountCents } = splitDiscountAndWallet({
           chargeCents: billableChargeCents,
           includedDiscountRemainingCents: remainingDiscount,
+          meterId: input.meterId,
         });
+        const blocking =
+          !accountUsesShadowBilling(locked) &&
+          locked.billingState !== 'enterprise_active' &&
+          billableChargeCents > 0;
+        const walletLockCents = blocking && walletCents > 0 ? walletCents : 0;
         const reservationMetadata = {
           ...(input.metadata ?? {}),
           list_charge_cents: input.reservedChargeCents,
           billable_charge_cents: billableChargeCents,
           discount_reserved_cents: discountCents,
           wallet_reserved_cents: walletCents,
+          wallet_lock_cents: walletLockCents,
         };
 
-        const blocking =
-          !accountUsesShadowBilling(locked) &&
-          locked.billingState !== 'enterprise_active' &&
-          billableChargeCents > 0;
         if (blocking) {
           const available = locked.walletBalanceCents - locked.reservedBalanceCents;
           if (walletCents > available) {
             return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
           }
-          if (locked.spendCapCents > 0) {
+          if (locked.planId !== 'free') {
             const pendingBillable = pending.reduce(
               (sum, row) => sum + pendingBillableChargeCents(row.metadata, row.reservedChargeCents),
               0,
@@ -585,7 +588,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .returning();
 
         const lockWallet = async (cents: number) => {
-          if (!blocking || cents <= 0) return;
+          if (cents <= 0) return;
           await tx
             .update(teamBillingAccounts)
             .set({
@@ -596,7 +599,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         };
 
         if (created) {
-          await lockWallet(walletCents);
+          await lockWallet(walletLockCents);
           return { kind: 'created' as const, row: created };
         }
 
@@ -620,11 +623,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
         }
 
         if (existing.state === 'reserved') {
-          const oldLock = walletReservedCentsFromMetadata(
-            existing.metadata,
-            existing.reservedChargeCents,
-          );
-          if (!accountUsesShadowBilling(locked) && oldLock > 0) {
+          const oldLock = walletLockCentsFromMetadata(existing.metadata);
+          if (oldLock > 0) {
             await tx
               .update(teamBillingAccounts)
               .set({
@@ -667,7 +667,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
           throw new Error('Failed to replace finalized reservation');
         }
-        await lockWallet(walletCents);
+        await lockWallet(walletLockCents);
         return { kind: 'created' as const, row: reactivated };
       });
 
@@ -757,6 +757,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const { discountCents, walletCents } = splitDiscountAndWallet({
           chargeCents: actualChargeCents,
           includedDiscountRemainingCents: account.includedDiscountRemainingCents,
+          meterId: input.meterId,
         });
 
         const polarUnits = paygOverageNativeUnits({
@@ -859,10 +860,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
 
         const walletLockCents =
           reservation[0]?.state === 'reserved'
-            ? walletReservedCentsFromMetadata(
-                reservation[0].metadata,
-                reservation[0].reservedChargeCents,
-              )
+            ? walletLockCentsFromMetadata(reservation[0].metadata)
             : 0;
         if (reservation[0]?.state === 'reserved') {
           await tx
@@ -876,16 +874,22 @@ export function createBillingScope(deps: BillingScopeDeps) {
             );
         }
 
-        if (
-          !accountUsesShadowBilling(account) &&
-          (walletLockCents > 0 || walletCents > 0 || discountCents > 0)
-        ) {
+        const applyCharges = !accountUsesShadowBilling(account);
+        if (walletLockCents > 0 || (applyCharges && (walletCents > 0 || discountCents > 0))) {
           await tx
             .update(teamBillingAccounts)
             .set({
-              reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
-              walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${walletCents})`,
-              includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
+              ...(walletLockCents > 0
+                ? {
+                    reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
+                  }
+                : {}),
+              ...(applyCharges && (walletCents > 0 || discountCents > 0)
+                ? {
+                    walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${walletCents})`,
+                    includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
+                  }
+                : {}),
               updatedAt: new Date(),
             })
             .where(eq(teamBillingAccounts.teamId, teamId));
@@ -1018,11 +1022,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .limit(1)
           .for('update');
         if (!account) throw new Error('Missing billing account');
-        const lockCents = walletReservedCentsFromMetadata(
-          reservation.metadata,
-          reservation.reservedChargeCents,
-        );
-        if (!accountUsesShadowBilling(account) && lockCents > 0) {
+        const lockCents = walletLockCentsFromMetadata(reservation.metadata);
+        if (lockCents > 0) {
           await tx
             .update(teamBillingAccounts)
             .set({

@@ -80,4 +80,15 @@ describe('maybeTriggerWalletAutoReload', () => {
     });
     expect(second).toEqual({ triggered: true });
   });
+
+  it('skips auto-reload when the spend cap is a hard stop at 0', async () => {
+    const result = await maybeTriggerWalletAutoReload({
+      db,
+      teamId: TEAM_ID,
+      account: { ...account, spendCapCents: 0 },
+      meteredSpendCents: 0,
+      provider: createFakeBillingProvider(),
+    });
+    expect(result).toEqual({ triggered: false, reason: 'spend_cap' });
+  });
 });

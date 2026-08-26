@@ -157,35 +157,43 @@ describe('paid plan change', () => {
 });
 
 describe('polar webhook signature', () => {
-  it('accepts a valid standard-webhooks signature', () => {
+  function signedRequest(timestamp: string) {
     const secretRaw = Buffer.from('test-secret');
     const secret = `whsec_${secretRaw.toString('base64')}`;
     const body = '{"type":"order.paid"}';
     const webhookId = 'msg_1';
-    const timestamp = '1710000000';
     const signed = `${webhookId}.${timestamp}.${body}`;
     const signature = createHmac('sha256', secretRaw).update(signed).digest('base64');
+    return {
+      body,
+      secret,
+      headers: {
+        'webhook-id': webhookId,
+        'webhook-timestamp': timestamp,
+        'webhook-signature': `v1,${signature}`,
+      },
+    };
+  }
+
+  it('accepts a valid standard-webhooks signature', () => {
+    const now = new Date('2026-08-26T17:00:00.000Z');
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const request = signedRequest(timestamp);
+    expect(verifyPolarWebhookSignature({ ...request, now })).toBe(true);
     expect(
       verifyPolarWebhookSignature({
-        body,
-        secret,
-        headers: {
-          'webhook-id': webhookId,
-          'webhook-timestamp': timestamp,
-          'webhook-signature': `v1,${signature}`,
-        },
-      }),
-    ).toBe(true);
-    expect(
-      verifyPolarWebhookSignature({
-        body,
-        secret,
-        headers: {
-          'webhook-id': webhookId,
-          'webhook-timestamp': timestamp,
-          'webhook-signature': 'v1,AAAA',
-        },
+        ...request,
+        now,
+        headers: { ...request.headers, 'webhook-signature': 'v1,AAAA' },
       }),
     ).toBe(false);
+  });
+
+  it('rejects stale or far-future webhook timestamps', () => {
+    const now = new Date('2026-08-26T17:00:00.000Z');
+    const stale = String(Math.floor(now.getTime() / 1000) - 10 * 60);
+    const future = String(Math.floor(now.getTime() / 1000) + 10 * 60);
+    expect(verifyPolarWebhookSignature({ ...signedRequest(stale), now })).toBe(false);
+    expect(verifyPolarWebhookSignature({ ...signedRequest(future), now })).toBe(false);
   });
 });

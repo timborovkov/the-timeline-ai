@@ -165,7 +165,8 @@ describe('billing scope', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
-          included_discount_remaining_cents = 50, wallet_balance_cents = 1000
+          included_discount_remaining_cents = 50, wallet_balance_cents = 1000,
+          spend_cap_cents = 10000
       WHERE team_id = '${TEAM_ID}';
     `);
     const reserved = await scope.reserve({
@@ -225,7 +226,8 @@ describe('billing scope', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
-          wallet_balance_cents = 500, included_discount_remaining_cents = 0
+          wallet_balance_cents = 500, included_discount_remaining_cents = 0,
+          spend_cap_cents = 10000
       WHERE team_id = '${TEAM_ID}';
     `);
     const reserved = await scope.reserve({
@@ -274,6 +276,107 @@ describe('billing scope', () => {
     });
     expect(second.ok).toBe(false);
     if (!second.ok) expect(second.code).toBe('spend_cap_reached');
+  });
+
+  it('rejects billable spend when the paid spend cap is 0', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 5000, included_discount_remaining_cents = 0,
+          spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-zero-cap',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(reserved.ok).toBe(false);
+    if (!reserved.ok) expect(reserved.code).toBe('spend_cap_reached');
+  });
+
+  it('does not spend included usage discount on extra member-days', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 5000, included_discount_remaining_cents = 6000,
+          spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-member-days',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 7,
+    });
+    expect(settled.ok).toBe(true);
+    const account = await scope.getAccount();
+    expect(account.includedDiscountRemainingCents).toBe(6000);
+    expect(account.walletBalanceCents).toBeLessThan(5000);
+  });
+
+  it('releases wallet locks from reservation provenance after the shadow flag flips', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 500, included_discount_remaining_cents = 0,
+          spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-lock-live',
+      meterId: 'ai',
+      reservedNativeUnits: 80,
+      reservedChargeCents: 80,
+    });
+    expect(reserved.ok).toBe(true);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(80);
+    await pg.exec(`
+      UPDATE team_billing_accounts SET shadow_billing = true WHERE team_id = '${TEAM_ID}';
+    `);
+    await scope.release('op-lock-live');
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = true, reserved_balance_cents = 0, wallet_balance_cents = 500
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const shadowReserved = await scope.reserve({
+      operationId: 'op-lock-shadow',
+      meterId: 'ai',
+      reservedNativeUnits: 80,
+      reservedChargeCents: 80,
+    });
+    expect(shadowReserved.ok).toBe(true);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
+    await pg.exec(`
+      UPDATE team_billing_accounts SET shadow_billing = false WHERE team_id = '${TEAM_ID}';
+    `);
+    await scope.release('op-lock-shadow');
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
   });
 
   it('blocks reservation when billing state is past_due', async () => {
@@ -395,7 +498,8 @@ describe('billing scope', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
-          included_discount_remaining_cents = 1, wallet_balance_cents = 0
+          included_discount_remaining_cents = 1, wallet_balance_cents = 0,
+          spend_cap_cents = 10000
       WHERE team_id = '${TEAM_ID}';
     `);
     const first = await scope.reserve({

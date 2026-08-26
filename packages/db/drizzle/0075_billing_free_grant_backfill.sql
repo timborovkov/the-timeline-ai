@@ -29,8 +29,10 @@ FROM (
     ) AS "rn"
   FROM "team_members"
   INNER JOIN "teams" ON "teams"."id" = "team_members"."team_id"
+  INNER JOIN "users" ON "users"."id" = "team_members"."user_id"
   WHERE "team_members"."role" = 'owner'
     AND "team_members"."removed_at" IS NULL
+    AND "users"."emailVerified" IS NOT NULL
 ) AS "ranked"
 WHERE "ranked"."rn" = 1
   AND NOT EXISTS (
