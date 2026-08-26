@@ -453,6 +453,12 @@
       "development": "./src/time/index.ts",
       "import": "./dist/time/index.js",
       "default": "./dist/time/index.js"
+    },
+    "./objects/metadata-schemas": {
+      "types": "./src/objects/metadata-schemas.ts",
+      "development": "./src/objects/metadata-schemas.ts",
+      "import": "./dist/objects/metadata-schemas.js",
+      "default": "./dist/objects/metadata-schemas.js"
     }
   },
   "main": "./dist/index.js",
