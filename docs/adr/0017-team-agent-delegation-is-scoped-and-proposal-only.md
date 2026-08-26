@@ -60,7 +60,7 @@ returns the captured event ID and citation for the current answer.
 Timeline propagates `x-timeline-agent-depth` through its MCP client. The initial
 agent and one nested Timeline-agent delegation are allowed; deeper direct
 recursion fails with `delegation_limit`. Request cancellation propagates through
-the agent and custom MCP calls, every turn has a 90-second deadline, and a
+the agent and custom MCP calls, every turn has a 180-second deadline, and a
 separate per-key bucket limits agent calls to 10 per minute.
 
 ## Consequences
