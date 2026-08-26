@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
+import { claimOwnedTeamFreeGrantsForVerifiedUser } from '@timeline/shared/billing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { claimOwnedTeamFreeGrantsForVerifiedUser } from '@timeline/shared/billing';
 import { verifyEmailToken } from '@/lib/email-verification';
 
 vi.mock('@timeline/shared/billing', () => ({
