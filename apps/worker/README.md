@@ -15,7 +15,7 @@ short. It runs the shared tool-using agent once per durable turn, applies the
 external profile through a no-tool final-answer pass, persists the answer before
 external delivery, and retries delivery from cache. Each job carries the
 turn UUID plus its team/user scope, and the worker claims it only through that
-`withTeam` conversation scope. Its 90-second deadline includes progress
+`withTeam` conversation scope. Its 180-second deadline includes progress
 startup, history loading, and model execution; retained failed queue jobs can
 be replaced for cached or still-queued recovery without repeating a paid
 answer. Set `TELEGRAM_BOT_TOKEN` on the worker for Telegram typing and replies;

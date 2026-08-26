@@ -163,7 +163,7 @@ app_mention
         Direct turns react with <code>:thinking_face:</code> while the
         <code>conversation-agent</code> worker runs. Notes and file captures react with
         <code>:eyes:</code>. The webhook persists and enqueues the turn before returning; the worker
-        has a 90-second deadline and posts the final answer as a normal DM. Profile refreshes and
+        has a 180-second deadline and posts the final answer as a normal DM. Profile refreshes and
         reaction delivery do not delay the webhook response after that durable enqueue. Installed
         workspace tokens remain encrypted in Postgres and are decrypted only when the worker
         reconstructs the delivery adapter. Slack AI Assistant status is optional and is not required
