@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { toast } from 'sonner';
 
 import { UndoToastButton } from '@/components/ui/undo-toast-button';
+import { recoverFromStaleServerAction } from '@/lib/stale-server-action';
 
 export const ACTION_TOAST_LOADING_DELAY_MS = 150;
 export const ACTION_TOAST_SUCCESS_MS = 2_000;
@@ -103,7 +104,8 @@ export async function notifyAction<T extends ActionResult>(
       result,
     );
     return result;
-  } catch {
+  } catch (error) {
+    if (recoverFromStaleServerAction(error)) return { error: options.error };
     finish(true, options.error);
     return { error: options.error };
   } finally {
