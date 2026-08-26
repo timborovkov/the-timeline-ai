@@ -22,7 +22,11 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
+import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
+import {
+  flushDeferredAcceptedSourceEnrichment,
+  writeIntegrationEvents,
+} from '#src/integrations/event-writer.js';
 import { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob } from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { withTeam } from '#src/team-scope.js';
@@ -1525,6 +1529,59 @@ describe('writeIntegrationEvents visibility', () => {
       signal_class: 'pulse',
       event_class: 'artifact',
     });
+  });
+
+  it('defers extract/embed when accepted-source billing admission fails, then flushes later', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-deferred',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:deferred:1',
+          provider: 'github',
+          externalObjectId: 'repo#deferred',
+          eventType: 'issue.opened',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Deferred enrichment until billing resumes',
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+    const [deferred] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(deferred?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never);
+    expect(flushed).toBe(1);
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+    expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId: eventId });
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
 
   it('falls back to team visibility for private integration events without a connector owner', async () => {

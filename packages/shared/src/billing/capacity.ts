@@ -8,6 +8,7 @@ import {
   teamBillingAccounts,
   teamInvites,
   teamMembers,
+  users,
   type Db,
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
@@ -415,7 +416,30 @@ export async function applyOwnedTeamFreeGrant(input: {
   db: Pick<Db, 'select' | 'insert' | 'update'>;
   teamId: string;
   userId: string;
-}): Promise<{ ok: true } | { ok: false; reason: 'free_grant_elsewhere' }> {
+}): Promise<{ ok: true } | { ok: false; reason: 'free_grant_elsewhere' | 'email_unverified' }> {
+  const [owner] = await input.db
+    .select({ emailVerified: users.emailVerified })
+    .from(users)
+    .where(eq(users.id, input.userId))
+    .limit(1);
+  if (!owner?.emailVerified) {
+    await input.db
+      .update(teamBillingAccounts)
+      .set({
+        billingState: 'restricted',
+        spendCapCents: 0,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(teamBillingAccounts.teamId, input.teamId),
+          eq(teamBillingAccounts.planId, 'free'),
+          sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
+        ),
+      );
+    await insertRestrictedFreeBillingAccount({ db: input.db, teamId: input.teamId });
+    return { ok: false, reason: 'email_unverified' };
+  }
   const billing = createBillingScope({
     // Transaction clients are not assignable to Db (`$client` is pool-only).
     db: input.db as unknown as Db,
@@ -457,4 +481,22 @@ export async function applyOwnedTeamFreeGrant(input: {
     );
   await insertRestrictedFreeBillingAccount({ db: input.db, teamId: input.teamId });
   return { ok: false, reason: 'free_grant_elsewhere' };
+}
+
+/** After credentials email verification, claim Free on owned restricted workspaces. */
+export async function claimOwnedTeamFreeGrantsForVerifiedUser(input: {
+  db: Db;
+  userId: string;
+}): Promise<void> {
+  const owned = await input.db
+    .select({ teamId: teamMembers.teamId })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.userId, input.userId), eq(teamMembers.role, 'owner')));
+  for (const row of owned) {
+    await applyOwnedTeamFreeGrant({
+      db: input.db,
+      teamId: row.teamId,
+      userId: input.userId,
+    });
+  }
 }

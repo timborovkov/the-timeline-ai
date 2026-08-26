@@ -1,8 +1,17 @@
 import { createHash } from 'node:crypto';
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { claimOwnedTeamFreeGrantsForVerifiedUser } from '@timeline/shared/billing';
 import { verifyEmailToken } from '@/lib/email-verification';
+
+vi.mock('@timeline/shared/billing', () => ({
+  claimOwnedTeamFreeGrantsForVerifiedUser: vi.fn().mockResolvedValue(undefined),
+}));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 function digest(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -91,6 +100,10 @@ describe('verifyEmailToken', () => {
 
     expect(updates).toEqual([expect.objectContaining({ emailVerified: now, updatedAt: now })]);
     expect(deletes).toHaveLength(1);
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).toHaveBeenCalledWith({
+      db,
+      userId: 'user-1',
+    });
   });
 
   it('does not report success when the token exists but no user row is updated', async () => {
@@ -114,5 +127,6 @@ describe('verifyEmailToken', () => {
         now,
       }),
     ).resolves.toBe('invalid');
+    expect(claimOwnedTeamFreeGrantsForVerifiedUser).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { type Db, users, verificationTokens } from '@timeline/db';
+import { claimOwnedTeamFreeGrantsForVerifiedUser } from '@timeline/shared/billing';
 import { sendMessage } from '@timeline/shared/messaging';
 import { and, eq, lt, sql } from 'drizzle-orm';
 
@@ -84,7 +85,14 @@ export async function verifyEmailToken(input: {
     await tx
       .delete(verificationTokens)
       .where(and(eq(verificationTokens.identifier, email), eq(verificationTokens.token, digest)));
-    return updatedUsers.length > 0;
+    return updatedUsers;
   });
-  return updated ? 'verified' : 'invalid';
+  const userId = updated[0]?.id;
+  if (!userId) return 'invalid';
+  try {
+    await claimOwnedTeamFreeGrantsForVerifiedUser({ db: input.db, userId });
+  } catch {
+    // Email is already verified; grant claim retries on the next signed-in load.
+  }
+  return 'verified';
 }

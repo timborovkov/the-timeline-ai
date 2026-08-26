@@ -107,16 +107,6 @@ export function freeAllowanceRemaining(meters: {
   };
 }
 
-function freeAllowanceExhausted(remaining: FreeAllowanceRemaining): boolean {
-  return (
-    remaining.aiChargeCents <= 0 ||
-    remaining.recallMinutes <= 0 ||
-    remaining.emailUnits <= 0 ||
-    remaining.storageGb <= 0 ||
-    remaining.acceptedSources <= 0
-  );
-}
-
 /** True only when every Free native floor is gone — not a single exhausted meter. */
 export function allFreeAllowancesExhausted(remaining: FreeAllowanceRemaining): boolean {
   return (
@@ -188,7 +178,7 @@ export function deriveBillingNudge(input: {
   const manage = input.canManageBilling;
 
   if (input.planId === 'free') {
-    if (freeAllowanceExhausted(input.freeRemaining)) {
+    if (allFreeAllowancesExhausted(input.freeRemaining)) {
       return {
         kind: 'free_exhausted',
         title: 'Free allowance used up',
@@ -359,7 +349,7 @@ export function deriveSidebarBillingSummary(input: {
     ];
     const worst = Math.max(0, ...fractions);
     const progressPercent = Math.min(100, Math.round(worst * 100));
-    const atLimit = freeAllowanceExhausted(input.freeRemaining);
+    const atLimit = allFreeAllowancesExhausted(input.freeRemaining);
     return {
       planId: input.planId,
       planName: plan.name,

@@ -57,8 +57,8 @@ describe('billing catalog', () => {
 
   it('converts OpenRouter USD cost into customer AI charge cents', () => {
     const { providerCostCents, customerChargeCents } = customerAiChargeCentsFromOpenRouterUsd(1);
-    expect(providerCostCents).toBeGreaterThan(0);
-    expect(customerChargeCents).toBeGreaterThanOrEqual(providerCostCents * 3);
+    expect(providerCostCents).toBe(92);
+    expect(customerChargeCents).toBe(368);
     expect(polarEventNameForMeter('ai')).toBe('timeline_ai_eur_cents');
     expect(polarEventNameForMeter('member_days')).toBeNull();
   });

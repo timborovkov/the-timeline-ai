@@ -1,3 +1,4 @@
+import { releaseRecallMeetingMinutes } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
@@ -261,6 +262,9 @@ export async function POST(req: Request): Promise<Response> {
         endedAt: createdAt ? new Date(createdAt) : new Date(),
       });
       if (noShowOutcome === 'retry_scheduled') {
+        await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
+          () => undefined,
+        );
         try {
           const queue = await requireRedisQueue();
           await queue.enqueueMeetingSchedulerTick();
@@ -271,6 +275,10 @@ export async function POST(req: Request): Promise<Response> {
             operation: 'recall_status_enqueue_no_show_retry',
           });
         }
+      } else if (noShowOutcome === 'terminal') {
+        await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
+          () => undefined,
+        );
       }
     } else if (isFailureEvent) {
       await scope.meetings.handleMeetingFailure({
@@ -279,6 +287,9 @@ export async function POST(req: Request): Promise<Response> {
         code: code ?? 'unknown',
         failedAt: createdAt ? new Date(createdAt) : new Date(),
       });
+      await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
+        () => undefined,
+      );
     } else if (shouldEnqueueFinalize) {
       shouldFinalizeCurrentAttempt = await scope.meetings.updateMeetingStatusForBot(
         meeting.id,

@@ -9,6 +9,7 @@ import {
   assertTeamCustomMcpCapacity,
   assertTeamMemberSeatCapacity,
   assertTeamWriteCapacity,
+  claimOwnedTeamFreeGrantsForVerifiedUser,
   getTeamCapacityUsage,
 } from '#src/billing/capacity.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
@@ -28,8 +29,8 @@ beforeEach(async () => {
   await pg.exec(`
     INSERT INTO teams (id, slug, name)
     VALUES ('${TEAM_ID}', 'billing-capacity', 'Billing Capacity');
-    INSERT INTO users (id, email)
-    VALUES ('${USER_ID}', 'owner@example.test');
+    INSERT INTO users (id, email, "emailVerified")
+    VALUES ('${USER_ID}', 'owner@example.test', now());
     INSERT INTO team_members (team_id, user_id, role)
     VALUES ('${TEAM_ID}', '${USER_ID}', 'owner');
   `);
@@ -121,6 +122,36 @@ describe('billing capacity (not Polar meters)', () => {
       reservedChargeCents: 1,
     });
     expect(blocked.ok).toBe(false);
+  });
+
+  it('leaves the workspace restricted until the owner email is verified', async () => {
+    const unverified = '22222222-3333-4444-8555-666666666666';
+    await pg.exec(`
+      INSERT INTO users (id, email)
+      VALUES ('${unverified}', 'unverified@example.test');
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${EXTRA_TEAM_ID}', 'extra-team', 'Extra Team');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${EXTRA_TEAM_ID}', '${unverified}', 'owner');
+    `);
+    const grant = await applyOwnedTeamFreeGrant({
+      db,
+      teamId: EXTRA_TEAM_ID,
+      userId: unverified,
+    });
+    expect(grant).toEqual({ ok: false, reason: 'email_unverified' });
+    const billing = createBillingScope({
+      db,
+      teamId: EXTRA_TEAM_ID,
+      userId: unverified,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await billing.getAccount()).billingState).toBe('restricted');
+    await pg.exec(`
+      UPDATE users SET "emailVerified" = now() WHERE id = '${unverified}';
+    `);
+    await claimOwnedTeamFreeGrantsForVerifiedUser({ db, userId: unverified });
+    expect((await billing.getAccount()).billingState).toBe('free');
   });
 
   it('reports live used/limit for enforced plan stock', async () => {

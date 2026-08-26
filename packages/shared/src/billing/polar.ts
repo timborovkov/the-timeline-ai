@@ -106,6 +106,7 @@ export function createPolarBillingProvider(options?: {
           events: [
             {
               name: event.name,
+              ...(event.id ? { id: event.id } : {}),
               external_customer_id: event.externalCustomerId,
               metadata: { units: event.units, ...(event.metadata ?? {}) },
             },

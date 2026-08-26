@@ -2,6 +2,8 @@ export interface PolarUsageEvent {
   externalCustomerId: string;
   name: string;
   units: number;
+  /** Stable Polar event id so retries do not double-ingest. */
+  id?: string;
   metadata?: Record<string, unknown>;
 }
 

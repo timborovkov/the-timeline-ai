@@ -17,7 +17,7 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
-import { settleRecallMeetingMinutes } from '@timeline/shared/billing';
+import { recallBillableMinutes, settleRecallMeetingMinutes } from '@timeline/shared/billing';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
@@ -708,6 +708,13 @@ export async function processMeetingFinalizeJob(
     return { skipped: 'already_completed', meetingId };
   }
   if (['failed', 'cancelled', 'skipped', 'no_show'].includes(meeting.status)) {
+    const billingScope = withTeam(
+      deps.db,
+      teamId,
+      meeting.createdByUserId ?? '00000000-0000-0000-0000-000000000000',
+      meeting.createdByUserId ? {} : { skipMembershipCheck: true },
+    );
+    await billingScope.billing.release(`recall:${meetingId}`).catch(() => undefined);
     return { skipped: 'terminal', meetingId };
   }
 
@@ -732,18 +739,20 @@ export async function processMeetingFinalizeJob(
           return { retryChunks: finalChunks };
         }
 
-        // Compute minutes used from the freshest chunk set. Use meeting
-        // duration if available, else fall back to last chunk end_ms.
-        let minutes = 0;
-        if (meeting.startedAt && meeting.endedAt) {
-          minutes = Math.max(
-            1,
-            Math.ceil((meeting.endedAt.getTime() - meeting.startedAt.getTime()) / 60000),
-          );
-        } else if (finalChunks.length > 0) {
-          const last = finalChunks[finalChunks.length - 1];
-          if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
-        }
+        // Compute minutes from join stamp (includes joining time), then
+        // startedAt, then last chunk end_ms. Cap at the reserved duration.
+        const metadata = (meeting.metadata ?? {}) as Record<string, unknown>;
+        const lastChunk = finalChunks[finalChunks.length - 1];
+        const minutes = recallBillableMinutes({
+          joinStartedAt: metadata.reserved_recall_started_at,
+          startedAt: meeting.startedAt,
+          endedAt: meeting.endedAt,
+          chunkEndMs: lastChunk?.endMs ?? null,
+          reservedMinutes:
+            typeof metadata.reserved_recall_minutes === 'number'
+              ? metadata.reserved_recall_minutes
+              : null,
+        });
 
         // Patch meeting metadata first, but do NOT flip status yet. Status
         // only moves to 'completed' after the raw_event + backfill succeed so

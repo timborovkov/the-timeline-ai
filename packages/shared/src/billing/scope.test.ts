@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
-import { createBillingScope } from '#src/billing/scope.js';
+import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -451,6 +451,52 @@ describe('billing scope', () => {
     });
     expect(retry.duplicate).toBe(true);
     expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      name: 'timeline_recall_minutes',
+      id: `timeline:${TEAM_ID}:op-polar-1`,
+    });
+  });
+
+  it('claims Polar outbox rows so concurrent ingest sends one event', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          polar_customer_id = 'cus_test', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    provider.ingestUsage = () => Promise.reject(new Error('polar down'));
+    await scope.settle({
+      operationId: 'op-polar-claim',
+      meterId: 'recall_minutes',
+      nativeUnits: 70,
+      customerChargeCents: 210,
+    });
+    const events: { id?: string }[] = [];
+    let inflight = 0;
+    let maxInflight = 0;
+    provider.ingestUsage = async (event) => {
+      inflight += 1;
+      maxInflight = Math.max(maxInflight, inflight);
+      events.push(event);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      inflight -= 1;
+    };
+    await Promise.all([
+      flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID }),
+      flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID }),
+    ]);
+    expect(events).toHaveLength(1);
+    expect(maxInflight).toBe(1);
+    expect(events[0]?.id).toBe(`timeline:${TEAM_ID}:op-polar-claim`);
   });
 
   it('accumulates sub-cent AI charges across settlements', async () => {
@@ -475,5 +521,45 @@ describe('billing scope', () => {
     const dash = await scope.getDashboard();
     expect(dash.meters.ai?.nativeUnits).toBeCloseTo(0.8);
     expect(dash.meters.ai?.customerChargeCents).toBe(1);
+  });
+
+  it('accumulates sub-cent accepted-source charges from locked counters', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    for (let i = 0; i < 20; i += 1) {
+      await scope.settle({
+        operationId: `op-src-${String(i)}`,
+        meterId: 'accepted_sources',
+        nativeUnits: 1,
+        customerChargeCents: 0,
+      });
+    }
+    const dash = await scope.getDashboard();
+    expect(dash.meters.accepted_sources?.nativeUnits).toBe(20);
+    expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
+  });
+
+  it('accumulates sub-cent email charges from locked counters', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    for (let i = 0; i < 4; i += 1) {
+      await scope.settle({
+        operationId: `op-email-${String(i)}`,
+        meterId: 'email_units',
+        nativeUnits: 1,
+        customerChargeCents: 0,
+      });
+    }
+    const dash = await scope.getDashboard();
+    expect(dash.meters.email_units?.nativeUnits).toBe(4);
+    expect(dash.meters.email_units?.customerChargeCents).toBe(1);
   });
 });

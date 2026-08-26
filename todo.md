@@ -554,7 +554,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       storage GB-month + member-day janitor, document write capacity.
       Agent turns, concurrent Recall bots, custom MCP servers, indexed chunks, and active-member
       ceilings are catalog capacity — not extra billed Polar meters. Extra
-      owned workspaces claim at most one person-level Free grant.
+      owned workspaces claim at most one person-level Free grant after the owner
+      email is verified.
 - [x] Prepaid €10 top-up checkout on wallet-backed plans, auto-reload Polar checkout
       email when the wallet is at/below the threshold and remaining spend-cap
       headroom covers the full €10 product, cheapest-plan preview from gross native
@@ -562,7 +563,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       period reset (webhook + janitor; not every Polar retry). Stale Polar
       activations are ignored; canceled paid plans become restricted unless the
       team holds the Free grant. Polar refunds claw back prepaid top-ups; Polar
-      usage ingest retries from a ledger outbox after local settlement.
+      usage ingest retries from a claimed ledger outbox after local settlement.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

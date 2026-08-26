@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   askOperationId,
   meetingReserveMinutesForPlan,
+  recallBillableMinutes,
   recallOperationId,
   reserveAskAi,
   reserveRecallMeetingMinutes,
@@ -110,5 +111,18 @@ describe('billing admission helpers', () => {
     const dash = await billing.getDashboard();
     expect(dash.meters.recall_minutes?.nativeUnits).toBe(12);
     expect(dash.meters.recall_minutes?.customerChargeCents).toBe(36);
+  });
+});
+
+describe('recallBillableMinutes', () => {
+  it('includes joining time from the reservation stamp', () => {
+    expect(
+      recallBillableMinutes({
+        joinStartedAt: '2026-08-26T12:00:00.000Z',
+        startedAt: new Date('2026-08-26T12:05:00.000Z'),
+        endedAt: new Date('2026-08-26T12:20:00.000Z'),
+        reservedMinutes: 120,
+      }),
+    ).toBe(20);
   });
 });

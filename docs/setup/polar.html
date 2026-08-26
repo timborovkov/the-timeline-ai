@@ -76,8 +76,8 @@ BILLING_CHARGES_ENABLED=false
         meters for them. <code>/app/usage</code>, Billing settings, and <code>/pricing</code> keep
         those ceilings in a closed Infrastructure limits disclosure rather than the default billed
         view. Webhook and search bursts stay on Redis token buckets; unique ingest volume is
-        <code>accepted_sources</code>. A person may claim one Free grant; extra owned workspaces are
-        restricted until a payment method is added.
+        <code>accepted_sources</code>. A person may claim one Free grant after email verification;
+        extra owned workspaces are restricted until a payment method is added.
       </p>
       <p>
         Background workers attach a billing context so OpenRouter wrappers settle the
@@ -93,9 +93,11 @@ BILLING_CHARGES_ENABLED=false
         <code>refund.updated</code>). Keep the endpoint disabled until the URL is publicly reachable
         (local tunnel or deploy). Paid-plan activation writes the catalog default spend cap
         (€25/€100/€500) when the workspace is still on Free. Refunds of the €10 top-up debit the
-        prepaid wallet (and freeze the workspace if that credit was already spent). Local usage
-        settlement is independent of Polar ingest: failed ingest is retried from the ledger outbox
-        and does not undo a committed charge.
+        prepaid wallet (and freeze the workspace if that credit was already spent). Refunds that
+        arrive before <code>order.paid</code> are stored and applied when the top-up credits. Local
+        usage settlement is independent of Polar ingest: the ledger outbox claims a row before
+        ingesting, Polar receives a stable event id, and a failed ingest does not undo a committed
+        charge.
       </p>
 
       <h2>Public and app surfaces</h2>

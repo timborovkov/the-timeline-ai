@@ -121,7 +121,59 @@ export async function creditWalletFromPolarOrder(input: {
     cents: input.cents,
     source: 'polar_order',
   });
+  await applyPendingPolarRefundsForOrder({
+    db: input.db,
+    teamId: input.teamId,
+    orderId: input.orderId,
+  });
   return { duplicate: result.duplicate };
+}
+
+async function applyPendingPolarRefundsForOrder(input: {
+  db: Db;
+  teamId: string;
+  orderId: string;
+}): Promise<void> {
+  const pending = await input.db
+    .select({
+      operationId: billingUsageLedger.operationId,
+      metadata: billingUsageLedger.metadata,
+    })
+    .from(billingUsageLedger)
+    .where(
+      and(
+        eq(billingUsageLedger.teamId, input.teamId),
+        eq(billingUsageLedger.kind, 'adjustment'),
+        sql`${billingUsageLedger.metadata}->>'order_id' = ${input.orderId}`,
+        sql`${billingUsageLedger.metadata}->>'pending' = 'true'`,
+      ),
+    );
+  for (const row of pending) {
+    const prefix = 'polar_refund_pending:';
+    const refundKey = row.operationId.startsWith(prefix)
+      ? row.operationId.slice(prefix.length)
+      : row.operationId;
+    const centsRaw = row.metadata.cents;
+    const cents = typeof centsRaw === 'number' && centsRaw > 0 ? centsRaw : 0;
+    await debitWalletFromPolarRefund({
+      db: input.db,
+      teamId: input.teamId,
+      orderId: input.orderId,
+      refundKey,
+      cents,
+    });
+    await input.db
+      .update(billingUsageLedger)
+      .set({
+        metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({ pending: false })}::jsonb`,
+      })
+      .where(
+        and(
+          eq(billingUsageLedger.teamId, input.teamId),
+          eq(billingUsageLedger.operationId, row.operationId),
+        ),
+      );
+  }
 }
 
 export async function debitWalletFromPolarRefund(input: {
@@ -144,6 +196,26 @@ export async function debitWalletFromPolarRefund(input: {
     )
     .limit(1);
   if (!original) {
+    await input.db
+      .insert(billingUsageLedger)
+      .values({
+        teamId: input.teamId,
+        operationId: `polar_refund_pending:${input.refundKey}`,
+        kind: 'adjustment',
+        meterId: 'ai',
+        nativeUnits: '0',
+        customerChargeCents: 0,
+        billable: false,
+        nonBillableReason: 'polar_refund_pending',
+        operationClass: 'wallet_refund',
+        source: 'polar_refund',
+        metadata: {
+          pending: true,
+          order_id: input.orderId,
+          cents: input.cents > 0 ? input.cents : PREPAID_TOPUP_CENTS,
+        },
+      })
+      .onConflictDoNothing();
     return { duplicate: false, reversed: false, shortfallCents: 0 };
   }
   const originalCentsRaw = original.metadata.cents;

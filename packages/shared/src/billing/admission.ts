@@ -164,6 +164,43 @@ export async function abortRecallJoinAfterProviderAccept(input: {
   await releaseBillingReservation(input.billing, input.operationId).catch(() => undefined);
 }
 
+export async function releaseRecallMeetingMinutes(
+  billing: BillingAdmissionScope,
+  input: { meetingId: string },
+): Promise<void> {
+  await releaseBillingReservation(billing, recallOperationId(input.meetingId));
+}
+
+function parseIsoDate(raw: unknown): Date | null {
+  if (typeof raw !== 'string' || raw.length === 0) return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Joining + in-call minutes, capped by the reserved duration. */
+export function recallBillableMinutes(input: {
+  joinStartedAt?: Date | string | null;
+  startedAt?: Date | null;
+  endedAt?: Date | null;
+  chunkEndMs?: number | null;
+  reservedMinutes?: number | null;
+}): number {
+  const joinStartedAt =
+    input.joinStartedAt instanceof Date ? input.joinStartedAt : parseIsoDate(input.joinStartedAt);
+  const start = joinStartedAt ?? input.startedAt ?? null;
+  const end = input.endedAt ?? null;
+  let minutes = 0;
+  if (start && end && end.getTime() > start.getTime()) {
+    minutes = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 60_000));
+  } else if (input.chunkEndMs && input.chunkEndMs > 0) {
+    minutes = Math.max(1, Math.ceil(input.chunkEndMs / 60_000));
+  }
+  if (typeof input.reservedMinutes === 'number' && input.reservedMinutes > 0) {
+    minutes = Math.min(minutes, Math.trunc(input.reservedMinutes));
+  }
+  return minutes;
+}
+
 export function meetingReserveMinutesForPlan(
   planId: BillingPlanId,
   freeRemaining: FreeAllowanceRemaining,

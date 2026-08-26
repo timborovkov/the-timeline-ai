@@ -4,6 +4,7 @@ import {
   claimMeetingJoinUnderRecallCap,
   isBillingAdmissionError,
   recallBillingUserMessage,
+  releaseRecallMeetingMinutes,
   reserveRecallMeetingMinutes,
 } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
@@ -544,6 +545,7 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
       await scope.meetings.updateMeetingStatus(meetingId, 'cancelled', {
         metadata: { cancelled_at: new Date().toISOString(), capture_status: 'cancelled' },
       });
+      await releaseRecallMeetingMinutes(scope.billing, { meetingId }).catch(() => undefined);
     }
     revalidatePath('/app/meetings');
     revalidatePath(`/app/meetings/${meetingId}`);

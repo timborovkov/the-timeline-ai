@@ -336,6 +336,46 @@ describe('handlePolarWebhookEvent', () => {
     expect((await billing.getAccount()).walletBalanceCents).toBe(0);
   });
 
+  it('applies an out-of-order top-up refund when the paid event arrives later', async () => {
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'refund.created',
+        data: {
+          id: 'ref_early',
+          order_id: 'ord_late',
+          amount: 1000,
+          status: 'succeeded',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_late',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+  });
+
   it('rejects a delayed older subscription after a newer one is stored', () => {
     expect(
       shouldApplyPaidSubscriptionUpdate({

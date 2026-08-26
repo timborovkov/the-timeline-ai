@@ -55,10 +55,10 @@ describe('billing status', () => {
       utilization: spendCapUtilization(0, 0),
       freeRemaining: {
         aiChargeCents: 0,
-        recallMinutes: 60,
-        emailUnits: 500,
-        storageGb: 1,
-        acceptedSources: 1000,
+        recallMinutes: 0,
+        emailUnits: 0,
+        storageGb: 0,
+        acceptedSources: 0,
       },
       meteredSpendCents: 500,
     });
@@ -79,7 +79,7 @@ describe('billing status', () => {
       },
       meteredSpendCents: 0,
     });
-    expect(nearStorage?.kind).toBe('free_exhausted');
+    expect(nearStorage?.kind).toBe('free_near_limit');
 
     const commitment = deriveBillingNudge({
       planId: 'payg',

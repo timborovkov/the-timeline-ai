@@ -73,13 +73,18 @@ credit hides margin and confuses prospects.
    lock. Extra member-days accrue with a cumulative monthly cent delta so daily
    rounding still totals €2 per extra member-month. AI customer charges keep
    fractional cents on `nativeUnits` and round the cumulative delta, so
-   sub-cent embeddings still consume the Free/PAYG floor. Polar usage ingest is
-   an out-of-transaction outbox (`polar_ingest_status` on the ledger); a failed
-   ingest does not fail local settlement, and the janitor plus duplicate settle
-   retries drain pending events. Paid-plan activation writes the catalog default
-   spend cap when the row is still Free (or cap 0). Polar `refund.created` /
-   `order.refunded` claw back prepaid top-ups (and freeze the workspace if the
-   wallet was already spent).
+   sub-cent embeddings still consume the Free/PAYG floor. Email, accepted-source,
+   and storage settlements recompute the same cumulative delta under the account
+   lock. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
+   and sends a stable Polar event `id` so settle and the janitor cannot
+   double-ingest; a failed ingest returns the row to `pending`. Paid-plan
+   activation writes the catalog default spend cap when the row is still Free
+   (or cap 0). Polar `refund.created` / `order.refunded` claw back prepaid
+   top-ups, persist out-of-order refunds until `order.paid`, and freeze the
+   workspace if the credit was already spent. Auto-reload checkout markers stay
+   retryable until Polar checkout succeeds. Credentials signup keeps the
+   workspace restricted until the owner email is verified. OpenRouter
+   `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
 8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion
    (`billing_usage_alert` intent + HTML template), deduped once per

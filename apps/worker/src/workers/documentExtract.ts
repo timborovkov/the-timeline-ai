@@ -294,33 +294,54 @@ export async function processDocumentExtractJob(
       }
       throw err;
     }
-    const insertedIds = await deps.db.transaction(async (tx) => {
-      await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
-      const inserted = await tx
-        .insert(documentChunks)
-        .values({
+    let insertedIds: string[];
+    try {
+      insertedIds = await deps.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 2))`);
+        await assertTeamWriteCapacity({
+          db: tx as unknown as Db,
           teamId,
-          documentId: document.id,
-          documentVersionId: version.id,
-          chunkIndex: 0,
-          representationKind: 'metadata_preview',
-          text: preview,
-          tokenCount: chunkText(preview)[0]?.tokenCount ?? Math.ceil(preview.length / 4),
-        })
-        .returning({ id: documentChunks.id });
-      await tx
-        .update(documentVersions)
-        .set({
-          processingStatus: 'deferred',
-          processingError:
-            document.fileKind === 'captured'
-              ? 'deep extraction deferred by captured-file budget'
-              : 'deep extraction deferred by document extraction cap',
-          extractionModelVersion: EXTRACT_CODE_VERSION,
-        })
-        .where(eq(documentVersions.id, version.id));
-      return inserted.map((row) => row.id);
-    });
+          additionalChunks: 1,
+          excludeDocumentVersionId: version.id,
+        });
+        await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
+        const inserted = await tx
+          .insert(documentChunks)
+          .values({
+            teamId,
+            documentId: document.id,
+            documentVersionId: version.id,
+            chunkIndex: 0,
+            representationKind: 'metadata_preview',
+            text: preview,
+            tokenCount: chunkText(preview)[0]?.tokenCount ?? Math.ceil(preview.length / 4),
+          })
+          .returning({ id: documentChunks.id });
+        await tx
+          .update(documentVersions)
+          .set({
+            processingStatus: 'deferred',
+            processingError:
+              document.fileKind === 'captured'
+                ? 'deep extraction deferred by captured-file budget'
+                : 'deep extraction deferred by document extraction cap',
+            extractionModelVersion: EXTRACT_CODE_VERSION,
+          })
+          .where(eq(documentVersions.id, version.id));
+        return inserted.map((row) => row.id);
+      });
+    } catch (err: unknown) {
+      if (isBillingAdmissionError(err)) {
+        await deps.db
+          .update(documentVersions)
+          .set({
+            processingStatus: 'failed',
+            processingError: err.message.slice(0, 500),
+          })
+          .where(eq(documentVersions.id, version.id));
+      }
+      throw err;
+    }
     for (const chunkId of insertedIds) {
       await io.enqueueEmbed({
         scope: 'doc_chunk',
@@ -426,12 +447,61 @@ export async function processDocumentExtractJob(
     throw new UnrecoverableError(reason);
   }
 
+  let insertedIds: string[];
   try {
-    await assertTeamWriteCapacity({
-      db: deps.db,
-      teamId,
-      additionalChunks: chunks.length,
-      excludeDocumentVersionId: version.id,
+    insertedIds = await deps.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 2))`);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+      await assertTeamWriteCapacity({
+        db: tx as unknown as Db,
+        teamId,
+        additionalChunks: chunks.length,
+        excludeDocumentVersionId: version.id,
+      });
+      await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
+      const inserted = await tx
+        .insert(documentChunks)
+        .values(
+          chunks.map((c) => ({
+            teamId,
+            documentId: document.id,
+            documentVersionId: version.id,
+            chunkIndex: c.index,
+            representationKind: c.kind,
+            text: c.text,
+            tokenCount: c.tokenCount,
+          })),
+        )
+        .returning({ id: documentChunks.id });
+      if (suggestedTitle && isLikelyGeneratedDocumentName(document.name)) {
+        await tx
+          .update(documents)
+          .set({
+            metadata: sql`${documents.metadata} || ${JSON.stringify({
+              suggested_title: suggestedTitle,
+              suggested_title_source: 'document_extract',
+              suggested_title_model: extractionModel,
+              suggested_title_generated_at: new Date().toISOString(),
+            })}::jsonb`,
+          })
+          .where(eq(documents.id, document.id));
+      }
+      await tx
+        .update(documentVersions)
+        .set({
+          processingStatus: 'chunked',
+          processingError: null,
+          // Stamp both the code-rev tag AND the model id (when vision was
+          // used) so the redocument-extract script can re-pick versions
+          // whose extractor changed without forcing a full re-extract of
+          // text-only documents.
+          extractionModelVersion:
+            extractionModel === EXTRACT_CODE_VERSION
+              ? EXTRACT_CODE_VERSION
+              : `${EXTRACT_CODE_VERSION}+${extractionModel}`,
+        })
+        .where(eq(documentVersions.id, version.id));
+      return inserted.map((r) => r.id);
     });
   } catch (err: unknown) {
     if (isBillingAdmissionError(err)) {
@@ -445,58 +515,6 @@ export async function processDocumentExtractJob(
     }
     throw err;
   }
-
-  // Single transaction: replace any existing chunks for this version
-  // (re-extract case) and stamp status. The unique index on
-  // (document_version_id, chunk_index) plus this transaction means
-  // concurrent jobs cannot interleave half-runs.
-  const insertedIds = await deps.db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
-    await tx.delete(documentChunks).where(eq(documentChunks.documentVersionId, version.id));
-    const inserted = await tx
-      .insert(documentChunks)
-      .values(
-        chunks.map((c) => ({
-          teamId,
-          documentId: document.id,
-          documentVersionId: version.id,
-          chunkIndex: c.index,
-          representationKind: c.kind,
-          text: c.text,
-          tokenCount: c.tokenCount,
-        })),
-      )
-      .returning({ id: documentChunks.id });
-    if (suggestedTitle && isLikelyGeneratedDocumentName(document.name)) {
-      await tx
-        .update(documents)
-        .set({
-          metadata: sql`${documents.metadata} || ${JSON.stringify({
-            suggested_title: suggestedTitle,
-            suggested_title_source: 'document_extract',
-            suggested_title_model: extractionModel,
-            suggested_title_generated_at: new Date().toISOString(),
-          })}::jsonb`,
-        })
-        .where(eq(documents.id, document.id));
-    }
-    await tx
-      .update(documentVersions)
-      .set({
-        processingStatus: 'chunked',
-        processingError: null,
-        // Stamp both the code-rev tag AND the model id (when vision was
-        // used) so the redocument-extract script can re-pick versions
-        // whose extractor changed without forcing a full re-extract of
-        // text-only documents.
-        extractionModelVersion:
-          extractionModel === EXTRACT_CODE_VERSION
-            ? EXTRACT_CODE_VERSION
-            : `${EXTRACT_CODE_VERSION}+${extractionModel}`,
-      })
-      .where(eq(documentVersions.id, version.id));
-    return inserted.map((r) => r.id);
-  });
 
   // Fan out embed jobs. Each chunk's embed point id is deterministic
   // (sha256 of scope + chunkId + model), so duplicate enqueues are safe.

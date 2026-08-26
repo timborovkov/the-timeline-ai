@@ -1,5 +1,5 @@
 import { billingUsageLedger, teamMembers, teams, users, type Db } from '@timeline/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 
@@ -13,6 +13,7 @@ import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
 
 const log = childLogger('billing:auto-reload');
+const AUTO_RELOAD_ATTEMPT_STALE_MS = 15 * 60 * 1000;
 
 function appBaseUrl(): string {
   return (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc').replace(
@@ -73,11 +74,12 @@ export async function maybeTriggerWalletAutoReload(input: {
   if (!productId) return { triggered: false, reason: 'missing_product' };
 
   const day = utcDay();
+  const operationId = `auto_reload:${input.teamId}:${day}`;
   const [ledgerRow] = await input.db
     .insert(billingUsageLedger)
     .values({
       teamId: input.teamId,
-      operationId: `auto_reload:${input.teamId}:${day}`,
+      operationId,
       kind: 'top_up',
       meterId: 'ai',
       nativeUnits: '0',
@@ -86,11 +88,52 @@ export async function maybeTriggerWalletAutoReload(input: {
       nonBillableReason: 'wallet_auto_reload_checkout',
       operationClass: 'wallet_auto_reload',
       source: 'polar_checkout',
-      metadata: { amount_cents: amount, threshold_cents: threshold },
+      metadata: {
+        amount_cents: amount,
+        threshold_cents: threshold,
+        auto_reload_status: 'attempting',
+        auto_reload_attempted_at: new Date().toISOString(),
+      },
     })
     .onConflictDoNothing()
     .returning();
-  if (!ledgerRow) return { triggered: false, reason: 'already_triggered_today' };
+  if (!ledgerRow) {
+    const [existing] = await input.db
+      .select({ metadata: billingUsageLedger.metadata })
+      .from(billingUsageLedger)
+      .where(
+        and(
+          eq(billingUsageLedger.teamId, input.teamId),
+          eq(billingUsageLedger.operationId, operationId),
+        ),
+      )
+      .limit(1);
+    const status = existing?.metadata.auto_reload_status;
+    const checkoutUrl = existing?.metadata.checkout_url;
+    if (status === 'sent' || typeof checkoutUrl === 'string') {
+      return { triggered: false, reason: 'already_triggered_today' };
+    }
+    if (status === 'attempting') {
+      const attemptedAt = existing?.metadata.auto_reload_attempted_at;
+      const attemptedMs = typeof attemptedAt === 'string' ? Date.parse(attemptedAt) : Number.NaN;
+      if (Number.isFinite(attemptedMs) && Date.now() - attemptedMs < AUTO_RELOAD_ATTEMPT_STALE_MS) {
+        return { triggered: false, reason: 'already_triggered_today' };
+      }
+    }
+    await input.db
+      .delete(billingUsageLedger)
+      .where(
+        and(
+          eq(billingUsageLedger.teamId, input.teamId),
+          eq(billingUsageLedger.operationId, operationId),
+        ),
+      );
+    return maybeTriggerWalletAutoReload(input);
+  }
+
+  const abandon = async () => {
+    await input.db.delete(billingUsageLedger).where(eq(billingUsageLedger.id, ledgerRow.id));
+  };
 
   const [team] = await input.db
     .select({ name: teams.name })
@@ -113,10 +156,16 @@ export async function maybeTriggerWalletAutoReload(input: {
       ),
     );
   const ownerEmail = owners.find((owner) => owner.email)?.email;
-  if (!ownerEmail) return { triggered: false, reason: 'no_owner_email' };
+  if (!ownerEmail) {
+    await abandon();
+    return { triggered: false, reason: 'no_owner_email' };
+  }
 
   const provider = input.provider ?? createPolarBillingProvider();
-  if (!provider) return { triggered: false, reason: 'provider_unavailable' };
+  if (!provider) {
+    await abandon();
+    return { triggered: false, reason: 'provider_unavailable' };
+  }
 
   const base = appBaseUrl();
   let checkoutUrl = `${base}/app/team?section=billing`;
@@ -130,8 +179,19 @@ export async function maybeTriggerWalletAutoReload(input: {
     checkoutUrl = checkout.url;
   } catch (err) {
     log.warn({ err, teamId: input.teamId }, 'auto-reload Polar checkout failed');
+    await abandon();
     return { triggered: false, reason: 'checkout_failed' };
   }
+
+  await input.db
+    .update(billingUsageLedger)
+    .set({
+      metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({
+        auto_reload_status: 'sent',
+        checkout_url: checkoutUrl,
+      })}::jsonb`,
+    })
+    .where(eq(billingUsageLedger.id, ledgerRow.id));
 
   const ym = periodYm();
   const teamName = team?.name ?? 'your workspace';

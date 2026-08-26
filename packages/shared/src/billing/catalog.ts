@@ -41,8 +41,6 @@ export interface PlanCommercial {
 export const OVERAGE_RATES = {
   /** Customer AI charge = provider EUR cost × multiplier (after FX). */
   aiCustomerMultiplier: 4,
-  /** OpenRouter fee already in usage.cost; apply FX then multiplier. */
-  openRouterUsdMarkup: 1.055,
   recallCentsPerMinute: 3,
   emailCentsPerThousandUnits: 250,
   storageCentsPerGbMonth: 25,
@@ -251,8 +249,9 @@ export function formatEuroFromCents(cents: number): string {
 }
 
 /**
- * Convert OpenRouter `usage.cost` (USD, already includes OpenRouter fee in many
- * routes) into Timeline customer AI charge euro cents.
+ * Convert OpenRouter `usage.cost` (USD, already includes the OpenRouter fee)
+ * into Timeline customer AI charge euro cents: FX then ×4. Do not apply an
+ * extra OpenRouter markup on top of `usage.cost`.
  */
 export function customerAiChargeCentsFromOpenRouterUsd(providerUsd: number): {
   providerCostCents: number;
@@ -260,7 +259,7 @@ export function customerAiChargeCentsFromOpenRouterUsd(providerUsd: number): {
   /** Unrounded customer cents so settlement can accumulate sub-cent calls. */
   customerChargeExactCents: number;
 } {
-  const providerEur = providerUsd * OVERAGE_RATES.openRouterUsdMarkup * BILLING_EUR_PER_USD;
+  const providerEur = providerUsd * BILLING_EUR_PER_USD;
   const customerChargeExactCents = providerEur * OVERAGE_RATES.aiCustomerMultiplier * 100;
   const providerCostCents = Math.round(providerEur * 100);
   const customerChargeCents = Math.round(customerChargeExactCents);

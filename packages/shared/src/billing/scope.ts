@@ -71,7 +71,8 @@ function defaultSpendCapForPlan(planId: BillingPlanId): number {
 function polarIngestEventFromMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): PolarUsageEvent | null {
-  if (metadata?.polar_ingest_status !== 'pending') return null;
+  const status = metadata?.polar_ingest_status;
+  if (status !== 'pending' && status !== 'in_progress') return null;
   const name = metadata.polar_ingest_name;
   const units = metadata.polar_ingest_units;
   const externalCustomerId = metadata.polar_ingest_customer_id;
@@ -89,6 +90,9 @@ function polarIngestEventFromMetadata(
     name,
     units,
     externalCustomerId,
+    ...(typeof operationId === 'string'
+      ? { id: polarUsageEventId(externalCustomerId, operationId) }
+      : {}),
     metadata: {
       ...(typeof operationId === 'string' ? { operation_id: operationId } : {}),
       ...(typeof chargeCents === 'number' ? { charge_cents: chargeCents } : {}),
@@ -96,22 +100,65 @@ function polarIngestEventFromMetadata(
   };
 }
 
+function polarUsageEventId(teamId: string, operationId: string): string {
+  return `timeline:${teamId}:${operationId}`;
+}
+
+const POLAR_INGEST_CLAIM_STALE_MS = 15 * 60 * 1000;
+
 async function markPolarIngestStatus(
   db: Db,
   teamId: string,
   operationId: string,
-  status: 'completed' | 'not_required',
+  status: 'pending' | 'completed' | 'not_required' | 'in_progress',
+  extra?: Record<string, unknown>,
 ): Promise<void> {
   await db
     .update(billingUsageLedger)
     .set({
       metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({
         polar_ingest_status: status,
+        ...extra,
       })}::jsonb`,
     })
     .where(
       and(eq(billingUsageLedger.teamId, teamId), eq(billingUsageLedger.operationId, operationId)),
     );
+}
+
+async function claimPolarIngestRow(input: {
+  db: Db;
+  teamId: string;
+  operationId: string;
+}): Promise<Record<string, unknown> | null> {
+  const staleBefore = new Date(Date.now() - POLAR_INGEST_CLAIM_STALE_MS).toISOString();
+  const claimedAt = new Date().toISOString();
+  const [row] = await input.db
+    .update(billingUsageLedger)
+    .set({
+      metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({
+        polar_ingest_status: 'in_progress',
+        polar_ingest_claimed_at: claimedAt,
+      })}::jsonb`,
+    })
+    .where(
+      and(
+        eq(billingUsageLedger.teamId, input.teamId),
+        eq(billingUsageLedger.operationId, input.operationId),
+        sql`(
+          ${billingUsageLedger.metadata}->>'polar_ingest_status' = 'pending'
+          OR (
+            ${billingUsageLedger.metadata}->>'polar_ingest_status' = 'in_progress'
+            AND COALESCE(
+              ${billingUsageLedger.metadata}->>'polar_ingest_claimed_at',
+              '1970-01-01T00:00:00.000Z'
+            ) < ${staleBefore}
+          )
+        )`,
+      ),
+    )
+    .returning({ metadata: billingUsageLedger.metadata });
+  return row?.metadata ?? null;
 }
 
 async function ingestPolarUsageIfPending(input: {
@@ -123,8 +170,20 @@ async function ingestPolarUsageIfPending(input: {
 }): Promise<void> {
   const event = polarIngestEventFromMetadata(input.metadata);
   if (!event || !input.provider) return;
-  await input.provider.ingestUsage(event);
-  await markPolarIngestStatus(input.db, input.teamId, input.operationId, 'completed');
+  const claimed = await claimPolarIngestRow({
+    db: input.db,
+    teamId: input.teamId,
+    operationId: input.operationId,
+  });
+  if (!claimed) return;
+  const claimedEvent = polarIngestEventFromMetadata(claimed) ?? event;
+  try {
+    await input.provider.ingestUsage(claimedEvent);
+    await markPolarIngestStatus(input.db, input.teamId, input.operationId, 'completed');
+  } catch (err) {
+    await markPolarIngestStatus(input.db, input.teamId, input.operationId, 'pending');
+    throw err;
+  }
 }
 
 export function createBillingScope(deps: BillingScopeDeps) {
@@ -678,14 +737,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
           ]),
         ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
         const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
-        const listChargeCents =
-          input.meterId === 'ai'
-            ? cumulativeChargeDeltaCents({
-                meterId: 'ai',
-                previousNativeUnits: previousNative,
-                nextNativeUnits: previousNative + input.nativeUnits,
-              })
-            : input.customerChargeCents;
+        const listChargeCents = cumulativeChargeDeltaCents({
+          meterId: input.meterId,
+          previousNativeUnits: previousNative,
+          nextNativeUnits: previousNative + input.nativeUnits,
+        });
         const actualChargeCents = paygOverageCustomerChargeCents({
           planId: account.planId,
           meterId: input.meterId,
@@ -1115,7 +1171,10 @@ export async function flushPendingPolarUsageIngest(input: {
     .from(billingUsageLedger)
     .where(
       and(
-        sql`${billingUsageLedger.metadata}->>'polar_ingest_status' = 'pending'`,
+        sql`(
+          ${billingUsageLedger.metadata}->>'polar_ingest_status' = 'pending'
+          OR ${billingUsageLedger.metadata}->>'polar_ingest_status' = 'in_progress'
+        )`,
         ...(input.teamId ? [eq(billingUsageLedger.teamId, input.teamId)] : []),
       ),
     );
