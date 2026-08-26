@@ -53,7 +53,7 @@ for profile refreshes or reaction delivery after the durable enqueue, so slow
 Slack API calls cannot consume its webhook acknowledgement budget. Telegram's
 request-side typing heartbeat remains active while the turn is queued, then
 hands progress ownership to the worker when it claims the turn. The worker's
-90-second deadline includes provider progress startup, history loading, and
+180-second deadline includes provider progress startup, history loading, and
 model execution.
 
 Duplicate detection, per-user rate enforcement, session selection, and turn

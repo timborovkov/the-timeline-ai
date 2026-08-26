@@ -1,5 +1,7 @@
 import type { MetadataRoute } from 'next';
 
+import { PWA_BACKGROUND_COLOR } from '@/lib/pwa-splash';
+
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'The Timeline',
@@ -11,8 +13,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/app',
     scope: '/',
     display: 'standalone',
-    background_color: '#0a0e0d',
-    theme_color: '#0a0e0d',
+    background_color: PWA_BACKGROUND_COLOR,
+    theme_color: PWA_BACKGROUND_COLOR,
     icons: [
       {
         src: '/icons/icon-192.png',

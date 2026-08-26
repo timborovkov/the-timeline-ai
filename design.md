@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.26 · Dedicated animated platform flow (2026-08-21). Replaces v3.25 Restored hero observatory.
+**Version:** v3.27 · Installed-app splash (2026-08-26). Replaces v3.26 Dedicated animated platform flow.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -169,6 +169,17 @@ Ask, Work, Documents, Meetings, Connections, and Team.
 The `IndexStrip` is restricted to explicit audit/operator views. Timeline uses
 a sticky collection toolbar under the 48px shell header instead of an index
 strip or loaded-count heading.
+
+### Installed app launch
+
+Home-screen Timeline uses the existing mark on `#0a0e0d`. Android Chrome
+composes the splash from the web app manifest `name`, `background_color`,
+`theme_color`, and 512px icon. iOS ignores that manifest splash and needs a
+startup image per device size and orientation. Those images are the same dark
+field with the centered mark — no wordmark, no extra chrome, no light-mode
+variant. Keep them in lockstep with
+[`apps/web/src/app/icon.svg`](apps/web/src/app/icon.svg); regenerate with
+`pnpm exec tsx apps/web/scripts/generate-pwa-splash.ts`.
 
 ## Shared components
 
@@ -1201,3 +1212,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Evidence-flow acquisition story | Reframes Timeline as AI team memory, introduces the reusable evidence-to-workspace-to-assistant explainer, and adds three substantive outcome-led solution pages. |
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
+| 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |

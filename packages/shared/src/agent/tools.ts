@@ -3007,7 +3007,7 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
     list_integrations: tool({
       description:
         "List third-party integrations connected to this team (Google Drive, Linear, GitHub, Monday.com, Slack, Sentry) and custom MCP servers. Returns provider, displayName, and last_synced_at. Use when the user asks 'what's connected' or to confirm a source before searching.",
-      inputSchema: z.object({}).strict(),
+      inputSchema: z.object({}),
       execute: async () =>
         runSafe('list_integrations', async () => {
           const [rows, mcpServers] = await Promise.all([

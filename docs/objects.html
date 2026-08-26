@@ -528,7 +528,14 @@
         >. Read-side tools <code>get_object</code>, <code>list_objects</code>,
         <code>list_tasks</code>, <code>list_team_members</code>, <code>recent_changes</code>, and
         <code>search_object_notes</code> sit alongside the existing <code>get_entity</code> /
-        <code>search_timeline</code> / <code>list_events</code>. Proposal-side tools
+        <code>search_timeline</code> / <code>list_events</code>. Dashboard chat keeps
+        <code>list_team_members</code> in the always-on core tool group so assignment-by-name turns
+        can resolve a teammate to a user id before calling <code>execute_board_update_item</code> or
+        <code>execute_object_update</code>. The same selector also has to honor the system prompt's
+        example phrases: <code>list_calendar_events</code> for "what's scheduled",
+        <code>list_pins</code> for "my pins", integration tools for Sentry/Monday.com, and any
+        snake-case native tool name the user mentions. Telegram and MCP
+        <code>askAgent</code> already expose the full native toolset. Proposal-side tools
         <code>suggest_task</code> and <code>suggest_object_memory</code> record reviewable
         suggestions; those proposals can use <code>ownerName</code>, <code>assigneeName</code>,
         <code>fromName</code>, and <code>toName</code> when a clear person or object is known but

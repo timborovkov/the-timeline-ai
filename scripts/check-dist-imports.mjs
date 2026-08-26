@@ -15,8 +15,15 @@ const checks = [
     name: '@timeline/shared conversation surfaces',
     run: async () => {
       const conversations = await import('@timeline/shared/conversation-surfaces');
-      if (conversations.DIRECT_CONVERSATION_TIMEOUT_MS !== 90_000) {
+      if (conversations.DIRECT_CONVERSATION_TIMEOUT_MS !== 180_000) {
         throw new Error('Direct-conversation timeout export is missing or incorrect');
+      }
+      const timeoutSeconds = String(conversations.DIRECT_CONVERSATION_TIMEOUT_MS / 1_000);
+      if (
+        conversations.CONVERSATION_AGENT_TIMEOUT_MESSAGE !==
+        `I couldn’t finish that within ${timeoutSeconds} seconds. Please try again, or start a new conversation.`
+      ) {
+        throw new Error('Direct-conversation timeout message export is missing or incorrect');
       }
       if (conversations.directConversationTitle('  Weekly   update  ') !== 'Weekly update') {
         throw new Error('Direct-conversation title export did not normalize whitespace');
