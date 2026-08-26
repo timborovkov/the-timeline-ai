@@ -26,6 +26,7 @@ const pgliteChunks = [
     'src/integrations/webhooks.test.ts',
     'src/job-recovery/index.test.ts',
     'src/mcp-server/handler.test.ts',
+    'src/mcp-server/oauth.test.ts',
     'src/meetings/quick-capture.test.ts',
     'src/meetings/scope.test.ts',
     'src/onboarding/index.test.ts',

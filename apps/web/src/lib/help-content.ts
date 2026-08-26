@@ -169,7 +169,7 @@ export const HELP_PAGES: HelpPage[] = [
     description: 'Connect durable sources and live MCP tools without breaking team isolation.',
     icon: PlugZap,
     related: ['capture', 'work', 'agents'],
-    updatedAt: '2026-08-20',
+    updatedAt: '2026-08-26',
     sections: [
       {
         title: 'Connected sources',
@@ -193,22 +193,29 @@ export const HELP_PAGES: HelpPage[] = [
           'Connection owners control what provider resources are shared.',
           'For Monday.com, selecting a parent board also captures its classic subitems; hidden “Subitems of …” helper boards are not selected separately.',
           'Personal MCP connections are visible only to their owner.',
-          'Outbound Timeline MCP keys see only team-visible events.',
+          'OAuth grants follow the signed-in member’s current team membership and visibility.',
+          'Manual outbound keys represent a team and see team-visible events only.',
         ],
       },
       {
         title: 'Use Timeline from an agent',
-        body: 'External agents can connect to Timeline through the outbound MCP endpoint. The GitHub plugin bundles that hosted connection with one general skill for choosing Timeline tools, expanding source evidence, and citing claims.',
+        body: 'External agents connect through the outbound MCP endpoint. Codex and Claude Code can install the repository package directly. OpenAI’s universal Plugins Directory instead uses a separate With MCP submission that combines the production remote MCP connection with the same Timeline skill.',
         items: [
-          'An administrator creates a bearer key on the Timeline MCP endpoint page; its plaintext is shown once.',
-          'Codex users can install the full plugin or the standalone Timeline skill for a self-hosted Timeline.',
-          'Default keys are read-only. Timeline agent access is a separate, optional scope for paid, proposal-only turns.',
+          'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
+          'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',
+          'The default OAuth read scope follows the member’s existing visibility, including private and specifically shared evidence that member can access. Timeline agent access is a separate, optional owner/admin-approved scope for paid, proposal-only turns.',
+          'Static team keys remain available as a compatibility fallback for manual clients.',
+          'Repository packaging is not evidence of provider submission, approval, or publication.',
         ],
         appLink: { href: '/app/team/mcp-share', label: 'Manage Timeline MCP' },
         resourceLinks: [
           {
-            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
-            label: 'Install plugin and skill',
+            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
+            label: 'Install in Codex',
+          },
+          {
+            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code',
+            label: 'Install in Claude Code',
           },
         ],
       },
@@ -218,36 +225,41 @@ export const HELP_PAGES: HelpPage[] = [
     slug: 'agents',
     title: 'Timeline for agents',
     description:
-      'Use a copy-ready Codex prompt to connect an external agent and install one general skill for evidence-backed Timeline work.',
+      'Connect Codex, Claude, ChatGPT, or another compatible agent to evidence-backed Timeline work.',
     icon: Bot,
     related: ['integrations', 'work', 'objects'],
-    updatedAt: '2026-08-20',
+    updatedAt: '2026-08-26',
     sections: [
       {
-        title: 'Install the Timeline plugin',
-        body: 'The copy-ready install prompt is the shortest path for Codex. It adds the GitHub plugin, the general Timeline skill, and the hosted Streamable HTTP MCP endpoint while keeping the bearer key in TIMELINE_MCP_KEY.',
+        title: 'Install in Codex or Claude Code',
+        body: 'Use the copy-ready prompt for Codex or the repository marketplace commands for Claude Code. Both packages add the general Timeline skill and hosted Streamable HTTP MCP endpoint. The bundled connection uses browser-based OAuth instead of embedding a bearer key.',
         items: [
           'timeline chooses between broad context, moments, raw events, and structured workspace tools based on the request.',
           'The same skill adapts to status updates, exact lookups, recaps, and incident analysis without competing triggers.',
           'It distinguishes current canonical state from activity, expands material sources, and preserves citations and uncertainty.',
-          'For CLI, relaunch Codex from the terminal that exported the key. For the app or IDE, store the key in ~/.codex/.env, fully restart the host, then start a new task.',
+          'Restart Codex or Claude Code after installation, start a new task or conversation, and complete Timeline sign-in, team selection, and scope consent when prompted.',
         ],
         resourceLinks: [
           {
-            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
-            label: 'Open installation guide',
+            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
+            label: 'Install in Codex',
+          },
+          {
+            href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code',
+            label: 'Install in Claude Code',
           },
         ],
       },
       {
         title: 'Connect Timeline MCP',
-        body: 'Create a key, export it in the Codex CLI launch terminal or store it in ~/.codex/.env for the app or IDE, and use the single /api/mcp/server URL with Streamable HTTP. The setup page generates a copy-ready Codex command with the current Timeline origin.',
+        body: 'Use the single /api/mcp/server URL with Streamable HTTP. Compatible clients discover Timeline OAuth from the endpoint, then open a browser for explicit sign-in, team selection, and scope consent.',
         items: [
-          'The plaintext key is shown once; Timeline stores only its hash.',
-          'Every outbound key sees team-visible data only. Private and specific-user evidence stays unavailable.',
-          'Self-hosted users install the standalone Timeline skill and point Codex at their own Timeline origin.',
+          'The default OAuth read grant follows the signed-in member’s current team membership and visibility, including private and specifically shared evidence that member can access.',
+          'Approved AI-app access can be reviewed and revoked from Provider accounts.',
+          'Static team keys remain available for manual clients and see team-visible data only.',
+          'Self-hosted users install the standalone Timeline skill and point their compatible client at their own Timeline origin.',
         ],
-        appLink: { href: '/app/team/mcp-share', label: 'Create an MCP key' },
+        appLink: { href: '/app/me/connections', label: 'Manage approved AI apps' },
         resourceLinks: [
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#connect-timeline-mcp',
@@ -257,7 +269,7 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Know the access boundary',
-        body: 'The bundled skill uses read tools and preserves citations. An administrator may separately enable timeline.ask_agent on a key, but that capability is stateless, may incur model cost, may call enabled team-shared custom MCP tools with external side effects, and can create only Timeline proposals that still require human review.',
+        body: 'The bundled skill uses read tools and preserves citations. The default OAuth grant cannot invoke timeline.ask_agent. A current team owner or admin may separately approve that scope for paid, stateless agent turns; it may call enabled team-shared custom MCP tools with external side effects and can create only Timeline proposals that still require human review.',
         resourceLinks: [
           {
             href: 'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills',

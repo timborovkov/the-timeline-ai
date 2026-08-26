@@ -3,11 +3,13 @@ import {
   documentVersions,
   entities,
   meetings,
+  mcpOutboundOAuthGrants,
   taskCategoryProjectInvalidations,
   userPins,
 } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { getEnv } from '@timeline/shared/env';
+import { MCP_TEAM_ACTOR_USER_ID } from '@timeline/shared/mcp-server';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
@@ -41,7 +43,6 @@ const PROCESSING_MEETING_MIN_AGE_MS = 30 * 60 * 1000;
 const PENDING_TASK_CATEGORY_MIN_AGE_MS = 5 * 60 * 1000;
 
 const log = childLogger('worker:janitor');
-const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 interface JanitorDeps {
   db: Db;
@@ -54,12 +55,15 @@ interface JanitorDeps {
   taskCategoryAttemptLimit?: number;
 }
 
-interface JanitorTickResult {
+export interface JanitorTickResult {
   documentVersionsRequeued: number;
   meetingsRequeued: number;
   taskCategoriesRequeued: number;
   taskCategoryFanoutsRequeued: number;
   timelineMomentPinsDeleted: number;
+  mcpOAuthAuthorizationCodesDeleted: number;
+  mcpOAuthTokensDeleted: number;
+  mcpOAuthGrantsDeleted: number;
 }
 
 /**
@@ -99,6 +103,7 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     ? await sweepTaskCategoryProjectInvalidations(deps.db, enqueueTaskCategory)
     : 0;
   const timelineMomentPinsDeleted = await sweepDeletedTimelineMomentPins(deps.db);
+  const mcpOAuthDeleted = await sweepExpiredMcpOAuthCredentials(deps.db);
 
   return {
     documentVersionsRequeued,
@@ -106,7 +111,36 @@ export async function processJanitorTick(deps: JanitorDeps): Promise<JanitorTick
     taskCategoriesRequeued,
     taskCategoryFanoutsRequeued,
     timelineMomentPinsDeleted,
+    mcpOAuthAuthorizationCodesDeleted: mcpOAuthDeleted.authorizationCodesDeleted,
+    mcpOAuthTokensDeleted: mcpOAuthDeleted.tokensDeleted,
+    mcpOAuthGrantsDeleted: mcpOAuthDeleted.grantsDeleted,
   };
+}
+
+export function janitorTickIsIdle(result: JanitorTickResult): boolean {
+  return Object.values(result).every((count) => count === 0);
+}
+
+async function sweepExpiredMcpOAuthCredentials(db: Db) {
+  const teamsWithGrants = await db
+    .select({ teamId: mcpOutboundOAuthGrants.teamId })
+    .from(mcpOutboundOAuthGrants)
+    .groupBy(mcpOutboundOAuthGrants.teamId)
+    .orderBy(asc(mcpOutboundOAuthGrants.teamId));
+  const total = {
+    authorizationCodesDeleted: 0,
+    tokensDeleted: 0,
+    grantsDeleted: 0,
+  };
+  for (const row of teamsWithGrants) {
+    const result = await withTeam(db, row.teamId, MCP_TEAM_ACTOR_USER_ID, {
+      skipMembershipCheck: true,
+    }).mcpOAuth.pruneExpiredCredentials();
+    total.authorizationCodesDeleted += result.authorizationCodesDeleted;
+    total.tokensDeleted += result.tokensDeleted;
+    total.grantsDeleted += result.grantsDeleted;
+  }
+  return total;
 }
 
 async function sweepDeletedTimelineMomentPins(db: Db): Promise<number> {
@@ -118,7 +152,9 @@ async function sweepDeletedTimelineMomentPins(db: Db): Promise<number> {
     .orderBy(asc(userPins.teamId));
   let deleted = 0;
   for (const row of teamsWithPins) {
-    const scope = withTeam(db, row.teamId, ZERO_UUID, { skipMembershipCheck: true });
+    const scope = withTeam(db, row.teamId, MCP_TEAM_ACTOR_USER_ID, {
+      skipMembershipCheck: true,
+    });
     deleted += await scope.pins.pruneDeletedTimelineMomentPins(PAGE_SIZE);
   }
   return deleted;
@@ -377,16 +413,10 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
       const startedAt = Date.now();
       const result = await processJanitorTick({ db: deps.db });
       const durationMs = Date.now() - startedAt;
-      if (
-        result.documentVersionsRequeued === 0 &&
-        result.meetingsRequeued === 0 &&
-        result.taskCategoriesRequeued === 0 &&
-        result.taskCategoryFanoutsRequeued === 0 &&
-        result.timelineMomentPinsDeleted === 0
-      ) {
+      if (janitorTickIsIdle(result)) {
         log.info({ jobId: job.id, durationMs }, 'janitor: nothing stuck');
       } else {
-        log.info({ jobId: job.id, ...result, durationMs }, 'janitor: requeued stuck rows');
+        log.info({ jobId: job.id, ...result, durationMs }, 'janitor: completed maintenance');
       }
       return { ...result, durationMs };
     },

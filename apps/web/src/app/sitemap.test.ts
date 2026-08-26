@@ -41,7 +41,7 @@ describe('sitemap', () => {
     expect(second).toEqual(first);
     expect(byUrl.get('https://thetimeline.cc/')).toBe('2026-08-21');
     expect(byUrl.get('https://thetimeline.cc/integrations')).toBe('2026-08-15');
-    expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-08-20');
+    expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-08-26');
     expect(byUrl.get('https://thetimeline.cc/terms')).toBe('2026-06-03');
     expect(first.every((entry) => typeof entry.lastModified === 'string')).toBe(true);
   });

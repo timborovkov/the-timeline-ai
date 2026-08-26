@@ -14,6 +14,8 @@ export interface RateLimitInput {
   refillPerSec: number;
   /** Tokens to consume on this call. Defaults to 1. */
   cost?: number;
+  /** Security-sensitive endpoints can deny when Redis is unavailable. Defaults to open. */
+  failureMode?: 'open' | 'closed';
 }
 
 export type RateLimitResult =
@@ -110,10 +112,14 @@ export async function checkRateLimit(
     if (allowed) return { ok: true, remaining };
     return { ok: false, retryAfterMs: raw[2], remaining };
   } catch (err) {
-    // Fail-open: a Redis hiccup must not take the API down. Log and allow.
+    // Most product paths fail open so a Redis hiccup does not take the API
+    // down. Security-sensitive mutation endpoints explicitly opt into closed.
     // Operational signal: monitor `rate_limit_error` rate to catch outages
     // that would otherwise hide a real attack.
     log.warn({ err: (err as Error).message, key: input.key }, 'rate_limit_error');
+    if (input.failureMode === 'closed') {
+      return { ok: false, retryAfterMs: 1_000, remaining: 0 };
+    }
     return { ok: true, remaining: input.capacity };
   }
 }

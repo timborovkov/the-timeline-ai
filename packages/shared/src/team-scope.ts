@@ -55,6 +55,7 @@ import { embed as defaultEmbed, type EmbedResult } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import { createMcpScope } from '#src/mcp/scope.js';
+import { createMcpOAuthScope } from '#src/mcp-server/oauth-scope.js';
 import { createMeetingScope } from '#src/meetings/scope.js';
 import { createObjectScope, normalizeIdentityFacet } from '#src/objects/index.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
@@ -1674,6 +1675,12 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     teamId,
     userId,
     ensureMember,
+  });
+
+  const mcpOAuthScope = createMcpOAuthScope({
+    db,
+    teamId,
+    userId,
   });
 
   const calendarScope = createCalendarScope({
@@ -4170,6 +4177,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     reconciliation: createReconciliationScope({ db, scope: core }),
     integrations: integrationScope,
     mcp: mcpScope,
+    mcpOAuth: mcpOAuthScope,
     onboarding: onboardingScope,
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,

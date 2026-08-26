@@ -67,7 +67,7 @@ export default async function McpSharePage() {
       />
       <PageHeader
         title="Timeline as MCP server"
-        subtitle="Expose team-level workspace retrieval and optional Timeline agent access through a bearer-keyed MCP endpoint."
+        subtitle="Expose Timeline through member-approved OAuth or manual team keys, with optional Timeline agent access."
         srLabel={`Timeline as MCP server · ${String(keys.length)} active keys`}
         metadata={[
           { label: 'team', value: active.teamName, signal: true },

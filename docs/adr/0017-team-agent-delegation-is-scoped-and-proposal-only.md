@@ -2,15 +2,15 @@
 
 ## Status
 
-Accepted.
+Accepted; amended 2026-08-26 for member-authorized OAuth and scope-upgrade discovery.
 
 ## Context
 
-Timeline already exposes team-visible retrieval through bearer-keyed MCP tools
-and runs the agent for verified web, Telegram, and Slack members. External
-agents also need a way to ask Timeline to reason over its connected workspace,
-including team-shared custom MCP tools, without granting a bearer key a human
-identity or direct mutation authority.
+Timeline exposes retrieval through static team bearer keys and member-authorized
+OAuth, and runs the agent for verified web, Telegram, and Slack members.
+External agents also need a way to ask Timeline to reason over its connected
+workspace, including team-shared custom MCP tools, without granting the
+delegated agent a human identity or direct mutation authority.
 
 Bound Telegram groups and Slack channels have the same identity problem. An
 unlinked sender may be trusted to invoke the team bot because the shared
@@ -40,12 +40,19 @@ revision, personal pins, approval-required `execute_*` tools, and every
 canonical mutation. A proposal never implies acceptance; a verified teammate
 must review it.
 
-Outbound MCP keys remain retrieval-only unless an admin explicitly grants
-`agent:ask`. Scoped tool discovery and call-time enforcement are independent,
-so a read-only key can neither list nor invoke `timeline.ask_agent`. Agent calls
-are stateless and return a bounded cited answer, parsed artifact references,
+Outbound MCP read principals can list `timeline.ask_agent` so clients can
+discover its `read agent:ask` security metadata. Call-time enforcement remains
+independent: a current-protocol read-only OAuth grant receives HTTP `403` with
+an `insufficient_scope` `WWW-Authenticate` challenge, while supported 2025
+clients receive equivalent in-band compatibility metadata and a read-only
+static key receives a stable forbidden result. A static key needs explicit
+admin-enabled `agent:ask`; an OAuth grant needs approval from a current owner or
+admin, and role demotion invalidates that scope. Authorized agent calls are
+stateless and return a bounded cited answer, parsed artifact references,
 proposal IDs, and a truncation flag. They execute as the zero-UUID team actor,
-which cannot match private authors or specific-user visibility lists.
+which cannot match private authors or specific-user visibility lists. OAuth
+retrieval tools outside that delegated call execute as the consenting member and
+retain the member's normal visibility boundary.
 
 Unlinked senders in bound Telegram groups and Slack channels use the same
 `proposal_only` identity. Linked members retain `full` behavior. Unlinked
@@ -61,7 +68,7 @@ Timeline propagates `x-timeline-agent-depth` through its MCP client. The initial
 agent and one nested Timeline-agent delegation are allowed; deeper direct
 recursion fails with `delegation_limit`. Request cancellation propagates through
 the agent and custom MCP calls, every turn has a 180-second deadline, and a
-separate per-key bucket limits agent calls to 10 per minute.
+separate per-credential bucket limits agent calls to 10 per minute.
 
 ## Consequences
 
@@ -69,10 +76,11 @@ External agents can delegate workspace reasoning and proposal drafting to
 Timeline without persistent MCP conversations or direct proposal-specific MCP
 tools. The caller owns conversation context and includes it in later questions.
 
-Administrators must understand that agent-enabled keys can consume model budget
-and that enabled custom MCP tools may have their own external side effects.
-Timeline continues to honor each server's enabled/disabled tool configuration;
-proposal-only authority governs Timeline state, not third-party server design.
+Administrators and consenting owners must understand that agent-enabled
+credentials can consume model budget and that enabled custom MCP tools may have
+their own external side effects. Timeline continues to honor each server's
+enabled/disabled tool configuration; proposal-only authority governs Timeline
+state, not third-party server design.
 
 The synthetic identity is deliberately less capable than a verified member.
 Future surfaces should reuse this mode instead of inventing provider-specific

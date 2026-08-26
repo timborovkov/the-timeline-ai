@@ -5,6 +5,10 @@ import {
   entities,
   entityRelationships,
   meetings as meetingsTable,
+  mcpOutboundOAuthClients,
+  mcpOutboundOAuthCodes,
+  mcpOutboundOAuthGrants,
+  mcpOutboundOAuthTokens,
   taskCategoryProjectInvalidations,
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
@@ -12,7 +16,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
-import { processJanitorTick } from '#src/workers/janitor.js';
+import { janitorTickIsIdle, processJanitorTick } from '#src/workers/janitor.js';
 
 /**
  * Integration tests for the janitor tick. Uses pglite for Postgres + stub
@@ -24,7 +28,9 @@ import { processJanitorTick } from '#src/workers/janitor.js';
  */
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
+const OTHER_TEAM_ID = '22222222-2222-4222-8222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const OTHER_USER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const DOC_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
 async function seed(pg: PGlite): Promise<void> {
@@ -536,5 +542,111 @@ describe('processJanitorTick — failure isolation', () => {
 
     expect(enqueueDoc).toHaveBeenCalledTimes(2);
     expect(result.documentVersionsRequeued).toBe(1);
+  });
+});
+
+describe('processJanitorTick — MCP OAuth retention', () => {
+  it('prunes every exact team scope and reports deletion counters', async () => {
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${OTHER_TEAM_ID}', 'other-oauth-team', 'Other OAuth Team');
+      INSERT INTO users (id, email)
+      VALUES ('${OTHER_USER_ID}', 'other-oauth@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${OTHER_TEAM_ID}', '${OTHER_USER_ID}', 'owner');
+    `);
+    const expiredAt = new Date(Date.now() - 60_000);
+    const oldRevokedAt = new Date(Date.now() - 32 * 24 * 60 * 60 * 1_000);
+    const clients = ['janitor-oauth-team-one', 'janitor-oauth-team-two'];
+    const grants = ['60000000-0000-4000-8000-000000000001', '60000000-0000-4000-8000-000000000002'];
+    await db.insert(mcpOutboundOAuthClients).values(
+      clients.map((clientId) => ({
+        clientId,
+        clientName: clientId,
+        redirectUris: ['https://client.example/oauth/callback'],
+      })),
+    );
+    await db.insert(mcpOutboundOAuthGrants).values([
+      {
+        id: grants[0],
+        clientId: clients[0] ?? '',
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        membershipAuthorizationEpoch: '70000000-0000-4000-8000-000000000001',
+        scopes: ['read'],
+        resource: 'https://thetimeline.cc/api/mcp/server',
+        revokedAt: oldRevokedAt,
+      },
+      {
+        id: grants[1],
+        clientId: clients[1] ?? '',
+        teamId: OTHER_TEAM_ID,
+        userId: OTHER_USER_ID,
+        membershipAuthorizationEpoch: '70000000-0000-4000-8000-000000000002',
+        scopes: ['read'],
+        resource: 'https://thetimeline.cc/api/mcp/server',
+        revokedAt: oldRevokedAt,
+      },
+    ]);
+    await db.insert(mcpOutboundOAuthCodes).values(
+      grants.map((grantId, index) => ({
+        grantId,
+        clientId: clients[index] ?? '',
+        codeHash: `janitor-expired-code-${String(index)}`,
+        redirectUri: 'https://client.example/oauth/callback',
+        codeChallenge: 'x'.repeat(43),
+        scopes: ['read'],
+        resource: 'https://thetimeline.cc/api/mcp/server',
+        expiresAt: expiredAt,
+      })),
+    );
+    await db.insert(mcpOutboundOAuthTokens).values(
+      grants.map((grantId, index) => ({
+        grantId,
+        accessTokenHash: `janitor-expired-access-${String(index)}`,
+        accessTokenPrefix: `janitor-a-${String(index)}`,
+        accessExpiresAt: expiredAt,
+        refreshTokenHash: `janitor-expired-refresh-${String(index)}`,
+        refreshTokenPrefix: `janitor-r-${String(index)}`,
+        refreshExpiresAt: expiredAt,
+      })),
+    );
+
+    const result = await processJanitorTick({
+      db: db as never,
+      enqueueDocumentExtractJob: vi.fn(),
+      enqueueMeetingFinalizeJob: vi.fn(),
+      taskCategoryEnabled: false,
+    });
+
+    expect(result).toMatchObject({
+      mcpOAuthAuthorizationCodesDeleted: 2,
+      mcpOAuthTokensDeleted: 2,
+      mcpOAuthGrantsDeleted: 2,
+    });
+    await expect(db.select().from(mcpOutboundOAuthCodes)).resolves.toEqual([]);
+    await expect(db.select().from(mcpOutboundOAuthTokens)).resolves.toEqual([]);
+    await expect(db.select().from(mcpOutboundOAuthGrants)).resolves.toEqual([]);
+  });
+});
+
+describe('janitorTickIsIdle', () => {
+  const idleResult = {
+    documentVersionsRequeued: 0,
+    meetingsRequeued: 0,
+    taskCategoriesRequeued: 0,
+    taskCategoryFanoutsRequeued: 0,
+    timelineMomentPinsDeleted: 0,
+    mcpOAuthAuthorizationCodesDeleted: 0,
+    mcpOAuthTokensDeleted: 0,
+    mcpOAuthGrantsDeleted: 0,
+  };
+
+  it('treats a zero-result tick as idle', () => {
+    expect(janitorTickIsIdle(idleResult)).toBe(true);
+  });
+
+  it('does not log idle when OAuth maintenance deleted rows', () => {
+    expect(janitorTickIsIdle({ ...idleResult, mcpOAuthTokensDeleted: 1 })).toBe(false);
   });
 });

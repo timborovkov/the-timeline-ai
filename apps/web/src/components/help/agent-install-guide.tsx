@@ -8,9 +8,11 @@ import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_INSTALL_STEPS,
   TIMELINE_AGENT_SKILL,
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_URL,
+  TIMELINE_CODEX_PLUGIN_INSTALL_URL,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
-  TIMELINE_PLUGIN_INSTALL_URL,
   TIMELINE_SKILL_INSTALL_PROMPT,
   TIMELINE_SKILLS_URL,
 } from '@/lib/agent-install-content';
@@ -55,14 +57,14 @@ export function AgentInstallGuide({ isSignedIn }: { isSignedIn: boolean }) {
         <div className="max-w-3xl space-y-5">
           <div className="inline-flex items-center gap-2 rounded-sm border border-border bg-surface-2 px-3 py-1.5 font-mono text-xs text-fg-muted">
             <Bot aria-hidden="true" className="size-4 text-signal" />
-            Agents / Codex / MCP
+            Agents / Codex / Claude / ChatGPT / MCP
           </div>
           <h1 className="max-w-[15ch] text-4xl font-semibold tracking-[-0.035em] text-fg sm:text-5xl lg:text-6xl">
             Connect your agent to what actually happened.
           </h1>
           <p className="max-w-[62ch] text-lg leading-7 text-fg-muted sm:text-xl">
             Install one general Timeline skill that teaches your agent how to retrieve, verify, and
-            cite team-visible workspace evidence.
+            cite workspace evidence visible to you as the authorizing member.
           </p>
         </div>
       </header>
@@ -82,13 +84,13 @@ export function AgentInstallGuide({ isSignedIn }: { isSignedIn: boolean }) {
                 Install The Timeline plugin
               </h2>
               <p className="max-w-[58ch] text-sm leading-6 text-fg-muted">
-                One bundle adds the Timeline skill and hosted MCP connection. Paste the prompt into
-                Codex and let it handle the install.
+                One bundle adds the Timeline skill and hosted MCP connection. Choose the install
+                path for Codex or Claude Code.
               </p>
             </div>
           </div>
           <ul className="space-y-2 text-sm text-fg">
-            {['General Timeline skill', 'Hosted MCP endpoint', 'Key stays in your environment'].map(
+            {['General Timeline skill', 'Hosted MCP endpoint', 'Browser-based OAuth consent'].map(
               (item) => (
                 <li key={item} className="flex gap-2">
                   <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-signal" />
@@ -99,23 +101,55 @@ export function AgentInstallGuide({ isSignedIn }: { isSignedIn: boolean }) {
           </ul>
         </div>
         <div className="space-y-4 p-5 sm:p-7">
-          <CopyPanel
-            value={TIMELINE_PLUGIN_INSTALL_PROMPT}
-            copyLabel="Copy install prompt"
-            context="Paste into a Codex task"
-          />
+          <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+            <article className="space-y-4 rounded-sm border border-border p-4 sm:p-5">
+              <div className="space-y-1">
+                <h3 className="font-semibold text-fg">Codex</h3>
+                <p className="text-sm leading-5 text-fg-muted">
+                  Paste the prompt into a task. Codex adds the repository marketplace and installs
+                  the plugin.
+                </p>
+              </div>
+              <CopyPanel
+                value={TIMELINE_PLUGIN_INSTALL_PROMPT}
+                copyLabel="Copy Codex install prompt"
+                context="Paste into a Codex task"
+              />
+              <Button asChild size="sm" variant="outline">
+                <a href={TIMELINE_CODEX_PLUGIN_INSTALL_URL} target="_blank" rel="noreferrer">
+                  Read the Codex install guide
+                  <ExternalLink aria-hidden="true" />
+                </a>
+              </Button>
+            </article>
+
+            <article className="space-y-4 rounded-sm border border-border p-4 sm:p-5">
+              <div className="space-y-1">
+                <h3 className="font-semibold text-fg">Claude Code</h3>
+                <p className="text-sm leading-5 text-fg-muted">
+                  Run both commands in a terminal, then restart Claude Code and start a new
+                  conversation.
+                </p>
+              </div>
+              <CopyPanel
+                value={TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND}
+                copyLabel="Copy Claude Code install commands"
+                context="Run in a terminal"
+              />
+              <Button asChild size="sm" variant="outline">
+                <a href={TIMELINE_CLAUDE_PLUGIN_INSTALL_URL} target="_blank" rel="noreferrer">
+                  Read the Claude Code install guide
+                  <ExternalLink aria-hidden="true" />
+                </a>
+              </Button>
+            </article>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <HelpAppLink
-              href="/app/team/mcp-share"
-              label="Create an MCP key"
+              href="/app/me/connections"
+              label="Manage approved AI apps"
               isSignedIn={isSignedIn}
             />
-            <Button asChild size="sm" variant="outline">
-              <a href={TIMELINE_PLUGIN_INSTALL_URL} target="_blank" rel="noreferrer">
-                Read the source guide
-                <ExternalLink aria-hidden="true" />
-              </a>
-            </Button>
           </div>
         </div>
       </section>
@@ -157,19 +191,16 @@ export function AgentInstallGuide({ isSignedIn }: { isSignedIn: boolean }) {
               <div className="space-y-1">
                 <h3 className="font-semibold text-fg">MCP only</h3>
                 <p className="text-sm leading-5 text-fg-muted">
-                  Set{' '}
-                  <code translate="no" className="font-mono text-xs text-fg">
-                    TIMELINE_MCP_KEY
-                  </code>{' '}
-                  in the terminal that will launch Codex, run the command, then relaunch Codex from
-                  that terminal.
+                  Add the hosted URL directly. A compatible client discovers Timeline OAuth, opens
+                  the browser consent flow, and keeps the resulting grant tied to your member
+                  account.
                 </p>
               </div>
             </div>
             <CopyPanel
               value={TIMELINE_MCP_COMMAND}
               copyLabel="Copy MCP command"
-              context="Run before launching Codex CLI"
+              context="Run in Codex CLI"
             />
           </article>
         </div>

@@ -1,5 +1,6 @@
 export const REQUEST_BODY_LIMITS = {
   integrationWebhook: 1024 * 1024,
+  mcpServer: 256 * 1024,
   recallTranscript: 2 * 1024 * 1024,
   slackCommand: 256 * 1024,
 } as const;

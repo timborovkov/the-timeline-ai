@@ -364,13 +364,34 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 ## Agent Reliability
 
 - [x] Expose the stateless Timeline team agent through opt-in outbound MCP keys,
-      with scope-filtered discovery/calls, cited structured answers, proposal ID
-      reporting, team-shared MCP evidence, bounded delegation, and the same
-      proposal-only identity for unlinked trusted Telegram groups and Slack
-      channels.
-- [x] Ship the repository Codex plugin and marketplace entry with the hosted
-      Timeline MCP connection, one general cited-workspace skill,
+      with scope-annotated discovery and call-time enforcement, cited structured
+      answers, proposal ID reporting, team-shared MCP evidence, bounded
+      delegation, and the same proposal-only identity for unlinked trusted
+      Telegram groups and Slack channels.
+- [x] Add repository plugin and marketplace packaging for Codex and Claude Code
+      with the hosted Timeline MCP connection, one general cited-workspace skill,
       standalone installation guidance, and links from public help and MCP setup.
+- [x] Implement the outbound MCP OAuth and current transport path in the repository:
+      RFC 9728/8414 discovery, CIMD-first client resolution with constrained DCR,
+      PKCE S256, member/team consent and revocation, `read` plus owner/admin-only
+      `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
+      annotations/output schemas, and standards-compatible 401 discovery.
+- [ ] Deploy this marketplace-readiness release, apply migration 0073, and pass
+      the production OAuth/MCP smoke matrix from every intended host.
+- [ ] Submit one OpenAI universal Plugins Directory **With MCP** draft containing
+      the production remote MCP connection and Timeline skill, and separately
+      submit the Claude plugin and any Claude.ai Connector listing intended for
+      launch. Use `docs/marketplace-submissions.md` as the field-by-field runbook
+      and evidence ledger; track submission, approval, and visible publication
+      independently.
+- [ ] Decide whether ChatGPT Enterprise verified-domain compatibility is needed.
+      If it is, implement and verify OIDC discovery, `openid email`, and UserInfo
+      with a verified email before making that claim; base OAuth does not depend
+      on this optional gate.
+- [ ] Before provider submission, obtain legal-owner approval for member-visible
+      OAuth access, static-key team visibility, provider-side retention/copies,
+      and revocation wording; verify public privacy/terms/support links, staffed
+      support and security channels, and reviewer accounts with sample data.
 - [x] Let reviewers revise unresolved approval proposals with plain-language
       feedback while preserving their operation, target, evidence, source
       records, and bounded revision history. Route chat corrections between

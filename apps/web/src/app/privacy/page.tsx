@@ -1,10 +1,12 @@
+import Link from 'next/link';
+
 import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
 import {
   LEGAL_ADDRESS,
-  LEGAL_EFFECTIVE_DATE,
   LEGAL_PROVIDER,
+  PRIVACY_EFFECTIVE_DATE,
   PRIVACY_VERSION,
   getLegalContactEmail,
 } from '@/lib/legal-versions';
@@ -23,7 +25,7 @@ export default function PrivacyPage() {
 
   return (
     <LegalPage
-      eyebrow={`Version ${PRIVACY_VERSION} · Effective ${LEGAL_EFFECTIVE_DATE}`}
+      eyebrow={`Version ${PRIVACY_VERSION} · Effective ${PRIVACY_EFFECTIVE_DATE}`}
       title="Privacy Policy"
       description="This policy explains how The Timeline processes personal data for team memory, capture, search, and AI-assisted workflows."
     >
@@ -41,7 +43,9 @@ export default function PrivacyPage() {
             Contact us at <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>.
           </>
         ) : (
-          'Support email is not configured in this environment.'
+          <>
+            Contact us through <Link href="/help/support">The Timeline support</Link>.
+          </>
         )}
       </p>
       <p>
@@ -65,6 +69,11 @@ export default function PrivacyPage() {
           Technical and product usage data, such as IP address, request metadata, logs, diagnostics,
           abuse signals, feature-flag evaluation data, and product analytics events.
         </li>
+        <li>
+          Authorized-app data, such as OAuth client identity and callback metadata, the selected
+          team and approved scopes, credential digests and prefixes, issue and expiry times,
+          revocation state, and security audit records.
+        </li>
       </ul>
 
       <h2>3. How We Use Data</h2>
@@ -73,6 +82,7 @@ export default function PrivacyPage() {
         <li>Authenticate users and manage teams, invitations, roles, and settings.</li>
         <li>Capture, transcribe, extract, embed, search, summarize, and display team content.</li>
         <li>Generate citations, suggestions, notifications, and agent answers.</li>
+        <li>Respond to requests from MCP clients and AI apps that a member has authorized.</li>
         <li>Respond to support, billing, security, and legal requests.</li>
         <li>Understand product usage, improve workflows, and evaluate feature flags.</li>
         <li>Prevent abuse, enforce terms, and protect users, teams, and the service.</li>
@@ -141,12 +151,35 @@ export default function PrivacyPage() {
         </tbody>
       </table>
 
-      <h2>6. Optional User-Enabled Integrations</h2>
+      <h2>6. Optional Integrations and Authorized AI Apps</h2>
       <p>
         Teams may choose to connect external services such as Slack, Telegram, GitHub, Google Drive,
         Linear, Monday.com, Sentry, calendar providers, custom ingest webhooks, and custom MCP
         servers. When enabled, The Timeline processes data from those services according to the
         permissions granted by the user or team.
+      </p>
+      <p>
+        A member may also authorize ChatGPT, Claude, Codex, or another MCP-compatible client to
+        request data from one selected team. The <strong>read</strong> scope can return team-visible
+        content, the authorizing member&apos;s private content, and content shared specifically with
+        that member, but only where the member can access it at the time of the request.
+      </p>
+      <p>
+        The separate <strong>agent:ask</strong> scope can be approved only by a current team owner
+        or admin. It lets the client ask the Timeline agent using team-visible context, create
+        team-visible proposals for review, and use enabled team tools. Those tools may act on
+        third-party services and can have external side effects. This scope does not give the client
+        general team-administration access.
+      </p>
+      <p>
+        The authorized app receives the content returned in response to its requests and may process
+        or retain it under the app operator&apos;s own terms and privacy policy. Revoking access
+        stops future Timeline requests, but it does not delete copies the app already received.
+      </p>
+      <p>
+        Timeline uses PKCE for this authorization flow, stores digests instead of plaintext
+        authorization codes and access or refresh tokens, and never sends your Timeline password to
+        the app.
       </p>
 
       <h2>7. Cookies</h2>
@@ -163,6 +196,20 @@ export default function PrivacyPage() {
         The Timeline, and operational logs for security, debugging, compliance, and abuse
         prevention. Raw events are designed as immutable source evidence unless hidden through
         supported product workflows such as source deletion tombstones.
+      </p>
+      <p>
+        Revoking an authorized app immediately marks its grant and credentials inactive. Expired
+        authorization-code digests are eligible for deletion after their ten-minute validity window.
+        Access- and refresh-token digests remain until the associated refresh-token expiry, up to 30
+        days from that token pair&apos;s issue, so attempted reuse can still be detected. Revoked
+        grant records are eligible for deletion after 31 days and only after their code and token
+        rows have been removed. The hourly maintenance worker performs these deletions on its next
+        successful sweep.
+      </p>
+      <p>
+        We may retain public-client registration metadata and security audit records after
+        revocation for security, abuse prevention, debugging, and legal compliance. These retained
+        records do not allow the app to regain access.
       </p>
 
       <h2>9. Security</h2>
@@ -199,7 +246,7 @@ export default function PrivacyPage() {
         {legalContactEmail ? (
           <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>
         ) : (
-          'support email not configured'
+          <Link href="/help/support">The Timeline support</Link>
         )}
         . Provider: {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
       </p>

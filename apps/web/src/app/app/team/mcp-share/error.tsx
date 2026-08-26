@@ -22,7 +22,7 @@ export default function McpShareError({
       />
       <PageHeader
         title="Timeline as MCP server"
-        subtitle="Expose team-level workspace retrieval to external agents via a bearer-keyed MCP endpoint."
+        subtitle="Expose Timeline to external agents through member-approved OAuth or manual team keys."
       />
       <ErrorState
         title="Unable to load Timeline as MCP server"

@@ -8,6 +8,7 @@ import { ActionChip } from '@/components/action-chip';
 import { Breadcrumb } from '@/components/breadcrumb';
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
 import { PersonalConnectionsUi } from '@/components/integrations/provider-connections';
+import { McpOAuthGrants } from '@/components/mcp-oauth-grants';
 import { PageHeader } from '@/components/page-header';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { SectionHeading } from '@/components/section-heading';
@@ -18,7 +19,7 @@ import { providerLabel } from '@/lib/resource-labels';
 
 export const metadata: Metadata = {
   title: 'Provider accounts',
-  description: 'Manage personal provider accounts you have granted to Timeline.',
+  description: 'Manage personal provider accounts and AI apps connected through Timeline.',
 };
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,12 @@ export const dynamic = 'force-dynamic';
 export default async function PersonalConnectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string }>;
+  searchParams: Promise<{
+    connected?: string;
+    error?: string;
+    mcpError?: string;
+    mcpRevoked?: string;
+  }>;
 }) {
   const session = await auth();
   if (!session?.user.id) redirect('/sign-in');
@@ -35,9 +41,10 @@ export default async function PersonalConnectionsPage({
   const params = await searchParams;
   const scope = withTeam(db, active.teamId, session.user.id);
   await scope.requireMembership();
-  const [connections, nativeCatalog] = await Promise.all([
+  const [connections, nativeCatalog, mcpOAuthGrants] = await Promise.all([
     scope.integrations.listOwnedProviderConnections(),
     Promise.resolve(integrationsLib.listAvailableProviders()),
+    scope.mcpOAuth.listGrants(),
   ]);
 
   return (
@@ -49,11 +56,12 @@ export default async function PersonalConnectionsPage({
       <PageHeader
         variant="collection"
         title="Provider accounts"
-        subtitle="Manage personal OAuth accounts and share allowed sources to the active team."
-        srLabel={`Provider accounts · ${String(connections.length)} connected`}
+        subtitle="Manage personal provider accounts, shared sources, and AI app access."
+        srLabel={`Provider accounts · ${String(connections.length)} connected · ${String(mcpOAuthGrants.length)} authorized apps`}
         metadata={[
           { label: 'Team', value: active.teamName },
           { label: 'Accounts', value: connections.length, mono: true },
+          { label: 'AI apps', value: mcpOAuthGrants.length, mono: true },
         ]}
       />
 
@@ -76,6 +84,12 @@ export default async function PersonalConnectionsPage({
         }
       />
 
+      <RedirectActionToast
+        id="connections:mcp-oauth"
+        error={params.mcpError ? 'Unable to revoke this app’s access. Try again.' : null}
+        success={params.mcpRevoked ? 'Revoked the app’s access to this team.' : null}
+      />
+
       <section className="space-y-3">
         <SectionHeading>Your provider accounts</SectionHeading>
         <PersonalConnectionsUi
@@ -88,6 +102,16 @@ export default async function PersonalConnectionsPage({
           }))}
           connectProviderHref="#connect-provider"
         />
+      </section>
+
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <SectionHeading>AI app access</SectionHeading>
+          <p className="text-sm text-fg-muted">
+            These apps can use Timeline through MCP with your permissions in {active.teamName}.
+          </p>
+        </div>
+        <McpOAuthGrants grants={mcpOAuthGrants} teamId={active.teamId} />
       </section>
 
       <section id="connect-provider" className="space-y-3">
