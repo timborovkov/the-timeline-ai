@@ -22,6 +22,7 @@ import {
   ingestWebhooks,
   integrations,
   integrationSelections,
+  legalAcceptances,
   mcpServers,
   meetings,
   meetingTranscriptChunks,
@@ -35,6 +36,7 @@ import {
   users,
 } from '@timeline/db';
 import { llm, qdrant } from '@timeline/shared';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { verifyPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getObjectBuffer, getS3Client } from '@timeline/shared/s3';
 import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -421,6 +423,7 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
   const db = getDb();
   const [
     peopleRows,
+    legalAcceptanceRows,
     eventCount,
     objectCount,
     documentCount,
@@ -445,7 +448,14 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
     northstarFactCount,
   ] = await Promise.all([
     db
-      .select({ email: users.email, passwordHash: users.passwordHash })
+      .select({
+        id: users.id,
+        email: users.email,
+        passwordHash: users.passwordHash,
+        legalTermsVersion: users.legalTermsVersion,
+        legalPrivacyVersion: users.legalPrivacyVersion,
+        legalAcceptedAt: users.legalAcceptedAt,
+      })
       .from(users)
       .innerJoin(
         teamMembers,
@@ -459,6 +469,22 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
         inArray(
           users.id,
           CORPUS_PEOPLE.map((person) => person.id),
+        ),
+      ),
+    db
+      .select({
+        userId: legalAcceptances.userId,
+        acceptedAt: legalAcceptances.acceptedAt,
+      })
+      .from(legalAcceptances)
+      .where(
+        and(
+          inArray(
+            legalAcceptances.userId,
+            CORPUS_PEOPLE.map((person) => person.id),
+          ),
+          eq(legalAcceptances.termsVersion, TERMS_VERSION),
+          eq(legalAcceptances.privacyVersion, PRIVACY_VERSION),
         ),
       ),
     db.select({ value: count() }).from(rawEvents).where(eq(rawEvents.teamId, DEMO_IDS.team)),
@@ -618,11 +644,35 @@ async function readExpandedDemoCorpusSnapshot(): Promise<
       passwordUsableEmails.push(row.email);
     }
   }
+  const currentLegalSnapshotEmails = peopleRows
+    .filter(
+      (row) =>
+        row.legalTermsVersion === TERMS_VERSION &&
+        row.legalPrivacyVersion === PRIVACY_VERSION &&
+        row.legalAcceptedAt !== null,
+    )
+    .map((row) => row.email);
+  const legalAcceptanceByUserId = new Map(
+    legalAcceptanceRows.map((row) => [row.userId, row.acceptedAt] as const),
+  );
+  const matchingLegalAcceptanceEmails = peopleRows
+    .filter((row) => {
+      const acceptedAt = legalAcceptanceByUserId.get(row.id);
+      return (
+        row.legalTermsVersion === TERMS_VERSION &&
+        row.legalPrivacyVersion === PRIVACY_VERSION &&
+        row.legalAcceptedAt !== null &&
+        acceptedAt?.getTime() === row.legalAcceptedAt.getTime()
+      );
+    })
+    .map((row) => row.email);
 
   return {
     people: peopleRows.length,
     loginEmails: peopleRows.map((row) => row.email),
     passwordUsableEmails,
+    currentLegalSnapshotEmails,
+    matchingLegalAcceptanceEmails,
     events: Number(eventCount[0]?.value ?? 0),
     objects: Number(objectCount[0]?.value ?? 0),
     documents: Number(documentCount[0]?.value ?? 0),

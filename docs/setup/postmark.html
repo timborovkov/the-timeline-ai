@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Postmark email setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-21</span></div>
       <p class="tldr">Postmark powers inbound timeline capture and outbound product emails.</p>
 
       <p>
@@ -40,6 +40,55 @@ SUPPORT_EMAIL=contact@thetimeline.cc
         <code>SUPPORT_EMAIL</code> to the mailbox destination for support requests. Requests use the
         visitor's email as <code>Reply-To</code>. The inbound webhook is authenticated separately
         via <code>POSTMARK_WEBHOOK_SECRET</code>.
+      </p>
+
+      <h2 id="privacy-account">Privacy and account checklist</h2>
+      <p>
+        Postmark is a content processor, not only an SMTP relay: outbound and inbound messages can
+        include recipient details, subject lines, full message bodies, attachments, and delivery
+        metadata. Complete this checklist for every production server before enabling email:
+      </p>
+      <ul>
+        <li>
+          <strong>Use the shortest viable message retention.</strong>
+          <a href="https://postmarkapp.com/support/article/how-does-the-retention-add-on-work"
+            >Postmark keeps message content for 45 days by default and supports custom retention
+            from 7 to 365 days</a
+          >. Configure the 7-day minimum unless a documented delivery-investigation need requires
+          longer, then record the selected period and a dated dashboard screenshot. Content deletion
+          can lag the period; aggregate statistics and bounce/spam suppression records can remain
+          longer.
+        </li>
+        <li>
+          <strong
+            >Disable open and click tracking unless it has an approved product purpose.</strong
+          >
+          If either is enabled, record the setting, legal basis, notice, and retention instead of
+          treating it as ordinary email delivery telemetry.
+        </li>
+        <li>
+          <strong>Complete vendor paperwork.</strong> Execute the applicable
+          <a href="https://postmarkapp.com/dpa">Postmark DPA</a>, review its current
+          <a href="https://postmarkapp.com/eu-privacy">subprocessor and EU transfer information</a>,
+          and retain the version/date with the vendor evidence pack.
+        </li>
+        <li>
+          <strong>Restrict account access.</strong> Give production access only to named operators,
+          protect their accounts with the strongest available authentication, review access after
+          role changes, and document any provider-support access to message content.
+        </li>
+        <li>
+          <strong>Do not claim message content is encrypted at rest.</strong>
+          <a href="https://postmarkapp.com/support/article/is-postmark-secure-and-redundant"
+            >Postmark documents TLS for API and SMTP connections, but says email message content is
+            not encrypted at rest</a
+          >. Keep secrets and unnecessary sensitive data out of email wherever possible.
+        </li>
+      </ul>
+      <p>
+        Postmark's retention setting controls Postmark's copy. Timeline separately persists accepted
+        inbound message content and attachments as team evidence, so deleting or expiring a message
+        in Postmark does not delete the corresponding Timeline records.
       </p>
 
       <h2 id="outbound-invites">2. Outbound product email</h2>

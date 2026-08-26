@@ -1,6 +1,7 @@
 'use client';
 
 import { ErrorState } from '@/components/error-state';
+import { PUBLIC_SUPPORT_EMAIL } from '@/lib/support-links';
 
 interface HelpRouteErrorProps {
   description: string;
@@ -30,6 +31,7 @@ export function HelpRouteError({ description, error, title, variant, reset }: He
         description={unchangedMessage}
         error={error}
         reset={reset}
+        supportHref={variant === 'support' ? `mailto:${PUBLIC_SUPPORT_EMAIL}` : undefined}
       />
     </article>
   );

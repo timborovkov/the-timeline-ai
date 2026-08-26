@@ -8,7 +8,7 @@ import {
 } from '#src/monitoring/sentry-scrub.js';
 
 describe('Sentry scrubber', () => {
-  it('scrubs request auth material case-insensitively', () => {
+  it('removes the complete request-header map and request cookies', () => {
     const event = scrubSentryRequestEvent({
       request: {
         url: 'https://app.timeline.test/api/integrations/github/callback?code=secret&state=secret#frag',
@@ -21,13 +21,16 @@ describe('Sentry scrubber', () => {
           'x-auth-token': 'token',
           'X-Auth-Token': 'other-token',
           'x-request-id': 'req-1',
+          referer: 'https://app.timeline.test/accept-invite/private?token=secret',
+          'x-forwarded-for': '203.0.113.10',
+          'x-unknown-secret': 'must-not-reach-sentry',
         },
       },
     });
 
     expect(event.request.url).toBe('https://app.timeline.test/api/integrations/github/callback');
     expect(event.request.cookies).toBeUndefined();
-    expect(event.request.headers).toEqual({ 'x-request-id': 'req-1' });
+    expect(event.request.headers).toBeUndefined();
   });
 
   it('strips query strings and redacts invite tokens from request URLs', () => {
@@ -82,5 +85,25 @@ describe('Sentry scrubber', () => {
         data: { url: 'https://api.telegram.org/bot123456:AAExampleTokenValue_for-tests/getMe' },
       }).data.url,
     ).toBe('https://api.telegram.org/bot[redacted]/getMe');
+  });
+
+  it('sanitizes URL-bearing navigation and HTTP breadcrumb fields', () => {
+    expect(
+      scrubSentryBreadcrumb({
+        data: {
+          url: 'https://app.timeline.test/api/auth/callback/github?code=secret&state=secret',
+          from: '/accept-invite/private-invite-token?returnTo=/app',
+          to: '/verify-email/private-verification-token?email=person@example.com',
+          href: 'https://storage.timeline.test/team/private-document.pdf?signature=secret',
+          method: 'GET',
+        },
+      }).data,
+    ).toEqual({
+      url: 'https://app.timeline.test/api/auth/callback/github',
+      from: '/accept-invite/[redacted]',
+      to: '/verify-email/[redacted]',
+      href: 'https://storage.timeline.test/team/private-document.pdf',
+      method: 'GET',
+    });
   });
 });

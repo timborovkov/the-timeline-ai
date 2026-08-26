@@ -1,5 +1,18 @@
 const checks = [
   {
+    name: '@timeline/shared legal versions',
+    run: async () => {
+      const legalVersions = await import('@timeline/shared/legal-versions');
+      const versionPattern = /^\d{4}-\d{2}-\d{2}$/;
+      if (
+        !versionPattern.test(legalVersions.TERMS_VERSION) ||
+        !versionPattern.test(legalVersions.PRIVACY_VERSION)
+      ) {
+        throw new Error('Legal-version exports are missing or are not date-versioned');
+      }
+    },
+  },
+  {
     name: '@timeline/shared evidence pack',
     run: async () => {
       const evidencePack = await import('@timeline/shared/evidence-pack');

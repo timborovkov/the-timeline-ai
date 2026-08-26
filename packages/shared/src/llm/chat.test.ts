@@ -32,6 +32,8 @@ const openRouterRequestSchema = z.object({
   provider: z
     .object({
       require_parameters: z.unknown(),
+      data_collection: z.literal('deny'),
+      zdr: z.literal(true),
     })
     .optional(),
   response_format: z.object({
@@ -398,6 +400,7 @@ describe('chatStructured', () => {
       DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     );
     expect(body.provider?.require_parameters).toBe(true);
+    expect(body.provider).toMatchObject({ data_collection: 'deny', zdr: true });
     expect(body.response_format.json_schema.strict).toBe(true);
     const factSchema = body.response_format.json_schema.schema.properties.facts.items;
     expect(factSchema.required).toEqual(
@@ -478,6 +481,8 @@ describe('chatStructured', () => {
         provider: z
           .object({
             require_parameters: z.unknown(),
+            data_collection: z.literal('deny'),
+            zdr: z.literal(true),
           })
           .optional(),
         max_completion_tokens: z.number().optional(),
@@ -490,6 +495,7 @@ describe('chatStructured', () => {
       DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     );
     expect(fallback.provider?.require_parameters).toBe(true);
+    expect(fallback.provider).toMatchObject({ data_collection: 'deny', zdr: true });
     expect(
       fallback.messages.some((message) =>
         String(message.content).includes('Return only a JSON object matching this JSON Schema'),
@@ -1250,6 +1256,7 @@ describe('streamChat', () => {
     expect(providerOptions).toMatchObject({
       openrouter: {
         models: [TIMELINE_MODELS.agent.id, TIMELINE_MODELS.structuredFallback.id],
+        provider: { data_collection: 'deny', zdr: true },
       },
     });
   });

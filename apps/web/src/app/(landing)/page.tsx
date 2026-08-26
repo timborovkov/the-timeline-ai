@@ -19,6 +19,7 @@ import {
   PUBLIC_DEMO_STORY,
 } from '@/components/marketing/public-demo-story';
 import { SOLUTION_ROUTES } from '@/components/marketing/solutions/content';
+import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import { PublicNavigationItems } from '@/components/public-navigation';
 import { auth } from '@/lib/auth';
@@ -236,7 +237,11 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
           what changed, and what comes next—then trace each claim back to the source.
         </p>
         <div className={styles.heroActions}>
-          <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.primaryCta}>
+          <Link
+            href={isSignedIn ? '/app' : '/sign-up'}
+            data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
+            className={styles.primaryCta}
+          >
             {isSignedIn ? 'Go to dashboard' : 'Try one real project'} <span aria-hidden>→</span>
           </Link>
           <Link href="/how-it-works" className={styles.textLink}>
@@ -578,7 +583,11 @@ function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
           Choose one project and the smallest useful source set. Preserve a week of selected work,
           then ask for current status, the next handoff, open blockers, and customer commitments.
         </p>
-        <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.primaryCta}>
+        <Link
+          href={isSignedIn ? '/app' : '/sign-up'}
+          data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
+          className={styles.primaryCta}
+        >
           {isSignedIn ? 'Open your Timeline' : 'Try one real project'} <span aria-hidden>→</span>
         </Link>
         {isSignedIn ? null : (
@@ -661,10 +670,18 @@ function Footer({ isSignedIn }: { isSignedIn: boolean }) {
         </nav>
         <nav aria-label="Support and legal">
           <GitHubSourceLink compact className={styles.footerGithub} />
+          <Link href="/trust">Trust</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
-          <Link href={CONTACT_HREF}>Contact</Link>
-          <Link href={isSignedIn ? '/app' : '/sign-in'}>
+          <Link href="/cookies">Cookies</Link>
+          <CookieSettingsButton />
+          <Link href={CONTACT_HREF} data-public-analytics-cta="contact_support">
+            Contact
+          </Link>
+          <Link
+            href={isSignedIn ? '/app' : '/sign-in'}
+            data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'sign_in'}
+          >
             {isSignedIn ? 'Dashboard' : 'Sign in'}
           </Link>
         </nav>

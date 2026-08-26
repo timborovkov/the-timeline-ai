@@ -26,6 +26,18 @@ export interface LiveIntegrationCanaryCleanupInput {
   docs?: string;
 }
 
+export type OpenRouterZdrRegistryInspection =
+  | {
+      ok: true;
+      endpointCount: number;
+      modelId: string;
+    }
+  | {
+      ok: false;
+      reason: 'invalid_response' | 'model_absent';
+      detail: string;
+    };
+
 export interface PostmarkInboundCaptureCanaryPayloadInput {
   messageId: string;
   to: string;
@@ -60,6 +72,58 @@ export interface TranscriptionCanaryWavInput {
 }
 
 export const TRANSCRIPTION_SPEECH_CANARY_TEXT = 'Timeline Canary task';
+
+export function inspectOpenRouterZdrRegistry(
+  payload: unknown,
+  modelId: string,
+): OpenRouterZdrRegistryInspection {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {
+      ok: false,
+      reason: 'invalid_response',
+      detail: 'ZDR registry response is not an object',
+    };
+  }
+
+  const data = (payload as Record<string, unknown>).data;
+  if (!Array.isArray(data)) {
+    return {
+      ok: false,
+      reason: 'invalid_response',
+      detail: 'ZDR registry response.data is not an array',
+    };
+  }
+
+  let endpointCount = 0;
+  for (const [index, endpoint] of data.entries()) {
+    if (!endpoint || typeof endpoint !== 'object' || Array.isArray(endpoint)) {
+      return {
+        ok: false,
+        reason: 'invalid_response',
+        detail: `ZDR registry response.data[${String(index)}] is not an object`,
+      };
+    }
+    const endpointModelId = (endpoint as Record<string, unknown>).model_id;
+    if (typeof endpointModelId !== 'string' || endpointModelId.trim().length === 0) {
+      return {
+        ok: false,
+        reason: 'invalid_response',
+        detail: `ZDR registry response.data[${String(index)}].model_id is not a non-empty string`,
+      };
+    }
+    if (endpointModelId === modelId) endpointCount += 1;
+  }
+
+  if (endpointCount === 0) {
+    return {
+      ok: false,
+      reason: 'model_absent',
+      detail: `${modelId} has no endpoint in the public ZDR registry`,
+    };
+  }
+
+  return { ok: true, endpointCount, modelId };
+}
 
 export async function completeLiveIntegrationCanaryCleanup(
   input: LiveIntegrationCanaryCleanupInput,

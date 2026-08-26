@@ -1,46 +1,63 @@
 import {
+  capturePostHogPersonlessSurfaceRequest,
   capturePostHogProductEvent,
-  evaluatePostHogFeatureFlag,
-  type FeatureFlagName,
+  reviewedPostHogHost,
+  REVIEWED_POSTHOG_EU_ORIGIN,
+  type AnalyticsActor,
+  type AppSurface,
   type ProductEventName,
   type ProductEventPayloads,
+  type PublicSurface,
 } from '@timeline/shared/analytics/posthog-node';
+import { after } from 'next/server';
 
-const DEFAULT_HOST = 'https://eu.i.posthog.com';
-
-function posthogKey(): string | undefined {
-  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-  return key && key !== 'undefined' ? key : undefined;
-}
-
-function posthogHost(): string {
-  const host = process.env.NEXT_PUBLIC_POSTHOG_HOST;
-  return host === undefined || host.length === 0 ? DEFAULT_HOST : host;
+function nonEmpty(value: string | undefined): string | undefined {
+  return value && value !== 'undefined' ? value : undefined;
 }
 
 function posthogConfig() {
-  return { key: posthogKey(), host: posthogHost() };
+  const configuredHost = nonEmpty(process.env.POSTHOG_HOST);
+  const host = configuredHost ? reviewedPostHogHost(configuredHost) : REVIEWED_POSTHOG_EU_ORIGIN;
+  const pseudonymizationKey = nonEmpty(process.env.ANALYTICS_PSEUDONYMIZATION_KEY);
+  return {
+    key: host ? nonEmpty(process.env.POSTHOG_PROJECT_KEY) : undefined,
+    host: host ?? REVIEWED_POSTHOG_EU_ORIGIN,
+    ...(pseudonymizationKey ? { pseudonymizationKey } : {}),
+  };
 }
 
 export async function trackProductEvent<Name extends ProductEventName>(
-  distinctId: string,
+  actor: AnalyticsActor,
   event: Name,
   properties: ProductEventPayloads[Name],
 ): Promise<void> {
-  await capturePostHogProductEvent(posthogConfig(), distinctId, event, properties);
+  await capturePostHogProductEvent(posthogConfig(), actor, event, properties);
 }
 
 export function trackProductEventBestEffort<Name extends ProductEventName>(
-  distinctId: string,
+  actor: AnalyticsActor,
   event: Name,
   properties: ProductEventPayloads[Name],
 ): void {
-  void trackProductEvent(distinctId, event, properties).catch(() => undefined);
+  const capture = trackProductEvent(actor, event, properties).catch(() => undefined);
+  try {
+    after(capture);
+  } catch {
+    // Workers and tests may call the shared helper outside a Next.js request.
+    // The already-started, failure-swallowing capture remains best effort there.
+  }
 }
 
-export async function getFeatureFlag(
-  flag: FeatureFlagName,
-  distinctId: string,
-): Promise<boolean | string | undefined> {
-  return evaluatePostHogFeatureFlag(posthogConfig(), flag, distinctId);
+export function capturePersonlessSurfaceRequest(
+  stream: 'public',
+  surface: PublicSurface,
+): Promise<void>;
+export function capturePersonlessSurfaceRequest(stream: 'app', surface: AppSurface): Promise<void>;
+export function capturePersonlessSurfaceRequest(
+  stream: 'public' | 'app',
+  surface: PublicSurface | AppSurface,
+): Promise<void> {
+  return stream === 'public'
+    ? capturePostHogPersonlessSurfaceRequest(posthogConfig(), 'public', surface as PublicSurface)
+    : capturePostHogPersonlessSurfaceRequest(posthogConfig(), 'app', surface as AppSurface);
 }

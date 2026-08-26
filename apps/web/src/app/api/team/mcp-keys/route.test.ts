@@ -16,6 +16,7 @@ const fakes = vi.hoisted(() => ({
   insertValues: [] as unknown[],
   returningRow: null as Record<string, unknown> | null,
   transactionError: null as Error | null,
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 vi.mock('@timeline/db', () => ({
@@ -34,6 +35,9 @@ vi.mock('drizzle-orm', () => ({
   isNull: (arg: unknown) => ({ op: 'isNull', arg }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: fakes.loggerError, warn: vi.fn(), info: vi.fn() }),
@@ -191,6 +195,11 @@ describe('/api/team/mcp-keys', () => {
         targetVisibility: 'team',
       },
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'mcp_key_mint', kind: 'mcp_outbound' },
+    );
   });
 
   it('grants agent access only when an admin explicitly opts in', async () => {

@@ -59,11 +59,13 @@ import {
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
 import { hashCredential } from '@timeline/shared/ingest-webhooks';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { hashKey } from '@timeline/shared/mcp-server';
 import { hashPassword } from '@timeline/shared/passwords';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
-import { DEMO_FIXTURE_VERSION, DEMO_IDS } from '../demo-fixture.js';
+import { DEMO_FIXTURE_VERSION, DEMO_IDS, DEMO_LEGAL_ACCEPTED_AT } from '../demo-fixture.js';
+import { seedCurrentLegalAcceptances } from '../demo-legal.js';
 
 import {
   CORPUS_CALENDAR_EVENTS,
@@ -172,20 +174,22 @@ export async function insertExpandedDemoCorpus(tx: SeedTx): Promise<void> {
 }
 
 async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
+  const people = CORPUS_PEOPLE.filter(
+    (person) => person.id !== DEMO_IDS.owner && person.id !== DEMO_IDS.member,
+  );
+
   await tx
     .insert(users)
     .values(
-      CORPUS_PEOPLE.filter(
-        (person) => person.id !== DEMO_IDS.owner && person.id !== DEMO_IDS.member,
-      ).map((person) => ({
+      people.map((person) => ({
         id: person.id,
         name: person.name,
         email: person.email,
         emailVerified: NOW,
         passwordHash,
-        legalTermsVersion: '2026-06-02',
-        legalPrivacyVersion: '2026-06-02',
-        legalAcceptedAt: NOW,
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: PRIVACY_VERSION,
+        legalAcceptedAt: new Date(DEMO_LEGAL_ACCEPTED_AT),
       })),
     )
     .onConflictDoUpdate({
@@ -201,12 +205,16 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
       },
     });
 
+  await seedCurrentLegalAcceptances(
+    tx,
+    people.map((person) => person.id),
+    new Date(DEMO_LEGAL_ACCEPTED_AT),
+  );
+
   await tx
     .insert(teamMembers)
     .values(
-      CORPUS_PEOPLE.filter(
-        (person) => person.id !== DEMO_IDS.owner && person.id !== DEMO_IDS.member,
-      ).map((person) => ({
+      people.map((person) => ({
         teamId: TEAM_ID,
         userId: person.id,
         role: person.role,

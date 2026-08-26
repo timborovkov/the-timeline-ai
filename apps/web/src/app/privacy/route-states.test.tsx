@@ -9,6 +9,8 @@ vi.mock('@/components/theme-toggle', () => ({
 }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
 
+import CookiesError from '@/app/cookies/error';
+import CookiesLoading from '@/app/cookies/loading';
 import PrivacyError from '@/app/privacy/error';
 import PrivacyLoading from '@/app/privacy/loading';
 import TermsError from '@/app/terms/error';
@@ -20,6 +22,13 @@ afterEach(() => {
 });
 
 const legalRoutes = [
+  {
+    description:
+      'The cookies, browser storage, analytics, and related technologies used by The Timeline.',
+    ErrorComponent: CookiesError,
+    Loading: CookiesLoading,
+    title: 'Cookies and similar technologies',
+  },
   {
     description:
       'This policy explains how The Timeline processes personal data for team memory, capture, search, and AI-assisted workflows.',
@@ -76,7 +85,7 @@ describe('Legal route states', () => {
         ),
       ).toBeTruthy();
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard('{Enter}');
       await user.keyboard('[Space]');

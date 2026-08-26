@@ -113,6 +113,12 @@
       "import": "./dist/logger.js",
       "default": "./dist/logger.js"
     },
+    "./legal-versions": {
+      "types": "./src/legal-versions.ts",
+      "development": "./src/legal-versions.ts",
+      "import": "./dist/legal-versions.js",
+      "default": "./dist/legal-versions.js"
+    },
     "./messaging": {
       "types": "./src/messaging/index.ts",
       "development": "./src/messaging/index.ts",

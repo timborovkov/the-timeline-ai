@@ -91,6 +91,7 @@ describe('database schema contracts', () => {
       WHERE schemaname = 'public'
         AND tablename IN (
           'teams',
+          'legal_acceptances',
           'raw_events',
           'entities',
           'agent_suggestions',
@@ -112,6 +113,7 @@ describe('database schema contracts', () => {
       'agent_suggestions',
       'artifact_evidence_associations',
       'entities',
+      'legal_acceptances',
       'monday_conversation_tombstone_invalidations',
       'monday_conversation_tombstones',
       'raw_events',
@@ -124,6 +126,128 @@ describe('database schema contracts', () => {
       'teams',
       'user_pins',
     ]);
+  });
+
+  it('backfills legal snapshots and preserves one acceptance event per document-version pair', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0072_object_discussions.sql' });
+      const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa73';
+      await migrationPg.exec(`
+        INSERT INTO users (
+          id,
+          email,
+          legal_terms_version,
+          legal_privacy_version,
+          legal_accepted_at
+        ) VALUES (
+          '${userId}',
+          'legal-history@example.test',
+          '2026-06-02',
+          '2026-06-02',
+          '2026-06-03T10:15:00Z'
+        )
+      `);
+
+      await applyMigrationFile(migrationPg, '0073_legal_acceptance_history.sql');
+
+      const backfilled = await migrationPg.query<{
+        terms_version: string;
+        privacy_version: string;
+        accepted_at: Date;
+        source: string;
+        ip_address: string | null;
+        user_agent: string | null;
+      }>(`
+        SELECT
+          terms_version,
+          privacy_version,
+          accepted_at,
+          source,
+          ip_address,
+          user_agent
+        FROM legal_acceptances
+        WHERE user_id = '${userId}'
+      `);
+      expect(backfilled.rows).toEqual([
+        {
+          terms_version: '2026-06-02',
+          privacy_version: '2026-06-02',
+          accepted_at: new Date('2026-06-03T10:15:00.000Z'),
+          source: 'legacy_snapshot',
+          ip_address: null,
+          user_agent: null,
+        },
+      ]);
+
+      await migrationPg.exec(`
+        INSERT INTO legal_acceptances (
+          user_id,
+          terms_version,
+          privacy_version,
+          accepted_at,
+          source
+        ) VALUES (
+          '${userId}',
+          '2026-06-02',
+          '2026-06-02',
+          '2026-06-04T10:15:00Z',
+          'legal_gate'
+        )
+        ON CONFLICT (user_id, terms_version, privacy_version) DO NOTHING;
+
+        INSERT INTO legal_acceptances (
+          user_id,
+          terms_version,
+          privacy_version,
+          accepted_at,
+          source
+        ) VALUES (
+          '${userId}',
+          '2026-08-21',
+          '2026-08-21',
+          '2026-08-21T10:15:00Z',
+          'legal_gate'
+        );
+      `);
+      const history = await migrationPg.query<{ terms_version: string; accepted_at: Date }>(`
+        SELECT terms_version, accepted_at
+        FROM legal_acceptances
+        WHERE user_id = '${userId}'
+        ORDER BY accepted_at
+      `);
+      expect(history.rows).toEqual([
+        {
+          terms_version: '2026-06-02',
+          accepted_at: new Date('2026-06-03T10:15:00.000Z'),
+        },
+        {
+          terms_version: '2026-08-21',
+          accepted_at: new Date('2026-08-21T10:15:00.000Z'),
+        },
+      ]);
+
+      await expect(
+        migrationPg.exec(`
+          UPDATE legal_acceptances
+          SET accepted_at = '2026-08-22T10:15:00Z'
+          WHERE user_id = '${userId}'
+        `),
+      ).rejects.toThrow(/legal_acceptances is append-only/);
+      await expect(
+        migrationPg.exec(`DELETE FROM legal_acceptances WHERE user_id = '${userId}'`),
+      ).rejects.toThrow(/legal_acceptances is append-only/);
+
+      await migrationPg.exec(`DELETE FROM users WHERE id = '${userId}'`);
+      const afterAccountDeletion = await migrationPg.query<{ value: number }>(`
+        SELECT COUNT(*)::int AS value
+        FROM legal_acceptances
+        WHERE user_id = '${userId}'
+      `);
+      expect(afterAccountDeletion.rows[0]?.value).toBe(0);
+    } finally {
+      await migrationPg.close();
+    }
   });
 
   it('backfills canonical shared-link associations at their current strengths', async () => {

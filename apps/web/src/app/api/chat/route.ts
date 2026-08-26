@@ -1,4 +1,5 @@
 import * as agent from '@timeline/shared/agent';
+import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import {
   CHAT_CONTEXT_TRAIL_MAX,
   chatContextPrompt,
@@ -688,13 +689,15 @@ export async function POST(req: Request): Promise<Response> {
   const nativeTools = agent.buildAgentTools(scope, {
     onToolError: reportChatAgentToolError,
     onApprovalDecision: ({ decision, itemCount, isBulk }) => {
-      trackProductEventBestEffort(session.user.id, 'approval_decision_submitted', {
-        teamId: active.teamId,
-        userId: session.user.id,
-        decision,
-        itemCount,
-        isBulk,
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: session.user.id, teamId: active.teamId },
+        'approval_decision_submitted',
+        {
+          decision,
+          itemCountBucket: bucketAnalyticsCount(itemCount),
+          isBulk,
+        },
+      );
     },
     allowPinMutations: hasExplicitPinMutationIntent(latestQuestion),
   });
@@ -757,13 +760,14 @@ export async function POST(req: Request): Promise<Response> {
   // persist only the delta (this user turn + the new assistant turn),
   // because useChat re-sends the full transcript every request and the
   // earlier user turns were persisted on their respective calls.
-  trackProductEventBestEffort(session.user.id, 'chat_message_sent', {
-    teamId: active.teamId,
-    userId: session.user.id,
-    sessionId: sessionId ?? null,
-    persisted: Boolean(sessionId),
-    messageCount: uiMessages.length,
-  });
+  trackProductEventBestEffort(
+    { kind: 'user', userId: session.user.id, teamId: active.teamId },
+    'chat_message_sent',
+    {
+      persisted: Boolean(sessionId),
+      messageCountBucket: bucketAnalyticsCount(uiMessages.length),
+    },
+  );
   log.info(
     {
       promptVersion: agent.AGENT_PROMPT_VERSION,
@@ -833,18 +837,21 @@ export async function POST(req: Request): Promise<Response> {
         },
         'chat completion',
       );
-      trackProductEventBestEffort(session.user.id, 'agent_answer_generated', {
-        teamId: active.teamId,
-        userId: session.user.id,
-        sessionId: sessionId ?? null,
-        persisted: Boolean(sessionId),
-        modelId: modelAttribution.responseModelId,
-        requestedModelId: modelAttribution.requestedModelId,
-        fallbackModelIds: modelAttribution.fallbackModelIds,
-        toolCount: 'toolCalls' in e && Array.isArray(e.toolCalls) ? e.toolCalls.length : 0,
-        promptVersion: agent.AGENT_PROMPT_VERSION,
-        ...tokenUsage(e.usage),
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: session.user.id, teamId: active.teamId },
+        'agent_answer_generated',
+        {
+          persisted: Boolean(sessionId),
+          modelId: modelAttribution.responseModelId,
+          requestedModelId: modelAttribution.requestedModelId,
+          fallbackModelIds: modelAttribution.fallbackModelIds,
+          toolCountBucket: bucketAnalyticsCount(
+            'toolCalls' in e && Array.isArray(e.toolCalls) ? e.toolCalls.length : 0,
+          ),
+          promptVersion: agent.AGENT_PROMPT_VERSION,
+          ...tokenUsage(e.usage),
+        },
+      );
       if (!sessionId) return;
       // Persist after the stream resolves. Errors here must NOT crash the
       // response — the user already saw the assistant reply and a failed

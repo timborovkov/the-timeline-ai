@@ -20,7 +20,7 @@ vi.mock('@/components/error-state', () => ({
       <h2>{title}</h2>
       <p>{description}</p>
       <button type="button" onClick={reset}>
-        Try again
+        Retry
       </button>
     </section>
   ),
@@ -54,7 +54,7 @@ describe('CalendarError', () => {
       ),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     await user.keyboard(' ');

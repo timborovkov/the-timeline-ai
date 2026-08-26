@@ -6,6 +6,10 @@ import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatViewProvider } from '@/components/chat/chat-view-context';
+import {
+  readFloatingChatSessionId,
+  storeFloatingChatSessionId,
+} from '@/lib/floating-chat-session-storage';
 
 const fakes = vi.hoisted(() => ({
   pathname: vi.fn(),
@@ -120,7 +124,7 @@ describe('FloatingAgentChat', () => {
     const user = userEvent.setup();
     const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
     const storageKey = 'timeline:floating-agent-chat:team-1:session';
-    window.localStorage.setItem(storageKey, storedSession);
+    storeFloatingChatSessionId(window.localStorage, 'team-1', storedSession);
 
     renderChat();
     await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
@@ -131,7 +135,7 @@ describe('FloatingAgentChat', () => {
     });
 
     await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
-    expect(window.localStorage.getItem(storageKey)).toBe(storedSession);
+    expect(readFloatingChatSessionId(window.localStorage, 'team-1')).toBe(storedSession);
     const closedPanel = document.getElementById('floating-agent-chat-panel');
     expect(closedPanel?.hasAttribute('open')).toBe(false);
     expect(closedPanel?.inert).toBe(true);
@@ -168,7 +172,7 @@ describe('FloatingAgentChat', () => {
   it('clears stale floating session id when hydration fails', async () => {
     const staleSessionId = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
     const storageKey = 'timeline:floating-agent-chat:team-1:session';
-    window.localStorage.setItem(storageKey, staleSessionId);
+    storeFloatingChatSessionId(window.localStorage, 'team-1', staleSessionId);
     fakes.loadChatSessionAction.mockResolvedValueOnce({ ok: false, error: 'Session not found' });
 
     renderChat();
@@ -183,8 +187,8 @@ describe('FloatingAgentChat', () => {
     const user = userEvent.setup();
     const team1Session = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
     const team2Session = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
-    window.localStorage.setItem('timeline:floating-agent-chat:team-1:session', team1Session);
-    window.localStorage.setItem('timeline:floating-agent-chat:team-2:session', team2Session);
+    storeFloatingChatSessionId(window.localStorage, 'team-1', team1Session);
+    storeFloatingChatSessionId(window.localStorage, 'team-2', team2Session);
 
     const { rerender } = render(
       <ChatViewProvider>

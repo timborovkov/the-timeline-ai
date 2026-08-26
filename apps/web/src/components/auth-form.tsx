@@ -9,6 +9,7 @@ import { TurnstileWidget } from '@/components/turnstile-widget';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 
 function SubmitButton({ disabled = false, label }: { disabled?: boolean; label: string }) {
   const { pending } = useFormStatus();
@@ -61,6 +62,8 @@ export function SignUpForm({
   return (
     <form action={action} className="space-y-4">
       {inviteToken ? <input type="hidden" name="inviteToken" value={inviteToken} /> : null}
+      <input type="hidden" name="termsVersion" value={TERMS_VERSION} />
+      <input type="hidden" name="privacyVersion" value={PRIVACY_VERSION} />
       <div className="space-y-2">
         <Label htmlFor="name">Name</Label>
         <Input id="name" name="name" autoComplete="name" required />

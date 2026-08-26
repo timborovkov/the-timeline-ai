@@ -4,6 +4,7 @@ import { and, eq } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
@@ -39,7 +40,7 @@ export async function DELETE(
       .for('update');
     const existing = existingRows[0];
     if (!existing) return null;
-    if (existing.revokedAt) return existing;
+    if (existing.revokedAt) return { revokedNow: false };
 
     const rows = await tx
       .update(mcpOutboundKeys)
@@ -57,8 +58,15 @@ export async function DELETE(
       targetVisibility: 'team',
       metadata: { surface: 'timeline_as_mcp_server' },
     });
-    return row;
+    return { revokedNow: true };
   });
   if (!revoked) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (revoked.revokedNow) {
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'integration_management_action_completed',
+      { action: 'mcp_key_revoke', kind: 'mcp_outbound' },
+    );
+  }
   return NextResponse.json({ ok: true });
 }

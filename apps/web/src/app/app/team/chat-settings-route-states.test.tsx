@@ -89,7 +89,7 @@ describe.each([
         '/app/team',
       );
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard(keys);
 

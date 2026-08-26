@@ -116,11 +116,11 @@ export async function createTeamExportAction(
       metadata: { mode: 'single', outcome: 'queued' },
     });
 
-    trackProductEventBestEffort(session.user.id, 'team_export_requested', {
-      teamId: active.teamId,
-      userId: session.user.id,
-      exportId: id,
-    });
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_export_requested',
+      {},
+    );
 
     revalidatePath('/app/team');
     return { ok: true };

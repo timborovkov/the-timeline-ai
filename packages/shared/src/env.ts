@@ -15,6 +15,11 @@ function emptyStringAsUnset(value: unknown): unknown {
   return value === '' ? undefined : value;
 }
 
+const reviewedPostHogServerHost = z.url().refine((value) => {
+  const url = new URL(value);
+  return !url.username && !url.password && url.origin === 'https://eu.i.posthog.com';
+}, 'POSTHOG_HOST must use the reviewed EU PostHog ingestion origin');
+
 function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...raw,
@@ -31,6 +36,7 @@ function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'NODE_ENV',
+  'TIMELINE_DEPLOYMENT_MODE',
   'LOG_LEVEL',
   'WORKER_MODE',
   'DOCUMENT_EXTRACT_ENABLED',
@@ -46,6 +52,7 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'REDIS_URL',
   'OPENROUTER_API_KEY',
   'OPENROUTER_BASE_URL',
+  'OPENROUTER_ZDR_GUARDRAIL_CONFIRMED',
   'S3_ENDPOINT',
   'S3_PUBLIC_ENDPOINT',
   'S3_REGION',
@@ -139,6 +146,12 @@ function assertDocumentExtractProcessEnvAllowlist(
 
 const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /**
+   * Distinguishes Timeline-operated hosting from a separately operated
+   * deployment. Default to hosted so production-only provider restrictions
+   * fail closed unless a self-managed operator opts into its own boundary.
+   */
+  TIMELINE_DEPLOYMENT_MODE: z.enum(['hosted', 'self-managed']).default('hosted'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 
   /**
@@ -226,6 +239,13 @@ const baseSchema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
+  /**
+   * Operational deployment assertion: the production OpenRouter key is bound
+   * to a key/account guardrail with ZDR enabled for OpenAI, Google, Anthropic,
+   * and non-frontier models. This is required because not every OpenRouter API
+   * surface (notably speech-to-text) exposes the chat provider-routing shape.
+   */
+  OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: z.preprocess(booleanString, z.boolean().default(false)),
   TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
   TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
@@ -325,10 +345,21 @@ const baseSchema = z.object({
   SENTRY_PROJECT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
-  // PostHog product analytics + feature flags. Browser-facing values are
-  // intentionally public; server helpers no-op when the project key is unset.
-  NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
-  NEXT_PUBLIC_POSTHOG_HOST: z.url().default('https://eu.i.posthog.com'),
+  // PostHog product analytics. Server and browser keys are deliberately
+  // separate so private product events never depend on a browser-visible key.
+  POSTHOG_PROJECT_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POSTHOG_HOST: z.preprocess(
+    emptyStringAsUnset,
+    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+  ),
+  ANALYTICS_PSEUDONYMIZATION_KEY: z.preprocess(emptyStringAsUnset, z.string().min(32).optional()),
+  // These public values are used only by the affirmative-consent public-site
+  // client. Authenticated routes must not import or initialize that client.
+  NEXT_PUBLIC_POSTHOG_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  NEXT_PUBLIC_POSTHOG_HOST: z.preprocess(
+    emptyStringAsUnset,
+    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+  ),
 
   // Phase 10 — Meeting bots. Provider defaults to Recall.ai. Set
   // RECALL_API_KEY + RECALL_STATUS_WEBHOOK_SECRET (Svix-signed status
@@ -341,10 +372,11 @@ const baseSchema = z.object({
   /**
    * Recall recording-media retention for meeting bots.
    *
-   * Unset / empty => timed retention for 1 hour. A positive integer is
-   * interpreted as timed retention in hours. "forever" asks Recall to retain
-   * indefinitely. Zero retention is intentionally unsupported because Recall's
-   * zero-retention mode is incompatible with prioritize_accuracy transcription.
+   * Unset / empty => timed retention for 1 hour. Development and explicitly
+   * self-managed deployments can choose another positive hour count or
+   * "forever". Timeline-hosted production is constrained below to one hour
+   * because Recall's zero-retention mode is incompatible with
+   * prioritize_accuracy.
    */
   RECALL_RETENTION: z.preprocess(emptyStringAsUnset, z.string().optional()),
   /**
@@ -401,6 +433,39 @@ const schema = baseSchema
         code: 'custom',
         path: ['LANGSMITH_API_KEY'],
         message: 'LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.LANGSMITH_TRACING) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LANGSMITH_TRACING'],
+        message:
+          'LANGSMITH_TRACING must be false in production because traces may contain customer content',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.OPENROUTER_API_KEY &&
+      !env.OPENROUTER_ZDR_GUARDRAIL_CONFIRMED
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['OPENROUTER_ZDR_GUARDRAIL_CONFIRMED'],
+        message:
+          'OPENROUTER_ZDR_GUARDRAIL_CONFIRMED must be true in production after verifying ZDR guardrail coverage for every model group Timeline uses',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.RECALL_API_KEY &&
+      env.RECALL_RETENTION !== undefined &&
+      env.RECALL_RETENTION.trim() !== '1'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_RETENTION'],
+        message: 'RECALL_RETENTION must be unset or 1 in hosted production',
       });
     }
     // Web + full worker still need Auth.js secrets. The credential-thin

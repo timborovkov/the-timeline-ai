@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-07-15</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-21</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. Timeline can also connect
@@ -36,6 +36,49 @@ SENTRY_ENVIRONMENT=development
 SENTRY_TRACES_SAMPLE_RATE=0
 SENTRY_PROFILES_SAMPLE_RATE=0
 </code></pre>
+
+      <h2 id="privacy-account">Privacy and account checklist</h2>
+      <p>
+        Sentry can receive exception messages, stack traces, breadcrumbs, runtime metadata, and
+        source maps. Before setting a production DSN, verify and preserve evidence for the account
+        controls that the repository cannot enforce:
+      </p>
+      <ul>
+        <li>
+          <strong>Region:</strong> choose the intended
+          <a
+            href="https://sentry.io/changelog/data-storage-location-in-germany-is-generally-available/"
+            >US or Germany data location</a
+          >, confirm that the production DSN belongs to that organization/region, and record the
+          choice. A hostname or an old vendor overview is not sufficient residency evidence.
+        </li>
+        <li>
+          <strong>Retention:</strong> set the shortest operationally useful event retention allowed
+          by the plan and record the exact period. Do not rely on Sentry's older 90-day security
+          overview as proof of the current account setting.
+        </li>
+        <li>
+          <strong>Seer and other AI features:</strong> keep them disabled unless their data flow,
+          model providers, retention, training terms, product purpose, and public disclosures have
+          been reviewed and approved. A provider statement about Seer does not establish Timeline's
+          configuration.
+        </li>
+        <li>
+          <strong>Contracts and subprocessors:</strong> execute the current
+          <a href="https://sentry.io/legal/dpa/">Sentry DPA</a>, review the applicable subprocessor
+          and transfer terms, and retain their dates with the account evidence.
+        </li>
+        <li>
+          <strong>Access:</strong> limit organization/project roles and API tokens to named
+          operators and CI jobs, use the strongest available authentication, review membership and
+          support access after role changes, and keep source-map upload credentials out of runtime
+          services.
+        </li>
+        <li>
+          <strong>Sampling:</strong> keep trace and profile sampling at zero until a separately
+          approved observability need defines the fields, rate, retention, and disclosure.
+        </li>
+      </ul>
 
       <h2 id="wiring">2. Wiring</h2>
       <p>
@@ -67,9 +110,10 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       </p>
       <p>
         Server actions run through <code>runSentryServerAction</code>, which delegates to Sentry's
-        <code>withServerActionInstrumentation</code> helper with the current request headers. This
-        gives actions named <code>serverAction/&lt;operation&gt;</code> spans and preserves trace
-        continuity without recording form data.
+        <code>withServerActionInstrumentation</code> helper with only a validated
+        <code>sentry-trace</code> value when present. This gives actions named
+        <code>serverAction/&lt;operation&gt;</code> spans and preserves trace continuity without
+        passing the complete request-header map or recording form data.
       </p>
       <p>
         Agent model runs, native tools, and custom MCP tool calls also report caught internal
@@ -83,8 +127,11 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       <p>
         Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,
         transcripts, filenames, uploaded content, or raw document text to Sentry events. The
-        scrubber removes request cookies and auth headers before send, and redacts Telegram Bot API
-        tokens embedded in HTTP breadcrumb URLs (<code>api.telegram.org/bot&lt;token&gt;/…</code>
+        scrubber removes request cookies and the entire request-header map before send. It strips
+        query strings and fragments from request and breadcrumb URLs, redacts invite and
+        verification path tokens, and redacts Telegram Bot API tokens (<code
+          >api.telegram.org/bot&lt;token&gt;/…</code
+        >
         and <code>api.telegram.org/file/bot&lt;token&gt;/…</code>). Browser-side filtering also
         drops known injected extension noise such as MetaMask in-page script connection errors, so
         third-party extension failures do not page as Timeline app failures. The web proxy rejects
@@ -95,6 +142,16 @@ SENTRY_PROFILES_SAMPLE_RATE=0
         Sentry drops the residual <code>Failed to parse body as FormData</code> noise that still
         lands on <code>/_not-found</code> from scanner traffic while keeping FormData failures on
         real routes.
+      </p>
+      <p>
+        These are targeted filters, not a general content-removal guarantee. The implemented scope
+        disables Sentry's default PII collection, removes request cookies and all request headers,
+        avoids attaching prompts/transcripts/files in Timeline's explicit captures, sanitizes
+        request and URL-bearing breadcrumb fields, bounds LLM failure metadata, and redacts known
+        credential-bearing URL patterns. Unexpected exception strings, stack locals, arbitrary
+        breadcrumb text, request-derived values, and errors thrown by third-party code can still
+        contain customer content. Inspect representative test events before production enablement
+        and after adding new integrations; do not claim that Sentry can never receive customer data.
       </p>
       <h2 id="source-maps">3. Source maps</h2>
       <p>

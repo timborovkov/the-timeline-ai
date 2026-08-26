@@ -11,6 +11,7 @@ import {
   completeLiveIntegrationCanaryCleanup,
   formatLiveIntegrationCanaryReport,
   getProvider,
+  inspectOpenRouterZdrRegistry,
   isExpectedSpeechTranscriptionCanaryText,
   type NativeProviderId,
   redactLiveIntegrationCanaryText,
@@ -20,7 +21,7 @@ import {
   validateSlackEventCaptureCanaryUrl,
   validateTelegramCaptureCanaryUrl,
 } from '@timeline/shared/integrations';
-import { chatStructured, transcribeAudio } from '@timeline/shared/llm';
+import { TIMELINE_MODELS, chatStructured, transcribeAudio } from '@timeline/shared/llm';
 import { listRecallBotsForCanary } from '@timeline/shared/meeting-bots';
 import { SlackApi } from '@timeline/shared/slack';
 import { z } from 'zod';
@@ -134,6 +135,55 @@ async function checkOpenRouter(): Promise<LiveIntegrationCanaryResult> {
     action: 'verify the configured model returns structured responses',
     docs: 'docs/setup/openrouter.html',
   };
+}
+
+async function checkOpenRouterZdrRegistry(): Promise<LiveIntegrationCanaryResult> {
+  const docs = 'docs/setup/openrouter.html#model-pins';
+  const modelId = TIMELINE_MODELS.transcription.id;
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/endpoints/zdr', {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    const { body, text } = await readJson(response);
+    if (!response.ok) {
+      return {
+        name: 'OpenRouter transcription ZDR registry',
+        status: 'warn',
+        detail: shortProviderError(response.status, body, text),
+        action: 'retry the public ZDR registry check before relying on transcription in production',
+        docs,
+      };
+    }
+
+    const inspection = inspectOpenRouterZdrRegistry(body, modelId);
+    if (!inspection.ok) {
+      return {
+        name: 'OpenRouter transcription ZDR registry',
+        status: 'warn',
+        detail: inspection.detail,
+        action:
+          inspection.reason === 'model_absent'
+            ? 'choose a ZDR-listed transcription model before production use and re-confirm the key guardrail'
+            : 'retry the public ZDR registry check and verify OpenRouter endpoint status',
+        docs,
+      };
+    }
+
+    return {
+      name: 'OpenRouter transcription ZDR registry',
+      status: 'ok',
+      detail: `${modelId} has ${String(inspection.endpointCount)} listed ZDR endpoint(s)`,
+    };
+  } catch (error) {
+    return {
+      name: 'OpenRouter transcription ZDR registry',
+      status: 'warn',
+      detail: safeCanaryDetail(error instanceof Error ? error.message : String(error)),
+      action: 'retry the public ZDR registry check before relying on transcription in production',
+      docs,
+    };
+  }
 }
 
 async function checkOpenRouterTranscription(): Promise<LiveIntegrationCanaryResult> {
@@ -1091,6 +1141,7 @@ loadEnvFile(envFile);
 
 const results: LiveIntegrationCanaryResult[] = [
   ...(await Promise.all([
+    checkOpenRouterZdrRegistry(),
     checkOpenRouter(),
     checkOpenRouterTranscription(),
     checkGithubApp(),

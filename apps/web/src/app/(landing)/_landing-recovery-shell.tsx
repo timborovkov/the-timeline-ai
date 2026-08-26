@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { LandingSkipLink } from '@/app/(landing)/_landing-skip-link';
 import styles from '@/app/(landing)/home.module.css';
 import { Logo } from '@/components/brand/logo';
+import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 
 const CONTACT_HREF = '/help/support';
@@ -30,8 +31,11 @@ export function LandingRecoveryShell({ children }: { children: ReactNode }) {
         </div>
         <nav aria-label="Landing footer">
           <Link href="/help">Help</Link>
+          <Link href="/trust">Trust</Link>
           <Link href="/terms">Terms</Link>
           <Link href="/privacy">Privacy</Link>
+          <Link href="/cookies">Cookies</Link>
+          <CookieSettingsButton />
           <Link href={CONTACT_HREF}>Contact</Link>
         </nav>
       </footer>

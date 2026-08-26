@@ -37,6 +37,7 @@ import {
   users,
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { hashPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
@@ -56,15 +57,14 @@ import {
   DEMO_FIXTURE_VERSION,
   DEMO_IDS,
   DEMO_LOGIN_PASSWORD,
+  DEMO_LEGAL_ACCEPTED_AT,
   DEMO_SOURCE_REFS,
   DEMO_TIMES,
 } from './demo-fixture.js';
+import { seedCurrentLegalAcceptances } from './demo-legal.js';
 import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
-
-const TERMS_VERSION = '2026-06-02';
-const PRIVACY_VERSION = '2026-06-02';
 
 const IDS = {
   owner: '10000000-0000-4000-8000-000000000001',
@@ -331,7 +331,7 @@ async function main(): Promise<void> {
             passwordHash,
             legalTermsVersion: TERMS_VERSION,
             legalPrivacyVersion: PRIVACY_VERSION,
-            legalAcceptedAt: now,
+            legalAcceptedAt: new Date(DEMO_LEGAL_ACCEPTED_AT),
           },
           {
             id: IDS.member,
@@ -341,7 +341,7 @@ async function main(): Promise<void> {
             passwordHash,
             legalTermsVersion: TERMS_VERSION,
             legalPrivacyVersion: PRIVACY_VERSION,
-            legalAcceptedAt: now,
+            legalAcceptedAt: new Date(DEMO_LEGAL_ACCEPTED_AT),
           },
         ])
         .onConflictDoUpdate({
@@ -356,6 +356,12 @@ async function main(): Promise<void> {
             updatedAt: now,
           },
         });
+
+      await seedCurrentLegalAcceptances(
+        tx,
+        [IDS.owner, IDS.member],
+        new Date(DEMO_LEGAL_ACCEPTED_AT),
+      );
 
       await tx
         .insert(teams)

@@ -1252,7 +1252,7 @@ export function createIntegrationScope(deps: {
   async function activateSharedResources(input: {
     providerConnectionId: string;
     resourceShareIds: string[];
-  }): Promise<IntegrationRow & { addedSelectionCount: number }> {
+  }): Promise<IntegrationRow & { addedSelectionCount: number; removedSelectionCount: number }> {
     await ensureMember('admin');
     const connectionRows = await db
       .select()
@@ -1355,8 +1355,15 @@ export function createIntegrationScope(deps: {
       const existingSelectionKeys = new Set(
         existingSelections.map((row) => `${row.selectionKind}\x00${row.externalId}`),
       );
+      const selectedSelectionKeys = new Set(
+        shares.map((share) => `${share.resourceKind}\x00${share.externalId}`),
+      );
       const addedSelectionCount = shares.filter(
         (share) => !existingSelectionKeys.has(`${share.resourceKind}\x00${share.externalId}`),
+      ).length;
+      const removedSelectionCount = existingSelections.filter(
+        (selection) =>
+          !selectedSelectionKeys.has(`${selection.selectionKind}\x00${selection.externalId}`),
       ).length;
       await tx
         .delete(integrationSelections)
@@ -1412,9 +1419,9 @@ export function createIntegrationScope(deps: {
         targetVisibility: 'team',
         metadata: { field: 'active_source_paths', selection_count: shares.length },
       });
-      return { integration, addedSelectionCount };
+      return { integration, addedSelectionCount, removedSelectionCount };
     });
-    const { integration, addedSelectionCount } = activation;
+    const { integration, addedSelectionCount, removedSelectionCount } = activation;
     await adminResolveConnectionAttention(db, teamId, {
       integrationId: integration.id,
       categories: ['needs_new_owner'],
@@ -1427,7 +1434,7 @@ export function createIntegrationScope(deps: {
         }),
       ),
     );
-    return { ...integration, addedSelectionCount };
+    return { ...integration, addedSelectionCount, removedSelectionCount };
   }
 
   async function listConnectionAttention() {

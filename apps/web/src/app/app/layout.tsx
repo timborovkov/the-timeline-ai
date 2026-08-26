@@ -7,7 +7,6 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
-import { AnalyticsProvider } from '@/components/analytics-provider';
 import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -140,32 +139,30 @@ export default async function AppLayout({
   );
 
   return (
-    <AnalyticsProvider userId={session.user.id} teamId={active.teamId}>
-      <QueryProvider>
-        <AppShell
-          active={active}
-          memberships={memberships}
-          recipientInvites={recipientInvites.map((invite) => ({
-            id: invite.id,
-            teamName: invite.teamName,
-            role: invite.role === 'owner' ? 'member' : invite.role,
-            expiresAt: invite.expiresAt.toISOString(),
-            invitedBy: invite.inviterName ?? invite.inviterEmail,
-          }))}
-          user={{
-            name: session.user.name,
-            email: currentUser?.email ?? session.user.email,
-            emailVerified: currentUser?.emailVerified ?? null,
-          }}
-          badges={badges}
-          inbox={inbox}
-          workspaceTimezone={workspaceTimezone}
-          sidebarInitiallyExpanded={sidebarInitiallyExpanded}
-        >
-          {children}
-          {modal}
-        </AppShell>
-      </QueryProvider>
-    </AnalyticsProvider>
+    <QueryProvider>
+      <AppShell
+        active={active}
+        memberships={memberships}
+        recipientInvites={recipientInvites.map((invite) => ({
+          id: invite.id,
+          teamName: invite.teamName,
+          role: invite.role === 'owner' ? 'member' : invite.role,
+          expiresAt: invite.expiresAt.toISOString(),
+          invitedBy: invite.inviterName ?? invite.inviterEmail,
+        }))}
+        user={{
+          name: session.user.name,
+          email: currentUser?.email ?? session.user.email,
+          emailVerified: currentUser?.emailVerified ?? null,
+        }}
+        badges={badges}
+        inbox={inbox}
+        workspaceTimezone={workspaceTimezone}
+        sidebarInitiallyExpanded={sidebarInitiallyExpanded}
+      >
+        {children}
+        {modal}
+      </AppShell>
+    </QueryProvider>
   );
 }

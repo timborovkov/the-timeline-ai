@@ -1,4 +1,5 @@
 export * from '#src/schema/users.js';
+export * from '#src/schema/legal-acceptances.js';
 export * from '#src/schema/teams.js';
 export * from '#src/schema/raw-events.js';
 export * from '#src/schema/telegram.js';

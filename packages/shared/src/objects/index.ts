@@ -5229,9 +5229,9 @@ export async function unarchiveObject(
   scope: TeamScopeCore,
   entityId: string,
   actor: UpdateActor,
-): Promise<ObjectRow> {
+): Promise<ObjectRow & { changedFields: string[] }> {
   const result = await updateObject(db, scope, entityId, { archivedAt: null }, actor);
-  return result.object;
+  return { ...result.object, changedFields: result.changedFields };
 }
 
 export async function mergeObjects(
