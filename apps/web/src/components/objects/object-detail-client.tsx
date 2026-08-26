@@ -45,7 +45,10 @@ import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectBoardContext } from '@/components/objects/object-board-context';
+import { ObjectBoardContextSection } from '@/components/objects/object-board-context-section';
+import { ObjectContactFields } from '@/components/objects/object-contact-fields';
 import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
+import { ObjectMetadataFields } from '@/components/objects/object-metadata-fields';
 import { ObjectOrigin, ObjectProvenanceGroups } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
 import {
@@ -54,6 +57,7 @@ import {
   visibleObjectSearchResultsForQuery,
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { PersonCompanySelect } from '@/components/objects/person-company-select';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
@@ -70,6 +74,7 @@ import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
+import { relationshipDisplayLabel } from '@/lib/relationship-display-label';
 import { statusLabel } from '@/lib/status-labels';
 
 const RELATIONSHIP_KINDS = [
@@ -100,8 +105,10 @@ interface Props {
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
   projects?: { id: string; label: string }[];
+  companies?: { id: string; label: string }[];
   members?: { id: string; label: string; name?: string; email?: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
+  primaryCompany?: objects.PersonPrimaryCompanyRow | null;
   taskCategoriesEnabled?: boolean;
   boardContext?: boards.ObjectBoardContextRow[];
   highlightCommentId?: string | null;
@@ -154,6 +161,7 @@ const STATUS_BY_TYPE: Record<string, string[]> = {
   decision: ['draft', 'proposed', 'accepted', 'rejected'],
 };
 const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
+const EMPTY_COMPANY_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_MEMBER_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_BOARD_CONTEXT: boards.ObjectBoardContextRow[] = [];
 const DETAIL_ACTION_CLASS =
@@ -933,6 +941,47 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     });
   }
 
+  function linkRelatedObject(other: ObjectDetail['connectedWork']['objects'][number]): void {
+    dispatchObjectUi({ error: null });
+    const tempId = `optimistic-relationship-${localMutationId()}`;
+    const optimisticRelationship: ObjectDetail['relationships'][number] = {
+      id: tempId,
+      direction: 'out',
+      kind: 'related',
+      otherId: other.id,
+      otherName: other.canonicalName,
+      otherType: other.type,
+    };
+    dispatchLocalDetail((current) => ({
+      ...current,
+      pendingRelationships: [optimisticRelationship, ...current.pendingRelationships],
+    }));
+    startTransition(async () => {
+      const result = await notifyAction({
+        id: `object:${detail.id}:relationship:${other.id}`,
+        loading: 'Linking object…',
+        success: 'Object linked',
+        error: 'Couldn’t link object',
+        run: () =>
+          addRelationshipAction({
+            fromEntityId: detail.id,
+            toEntityId: other.id,
+            kind: 'related',
+          }),
+      });
+      if (result.error) {
+        dispatchLocalDetail((current) => ({
+          ...current,
+          pendingRelationships: current.pendingRelationships.filter(
+            (relationship) => relationship.id !== tempId,
+          ),
+        }));
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
   return {
     acceptChange,
     addNote,
@@ -949,6 +998,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     aliasesDraft,
     linkKind,
     linkQuery,
+    linkRelatedObject,
     localDetail,
     nameDraft,
     noteBody,
@@ -994,7 +1044,7 @@ function ObjectDetailView(props: Props) {
         onRepairMemory={view.repairMemory}
       />
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_14rem]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
         <main className="min-w-0 space-y-2">
           {view.suggestions.length > 0 ? (
             <ApprovalsClient
@@ -1023,6 +1073,10 @@ function ObjectDetailView(props: Props) {
           <ObjectConnectedWorkSection
             connectedWork={view.detail.connectedWork}
             hiddenBoardItemIds={hiddenBoardItemIds}
+            relationships={view.viewDetail.relationships}
+            sourceType={view.viewDetail.type}
+            pending={view.pending}
+            onLinkRelatedObject={view.linkRelatedObject}
           />
 
           <ObjectSectionFeed objectId={view.detail.id} section="events" title="Evidence" />
@@ -1046,7 +1100,14 @@ function ObjectDetailView(props: Props) {
         </main>
 
         <DetailRail className="min-w-0 divide-y divide-border xl:sticky xl:top-2 [&>footer]:px-2 [&>footer]:py-1.5 [&>section]:px-1 [&>section]:py-1.5">
-          <ObjectContactSection detail={view.viewDetail} />
+          <ObjectBoardContextSection
+            rows={props.boardContext ?? EMPTY_BOARD_CONTEXT}
+            entityId={view.viewDetail.id}
+            members={props.members ?? EMPTY_MEMBER_OPTIONS}
+            disabled={view.pending}
+          />
+          <ObjectContactFields detail={view.viewDetail} disabled={view.pending} />
+          <ObjectMetadataFields detail={view.viewDetail} disabled={view.pending} />
 
           <ObjectEditableFields
             detail={view.localDetail}
@@ -1057,8 +1118,10 @@ function ObjectDetailView(props: Props) {
             patch={view.patch}
             dispatchObjectUi={view.dispatchObjectUi}
             projects={props.projects}
+            companies={props.companies}
             members={props.members}
             primaryProject={props.primaryProject}
+            primaryCompany={props.primaryCompany}
             taskCategoriesEnabled={props.taskCategoriesEnabled}
           />
 
@@ -1096,37 +1159,6 @@ function ObjectDetailView(props: Props) {
         </DetailRail>
       </div>
     </div>
-  );
-}
-
-function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
-  const contacts = detail.identityFacets.filter(
-    (facet) => facet.kind === 'email' || facet.kind === 'phone',
-  );
-  if (detail.type !== 'person' || contacts.length === 0) return null;
-
-  return (
-    <section>
-      <h2 className={DETAIL_SECTION_LABEL_CLASS}>Contact</h2>
-      <div className="mt-1 space-y-1">
-        {contacts.map((facet) => {
-          const href =
-            facet.kind === 'email'
-              ? `mailto:${facet.normalizedValue}`
-              : `tel:${facet.normalizedValue}`;
-          return (
-            <a
-              key={facet.id}
-              href={href}
-              className={`flex min-w-0 items-center justify-between gap-2 ${DETAIL_LINK_CLASS}`}
-            >
-              <span className="min-w-0 truncate">{facet.value}</span>
-              <span className={`shrink-0 ${DETAIL_META_CLASS}`}>{statusLabel(facet.kind)}</span>
-            </a>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -1403,8 +1435,10 @@ function ObjectEditableFields({
   patch,
   dispatchObjectUi,
   projects = EMPTY_PROJECT_OPTIONS,
+  companies = EMPTY_COMPANY_OPTIONS,
   members = EMPTY_MEMBER_OPTIONS,
   primaryProject = null,
+  primaryCompany = null,
   taskCategoriesEnabled = true,
 }: {
   detail: ObjectDetail;
@@ -1415,8 +1449,10 @@ function ObjectEditableFields({
   patch: (field: EditableField, value: EditableValue) => void;
   dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
   projects?: { id: string; label: string }[];
+  companies?: { id: string; label: string }[];
   members?: { id: string; label: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
+  primaryCompany?: objects.PersonPrimaryCompanyRow | null;
   taskCategoriesEnabled?: boolean;
 }) {
   const options = statusOptions(detail.type);
@@ -1545,6 +1581,19 @@ function ObjectEditableFields({
           ) : null}
         </>
       ) : null}
+      {detail.type === 'person' && !detail.archivedAt ? (
+        <div className="px-1.5">
+          <span className="mb-1 block text-xs text-fg-dim">Company</span>
+          <PersonCompanySelect
+            personId={detail.id}
+            companyId={primaryCompany?.companyId ?? null}
+            currentCompanyLabel={primaryCompany?.companyName}
+            currentCompanyArchived={Boolean(primaryCompany?.archivedAt)}
+            companies={companies}
+            quiet
+          />
+        </div>
+      ) : null}
       <label className="flex min-h-8 items-center gap-3 px-2">
         <span className="w-16 shrink-0 text-xs text-fg-dim">Stage</span>
         <input
@@ -1594,9 +1643,17 @@ function ObjectEditableFields({
 function ObjectConnectedWorkSection({
   connectedWork,
   hiddenBoardItemIds,
+  relationships,
+  sourceType,
+  pending,
+  onLinkRelatedObject,
 }: {
   connectedWork: ObjectDetail['connectedWork'];
   hiddenBoardItemIds: ReadonlySet<string>;
+  relationships: ObjectDetail['relationships'];
+  sourceType: ObjectDetail['type'];
+  pending: boolean;
+  onLinkRelatedObject: (object: ObjectDetail['connectedWork']['objects'][number]) => void;
 }) {
   const boards = connectedWork.boards.filter((board) => !hiddenBoardItemIds.has(board.itemId));
   const hasWork =
@@ -1616,7 +1673,13 @@ function ObjectConnectedWorkSection({
       <div className="mt-1 space-y-2">
         <ConnectedTaskList title="Open tasks" tasks={connectedWork.openTasks} />
         <ConnectedCalendarList events={connectedWork.calendarEvents} />
-        <ConnectedObjectList objects={connectedWork.objects} />
+        <ConnectedObjectList
+          objects={connectedWork.objects}
+          relationships={relationships}
+          sourceType={sourceType}
+          pending={pending}
+          onLinkRelatedObject={onLinkRelatedObject}
+        />
         <ConnectedBoardList boards={boards} />
         <ConnectedApprovalList approvals={connectedWork.pendingApprovals} />
         <ConnectedTaskList title="Recent history" tasks={connectedWork.recentTasks} />
@@ -1692,22 +1755,60 @@ function ConnectedCalendarList({
   );
 }
 
-function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork']['objects'] }) {
+function ConnectedObjectList({
+  objects,
+  relationships,
+  sourceType,
+  pending,
+  onLinkRelatedObject,
+}: {
+  objects: ObjectDetail['connectedWork']['objects'];
+  relationships: ObjectDetail['relationships'];
+  sourceType: ObjectDetail['type'];
+  pending: boolean;
+  onLinkRelatedObject: (object: ObjectDetail['connectedWork']['objects'][number]) => void;
+}) {
   if (objects.length === 0) return null;
+  const linkedIds = new Set(relationships.map((relationship) => relationship.otherId));
   return (
     <ConnectedWorkSection title="People and objects">
       <ul className="space-y-1">
-        {objects.map((object) => (
-          <li key={object.id} className="grid gap-0.5">
-            <a href={`/app/objects/${object.id}`} className={DETAIL_LINK_CLASS}>
-              {displayText(object.canonicalName)}
-            </a>
-            <span className={DETAIL_META_CLASS}>
-              {statusLabel(object.type)} · {object.factCount} fact
-              {object.factCount === 1 ? '' : 's'}
-            </span>
-          </li>
-        ))}
+        {objects.map((object) => {
+          const linked = linkedIds.has(object.id);
+          return (
+            <li key={object.id} className="grid gap-0.5">
+              <div className="flex items-center justify-between gap-2">
+                <a href={`/app/objects/${object.id}`} className={DETAIL_LINK_CLASS}>
+                  {displayText(object.canonicalName)}
+                </a>
+                {linked ? null : (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      onLinkRelatedObject(object);
+                    }}
+                    className={DETAIL_ACTION_CLASS}
+                  >
+                    Link
+                  </button>
+                )}
+              </div>
+              <span className={DETAIL_META_CLASS}>
+                {statusLabel(object.type)} · {object.factCount} fact
+                {object.factCount === 1 ? '' : 's'}
+                {linked
+                  ? ` · ${relationshipDisplayLabel({
+                      kind: 'related',
+                      sourceType,
+                      otherType: object.type,
+                      direction: 'out',
+                    })}`
+                  : ''}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </ConnectedWorkSection>
   );
@@ -1736,6 +1837,9 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
               </span>
               {board.nextStep ? (
                 <span className={DETAIL_META_CLASS}>{displayText(board.nextStep)}</span>
+              ) : null}
+              {board.notes ? (
+                <span className={DETAIL_META_CLASS}>{displayText(board.notes)}</span>
               ) : null}
             </li>
           ))}
@@ -1983,11 +2087,12 @@ function ObjectRelationshipsSection({
               </a>
               <div className="flex items-center justify-between gap-3">
                 <span className={DETAIL_META_CLASS}>
-                  {relationship.kind === 'related'
-                    ? statusLabel(relationship.kind)
-                    : relationship.direction === 'out'
-                      ? statusLabel(relationship.kind)
-                      : `← ${statusLabel(relationship.kind)}`}{' '}
+                  {relationshipDisplayLabel({
+                    kind: relationship.kind,
+                    sourceType,
+                    otherType: relationship.otherType,
+                    direction: relationship.direction,
+                  })}{' '}
                   · {statusLabel(relationship.otherType)}
                 </span>
                 {(relationship.direction === 'out' || relationship.kind === 'related') &&

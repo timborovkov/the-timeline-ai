@@ -551,6 +551,178 @@ export async function setTaskProjectAction(input: unknown): Promise<ActionState>
   });
 }
 
+const metadataPatchSchema = z.record(z.string(), z.unknown());
+
+export async function updateObjectMetadataAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('update_object_metadata', async () => {
+    const parsed = z.object({ id: uuidSchema, metadata: metadataPatchSchema }).safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const current = await r.scope.objects.getObject(parsed.data.id);
+      if (!current) return { error: 'Object not found' };
+      const validated = objects.parseObjectMetadataPatch(current.type, parsed.data.metadata);
+      if (!validated.ok) return { error: validated.error };
+      const result = await r.scope.objects.updateObject(
+        parsed.data.id,
+        { metadata: validated.patch },
+        { kind: 'user', userId: r.userId },
+      );
+      await reconcileCanonicalChangeBestEffort('reconcile_object_update_after_metadata', () =>
+        reconcileObjectUpdate(r.scope.suggestions, {
+          id: parsed.data.id,
+          type: result.object.type,
+          changedFields: result.changedFields,
+        }),
+      );
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update metadata') };
+    }
+  });
+}
+
+const identityFacetKindSchema = z.enum([
+  'email',
+  'phone',
+  'telegram',
+  'slack',
+  'github',
+  'timeline_user',
+  'other',
+]);
+
+export async function createIdentityFacetAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('create_identity_facet', async () => {
+    const parsed = z
+      .object({
+        entityId: uuidSchema,
+        kind: identityFacetKindSchema,
+        value: z.string().trim().min(1).max(500),
+      })
+      .safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const facet = await r.scope.objects.createIdentityFacet({
+        entityId: parsed.data.entityId,
+        kind: parsed.data.kind,
+        value: parsed.data.value,
+        actor: { kind: 'user', userId: r.userId },
+      });
+      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      return { ok: true, id: facet.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to add contact') };
+    }
+  });
+}
+
+export async function archiveIdentityFacetAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('archive_identity_facet', async () => {
+    const parsed = z.object({ facetId: uuidSchema, entityId: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid contact' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const archived = await r.scope.objects.archiveIdentityFacet(parsed.data.facetId, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      if (!archived) return { error: 'Contact not found' };
+      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      return { ok: true, id: parsed.data.facetId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to remove contact') };
+    }
+  });
+}
+
+export async function setPersonCompanyAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('set_person_company', async () => {
+    const parsed = z.object({ id: uuidSchema, companyId: uuidSchema.nullable() }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid company' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.setPersonCompany(parsed.data.id, parsed.data.companyId, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      revalidateObjectMutationSurfaces(
+        [
+          parsed.data.id,
+          parsed.data.companyId,
+          result.company?.companyId,
+          ...result.touchedIds,
+        ].filter((id): id is string => Boolean(id)),
+      );
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update company') };
+    }
+  });
+}
+
+export async function structureContactFromBoardNotesAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('structure_contact_from_board_notes', async () => {
+    const parsed = z
+      .object({ entityId: uuidSchema, notes: z.string().trim().min(1).max(5000) })
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Invalid board notes' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const { extractContactsFromText } =
+        await import('@timeline/shared/conversational/contact-artifacts');
+      const detail = await r.scope.objects.getObject(parsed.data.entityId);
+      if (!detail) return { error: 'Object not found' };
+      const contacts = extractContactsFromText(parsed.data.notes);
+      const metadataPatch: Record<string, unknown> = {};
+      if (detail.type === 'person') {
+        const facetCreates: ReturnType<typeof r.scope.objects.createIdentityFacet>[] = [];
+        for (const contact of contacts) {
+          if (contact.kind !== 'email' && contact.kind !== 'phone') continue;
+          facetCreates.push(
+            r.scope.objects.createIdentityFacet({
+              entityId: parsed.data.entityId,
+              kind: contact.kind,
+              value: contact.displayValue,
+              actor: { kind: 'user', userId: r.userId },
+            }),
+          );
+        }
+        await Promise.all(facetCreates);
+      } else if (detail.type === 'company') {
+        const email = contacts.find((contact) => contact.kind === 'email');
+        const phone = contacts.find((contact) => contact.kind === 'phone');
+        if (email) {
+          const domain = email.normalizedValue.split('@')[1];
+          if (domain) metadataPatch.domain = domain;
+        }
+        if (phone) metadataPatch.relationship = `Phone: ${phone.displayValue}`;
+      }
+      if (Object.keys(metadataPatch).length > 0) {
+        const validated = objects.parseObjectMetadataPatch(detail.type, metadataPatch);
+        if (validated.ok) {
+          await r.scope.objects.updateObject(
+            parsed.data.entityId,
+            { metadata: validated.patch },
+            { kind: 'user', userId: r.userId },
+          );
+        }
+      }
+      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      return { ok: true, id: parsed.data.entityId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to structure contact info') };
+    }
+  });
+}
+
 export async function loadTaskCategoryStatesAction(input: unknown): Promise<{
   rows?: Pick<
     objects.ObjectRow,

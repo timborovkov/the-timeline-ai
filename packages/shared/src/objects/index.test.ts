@@ -1834,6 +1834,80 @@ describe('object scope — notes and suggestions', () => {
     ]);
   });
 
+  it('archives identity facets and hides them from object detail', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Contact Archive',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const facet = await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'archive@example.com',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(
+      scope.archiveIdentityFacet(facet.id, { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
+    await expect(scope.listIdentityFacets(person.id)).resolves.toEqual([]);
+    await expect(scope.getObject(person.id)).resolves.toMatchObject({
+      identityFacets: [],
+    });
+  });
+
+  it('sets a single primary company for a person', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, company] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Primary Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Primary Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    const result = await scope.setPersonCompany(person.id, company.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(result.changed).toBe(true);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: company.id,
+        companyName: 'Primary Company',
+      }),
+    ]);
+  });
+
+  it('merges metadata patches instead of replacing the whole object metadata blob', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Metadata Merge Co',
+      metadata: { domain: 'old.example', relationship: 'partner' },
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.updateObject(
+      company.id,
+      { metadata: { domain: 'new.example' } },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    await expect(scope.getObject(company.id)).resolves.toMatchObject({
+      metadata: {
+        domain: 'new.example',
+        relationship: 'partner',
+      },
+    });
+  });
+
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({

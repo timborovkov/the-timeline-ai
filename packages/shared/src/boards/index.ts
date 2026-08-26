@@ -211,6 +211,8 @@ export interface ObjectBoardContextRow {
   responsibleUserId: string | null;
   dueAt: Date | null;
   priority: number | null;
+  nextStep: string | null;
+  notes: string | null;
 }
 
 export interface BoardWorkQueueItemRow {
@@ -2096,6 +2098,8 @@ export function createBoardScope({
         responsibleUserId: row.item.responsibleUserId,
         dueAt: row.item.dueAt,
         priority: row.item.priority,
+        nextStep: row.item.nextStep,
+        notes: row.item.notes,
       }));
     },
 

@@ -789,12 +789,14 @@ line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
 evidence / facts groups that have items. Empty “Not enough object memory,” “No
 connected work,” and “Nothing here yet” cards are prohibited. Discussion keeps
-a borderless composer with @mentions. The right column is one Properties rail: a 6px-radius
-`--surface` panel with a hairline `--border`, not raw page canvas. Properties,
-Related, recent changes, and Archive share that one panel and divide with
-hairlines. Do not nest a card per field. The task peek uses the same rail so
-it lifts off the list in light and dark. An empty summary is a single
-Generate summary control, not a “ready to generate” block. Evidence uses a
+a borderless composer with @mentions. The right column is one Properties rail at
+`18rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
+`--border`, not raw page canvas. Board context, contact facets, type-aware
+metadata, Properties, Company (person objects), Related, recent changes, and
+Archive share that one panel and divide with hairlines. Do not nest a card per
+field. The task peek and board card peek use the same rail pattern so they lift
+off the list in light and dark; both include Discussion below command fields and
+before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
 quiet text control, not a signal chip. Section labels, supporting copy, and
 timestamps use 12px `--fg-dim`. Body and links use 14px `--fg` at regular
 weight. Quiet actions use 12px `--fg-muted`. `--signal` is reserved for

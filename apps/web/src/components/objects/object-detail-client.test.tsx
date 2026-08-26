@@ -501,6 +501,7 @@ describe('ObjectDetailClient', () => {
               dueAt: null,
               priority: null,
               nextStep: 'Agree pilot scope',
+              notes: null,
             },
           ],
           pendingApprovals: [
@@ -579,6 +580,7 @@ describe('ObjectDetailClient', () => {
               dueAt: null,
               priority: null,
               nextStep: 'Agree pilot scope',
+              notes: null,
             },
           ],
         },
@@ -597,14 +599,17 @@ describe('ObjectDetailClient', () => {
           responsibleUserId: null,
           dueAt: null,
           priority: null,
+          nextStep: 'Agree pilot scope',
+          notes: null,
         },
       ],
     });
 
     expect(html).toContain('Pilot pipeline');
     expect(html).toContain('Proposal');
+    expect(html).toContain('Board context');
+    expect(html).toContain('Agree pilot scope');
     expect(html).not.toContain('Connected work');
-    expect(html).not.toContain('Agree pilot scope');
   });
 
   it('shows connected open tasks once on the object detail page', () => {
