@@ -222,9 +222,9 @@ describe('billing scope', () => {
     });
     expect(settled.ok).toBe(true);
     expect(settled.duplicate).toBe(false);
-    if (settled.ok && !settled.duplicate) {
-      expect(settled.ledger?.customerChargeCents).toBe(200);
-      expect(settled.ledger?.metadata).toMatchObject({
+    if (!settled.duplicate) {
+      expect(settled.ledger.customerChargeCents).toBe(200);
+      expect(settled.ledger.metadata).toMatchObject({
         wallet_cents: 200,
         wallet_shortfall_cents: 120,
       });

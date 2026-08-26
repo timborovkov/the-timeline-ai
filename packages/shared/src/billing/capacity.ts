@@ -14,6 +14,7 @@ import {
 import { and, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
+
 import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
@@ -147,7 +148,7 @@ export async function assertTeamWriteCapacity(input: {
   if (cap.storageGb !== null) {
     const [row] = await input.db
       .select({
-        bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize})::bigint, 0)`,
+        bytes: sql<string | number>`COALESCE(SUM(${documentVersions.byteSize})::bigint, 0)`,
       })
       .from(documentVersions)
       .innerJoin(documents, eq(documents.id, documentVersions.documentId))
