@@ -68,6 +68,12 @@ const nativeToolGroups = {
 
 type NativeToolGroup = keyof typeof nativeToolGroups;
 
+const nativeToolNamePatterns: { group: NativeToolGroup; pattern: RegExp }[] = (
+  Object.entries(nativeToolGroups) as [NativeToolGroup, readonly string[]][]
+).flatMap(([group, names]) =>
+  names.map((name) => ({ group, pattern: new RegExp(`\\b${name}\\b`) })),
+);
+
 interface ChatToolDashboardContext {
   pathname?: string;
   routeKind?: string;
@@ -92,13 +98,8 @@ function matchesAny(value: string, patterns: RegExp[]): boolean {
 
 function addGroupsForNamedNativeTools(question: string, groups: Set<NativeToolGroup>): void {
   const lower = question.toLowerCase();
-  for (const [group, names] of Object.entries(nativeToolGroups) as [
-    NativeToolGroup,
-    readonly string[],
-  ][]) {
-    for (const name of names) {
-      if (new RegExp(`\\b${name}\\b`).test(lower)) groups.add(group);
-    }
+  for (const { group, pattern } of nativeToolNamePatterns) {
+    if (pattern.test(lower)) groups.add(group);
   }
 }
 
