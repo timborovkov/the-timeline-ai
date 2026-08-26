@@ -10,6 +10,7 @@
         "src/app/actions/*.ts",
         "src/lib/public-site/index.ts",
         "src/proxy.{ts,tsx}",
+        "scripts/*.{ts,mjs}",
         "postcss.config.{js,mjs,cjs,ts}"
       ],
       "project": ["src/**/*.{ts,tsx}"],

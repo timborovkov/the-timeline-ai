@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import manifest from '@/app/manifest';
+import { PWA_BACKGROUND_COLOR } from '@/lib/pwa-splash';
 
 describe('web app manifest', () => {
   it('launches into the workspace with PNG home-screen icons', () => {
@@ -10,6 +11,8 @@ describe('web app manifest', () => {
     expect(result.id).toBe('/');
     expect(result.start_url).toBe('/app');
     expect(result.display).toBe('standalone');
+    expect(result.background_color).toBe(PWA_BACKGROUND_COLOR);
+    expect(result.theme_color).toBe(PWA_BACKGROUND_COLOR);
     expect(result.icons).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
