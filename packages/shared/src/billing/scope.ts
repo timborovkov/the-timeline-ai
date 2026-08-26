@@ -33,15 +33,17 @@ import {
   paygOverageNativeUnits,
   pendingBillableChargeCents,
   pendingDiscountReservedCents,
+  shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
   walletReservedCentsFromMetadata,
 } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { cheapestPlanPreview } from '#src/billing/preview.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
+import { accountUsesShadowBilling } from '#src/billing/shadow.js';
 import {
-  costBearingPausedFromAccount,
   billingStateAllowsReservation,
+  costBearingPausedFromAccount,
   deriveBillingNudge,
   deriveSidebarBillingSummary,
   freeAllowanceConsumedForMeter,
@@ -276,8 +278,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
         activeMembers: activeMemberCount,
         meters: byMeter,
       });
+      const shadowBilling = accountUsesShadowBilling(account);
       return {
-        account,
+        account: { ...account, shadowBilling },
         plan,
         capacity,
         freeAllowances: FREE_ALLOWANCES,
@@ -298,7 +301,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         costBearingPaused: costBearingPausedFromAccount({
           planId: account.planId,
           billingState: account.billingState,
-          shadowBilling: account.shadowBilling,
+          shadowBilling,
           spendCapCents: account.spendCapCents,
           meteredSpendCents,
           walletBalanceCents: account.walletBalanceCents,
@@ -434,28 +437,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
       if (!billingStateAllowsReservation(account.billingState)) {
         return { ok: false as const, code: 'usage_limit_reached' as const };
       }
-      const agentTurnCap = CAPACITY_BY_PLAN[account.planId].agentTurnsPerMonth;
-      if (
-        agentTurnCap !== null &&
-        (input.operationId.startsWith('ask:') || input.metadata?.operation_class === 'agent_ask')
-      ) {
-        const periodStart = new Date(
-          Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1),
-        );
-        const [turnRow] = await db
-          .select({ n: sql<number>`count(*)::int` })
-          .from(billingUsageReservations)
-          .where(
-            and(
-              eq(billingUsageReservations.teamId, teamId),
-              sql`${billingUsageReservations.operationId} LIKE 'ask:%'`,
-              gte(billingUsageReservations.createdAt, periodStart),
-            ),
-          );
-        if ((turnRow?.n ?? 0) >= agentTurnCap) {
-          return { ok: false as const, code: 'usage_limit_reached' as const };
-        }
-      }
+      const isAskTurn =
+        input.operationId.startsWith('ask:') || input.metadata?.operation_class === 'agent_ask';
       const expiresAt = new Date(Date.now() + (input.ttlMs ?? 15 * 60_000));
       const ym = periodYm();
 
@@ -472,6 +455,27 @@ export function createBillingScope(deps: BillingScopeDeps) {
         }
         if (!billingStateAllowsReservation(locked.billingState)) {
           return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
+        }
+        if (isAskTurn) {
+          const agentTurnCap = CAPACITY_BY_PLAN[locked.planId].agentTurnsPerMonth;
+          if (agentTurnCap !== null) {
+            const periodStart = new Date(
+              Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1),
+            );
+            const [turnRow] = await tx
+              .select({ n: sql<number>`count(*)::int` })
+              .from(billingUsageReservations)
+              .where(
+                and(
+                  eq(billingUsageReservations.teamId, teamId),
+                  sql`${billingUsageReservations.operationId} LIKE 'ask:%'`,
+                  gte(billingUsageReservations.createdAt, periodStart),
+                ),
+              );
+            if ((turnRow?.n ?? 0) >= agentTurnCap) {
+              return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
+            }
+          }
         }
 
         const countersTx = await tx
@@ -543,7 +547,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         };
 
         const blocking =
-          !locked.shadowBilling &&
+          !accountUsesShadowBilling(locked) &&
           locked.billingState !== 'enterprise_active' &&
           billableChargeCents > 0;
         if (blocking) {
@@ -620,7 +624,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             existing.metadata,
             existing.reservedChargeCents,
           );
-          if (!locked.shadowBilling && oldLock > 0) {
+          if (!accountUsesShadowBilling(locked) && oldLock > 0) {
             await tx
               .update(teamBillingAccounts)
               .set({
@@ -762,12 +766,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
           meters: metersBefore,
         });
         const eventName = polarEventNameForMeter(input.meterId);
-        const shouldIngestPolar =
-          Boolean(eventName) &&
-          Boolean(account.polarCustomerId) &&
-          !account.shadowBilling &&
-          input.billable !== false &&
-          polarUnits > 0;
+        const shouldIngestPolar = shouldIngestPolarMeteredUsage({
+          eventName,
+          polarCustomerId: account.polarCustomerId,
+          shadowBilling: accountUsesShadowBilling(account),
+          billable: input.billable !== false,
+          polarUnits,
+          walletCents,
+          discountCents,
+        });
         const polarIngestMetadata = shouldIngestPolar
           ? {
               polar_ingest_status: 'pending',
@@ -870,7 +877,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         }
 
         if (
-          !account.shadowBilling &&
+          !accountUsesShadowBilling(account) &&
           (walletLockCents > 0 || walletCents > 0 || discountCents > 0)
         ) {
           await tx
@@ -1015,7 +1022,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           reservation.metadata,
           reservation.reservedChargeCents,
         );
-        if (!account.shadowBilling && lockCents > 0) {
+        if (!accountUsesShadowBilling(account) && lockCents > 0) {
           await tx
             .update(teamBillingAccounts)
             .set({

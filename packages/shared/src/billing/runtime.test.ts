@@ -205,4 +205,30 @@ describe('billing runtime', () => {
     const dash = await billing.getDashboard();
     expect(dash.meters.ai).toBeUndefined();
   });
+
+  it('preserves the Polar renewal boundary when the janitor refills included discount', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', included_discount_remaining_cents = 0,
+          period_started_at = '2026-07-15T00:00:00Z', period_ends_at = '2026-08-15T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({
+      db,
+      teamId: TEAM_ID,
+      now: new Date('2026-08-20T12:00:00Z'),
+    });
+    expect(reset).toBe(true);
+    const after = await billing.getAccount();
+    expect(after.includedDiscountRemainingCents).toBe(6_000);
+    expect(after.periodStartedAt?.toISOString()).toBe('2026-08-15T00:00:00.000Z');
+    expect(after.periodEndsAt?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
+  });
 });

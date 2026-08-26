@@ -560,8 +560,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       email when the wallet is at/below the threshold and remaining spend-cap
       headroom covers the full €10 product, cheapest-plan preview from gross native
       usage (informational, never auto-switch), Team/Business included-discount
-      period reset (webhook + janitor; not every Polar retry). Stale Polar
-      activations are ignored; canceled paid plans become restricted unless the
+      period reset (webhook + janitor advancing the stored Polar window; not
+      every Polar retry). Paid-plan changes update the existing Polar subscription.
+      Prepaid wallet/included-discount collection is not ingested to Polar meters.
+      Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
+      Stale Polar activations are ignored; canceled paid plans become restricted unless the
       team holds the Free grant. Polar refunds claw back prepaid top-ups; Polar
       usage ingest retries from a claimed ledger outbox after local settlement.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /

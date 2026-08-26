@@ -21,7 +21,9 @@ credit hides margin and confuses prospects.
    usage ledger, counters) is product truth for admission and dashboards.
 4. **Shadow billing** is the default (`BILLING_CHARGES_ENABLED=false`): record
    usage and expose UI, but do not block or charge until reconciliation proves
-   the ledger.
+   the ledger. Admission, Polar ingest, and dashboards derive live vs shadow
+   from that env flag so flipping it to true does not wait for the next Polar
+   webhook.
 5. Public catalog lives at `/pricing` (self-serve Free/PAYG/Team/Business columns;
    Enterprise is a quiet contact nudge). Team usage is at `/app/usage`; admins
    manage plan/spend cap at `/app/team?section=billing`. Free hard-stops apply
@@ -59,10 +61,16 @@ credit hides margin and confuses prospects.
    Credit still lands on Polar `order.paid`. Polar subscription webhooks apply
    `shadowBilling` from `BILLING_CHARGES_ENABLED`, map Polar `status`, ignore
    stale activations (older Polar `modified_at` or an older subscription period),
-   reset Team/Business included discount only on a new period or plan/subscription
-   change, and cancel only the matching `polarSubscriptionId`. A canceled paid
-   plan becomes `free` if this team holds the person-level Free grant, otherwise
-   `restricted`. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted
+   reset Team/Business included discount only on a new period start or
+   plan/subscription change, and cancel only the matching `polarSubscriptionId`.
+   Janitor fallback refills that discount by advancing the stored Polar
+   renewal window, not by snapping to UTC calendar months. Paid-plan changes
+   PATCH the existing Polar subscription (or open the customer portal) instead
+   of creating a second checkout. Prepaid wallet and included-discount collection
+   is local; Polar meters are not ingested for those already-collected units.
+   Live charging follows `BILLING_CHARGES_ENABLED` even when existing paid rows
+   still snapshot `shadowBilling = true`. A canceled paid plan becomes `free` if
+   this team holds the person-level Free grant, otherwise `restricted`. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted
    code matches `POLAR_DISCOUNT_CODE`. Reservations lock the wallet-funded
    remainder after the PAYG Free floor and included discount, include pending
    reservation charges in the spend cap **and** Free native allowances, count
@@ -83,7 +91,8 @@ credit hides margin and confuses prospects.
    top-ups, persist out-of-order refunds until `order.paid`, and freeze the
    workspace if the credit was already spent. Auto-reload checkout markers stay
    retryable until Polar checkout succeeds. Credentials signup keeps the
-   workspace restricted until the owner email is verified. OpenRouter
+   workspace restricted until the owner email is verified; `email_verification`
+   mail is not metered against that restricted workspace. OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
 8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion

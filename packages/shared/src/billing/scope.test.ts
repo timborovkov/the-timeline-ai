@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
+import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -414,7 +415,7 @@ describe('billing scope', () => {
     if (!second.ok) expect(second.code).toBe('usage_limit_reached');
   });
 
-  it('retries Polar ingest after a duplicate local settlement', async () => {
+  it('does not Polar-ingest usage already collected from the prepaid wallet', async () => {
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({
       db,
@@ -430,7 +431,6 @@ describe('billing scope', () => {
           polar_customer_id = 'cus_test', wallet_balance_cents = 5000
       WHERE team_id = '${TEAM_ID}';
     `);
-    provider.ingestUsage = () => Promise.reject(new Error('polar down'));
     await scope.settle({
       operationId: 'op-polar-1',
       meterId: 'recall_minutes',
@@ -438,11 +438,6 @@ describe('billing scope', () => {
       customerChargeCents: 210,
     });
     expect(provider.events).toHaveLength(0);
-    const events: { name: string }[] = [];
-    provider.ingestUsage = (event) => {
-      events.push(event);
-      return Promise.resolve();
-    };
     const retry = await scope.settle({
       operationId: 'op-polar-1',
       meterId: 'recall_minutes',
@@ -450,11 +445,7 @@ describe('billing scope', () => {
       customerChargeCents: 210,
     });
     expect(retry.duplicate).toBe(true);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      name: 'timeline_recall_minutes',
-      id: `timeline:${TEAM_ID}:op-polar-1`,
-    });
+    expect(provider.events).toHaveLength(0);
   });
 
   it('claims Polar outbox rows so concurrent ingest sends one event', async () => {
@@ -473,13 +464,24 @@ describe('billing scope', () => {
           polar_customer_id = 'cus_test', wallet_balance_cents = 5000
       WHERE team_id = '${TEAM_ID}';
     `);
-    provider.ingestUsage = () => Promise.reject(new Error('polar down'));
     await scope.settle({
       operationId: 'op-polar-claim',
       meterId: 'recall_minutes',
       nativeUnits: 70,
       customerChargeCents: 210,
     });
+    await pg.exec(`
+      UPDATE billing_usage_ledger
+      SET metadata = metadata || jsonb_build_object(
+        'polar_ingest_status', 'pending',
+        'polar_ingest_name', 'timeline_recall_minutes',
+        'polar_ingest_units', 10,
+        'polar_ingest_customer_id', '${TEAM_ID}',
+        'polar_ingest_operation_id', 'op-polar-claim',
+        'polar_ingest_charge_cents', 30
+      )
+      WHERE team_id = '${TEAM_ID}' AND operation_id = 'op-polar-claim';
+    `);
     const events: { id?: string }[] = [];
     let inflight = 0;
     let maxInflight = 0;
@@ -561,5 +563,73 @@ describe('billing scope', () => {
     const dash = await scope.getDashboard();
     expect(dash.meters.email_units?.nativeUnits).toBe(4);
     expect(dash.meters.email_units?.customerChargeCents).toBe(1);
+  });
+
+  it('rechecks the Ask-turn cap inside the account lock', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      INSERT INTO billing_usage_reservations (
+        team_id, operation_id, meter_id, reserved_native_units, reserved_charge_cents, expires_at
+      )
+      SELECT '${TEAM_ID}', 'ask:web:' || g, 'ai', 1, 1, now() + interval '1 hour'
+      FROM generate_series(1, 99) AS g;
+    `);
+    const [first, second] = await Promise.all([
+      scope.reserve({
+        operationId: 'ask:web:lock-a',
+        meterId: 'ai',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      }),
+      scope.reserve({
+        operationId: 'ask:web:lock-b',
+        meterId: 'ai',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      }),
+    ]);
+    expect([first, second].filter((row) => row.ok)).toHaveLength(1);
+    expect([first, second].some((row) => !row.ok && row.code === 'usage_limit_reached')).toBe(true);
+  });
+
+  it('treats existing shadow rows as live charging once BILLING_CHARGES_ENABLED is on', async () => {
+    const previous = process.env.BILLING_CHARGES_ENABLED;
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    try {
+      const scope = createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await scope.getAccount();
+      await pg.exec(`
+        UPDATE team_billing_accounts
+        SET shadow_billing = true, plan_id = 'team', billing_state = 'team_active',
+            wallet_balance_cents = 0, included_discount_remaining_cents = 0
+        WHERE team_id = '${TEAM_ID}';
+      `);
+      const dash = await scope.getDashboard();
+      expect(dash.account.shadowBilling).toBe(false);
+      const reserved = await scope.reserve({
+        operationId: 'op-live-toggle',
+        meterId: 'ai',
+        reservedNativeUnits: 80,
+        reservedChargeCents: 80,
+      });
+      expect(reserved.ok).toBe(false);
+      if (!reserved.ok) expect(reserved.code).toBe('usage_limit_reached');
+    } finally {
+      if (previous === undefined) delete process.env.BILLING_CHARGES_ENABLED;
+      else process.env.BILLING_CHARGES_ENABLED = previous;
+      resetEnvForTests();
+    }
   });
 });

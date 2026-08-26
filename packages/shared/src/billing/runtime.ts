@@ -23,7 +23,11 @@ import {
   PREPAID_TOPUP_CENTS,
   customerAiChargeCentsFromOpenRouterUsd,
 } from '#src/billing/catalog.js';
-import { cumulativeChargeDeltaCents, memberDaysChargeCents } from '#src/billing/charge.js';
+import {
+  cumulativeChargeDeltaCents,
+  memberDaysChargeCents,
+  nextIncludedDiscountPeriod,
+} from '#src/billing/charge.js';
 import {
   BILLING_SYSTEM_USER_ID,
   getBillingContext,
@@ -39,6 +43,7 @@ import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
+import { accountUsesShadowBilling, shadowBillingFromChargesEnabled } from '#src/billing/shadow.js';
 
 const GIB = 1024 ** 3;
 
@@ -587,6 +592,7 @@ export async function accrueTeamMemberDays(input: {
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {
   await expireStaleBillingReservations({ db });
   await leaveOverdueRecallBots(db);
+  await reconcileShadowBillingFromChargesEnabled(db);
   const polarProvider = createPolarBillingProvider();
   if (polarProvider) {
     await flushPendingPolarUsageIngest({ db, provider: polarProvider });
@@ -615,7 +621,7 @@ export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number
         await maybeTriggerWalletAutoReload({
           db,
           teamId: team.id,
-          account,
+          account: { ...account, shadowBilling: accountUsesShadowBilling(account) },
           meteredSpendCents: counters.reduce((sum, row) => sum + row.customerChargeCents, 0),
         });
       }
@@ -626,9 +632,18 @@ export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number
   return { teams: rows.length };
 }
 
+async function reconcileShadowBillingFromChargesEnabled(db: Db): Promise<void> {
+  const shadowBilling = shadowBillingFromChargesEnabled();
+  await db
+    .update(teamBillingAccounts)
+    .set({ shadowBilling, updatedAt: new Date() })
+    .where(eq(teamBillingAccounts.shadowBilling, !shadowBilling));
+}
+
 export async function resetIncludedDiscountIfPeriodElapsed(input: {
   db: Db;
   teamId: string;
+  now?: Date;
 }): Promise<boolean> {
   const [account] = await input.db
     .select()
@@ -636,17 +651,20 @@ export async function resetIncludedDiscountIfPeriodElapsed(input: {
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
   if (!account) return false;
-  const now = new Date();
-  if (account.periodEndsAt && account.periodEndsAt > now) return false;
+  const now = input.now ?? new Date();
+  const next = nextIncludedDiscountPeriod({
+    now,
+    periodStartedAt: account.periodStartedAt,
+    periodEndsAt: account.periodEndsAt,
+  });
+  if (!next) return false;
   const included = PLAN_CATALOG[account.planId].includedUsageDiscountCents;
-  const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   await input.db
     .update(teamBillingAccounts)
     .set({
       includedDiscountRemainingCents: included,
-      periodStartedAt: periodStart,
-      periodEndsAt: periodEnd,
+      periodStartedAt: next.periodStartedAt,
+      periodEndsAt: next.periodEndsAt,
       updatedAt: now,
     })
     .where(eq(teamBillingAccounts.teamId, input.teamId));

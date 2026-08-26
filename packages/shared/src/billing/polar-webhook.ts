@@ -125,11 +125,15 @@ export function shouldResetIncludedDiscount(input: {
   existing: typeof teamBillingAccounts.$inferSelect | undefined;
   planId: BillingPlanId;
   polarSubscriptionId: string | null;
+  periodStartedAt?: Date | null;
   periodEndsAt: Date | null;
 }): boolean {
   if (!input.existing) return true;
   if (input.existing.planId !== input.planId) return true;
   if (input.existing.polarSubscriptionId !== input.polarSubscriptionId) return true;
+  if (input.periodStartedAt && input.existing.periodStartedAt) {
+    return input.periodStartedAt.getTime() > input.existing.periodStartedAt.getTime();
+  }
   if (!input.periodEndsAt) return false;
   if (!input.existing.periodEndsAt) return true;
   return input.periodEndsAt.getTime() > input.existing.periodEndsAt.getTime();
@@ -217,6 +221,7 @@ async function upsertPaidSubscription(input: {
     existing,
     planId: input.plan,
     polarSubscriptionId,
+    periodStartedAt: period.periodStartedAt,
     periodEndsAt: period.periodEndsAt,
   });
   const now = new Date();
@@ -247,13 +252,9 @@ async function upsertPaidSubscription(input: {
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
         shadowBilling: !input.chargesEnabled,
-        ...(resetDiscount
-          ? {
-              includedDiscountRemainingCents: included,
-              periodStartedAt,
-              ...(periodEndsAt ? { periodEndsAt } : {}),
-            }
-          : {}),
+        periodStartedAt,
+        ...(periodEndsAt ? { periodEndsAt } : {}),
+        ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
         spendCapCents: spendCapCentsForPaidActivation({
           existing,
           plan: input.plan,

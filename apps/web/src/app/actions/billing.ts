@@ -1,6 +1,7 @@
 'use server';
 
 import {
+  createPlanChangeSession,
   createPolarBillingProvider,
   isPolarBillingConfigured,
   isPolarTopUpConfigured,
@@ -65,11 +66,15 @@ export async function startBillingCheckout(input: {
     email: gate.email,
     name: gate.active.teamName,
   });
-  const checkout = await provider.createCheckoutSession({
+  const account = await gate.scope.billing.getAccount();
+  const checkout = await createPlanChangeSession({
+    provider,
+    account,
+    productId,
     externalCustomerId: gate.active.teamId,
     customerEmail: gate.email,
-    productId,
     successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
+    portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
     ...(submittedCode && env.POLAR_DISCOUNT_ID ? { discountId: env.POLAR_DISCOUNT_ID } : {}),
   });
   return { ok: true, url: checkout.url };

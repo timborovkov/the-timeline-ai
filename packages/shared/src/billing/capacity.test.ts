@@ -14,6 +14,7 @@ import {
 } from '#src/billing/capacity.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { createBillingScope } from '#src/billing/scope.js';
+import { createMcpScope } from '#src/mcp/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -169,5 +170,21 @@ describe('billing capacity (not Polar meters)', () => {
     expect(byKind.active_members).toMatchObject({ used: 1, limit: 3 });
     expect(byKind.custom_mcp_servers).toMatchObject({ used: 0, limit: 0 });
     expect(byKind.documents).toMatchObject({ used: 0, limit: 100 });
+  });
+
+  it('rejects adding a custom MCP server on the Free plan', async () => {
+    const mcp = createMcpScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await expect(
+      mcp.addServer({
+        name: 'Context7',
+        url: 'https://mcp.context7.com/mcp',
+        authType: 'none',
+      }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
   });
 });

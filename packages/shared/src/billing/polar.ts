@@ -4,6 +4,7 @@ import type {
   BillingProvider,
   CreateCheckoutInput,
   PolarUsageEvent,
+  UpdateSubscriptionInput,
 } from '#src/billing/provider.js';
 
 import { getEnv } from '#src/env.js';
@@ -99,6 +100,25 @@ export function createPolarBillingProvider(options?: {
       return { url };
     },
 
+    async updateSubscription(input: UpdateSubscriptionInput) {
+      const updated = await polarFetch(`/subscriptions/${input.subscriptionId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          product_id: input.productId,
+          proration_behavior: 'prorate',
+          ...(input.discountId ? { discount_id: input.discountId } : {}),
+        }),
+      });
+      if (updated.ok) return { ok: true as const };
+      // Polar needs a stored payment method change or the subscription is
+      // locked/canceled — send the owner to the customer portal instead of
+      // opening a second checkout that would stack subscriptions.
+      if (updated.status === 402 || updated.status === 403 || updated.status === 409) {
+        return { ok: false as const, code: 'portal_required' as const };
+      }
+      throw new Error(`Polar subscription update failed: ${updated.status}`);
+    },
+
     async ingestUsage(event: PolarUsageEvent) {
       const res = await polarFetch('/events/ingest', {
         method: 'POST',
@@ -178,4 +198,70 @@ export function polarTopUpProductId(): string | undefined {
 
 export function isPolarTopUpConfigured(): boolean {
   return Boolean(getEnv().POLAR_ACCESS_TOKEN && polarTopUpProductId());
+}
+
+/** Paid workspaces already have a Polar subscription; do not open a second one. */
+export function polarSubscriptionIdForPlanChange(account: {
+  planId: string;
+  billingState: string;
+  polarSubscriptionId: string | null;
+}): string | undefined {
+  if (!account.polarSubscriptionId) return undefined;
+  if (account.planId !== 'payg' && account.planId !== 'team' && account.planId !== 'business') {
+    return undefined;
+  }
+  if (
+    account.billingState !== 'payg_active' &&
+    account.billingState !== 'team_active' &&
+    account.billingState !== 'business_active' &&
+    account.billingState !== 'grace'
+  ) {
+    return undefined;
+  }
+  return account.polarSubscriptionId;
+}
+
+/**
+ * Free → paid uses Polar checkout. Paid → paid updates the existing
+ * subscription (or the customer portal when Polar cannot PATCH in place).
+ */
+export async function createPlanChangeSession(input: {
+  provider: BillingProvider;
+  account: {
+    planId: string;
+    billingState: string;
+    polarSubscriptionId: string | null;
+  };
+  productId: string;
+  externalCustomerId: string;
+  customerEmail: string;
+  successUrl: string;
+  portalReturnUrl: string;
+  discountId?: string;
+}): Promise<{ url: string }> {
+  const subscriptionId = polarSubscriptionIdForPlanChange(input.account);
+  if (subscriptionId) {
+    try {
+      const updated = await input.provider.updateSubscription({
+        subscriptionId,
+        productId: input.productId,
+        ...(input.discountId ? { discountId: input.discountId } : {}),
+      });
+      if (updated.ok) return { url: input.successUrl };
+    } catch {
+      // Polar could not change the product in place.
+    }
+    const portal = await input.provider.createCustomerPortalSession({
+      externalCustomerId: input.externalCustomerId,
+      returnUrl: input.portalReturnUrl,
+    });
+    return { url: portal.url };
+  }
+  return input.provider.createCheckoutSession({
+    externalCustomerId: input.externalCustomerId,
+    customerEmail: input.customerEmail,
+    productId: input.productId,
+    successUrl: input.successUrl,
+    ...(input.discountId ? { discountId: input.discountId } : {}),
+  });
 }

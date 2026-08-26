@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   cumulativeChargeDeltaCents,
   memberDaysChargeCents,
+  nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
+  shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
 } from '#src/billing/charge.js';
 import { allFreeAllowancesExhausted, costBearingPausedFromAccount } from '#src/billing/status.js';
@@ -104,6 +106,57 @@ describe('memberDaysChargeCents', () => {
         });
     }
     expect(charged).toBe(200);
+  });
+});
+
+describe('shouldIngestPolarMeteredUsage', () => {
+  it('skips Polar ingest when the prepaid wallet or included discount collected', () => {
+    expect(
+      shouldIngestPolarMeteredUsage({
+        eventName: 'timeline_recall_minutes',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        billable: true,
+        polarUnits: 10,
+        walletCents: 30,
+        discountCents: 0,
+      }),
+    ).toBe(false);
+    expect(
+      shouldIngestPolarMeteredUsage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        billable: true,
+        polarUnits: 80,
+        walletCents: 0,
+        discountCents: 80,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('nextIncludedDiscountPeriod', () => {
+  it('advances from the stored Polar boundary instead of the calendar month', () => {
+    const next = nextIncludedDiscountPeriod({
+      now: new Date('2026-08-20T12:00:00Z'),
+      periodStartedAt: new Date('2026-07-15T00:00:00Z'),
+      periodEndsAt: new Date('2026-08-15T00:00:00Z'),
+    });
+    expect(next).toEqual({
+      periodStartedAt: new Date('2026-08-15T00:00:00Z'),
+      periodEndsAt: new Date('2026-09-15T00:00:00Z'),
+    });
+  });
+
+  it('does not reset while the stored Polar window is still open', () => {
+    expect(
+      nextIncludedDiscountPeriod({
+        now: new Date('2026-08-10T12:00:00Z'),
+        periodStartedAt: new Date('2026-07-15T00:00:00Z'),
+        periodEndsAt: new Date('2026-08-15T00:00:00Z'),
+      }),
+    ).toBeNull();
   });
 });
 

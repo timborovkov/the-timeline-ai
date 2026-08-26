@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { resetEnvForTests } from '#src/env.js';
-import { messagingInternals, sendDailyDigest, sendMessage } from '#src/messaging/delivery.js';
+import {
+  messagingInternals,
+  sendDailyDigest,
+  sendMessage,
+  shouldMeterWorkspaceEmail,
+} from '#src/messaging/delivery.js';
 import { renderMessage } from '#src/messaging/templates.js';
 
 function fakeDeliveryDb(
@@ -692,5 +697,18 @@ describe('Postmark messaging adapter', () => {
         error: 'Digest window expired before send.',
       }),
     );
+  });
+});
+
+describe('workspace email metering', () => {
+  it('exempts verification mail and billing alerts', () => {
+    expect(shouldMeterWorkspaceEmail('email_verification', { db: {}, teamId: 'team-1' })).toBe(
+      false,
+    );
+    expect(shouldMeterWorkspaceEmail('billing_usage_alert', { db: {}, teamId: 'team-1' })).toBe(
+      false,
+    );
+    expect(shouldMeterWorkspaceEmail('welcome', { db: {}, teamId: 'team-1' })).toBe(true);
+    expect(shouldMeterWorkspaceEmail('email_verification', { db: {}, teamId: null })).toBe(false);
   });
 });

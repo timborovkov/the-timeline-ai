@@ -241,7 +241,12 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           <p className="mt-3 text-sm text-fg-muted">
             Polar checkout is not configured in this environment. Usage still records locally.
           </p>
-        ) : null}
+        ) : (
+          <p className="mt-3 text-sm text-fg-muted">
+            Switching paid plans updates your existing Polar subscription. New checkouts are only
+            used when this workspace does not already have one.
+          </p>
+        )}
         <p className="mt-3 text-sm text-fg-muted">
           Need procurement or an SLA?{' '}
           <Link href="/help/support" className="underline decoration-border underline-offset-4">

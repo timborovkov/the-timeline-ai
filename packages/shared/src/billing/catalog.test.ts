@@ -22,7 +22,11 @@ import {
   recallChargeCents,
   storageChargeCents,
 } from '#src/billing/catalog.js';
-import { verifyPolarWebhookSignature } from '#src/billing/polar.js';
+import {
+  createPlanChangeSession,
+  polarSubscriptionIdForPlanChange,
+  verifyPolarWebhookSignature,
+} from '#src/billing/polar.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 
 describe('billing catalog', () => {
@@ -79,6 +83,76 @@ describe('fake billing provider', () => {
     });
     expect(provider.events).toHaveLength(1);
     expect(provider.events[0]?.units).toBe(12);
+  });
+});
+
+describe('paid plan change', () => {
+  it('updates the existing Polar subscription instead of opening a second checkout', async () => {
+    expect(
+      polarSubscriptionIdForPlanChange({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_paid',
+      }),
+    ).toBe('sub_paid');
+    expect(
+      polarSubscriptionIdForPlanChange({
+        planId: 'free',
+        billingState: 'free',
+        polarSubscriptionId: null,
+      }),
+    ).toBeUndefined();
+
+    const provider = createFakeBillingProvider();
+    const updated = await createPlanChangeSession({
+      provider,
+      account: {
+        planId: 'payg',
+        billingState: 'payg_active',
+        polarSubscriptionId: 'sub_paid',
+      },
+      productId: 'prod_team',
+      externalCustomerId: 'team-1',
+      customerEmail: 'owner@example.test',
+      successUrl: 'https://timeline.test/app/team?section=billing&checkout=success',
+      portalReturnUrl: 'https://timeline.test/app/team?section=billing',
+    });
+    expect(updated.url).toContain('checkout=success');
+    expect(provider.subscriptionUpdates).toEqual([
+      { subscriptionId: 'sub_paid', productId: 'prod_team' },
+    ]);
+
+    const fresh = createFakeBillingProvider();
+    const checkout = await createPlanChangeSession({
+      provider: fresh,
+      account: { planId: 'free', billingState: 'free', polarSubscriptionId: null },
+      productId: 'prod_payg',
+      externalCustomerId: 'team-1',
+      customerEmail: 'owner@example.test',
+      successUrl: 'https://timeline.test/success',
+      portalReturnUrl: 'https://timeline.test/portal',
+    });
+    expect(checkout.url).toContain('/checkout/fake');
+    expect(fresh.subscriptionUpdates).toHaveLength(0);
+  });
+
+  it('sends the owner to the Polar portal when the subscription cannot be patched', async () => {
+    const provider = createFakeBillingProvider();
+    provider.updateSubscription = () => Promise.resolve({ ok: false, code: 'portal_required' });
+    const result = await createPlanChangeSession({
+      provider,
+      account: {
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_paid',
+      },
+      productId: 'prod_business',
+      externalCustomerId: 'team-1',
+      customerEmail: 'owner@example.test',
+      successUrl: 'https://timeline.test/success',
+      portalReturnUrl: 'https://timeline.test/portal',
+    });
+    expect(result.url).toContain('/portal/fake');
   });
 });
 

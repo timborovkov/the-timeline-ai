@@ -271,6 +271,19 @@ export async function markDeliveryResult(input: {
     .where(eq(messageDeliveries.id, input.deliveryId));
 }
 
+const UNMETERED_WORKSPACE_EMAIL_INTENTS = new Set<MessageIntent>([
+  'billing_usage_alert',
+  'email_verification',
+]);
+
+/** Verification mail and billing alerts must send even on a restricted workspace. */
+export function shouldMeterWorkspaceEmail(
+  intent: MessageIntent,
+  options: { db?: unknown; teamId?: string | null },
+): boolean {
+  return Boolean(options.db && options.teamId) && !UNMETERED_WORKSPACE_EMAIL_INTENTS.has(intent);
+}
+
 export async function sendMessage<TIntent extends MessageIntent>(
   intent: TIntent,
   messageInput: MessageInput<TIntent>,
@@ -348,8 +361,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
     return { ok: true, ...(deliveryId ? { deliveryId } : {}) };
   }
 
-  const shouldMeterEmail =
-    Boolean(options.db && options.teamId) && intent !== 'billing_usage_alert';
+  const shouldMeterEmail = shouldMeterWorkspaceEmail(intent, options);
   const units = Math.max(1, emailRecipientCount(rendered.to));
   const operationKey = options.dedupeKey ?? `${intent}:${rendered.to}`;
   const emailOperationId = `email_out:${operationKey}`;

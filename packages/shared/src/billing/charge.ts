@@ -172,3 +172,54 @@ export function metersPlusPendingReservations(
 export function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
 }
+
+/**
+ * Prepaid wallet and included discount already collect locally. Polar meters
+ * invoice the same native units, so ingest only when Polar would be the sole
+ * collector (no wallet or included-discount debit).
+ */
+export function shouldIngestPolarMeteredUsage(input: {
+  eventName: string | null | undefined;
+  polarCustomerId: string | null | undefined;
+  shadowBilling: boolean;
+  billable: boolean;
+  polarUnits: number;
+  walletCents: number;
+  discountCents: number;
+}): boolean {
+  if (!input.eventName || !input.polarCustomerId) return false;
+  if (input.shadowBilling || !input.billable) return false;
+  if (input.polarUnits <= 0) return false;
+  if (input.walletCents > 0 || input.discountCents > 0) return false;
+  return true;
+}
+
+/**
+ * Advance from the stored Polar/subscription window instead of snapping to
+ * UTC calendar months. Returns null while the current window is still open.
+ */
+export function nextIncludedDiscountPeriod(input: {
+  now: Date;
+  periodStartedAt: Date | null;
+  periodEndsAt: Date | null;
+}): { periodStartedAt: Date; periodEndsAt: Date } | null {
+  if (input.periodEndsAt && input.periodEndsAt > input.now) return null;
+  if (input.periodStartedAt && input.periodEndsAt) {
+    const durationMs = input.periodEndsAt.getTime() - input.periodStartedAt.getTime();
+    const duration = durationMs > 0 ? durationMs : 31 * 24 * 60 * 60 * 1000;
+    let periodStart = input.periodEndsAt;
+    let periodEnd = new Date(periodStart.getTime() + duration);
+    while (periodEnd <= input.now) {
+      periodStart = periodEnd;
+      periodEnd = new Date(periodStart.getTime() + duration);
+    }
+    return { periodStartedAt: periodStart, periodEndsAt: periodEnd };
+  }
+  const periodStartedAt = new Date(
+    Date.UTC(input.now.getUTCFullYear(), input.now.getUTCMonth(), 1),
+  );
+  const periodEndsAt = new Date(
+    Date.UTC(input.now.getUTCFullYear(), input.now.getUTCMonth() + 1, 1),
+  );
+  return { periodStartedAt, periodEndsAt };
+}

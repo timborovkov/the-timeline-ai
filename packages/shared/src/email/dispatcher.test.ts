@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PostmarkInbound } from '#src/email/postmark-schema.js';
 
+import { createBillingScope } from '#src/billing/scope.js';
 import { handleInbound } from '#src/email/dispatcher.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
@@ -519,6 +520,46 @@ describe('email dispatcher', () => {
       rawEventId: parent?.id,
       teamId: TEAM_ID,
     });
+  });
+
+  it('skips document extraction when inbound-email admission fails', async () => {
+    const billing = createBillingScope({
+      db: db as never,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.settle({
+      operationId: 'fill-email',
+      meterId: 'email_units',
+      nativeUnits: 500,
+      customerChargeCents: 0,
+    });
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const document = documentDeps();
+    const payload = inboundPayload('over-cap-doc');
+    payload.Attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
+
+    await expect(
+      handleInbound(
+        {
+          db: db as never,
+          inboundDomain: 'inbound.test',
+          attachments,
+          documents: document,
+          ...queues,
+        },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    expect(document.enqueueExtract).not.toHaveBeenCalled();
+    expect(document.upload).not.toHaveBeenCalled();
+    const captured = await db.select().from(documents).where(eq(documents.teamId, TEAM_ID));
+    expect(captured).toHaveLength(0);
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
+    expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
   });
 
   it('repairs missing captured documents on duplicate email delivery replay', async () => {

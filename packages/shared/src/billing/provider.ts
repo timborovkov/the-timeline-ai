@@ -15,6 +15,14 @@ export interface CreateCheckoutInput {
   discountId?: string;
 }
 
+export interface UpdateSubscriptionInput {
+  subscriptionId: string;
+  productId: string;
+  discountId?: string;
+}
+
+export type UpdateSubscriptionResult = { ok: true } | { ok: false; code: 'portal_required' };
+
 export interface BillingProvider {
   ensureCustomer(input: {
     externalId: string;
@@ -26,6 +34,7 @@ export interface BillingProvider {
     externalCustomerId: string;
     returnUrl: string;
   }): Promise<{ url: string }>;
+  updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
   ingestUsage(event: PolarUsageEvent): Promise<void>;
 }
 
@@ -33,12 +42,15 @@ export interface BillingProvider {
 export function createFakeBillingProvider(): BillingProvider & {
   events: PolarUsageEvent[];
   customers: Map<string, { id: string; email: string }>;
+  subscriptionUpdates: UpdateSubscriptionInput[];
 } {
   const events: PolarUsageEvent[] = [];
   const customers = new Map<string, { id: string; email: string }>();
+  const subscriptionUpdates: UpdateSubscriptionInput[] = [];
   return {
     events,
     customers,
+    subscriptionUpdates,
     ensureCustomer(input) {
       const existing = customers.get(input.externalId);
       if (existing) return Promise.resolve(existing);
@@ -56,6 +68,10 @@ export function createFakeBillingProvider(): BillingProvider & {
       return Promise.resolve({
         url: `https://sandbox.polar.sh/portal/fake?customer=${input.externalCustomerId}`,
       });
+    },
+    updateSubscription(input) {
+      subscriptionUpdates.push(input);
+      return Promise.resolve({ ok: true });
     },
     ingestUsage(event) {
       events.push(event);

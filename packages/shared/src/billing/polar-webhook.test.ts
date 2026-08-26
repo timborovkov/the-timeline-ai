@@ -75,6 +75,18 @@ describe('Polar webhook helpers', () => {
     ).toBe(true);
     expect(
       shouldResetIncludedDiscount({
+        existing: {
+          ...existing,
+          periodStartedAt: new Date('2026-08-15T00:00:00Z'),
+        } as never,
+        planId: 'team',
+        polarSubscriptionId: 'sub_1',
+        periodStartedAt: new Date('2026-08-15T00:00:00Z'),
+        periodEndsAt: new Date('2026-09-15T00:00:00Z'),
+      }),
+    ).toBe(false);
+    expect(
+      shouldResetIncludedDiscount({
         existing: existing as never,
         planId: 'business',
         polarSubscriptionId: 'sub_1',

@@ -693,21 +693,31 @@ async function ingestForTeam(
     // raw_event for an audio attachment would duplicate the timeline row.
     // The reconciler ticket in todo.md covers the rare "parent landed,
     // children missing" case via a periodic scan.
-    await maybeEnqueueExtract(deps, createResult.id, team.id);
-    await maybeEnqueueEmbed(deps, createResult.id, team.id);
-    if (contentText.trim()) await maybeEnqueueSuggestion(deps, createResult.id, team.id);
-    if (
-      await processEmailDocumentCandidates(deps, {
-        teamId: team.id,
-        parentRawEventId: createResult.id,
-        parentAuthorUserId: authorUserId,
-        visibility: resolvedEmailVisibility,
-        visibilityOwnerUserId,
-        messageId,
-        candidates: documentCandidates,
-      })
-    ) {
-      await patchEmailParentAttachments(deps.db, createResult.id, attachmentsRecords);
+    const replayMeter = await meterEmailUnits({
+      db: deps.db,
+      teamId: team.id,
+      ...(authorUserId ? { userId: authorUserId } : {}),
+      operationId: `email_in:${messageId}`,
+      units: 1,
+      operationClass: 'email_inbound',
+    });
+    if (replayMeter.ok) {
+      await maybeEnqueueExtract(deps, createResult.id, team.id);
+      await maybeEnqueueEmbed(deps, createResult.id, team.id);
+      if (contentText.trim()) await maybeEnqueueSuggestion(deps, createResult.id, team.id);
+      if (
+        await processEmailDocumentCandidates(deps, {
+          teamId: team.id,
+          parentRawEventId: createResult.id,
+          parentAuthorUserId: authorUserId,
+          visibility: resolvedEmailVisibility,
+          visibilityOwnerUserId,
+          messageId,
+          candidates: documentCandidates,
+        })
+      ) {
+        await patchEmailParentAttachments(deps.db, createResult.id, attachmentsRecords);
+      }
     }
     return false;
   }
@@ -730,15 +740,17 @@ async function ingestForTeam(
   }
   let parentAttachmentsDirty = false;
 
-  parentAttachmentsDirty = await processEmailDocumentCandidates(deps, {
-    teamId: team.id,
-    parentRawEventId: parentEventId,
-    parentAuthorUserId: authorUserId,
-    visibility: resolvedEmailVisibility,
-    visibilityOwnerUserId,
-    messageId,
-    candidates: documentCandidates,
-  });
+  parentAttachmentsDirty = allowEnrichment
+    ? await processEmailDocumentCandidates(deps, {
+        teamId: team.id,
+        parentRawEventId: parentEventId,
+        parentAuthorUserId: authorUserId,
+        visibility: resolvedEmailVisibility,
+        visibilityOwnerUserId,
+        messageId,
+        candidates: documentCandidates,
+      })
+    : false;
 
   // Promote each audio attachment to its own raw_event + transcribe job.
   // These are created via createEvent (not createEmailEvent) because the
