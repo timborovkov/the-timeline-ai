@@ -744,7 +744,10 @@ export async function processMeetingFinalizeJob(
         const metadata = (meeting.metadata ?? {}) as Record<string, unknown>;
         const lastChunk = finalChunks[finalChunks.length - 1];
         const minutes = recallBillableMinutes({
-          joinStartedAt: metadata.reserved_recall_started_at,
+          joinStartedAt:
+            typeof metadata.reserved_recall_started_at === 'string'
+              ? metadata.reserved_recall_started_at
+              : null,
           startedAt: meeting.startedAt,
           endedAt: meeting.endedAt,
           chunkEndMs: lastChunk?.endMs ?? null,
