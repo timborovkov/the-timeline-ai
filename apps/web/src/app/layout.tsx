@@ -2,11 +2,12 @@ import { getEnv } from '@timeline/shared/env';
 import localFont from 'next/font/local';
 import Script from 'next/script';
 
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
+import { appleWebApp, pwaViewport } from '@/lib/pwa-splash';
 import { SIDEBAR_PREFERENCE_BOOTSTRAP } from '@/lib/sidebar-preference';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -85,12 +86,7 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: '/apple-touch-icon.png', sizes: '180x180', type: 'image/png' }],
   },
-  appleWebApp: {
-    capable: true,
-    title: 'The Timeline',
-    // Non-overlaying: black-translucent draws under the status bar without safe-area padding.
-    statusBarStyle: 'black',
-  },
+  appleWebApp,
   openGraph: {
     title: 'AI Team Memory With Cited Answers · The Timeline',
     description:
@@ -127,6 +123,8 @@ export const metadata: Metadata = {
     },
   },
 };
+
+export const viewport: Viewport = pwaViewport;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   const taskCategoriesEnabled = getEnv().TASK_CATEGORY_UI_ENABLED;
