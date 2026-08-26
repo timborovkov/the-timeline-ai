@@ -1,4 +1,4 @@
-# ADR 0017: Polar native-meter billing with shadow ledger
+# ADR 0018: Polar native-meter billing with shadow ledger
 
 ## Status
 

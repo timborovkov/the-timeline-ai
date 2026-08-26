@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
+import { EXTERNAL_AGENT_TURN_TIMEOUT_MS } from '#src/agent/timeout.js';
 import { buildAgentTools } from '#src/agent/tools.js';
 import { handleMcpRequest } from '#src/mcp-server/handler.js';
 import { hashKey } from '#src/mcp-server/keys.js';
@@ -792,7 +793,7 @@ describe('handleMcpRequest', () => {
     ).resolves.toMatchObject({ error: 'failed', message: 'invalid_question', isError: true });
   });
 
-  it('cancels agent turns at the 90-second deadline', async () => {
+  it('cancels agent turns at the 180-second deadline', async () => {
     vi.useFakeTimers();
     try {
       let markStarted: (() => void) | undefined;
@@ -833,7 +834,7 @@ describe('handleMcpRequest', () => {
       );
 
       await started;
-      await vi.advanceTimersByTimeAsync(90_000);
+      await vi.advanceTimersByTimeAsync(EXTERNAL_AGENT_TURN_TIMEOUT_MS);
       const response = await responsePromise;
       expect(response).toMatchObject({ result: { isError: true } });
       if (!response || !('result' in response)) throw new Error('expected tool result');

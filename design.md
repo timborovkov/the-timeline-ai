@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.28 · Folded infrastructure limits (2026-08-24). Replaces v3.27 Usage plan limits.
+**Version:** v3.29 · Installed-app splash (2026-08-26). Replaces v3.28 Folded infrastructure limits.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -169,6 +169,17 @@ Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 The `IndexStrip` is restricted to explicit audit/operator views. Timeline uses
 a sticky collection toolbar under the 48px shell header instead of an index
 strip or loaded-count heading.
+
+### Installed app launch
+
+Home-screen Timeline uses the existing mark on `#0a0e0d`. Android Chrome
+composes the splash from the web app manifest `name`, `background_color`,
+`theme_color`, and 512px icon. iOS ignores that manifest splash and needs a
+startup image per device size and orientation. Those images are the same dark
+field with the centered mark — no wordmark, no extra chrome, no light-mode
+variant. Keep them in lockstep with
+[`apps/web/src/app/icon.svg`](apps/web/src/app/icon.svg); regenerate with
+`pnpm exec tsx apps/web/scripts/generate-pwa-splash.ts`.
 
 ## Shared components
 
@@ -1204,3 +1215,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Free CTA honesty | Header CTA is `Start free`; landing and sign-up say free / no card; upgrade nudges link to `/pricing`. |
 | 2026-08-22 | Usage plan limits | Usage and Billing show live used/limit for Ask turns, concurrent meeting notetakers, custom MCP servers, documents, storage, indexed chunks, and member seats — not Polar meters. |
 | 2026-08-24 | Folded infrastructure limits | Usage, Billing, and `/pricing` keep billed meters in the default view. Plan capacity ceilings sit in a closed **Infrastructure limits** disclosure. |
+| 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |

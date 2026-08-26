@@ -544,7 +544,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Business (€199) commitments; Enterprise custom. Polar MoR + shadow ledger.
 - [x] Billing foundation: entitlements catalog, Polar products/meters (sandbox),
       `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
-      shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0017.
+      shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` tracking (meters plus folded infrastructure limits); Home/Usage/Billing upgrade nudges;
       Free hard-stop + spend-cap admission in billing scope (`release` included).

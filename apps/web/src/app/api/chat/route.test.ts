@@ -817,6 +817,52 @@ describe('POST /api/chat', () => {
     });
   });
 
+  it('keeps list_team_members and board update tools for assign-by-name turns', async () => {
+    const assignMessage = {
+      id: 'm-assign',
+      role: 'user',
+      parts: [{ type: 'text', text: 'assign mikael' }],
+    };
+    fakes.fakeSafeValidateUIMessages.mockResolvedValue({
+      success: true,
+      data: [assignMessage],
+    });
+    fakes.fakeBuildAgentTools.mockReturnValue({
+      retrieve_workspace_context: { type: 'native' },
+      search_timeline: { type: 'native' },
+      search_app_guide: { type: 'native' },
+      get_app_route: { type: 'native' },
+      list_team_members: { type: 'native' },
+      search_boards: { type: 'native' },
+      execute_board_update_item: { type: 'native' },
+      execute_object_update: { type: 'native' },
+    });
+
+    const response = await POST(
+      request(
+        validBody({
+          messages: [assignMessage],
+          dashboardContext: {
+            pathname: '/app/boards/66666666-6666-4666-8666-666666666666',
+            routeKind: 'boards',
+            boardId: '66666666-6666-4666-8666-666666666666',
+            boardItemId: '77777777-7777-4777-8777-777777777777',
+          },
+        }),
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
+      | [{ tools?: Record<string, unknown> }]
+      | undefined;
+    expect(streamCall?.[0].tools).toMatchObject({
+      list_team_members: { type: 'native' },
+      search_boards: { type: 'native' },
+      execute_board_update_item: { type: 'native' },
+    });
+  });
+
   it('discovers MCP tools only for connected-source turns', async () => {
     const sourceMessage = {
       id: 'm-source',

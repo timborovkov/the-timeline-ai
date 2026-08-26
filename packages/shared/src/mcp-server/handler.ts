@@ -57,7 +57,7 @@ type JsonRpcResponse = JsonRpcSuccess | JsonRpcError;
 
 const PROTOCOL_VERSION = '2024-11-05';
 const MAX_AGENT_DELEGATION_DEPTH = 1;
-const MCP_AGENT_TIMEOUT_MS = 90_000;
+const MCP_AGENT_TIMEOUT_MS = agent.EXTERNAL_AGENT_TURN_TIMEOUT_MS;
 const INTEGRATION_SEARCH_MAX_EVENT_IDS = 10_000;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PSEUDO_USER = '00000000-0000-0000-0000-000000000000';
