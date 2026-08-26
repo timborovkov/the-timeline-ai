@@ -1,4 +1,5 @@
 import { contextIdsFromTrail, type ChatContextRef } from '@timeline/shared/chat-context';
+
 import type { ToolSet } from 'ai';
 
 /**

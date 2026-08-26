@@ -1,6 +1,7 @@
 import { buildAgentTools } from '@timeline/shared/agent';
-import type { TeamScope } from '@timeline/shared/team-scope';
 import { describe, expect, it } from 'vitest';
+
+import type { TeamScope } from '@timeline/shared/team-scope';
 
 import {
   omittedNativeToolGroups,
