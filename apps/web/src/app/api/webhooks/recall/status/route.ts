@@ -203,6 +203,11 @@ export async function POST(req: Request): Promise<Response> {
   // re-enqueue finalize over a cancelled meeting. Return 200 so Recall
   // stops retrying; the event is a no-op from our perspective.
   if (TERMINAL_STATUSES.has(meeting.status)) {
+    if (meeting.status !== 'completed' && meeting.status !== 'completed_partial') {
+      await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
+        () => undefined,
+      );
+    }
     log.info(
       { botId, event: parsed.event, currentStatus: meeting.status },
       'ignoring_event_terminal_status',

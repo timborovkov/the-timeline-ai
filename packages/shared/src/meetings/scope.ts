@@ -29,6 +29,8 @@ import {
   sql,
 } from 'drizzle-orm';
 
+import { releaseRecallMeetingMinutes } from '#src/billing/admission.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { participantNames } from '#src/meetings/participants.js';
 import { formatMeetingTranscript } from '#src/meetings/transcript.js';
@@ -687,6 +689,19 @@ export async function lookupMeetingByBotId(
 
 export function createMeetingScope(deps: MeetingScopeDeps) {
   const { db, teamId, userId, ensureMember } = deps;
+
+  async function releaseRecallReservation(meetingId: string): Promise<void> {
+    const billing = createBillingScope({
+      db,
+      teamId,
+      userId,
+      ensureMember: async () => {
+        await ensureMember();
+        return 'member';
+      },
+    });
+    await releaseRecallMeetingMinutes(billing, { meetingId }).catch(() => undefined);
+  }
 
   // Visibility predicate over meetings. Same shape as raw_events: team,
   // or private-only-author, or specific_users-includes-user.
@@ -1525,7 +1540,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         no_show_code: input.code,
       });
 
-      return db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx) => {
         const retryableSavedMeeting = tx
           .select({ id: savedMeetings.id })
           .from(savedMeetings)
@@ -1562,7 +1577,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
             ),
           )
           .returning({ id: meetings.id });
-        if (retried[0]) return 'retry_scheduled';
+        if (retried[0]) return 'retry_scheduled' as const;
 
         const terminal = await tx
           .update(meetings)
@@ -1582,7 +1597,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           )
           .returning({ savedMeetingId: meetings.savedMeetingId });
         const terminalMeeting = terminal[0];
-        if (!terminalMeeting) return 'ignored';
+        if (!terminalMeeting) return 'ignored' as const;
         if (terminalMeeting.savedMeetingId) {
           await recordSavedMeetingJoinFailureInternal(
             tx,
@@ -1590,8 +1605,12 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
             'no_show',
           );
         }
-        return 'terminal';
+        return 'terminal' as const;
       });
+      if (outcome === 'retry_scheduled' || outcome === 'terminal') {
+        await releaseRecallReservation(input.meetingId);
+      }
+      return outcome;
     },
 
     async handleMeetingFailure(input: {
@@ -1605,7 +1624,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         failure_at: input.failedAt.toISOString(),
         failure_code: input.code,
       });
-      return db.transaction(async (tx) => {
+      const outcome = await db.transaction(async (tx) => {
         const failed = await tx
           .update(meetings)
           .set({
@@ -1623,12 +1642,16 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           )
           .returning({ savedMeetingId: meetings.savedMeetingId });
         const failedMeeting = failed[0];
-        if (!failedMeeting) return 'ignored';
+        if (!failedMeeting) return 'ignored' as const;
         if (failedMeeting.savedMeetingId) {
           await recordSavedMeetingJoinFailureInternal(tx, failedMeeting.savedMeetingId, 'failure');
         }
-        return 'failed';
+        return 'failed' as const;
       });
+      if (outcome === 'failed') {
+        await releaseRecallReservation(input.meetingId);
+      }
+      return outcome;
     },
 
     async expireSavedMeetingNoShowRetries(now = new Date()): Promise<number> {

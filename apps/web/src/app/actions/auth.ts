@@ -2,7 +2,6 @@
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
 import {
-  applyOwnedTeamFreeGrant,
   assertTeamMemberSeatCapacity,
   insertRestrictedFreeBillingAccount,
   isBillingAdmissionError,
@@ -197,11 +196,12 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           .returning({ id: teams.id });
         const teamId = teamRows[0]?.id;
         if (!teamId) throw new Error('Failed to create team');
-        // react-doctor-disable-next-line react-doctor/async-parallel -- Restricted billing insert must precede the Free grant on this transaction client.
+        // react-doctor-disable-next-line react-doctor/async-parallel -- Team membership insert must precede digest and restricted billing writes on this transaction client.
         await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
         await insertDefaultDigestDestination(tx, teamId);
+        // Credentials signup does not set emailVerified. Keep the workspace
+        // restricted until verifyEmailToken claims the person-level Free grant.
         await insertRestrictedFreeBillingAccount({ db: tx, teamId });
-        await applyOwnedTeamFreeGrant({ db: tx, teamId, userId });
         return { activeTeamId: teamId, userId, event: 'team_created' as const };
       });
     } catch (e) {
