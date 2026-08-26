@@ -15,7 +15,10 @@ export function createObjectDiscussionDeliveryAdapter(input: {
   return {
     acknowledgeAgentRequest: () => Promise.resolve(),
     acknowledgeCapture: () => Promise.resolve(),
-    startProgress: () => Promise.resolve(() => undefined),
+    startProgress: async () => {
+      await input.postComment('_Looking that up…_');
+      return () => undefined;
+    },
     deliverAnswer: (text) => input.postComment(text),
     deliverFailure: (text) => input.postComment(text),
   };

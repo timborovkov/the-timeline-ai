@@ -1,0 +1,89 @@
+'use client';
+
+import { textHasContacts } from '@timeline/shared/conversational/contact-artifacts';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useTransition } from 'react';
+
+import type * as boards from '@timeline/shared/boards';
+
+import { structureContactFromBoardNotesAction } from '@/app/actions/objects';
+import { DueDateDisplay } from '@/components/due-date-display';
+import { displayText } from '@/lib/display-dates';
+import { notifyAction } from '@/lib/notify';
+
+const EMPTY_MEMBERS: { id: string; label: string }[] = [];
+
+export function ObjectBoardContextSection({
+  rows,
+  entityId,
+  members = EMPTY_MEMBERS,
+  disabled = false,
+}: {
+  rows: boards.ObjectBoardContextRow[];
+  entityId: string;
+  members?: { id: string; label: string }[];
+  disabled?: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  if (rows.length === 0) return null;
+
+  return (
+    <section aria-label="Board context">
+      <h2 className="text-xs font-normal text-fg-dim">Board context</h2>
+      <ul className="mt-1 space-y-2">
+        {rows.map((row) => {
+          const responsible = members.find((member) => member.id === row.responsibleUserId)?.label;
+          const canStructure = row.notes ? textHasContacts(row.notes) : false;
+          return (
+            <li key={row.itemId} className="grid gap-0.5">
+              <Link
+                href={`/app/boards/${row.boardId}?item=${row.itemId}`}
+                className="text-sm text-fg hover:underline"
+              >
+                {displayText(row.boardName)}
+              </Link>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-dim">
+                {row.laneName ? <span>{displayText(row.laneName)}</span> : null}
+                {responsible ? <span>· {displayText(responsible)}</span> : null}
+                <DueDateDisplay value={row.dueAt} variant="compact" />
+              </div>
+              {row.nextStep ? (
+                <p className="text-xs text-fg-muted">{displayText(row.nextStep)}</p>
+              ) : null}
+              {row.notes ? (
+                <p className="text-xs leading-5 text-fg">{displayText(row.notes)}</p>
+              ) : null}
+              {canStructure ? (
+                <button
+                  type="button"
+                  disabled={disabled || pending}
+                  onClick={() => {
+                    startTransition(async () => {
+                      const result = await notifyAction({
+                        id: `object:${entityId}:structure-contact`,
+                        loading: 'Structuring contact info…',
+                        success: 'Contact info structured',
+                        error: 'Couldn’t structure contact info',
+                        run: () =>
+                          structureContactFromBoardNotesAction({
+                            entityId,
+                            notes: row.notes ?? '',
+                          }),
+                      });
+                      if (!result.error) router.refresh();
+                    });
+                  }}
+                  className="text-left text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+                >
+                  Structure contact info
+                </button>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}

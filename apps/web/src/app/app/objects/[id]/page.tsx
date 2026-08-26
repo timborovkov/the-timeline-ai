@@ -101,19 +101,33 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
   }
 
   await scope.objects.markVisited(detail.id);
-  const [boardContext, pendingBundles, projects, primaryProjects, initialPinned, members] =
-    await Promise.all([
-      scope.boards.listObjectBoardContext(detail.id),
-      scope.suggestions.listPendingSuggestions(),
-      detail.type === 'task'
-        ? scope.objects.listObjects({ type: 'project', archived: false, limit: 200 })
-        : Promise.resolve([]),
-      detail.type === 'task'
-        ? scope.objects.listPrimaryProjectsForTasks([detail.id])
-        : Promise.resolve([]),
-      scope.pins.isPinned({ kind: 'object', key: detail.id }),
-      scope.timeline.listMembers(),
-    ]);
+  const [
+    boardContext,
+    pendingBundles,
+    projects,
+    primaryProjects,
+    primaryCompanies,
+    companies,
+    initialPinned,
+    members,
+  ] = await Promise.all([
+    scope.boards.listObjectBoardContext(detail.id),
+    scope.suggestions.listPendingSuggestions(),
+    detail.type === 'task'
+      ? scope.objects.listObjects({ type: 'project', archived: false, limit: 200 })
+      : Promise.resolve([]),
+    detail.type === 'task'
+      ? scope.objects.listPrimaryProjectsForTasks([detail.id])
+      : Promise.resolve([]),
+    detail.type === 'person'
+      ? scope.objects.listPrimaryCompaniesForPeople([detail.id])
+      : Promise.resolve([]),
+    detail.type === 'person'
+      ? scope.objects.listObjects({ type: 'company', archived: false, limit: 200 })
+      : Promise.resolve([]),
+    scope.pins.isPinned({ kind: 'object', key: detail.id }),
+    scope.timeline.listMembers(),
+  ]);
   const memberOptions = members.map((member) => ({
     id: member.userId,
     label: displayMemberLabel(member),
@@ -138,9 +152,11 @@ export default async function ObjectDetailPage({ params, searchParams }: PagePro
         initialPinned={initialPinned}
         suggestions={suggestions}
         projects={projects.map((project) => ({ id: project.id, label: project.canonicalName }))}
+        companies={companies.map((company) => ({ id: company.id, label: company.canonicalName }))}
         members={memberOptions}
         highlightCommentId={firstParam(query.comment) ?? null}
         primaryProject={primaryProjects[0] ?? null}
+        primaryCompany={primaryCompanies[0] ?? null}
         taskCategoriesEnabled={getEnv().TASK_CATEGORY_UI_ENABLED}
         boardContext={boardContext}
       />

@@ -17,7 +17,10 @@ import type { ReactNode } from 'react';
 import { RemoveBoardItemButton } from '@/components/boards/remove-board-item-button';
 import { ChatViewContextBinder } from '@/components/chat/chat-view-context';
 import { DueDateDisplay } from '@/components/due-date-display';
+import { ObjectCompactRelationships } from '@/components/objects/object-compact-relationships';
+import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
 import { ObjectRelatedContext } from '@/components/objects/object-related-context';
+import { useObjectDiscussionState } from '@/components/objects/use-object-discussion-state';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TechnicalDetails } from '@/components/technical-details';
@@ -44,6 +47,11 @@ interface Props {
   view: BoardLayout;
   item: boards.BoardItemRow | null;
   connectedWork?: objects.ObjectDetail['connectedWork'] | null;
+  notes?: objects.ObjectDetail['notes'];
+  recentChanges?: objects.ObjectDetail['recentChanges'];
+  relationships?: objects.ObjectDetail['relationships'];
+  objectType?: objects.ObjectType | null;
+  currentUserId?: string;
   history: boards.BoardItemChangeRow[];
   lanes?: boards.BoardLaneRow[];
   members?: BoardMemberOption[];
@@ -58,6 +66,9 @@ interface Props {
 const EMPTY_LANES: boards.BoardLaneRow[] = [];
 const EMPTY_MEMBERS: BoardMemberOption[] = [];
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
+const EMPTY_NOTES: objects.ObjectDetail['notes'] = [];
+const EMPTY_RECENT_CHANGES: objects.ObjectDetail['recentChanges'] = [];
+const EMPTY_RELATIONSHIPS: objects.ObjectDetail['relationships'] = [];
 
 interface DraftState {
   itemId: string | null;
@@ -102,6 +113,11 @@ export function BoardCardDetail({
   view,
   item,
   connectedWork = null,
+  notes = EMPTY_NOTES,
+  recentChanges = EMPTY_RECENT_CHANGES,
+  relationships = EMPTY_RELATIONSHIPS,
+  objectType = null,
+  currentUserId,
   history,
   lanes = EMPTY_LANES,
   members = EMPTY_MEMBERS,
@@ -111,6 +127,10 @@ export function BoardCardDetail({
 }: Props) {
   const [draftState, setDraftState] = useState(() => draftStateForItem(item));
   const [pending, startTransition] = useTransition();
+  const discussion = useObjectDiscussionState({
+    entityId: item?.entityId ?? '',
+    notes,
+  });
   const nextDraftState = reconcileDraftState(draftState, item);
   const currentDraftState = nextDraftState === draftState ? draftState : nextDraftState;
   if (nextDraftState !== draftState) setDraftState(nextDraftState);
@@ -182,6 +202,29 @@ export function BoardCardDetail({
         onBlur={saveNextStep}
       />
       <BoardObjectDetails item={item} lane={lane} blocked={blocked} />
+      {objectType ? (
+        <ObjectCompactRelationships
+          entityId={item.entityId}
+          sourceType={objectType}
+          relationships={relationships}
+        />
+      ) : null}
+      <div className="px-3 py-1.5">
+        <ObjectDiscussionPanel
+          notes={notes}
+          recentChanges={recentChanges}
+          userId={currentUserId ?? ''}
+          members={members}
+          pending={discussion.pending}
+          noteBody={discussion.noteBody}
+          editingNoteId={discussion.editingNoteId}
+          editingBody={discussion.editingBody}
+          dispatchObjectUi={discussion.dispatchObjectUi}
+          onAddNote={discussion.addNote}
+          onSaveNote={discussion.saveNote}
+          onDeleteNote={discussion.deleteNote}
+        />
+      </div>
       <ObjectRelatedContext connectedWork={connectedWork} compact />
       <BoardNotesSection
         item={item}

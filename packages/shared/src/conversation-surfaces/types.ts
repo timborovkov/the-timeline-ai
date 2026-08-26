@@ -34,6 +34,13 @@ export const DIRECT_CONVERSATION_HISTORY_MESSAGE_LIMIT = 20;
 export const DIRECT_CONVERSATION_HISTORY_CHARACTER_LIMIT = 30_000;
 export const DIRECT_CONVERSATION_RATE_LIMIT_PER_MINUTE = 10;
 export const DIRECT_CONVERSATION_TIMEOUT_MS = EXTERNAL_AGENT_TURN_TIMEOUT_MS;
+export const OBJECT_DISCUSSION_TIMEOUT_MS = 120_000;
+
+export function conversationTimeoutMs(surface: ConversationSurface): number {
+  if (surface === 'object_discussion') return OBJECT_DISCUSSION_TIMEOUT_MS;
+  return DIRECT_CONVERSATION_TIMEOUT_MS;
+}
+
 export const CONVERSATION_AGENT_TIMEOUT_MESSAGE = `I couldn’t finish that within ${String(
   DIRECT_CONVERSATION_TIMEOUT_MS / 1_000,
 )} seconds. Please try again, or start a new conversation.`;
