@@ -7,7 +7,9 @@ import type { ToolSet } from 'ai';
  * `buildAgentTools` must appear here except `propose_object_change`, which
  * stays on proposal-only MCP/Telegram agents. `list_team_members` stays in
  * `core` so the model can resolve teammate names even when the user message
- * is only "assign Mikael".
+ * is only "assign Mikael". Keyword matchers must cover the system prompt's
+ * example phrases (scheduled, pins, sentry) and any snake_case tool name the
+ * user mentions.
  */
 const nativeToolGroups = {
   core: [
@@ -88,6 +90,18 @@ function matchesAny(value: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(value));
 }
 
+function addGroupsForNamedNativeTools(question: string, groups: Set<NativeToolGroup>): void {
+  const lower = question.toLowerCase();
+  for (const [group, names] of Object.entries(nativeToolGroups) as [
+    NativeToolGroup,
+    readonly string[],
+  ][]) {
+    for (const name of names) {
+      if (new RegExp(`\\b${name}\\b`).test(lower)) groups.add(group);
+    }
+  }
+}
+
 export function selectAgentToolGroups(input: {
   question: string;
   dashboardContext?: ChatToolDashboardContext | undefined;
@@ -120,7 +134,7 @@ export function selectAgentToolGroups(input: {
     objectId ||
     taskId ||
     matchesAny(text, [
-      /\b(object|person|company|project|topic|deal|vendor|incident|decision|hiring|task|todo|follow[- ]?up|status|stage|archive|merge)\b/,
+      /\b(object|person|company|project|topic|deal|vendor|incident|decision|hiring|task|todo|follow[- ]?up|status|stage|archive|merge|changed|changes)\b/,
     ])
   ) {
     groups.add('objects');
@@ -135,7 +149,12 @@ export function selectAgentToolGroups(input: {
     groups.add('boards');
   }
 
-  if (documentId || matchesAny(text, [/\b(document|doc|file|pdf|contract|policy|drive|chunk)\b/])) {
+  if (
+    documentId ||
+    matchesAny(text, [
+      /\b(document|documents|docs|doc|file|pdf|contract|policy|onboarding|drive|chunk)\b/,
+    ])
+  ) {
     groups.add('documents');
   }
 
@@ -144,7 +163,7 @@ export function selectAgentToolGroups(input: {
     meetingId ||
     input.dashboardContext?.calendarDate ||
     matchesAny(text, [
-      /\b(calendar|schedule|meeting|today|tomorrow|yesterday|week|month|date|time)\b/,
+      /\b(calendar|schedule|scheduled|scheduling|reschedule|rescheduled|meeting|today|tomorrow|yesterday|week|month|date|time)\b/,
     ])
   ) {
     groups.add('calendar');
@@ -164,7 +183,7 @@ export function selectAgentToolGroups(input: {
   if (
     hasContrastiveCorrection ||
     matchesAny(text, [
-      /\b(create|add|update|change|edit|set|move|cancel|delete|remove|archive|merge|schedule|reschedule|approve|correct|fix|wrong|incorrect|actually|instead|do it|mark|done|complete|finish|close|assign|assigned|reassign|reassigned)\b/,
+      /\b(create|add|update|change|edit|set|move|cancel|cancelled|canceled|delete|remove|archive|merge|schedule|reschedule|rescheduled|approve|correct|fix|wrong|incorrect|actually|instead|do it|mark|done|complete|finish|close|assign|assigned|reassign|reassigned)\b/,
       /\bit(?:'s| is)\s+not\b/,
     ])
   ) {
@@ -191,16 +210,20 @@ export function selectAgentToolGroups(input: {
   if (
     onSetupSurface ||
     matchesAny(text, [
-      /\b(integration|source|slack|telegram|tg|github|linear|drive|email|connected|external|mcp|invite|setup)\b/,
+      /\b(integration|source|slack|telegram|tg|github|linear|drive|email|connected|external|mcp|invite|setup|sentry|monday\.com)\b/,
     ])
   ) {
     groups.add('integrations');
   }
 
-  if (matchesAny(text, [/\b(pin|pinned|unpin|pinned work)\b/])) groups.add('pins');
+  if (matchesAny(text, [/\b(pin|pins|pinned|unpin|unpinned|pinned work)\b/])) {
+    groups.add('pins');
+  }
+
+  addGroupsForNamedNativeTools(input.question, groups);
 
   const includeMcp = matchesAny(text, [
-    /\b(external tool|connected tool|mcp|github|linear|drive|jira|notion|slack|telegram|source)\b/,
+    /\b(external tool|connected tool|custom tool|mcp|mcp__|github|linear|drive|jira|notion|slack|telegram|source|sentry|monday\.com)\b/,
   ]);
 
   return { groups: [...groups], includeMcp };
@@ -208,7 +231,8 @@ export function selectAgentToolGroups(input: {
 
 export function hasExplicitPinMutationIntent(question: string): boolean {
   return matchesAny(question.toLowerCase(), [
-    /\b(pin|unpin)\s+(this|that|the|my|an?\s+)?\b/,
+    /\bunpin(?:ned)?\b/,
+    /\b(pin|unpin)\s+(this|that|the|my|it|an?\s+)?\b/,
     /\b(add|save)\b.{0,40}\b(to|as)\s+(my\s+)?pins?\b/,
     /\b(remove|delete)\b.{0,40}\bfrom\s+(my\s+)?pins?\b/,
     /\b(move|reorder)\b.{0,40}\bpins?\b/,

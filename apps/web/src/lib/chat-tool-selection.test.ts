@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { TeamScope } from '@timeline/shared/team-scope';
 
 import {
+  hasExplicitPinMutationIntent,
   omittedNativeToolGroups,
   selectAgentToolGroups,
   selectedNativeToolNames,
@@ -48,5 +49,48 @@ describe('chat tool selection', () => {
     expect(selection.groups).toEqual(
       expect.arrayContaining(['core', 'guide', 'boards', 'actions', 'objects']),
     );
+  });
+
+  it('offers the prompt-named tool for the phrases the system prompt uses', () => {
+    const cases: { question: string; tools: string[]; includeMcp?: boolean }[] = [
+      { question: "what's scheduled", tools: ['list_calendar_events'] },
+      { question: "what's on my calendar", tools: ['list_calendar_events'] },
+      { question: 'this meeting is cancelled', tools: ['execute_calendar_cancel'] },
+      { question: 'show my pins', tools: ['list_pins'] },
+      { question: 'what are my pins?', tools: ['list_pins'] },
+      { question: 'search sentry for the outage', tools: ['search_integration_events'] },
+      {
+        question: 'look up this monday.com item',
+        tools: ['search_integration_events'],
+        includeMcp: true,
+      },
+      { question: 'what changed on Acme?', tools: ['recent_changes'] },
+      { question: 'where is the onboarding guide?', tools: ['search_documents'] },
+      { question: 'use list_calendar_events before answering', tools: ['list_calendar_events'] },
+      { question: 'call search_documents for the refund policy', tools: ['search_documents'] },
+    ];
+
+    for (const testCase of cases) {
+      const selection = selectAgentToolGroups({ question: testCase.question });
+      const names = selectedNativeToolNames(selection.groups);
+      for (const tool of testCase.tools) {
+        expect(names, `${testCase.question} -> ${tool}`).toContain(tool);
+      }
+      if (testCase.includeMcp) expect(selection.includeMcp).toBe(true);
+    }
+  });
+
+  it('does not treat a calendar lookup as a mutation', () => {
+    const names = selectedNativeToolNames(
+      selectAgentToolGroups({ question: "what's scheduled" }).groups,
+    );
+    expect(names).toContain('list_calendar_events');
+    expect(names).not.toContain('execute_calendar_create');
+    expect(names).not.toContain('execute_calendar_cancel');
+  });
+
+  it('treats unpin as an explicit pin mutation', () => {
+    expect(hasExplicitPinMutationIntent('unpin it')).toBe(true);
+    expect(hasExplicitPinMutationIntent('show my pins')).toBe(false);
   });
 });

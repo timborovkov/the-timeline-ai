@@ -531,14 +531,17 @@
         <code>search_timeline</code> / <code>list_events</code>. Dashboard chat keeps
         <code>list_team_members</code> in the always-on core tool group so assignment-by-name turns
         can resolve a teammate to a user id before calling <code>execute_board_update_item</code> or
-        <code>execute_object_update</code>. Telegram and MCP <code>askAgent</code> already expose
-        the full native toolset. Proposal-side tools <code>suggest_task</code> and
-        <code>suggest_object_memory</code> record reviewable suggestions; those proposals can use
-        <code>ownerName</code>, <code>assigneeName</code>, <code>fromName</code>, and
-        <code>toName</code> when a clear person or object is known but the UUID is unavailable.
-        Acceptance resolves only unique active team-member or object-name matches and fails safe
-        when names are ambiguous. Approval-required dashboard action tools such as
-        <code>execute_object_create</code>, <code>execute_object_update</code>,
+        <code>execute_object_update</code>. The same selector also has to honor the system prompt's
+        example phrases: <code>list_calendar_events</code> for "what's scheduled",
+        <code>list_pins</code> for "my pins", integration tools for Sentry/Monday.com, and any
+        snake-case native tool name the user mentions. Telegram and MCP
+        <code>askAgent</code> already expose the full native toolset. Proposal-side tools
+        <code>suggest_task</code> and <code>suggest_object_memory</code> record reviewable
+        suggestions; those proposals can use <code>ownerName</code>, <code>assigneeName</code>,
+        <code>fromName</code>, and <code>toName</code> when a clear person or object is known but
+        the UUID is unavailable. Acceptance resolves only unique active team-member or object-name
+        matches and fails safe when names are ambiguous. Approval-required dashboard action tools
+        such as <code>execute_object_create</code>, <code>execute_object_update</code>,
         <code>execute_object_archive</code>, <code>execute_object_merge</code>, and the board-card
         tools <code>execute_board_add_item</code>, <code>execute_board_update_item</code>, and
         <code>execute_board_remove_item</code> mutate canonical state only after explicit in-chat
