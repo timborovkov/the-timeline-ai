@@ -14,13 +14,12 @@ import {
 import { and, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
-import type { PlanCapacityUsageRow } from '#src/billing/status.js';
-
 import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
+import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
 
 const GIB = 1024 ** 3;
 
@@ -120,10 +119,16 @@ export async function assertTeamWriteCapacity(input: {
 }): Promise<void> {
   const billing = billingScopeForDb(input.db, input.teamId);
   const account = await billing.getAccount();
-  if (account.billingState === 'restricted') {
+  if (!billingStateAllowsReservation(account.billingState)) {
+    if (account.billingState === 'restricted') {
+      throw new BillingAdmissionError(
+        'usage_limit_reached',
+        'This extra workspace has no Free allowance. Add a payment method in Billing to write.',
+      );
+    }
     throw new BillingAdmissionError(
       'usage_limit_reached',
-      'This extra workspace has no Free allowance. Add a payment method in Billing to write.',
+      "This team's billing is paused, so new files cannot be uploaded until billing is restored.",
     );
   }
   const cap = CAPACITY_BY_PLAN[account.planId];
@@ -142,7 +147,7 @@ export async function assertTeamWriteCapacity(input: {
   if (cap.storageGb !== null) {
     const [row] = await input.db
       .select({
-        bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize}), 0)`,
+        bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize})::bigint, 0)`,
       })
       .from(documentVersions)
       .innerJoin(documents, eq(documents.id, documentVersions.documentId))
@@ -153,7 +158,8 @@ export async function assertTeamWriteCapacity(input: {
           sql`${documentVersions.byteSize} IS NOT NULL`,
         ),
       );
-    const gb = ((row?.bytes ?? 0) + (input.additionalBytes ?? 0)) / GIB;
+    const usedBytes = Number(row?.bytes ?? 0);
+    const gb = (usedBytes + (input.additionalBytes ?? 0)) / GIB;
     if (gb > cap.storageGb) {
       throw new BillingAdmissionError(code, 'Storage limit reached for this plan');
     }
@@ -498,7 +504,13 @@ export async function claimOwnedTeamFreeGrantsForVerifiedUser(input: {
   const owned = await input.db
     .select({ teamId: teamMembers.teamId })
     .from(teamMembers)
-    .where(and(eq(teamMembers.userId, input.userId), eq(teamMembers.role, 'owner')));
+    .where(
+      and(
+        eq(teamMembers.userId, input.userId),
+        eq(teamMembers.role, 'owner'),
+        isNull(teamMembers.removedAt),
+      ),
+    );
   for (const row of owned) {
     await applyOwnedTeamFreeGrant({
       db: input.db,

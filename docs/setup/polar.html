@@ -81,6 +81,7 @@ BILLING_CHARGES_ENABLED=false
         <code>accepted_sources</code>. A person may claim one Free grant after email verification;
         failed claims retry on the next signed-in load. Extra owned workspaces are restricted until
         a payment method is added. Unverified owners are not granted Free by the backfill migration.
+        Removed owner memberships cannot claim or steal that person-level grant.
       </p>
       <p>
         Background workers attach a billing context so OpenRouter wrappers settle the
@@ -96,9 +97,14 @@ BILLING_CHARGES_ENABLED=false
         <code>refund.updated</code>). Keep the endpoint disabled until the URL is publicly reachable
         (local tunnel or deploy). Webhook signatures require a timestamp within five minutes.
         Subscription events compare Polar <code>modified_at</code> to
-        <code>polar_event_modified_at</code>, not local <code>updated_at</code>. Paid-plan
-        activation writes the catalog default spend cap (€25/€100/€500) when the workspace is still
-        on Free. A paid spend cap of €0 is a hard stop. Refunds of the €10 top-up debit the prepaid
+        <code>polar_event_modified_at</code>, not local <code>updated_at</code>, after locking the
+        billing account in the same transaction. Request bodies are bounded to the integration
+        webhook size limit before signature verify. Paid-plan activation writes the catalog default
+        spend cap (€25/€100/€500) when the workspace is still on Free; later subscription updates
+        preserve an administrator-selected paid cap, including €0 as a hard stop. Settlement that
+        exceeds the reserved wallet or paid spend cap still records the full ledger charge and
+        freezes the workspace. Document uploads are blocked in every non-reservable billing state.
+        Refunds of the €10 top-up debit the prepaid
         wallet, serialize concurrent <code>refund.created</code> /
         <code>order.refunded</code> totals, and freeze the workspace if that credit was already
         spent. Refunds that arrive before <code>order.paid</code> are stored and applied when the

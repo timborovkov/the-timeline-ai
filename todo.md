@@ -567,8 +567,14 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Stale Polar activations are ignored against `polar_event_modified_at`; canceled paid
       plans become restricted unless the team holds the Free grant. Polar refunds serialize remaining
       clawback then debit prepaid top-ups; Polar usage ingest retries from a claimed ledger outbox
-      after local settlement. A paid spend cap of €0 is a hard stop. Extra member-days skip included
+      after local settlement. A paid spend cap of €0 is a hard stop and is preserved across Polar
+      subscription updates. Extra member-days skip included
       usage discount and accrue members added after the first daily tick.
+      Polar webhooks bound the request body before signature verify and lock the billing account
+      before applying Polar `modified_at`. Settlement above the reserved wallet or paid
+      spend cap freezes the workspace. Document writes require a reservable billing state.
+      Free-grant claims skip removed owners; storage admission converts aggregated bytes before
+      adding a new upload.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

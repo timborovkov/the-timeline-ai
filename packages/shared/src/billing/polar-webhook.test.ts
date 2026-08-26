@@ -8,6 +8,7 @@ import {
   handlePolarWebhookEvent,
   shouldApplyPaidSubscriptionUpdate,
   shouldResetIncludedDiscount,
+  spendCapCentsForPaidActivation,
 } from '#src/billing/polar-webhook.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -93,6 +94,28 @@ describe('Polar webhook helpers', () => {
         periodEndsAt: new Date('2026-09-01T00:00:00Z'),
       }),
     ).toBe(true);
+  });
+
+  it('preserves a paid spend cap of 0 and only defaults when activating from Free', () => {
+    expect(
+      spendCapCentsForPaidActivation({
+        existing: { planId: 'team', spendCapCents: 0 } as never,
+        plan: 'team',
+      }),
+    ).toBe(0);
+    expect(
+      spendCapCentsForPaidActivation({
+        existing: { planId: 'payg', spendCapCents: 0 } as never,
+        plan: 'payg',
+      }),
+    ).toBe(0);
+    expect(
+      spendCapCentsForPaidActivation({
+        existing: { planId: 'free', spendCapCents: 0 } as never,
+        plan: 'payg',
+      }),
+    ).toBe(2_500);
+    expect(spendCapCentsForPaidActivation({ existing: undefined, plan: 'team' })).toBe(10_000);
   });
 });
 
@@ -291,6 +314,128 @@ describe('handlePolarWebhookEvent', () => {
       },
     });
     expect((await billing.getAccount()).spendCapCents).toBe(2_500);
+  });
+
+  it('preserves a paid spend cap of 0 across subscription.updated', async () => {
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_payg',
+          status: 'active',
+          product_id: 'prod_payg',
+          modified_at: '2026-08-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts SET spend_cap_cents = 0 WHERE team_id = '${TEAM_ID}';
+    `);
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_payg',
+          status: 'active',
+          product_id: 'prod_payg',
+          modified_at: '2026-08-02T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).spendCapCents).toBe(0);
+    expect((await billing.getAccount()).billingState).toBe('payg_active');
+  });
+
+  it('ignores an older Polar subscription event after locking the billing account', async () => {
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          modified_at: '2026-08-10T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'past_due',
+          product_id: 'prod_team',
+          modified_at: '2026-08-09T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const kept = await billing.getAccount();
+    expect(kept.billingState).toBe('team_active');
+    expect(kept.polarEventModifiedAt?.toISOString()).toBe('2026-08-10T00:00:00.000Z');
+
+    await Promise.all([
+      handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: PRODUCTS,
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: 'sub_team',
+            status: 'past_due',
+            product_id: 'prod_team',
+            modified_at: '2026-08-09T12:00:00.000Z',
+            customer: { id: 'cus_1', external_id: TEAM_ID },
+          },
+        },
+      }),
+      handlePolarWebhookEvent({
+        db,
+        chargesEnabled: true,
+        products: PRODUCTS,
+        payload: {
+          type: 'subscription.updated',
+          data: {
+            id: 'sub_team',
+            status: 'active',
+            product_id: 'prod_team',
+            modified_at: '2026-08-11T00:00:00.000Z',
+            customer: { id: 'cus_1', external_id: TEAM_ID },
+          },
+        },
+      }),
+    ]);
+    const afterRace = await billing.getAccount();
+    expect(afterRace.billingState).toBe('team_active');
+    expect(afterRace.polarEventModifiedAt?.toISOString()).toBe('2026-08-11T00:00:00.000Z');
   });
 
   it('reverses a prepaid top-up when Polar refunds the order', async () => {

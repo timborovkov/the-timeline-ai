@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { billingFreeGrants, type Db } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -153,6 +154,89 @@ describe('billing capacity (not Polar meters)', () => {
     `);
     await claimOwnedTeamFreeGrantsForVerifiedUser({ db, userId: unverified });
     expect((await billing.getAccount()).billingState).toBe('free');
+  });
+
+  it('ignores removed owner memberships when claiming Free grants', async () => {
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${EXTRA_TEAM_ID}', 'extra-team', 'Extra Team');
+      INSERT INTO team_members (team_id, user_id, role, removed_at)
+      VALUES ('${EXTRA_TEAM_ID}', '${USER_ID}', 'owner', now());
+      UPDATE team_members SET removed_at = now()
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
+    `);
+    await claimOwnedTeamFreeGrantsForVerifiedUser({ db, userId: USER_ID });
+    const grants = await db
+      .select()
+      .from(billingFreeGrants)
+      .where(eq(billingFreeGrants.userId, USER_ID));
+    expect(grants).toHaveLength(0);
+  });
+
+  it('claims Free on the active owned workspace and skips a removed extra owner row', async () => {
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${EXTRA_TEAM_ID}', 'extra-team', 'Extra Team');
+      INSERT INTO team_members (team_id, user_id, role, removed_at)
+      VALUES ('${EXTRA_TEAM_ID}', '${USER_ID}', 'owner', now());
+    `);
+    await claimOwnedTeamFreeGrantsForVerifiedUser({ db, userId: USER_ID });
+    const [grant] = await db
+      .select()
+      .from(billingFreeGrants)
+      .where(eq(billingFreeGrants.userId, USER_ID));
+    expect(grant?.assignedTeamId).toBe(TEAM_ID);
+    const extraGrants = await db
+      .select()
+      .from(billingFreeGrants)
+      .where(eq(billingFreeGrants.assignedTeamId, EXTRA_TEAM_ID));
+    expect(extraGrants).toHaveLength(0);
+  });
+
+  it('blocks document writes in non-reservable billing states even under stock limits', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'past_due', plan_id = 'team', spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalDocuments: 1 }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts SET billing_state = 'read_only' WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalBytes: 1 }),
+    ).rejects.toMatchObject({
+      message: "This team's billing is paused, so new files cannot be uploaded until billing is restored.",
+    });
+  });
+
+  it('adds storage bytes numerically instead of concatenating the SUM result', async () => {
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000000', '${TEAM_ID}', 'big.bin');
+      INSERT INTO document_versions (team_id, document_id, version, object_key, byte_size)
+      VALUES (
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000000',
+        1,
+        'team/docs/big.bin',
+        1073741824
+      );
+    `);
+    await assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalBytes: 0 });
+    await expect(
+      assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalBytes: 1 }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
   });
 
   it('reports live used/limit for enforced plan stock', async () => {

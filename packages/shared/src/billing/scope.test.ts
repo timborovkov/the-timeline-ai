@@ -191,6 +191,50 @@ describe('billing scope', () => {
     expect(after.includedDiscountRemainingCents).toBe(0);
   });
 
+  it('freezes the workspace when settlement wallet charge exceeds the reserved wallet', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, wallet_balance_cents = 80,
+          spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-excess',
+      meterId: 'ai',
+      reservedNativeUnits: 80,
+      reservedChargeCents: 80,
+    });
+    expect(reserved.ok).toBe(true);
+
+    const settled = await scope.settle({
+      operationId: 'op-excess',
+      meterId: 'ai',
+      nativeUnits: 200,
+      customerChargeCents: 200,
+    });
+    expect(settled.ok).toBe(true);
+    expect(settled.duplicate).toBe(false);
+    if (settled.ok && !settled.duplicate) {
+      expect(settled.ledger?.customerChargeCents).toBe(200);
+      expect(settled.ledger?.metadata).toMatchObject({
+        wallet_cents: 200,
+        wallet_shortfall_cents: 120,
+      });
+    }
+    const after = await scope.getAccount();
+    expect(after.walletBalanceCents).toBe(0);
+    expect(after.billingState).toBe('read_only');
+    expect(after.spendCapCents).toBe(0);
+  });
+
   it('does not lock PAYG wallet for usage still inside the Free floor', async () => {
     const scope = createBillingScope({
       db,

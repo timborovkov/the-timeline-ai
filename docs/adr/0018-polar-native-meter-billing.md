@@ -82,7 +82,18 @@ credit hides margin and confuses prospects.
    is local; Polar meters are not ingested for those already-collected units.
    Live charging follows `BILLING_CHARGES_ENABLED` even when existing paid rows
    still snapshot `shadowBilling = true`. A canceled paid plan becomes `free` if
-   this team holds the person-level Free grant, otherwise `restricted`. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted
+   this team holds the person-level Free grant, otherwise `restricted`. Paid-plan
+   activation writes the catalog default spend cap when the row is still Free;
+   later `subscription.updated` / renewal events preserve an administrator-selected
+   paid cap, including €0 as a hard stop. Subscription upserts and cancels lock the
+   billing account and recheck Polar `modified_at` in the same transaction so an
+   older event cannot overwrite a newer one. Polar webhook bodies are bounded to
+   the integration webhook size limit before signature verify. Settlement that
+   exceeds the reserved wallet or paid spend cap still records the full ledger
+   charge and freezes the workspace (`read_only`, spend cap €0). Document writes
+   require a reservable billing state, not only non-`restricted`. Free-grant claims
+   skip removed owner memberships. Storage admission casts aggregated
+   `SUM(byte_size)` to a number before adding the new upload. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted
    code matches `POLAR_DISCOUNT_CODE`. Reservations lock the wallet-funded
    remainder after the PAYG Free floor and included discount, include pending
    reservation charges in the spend cap **and** Free native allowances, count
@@ -98,9 +109,8 @@ credit hides margin and confuses prospects.
    and storage settlements recompute the same cumulative delta under the account
    lock. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
    and sends a stable Polar event `id` so settle and the janitor cannot
-   double-ingest; a failed ingest returns the row to `pending`. Paid-plan
-   activation writes the catalog default spend cap when the row is still Free
-   (or cap 0, which is a hard stop on paid plans). Polar `refund.created` /
+   double-ingest; a failed ingest returns the row to `pending`. Polar
+   `refund.created` /
    `order.refunded` claw back prepaid top-ups under a serialized remaining-total
    lock, persist out-of-order refunds until `order.paid`, and freeze the
    workspace if the credit was already spent. Auto-reload checkout markers stay

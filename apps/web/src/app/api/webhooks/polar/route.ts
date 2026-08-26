@@ -2,6 +2,11 @@ import { handlePolarWebhookEvent, verifyPolarWebhookSignature } from '@timeline/
 import { getEnv } from '@timeline/shared/env';
 
 import { db } from '@/lib/db';
+import {
+  payloadTooLargeResponse,
+  readCappedTextBody,
+  REQUEST_BODY_LIMITS,
+} from '@/lib/request-body';
 
 export const runtime = 'nodejs';
 
@@ -12,7 +17,9 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'webhook_not_configured' }, { status: 503 });
   }
 
-  const body = await req.text();
+  const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.integrationWebhook);
+  if (bodyResult.tooLarge) return payloadTooLargeResponse();
+  const body = bodyResult.text;
   const ok = verifyPolarWebhookSignature({
     body,
     headers: req.headers,

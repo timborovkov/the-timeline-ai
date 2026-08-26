@@ -787,6 +787,21 @@ export function createBillingScope(deps: BillingScopeDeps) {
             }
           : { polar_ingest_status: 'not_required' };
 
+        const applyCharges = !accountUsesShadowBilling(account);
+        const walletShortfallCents =
+          applyCharges && walletCents > account.walletBalanceCents
+            ? walletCents - account.walletBalanceCents
+            : 0;
+        const periodSpendCents = countersBefore.reduce(
+          (sum, row) => sum + row.customerChargeCents,
+          0,
+        );
+        const spendCapExceeded =
+          applyCharges &&
+          account.planId !== 'free' &&
+          periodSpendCents + actualChargeCents > account.spendCapCents;
+        const freezeAccount = walletShortfallCents > 0 || spendCapExceeded;
+
         const [ledgerRow] = await tx
           .insert(billingUsageLedger)
           .values({
@@ -811,6 +826,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               list_charge_cents: listChargeCents,
               discount_cents: discountCents,
               wallet_cents: walletCents,
+              ...(walletShortfallCents > 0 ? { wallet_shortfall_cents: walletShortfallCents } : {}),
               ...polarIngestMetadata,
             },
           })
@@ -874,8 +890,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
             );
         }
 
-        const applyCharges = !accountUsesShadowBilling(account);
-        if (walletLockCents > 0 || (applyCharges && (walletCents > 0 || discountCents > 0))) {
+        if (
+          walletLockCents > 0 ||
+          (applyCharges && (walletCents > 0 || discountCents > 0)) ||
+          freezeAccount
+        ) {
           await tx
             .update(teamBillingAccounts)
             .set({
@@ -890,6 +909,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                     includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
                   }
                 : {}),
+              ...(freezeAccount ? { billingState: 'read_only' as const, spendCapCents: 0 } : {}),
               updatedAt: new Date(),
             })
             .where(eq(teamBillingAccounts.teamId, teamId));
@@ -899,7 +919,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           duplicate: false as const,
           ledger: ledgerRow,
           planId: account.planId,
-          spendCapCents: account.spendCapCents,
+          spendCapCents: freezeAccount ? 0 : account.spendCapCents,
         };
       });
 

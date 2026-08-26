@@ -79,10 +79,9 @@ export function spendCapCentsForPaidActivation(input: {
   plan: PolarPaidPlanId;
 }): number {
   const catalogDefault = PLAN_CATALOG[input.plan].defaultSpendCapCents;
-  if (!input.existing) return catalogDefault;
-  if (input.existing.planId === 'free' || input.existing.spendCapCents <= 0) {
-    return catalogDefault;
-  }
+  // Only Free → paid activation synthesizes a catalog default. Paid accounts
+  // keep an administrator-selected cap, including €0 as a hard stop.
+  if (!input.existing || input.existing.planId === 'free') return catalogDefault;
   return input.existing.spendCapCents;
 }
 
@@ -187,12 +186,13 @@ function teamIdFromPayload(payload: PolarWebhookPayload): string | null {
   return payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
 }
 
-async function loadAccount(db: Db, teamId: string) {
+async function lockBillingAccount(db: Db, teamId: string) {
   const [row] = await db
     .select()
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, teamId))
-    .limit(1);
+    .limit(1)
+    .for('update');
   return row;
 }
 
@@ -204,69 +204,71 @@ async function upsertPaidSubscription(input: {
   data: PolarWebhookPayload['data'];
   chargesEnabled: boolean;
 }): Promise<void> {
-  const existing = await loadAccount(input.db, input.teamId);
-  const polarSubscriptionId = input.data?.id ?? null;
-  const period = polarSubscriptionPeriod(input.data);
-  if (
-    !shouldApplyPaidSubscriptionUpdate({
+  await input.db.transaction(async (tx) => {
+    const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
+    const polarSubscriptionId = input.data?.id ?? null;
+    const period = polarSubscriptionPeriod(input.data);
+    if (
+      !shouldApplyPaidSubscriptionUpdate({
+        existing,
+        incomingSubscriptionId: polarSubscriptionId,
+        incomingPeriodStartedAt: period.periodStartedAt,
+        incomingModifiedAt: polarEventModifiedAt(input.data),
+      })
+    ) {
+      return;
+    }
+    const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
+    const resetDiscount = shouldResetIncludedDiscount({
       existing,
-      incomingSubscriptionId: polarSubscriptionId,
-      incomingPeriodStartedAt: period.periodStartedAt,
-      incomingModifiedAt: polarEventModifiedAt(input.data),
-    })
-  ) {
-    return;
-  }
-  const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
-  const resetDiscount = shouldResetIncludedDiscount({
-    existing,
-    planId: input.plan,
-    polarSubscriptionId,
-    periodStartedAt: period.periodStartedAt,
-    periodEndsAt: period.periodEndsAt,
-  });
-  const now = new Date();
-  const periodStartedAt = period.periodStartedAt ?? existing?.periodStartedAt ?? now;
-  const periodEndsAt = period.periodEndsAt ?? existing?.periodEndsAt ?? null;
-  const polarEventModifiedAtValue =
-    polarEventModifiedAt(input.data) ?? existing?.polarEventModifiedAt ?? now;
-
-  await input.db
-    .insert(teamBillingAccounts)
-    .values({
-      teamId: input.teamId,
       planId: input.plan,
-      billingState: input.billingState,
-      polarCustomerId: polarCustomerId(input.data),
       polarSubscriptionId,
-      polarProductId: input.data?.product_id ?? null,
-      spendCapCents: PLAN_CATALOG[input.plan].defaultSpendCapCents,
-      includedDiscountRemainingCents: included,
-      periodStartedAt,
-      ...(periodEndsAt ? { periodEndsAt } : {}),
-      polarEventModifiedAt: polarEventModifiedAtValue,
-      shadowBilling: !input.chargesEnabled,
-    })
-    .onConflictDoUpdate({
-      target: [teamBillingAccounts.teamId],
-      set: {
+      periodStartedAt: period.periodStartedAt,
+      periodEndsAt: period.periodEndsAt,
+    });
+    const now = new Date();
+    const periodStartedAt = period.periodStartedAt ?? existing?.periodStartedAt ?? now;
+    const periodEndsAt = period.periodEndsAt ?? existing?.periodEndsAt ?? null;
+    const polarEventModifiedAtValue =
+      polarEventModifiedAt(input.data) ?? existing?.polarEventModifiedAt ?? now;
+
+    await tx
+      .insert(teamBillingAccounts)
+      .values({
+        teamId: input.teamId,
         planId: input.plan,
         billingState: input.billingState,
         polarCustomerId: polarCustomerId(input.data),
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
-        shadowBilling: !input.chargesEnabled,
+        spendCapCents: PLAN_CATALOG[input.plan].defaultSpendCapCents,
+        includedDiscountRemainingCents: included,
         periodStartedAt,
         ...(periodEndsAt ? { periodEndsAt } : {}),
-        ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
-        spendCapCents: spendCapCentsForPaidActivation({
-          existing,
-          plan: input.plan,
-        }),
         polarEventModifiedAt: polarEventModifiedAtValue,
-        updatedAt: now,
-      },
-    });
+        shadowBilling: !input.chargesEnabled,
+      })
+      .onConflictDoUpdate({
+        target: [teamBillingAccounts.teamId],
+        set: {
+          planId: input.plan,
+          billingState: input.billingState,
+          polarCustomerId: polarCustomerId(input.data),
+          polarSubscriptionId,
+          polarProductId: input.data?.product_id ?? null,
+          shadowBilling: !input.chargesEnabled,
+          periodStartedAt,
+          ...(periodEndsAt ? { periodEndsAt } : {}),
+          ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
+          spendCapCents: spendCapCentsForPaidActivation({
+            existing,
+            plan: input.plan,
+          }),
+          polarEventModifiedAt: polarEventModifiedAtValue,
+          updatedAt: now,
+        },
+      });
+  });
 }
 
 async function cancelMatchingSubscription(input: {
@@ -276,37 +278,42 @@ async function cancelMatchingSubscription(input: {
   incomingModifiedAt: Date | null;
 }): Promise<void> {
   if (!input.subscriptionId) return;
-  const existing = await loadAccount(input.db, input.teamId);
-  if (
-    existing?.polarEventModifiedAt &&
-    input.incomingModifiedAt &&
-    input.incomingModifiedAt.getTime() < existing.polarEventModifiedAt.getTime()
-  ) {
-    return;
-  }
-  const [grant] = await input.db
-    .select({ id: billingFreeGrants.id })
-    .from(billingFreeGrants)
-    .where(
-      and(eq(billingFreeGrants.assignedTeamId, input.teamId), isNull(billingFreeGrants.revokedAt)),
-    )
-    .limit(1);
-  await input.db
-    .update(teamBillingAccounts)
-    .set({
-      billingState: grant ? 'free' : 'restricted',
-      planId: 'free',
-      spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
-      polarEventModifiedAt:
-        input.incomingModifiedAt ?? existing?.polarEventModifiedAt ?? new Date(),
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(teamBillingAccounts.teamId, input.teamId),
-        eq(teamBillingAccounts.polarSubscriptionId, input.subscriptionId),
-      ),
-    );
+  await input.db.transaction(async (tx) => {
+    const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
+    if (!existing || existing.polarSubscriptionId !== input.subscriptionId) return;
+    if (
+      !shouldApplyPaidSubscriptionUpdate({
+        existing,
+        incomingSubscriptionId: input.subscriptionId,
+        incomingPeriodStartedAt: existing.periodStartedAt,
+        incomingModifiedAt: input.incomingModifiedAt,
+      })
+    ) {
+      return;
+    }
+    const [grant] = await tx
+      .select({ id: billingFreeGrants.id })
+      .from(billingFreeGrants)
+      .where(
+        and(eq(billingFreeGrants.assignedTeamId, input.teamId), isNull(billingFreeGrants.revokedAt)),
+      )
+      .limit(1);
+    await tx
+      .update(teamBillingAccounts)
+      .set({
+        billingState: grant ? 'free' : 'restricted',
+        planId: 'free',
+        spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
+        polarEventModifiedAt: input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(teamBillingAccounts.teamId, input.teamId),
+          eq(teamBillingAccounts.polarSubscriptionId, input.subscriptionId),
+        ),
+      );
+  });
 }
 
 export async function handlePolarWebhookEvent(input: {

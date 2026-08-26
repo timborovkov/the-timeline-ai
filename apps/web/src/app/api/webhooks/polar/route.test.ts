@@ -75,6 +75,21 @@ describe('POST /api/webhooks/polar', () => {
       }),
     );
   });
+
+  it('rejects an oversized body before signature verify or parse', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        headers: { 'content-length': String(1024 * 1024 + 1) },
+        body: '{}',
+      }),
+    );
+    expect(res.status).toBe(413);
+    await expect(res.json()).resolves.toMatchObject({ reason: 'payload_too_large' });
+    expect(verifyPolarWebhookSignature).not.toHaveBeenCalled();
+    expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
+  });
 });
 
 describe('signature helper wiring', () => {
