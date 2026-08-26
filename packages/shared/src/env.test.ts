@@ -351,6 +351,15 @@ describe('getEnv', () => {
     expect(getEnv().WORKER_MODE).toBe('document-extract');
   });
 
+  it('accepts live billing mode on production document-extract', () => {
+    setExtractProductionEnv({ BILLING_CHARGES_ENABLED: 'true' });
+
+    expect(getEnv()).toMatchObject({
+      WORKER_MODE: 'document-extract',
+      BILLING_CHARGES_ENABLED: true,
+    });
+  });
+
   it('accepts an explicit DAYTONA_SNAPSHOT pin and disabling boot ensure', () => {
     setExtractProductionEnv({
       DAYTONA_SNAPSHOT: 'timeline-document-extract-deadbeefcafe',
@@ -376,6 +385,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('__MISE_SHIM')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('CI')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('PATH')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('BILLING_CHARGES_ENABLED')).toBe(true);
   });
 
   it('rejects non-extract secrets including unparsed canary/MCP keys', () => {

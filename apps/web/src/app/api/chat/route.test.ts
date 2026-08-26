@@ -124,6 +124,7 @@ vi.mock('@timeline/shared/llm', () => ({
 vi.mock('@timeline/shared/billing', () => ({
   askBillingUserMessage: (error: string) => error,
   askOperationId: () => 'ask:web:test',
+  ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS: 250,
   mapAskBillingError: (code: string) => code,
   openRouterUsdCostFromFinishEvent: () => 0,
   releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
@@ -142,6 +143,10 @@ vi.mock('ai', () => ({
 }));
 
 const { POST } = await import('./route.js');
+const {
+  releaseBillingReservation,
+  settleAskAiFromOpenRouterUsd,
+} = await import('@timeline/shared/billing');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -157,10 +162,15 @@ const followUpMessage = {
 let capturedOnFinish: ((event: Record<string, unknown>) => void | Promise<void>) | null = null;
 let capturedOnError: ((event: { error: unknown }) => void) | null = null;
 
-function request(body: unknown, url = 'https://timeline.test/api/chat'): Request {
+function request(
+  body: unknown,
+  url = 'https://timeline.test/api/chat',
+  init: RequestInit = {},
+): Request {
   return new Request(url, {
     method: 'POST',
     body: JSON.stringify(body),
+    ...init,
   });
 }
 
@@ -1320,5 +1330,45 @@ describe('POST /api/chat', () => {
 
     expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
     expect(fakes.fakeReportHandledEvent).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ minCustomerChargeCents: 250 }),
+      );
+    });
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
+  });
+
+  it('releases the Ask reservation when the client aborts before work starts', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const response = await POST(
+      request(validBody({ sessionId: SESSION_ID }), 'https://timeline.test/api/chat', {
+        signal: controller.signal,
+      }),
+    );
+    expect(response.status).toBe(499);
+    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+    expect(releaseBillingReservation).toHaveBeenCalled();
+    expect(settleAskAiFromOpenRouterUsd).not.toHaveBeenCalled();
+  });
+
+  it('conservatively settles streamed usage when the client aborts after work starts', async () => {
+    const controller = new AbortController();
+    const response = await POST(
+      request(validBody({ sessionId: SESSION_ID }), 'https://timeline.test/api/chat', {
+        signal: controller.signal,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(fakes.fakeStreamChat).toHaveBeenCalled();
+    controller.abort();
+    await vi.waitFor(() => {
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ minCustomerChargeCents: 250 }),
+      );
+    });
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
   });
 });

@@ -111,7 +111,14 @@ BILLING_CHARGES_ENABLED=false
         ingest: prepaid wallet and included discount already collect locally, so those units are not
         sent to Polar meters. Remaining Polar ingest uses a ledger outbox that claims a row before
         ingesting, Polar receives a stable event id, and a failed ingest does not undo a committed
-        charge.
+        charge. Janitor included-discount resets lock the billing account so they cannot overwrite a
+        newer Polar plan or period. Ask streams that abort after work starts settle at least the
+        reserved customer charge. Failed structured-output attempts still contribute OpenRouter
+        <code>usage.cost</code>. Recall minutes that cross a UTC month are attributed to each month
+        they span. Document create and restore serialize capacity under advisory lock key 1.
+        Deferred accepted-source flush rotates past still-blocked rows. Set
+        <code>BILLING_CHARGES_ENABLED</code> on <code>document-extract-orchestrator</code> as well
+        as web/worker; it is a non-secret allowlisted toggle, not an extra credential.
       </p>
 
       <h2>Public and app surfaces</h2>

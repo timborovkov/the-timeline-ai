@@ -124,23 +124,30 @@ export async function settleAskAiFromOpenRouterUsd(
     openRouterUsd: number;
     deliverySurface: string;
     model?: string;
+    minCustomerChargeCents?: number;
   },
 ): Promise<void> {
   const { providerCostCents, customerChargeExactCents } = customerAiChargeCentsFromOpenRouterUsd(
     Math.max(0, input.openRouterUsd),
   );
+  const nativeUnits = Math.max(customerChargeExactCents, input.minCustomerChargeCents ?? 0);
   await billing.settle({
     operationId: input.operationId,
     meterId: 'ai',
-    nativeUnits: customerChargeExactCents,
-    customerChargeCents: Math.round(customerChargeExactCents),
+    nativeUnits,
+    customerChargeCents: Math.round(nativeUnits),
     providerCostCents,
     operationClass: 'agent_ask',
     provider: 'openrouter',
     ...(input.model ? { model: input.model } : {}),
     source: 'ask',
     deliverySurface: input.deliverySurface,
-    metadata: { openrouter_usd: input.openRouterUsd },
+    metadata: {
+      openrouter_usd: input.openRouterUsd,
+      ...(input.minCustomerChargeCents
+        ? { conservative_min_customer_charge_cents: input.minCustomerChargeCents }
+        : {}),
+    },
   });
 }
 

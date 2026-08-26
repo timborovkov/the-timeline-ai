@@ -780,4 +780,59 @@ describe('billing scope', () => {
       resetEnvForTests();
     }
   });
+
+  it('attributes Recall minutes that cross a UTC month to both periods', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 10000, wallet_balance_cents = 5000,
+          spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'recall-span',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: 120,
+      reservedChargeCents: 360,
+    });
+    expect(reserved.ok).toBe(true);
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET created_at = '2026-08-31T23:00:00Z'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = 'recall-span';
+    `);
+    const settled = await scope.settle({
+      operationId: 'recall-span',
+      meterId: 'recall_minutes',
+      nativeUnits: 120,
+      customerChargeCents: 360,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.customerChargeCents).toBe(360);
+      expect(settled.ledger.metadata).toMatchObject({
+        period_segments: [
+          { period_ym: '2026-08', native_units: 60, customer_charge_cents: 180 },
+          { period_ym: '2026-09', native_units: 60, customer_charge_cents: 180 },
+        ],
+      });
+    }
+    const counters = await pg.query<{ period_ym: string; native_units: string }>(
+      `SELECT period_ym, native_units::text
+       FROM billing_usage_counters
+       WHERE team_id = '${TEAM_ID}' AND meter_id = 'recall_minutes'
+       ORDER BY period_ym`,
+    );
+    expect(counters.rows).toEqual([
+      { period_ym: '2026-08', native_units: '60.000000' },
+      { period_ym: '2026-09', native_units: '60.000000' },
+    ]);
+  });
 });

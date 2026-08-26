@@ -198,6 +198,75 @@ export function shouldIngestPolarMeteredUsage(input: {
   return true;
 }
 
+export function periodYmUtc(date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Split duration-based native units across UTC month boundaries so a Recall
+ * meeting that crosses midnight on the 1st is not charged wholly to the new
+ * month. Non-duration meters stay in the operation's start period.
+ */
+export function splitDurationNativeUnitsByUtcMonth(input: {
+  startedAt: Date;
+  nativeUnits: number;
+  unitMs: number;
+}): { periodYm: string; nativeUnits: number }[] {
+  const total = Math.max(0, input.nativeUnits);
+  if (!(input.startedAt instanceof Date) || Number.isNaN(input.startedAt.getTime())) {
+    return [{ periodYm: periodYmUtc(), nativeUnits: total }];
+  }
+  if (total === 0 || input.unitMs <= 0) {
+    return [{ periodYm: periodYmUtc(input.startedAt), nativeUnits: total }];
+  }
+  const startMs = input.startedAt.getTime();
+  const endMs = startMs + total * input.unitMs;
+  const segments: { periodYm: string; nativeUnits: number }[] = [];
+  let cursorMs = startMs;
+  let remaining = total;
+  while (remaining > 0) {
+    const cursor = new Date(cursorMs);
+    const ym = periodYmUtc(cursor);
+    const nextMonthMs = Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1);
+    const sliceEndMs = Math.min(endMs, nextMonthMs);
+    const rawUnits = Math.max(0, (sliceEndMs - cursorMs) / input.unitMs);
+    const isLast = sliceEndMs >= endMs;
+    const nativeUnits = isLast ? remaining : Math.min(remaining, Math.floor(rawUnits));
+    if (nativeUnits > 0 || segments.length === 0) {
+      const last = segments.at(-1);
+      if (last && last.periodYm === ym) last.nativeUnits += nativeUnits;
+      else segments.push({ periodYm: ym, nativeUnits });
+      remaining -= nativeUnits;
+    }
+    if (isLast || nextMonthMs <= cursorMs) {
+      if (remaining > 0) {
+        const last = segments.at(-1);
+        if (last) last.nativeUnits += remaining;
+        else segments.push({ periodYm: ym, nativeUnits: remaining });
+        remaining = 0;
+      }
+      break;
+    }
+    cursorMs = nextMonthMs;
+  }
+  return segments.filter((row) => row.nativeUnits > 0 || segments.length === 1);
+}
+
+export function settlementSegmentsForMeter(input: {
+  meterId: BillingMeterId;
+  nativeUnits: number;
+  startedAt: Date;
+}): { periodYm: string; nativeUnits: number }[] {
+  if (input.meterId === 'recall_minutes') {
+    return splitDurationNativeUnitsByUtcMonth({
+      startedAt: input.startedAt,
+      nativeUnits: input.nativeUnits,
+      unitMs: 60_000,
+    });
+  }
+  return [{ periodYm: periodYmUtc(input.startedAt), nativeUnits: Math.max(0, input.nativeUnits) }];
+}
+
 /**
  * Advance from the stored Polar/subscription window instead of snapping to
  * UTC calendar months. Returns null while the current window is still open.

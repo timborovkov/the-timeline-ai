@@ -65,6 +65,32 @@ export function openRouterFinishFromAiResult(result: {
   };
 }
 
+export function openRouterFinishFromCaughtError(err: unknown): OpenRouterFinishEvent | undefined {
+  const row = asRecord(err);
+  if (!row) return undefined;
+  const usage = row.usage ?? row.totalUsage;
+  const providerMetadata = row.providerMetadata ?? row.provider_metadata;
+  const response = asRecord(row.response);
+  const responseUsage = response?.usage;
+  if (usage !== undefined || providerMetadata !== undefined || responseUsage !== undefined) {
+    return openRouterFinishFromAiResult({
+      usage: usage ?? responseUsage,
+      providerMetadata,
+      totalUsage: row.totalUsage ?? usage ?? responseUsage,
+    });
+  }
+  if (err instanceof AggregateError) {
+    for (const inner of err.errors) {
+      const finish = openRouterFinishFromCaughtError(inner);
+      if (finish && openRouterUsdCostFromFinishEvent(finish) > 0) return finish;
+    }
+  }
+  if (err instanceof Error && 'cause' in err) {
+    return openRouterFinishFromCaughtError(err.cause);
+  }
+  return undefined;
+}
+
 export function openRouterFinishFromUsdCost(usd: number): OpenRouterFinishEvent {
   const cost = Number.isFinite(usd) && usd > 0 ? usd : 0;
   return {

@@ -1209,7 +1209,6 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
      */
     async createDocument(input: CreateDocumentInput): Promise<CreateDocumentResult> {
       await ensureMember();
-      await assertTeamWriteCapacity({ db, teamId, additionalDocuments: 1 });
       if (input.folderId) await assertFolderInTeam(input.folderId);
       const visibility = input.visibility ?? 'team';
       const visibilityUserIds = await normalizeDocumentVisibilityUserIds({
@@ -1217,6 +1216,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         visibilityUserIds: input.visibilityUserIds ?? null,
       });
       return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
+        await assertTeamWriteCapacity({
+          db: tx as unknown as Db,
+          teamId,
+          additionalDocuments: 1,
+        });
         const docRows = await tx
           .insert(documents)
           .values({
@@ -1641,18 +1646,38 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     async restoreDocument(id: string): Promise<void> {
       await ensureMember();
-      const existing = await db
-        .select()
-        .from(documents)
-        .where(and(eq(documents.id, id), eq(documents.teamId, teamId)))
-        .limit(1);
-      const document = existing[0] as DocumentRow | undefined;
-      if (!document) throw new Error('Document not found');
       await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
+        const existing = await tx
+          .select()
+          .from(documents)
+          .where(and(eq(documents.id, id), eq(documents.teamId, teamId)))
+          .limit(1);
+        const document = existing[0] as DocumentRow | undefined;
+        if (!document) throw new Error('Document not found');
+        if (!document.deletedAt) return;
+        const [bytesRow] = await tx
+          .select({
+            bytes: sql<string | number>`COALESCE(SUM(${documentVersions.byteSize})::bigint, 0)`,
+          })
+          .from(documentVersions)
+          .where(eq(documentVersions.documentId, document.id));
+        await assertTeamWriteCapacity({
+          db: tx as unknown as Db,
+          teamId,
+          additionalDocuments: 1,
+          additionalBytes: Number(bytesRow?.bytes ?? 0),
+        });
         await tx
           .update(documents)
           .set({ deletedAt: null, updatedAt: new Date() })
-          .where(and(eq(documents.id, id), eq(documents.teamId, teamId)));
+          .where(
+            and(
+              eq(documents.id, id),
+              eq(documents.teamId, teamId),
+              sql`${documents.deletedAt} IS NOT NULL`,
+            ),
+          );
         await writeDocumentEvent(tx, {
           action: 'restore',
           summary: `Restored ${document.name}`,

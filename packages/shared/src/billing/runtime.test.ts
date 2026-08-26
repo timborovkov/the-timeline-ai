@@ -269,4 +269,32 @@ describe('billing runtime', () => {
     expect(after.periodStartedAt?.toISOString()).toBe('2026-08-15T00:00:00.000Z');
     expect(after.periodEndsAt?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
   });
+
+  it('does not overwrite a newer Polar plan or period already on the locked row', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'business', billing_state = 'business_active',
+          included_discount_remaining_cents = 25000,
+          period_started_at = '2026-08-20T00:00:00Z', period_ends_at = '2026-09-20T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({
+      db,
+      teamId: TEAM_ID,
+      now: new Date('2026-08-26T12:00:00Z'),
+    });
+    expect(reset).toBe(false);
+    const after = await billing.getAccount();
+    expect(after.planId).toBe('business');
+    expect(after.includedDiscountRemainingCents).toBe(25_000);
+    expect(after.periodStartedAt?.toISOString()).toBe('2026-08-20T00:00:00.000Z');
+    expect(after.periodEndsAt?.toISOString()).toBe('2026-09-20T00:00:00.000Z');
+  });
 });

@@ -5,8 +5,10 @@ import {
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
+  settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
+  splitDurationNativeUnitsByUtcMonth,
 } from '#src/billing/charge.js';
 import { allFreeAllowancesExhausted, costBearingPausedFromAccount } from '#src/billing/status.js';
 
@@ -167,6 +169,41 @@ describe('nextIncludedDiscountPeriod', () => {
         periodEndsAt: new Date('2026-08-15T00:00:00Z'),
       }),
     ).toBeNull();
+  });
+});
+
+describe('settlement period attribution', () => {
+  it('splits Recall minutes across UTC months from the start timestamp', () => {
+    expect(
+      splitDurationNativeUnitsByUtcMonth({
+        startedAt: new Date('2026-08-31T23:00:00Z'),
+        nativeUnits: 120,
+        unitMs: 60_000,
+      }),
+    ).toEqual([
+      { periodYm: '2026-08', nativeUnits: 60 },
+      { periodYm: '2026-09', nativeUnits: 60 },
+    ]);
+    expect(
+      settlementSegmentsForMeter({
+        meterId: 'recall_minutes',
+        nativeUnits: 120,
+        startedAt: new Date('2026-08-31T23:00:00Z'),
+      }),
+    ).toEqual([
+      { periodYm: '2026-08', nativeUnits: 60 },
+      { periodYm: '2026-09', nativeUnits: 60 },
+    ]);
+  });
+
+  it('keeps AI and other non-duration meters in the start period', () => {
+    expect(
+      settlementSegmentsForMeter({
+        meterId: 'ai',
+        nativeUnits: 80,
+        startedAt: new Date('2026-08-31T23:00:00Z'),
+      }),
+    ).toEqual([{ periodYm: '2026-08', nativeUnits: 80 }]);
   });
 });
 

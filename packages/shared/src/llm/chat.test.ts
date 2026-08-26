@@ -518,7 +518,12 @@ describe('chatStructured', () => {
                   finish_reason: 'stop',
                 },
               ],
-              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              usage: {
+                prompt_tokens: 1,
+                completion_tokens: 1,
+                total_tokens: 2,
+                cost: 0.04,
+              },
             }),
             { status: 200, headers: { 'Content-Type': 'application/json' } },
           ),
@@ -538,7 +543,12 @@ describe('chatStructured', () => {
                 finish_reason: 'stop',
               },
             ],
-            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            usage: {
+              prompt_tokens: 1,
+              completion_tokens: 1,
+              total_tokens: 2,
+              cost: 0.02,
+            },
           }),
           { status: 200, headers: { 'Content-Type': 'application/json' } },
         ),
@@ -554,7 +564,11 @@ describe('chatStructured', () => {
       { fetch: fetchStub },
     );
 
-    expect(result).toEqual({ object: { facts: [] }, model: TIMELINE_MODELS.extraction.id });
+    expect(result).toMatchObject({
+      object: { facts: [] },
+      model: TIMELINE_MODELS.extraction.id,
+    });
+    expect(result.openRouterUsd).toBeCloseTo(0.06);
     expect(requests).toHaveLength(2);
     const summaries = requests.map((request) =>
       z

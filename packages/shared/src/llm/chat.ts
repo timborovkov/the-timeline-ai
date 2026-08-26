@@ -13,6 +13,7 @@ import { z } from 'zod';
 
 import {
   openRouterFinishFromAiResult,
+  openRouterFinishFromCaughtError,
   openRouterFinishFromUsdCost,
   openRouterUsdCostFromFinishEvent,
 } from '#src/billing/openrouter-usage.js';
@@ -89,9 +90,19 @@ export interface StreamChatModelAttribution {
 }
 
 class JsonObjectFallbackParseError extends Error {
-  constructor(cause: unknown) {
+  readonly usage?: unknown;
+  readonly providerMetadata?: unknown;
+  readonly totalUsage?: unknown;
+
+  constructor(
+    cause: unknown,
+    usage?: { usage?: unknown; providerMetadata?: unknown; totalUsage?: unknown },
+  ) {
     super('llm.chatStructured json_object fallback returned invalid JSON', { cause });
     this.name = 'JsonObjectFallbackParseError';
+    if (usage?.usage !== undefined) this.usage = usage.usage;
+    if (usage?.providerMetadata !== undefined) this.providerMetadata = usage.providerMetadata;
+    if (usage?.totalUsage !== undefined) this.totalUsage = usage.totalUsage;
   }
 }
 
@@ -384,7 +395,11 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   try {
     parsed = JSON.parse(candidateText);
   } catch (err) {
-    throw new JsonObjectFallbackParseError(err);
+    throw new JsonObjectFallbackParseError(err, {
+      usage: result.usage,
+      providerMetadata: result.providerMetadata,
+      totalUsage: result.totalUsage,
+    });
   }
   const object: z.infer<TSchema> = schema.parse(parsed);
   return {
@@ -444,6 +459,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           const object: z.infer<TSchema> = input.schema.parse(result.object);
           return { object, model: candidateModelId };
         } catch (err) {
+          captureFinish(openRouterFinishFromCaughtError(err));
           if (deps.model || !shouldFallbackToJsonObject(err)) throw err;
           const fallbackModel = buildOpenRouterLanguageModel(candidateModelId, deps, {
             supportsStructuredOutputs: false,
@@ -457,6 +473,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
             maxOutputTokens,
             ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
           }).catch((fallbackErr: unknown) => {
+            captureFinish(openRouterFinishFromCaughtError(fallbackErr));
             throw new AggregateError(
               [err, fallbackErr],
               'llm.chatStructured failed with json_schema and json_object response formats',

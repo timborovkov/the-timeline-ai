@@ -1584,6 +1584,61 @@ describe('writeIntegrationEvents visibility', () => {
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
 
+  it('rotates past still-blocked deferred rows to flush later events', async () => {
+    const blockedTeamId = '22222222-2222-2222-2222-222222222222';
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name) VALUES ('${blockedTeamId}', 'team-blocked', 'Blocked');
+      INSERT INTO team_members (team_id, user_id, role) VALUES ('${blockedTeamId}', '${USER_ID}', 'owner');
+    `);
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: blockedTeamId });
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      SELECT ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid,
+             '${blockedTeamId}', 'integration', 'blocked ' || g,
+             '{"billing_enrichment_deferred": true}'::jsonb
+      FROM generate_series(1, 50) AS g;
+    `);
+
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-flushable',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [flushableId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:flushable:1',
+          provider: 'github',
+          externalObjectId: 'repo#flushable',
+          eventType: 'issue.opened',
+          occurredAt: new Date('2026-05-27T10:00:00Z'),
+          contentText: 'Flushable after blocked rows',
+        },
+      ],
+    });
+    if (!flushableId) throw new Error('flushable insert failed');
+    await pg.exec(`
+      UPDATE raw_events
+      SET source_metadata = coalesce(source_metadata, '{}'::jsonb)
+        || '{"billing_enrichment_deferred": true}'::jsonb
+      WHERE id = '${flushableId}';
+    `);
+
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never, 50);
+    expect(flushed).toBeGreaterThanOrEqual(1);
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, flushableId));
+    expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
   it('falls back to team visibility for private integration events without a connector owner', async () => {
     const [integration] = await db
       .insert(integrations)

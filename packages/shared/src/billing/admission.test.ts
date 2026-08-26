@@ -73,6 +73,30 @@ describe('billing admission helpers', () => {
     expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
   });
 
+  it('settles aborted Ask usage at the reserved customer floor', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = askOperationId('web', 'abort-1');
+    const reserved = await reserveAskAi(billing, {
+      operationId,
+      deliverySurface: 'web',
+    });
+    expect(reserved.ok).toBe(true);
+    await settleAskAiFromOpenRouterUsd(billing, {
+      operationId,
+      openRouterUsd: 0,
+      deliverySurface: 'web',
+      minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.meters.ai?.customerChargeCents).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
+    expect(dash.meters.ai?.nativeUnits).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
+  });
+
   it('caps Free Recall reservation to remaining minutes', () => {
     expect(
       meetingReserveMinutesForPlan('free', {

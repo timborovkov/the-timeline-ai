@@ -61,6 +61,7 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'SENTRY_RELEASE',
   'SENTRY_ORG',
   'SENTRY_PROJECT',
+  'BILLING_CHARGES_ENABLED',
 ]);
 
 /** Exact shell/runtime keys (not prefixes — avoid `LANG` matching `LANGSMITH_*`). */

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   openRouterFinishFromAiResult,
+  openRouterFinishFromCaughtError,
   openRouterFinishFromUsdCost,
   openRouterUsdCostFromFinishEvent,
 } from '#src/billing/openrouter-usage.js';
@@ -50,5 +51,21 @@ describe('openRouterUsdCostFromFinishEvent', () => {
 
   it('rebuilds a finish event from accumulated USD', () => {
     expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromUsdCost(0.03))).toBe(0.03);
+  });
+
+  it('reads usage from a rejected structured-output error', () => {
+    const err = Object.assign(new Error('No object generated'), {
+      name: 'AI_NoObjectGeneratedError',
+      usage: { raw: { cost: 0.04 } },
+    });
+    expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromCaughtError(err) ?? {})).toBe(0.04);
+  });
+
+  it('walks AggregateError causes for nested usage', () => {
+    const inner = Object.assign(new Error('invalid JSON'), {
+      usage: { raw: { cost: 0.01 } },
+    });
+    const err = new AggregateError([inner], 'llm.chatStructured failed');
+    expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromCaughtError(err) ?? {})).toBe(0.01);
   });
 });

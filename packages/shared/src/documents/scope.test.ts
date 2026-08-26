@@ -772,6 +772,35 @@ describe('document scope — visibility filter', () => {
     ).rejects.toBeInstanceOf(BillingAdmissionError);
   });
 
+  it('serializes document capacity so a concurrent 101st create cannot both succeed', async () => {
+    await pg.exec(`
+      INSERT INTO documents (team_id, name)
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 99) AS g;
+    `);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const results = await Promise.allSettled([
+      scope.createDocument({
+        name: 'hundred.pdf',
+        folderId: null,
+        filename: 'hundred.pdf',
+        contentType: 'application/pdf',
+      }),
+      scope.createDocument({
+        name: 'hundred-one.pdf',
+        folderId: null,
+        filename: 'hundred-one.pdf',
+        contentType: 'application/pdf',
+      }),
+    ]);
+    const succeeded = results.filter((row) => row.status === 'fulfilled');
+    const failed = results.filter((row) => row.status === 'rejected');
+    expect(succeeded).toHaveLength(1);
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.status === 'rejected' ? failed[0].reason : undefined).toBeInstanceOf(
+      BillingAdmissionError,
+    );
+  });
+
   it('specific_users visibility honors the visibility_user_ids array', async () => {
     const A = withTeam(db, TEAM_ID, USER_A).documents;
     const created = await A.createDocument({
@@ -881,6 +910,40 @@ describe('document scope — soft delete + audit trail', () => {
     await scope.restoreDocument(created.document.id);
     const remaining = await scope.listDocuments({ folderId: null });
     expect(remaining.map((d) => d.id)).toContain(created.document.id);
+  });
+
+  it('refuses restore when the restored bytes would exceed Free storage', async () => {
+    const gib = 1024 ** 3;
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const original = await scope.createDocument({
+      name: 'full.bin',
+      folderId: null,
+      filename: 'full.bin',
+      contentType: 'application/octet-stream',
+    });
+    await scope.finalizeDocumentVersion({
+      versionId: original.version.id,
+      byteSize: gib,
+      contentType: 'application/octet-stream',
+    });
+    await scope.softDeleteDocument(original.document.id);
+    const replacement = await scope.createDocument({
+      name: 'new.bin',
+      folderId: null,
+      filename: 'new.bin',
+      contentType: 'application/octet-stream',
+    });
+    await scope.finalizeDocumentVersion({
+      versionId: replacement.version.id,
+      byteSize: 1,
+      contentType: 'application/octet-stream',
+    });
+    await expect(scope.restoreDocument(original.document.id)).rejects.toBeInstanceOf(
+      BillingAdmissionError,
+    );
+    const remaining = await scope.listDocuments({ folderId: null });
+    expect(remaining.map((d) => d.id)).toContain(replacement.document.id);
+    expect(remaining.map((d) => d.id)).not.toContain(original.document.id);
   });
 
   it('soft-deleted folders are NOT reachable via getFolder (bugbot #3298903330)', async () => {

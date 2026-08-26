@@ -33,6 +33,7 @@ import {
   paygOverageNativeUnits,
   pendingBillableChargeCents,
   pendingDiscountReservedCents,
+  settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
   walletLockCentsFromMetadata,
@@ -706,7 +707,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
     }) {
       await ensureMember();
       await ensureAccount();
-      const ym = periodYm();
       const settled = await db.transaction(async (tx) => {
         const [account] = await tx
           .select()
@@ -726,45 +726,69 @@ export function createBillingScope(deps: BillingScopeDeps) {
           )
           .limit(1);
 
-        const countersBefore = await tx
+        const startedAt = reservation[0]?.createdAt ?? new Date();
+        const segments = settlementSegmentsForMeter({
+          meterId: input.meterId,
+          nativeUnits: input.nativeUnits,
+          startedAt,
+        });
+        const primaryYm = segments[0]?.periodYm ?? periodYm(startedAt);
+        const uniquePeriods = [...new Set(segments.map((row) => row.periodYm))];
+        const countersBeforeRows = await tx
           .select()
           .from(billingUsageCounters)
           .where(
-            and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
+            and(
+              eq(billingUsageCounters.teamId, teamId),
+              inArray(billingUsageCounters.periodYm, uniquePeriods),
+            ),
           );
-        const metersBefore = Object.fromEntries(
-          countersBefore.map((row) => [
-            row.meterId,
-            {
-              nativeUnits: Number(row.nativeUnits),
-              customerChargeCents: row.customerChargeCents,
-            },
-          ]),
-        ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
-        const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
-        const listChargeCents = cumulativeChargeDeltaCents({
-          meterId: input.meterId,
-          previousNativeUnits: previousNative,
-          nextNativeUnits: previousNative + input.nativeUnits,
+        const metersByPeriod = new Map<
+          string,
+          Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>
+        >();
+        for (const row of countersBeforeRows) {
+          const current = metersByPeriod.get(row.periodYm) ?? {};
+          current[row.meterId as BillingMeterId] = {
+            nativeUnits: Number(row.nativeUnits),
+            customerChargeCents: row.customerChargeCents,
+          };
+          metersByPeriod.set(row.periodYm, current);
+        }
+        const segmentCharges = segments.map((segment) => {
+          const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
+          const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
+          const listChargeCents = cumulativeChargeDeltaCents({
+            meterId: input.meterId,
+            previousNativeUnits: previousNative,
+            nextNativeUnits: previousNative + segment.nativeUnits,
+          });
+          const actualChargeCents = paygOverageCustomerChargeCents({
+            planId: account.planId,
+            meterId: input.meterId,
+            nativeUnits: segment.nativeUnits,
+            listChargeCents,
+            meters: metersBefore,
+          });
+          const polarUnits = paygOverageNativeUnits({
+            planId: account.planId,
+            meterId: input.meterId,
+            nativeUnits: segment.nativeUnits,
+            meters: metersBefore,
+          });
+          return { ...segment, listChargeCents, actualChargeCents, polarUnits, metersBefore };
         });
-        const actualChargeCents = paygOverageCustomerChargeCents({
-          planId: account.planId,
-          meterId: input.meterId,
-          nativeUnits: input.nativeUnits,
-          listChargeCents,
-          meters: metersBefore,
-        });
+        const listChargeCents = segmentCharges.reduce((sum, row) => sum + row.listChargeCents, 0);
+        const actualChargeCents = segmentCharges.reduce(
+          (sum, row) => sum + row.actualChargeCents,
+          0,
+        );
+        const polarUnits = segmentCharges.reduce((sum, row) => sum + row.polarUnits, 0);
+        const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
         const { discountCents, walletCents } = splitDiscountAndWallet({
           chargeCents: actualChargeCents,
           includedDiscountRemainingCents: account.includedDiscountRemainingCents,
           meterId: input.meterId,
-        });
-
-        const polarUnits = paygOverageNativeUnits({
-          planId: account.planId,
-          meterId: input.meterId,
-          nativeUnits: input.nativeUnits,
-          meters: metersBefore,
         });
         const eventName = polarEventNameForMeter(input.meterId);
         const shouldIngestPolar = shouldIngestPolarMeteredUsage({
@@ -827,6 +851,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
               discount_cents: discountCents,
               wallet_cents: walletCents,
               ...(walletShortfallCents > 0 ? { wallet_shortfall_cents: walletShortfallCents } : {}),
+              ...(segmentCharges.length > 1
+                ? {
+                    period_segments: segmentCharges.map((row) => ({
+                      period_ym: row.periodYm,
+                      native_units: row.nativeUnits,
+                      customer_charge_cents: row.actualChargeCents,
+                    })),
+                  }
+                : {}),
               ...polarIngestMetadata,
             },
           })
@@ -852,27 +885,29 @@ export function createBillingScope(deps: BillingScopeDeps) {
           };
         }
 
-        await tx
-          .insert(billingUsageCounters)
-          .values({
-            teamId,
-            periodYm: ym,
-            meterId: input.meterId,
-            nativeUnits: String(input.nativeUnits),
-            customerChargeCents: actualChargeCents,
-          })
-          .onConflictDoUpdate({
-            target: [
-              billingUsageCounters.teamId,
-              billingUsageCounters.periodYm,
-              billingUsageCounters.meterId,
-            ],
-            set: {
-              nativeUnits: sql`${billingUsageCounters.nativeUnits} + ${String(input.nativeUnits)}`,
-              customerChargeCents: sql`${billingUsageCounters.customerChargeCents} + ${actualChargeCents}`,
-              updatedAt: new Date(),
-            },
-          });
+        for (const segment of segmentCharges) {
+          await tx
+            .insert(billingUsageCounters)
+            .values({
+              teamId,
+              periodYm: segment.periodYm,
+              meterId: input.meterId,
+              nativeUnits: String(segment.nativeUnits),
+              customerChargeCents: segment.actualChargeCents,
+            })
+            .onConflictDoUpdate({
+              target: [
+                billingUsageCounters.teamId,
+                billingUsageCounters.periodYm,
+                billingUsageCounters.meterId,
+              ],
+              set: {
+                nativeUnits: sql`${billingUsageCounters.nativeUnits} + ${String(segment.nativeUnits)}`,
+                customerChargeCents: sql`${billingUsageCounters.customerChargeCents} + ${segment.actualChargeCents}`,
+                updatedAt: new Date(),
+              },
+            });
+        }
 
         const walletLockCents =
           reservation[0]?.state === 'reserved'
@@ -985,7 +1020,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .select()
             .from(billingUsageCounters)
             .where(
-              and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
+              and(
+                eq(billingUsageCounters.teamId, teamId),
+                eq(billingUsageCounters.periodYm, periodYm()),
+              ),
             );
           await maybeTriggerWalletAutoReload({
             db,

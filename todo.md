@@ -574,7 +574,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       before applying Polar `modified_at`. Settlement above the reserved wallet or paid
       spend cap freezes the workspace. Document writes require a reservable billing state.
       Free-grant claims skip removed owners; storage admission converts aggregated bytes before
-      adding a new upload.
+      adding a new upload. Janitor included-discount resets lock the billing account against a
+      newer Polar plan/period. Ask streams that abort after work starts settle the reserved
+      customer charge. Document-extract allowlists `BILLING_CHARGES_ENABLED`. Deferred
+      accepted-source flush rotates past still-blocked rows. Document restore rechecks capacity;
+      document create serializes the Free count under lock key 1. Failed structured-output
+      attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
+      split across those periods.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

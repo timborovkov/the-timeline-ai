@@ -673,28 +673,43 @@ export async function resetIncludedDiscountIfPeriodElapsed(input: {
   teamId: string;
   now?: Date;
 }): Promise<boolean> {
-  const [account] = await input.db
-    .select()
-    .from(teamBillingAccounts)
-    .where(eq(teamBillingAccounts.teamId, input.teamId))
-    .limit(1);
-  if (!account) return false;
-  const now = input.now ?? new Date();
-  const next = nextIncludedDiscountPeriod({
-    now,
-    periodStartedAt: account.periodStartedAt,
-    periodEndsAt: account.periodEndsAt,
+  return input.db.transaction(async (tx) => {
+    const [account] = await tx
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, input.teamId))
+      .limit(1)
+      .for('update');
+    if (!account) return false;
+    const now = input.now ?? new Date();
+    const next = nextIncludedDiscountPeriod({
+      now,
+      periodStartedAt: account.periodStartedAt,
+      periodEndsAt: account.periodEndsAt,
+    });
+    if (!next) return false;
+    const included = PLAN_CATALOG[account.planId].includedUsageDiscountCents;
+    const [updated] = await tx
+      .update(teamBillingAccounts)
+      .set({
+        includedDiscountRemainingCents: included,
+        periodStartedAt: next.periodStartedAt,
+        periodEndsAt: next.periodEndsAt,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(teamBillingAccounts.teamId, input.teamId),
+          eq(teamBillingAccounts.planId, account.planId),
+          account.periodStartedAt
+            ? eq(teamBillingAccounts.periodStartedAt, account.periodStartedAt)
+            : sql`${teamBillingAccounts.periodStartedAt} IS NULL`,
+          account.periodEndsAt
+            ? eq(teamBillingAccounts.periodEndsAt, account.periodEndsAt)
+            : sql`${teamBillingAccounts.periodEndsAt} IS NULL`,
+        ),
+      )
+      .returning({ teamId: teamBillingAccounts.teamId });
+    return Boolean(updated);
   });
-  if (!next) return false;
-  const included = PLAN_CATALOG[account.planId].includedUsageDiscountCents;
-  await input.db
-    .update(teamBillingAccounts)
-    .set({
-      includedDiscountRemainingCents: included,
-      periodStartedAt: next.periodStartedAt,
-      periodEndsAt: next.periodEndsAt,
-      updatedAt: now,
-    })
-    .where(eq(teamBillingAccounts.teamId, input.teamId));
-  return true;
 }

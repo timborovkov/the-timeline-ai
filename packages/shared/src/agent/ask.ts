@@ -29,6 +29,7 @@ import {
   settleAskAiFromOpenRouterUsd,
   type AskBillingError,
 } from '#src/billing/admission.js';
+import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS } from '#src/billing/catalog.js';
 import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
 import { getEnv } from '#src/env.js';
 import {
@@ -407,7 +408,7 @@ export async function askAgent(
 
   let openRouterUsd = 0;
   let billingFinalized = false;
-  const settleBilling = async (model?: string) => {
+  const settleBilling = async (model?: string, opts?: { conservative?: boolean }) => {
     if (billingFinalized) return;
     billingFinalized = true;
     try {
@@ -416,6 +417,9 @@ export async function askAgent(
         openRouterUsd,
         deliverySurface: input.deliverySurface,
         ...(model ? { model } : {}),
+        ...(opts?.conservative
+          ? { minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS }
+          : {}),
       });
     } catch (err) {
       const safeError = deps.sanitizeError?.(err) ?? err;
@@ -563,12 +567,23 @@ export async function askAgent(
       ...attribution,
     };
   } catch (err) {
-    await releaseBilling();
+    const aborted = isAskAbortError(err);
+    if (aborted || openRouterUsd > 0) {
+      await settleBilling(undefined, { conservative: aborted });
+    } else {
+      await releaseBilling();
+    }
     const safeError = deps.sanitizeError?.(err) ?? err;
     log.error({ err: safeError, teamId: input.teamId }, 'askAgent failed');
     deps.onAgentError?.(safeError);
     return { ok: false, error: 'failed' };
   }
+}
+
+function isAskAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const row = error as { name?: unknown; causeName?: unknown };
+  return row.name === 'AbortError' || row.causeName === 'AbortError';
 }
 
 function shouldIncludeMcpTools(question: string): boolean {

@@ -120,6 +120,16 @@ credit hides margin and confuses prospects.
    excluded from the Free-grant backfill; `email_verification`
    mail is not metered against that restricted workspace. OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
+   Janitor included-discount resets lock the billing account and refuse to
+   overwrite a newer Polar plan or period. Client-aborted Ask streams settle at
+   least the reserved customer charge instead of releasing after work starts.
+   `WORKER_MODE=document-extract` allows the non-secret `BILLING_CHARGES_ENABLED`
+   toggle so extract AI metering can run live. Deferred accepted-source flush
+   rotates past still-blocked rows. Document restore rechecks storage and
+   document capacity under the same advisory lock as create (hash key 1).
+   Failed structured-output attempts still contribute OpenRouter `usage.cost` to
+   settlement. Duration meters such as Recall minutes split native units across
+   the UTC months they span.
 8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion
    (`billing_usage_alert` intent + HTML template), deduped once per

@@ -2,6 +2,7 @@ import * as agent from '@timeline/shared/agent';
 import {
   askBillingUserMessage,
   askOperationId,
+  ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   mapAskBillingError,
   openRouterUsdCostFromFinishEvent,
   releaseBillingReservation,
@@ -763,7 +764,7 @@ export async function POST(req: Request): Promise<Response> {
 
   let openRouterUsd = 0;
   let billingFinalized = false;
-  const settleChatBilling = async (responseModelId?: string) => {
+  const settleChatBilling = async (responseModelId?: string, opts?: { conservative?: boolean }) => {
     if (billingFinalized) return;
     billingFinalized = true;
     try {
@@ -772,6 +773,9 @@ export async function POST(req: Request): Promise<Response> {
         openRouterUsd,
         deliverySurface: 'web',
         ...(responseModelId ? { model: responseModelId } : { model: modelId }),
+        ...(opts?.conservative
+          ? { minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS }
+          : {}),
       });
     } catch (err) {
       log.warn({ err, teamId: active.teamId, billingOperationId }, 'chat billing settle failed');
@@ -792,7 +796,7 @@ export async function POST(req: Request): Promise<Response> {
   req.signal.addEventListener(
     'abort',
     () => {
-      void releaseChatBilling();
+      void settleChatBilling(undefined, { conservative: true });
     },
     { once: true },
   );
@@ -864,7 +868,7 @@ export async function POST(req: Request): Promise<Response> {
     abortSignal: req.signal,
     onError: (e) => {
       if (isAiStreamAbort(e.error)) {
-        void releaseChatBilling();
+        void settleChatBilling(undefined, { conservative: true });
         return;
       }
       void releaseChatBilling();

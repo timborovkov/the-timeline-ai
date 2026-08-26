@@ -185,7 +185,7 @@ export async function assertTeamWriteCapacity(input: {
  * Serialize concurrent member-seat count+claim on one DB client.
  * Callers must invoke this inside the membership/invite write transaction so
  * the advisory lock covers the subsequent insert. Hash key 4 is reserved for
- * member seats (0 Recall, 1 storage, 2 chunks, 3 MCP).
+ * member seats (0 Recall, 1 document writes, 2 chunks, 3 MCP).
  */
 export async function assertTeamMemberSeatCapacity(input: {
   db: Db;

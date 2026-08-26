@@ -12,7 +12,7 @@ import {
   slackConversationBindings,
   slackWorkspaces,
 } from '@timeline/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import type { IntegrationEvent, IntegrationRow, ObjectMapping } from '#src/integrations/types.js';
 
@@ -65,6 +65,7 @@ import { withTeam } from '#src/team-scope.js';
 const log = childLogger('integrations:event-writer');
 
 const BILLING_ENRICHMENT_DEFERRED = 'billing_enrichment_deferred';
+const BILLING_ENRICHMENT_CHECKED_AT = 'billing_enrichment_checked_at';
 
 // Phase 11 — Persist normalized integration events into raw_events with
 // source='integration' + dedup_key. The partial unique index
@@ -778,49 +779,77 @@ function tombstoneMetadataForFutureConversationEvent(
 }
 
 export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50): Promise<number> {
-  const rows = await db
-    .select({
-      id: rawEvents.id,
-      teamId: rawEvents.teamId,
-      sourceMetadata: rawEvents.sourceMetadata,
-    })
-    .from(rawEvents)
-    .where(
-      and(
-        sql`${rawEvents.sourceMetadata}->>'billing_enrichment_deferred' = 'true'`,
-        sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
-      ),
-    )
-    .limit(limit);
   let flushed = 0;
-  for (const row of rows) {
-    const metered = await meterAcceptedSources({
-      db,
-      teamId: row.teamId,
-      rawEventIds: [row.id],
-    });
-    if (!metered.ok) continue;
-    const clear = JSON.stringify({ [BILLING_ENRICHMENT_DEFERRED]: false });
-    await db
-      .update(rawEvents)
-      .set({
-        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+  const maxScan = Math.max(limit * 20, 200);
+  let scanned = 0;
+  while (flushed < limit && scanned < maxScan) {
+    const rows = await db
+      .select({
+        id: rawEvents.id,
+        teamId: rawEvents.teamId,
+        sourceMetadata: rawEvents.sourceMetadata,
       })
-      .where(eq(rawEvents.id, row.id));
-    const jobs = [
-      enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
-        enqueueEmbedJob({ scope: 'raw_event', teamId: row.teamId, rawEventId: row.id }),
-      ),
-    ];
-    if (!integrationSkipsExtract({ sourceMetadata: row.sourceMetadata })) {
-      jobs.unshift(
-        enqueueIntegrationProcessingJob(db, row.id, 'extraction', () =>
-          enqueueExtractJob({ teamId: row.teamId, rawEventId: row.id }),
+      .from(rawEvents)
+      .where(
+        and(
+          sql`${rawEvents.sourceMetadata}->>'billing_enrichment_deferred' = 'true'`,
+          sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
         ),
-      );
+      )
+      .orderBy(
+        sql`COALESCE(${rawEvents.sourceMetadata}->>'billing_enrichment_checked_at', '')`,
+        asc(rawEvents.id),
+      )
+      .limit(Math.min(limit, maxScan - scanned));
+    if (rows.length === 0) break;
+    let progressed = false;
+    for (const row of rows) {
+      scanned += 1;
+      const metered = await meterAcceptedSources({
+        db,
+        teamId: row.teamId,
+        rawEventIds: [row.id],
+      });
+      if (!metered.ok) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const clear = JSON.stringify({
+        [BILLING_ENRICHMENT_DEFERRED]: false,
+        [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
+      const jobs = [
+        enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
+          enqueueEmbedJob({ scope: 'raw_event', teamId: row.teamId, rawEventId: row.id }),
+        ),
+      ];
+      if (!integrationSkipsExtract({ sourceMetadata: row.sourceMetadata })) {
+        jobs.unshift(
+          enqueueIntegrationProcessingJob(db, row.id, 'extraction', () =>
+            enqueueExtractJob({ teamId: row.teamId, rawEventId: row.id }),
+          ),
+        );
+      }
+      await Promise.all(jobs);
+      flushed += 1;
+      progressed = true;
+      if (flushed >= limit) break;
     }
-    await Promise.all(jobs);
-    flushed += 1;
+    if (!progressed && rows.length < limit) break;
   }
   return flushed;
 }
