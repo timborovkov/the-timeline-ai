@@ -32,7 +32,7 @@ export interface BillingAdmissionScope {
     ttlMs?: number;
     metadata?: Record<string, unknown>;
   }): Promise<
-    | { ok: true; reservation: unknown; reused: boolean }
+    | { ok: true; reservation: unknown; reused: boolean; alreadySettled?: boolean }
     | { ok: false; code: BillingReserveFailureCode }
   >;
   settle(input: {
@@ -126,14 +126,14 @@ export async function settleAskAiFromOpenRouterUsd(
     model?: string;
   },
 ): Promise<void> {
-  const { providerCostCents, customerChargeCents } = customerAiChargeCentsFromOpenRouterUsd(
+  const { providerCostCents, customerChargeExactCents } = customerAiChargeCentsFromOpenRouterUsd(
     Math.max(0, input.openRouterUsd),
   );
   await billing.settle({
     operationId: input.operationId,
     meterId: 'ai',
-    nativeUnits: customerChargeCents,
-    customerChargeCents,
+    nativeUnits: customerChargeExactCents,
+    customerChargeCents: Math.round(customerChargeExactCents),
     providerCostCents,
     operationClass: 'agent_ask',
     provider: 'openrouter',

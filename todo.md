@@ -561,7 +561,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       usage (informational, never auto-switch), Team/Business included-discount
       period reset (webhook + janitor; not every Polar retry). Stale Polar
       activations are ignored; canceled paid plans become restricted unless the
-      team holds the Free grant.
+      team holds the Free grant. Polar refunds claw back prepaid top-ups; Polar
+      usage ingest retries from a ledger outbox after local settlement.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

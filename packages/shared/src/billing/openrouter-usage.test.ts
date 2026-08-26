@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   openRouterFinishFromAiResult,
+  openRouterFinishFromUsdCost,
   openRouterUsdCostFromFinishEvent,
 } from '#src/billing/openrouter-usage.js';
 
@@ -45,5 +46,9 @@ describe('openRouterUsdCostFromFinishEvent', () => {
         totalUsage: undefined,
       }),
     ).toEqual({ usage: { inputTokens: 10 } });
+  });
+
+  it('rebuilds a finish event from accumulated USD', () => {
+    expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromUsdCost(0.03))).toBe(0.03);
   });
 });

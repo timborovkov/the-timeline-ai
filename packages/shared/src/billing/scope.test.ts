@@ -96,7 +96,7 @@ describe('billing scope', () => {
     await scope.settle({
       operationId: 'op-ai-fill',
       meterId: 'ai',
-      nativeUnits: 1,
+      nativeUnits: 500,
       customerChargeCents: 500,
     });
     const blocked = await scope.reserve({
@@ -297,5 +297,183 @@ describe('billing scope', () => {
     });
     expect(reserved.ok).toBe(false);
     if (!reserved.ok) expect(reserved.code).toBe('usage_limit_reached');
+  });
+
+  it('counts in-flight Free reservations against the native allowance', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.settle({
+      operationId: 'op-email-fill',
+      meterId: 'email_units',
+      nativeUnits: 499,
+      customerChargeCents: 0,
+    });
+    const first = await scope.reserve({
+      operationId: 'op-email-a',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    expect(first.ok).toBe(true);
+    const second = await scope.reserve({
+      operationId: 'op-email-b',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('free_allowance_reached');
+  });
+
+  it('re-reserves a released operation id after a failed provider attempt', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const first = await scope.reserve({
+      operationId: 'op-retry',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    expect(first.ok).toBe(true);
+    await scope.release('op-retry');
+    const retry = await scope.reserve({
+      operationId: 'op-retry',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    expect(retry.ok).toBe(true);
+    if (retry.ok) expect(retry.alreadySettled).toBeUndefined();
+  });
+
+  it('does not treat a settled reservation as an active lock', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.reserve({
+      operationId: 'op-settled',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    await scope.settle({
+      operationId: 'op-settled',
+      meterId: 'email_units',
+      nativeUnits: 1,
+      customerChargeCents: 0,
+    });
+    const retry = await scope.reserve({
+      operationId: 'op-settled',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    expect(retry.ok).toBe(true);
+    if (retry.ok) expect(retry.alreadySettled).toBe(true);
+  });
+
+  it('reserves included discount only once across overlapping Team reservations', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 1, wallet_balance_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const first = await scope.reserve({
+      operationId: 'op-disc-a',
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+    });
+    expect(first.ok).toBe(true);
+    const second = await scope.reserve({
+      operationId: 'op-disc-b',
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('usage_limit_reached');
+  });
+
+  it('retries Polar ingest after a duplicate local settlement', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          polar_customer_id = 'cus_test', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    provider.ingestUsage = () => Promise.reject(new Error('polar down'));
+    await scope.settle({
+      operationId: 'op-polar-1',
+      meterId: 'recall_minutes',
+      nativeUnits: 70,
+      customerChargeCents: 210,
+    });
+    expect(provider.events).toHaveLength(0);
+    const events: { name: string }[] = [];
+    provider.ingestUsage = (event) => {
+      events.push(event);
+      return Promise.resolve();
+    };
+    const retry = await scope.settle({
+      operationId: 'op-polar-1',
+      meterId: 'recall_minutes',
+      nativeUnits: 70,
+      customerChargeCents: 210,
+    });
+    expect(retry.duplicate).toBe(true);
+    expect(events).toHaveLength(1);
+  });
+
+  it('accumulates sub-cent AI charges across settlements', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.settle({
+      operationId: 'op-ai-frac-1',
+      meterId: 'ai',
+      nativeUnits: 0.4,
+      customerChargeCents: 0,
+    });
+    await scope.settle({
+      operationId: 'op-ai-frac-2',
+      meterId: 'ai',
+      nativeUnits: 0.4,
+      customerChargeCents: 0,
+    });
+    const dash = await scope.getDashboard();
+    expect(dash.meters.ai?.nativeUnits).toBeCloseTo(0.8);
+    expect(dash.meters.ai?.customerChargeCents).toBe(1);
   });
 });

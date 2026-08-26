@@ -7,9 +7,9 @@ import {
   teamBillingAccounts,
   teamMembers,
 } from '@timeline/db';
-import { and, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
-import type { BillingProvider } from '#src/billing/provider.js';
+import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
@@ -26,9 +26,13 @@ import {
   polarEventNameForMeter,
 } from '#src/billing/catalog.js';
 import {
+  cumulativeChargeDeltaCents,
   isUniqueViolation,
+  metersPlusPendingReservations,
   paygOverageCustomerChargeCents,
   paygOverageNativeUnits,
+  pendingBillableChargeCents,
+  pendingDiscountReservedCents,
   splitDiscountAndWallet,
   walletReservedCentsFromMetadata,
 } from '#src/billing/charge.js';
@@ -62,6 +66,65 @@ function periodYm(date = new Date()): string {
 
 function defaultSpendCapForPlan(planId: BillingPlanId): number {
   return PLAN_CATALOG[planId].defaultSpendCapCents;
+}
+
+function polarIngestEventFromMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): PolarUsageEvent | null {
+  if (metadata?.polar_ingest_status !== 'pending') return null;
+  const name = metadata.polar_ingest_name;
+  const units = metadata.polar_ingest_units;
+  const externalCustomerId = metadata.polar_ingest_customer_id;
+  if (
+    typeof name !== 'string' ||
+    typeof units !== 'number' ||
+    !Number.isFinite(units) ||
+    typeof externalCustomerId !== 'string'
+  ) {
+    return null;
+  }
+  const operationId = metadata.polar_ingest_operation_id;
+  const chargeCents = metadata.polar_ingest_charge_cents;
+  return {
+    name,
+    units,
+    externalCustomerId,
+    metadata: {
+      ...(typeof operationId === 'string' ? { operation_id: operationId } : {}),
+      ...(typeof chargeCents === 'number' ? { charge_cents: chargeCents } : {}),
+    },
+  };
+}
+
+async function markPolarIngestStatus(
+  db: Db,
+  teamId: string,
+  operationId: string,
+  status: 'completed' | 'not_required',
+): Promise<void> {
+  await db
+    .update(billingUsageLedger)
+    .set({
+      metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({
+        polar_ingest_status: status,
+      })}::jsonb`,
+    })
+    .where(
+      and(eq(billingUsageLedger.teamId, teamId), eq(billingUsageLedger.operationId, operationId)),
+    );
+}
+
+async function ingestPolarUsageIfPending(input: {
+  db: Db;
+  teamId: string;
+  operationId: string;
+  metadata: Record<string, unknown>;
+  provider?: BillingProvider;
+}): Promise<void> {
+  const event = polarIngestEventFromMetadata(input.metadata);
+  if (!event || !input.provider) return;
+  await input.provider.ingestUsage(event);
+  await markPolarIngestStatus(input.db, input.teamId, input.operationId, 'completed');
 }
 
 export function createBillingScope(deps: BillingScopeDeps) {
@@ -335,45 +398,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
       }
       const expiresAt = new Date(Date.now() + (input.ttlMs ?? 15 * 60_000));
       const ym = periodYm();
-      const counters = await db
-        .select()
-        .from(billingUsageCounters)
-        .where(and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)));
-      const byMeter = Object.fromEntries(
-        counters.map((row) => [
-          row.meterId,
-          {
-            nativeUnits: Number(row.nativeUnits),
-            customerChargeCents: row.customerChargeCents,
-          },
-        ]),
-      ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
-
-      // Free plan hard-stops at native allowances even while shadow billing is on.
-      if (account.planId === 'free' && account.billingState !== 'enterprise_active') {
-        const allowance = freeAllowanceConsumedForMeter(input.meterId, byMeter);
-        if (allowance) {
-          const next =
-            allowance.unit === 'cents'
-              ? allowance.consumed + input.reservedChargeCents
-              : allowance.consumed + input.reservedNativeUnits;
-          if (next > allowance.limit) {
-            return { ok: false as const, code: 'free_allowance_reached' as const };
-          }
-        }
-      }
-
-      const billableChargeCents = paygOverageCustomerChargeCents({
-        planId: account.planId,
-        meterId: input.meterId,
-        nativeUnits: input.reservedNativeUnits,
-        listChargeCents: input.reservedChargeCents,
-        meters: byMeter,
-      });
-      const { walletCents, discountCents } = splitDiscountAndWallet({
-        chargeCents: billableChargeCents,
-        includedDiscountRemainingCents: account.includedDiscountRemainingCents,
-      });
 
       const outcome = await db.transaction(async (tx) => {
         const [locked] = await tx
@@ -390,6 +414,74 @@ export function createBillingScope(deps: BillingScopeDeps) {
           return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
         }
 
+        const countersTx = await tx
+          .select()
+          .from(billingUsageCounters)
+          .where(
+            and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
+          );
+        const pending = (
+          await tx
+            .select()
+            .from(billingUsageReservations)
+            .where(
+              and(
+                eq(billingUsageReservations.teamId, teamId),
+                eq(billingUsageReservations.state, 'reserved'),
+              ),
+            )
+        ).filter((row) => row.operationId !== input.operationId);
+        const byMeter = Object.fromEntries(
+          countersTx.map((row) => [
+            row.meterId,
+            {
+              nativeUnits: Number(row.nativeUnits),
+              customerChargeCents: row.customerChargeCents,
+            },
+          ]),
+        ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
+        const metersForAdmission = metersPlusPendingReservations(byMeter, pending);
+
+        if (locked.planId === 'free' && locked.billingState !== 'enterprise_active') {
+          const allowance = freeAllowanceConsumedForMeter(input.meterId, metersForAdmission);
+          if (allowance) {
+            const next =
+              allowance.unit === 'cents'
+                ? allowance.consumed + input.reservedChargeCents
+                : allowance.consumed + input.reservedNativeUnits;
+            if (next > allowance.limit) {
+              return { kind: 'reject' as const, code: 'free_allowance_reached' as const };
+            }
+          }
+        }
+
+        const billableChargeCents = paygOverageCustomerChargeCents({
+          planId: locked.planId,
+          meterId: input.meterId,
+          nativeUnits: input.reservedNativeUnits,
+          listChargeCents: input.reservedChargeCents,
+          meters: metersForAdmission,
+        });
+        const pendingDiscount = pending.reduce(
+          (sum, row) => sum + pendingDiscountReservedCents(row.metadata),
+          0,
+        );
+        const remainingDiscount = Math.max(
+          0,
+          locked.includedDiscountRemainingCents - pendingDiscount,
+        );
+        const { walletCents, discountCents } = splitDiscountAndWallet({
+          chargeCents: billableChargeCents,
+          includedDiscountRemainingCents: remainingDiscount,
+        });
+        const reservationMetadata = {
+          ...(input.metadata ?? {}),
+          list_charge_cents: input.reservedChargeCents,
+          billable_charge_cents: billableChargeCents,
+          discount_reserved_cents: discountCents,
+          wallet_reserved_cents: walletCents,
+        };
+
         const blocking =
           !locked.shadowBilling &&
           locked.billingState !== 'enterprise_active' &&
@@ -400,32 +492,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
             return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
           }
           if (locked.spendCapCents > 0) {
-            const pending = await tx
-              .select({
-                metadata: billingUsageReservations.metadata,
-                reservedChargeCents: billingUsageReservations.reservedChargeCents,
-              })
-              .from(billingUsageReservations)
-              .where(
-                and(
-                  eq(billingUsageReservations.teamId, teamId),
-                  eq(billingUsageReservations.state, 'reserved'),
-                ),
-              );
-            const pendingBillable = pending.reduce((sum, row) => {
-              const raw = row.metadata.billable_charge_cents;
-              const cents =
-                typeof raw === 'number' && Number.isInteger(raw) && raw >= 0
-                  ? raw
-                  : Math.max(0, row.reservedChargeCents);
-              return sum + cents;
-            }, 0);
-            const countersTx = await tx
-              .select({ customerChargeCents: billingUsageCounters.customerChargeCents })
-              .from(billingUsageCounters)
-              .where(
-                and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
-              );
+            const pendingBillable = pending.reduce(
+              (sum, row) => sum + pendingBillableChargeCents(row.metadata, row.reservedChargeCents),
+              0,
+            );
             const periodSpend =
               countersTx.reduce((sum, row) => sum + row.customerChargeCents, 0) +
               pendingBillable +
@@ -436,7 +506,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
         }
 
-        const [row] = await tx
+        const [created] = await tx
           .insert(billingUsageReservations)
           .values({
             teamId,
@@ -445,34 +515,28 @@ export function createBillingScope(deps: BillingScopeDeps) {
             reservedNativeUnits: String(input.reservedNativeUnits),
             reservedChargeCents: walletCents,
             expiresAt,
-            metadata: {
-              ...(input.metadata ?? {}),
-              list_charge_cents: input.reservedChargeCents,
-              billable_charge_cents: billableChargeCents,
-              discount_reserved_cents: discountCents,
-              wallet_reserved_cents: walletCents,
-            },
+            metadata: reservationMetadata,
           })
           .onConflictDoNothing()
           .returning();
-        if (!row) return { kind: 'conflict' as const };
-        if (blocking && walletCents > 0) {
+
+        const lockWallet = async (cents: number) => {
+          if (!blocking || cents <= 0) return;
           await tx
             .update(teamBillingAccounts)
             .set({
-              reservedBalanceCents: sql`${teamBillingAccounts.reservedBalanceCents} + ${walletCents}`,
+              reservedBalanceCents: sql`${teamBillingAccounts.reservedBalanceCents} + ${cents}`,
               updatedAt: new Date(),
             })
             .where(eq(teamBillingAccounts.teamId, teamId));
-        }
-        return { kind: 'created' as const, row };
-      });
+        };
 
-      if (outcome.kind === 'reject') {
-        return { ok: false as const, code: outcome.code };
-      }
-      if (outcome.kind === 'conflict') {
-        const existing = await db
+        if (created) {
+          await lockWallet(walletCents);
+          return { kind: 'created' as const, row: created };
+        }
+
+        const [existing] = await tx
           .select()
           .from(billingUsageReservations)
           .where(
@@ -481,10 +545,81 @@ export function createBillingScope(deps: BillingScopeDeps) {
               eq(billingUsageReservations.operationId, input.operationId),
             ),
           )
-          .limit(1);
-        const reservation = existing[0];
-        if (!reservation) throw new Error('Reservation conflict without existing row');
-        return { ok: true as const, reservation, reused: true as const };
+          .limit(1)
+          .for('update');
+        if (!existing) throw new Error('Reservation conflict without existing row');
+        if (existing.state === 'settled') {
+          return { kind: 'already_settled' as const, row: existing };
+        }
+        if (existing.state === 'reserved' && existing.expiresAt.getTime() > Date.now()) {
+          return { kind: 'reused' as const, row: existing };
+        }
+
+        if (existing.state === 'reserved') {
+          const oldLock = walletReservedCentsFromMetadata(
+            existing.metadata,
+            existing.reservedChargeCents,
+          );
+          if (!locked.shadowBilling && oldLock > 0) {
+            await tx
+              .update(teamBillingAccounts)
+              .set({
+                reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${oldLock})`,
+                updatedAt: new Date(),
+              })
+              .where(eq(teamBillingAccounts.teamId, teamId));
+          }
+        }
+
+        const [reactivated] = await tx
+          .update(billingUsageReservations)
+          .set({
+            meterId: input.meterId,
+            reservedNativeUnits: String(input.reservedNativeUnits),
+            reservedChargeCents: walletCents,
+            state: 'reserved',
+            expiresAt,
+            metadata: reservationMetadata,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(billingUsageReservations.id, existing.id),
+              inArray(billingUsageReservations.state, ['reserved', 'released', 'expired']),
+            ),
+          )
+          .returning();
+        if (!reactivated) {
+          const [raced] = await tx
+            .select()
+            .from(billingUsageReservations)
+            .where(eq(billingUsageReservations.id, existing.id))
+            .limit(1);
+          if (raced?.state === 'settled') {
+            return { kind: 'already_settled' as const, row: raced };
+          }
+          if (raced?.state === 'reserved') {
+            return { kind: 'reused' as const, row: raced };
+          }
+          throw new Error('Failed to replace finalized reservation');
+        }
+        await lockWallet(walletCents);
+        return { kind: 'created' as const, row: reactivated };
+      });
+
+      if (outcome.kind === 'reject') {
+        return { ok: false as const, code: outcome.code };
+      }
+      if (outcome.kind === 'already_settled') {
+        return {
+          ok: true as const,
+          reservation: outcome.row,
+          reused: true as const,
+          alreadySettled: true as const,
+        };
+      }
+      if (outcome.kind === 'reused') {
+        return { ok: true as const, reservation: outcome.row, reused: true as const };
       }
 
       return { ok: true as const, reservation: outcome.row, reused: false as const };
@@ -542,17 +677,50 @@ export function createBillingScope(deps: BillingScopeDeps) {
             },
           ]),
         ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
+        const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
+        const listChargeCents =
+          input.meterId === 'ai'
+            ? cumulativeChargeDeltaCents({
+                meterId: 'ai',
+                previousNativeUnits: previousNative,
+                nextNativeUnits: previousNative + input.nativeUnits,
+              })
+            : input.customerChargeCents;
         const actualChargeCents = paygOverageCustomerChargeCents({
           planId: account.planId,
           meterId: input.meterId,
           nativeUnits: input.nativeUnits,
-          listChargeCents: input.customerChargeCents,
+          listChargeCents,
           meters: metersBefore,
         });
         const { discountCents, walletCents } = splitDiscountAndWallet({
           chargeCents: actualChargeCents,
           includedDiscountRemainingCents: account.includedDiscountRemainingCents,
         });
+
+        const polarUnits = paygOverageNativeUnits({
+          planId: account.planId,
+          meterId: input.meterId,
+          nativeUnits: input.nativeUnits,
+          meters: metersBefore,
+        });
+        const eventName = polarEventNameForMeter(input.meterId);
+        const shouldIngestPolar =
+          Boolean(eventName) &&
+          Boolean(account.polarCustomerId) &&
+          !account.shadowBilling &&
+          input.billable !== false &&
+          polarUnits > 0;
+        const polarIngestMetadata = shouldIngestPolar
+          ? {
+              polar_ingest_status: 'pending',
+              polar_ingest_name: eventName,
+              polar_ingest_units: polarUnits,
+              polar_ingest_customer_id: teamId,
+              polar_ingest_operation_id: input.operationId,
+              polar_ingest_charge_cents: actualChargeCents,
+            }
+          : { polar_ingest_status: 'not_required' };
 
         const [ledgerRow] = await tx
           .insert(billingUsageLedger)
@@ -575,16 +743,32 @@ export function createBillingScope(deps: BillingScopeDeps) {
             reservationId: reservation[0]?.id ?? null,
             metadata: {
               ...(input.metadata ?? {}),
-              list_charge_cents: input.customerChargeCents,
+              list_charge_cents: listChargeCents,
               discount_cents: discountCents,
               wallet_cents: walletCents,
+              ...polarIngestMetadata,
             },
           })
           .onConflictDoNothing()
           .returning();
 
         if (!ledgerRow) {
-          return { duplicate: true as const };
+          const [existingLedger] = await tx
+            .select()
+            .from(billingUsageLedger)
+            .where(
+              and(
+                eq(billingUsageLedger.teamId, teamId),
+                eq(billingUsageLedger.operationId, input.operationId),
+              ),
+            )
+            .limit(1);
+          return {
+            duplicate: true as const,
+            ledger: existingLedger ?? null,
+            planId: account.planId,
+            spendCapCents: account.spendCapCents,
+          };
         }
 
         await tx
@@ -620,7 +804,12 @@ export function createBillingScope(deps: BillingScopeDeps) {
           await tx
             .update(billingUsageReservations)
             .set({ state: 'settled', updatedAt: new Date() })
-            .where(eq(billingUsageReservations.id, reservation[0].id));
+            .where(
+              and(
+                eq(billingUsageReservations.id, reservation[0].id),
+                eq(billingUsageReservations.state, 'reserved'),
+              ),
+            );
         }
 
         if (
@@ -641,42 +830,27 @@ export function createBillingScope(deps: BillingScopeDeps) {
         return {
           duplicate: false as const,
           ledger: ledgerRow,
-          actualChargeCents,
-          polarUnits: paygOverageNativeUnits({
-            planId: account.planId,
-            meterId: input.meterId,
-            nativeUnits: input.nativeUnits,
-            meters: metersBefore,
-          }),
-          eventName: polarEventNameForMeter(input.meterId),
-          polarCustomerId: account.polarCustomerId,
-          shadowBilling: account.shadowBilling,
           planId: account.planId,
           spendCapCents: account.spendCapCents,
         };
       });
 
-      if (settled.duplicate) {
-        return { ok: true as const, duplicate: true as const };
+      try {
+        if (settled.ledger) {
+          await ingestPolarUsageIfPending({
+            db,
+            teamId,
+            operationId: input.operationId,
+            metadata: settled.ledger.metadata,
+            ...(provider ? { provider } : {}),
+          });
+        }
+      } catch (err) {
+        log.warn({ err, teamId, operationId: input.operationId }, 'polar usage ingest deferred');
       }
 
-      if (
-        provider &&
-        settled.eventName &&
-        settled.polarCustomerId &&
-        !settled.shadowBilling &&
-        input.billable !== false &&
-        settled.polarUnits > 0
-      ) {
-        await provider.ingestUsage({
-          externalCustomerId: teamId,
-          name: settled.eventName,
-          units: settled.polarUnits,
-          metadata: {
-            operation_id: input.operationId,
-            charge_cents: settled.actualChargeCents,
-          },
-        });
+      if (settled.duplicate) {
+        return { ok: true as const, duplicate: true as const };
       }
 
       try {
@@ -743,33 +917,49 @@ export function createBillingScope(deps: BillingScopeDeps) {
     /** Release an unused reservation (failed work, cancelled meeting, etc.). */
     async release(operationId: string) {
       await ensureMember();
-      const account = await ensureAccount();
-      const existing = await db
-        .select()
-        .from(billingUsageReservations)
-        .where(
-          and(
-            eq(billingUsageReservations.teamId, teamId),
-            eq(billingUsageReservations.operationId, operationId),
-          ),
-        )
-        .limit(1);
-      const reservation = existing[0];
-      if (!reservation) return { ok: true as const, missing: true as const };
-      if (reservation.state !== 'reserved') {
-        return { ok: true as const, missing: false as const, alreadyFinal: true as const };
-      }
-      await db
-        .update(billingUsageReservations)
-        .set({ state: 'released', updatedAt: new Date() })
-        .where(eq(billingUsageReservations.id, reservation.id));
-      if (!account.shadowBilling) {
+      await ensureAccount();
+      return db.transaction(async (tx) => {
+        const [reservation] = await tx
+          .update(billingUsageReservations)
+          .set({ state: 'released', updatedAt: new Date() })
+          .where(
+            and(
+              eq(billingUsageReservations.teamId, teamId),
+              eq(billingUsageReservations.operationId, operationId),
+              eq(billingUsageReservations.state, 'reserved'),
+            ),
+          )
+          .returning();
+        if (!reservation) {
+          const [existing] = await tx
+            .select({ id: billingUsageReservations.id })
+            .from(billingUsageReservations)
+            .where(
+              and(
+                eq(billingUsageReservations.teamId, teamId),
+                eq(billingUsageReservations.operationId, operationId),
+              ),
+            )
+            .limit(1);
+          return {
+            ok: true as const,
+            missing: !existing,
+            alreadyFinal: Boolean(existing),
+          };
+        }
+        const [account] = await tx
+          .select()
+          .from(teamBillingAccounts)
+          .where(eq(teamBillingAccounts.teamId, teamId))
+          .limit(1)
+          .for('update');
+        if (!account) throw new Error('Missing billing account');
         const lockCents = walletReservedCentsFromMetadata(
           reservation.metadata,
           reservation.reservedChargeCents,
         );
-        if (lockCents > 0) {
-          await db
+        if (!account.shadowBilling && lockCents > 0) {
+          await tx
             .update(teamBillingAccounts)
             .set({
               reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${lockCents})`,
@@ -777,8 +967,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
             })
             .where(eq(teamBillingAccounts.teamId, teamId));
         }
-      }
-      return { ok: true as const, missing: false as const, alreadyFinal: false as const };
+        return { ok: true as const, missing: false as const, alreadyFinal: false as const };
+      });
     },
 
     async creditWallet(input: { operationId: string; cents: number; source?: string }) {
@@ -828,6 +1018,60 @@ export function createBillingScope(deps: BillingScopeDeps) {
       });
     },
 
+    async debitWallet(input: {
+      operationId: string;
+      cents: number;
+      source?: string;
+      freezeOnShortfall?: boolean;
+      metadata?: Record<string, unknown>;
+    }) {
+      await ensureMember('admin');
+      if (!Number.isInteger(input.cents) || input.cents <= 0) {
+        throw new Error('refund amount must be a positive integer (euro cents)');
+      }
+      await ensureAccount();
+      return db.transaction(async (tx) => {
+        const [ledgerRow] = await tx
+          .insert(billingUsageLedger)
+          .values({
+            teamId,
+            operationId: input.operationId,
+            kind: 'reversal',
+            meterId: 'ai',
+            nativeUnits: '0',
+            customerChargeCents: 0,
+            billable: false,
+            nonBillableReason: 'wallet_refund',
+            operationClass: 'wallet_refund',
+            source: input.source ?? 'polar',
+            actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
+            metadata: { cents: input.cents, ...(input.metadata ?? {}) },
+          })
+          .onConflictDoNothing()
+          .returning();
+        if (!ledgerRow) return { ok: true as const, duplicate: true as const, shortfallCents: 0 };
+        const [account] = await tx
+          .select()
+          .from(teamBillingAccounts)
+          .where(eq(teamBillingAccounts.teamId, teamId))
+          .limit(1)
+          .for('update');
+        if (!account) throw new Error('Missing billing account');
+        const debit = Math.min(account.walletBalanceCents, input.cents);
+        const shortfallCents = Math.max(0, input.cents - debit);
+        const freeze = Boolean(input.freezeOnShortfall) && shortfallCents > 0;
+        await tx
+          .update(teamBillingAccounts)
+          .set({
+            walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${debit})`,
+            ...(freeze ? { billingState: 'read_only' as const, spendCapCents: 0 } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(teamBillingAccounts.teamId, teamId));
+        return { ok: true as const, duplicate: false as const, shortfallCents };
+      });
+    },
+
     async setAutoReload(input: {
       enabled: boolean;
       thresholdCents?: number | null;
@@ -855,3 +1099,40 @@ export function createBillingScope(deps: BillingScopeDeps) {
 }
 
 export type BillingScope = ReturnType<typeof createBillingScope>;
+
+export async function flushPendingPolarUsageIngest(input: {
+  db: Db;
+  provider?: BillingProvider | null;
+  teamId?: string;
+}): Promise<number> {
+  if (!input.provider) return 0;
+  const rows = await input.db
+    .select({
+      teamId: billingUsageLedger.teamId,
+      operationId: billingUsageLedger.operationId,
+      metadata: billingUsageLedger.metadata,
+    })
+    .from(billingUsageLedger)
+    .where(
+      and(
+        sql`${billingUsageLedger.metadata}->>'polar_ingest_status' = 'pending'`,
+        ...(input.teamId ? [eq(billingUsageLedger.teamId, input.teamId)] : []),
+      ),
+    );
+  let flushed = 0;
+  for (const row of rows) {
+    try {
+      await ingestPolarUsageIfPending({
+        db: input.db,
+        teamId: row.teamId,
+        operationId: row.operationId,
+        metadata: row.metadata,
+        provider: input.provider,
+      });
+      flushed += 1;
+    } catch {
+      // Leave pending for the next maintenance tick.
+    }
+  }
+  return flushed;
+}

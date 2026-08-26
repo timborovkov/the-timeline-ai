@@ -65,10 +65,21 @@ credit hides margin and confuses prospects.
    `restricted`. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted
    code matches `POLAR_DISCOUNT_CODE`. Reservations lock the wallet-funded
    remainder after the PAYG Free floor and included discount, include pending
-   reservation charges in the spend cap, expire on TTL, and Free pause copy
-   follows admission (not a single exhausted meter). Extra member-days accrue
-   with a cumulative monthly cent delta so daily rounding still totals €2 per
-   extra member-month.
+   reservation charges in the spend cap **and** Free native allowances, count
+   in-flight included-discount claims against `includedDiscountRemainingCents`,
+   expire on TTL, and Free pause copy follows admission (not a single exhausted
+   meter). Released or expired reservations may be replaced for the same
+   operation id; settled rows are reused as already-final rather than a fresh
+   lock. Extra member-days accrue with a cumulative monthly cent delta so daily
+   rounding still totals €2 per extra member-month. AI customer charges keep
+   fractional cents on `nativeUnits` and round the cumulative delta, so
+   sub-cent embeddings still consume the Free/PAYG floor. Polar usage ingest is
+   an out-of-transaction outbox (`polar_ingest_status` on the ledger); a failed
+   ingest does not fail local settlement, and the janitor plus duplicate settle
+   retries drain pending events. Paid-plan activation writes the catalog default
+   spend cap when the row is still Free (or cap 0). Polar `refund.created` /
+   `order.refunded` claw back prepaid top-ups (and freeze the workspace if the
+   wallet was already spent).
 8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion
    (`billing_usage_alert` intent + HTML template), deduped once per

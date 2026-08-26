@@ -256,6 +256,86 @@ describe('handlePolarWebhookEvent', () => {
     expect(ignoredStale.planId).toBe('free');
   });
 
+  it('applies the paid plan default spend cap when upgrading from Free', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await billing.getAccount()).spendCapCents).toBe(0);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_payg',
+          status: 'active',
+          product_id: 'prod_payg',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).spendCapCents).toBe(2_500);
+  });
+
+  it('reverses a prepaid top-up when Polar refunds the order', async () => {
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_top',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(1000);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'refund.created',
+        data: {
+          id: 'ref_1',
+          order_id: 'ord_top',
+          amount: 1000,
+          status: 'succeeded',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.refunded',
+        data: {
+          id: 'ord_top',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+  });
+
   it('rejects a delayed older subscription after a newer one is stored', () => {
     expect(
       shouldApplyPaidSubscriptionUpdate({

@@ -379,7 +379,9 @@ export async function sendMessage<TIntent extends MessageIntent>(
         retryable: false,
       };
     }
-    const result = await sendPostmarkEmail(rendered, options.fetch);
+    const result = reserved.alreadySettled
+      ? { ok: true as const }
+      : await sendPostmarkEmail(rendered, options.fetch);
     if (result.ok) {
       await settleEmailUnits({
         db: options.db,

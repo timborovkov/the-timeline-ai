@@ -257,11 +257,14 @@ export function formatEuroFromCents(cents: number): string {
 export function customerAiChargeCentsFromOpenRouterUsd(providerUsd: number): {
   providerCostCents: number;
   customerChargeCents: number;
+  /** Unrounded customer cents so settlement can accumulate sub-cent calls. */
+  customerChargeExactCents: number;
 } {
   const providerEur = providerUsd * OVERAGE_RATES.openRouterUsdMarkup * BILLING_EUR_PER_USD;
+  const customerChargeExactCents = providerEur * OVERAGE_RATES.aiCustomerMultiplier * 100;
   const providerCostCents = Math.round(providerEur * 100);
-  const customerChargeCents = Math.round(providerEur * OVERAGE_RATES.aiCustomerMultiplier * 100);
-  return { providerCostCents, customerChargeCents };
+  const customerChargeCents = Math.round(customerChargeExactCents);
+  return { providerCostCents, customerChargeCents, customerChargeExactCents };
 }
 
 export function recallChargeCents(minutes: number): number {

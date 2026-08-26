@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   billingMemberDayLedger,
   billingUsageCounters,
+  billingUsageLedger,
   documentVersions,
   documents,
   teamBillingAccounts,
@@ -19,6 +20,7 @@ import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
   PLAN_CATALOG,
+  PREPAID_TOPUP_CENTS,
   customerAiChargeCentsFromOpenRouterUsd,
 } from '#src/billing/catalog.js';
 import { cumulativeChargeDeltaCents, memberDaysChargeCents } from '#src/billing/charge.js';
@@ -33,9 +35,10 @@ import {
   openRouterUsdCostFromFinishEvent,
   type OpenRouterFinishEvent,
 } from '#src/billing/openrouter-usage.js';
+import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
-import { createBillingScope } from '#src/billing/scope.js';
+import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
 
 const GIB = 1024 ** 3;
 
@@ -52,11 +55,13 @@ function daysInUtcMonth(date = new Date()): number {
 }
 
 function billingScope(ctx: Pick<BillingAlsContext, 'db' | 'teamId' | 'userId'>) {
+  const provider = createPolarBillingProvider() ?? undefined;
   return createBillingScope({
     db: ctx.db,
     teamId: ctx.teamId,
     userId: ctx.userId,
     ensureMember: () => Promise.resolve('owner'),
+    ...(provider ? { provider } : {}),
   });
 }
 
@@ -117,6 +122,72 @@ export async function creditWalletFromPolarOrder(input: {
     source: 'polar_order',
   });
   return { duplicate: result.duplicate };
+}
+
+export async function debitWalletFromPolarRefund(input: {
+  db: Db;
+  teamId: string;
+  orderId: string;
+  refundKey: string;
+  cents: number;
+}): Promise<{ duplicate: boolean; reversed: boolean; shortfallCents: number }> {
+  const [original] = await input.db
+    .select({
+      metadata: billingUsageLedger.metadata,
+    })
+    .from(billingUsageLedger)
+    .where(
+      and(
+        eq(billingUsageLedger.teamId, input.teamId),
+        eq(billingUsageLedger.operationId, `polar_topup:${input.orderId}`),
+      ),
+    )
+    .limit(1);
+  if (!original) {
+    return { duplicate: false, reversed: false, shortfallCents: 0 };
+  }
+  const originalCentsRaw = original.metadata.cents;
+  const originalCents =
+    typeof originalCentsRaw === 'number' && originalCentsRaw > 0
+      ? originalCentsRaw
+      : PREPAID_TOPUP_CENTS;
+  const priorReversals = await input.db
+    .select({ metadata: billingUsageLedger.metadata })
+    .from(billingUsageLedger)
+    .where(
+      and(
+        eq(billingUsageLedger.teamId, input.teamId),
+        eq(billingUsageLedger.kind, 'reversal'),
+        sql`${billingUsageLedger.metadata}->>'order_id' = ${input.orderId}`,
+      ),
+    );
+  const alreadyReversed = priorReversals.reduce((sum, row) => {
+    const cents = row.metadata.cents;
+    return sum + (typeof cents === 'number' && cents > 0 ? cents : 0);
+  }, 0);
+  const remaining = Math.max(0, originalCents - alreadyReversed);
+  const requested = input.cents > 0 ? input.cents : remaining;
+  const debitCents = Math.min(remaining, requested);
+  if (debitCents <= 0) {
+    return { duplicate: true, reversed: false, shortfallCents: 0 };
+  }
+  const billing = billingScope({
+    db: input.db,
+    teamId: input.teamId,
+    userId: BILLING_SYSTEM_USER_ID,
+  });
+  const result = await billing.debitWallet({
+    operationId: `polar_refund:${input.refundKey}`,
+    cents: debitCents,
+    source: 'polar_refund',
+    freezeOnShortfall: true,
+    metadata: { order_id: input.orderId, cents: debitCents },
+  });
+  return {
+    duplicate: result.duplicate,
+    reversed: !result.duplicate,
+    shortfallCents: result.shortfallCents,
+  };
 }
 
 export async function settleTeamMeter(input: {
@@ -191,7 +262,9 @@ export async function reserveEmailUnits(input: {
   userId?: string;
   operationId: string;
   units: number;
-}): Promise<{ ok: true } | { ok: false; code: BillingReserveFailureCode }> {
+}): Promise<
+  { ok: true; alreadySettled?: boolean } | { ok: false; code: BillingReserveFailureCode }
+> {
   const units = Math.max(0, Math.trunc(input.units));
   if (units === 0) return { ok: true };
   const previous = await currentMeterNativeUnits(input.db, input.teamId, 'email_units');
@@ -211,7 +284,7 @@ export async function reserveEmailUnits(input: {
     }),
   });
   if (!reserved.ok) return reserved;
-  return { ok: true };
+  return { ok: true, ...(reserved.alreadySettled ? { alreadySettled: true as const } : {}) };
 }
 
 export async function settleEmailUnits(input: {
@@ -307,12 +380,13 @@ export async function withAiMetering<T>(
   try {
     const { value, finish } = await fn();
     const usd = finish ? openRouterUsdCostFromFinishEvent(finish) : 0;
-    const { providerCostCents, customerChargeCents } = customerAiChargeCentsFromOpenRouterUsd(usd);
+    const { providerCostCents, customerChargeExactCents } =
+      customerAiChargeCentsFromOpenRouterUsd(usd);
     await billing.settle({
       operationId,
       meterId: 'ai',
-      nativeUnits: customerChargeCents,
-      customerChargeCents,
+      nativeUnits: customerChargeExactCents,
+      customerChargeCents: Math.round(customerChargeExactCents),
       providerCostCents,
       operationClass,
       provider: 'openrouter',
@@ -441,6 +515,10 @@ export async function accrueTeamMemberDays(input: {
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {
   await expireStaleBillingReservations({ db });
   await leaveOverdueRecallBots(db);
+  const polarProvider = createPolarBillingProvider();
+  if (polarProvider) {
+    await flushPendingPolarUsageIngest({ db, provider: polarProvider });
+  }
   const rows = await db.select({ id: teams.id }).from(teams);
   for (const team of rows) {
     try {

@@ -85,17 +85,15 @@ export function spendCapUtilization(
 }
 
 export function freeAllowanceRemaining(meters: {
-  ai?: { customerChargeCents: number } | null;
+  ai?: { customerChargeCents: number; nativeUnits?: number } | null;
   recall_minutes?: { nativeUnits: number } | null;
   email_units?: { nativeUnits: number } | null;
   storage_gb_month?: { nativeUnits: number } | null;
   accepted_sources?: { nativeUnits: number } | null;
 }): FreeAllowanceRemaining {
+  const aiConsumed = Math.max(meters.ai?.nativeUnits ?? 0, meters.ai?.customerChargeCents ?? 0);
   return {
-    aiChargeCents: Math.max(
-      0,
-      FREE_ALLOWANCES.aiChargeCents - (meters.ai?.customerChargeCents ?? 0),
-    ),
+    aiChargeCents: Math.max(0, FREE_ALLOWANCES.aiChargeCents - aiConsumed),
     recallMinutes: Math.max(
       0,
       FREE_ALLOWANCES.recallMinutes - (meters.recall_minutes?.nativeUnits ?? 0),
@@ -273,7 +271,9 @@ export function freeAllowanceConsumedForMeter(
   switch (meterId) {
     case 'ai':
       return {
-        consumed: meters.ai?.customerChargeCents ?? 0,
+        // Gross AI cents live on nativeUnits. PAYG customerChargeCents is
+        // post-floor overage and would otherwise reset the €5 floor every call.
+        consumed: Math.max(meters.ai?.nativeUnits ?? 0, meters.ai?.customerChargeCents ?? 0),
         limit: FREE_ALLOWANCES.aiChargeCents,
         unit: 'cents',
       };

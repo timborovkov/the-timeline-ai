@@ -48,6 +48,27 @@ describe('billing charge split', () => {
     ).toBe(30);
   });
 
+  it('uses gross AI native units for the PAYG Free floor', () => {
+    expect(
+      paygOverageCustomerChargeCents({
+        planId: 'payg',
+        meterId: 'ai',
+        nativeUnits: 40,
+        listChargeCents: 40,
+        meters: { ai: { nativeUnits: 0, customerChargeCents: 0 } },
+      }),
+    ).toBe(0);
+    expect(
+      paygOverageCustomerChargeCents({
+        planId: 'payg',
+        meterId: 'ai',
+        nativeUnits: 40,
+        listChargeCents: 40,
+        meters: { ai: { nativeUnits: 480, customerChargeCents: 0 } },
+      }),
+    ).toBe(20);
+  });
+
   it('charges accepted sources on the cumulative cent boundary', () => {
     expect(
       cumulativeChargeDeltaCents({

@@ -26,4 +26,18 @@ describe('cheapestPlanPreview', () => {
     expect(preview.bills.business.platformFeeCents).toBe(19_900);
     expect(preview.bills.business.meteredAfterDiscountCents).toBe(15_000);
   });
+
+  it('does not double-count member-days when seats are priced separately', () => {
+    const preview = cheapestPlanPreview({
+      activeMembers: 5,
+      meters: {
+        ai: { nativeUnits: 0, customerChargeCents: 0 },
+        member_days: { nativeUnits: 62, customerChargeCents: 400 },
+      },
+    });
+    expect(preview.bills.payg.extraMemberCents).toBe(400);
+    expect(preview.bills.payg.meteredAfterDiscountCents).toBe(0);
+    expect(preview.bills.team.extraMemberCents).toBe(0);
+    expect(preview.bills.team.meteredAfterDiscountCents).toBe(0);
+  });
 });

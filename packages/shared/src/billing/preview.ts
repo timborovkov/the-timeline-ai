@@ -30,7 +30,9 @@ export function grossListChargeCentsFromMeters(meters: MeterTotals): number {
   let sum = 0;
   for (const [meterId, row] of Object.entries(meters)) {
     if (!row) continue;
-    sum += listChargeCentsForMeter(meterId as BillingMeterId, row.nativeUnits);
+    const id = meterId as BillingMeterId;
+    if (id === 'member_days') continue;
+    sum += listChargeCentsForMeter(id, row.nativeUnits);
   }
   return sum;
 }
@@ -40,6 +42,7 @@ function paygOverageFromMeters(meters: MeterTotals): number {
   for (const [meterId, row] of Object.entries(meters)) {
     if (!row) continue;
     const id = meterId as BillingMeterId;
+    if (id === 'member_days') continue;
     const listChargeCents = listChargeCentsForMeter(id, row.nativeUnits);
     sum += paygOverageCustomerChargeCents({
       planId: 'payg',

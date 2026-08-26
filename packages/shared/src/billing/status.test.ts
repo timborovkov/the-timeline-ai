@@ -26,6 +26,13 @@ describe('billing status', () => {
     expect(remaining.recallMinutes).toBe(10);
   });
 
+  it('treats PAYG AI native units as gross Free-floor consumption', () => {
+    const remaining = freeAllowanceRemaining({
+      ai: { customerChargeCents: 0, nativeUnits: 400 },
+    });
+    expect(remaining.aiChargeCents).toBe(100);
+  });
+
   it('nudges free workspaces near or at allowance', () => {
     const near = deriveBillingNudge({
       planId: 'free',

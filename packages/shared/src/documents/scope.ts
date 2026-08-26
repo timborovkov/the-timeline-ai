@@ -1475,18 +1475,8 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         .limit(1);
       const peeked = peekedRows[0] as DocumentVersionRow | undefined;
       if (!peeked) throw new Error('Document version not found');
-      // Capacity must run outside the finalize transaction. Using the outer
-      // `db` client while a transaction is open deadlocks PGlite / a single
-      // Postgres connection. Skip the check on idempotent replays so already
-      // stamped bytes are not counted twice.
-      if (!peeked.sourceEventId) {
-        await assertTeamWriteCapacity({
-          db,
-          teamId,
-          additionalBytes: input.byteSize,
-        });
-      }
       return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
         const vrows = await tx
           .select()
           .from(documentVersions)
@@ -1494,6 +1484,13 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           .limit(1);
         const version = vrows[0] as DocumentVersionRow | undefined;
         if (!version) throw new Error('Document version not found');
+        if (!version.sourceEventId) {
+          await assertTeamWriteCapacity({
+            db: tx as unknown as Db,
+            teamId,
+            additionalBytes: input.byteSize,
+          });
+        }
 
         const drows = await tx
           .select()

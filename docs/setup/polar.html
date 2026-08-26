@@ -88,8 +88,14 @@ BILLING_CHARGES_ENABLED=false
       <h2>Webhook</h2>
       <p>
         Point a Polar webhook at <code>POST /api/webhooks/polar</code> with Standard Webhooks /
-        <code>whsec_</code> signing. Subscribe at least to subscription and order events. Keep the
-        endpoint disabled until the URL is publicly reachable (local tunnel or deploy).
+        <code>whsec_</code> signing. Subscribe at least to subscription, order, and refund events
+        (<code>order.paid</code>, <code>order.refunded</code>, <code>refund.created</code>,
+        <code>refund.updated</code>). Keep the endpoint disabled until the URL is publicly reachable
+        (local tunnel or deploy). Paid-plan activation writes the catalog default spend cap
+        (€25/€100/€500) when the workspace is still on Free. Refunds of the €10 top-up debit the
+        prepaid wallet (and freeze the workspace if that credit was already spent). Local usage
+        settlement is independent of Polar ingest: failed ingest is retried from the ledger outbox
+        and does not undo a committed charge.
       </p>
 
       <h2>Public and app surfaces</h2>

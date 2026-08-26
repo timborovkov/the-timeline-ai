@@ -108,13 +108,65 @@ export function cumulativeChargeDeltaCents(input: {
   return Math.max(0, next - previous);
 }
 
+export function metadataNonNegativeInteger(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+  fallback = 0,
+): number {
+  const raw = metadata?.[key];
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
+  return Math.max(0, fallback);
+}
+
 export function walletReservedCentsFromMetadata(
   metadata: Record<string, unknown> | null | undefined,
   fallbackChargeCents: number,
 ): number {
-  const raw = metadata?.wallet_reserved_cents;
+  return metadataNonNegativeInteger(metadata, 'wallet_reserved_cents', fallbackChargeCents);
+}
+
+export function pendingListChargeCents(
+  metadata: Record<string, unknown> | null | undefined,
+  fallbackChargeCents: number,
+): number {
+  return metadataNonNegativeInteger(metadata, 'list_charge_cents', fallbackChargeCents);
+}
+
+export function pendingBillableChargeCents(
+  metadata: Record<string, unknown> | null | undefined,
+  fallbackChargeCents: number,
+): number {
+  const raw = metadata?.billable_charge_cents;
   if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
-  return Math.max(0, fallbackChargeCents);
+  return pendingListChargeCents(metadata, fallbackChargeCents);
+}
+
+export function pendingDiscountReservedCents(
+  metadata: Record<string, unknown> | null | undefined,
+): number {
+  return metadataNonNegativeInteger(metadata, 'discount_reserved_cents', 0);
+}
+
+/** Fold in-flight reservations into settled meter totals for admission. */
+export function metersPlusPendingReservations(
+  meters: MeterTotals,
+  pending: readonly {
+    meterId: BillingMeterId;
+    reservedNativeUnits: string | number;
+    reservedChargeCents: number;
+    metadata: Record<string, unknown> | null;
+  }[],
+): MeterTotals {
+  const next: MeterTotals = { ...meters };
+  for (const row of pending) {
+    const current = next[row.meterId] ?? { nativeUnits: 0, customerChargeCents: 0 };
+    const list = pendingListChargeCents(row.metadata, row.reservedChargeCents);
+    next[row.meterId] = {
+      nativeUnits: current.nativeUnits + Number(row.reservedNativeUnits),
+      customerChargeCents: current.customerChargeCents + list,
+    };
+  }
+  return next;
 }
 
 export function isUniqueViolation(err: unknown): boolean {

@@ -18,6 +18,7 @@ import type { PlanCapacityUsageRow } from '#src/billing/status.js';
 import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
+import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 
 const GIB = 1024 ** 3;
@@ -27,11 +28,13 @@ function admissionCodeForPlan(planId: string): BillingReserveFailureCode {
 }
 
 function billingScopeForDb(db: Db, teamId: string) {
+  const provider = createPolarBillingProvider() ?? undefined;
   return createBillingScope({
     db,
     teamId,
     userId: BILLING_SYSTEM_USER_ID,
     ensureMember: () => Promise.resolve('owner'),
+    ...(provider ? { provider } : {}),
   });
 }
 

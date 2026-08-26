@@ -2,7 +2,7 @@ import { billingFreeGrants, teamBillingAccounts, type Db } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { PLAN_CATALOG, PREPAID_TOPUP_CENTS, type BillingPlanId } from '#src/billing/catalog.js';
-import { creditWalletFromPolarOrder } from '#src/billing/runtime.js';
+import { creditWalletFromPolarOrder, debitWalletFromPolarRefund } from '#src/billing/runtime.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business';
 
@@ -13,6 +13,8 @@ export interface PolarWebhookPayload {
     status?: string;
     product_id?: string;
     amount?: number;
+    refunded_amount?: number;
+    refundedAmount?: number;
     current_period_start?: string | number;
     current_period_end?: string | number;
     currentPeriodStart?: string | number;
@@ -24,6 +26,8 @@ export interface PolarWebhookPayload {
     customer?: { external_id?: string; id?: string };
     customer_id?: string;
     external_customer_id?: string;
+    order_id?: string;
+    orderId?: string;
   };
 }
 
@@ -68,6 +72,18 @@ export function polarSubscriptionPeriod(data: PolarWebhookPayload['data']): {
     periodStartedAt: parsePolarTimestamp(data?.current_period_start ?? data?.currentPeriodStart),
     periodEndsAt: parsePolarTimestamp(data?.current_period_end ?? data?.currentPeriodEnd),
   };
+}
+
+export function spendCapCentsForPaidActivation(input: {
+  existing: typeof teamBillingAccounts.$inferSelect | undefined;
+  plan: PolarPaidPlanId;
+}): number {
+  const catalogDefault = PLAN_CATALOG[input.plan].defaultSpendCapCents;
+  if (!input.existing) return catalogDefault;
+  if (input.existing.planId === 'free' || input.existing.spendCapCents <= 0) {
+    return catalogDefault;
+  }
+  return input.existing.spendCapCents;
 }
 
 export function billingStateForPolarPlan(plan: PolarPaidPlanId) {
@@ -238,6 +254,10 @@ async function upsertPaidSubscription(input: {
               ...(periodEndsAt ? { periodEndsAt } : {}),
             }
           : {}),
+        spendCapCents: spendCapCentsForPaidActivation({
+          existing,
+          plan: input.plan,
+        }),
         updatedAt: now,
       },
     });
@@ -321,6 +341,35 @@ export async function handlePolarWebhookEvent(input: {
         db: input.db,
         teamId,
         orderId,
+        cents,
+      });
+    }
+  }
+
+  if (type === 'order.refunded' || type === 'refund.created' || type === 'refund.updated') {
+    const refundStatus = (data?.status ?? 'succeeded').trim().toLowerCase();
+    if (type !== 'order.refunded' && refundStatus && refundStatus !== 'succeeded') {
+      return { ok: true, ignored: 'refund_not_succeeded' };
+    }
+    const topupProductId = input.products.topup;
+    const isTopupProduct = Boolean(topupProductId && data?.product_id === topupProductId);
+    const orderId =
+      type === 'order.refunded' ? (data?.id ?? null) : (data?.order_id ?? data?.orderId ?? null);
+    const refundId = type === 'order.refunded' ? null : (data?.id ?? null);
+    const cents =
+      typeof data?.amount === 'number' && data.amount > 0
+        ? data.amount
+        : typeof data?.refunded_amount === 'number' && data.refunded_amount > 0
+          ? data.refunded_amount
+          : typeof data?.refundedAmount === 'number' && data.refundedAmount > 0
+            ? data.refundedAmount
+            : 0;
+    if (orderId && (isTopupProduct || type !== 'order.refunded' || cents > 0)) {
+      await debitWalletFromPolarRefund({
+        db: input.db,
+        teamId,
+        orderId,
+        refundKey: refundId ?? `order:${orderId}`,
         cents,
       });
     }

@@ -65,6 +65,14 @@ export function openRouterFinishFromAiResult(result: {
   };
 }
 
+export function openRouterFinishFromUsdCost(usd: number): OpenRouterFinishEvent {
+  const cost = Number.isFinite(usd) && usd > 0 ? usd : 0;
+  return {
+    usage: { raw: { cost } },
+    totalUsage: { raw: { cost } },
+  };
+}
+
 /**
  * Best-effort OpenRouter USD cost for one finish / step event.
  * Prefers explicit OpenRouter metadata, then raw usage, then summed steps.
