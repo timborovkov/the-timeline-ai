@@ -1579,7 +1579,7 @@ describe('writeIntegrationEvents visibility', () => {
       teamId: TEAM_ID,
       rawEventId: eventId,
     });
-    expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId: eventId });
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
     const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
