@@ -104,14 +104,14 @@ BILLING_CHARGES_ENABLED=false
         preserve an administrator-selected paid cap, including €0 as a hard stop. Settlement that
         exceeds the reserved wallet or paid spend cap still records the full ledger charge and
         freezes the workspace. Document uploads are blocked in every non-reservable billing state.
-        Refunds of the €10 top-up debit the prepaid
-        wallet, serialize concurrent <code>refund.created</code> /
-        <code>order.refunded</code> totals, and freeze the workspace if that credit was already
-        spent. Refunds that arrive before <code>order.paid</code> are stored and applied when the
-        top-up credits. Local usage settlement is independent of Polar ingest: prepaid wallet and
-        included discount already collect locally, so those units are not sent to Polar meters.
-        Remaining Polar ingest uses a ledger outbox that claims a row before ingesting, Polar
-        receives a stable event id, and a failed ingest does not undo a committed charge.
+        Refunds of the €10 top-up debit the prepaid wallet, serialize concurrent
+        <code>refund.created</code> / <code>order.refunded</code> totals, and freeze the workspace
+        if that credit was already spent. Refunds that arrive before <code>order.paid</code> are
+        stored and applied when the top-up credits. Local usage settlement is independent of Polar
+        ingest: prepaid wallet and included discount already collect locally, so those units are not
+        sent to Polar meters. Remaining Polar ingest uses a ledger outbox that claims a row before
+        ingesting, Polar receives a stable event id, and a failed ingest does not undo a committed
+        charge.
       </p>
 
       <h2>Public and app surfaces</h2>

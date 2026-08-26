@@ -216,7 +216,8 @@ describe('billing capacity (not Polar meters)', () => {
     await expect(
       assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalBytes: 1 }),
     ).rejects.toMatchObject({
-      message: "This team's billing is paused, so new files cannot be uploaded until billing is restored.",
+      message:
+        "This team's billing is paused, so new files cannot be uploaded until billing is restored.",
     });
   });
 

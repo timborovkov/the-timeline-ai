@@ -295,7 +295,10 @@ async function cancelMatchingSubscription(input: {
       .select({ id: billingFreeGrants.id })
       .from(billingFreeGrants)
       .where(
-        and(eq(billingFreeGrants.assignedTeamId, input.teamId), isNull(billingFreeGrants.revokedAt)),
+        and(
+          eq(billingFreeGrants.assignedTeamId, input.teamId),
+          isNull(billingFreeGrants.revokedAt),
+        ),
       )
       .limit(1);
     await tx
@@ -304,7 +307,8 @@ async function cancelMatchingSubscription(input: {
         billingState: grant ? 'free' : 'restricted',
         planId: 'free',
         spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
-        polarEventModifiedAt: input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? new Date(),
+        polarEventModifiedAt:
+          input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? new Date(),
         updatedAt: new Date(),
       })
       .where(
