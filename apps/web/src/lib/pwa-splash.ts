@@ -1,12 +1,14 @@
 import type { Metadata, Viewport } from 'next';
 
+type AppleWebAppConfig = Exclude<NonNullable<Metadata['appleWebApp']>, boolean>;
+
 /** Matches the home-screen icon field and Android Chrome splash. */
 export const PWA_BACKGROUND_COLOR = '#0a0e0d';
 export const PWA_FOREGROUND_COLOR = '#f5f5f5';
 export const PWA_SIGNAL_COLOR = '#b5ea4a';
 
 /** Light `--bg` (`oklch(0.99 0.002 240)`) for browser chrome before install. */
-export const PWA_LIGHT_THEME_COLOR = '#fbfcfc';
+const PWA_LIGHT_THEME_COLOR = '#fbfcfc';
 
 /** Matches `apps/web/src/app/icon.svg` viewBox. */
 export const APP_MARK_VIEWBOX = 54;
@@ -58,7 +60,7 @@ export function appleSplashPath(width: number, height: number): string {
   return `/splash/apple-${width}-${height}.png`;
 }
 
-export function appleSplashPixelSizes(): Array<{ width: number; height: number }> {
+export function appleSplashPixelSizes(): { width: number; height: number }[] {
   return APPLE_SPLASH_DEVICES.flatMap((device) => [
     { width: device.width, height: device.height },
     { width: device.height, height: device.width },
@@ -74,21 +76,20 @@ function appleSplashMedia(
   return `(device-width: ${deviceWidth}px) and (device-height: ${deviceHeight}px) and (-webkit-device-pixel-ratio: ${scaleFactor}) and (orientation: ${orientation})`;
 }
 
-export const appleStartupImages: NonNullable<NonNullable<Metadata['appleWebApp']>['startupImage']> =
-  APPLE_SPLASH_DEVICES.flatMap((device) => {
-    const cssWidth = device.width / device.scaleFactor;
-    const cssHeight = device.height / device.scaleFactor;
-    return [
-      {
-        url: appleSplashPath(device.width, device.height),
-        media: appleSplashMedia(cssWidth, cssHeight, device.scaleFactor, 'portrait'),
-      },
-      {
-        url: appleSplashPath(device.height, device.width),
-        media: appleSplashMedia(cssHeight, cssWidth, device.scaleFactor, 'landscape'),
-      },
-    ];
-  });
+export const appleStartupImages = APPLE_SPLASH_DEVICES.flatMap((device) => {
+  const cssWidth = device.width / device.scaleFactor;
+  const cssHeight = device.height / device.scaleFactor;
+  return [
+    {
+      url: appleSplashPath(device.width, device.height),
+      media: appleSplashMedia(cssWidth, cssHeight, device.scaleFactor, 'portrait'),
+    },
+    {
+      url: appleSplashPath(device.height, device.width),
+      media: appleSplashMedia(cssHeight, cssWidth, device.scaleFactor, 'landscape'),
+    },
+  ];
+});
 
 export const appleWebApp = {
   capable: true,
@@ -96,7 +97,7 @@ export const appleWebApp = {
   // Non-overlaying: black-translucent draws under the status bar without safe-area padding.
   statusBarStyle: 'black',
   startupImage: appleStartupImages,
-} satisfies NonNullable<Metadata['appleWebApp']>;
+} satisfies AppleWebAppConfig;
 
 export const pwaViewport = {
   width: 'device-width',

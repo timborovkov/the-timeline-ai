@@ -15,7 +15,6 @@ import {
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const MARK_RATIO = 0.22;
-const COLOR_BG = 0;
 const COLOR_FG = 1;
 const COLOR_SIGNAL = 2;
 
