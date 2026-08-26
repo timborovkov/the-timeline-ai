@@ -71,7 +71,8 @@ function defaultSpendCapForPlan(planId: BillingPlanId): number {
 function polarIngestEventFromMetadata(
   metadata: Record<string, unknown> | null | undefined,
 ): PolarUsageEvent | null {
-  const status = metadata?.polar_ingest_status;
+  if (!metadata) return null;
+  const status = metadata.polar_ingest_status;
   if (status !== 'pending' && status !== 'in_progress') return null;
   const name = metadata.polar_ingest_name;
   const units = metadata.polar_ingest_units;
