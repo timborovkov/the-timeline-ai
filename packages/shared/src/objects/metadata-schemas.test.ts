@@ -32,23 +32,40 @@ describe('object metadata schemas', () => {
     });
   });
 
-  it('rejects metadata patches for unsupported object types', () => {
-    expect(parseObjectMetadataPatch('project', { domain: 'x.example' })).toEqual({
-      ok: false,
-      error: 'Metadata editing is not supported for project objects',
+  it('accepts arbitrary custom metadata keys for any object type', () => {
+    expect(parseObjectMetadataPatch('project', { region: 'EMEA' })).toEqual({
+      ok: true,
+      patch: { region: 'EMEA' },
+    });
+    expect(parseObjectMetadataPatch('person', { role: 'Lead', badge: 'VIP' })).toEqual({
+      ok: true,
+      patch: { role: 'Lead', badge: 'VIP' },
     });
   });
 
-  it('returns readable metadata entries for known and legacy keys', () => {
+  it('rejects reserved and contact metadata keys', () => {
+    expect(parseObjectMetadataPatch('company', { fixture_version: 'x' })).toEqual({
+      ok: false,
+      error: 'Metadata key “fixture_version” is reserved',
+    });
+    expect(parseObjectMetadataPatch('person', { email: 'a@b.example' })).toEqual({
+      ok: false,
+      error: 'Use Contact for email, not Details',
+    });
+  });
+
+  it('hides internal and contact keys from readable metadata entries', () => {
     expect(
       readableMetadataEntries('person', {
         role: 'Customer lead',
         email: 'elena@example.com',
         display_title: 'hidden',
+        fixture_version: 'demo-seed-v1',
+        note: 'Preferred contact via Slack',
       }),
     ).toEqual([
       { key: 'role', value: 'Customer lead' },
-      { key: 'email', value: 'elena@example.com' },
+      { key: 'note', value: 'Preferred contact via Slack' },
     ]);
   });
 });

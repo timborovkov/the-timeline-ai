@@ -81,6 +81,7 @@ export interface CorpusObject {
   dueAt?: string | null;
   taskCategory?: string | null;
   metadata?: Record<string, unknown>;
+  identityFacets?: Array<{ kind: 'email' | 'phone'; value: string }>;
 }
 
 export interface CorpusDocument {
@@ -996,7 +997,8 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Elena'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { email: 'elena.park@northstar.example', role: 'Customer lead' },
+    metadata: { role: 'Customer lead' },
+    identityFacets: [{ kind: 'email', value: 'elena.park@northstar.example' }],
   },
   {
     n: 3,
@@ -1014,7 +1016,8 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Priya'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { email: 'priya.shah@northwind.example', role: 'Partner' },
+    metadata: { role: 'Partner' },
+    identityFacets: [{ kind: 'email', value: 'priya.shah@northwind.example' }],
   },
   {
     n: 5,
@@ -1288,7 +1291,8 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Dana Cole',
     status: 'active',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { email: 'dana.cole@brightline.example', role: 'Buyer' },
+    metadata: { role: 'Buyer' },
+    identityFacets: [{ kind: 'email', value: 'dana.cole@brightline.example' }],
   },
   {
     n: 36,
