@@ -31,14 +31,14 @@ const TRUST_SIGNALS = [
   },
   {
     label: 'Meeting media',
-    value: '1 hour requested',
-    detail:
-      'Recall.ai processes it; Timeline stores the transcript, not the call recording. Live deletion evidence remains pending.',
+    value: '1 hour by default',
+    detail: 'Recall.ai processes it; Timeline stores the transcript, not the call recording.',
   },
   {
     label: 'Advertising trackers',
     value: 'None',
-    detail: 'No behavioral advertising. Public browser analytics remains a blocked consent target.',
+    detail:
+      'No behavioral advertising, heatmaps, or replay. Optional public analytics requires consent.',
   },
 ] as const;
 
@@ -64,7 +64,7 @@ const DATA_PATH = [
 const PROVIDERS = [
   [
     'Railway',
-    'App, workers, PostgreSQL, Redis, and the signed-file transfer endpoint; private-network deployment is required but not yet evidenced',
+    'App, workers, PostgreSQL, Redis, private server traffic, and the signed-file transfer endpoint',
   ],
   ['OpenRouter', 'Privacy-filtered routing to eligible AI inference endpoints'],
   [
@@ -75,7 +75,7 @@ const PROVIDERS = [
   ['Postmark', 'Transactional and inbound email'],
   [
     'PostHog',
-    'Conditional product telemetry; the approved public-only browser design remains blocked pending consent controls and provider evidence',
+    'Personless surface totals, pseudonymous product events, and consent-gated public-browser analytics; provider evidence remains pending',
   ],
   ['Sentry', 'Minimized error diagnostics with targeted credential and URL redaction'],
   ['Cloudflare Turnstile', 'Abuse prevention on public forms and password signup'],
@@ -112,8 +112,7 @@ function TrustProvidersSection() {
               <Link className="text-fg underline underline-offset-4" href="/privacy">
                 Privacy Policy
               </Link>
-              . Current browser storage and the not-yet-deployed public analytics consent target are
-              in the{' '}
+              . Current browser storage and public analytics choices are in the{' '}
               <Link className="text-fg underline underline-offset-4" href="/cookies">
                 Cookies and similar technologies notice
               </Link>
@@ -150,11 +149,11 @@ function TrustAssuranceSection({ securityEmail }: { securityEmail: string }) {
                 </h3>
                 <p className="mt-4 text-sm leading-7 text-fg-muted">
                   Public source, team and visibility boundaries, encrypted secrets, meeting consent
-                  controls, and a maintained provider register. The optional public browser
-                  analytics target is not claimed as deployed: the current protected-route
-                  integration must stay unconfigured until it is removed, affirmative consent and
-                  withdrawal work, and provider/account evidence is complete. AI account evidence
-                  also remains a deployment checklist item until captured.
+                  controls, and a maintained provider register. Browser analytics is confined to
+                  reviewed public pages and waits for affirmative consent; protected workspace
+                  routes do not load it. Personless surface streams and pseudonymous product events
+                  use separate server paths. Provider/account evidence and AI account evidence
+                  remain deployment checklist items until captured.
                 </p>
               </article>
               <article className="bg-bg p-7 sm:p-8">
@@ -372,12 +371,11 @@ export default async function TrustPage() {
                     Infrastructure with fewer hidden hops.
                   </h2>
                   <p className="mt-5 text-base leading-8 text-fg-muted">
-                    Railway hosts the web app, workers, PostgreSQL, and Redis. The required hosted
-                    topology puts Qdrant and RustFS server traffic on Railway&apos;s private network
-                    and exposes RustFS over HTTPS only for team-authorized, short-lived signed
-                    browser transfers, with non-public buckets. Deployment evidence for that network
-                    and bucket configuration is still pending. OAuth, API, and MCP secrets use
-                    AES-256-GCM authenticated encryption at rest.
+                    Railway hosts the web app, workers, PostgreSQL, and Redis. Qdrant vector search
+                    and RustFS object storage use Railway&apos;s private network for server traffic
+                    and persistent volumes. RustFS also exposes HTTPS for team-authorized,
+                    short-lived signed browser transfers; its buckets are not public. OAuth, API,
+                    and MCP secrets use AES-256-GCM authenticated encryption at rest.
                   </p>
                 </div>
                 <div>

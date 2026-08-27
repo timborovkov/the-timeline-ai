@@ -33,6 +33,11 @@ const recallWebhookSecretSchema = z.preprocess(
     .optional(),
 );
 
+const reviewedPostHogServerHost = z.url().refine((value) => {
+  const url = new URL(value);
+  return !url.username && !url.password && url.origin === 'https://eu.i.posthog.com';
+}, 'POSTHOG_HOST must use the reviewed EU PostHog ingestion origin');
+
 function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...raw,
@@ -363,10 +368,21 @@ const baseSchema = z.object({
   SENTRY_PROJECT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
-  // PostHog product analytics + feature flags. Browser-facing values are
-  // intentionally public; server helpers no-op when the project key is unset.
-  NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
-  NEXT_PUBLIC_POSTHOG_HOST: z.url().default('https://eu.i.posthog.com'),
+  // PostHog product analytics. Server and browser keys are deliberately
+  // separate so private product events never depend on a browser-visible key.
+  POSTHOG_PROJECT_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POSTHOG_HOST: z.preprocess(
+    emptyStringAsUnset,
+    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+  ),
+  ANALYTICS_PSEUDONYMIZATION_KEY: z.preprocess(emptyStringAsUnset, z.string().min(32).optional()),
+  // These public values are used only by the affirmative-consent public-site
+  // client. Authenticated routes must not import or initialize that client.
+  NEXT_PUBLIC_POSTHOG_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  NEXT_PUBLIC_POSTHOG_HOST: z.preprocess(
+    emptyStringAsUnset,
+    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+  ),
 
   // Phase 10 — Meeting bots. The workspace verification secret signs both
   // status and realtime transcript deliveries. Accounts created before

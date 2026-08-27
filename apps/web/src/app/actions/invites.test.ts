@@ -50,6 +50,7 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/active-team', () => ({
   ACTIVE_TEAM_COOKIE: 'timeline_active_team',
   activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+  serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
 }));
 vi.mock('@/lib/default-team', () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }));
 vi.mock('@/lib/legal', () => ({
@@ -200,7 +201,7 @@ describe('acceptInviteAction', () => {
     expect(fakes.fakeClearPendingInvite).toHaveBeenCalledOnce();
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
   });
@@ -280,7 +281,7 @@ describe('acceptRecipientInviteAction', () => {
     ]);
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
   });

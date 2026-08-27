@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/lib/db', () => ({ db: { select: vi.fn() } }));
+import {
+  activeTeamCookieOptions,
+  parseActiveTeamCookie,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team-cookie';
 
-const { activeTeamCookieOptions } = await import('@/lib/active-team');
+const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -26,5 +30,25 @@ describe('active-team cookie privacy options', () => {
     vi.stubEnv('NODE_ENV', 'development');
 
     expect(activeTeamCookieOptions().secure).toBe(false);
+  });
+
+  it('accepts current and legacy UUID values without accepting arbitrary input', () => {
+    expect(parseActiveTeamCookie(`v2:${TEAM_ID}`)).toEqual({
+      teamId: TEAM_ID,
+      needsMigration: false,
+    });
+    expect(parseActiveTeamCookie(TEAM_ID.toUpperCase())).toEqual({
+      teamId: TEAM_ID,
+      needsMigration: true,
+    });
+    expect(parseActiveTeamCookie('v2:not-a-team')).toBeNull();
+    expect(parseActiveTeamCookie('not-a-team')).toBeNull();
+  });
+
+  it('serializes only valid team UUIDs into the current value format', () => {
+    expect(serializeActiveTeamCookie(TEAM_ID)).toBe(`v2:${TEAM_ID}`);
+    expect(() => serializeActiveTeamCookie('not-a-team')).toThrow(
+      'Active team cookie requires a UUID',
+    );
   });
 });

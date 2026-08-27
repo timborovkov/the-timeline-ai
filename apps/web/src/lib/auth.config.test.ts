@@ -6,8 +6,12 @@ import type { Session } from 'next-auth';
 import { authorizeProductRequest, hasCurrentLegalSession } from '@/lib/auth.config';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 
-function request(path: string): NextRequest {
-  return new NextRequest(`https://timeline.test${path}`);
+const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+
+function request(path: string, activeTeamCookie?: string): NextRequest {
+  return new NextRequest(`https://timeline.test${path}`, {
+    headers: activeTeamCookie ? { cookie: `tl_active_team=${activeTeamCookie}` } : undefined,
+  });
 }
 
 function session(current = true): Session {
@@ -32,7 +36,28 @@ describe('hasCurrentLegalSession', () => {
 
 describe('authorizeProductRequest', () => {
   it('keeps the existing sign-in gate for unauthenticated app requests', () => {
-    expect(authorizeProductRequest({ auth: null, request: request('/app/timeline') })).toBe(false);
+    const result = authorizeProductRequest({
+      auth: null,
+      request: request('/app/timeline?view=all', TEAM_ID),
+    });
+
+    expect(result).toBeInstanceOf(Response);
+    const response = result as Response;
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://timeline.test/sign-in?callbackUrl=https%3A%2F%2Ftimeline.test%2Fapp%2Ftimeline%3Fview%3Dall',
+    );
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+  });
+
+  it('does not slide or delete a current active-team cookie during sign-in redirect', () => {
+    const result = authorizeProductRequest({
+      auth: null,
+      request: request('/app/timeline', `v2:${TEAM_ID}`),
+    });
+
+    expect(result).toBeInstanceOf(Response);
+    expect((result as Response).headers.has('set-cookie')).toBe(false);
   });
 
   it('allows users with current signed legal claims into the product', () => {

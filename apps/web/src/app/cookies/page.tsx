@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
+import { CookieSettingsButton } from '@/components/public-analytics';
 import { getLegalContactEmail } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
 
@@ -110,16 +111,59 @@ function CurrentBrowserStorage() {
           </tr>
           <tr>
             <td>
-              <strong>am_vid</strong>, <strong>am_sid</strong>, and <strong>am_st</strong> in local
-              storage, written by a legacy Convex-hosted page tracker with persistent visitor and
-              session identifiers.
+              <strong>tl_analytics_consent</strong>, a first-party cookie lasting up to 180 days.
             </td>
             <td>
-              This tracker currently loads without an analytics choice and can send the full page
-              URL, referrer, campaign parameters, language, screen dimensions, scroll depth, and
-              time on page. It violates the approved boundary and is scheduled for removal and
-              historical-data review by the analytics owner. This privacy worktree must not be
-              deployed on its own.
+              Remember the version, accepted or rejected analytics choice, and choice time. A
+              rejection contains no PostHog, account, user, team, session, or device identifier.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <strong>tl_public_attribution</strong>, a first-party cookie lasting up to 30 days,
+              created only after analytics is accepted and a reviewed UTM parameter is present.
+            </td>
+            <td>
+              Remember the first reviewed source, medium, campaign category, and first-touch time
+              for registration attribution. Only reviewed categories, including an explicit “other”
+              category, are stored. Unknown or free-text values, click IDs, and other query values
+              are discarded.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <strong>ph_timeline_public_analytics_v1</strong> in local storage, created only after
+              analytics is accepted on an eligible public page. PostHog can also keep bounded
+              session-window keys with that prefix.
+            </td>
+            <td>
+              Maintain a pseudonymous public-site visitor and session for manual, allowlisted
+              PostHog events. It is not identified, aliased, or grouped to an account, user, or
+              team, and it is cleared when analytics is rejected or withdrawn.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <strong>tl_posthog_consent_v1</strong> in local storage after analytics is accepted on
+              an eligible public page. It remains until Timeline removes it, the value is replaced,
+              or browser data is cleared.
+            </td>
+            <td>
+              Let the PostHog SDK apply the separate Timeline analytics choice without sending an
+              opt-in event. Timeline removes it when analytics is rejected or withdrawn and before
+              entering a private app route.
+            </td>
+          </tr>
+          <tr>
+            <td>
+              Legacy <strong>am_vid</strong>, <strong>am_sid</strong>, and <strong>am_st</strong>
+              values may remain in browsers that previously loaded the removed Convex-hosted page
+              tracker.
+            </td>
+            <td>
+              Current source no longer writes or sends these values. Rejecting or withdrawing in
+              Cookie settings clears them. Historical provider data and the old deployment still
+              require an operator review before any deletion claim.
             </td>
           </tr>
         </tbody>
@@ -136,22 +180,18 @@ function CurrentBrowserStorage() {
 function AnalyticsStatusAndTarget() {
   return (
     <>
-      <h2>2. Browser analytics: current status and approved target</h2>
+      <h2>2. Optional public browser analytics</h2>
       <p>
-        <strong>This is a notice, not a consent control.</strong> Reading this page does not record
-        a choice. The current repository does not yet include an analytics-consent preference or a
-        working Cookie settings control. It contains a conditional PostHog browser integration in
-        protected workspace routes which, when configured, identifies a user and team and can use
-        PostHog cookie and local-storage persistence. That does not meet the approved target below.
-        The hosted browser key must remain unset until the protected-route integration is removed
-        and the consent design is implemented and verified. The legacy Convex tracker listed above
-        is a separate, current violation; its runtime removal belongs to the analytics branch.
+        The source-controlled Cookie settings control records a separate analytics choice. Reading
+        this notice alone does not accept analytics. If this deployment has no reviewed PostHog
+        browser key, the control reports analytics as unavailable and cannot record an acceptance
+        that silently activates later.
       </p>
-      <p>The approved target for any future optional browser analytics is:</p>
+      <p>When optional analytics is configured and accepted:</p>
       <ul>
         <li>
-          PostHog may run only on eligible public marketing, help, and legal pages, and only after a
-          visitor makes a separate affirmative analytics choice.
+          PostHog loads only on source-allowlisted public marketing, help-article, Trust, and legal
+          pages after a separate affirmative choice.
         </li>
         <li>
           PostHog must not initialize in signed-in or private workspace routes and must never
@@ -167,21 +207,22 @@ function AnalyticsStatusAndTarget() {
           event allowlist remain off.
         </li>
         <li>
-          A separate server counter may keep identifier-free aggregate totals for public pages. It
-          records a route bucket and count only—not a browser, visitor, session, user, or team ID—so
-          an analytics rejection does not disable that aggregate count.
+          A separate server counter may keep personless surface-request totals for broad public page
+          categories. It does not carry a browser, visitor, session, user, or team identifier. Bots
+          and retries can contribute, so these totals are not visitor or session metrics. An
+          analytics rejection does not disable this separate count.
         </li>
       </ul>
       <p>
-        This target is a release condition, not a claim that a consent manager or public-page
-        PostHog deployment exists today.
+        A public PostHog identity is pseudonymous, not anonymous. Production region, retention,
+        account access, contract, deletion, and configuration evidence must still be verified before
+        stronger deployment claims are made.
       </p>
 
-      <h2>3. Information required before optional analytics can be enabled</h2>
+      <h2>3. Implementation and deployment status</h2>
       <p>
-        The analytics owner must replace every “not recorded” value below and verify it against the
-        deployed browser, provider account, contract, and deletion path. Until then, optional
-        browser analytics must stay disabled.
+        Repository controls can enforce the browser boundary, but they cannot prove provider-account
+        or production settings. The analytics owner must verify the remaining deployment values.
       </p>
       <table>
         <thead>
@@ -193,27 +234,41 @@ function AnalyticsStatusAndTarget() {
         <tbody>
           <tr>
             <td>Consent-choice storage name, scope, and lifetime</td>
-            <td>Not recorded — do not enable.</td>
+            <td>tl_analytics_consent; first party; service-wide path; up to 180 days.</td>
           </tr>
           <tr>
-            <td>PostHog cookie and local-storage names, scope, and lifetimes</td>
-            <td>Not recorded for the approved public-only design — do not enable.</td>
+            <td>PostHog browser storage</td>
+            <td>
+              Local-storage-only persistence named ph_timeline_public_analytics_v1; exact provider
+              retention remains unverified.
+            </td>
           </tr>
           <tr>
             <td>PostHog project host, processing region, and account access</td>
-            <td>Not verified — do not enable.</td>
+            <td>
+              EU Cloud project reviewed 26 August 2026. Production access and deployment evidence
+              remain incomplete — do not enable optional browser analytics yet.
+            </td>
           </tr>
           <tr>
-            <td>Event and property allowlist, IP handling, and geolocation settings</td>
-            <td>Not approved for the public-only design — do not enable.</td>
+            <td>Event and property allowlist</td>
+            <td>
+              Manual public_page_viewed and public_cta_clicked events with fixed surface and action
+              values. Project-level client IP discard is enabled; production payload evidence
+              remains open.
+            </td>
           </tr>
           <tr>
             <td>Provider retention, deletion workflow, DPA, and transfer safeguard</td>
-            <td>Not verified — do not enable.</td>
+            <td>
+              Pay-as-you-go currently documents seven-year product-event retention, which exceeds
+              Timeline's 90-day target. Legacy deletion is queued; completion, DPA, and transfer
+              evidence remain open — do not enable optional browser analytics yet.
+            </td>
           </tr>
           <tr>
-            <td>Deployed date, responsible owner, and passing consent-route tests</td>
-            <td>Not recorded — this notice does not claim deployment.</td>
+            <td>Deployed date, responsible owner, and production canary</td>
+            <td>Not yet recorded — repository implementation is not production evidence.</td>
           </tr>
         </tbody>
       </table>
@@ -226,12 +281,14 @@ function ChoicesAndOtherServices() {
     <>
       <h2>4. Choosing, rejecting, and withdrawing</h2>
       <p>
-        There is no Cookie settings button on this page because showing a control that does not work
-        would be misleading. If optional public browser analytics is enabled later, eligible public
-        pages must show a real settings control that makes accepting and rejecting equally
-        accessible. The same control must let you withdraw later. Withdrawal must stop future
-        PostHog browser collection and remove its browser-side identifiers; it does not change the
-        lawfulness of earlier processing or automatically erase provider records already received.
+        Use Cookie settings to accept, reject, or withdraw optional public analytics. Rejecting and
+        accepting are equally available when PostHog is configured. Withdrawal stops future browser
+        collection and clears Timeline's public PostHog, attribution, and legacy Convex tracker
+        storage from this browser. It does not change the lawfulness of earlier processing or
+        automatically erase provider records already received.
+      </p>
+      <p>
+        <CookieSettingsButton className="inline-flex rounded-sm border border-border px-3 py-2 font-medium text-fg hover:bg-surface" />
       </p>
       <p>
         You can also delete or block cookies and site storage in your browser. Doing so can sign you
@@ -276,7 +333,7 @@ export default function CookiesPage() {
     <LegalPage
       eyebrow={`Notice · Last reviewed ${REVIEW_DATE}`}
       title="Cookies and similar technologies"
-      description="What The Timeline currently stores in your browser, what is necessary for the service, and the consent boundary required before optional public analytics can be enabled."
+      description="What The Timeline stores in your browser, what is necessary for the service, and how to control optional public analytics."
     >
       <p>
         This notice supplements our <Link href="/privacy">Privacy Policy</Link> and the concise{' '}

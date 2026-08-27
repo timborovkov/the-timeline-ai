@@ -410,19 +410,27 @@ evidence. Public copy must keep this distinction clear.
 
 ## 10. Analytics, cookies, logging, and monitoring
 
-The normative target is defined in the
+The normative contract is defined in the
 [privacy and analytics implementation interface](./privacy-analytics-interface.md).
-It is **Required**, not a claim that the current runtime, deployment, or provider
-account already enforces it. G-03 and G-10 remain open until the analytics
-implementation branch returns the specified tests and production evidence.
+The current source implements that runtime boundary with focused tests. The
+[2026-08-26 PostHog account review](./research/posthog-rollout-evidence-2026-08-26.md)
+verifies part of the provider configuration, but it is not production evidence.
+G-03 and G-10 remain partial until the specified deployment, contract,
+retention, deletion, and canary evidence is retained.
 
-The target has four analytics paths and one separate reliability path:
+The current source has four analytics paths and one separate reliability path:
 
-1. **Identifier-free aggregate public request counts are always on.** They run
-   server-side on allowlisted public routes and persist only pre-aggregated,
-   coarse counters. They do not read browser consent or include a user, team,
-   device, session, cookie, request, IP, user-agent, referrer, URL parameter, or
-   PostHog identifier.
+1. **Personless public and app surface-request streams are always on.** They run
+   server-side on allowlisted route templates and use one fixed, non-visitor
+   PostHog stream ID for public requests and another for authenticated app
+   requests. The only variable property is an allowlisted surface enum. They do
+   not read browser consent or include a visitor, user, team, device, session,
+   cookie, client-request IP, user-agent, referrer, campaign, URL parameter, or
+   Customer Content value. PostHog receives only the server connection and
+   reviewed SDK transport metadata (project key, stream ID, event name, SDK
+   server marker, SDK name/version, UUID/timestamps, and GeoIP-disable flag); GeoIP enrichment is
+   disabled. None of those fields is derived from the request. These events support totals only, not unique
+   visitors, sessions, retention, or returning-user analysis.
 2. **Public browser analytics is optional.** It may run only after affirmative
    analytics consent and only on allowlisted public routes. Before a choice,
    after rejection, and after withdrawal there must be zero browser PostHog
@@ -433,16 +441,16 @@ The target has four analytics paths and one separate reliability path:
    weaken the private boundary or link the public identity to an account.
 4. **Authenticated product analytics is explicit server/worker processing.**
    Each event has a named purpose, owner, exact runtime-validated schema, and
-   legal basis. It is content-free and uses an opaque user/team identifier only
-   when the approved event contract requires correlation. Browser consent does
-   not authorize this separate path.
+   legal basis. It is content-free and requires a validated user or team actor
+   whose raw ID is HMAC-pseudonymized before capture. Browser consent does not
+   authorize this separate path or connect that actor to a public identity.
 5. **Sentry is separate reliability/security monitoring.** It does not share a
    PostHog identity or turn analytics consent into error-monitoring consent. Its
    minimization, scrubber, provider, retention, and legal-basis controls remain
    independently subject to G-11.
 
-Declining optional browser analytics does not affect the aggregate public
-request counts and must not affect public content, signup, authentication,
+Declining optional browser analytics does not affect the personless server
+surface streams and must not affect public content, signup, authentication,
 invitations, or authenticated product features. The consent interface must
 explain this distinction and provide equally clear accept and reject actions,
 an easy withdrawal control, and a minimal necessary record that remembers the
@@ -460,9 +468,10 @@ prompts, outputs, transcripts, documents, cookies, headers, arbitrary errors,
 and uploaded or customer content are prohibited. Public PostHog identities must
 never be identified, aliased, or grouped to an account, user, or team.
 
-Legacy Convex pageview code, deployed behavior, logs, token URLs, deletion, and
-credential rotation remain an analytics/security handoff under G-03. This
-standard does not infer deployment state from a worktree removal.
+The legacy Convex pageview import is removed from the current source and guarded
+by a regression test. Deployed behavior, logs, token URLs, retained data,
+deletion, and credential rotation remain an analytics/security handoff under
+G-03. This standard does not infer deployment state from a worktree removal.
 
 The public and authenticated product may use strictly necessary cookies or
 browser storage for authentication, active-team and invite state, security,
@@ -471,9 +480,10 @@ Turnstile is conditional anti-abuse processing on signup and support forms. Do
 not label all storage as “cookies” or all cookies as analytics; document purpose,
 lifetime, and provider accurately.
 
-Sentry is conditional error monitoring. The required target keeps default PII
-collection and session replay disabled, scrubs known secret-bearing headers and
-URLs, and minimizes production trace/profile sampling. Exception text can still
+Sentry is conditional error monitoring. The current source keeps default PII
+collection and session replay disabled, removes request cookies and all request
+headers from events and transactions, sanitizes request URLs and breadcrumbs,
+and minimizes production trace/profile sampling. Exception text can still
 contain unexpected customer data, so deployed configuration, sample events,
 and scrubbers require review before an **Enforced** or **Verified** claim.
 
@@ -499,7 +509,7 @@ sentence.
 | Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Hosted production requests one-hour media retention and rejects another configured value; deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
 | Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
 | Postmark | Transactional/support email and inbound email payloads | Required when configured; retention, tracking, DPA and support access are **Gap** |
-| PostHog | Consent-gated, allowlisted public browser events and explicit minimized server/worker product events | Interface is **Required** but runtime enforcement is pending the analytics branch; project region, retention, IP/geolocation, profiles, access, DPA, transfers, deletion, and production evidence are **Gap** |
+| PostHog | Fixed-stream personless surface requests, consent-gated allowlisted public-browser events, and pseudonymous minimized server/worker product events | Runtime controls are implemented. The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, and a pinned Launch dashboard shell. Pay-as-you-go retention, contracts/transfers, deletion completion, populated insights, and production canaries remain **Gap**. |
 | Sentry | Error monitoring and source-map processing | PII defaults and scrubbers are **Enforced**; project region, retention, AI options and sample audit are **Gap** |
 | Cloudflare Turnstile | Signup/support anti-abuse browser signals | **Conditional**; DPA and legal-basis record are **Gap** |
 
@@ -567,7 +577,7 @@ a soft-delete flag alone is not a complete deletion claim.
 | Recall.ai | Timeline requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
 | Daytona | Ephemeral sandbox state is discarded/deleted; observability data may remain three days | Never equate ephemeral compute with zero provider retention |
 | Postmark | Public default message retention is 45 days, configurable no lower than seven days; actual account setting is unverified | Name Postmark and avoid a shorter unverified promise |
-| PostHog | Target is zero browser capture/identifier before consent or after rejection, public-route-only browser analytics after opt-in, and explicit minimized server/worker events; runtime and project retention remain unverified | Public copy may describe the current gap and target when explicitly qualified; make no claim that the target is deployed or enforced, and no unverified retention or “anonymous” claim, until G-10 closes |
+| PostHog | Current source enforces zero browser capture/identifier before valid consent or after rejection, public-route-only browser analytics after opt-in, fixed personless surface streams, and explicit minimized server/worker events. The EU account review verifies disabled automatic capture and IP discard. Pay-as-you-go documents seven-year product-event retention, which exceeds the 90-day target; production and deletion completion remain unverified. | Public copy may describe the source-enforced product design and the dated account review. Do not claim that it is deployed, that retention is 90 days, that queued deletion is complete, or that pseudonymous analytics is anonymous until G-10 closes. |
 | Sentry | Account retention is unverified | Describe minimized error monitoring, not a retention period |
 | LangSmith | Production tracing is rejected | Development traces must use synthetic/approved data and follow the selected account retention |
 | Connected services | Source retention remains controlled by the customer's provider; Timeline retains captured copies separately | Disconnecting is not deletion from either system |
@@ -652,9 +662,10 @@ Every change must preserve these rules:
 - Webhooks authenticate signatures or strong shared secrets before processing;
   logs never expose webhook URLs or tokens.
 - Analytics and logs follow section 10 and the privacy/analytics interface:
-  aggregate public counts stay identifier-free, optional browser analytics is
-  consent-gated and public-route-only, private routes load no browser analytics,
-  and authenticated events are explicit server/worker calls.
+  personless surface streams use fixed non-visitor IDs and allowlisted enums,
+  optional browser analytics is consent-gated and public-route-only, private
+  routes load no browser analytics, and authenticated events are explicit
+  pseudonymous server/worker calls.
 - Files are untrusted, size-bounded, type-checked, and accessed through
   authorized short-lived URLs.
 - New providers and outbound domains complete the provider review in section 11
@@ -723,8 +734,8 @@ Public claims must be specific, time-bounded where needed, and tied to evidence.
 - A deletion duration not proven across active stores, backups, vectors, queues,
   and providers.
 - “No browser tracking,” “rejecting creates no identifier,” or “private routes
-  never load analytics” until G-10's runtime,
-  provider-account, and production evidence is complete.
+  never load analytics” as a deployed fact until G-10's provider-account and
+  deployment evidence is complete.
 - “Anonymous analytics” when stable user or team identifiers are processed.
 - “Open source” or “anyone may self-host” until a repository license grants those
   rights.
@@ -748,14 +759,14 @@ item requires dated evidence stored in the internal control file.
 | --- | --- | --- | --- | --- |
 | G-01 | **OPEN / blocker** | **TBD: founders + counsel** | Choose repository license after contributor/IP review; commit the license and contribution terms | “Open source” and general self-hosting rights |
 | G-02 | **PARTIAL: role policy + canary code implemented** | **TBD: AI/platform** | Run and lock the 24-language transcription bake-off; generate the key/guardrail/catalog/policy-bound runtime attestation; use an operator-only management key to capture dated evidence of the exact inference-key assignment, `allowed_models`, guardrail/ZDR settings, logging/sharing/Broadcast/cache settings, current DPA/subprocessors, and scheduled synthetic plus registry canaries. Never deploy the management key to web or worker runtime. | Verified hosted ZDR-by-role and no-training claims; any transcription-model migration |
-| G-03 | **OPEN / analytics handoff** | **TBD: analytics + security** | Verify and remove any legacy Convex pageview code and deployed path; inspect prior logs/ownership and token URLs, delete retained data where possible, rotate still-valid credentials if affected, and retain dated runtime/deployment evidence | Complete tracker inventory and legacy analytics incident closure |
+| G-03 | **PARTIAL: source removed** | **TBD: analytics + security** | Current source and regression tests remove the legacy Convex pageview import. Verify the deployed path; inspect prior logs/ownership and token URLs, export anything that must be retained, delete tracker-only data/deployment where proven safe, rotate still-valid credentials if affected, and retain dated evidence. | Complete tracker inventory and legacy analytics incident closure |
 | G-04 | **OPEN / blocker** | **TBD: founders + counsel** | Resolve Railway and Daytona special-category-data DPA mismatch or technically restrict unsupported data | Regulated/special-category hosted use |
 | G-05 | **OPEN** | **TBD: infrastructure** | Record Railway region per service/volume, public networking, storage encryption, log retention, backup schedule, and successful restore test | Residency, encryption, backup, and recovery claims |
 | G-06 | **OPEN** | **TBD: privacy/vendor** | Capture executed DPAs and dated subprocessors for every fixed processor; record transfer mechanisms and incident/deletion terms | Authoritative subprocessor and transfer statements |
 | G-07 | **OPEN** | **TBD: meetings** | Verify Recall region, DPA, account retention, request-level retention, support access, and deletion failure handling | Meeting residency and provider deletion claims |
 | G-08 | **OPEN** | **TBD: documents** | Verify Daytona target/host, telemetry payloads/retention, DPA coverage, and April 2026 incident/credential status | Sensitive-document readiness |
 | G-09 | **OPEN** | **TBD: email** | Set Postmark to minimum viable retention, verify open/click tracking, DPA, sender configuration, and support access | Email retention and tracking statements |
-| G-10 | **OPEN / analytics implementation handoff** | **TBD: analytics + product privacy** | Implement and prove the [privacy/analytics interface](./privacy-analytics-interface.md): identifier-free always-on aggregate public counters; affirmative-consent-only browser analytics on allowlisted public routes; zero browser PostHog capture/identifier before consent or after rejection/withdrawal; no browser analytics on private routes; explicit schema-valid minimized server/worker events; separate Sentry path; no autocapture, automatic pageview/pageleave, heatmaps, replay, DOM capture, identity linking, or analytics-backed client flags. Capture tests and dated production canary plus PostHog region, retention, IP/geolocation, profiles, DPA, transfers, deletion, access, property allowlist, consent, and legal-basis evidence | Any deployed browser-privacy, analytics residency/retention, cookie/consent, or analytics legal-basis claim |
+| G-10 | **PARTIAL: runtime + account review** | **TBD: analytics + product privacy** | The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, a pinned Launch dashboard shell, and queued legacy-data deletion. Prove the remaining [privacy/analytics interface](./privacy-analytics-interface.md): production fixed-stream and pseudonymous payloads, consent/private-route browser boundaries, populated insights, deletion completion, retention decision, DPA/transfers, access controls, and legal basis. | Any deployed analytics claim, 90-day retention claim, completed-deletion claim, or provider assurance beyond the dated evidence |
 | G-11 | **OPEN** | **TBD: reliability** | Verify Sentry region, retention, Seer/AI settings, DPA, access, sampling, and representative scrubbed event payload | Error-monitoring retention and AI claims |
 | G-12 | **OPEN / blocker** | **TBD: security owner** | Inventory named production access, enforce MFA/least privilege, document break-glass, retain access logs, and run quarterly review | “Rare, approved, and auditable” staff-access claim |
 | G-13 | **OPEN / blocker** | **TBD: privacy + platform** | Define and test deletion across PostgreSQL, RustFS, Qdrant, Redis/queues, backups, exports, analytics, error monitoring, email, Recall, and connected providers | Deletion SLA and complete-erasure claim |

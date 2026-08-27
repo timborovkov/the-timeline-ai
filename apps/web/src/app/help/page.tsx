@@ -5,6 +5,15 @@ import type { Metadata } from 'next';
 
 import { HelpGuideDirectory } from '@/components/help/help-guide-directory';
 import { publicMetadata } from '@/lib/public-metadata';
+import {
+  GITHUB_BUG_REPORT_URL,
+  GITHUB_CONTRIBUTING_URL,
+  GITHUB_SECURITY_URL,
+  PUBLIC_SUPPORT_EMAIL,
+} from '@/lib/support-links';
+
+const supportLinkClass =
+  'rounded-sm text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export const metadata: Metadata = publicMetadata({
   title: 'Help',
@@ -48,24 +57,46 @@ export default function HelpIndexPage() {
         </Link>
       </section>
 
-      <section className="grid gap-5 border-y border-border py-7 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <section className="border-y border-border py-7">
         <div>
-          <h2 className="text-base font-semibold text-fg">Still stuck?</h2>
+          <h2 className="text-base font-semibold text-fg">Get help or contribute</h2>
           <p className="mt-1 max-w-[62ch] text-sm leading-6 text-fg-muted">
-            Send the route, what you expected, and what happened. Signed-in requests include team
-            context automatically.
+            Send account details privately. Use GitHub only for non-sensitive, reproducible bugs and
+            proposed contributions.
           </p>
         </div>
-        <Link
-          href="/help/support"
-          className="group inline-flex min-h-10 items-center gap-2 rounded-sm text-sm font-semibold text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
-        >
-          Contact support
-          <ArrowRight
-            aria-hidden="true"
-            className="size-4 transition-transform group-hover:translate-x-1"
-          />
-        </Link>
+        <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
+          <Link className={supportLinkClass} href="/help/support">
+            Contact support
+          </Link>
+          <a className={supportLinkClass} href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}>
+            Email {PUBLIC_SUPPORT_EMAIL}
+          </a>
+          <a
+            className={supportLinkClass}
+            href={GITHUB_BUG_REPORT_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Report a bug
+          </a>
+          <a
+            className={supportLinkClass}
+            href={GITHUB_SECURITY_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Security
+          </a>
+          <a
+            className={supportLinkClass}
+            href={GITHUB_CONTRIBUTING_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Contribute
+          </a>
+        </div>
       </section>
     </article>
   );

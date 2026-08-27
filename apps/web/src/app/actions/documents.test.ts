@@ -6,6 +6,7 @@ import type * as RateLimitModule from '@timeline/shared/rate-limit';
 
 import {
   createFolderAction,
+  deleteDocumentAction,
   deleteFolderAction,
   finalizeDocumentVersionAction,
   getDocumentPreviewUrlAction,
@@ -67,6 +68,7 @@ const fakes = vi.hoisted(() => ({
   fakeCheckRateLimit: vi.fn(),
   fakeSafeMarkOnboardingStep: vi.fn(),
   fakeRevalidatePath: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -81,6 +83,9 @@ vi.mock('@/lib/onboarding', () => ({
   safeMarkOnboardingStep: fakes.fakeSafeMarkOnboardingStep,
 }));
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({ documents: fakes.fakeScope, audit: { record: fakes.fakeAuditRecord } }),
@@ -114,6 +119,7 @@ const {
   fakeCheckRateLimit,
   fakeSafeMarkOnboardingStep,
   fakeRevalidatePath,
+  trackProductEventBestEffort,
 } = fakes;
 
 const DOC_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -228,6 +234,11 @@ describe('documents actions — schema validation gates the scope', () => {
       visibility: 'specific_users',
       visibilityUserIds: [USER_ID],
     });
+    expect(trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'document_action_completed',
+      { action: 'folder_create' },
+    );
   });
 
   it('createFolderAction still succeeds when post-create revalidation fails', async () => {
@@ -255,6 +266,11 @@ describe('documents actions — schema validation gates the scope', () => {
 
     await expect(deleteFolderAction(DOC_ID)).resolves.toEqual({ ok: true });
     expect(fakeScope.softDeleteFolder).toHaveBeenCalledWith(DOC_ID);
+    expect(trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'document_action_completed',
+      { action: 'folder_delete' },
+    );
   });
 
   it('renameDocumentAction still succeeds when post-rename revalidation fails', async () => {
@@ -266,6 +282,29 @@ describe('documents actions — schema validation gates the scope', () => {
       ok: true,
     });
     expect(fakeScope.renameDocument).toHaveBeenCalledWith({ id: DOC_ID, name: 'Renamed' });
+    expect(trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'document_action_completed',
+      { action: 'document_rename' },
+    );
+  });
+
+  it('does not emit document actions when validation or the mutation fails', async () => {
+    await renameDocumentAction({ id: 'not-a-uuid', name: 'Nope' });
+    fakeScope.softDeleteDocument.mockRejectedValueOnce(new Error('db down'));
+    await deleteDocumentAction(DOC_ID);
+
+    expect(trackProductEventBestEffort).not.toHaveBeenCalled();
+  });
+
+  it('emits a content-free document delete event after success', async () => {
+    await expect(deleteDocumentAction(DOC_ID)).resolves.toEqual({ ok: true });
+
+    expect(trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'document_action_completed',
+      { action: 'document_delete' },
+    );
   });
 });
 

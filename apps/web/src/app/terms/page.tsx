@@ -1,4 +1,3 @@
-import { TIMELINE_AI_PRIVACY_POLICY_VERSION } from '@timeline/shared/llm';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -137,9 +136,8 @@ function TermsContentAndAiSections() {
         for retrieval is processing for the Service, not model training.
       </p>
       <p>
-        Under model privacy policy {TIMELINE_AI_PRIVACY_POLICY_VERSION},{' '}
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList} require zero-data-retention
-        endpoints and may not downgrade to weaker retention during an outage.{' '}
+        processing and cannot downgrade to weaker retention during an outage.{' '}
         {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.termsDetail}
       </p>
       <p>

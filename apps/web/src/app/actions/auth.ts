@@ -11,13 +11,18 @@ import { redirect } from 'next/navigation';
 import { AuthError } from 'next-auth';
 import { z } from 'zod';
 
-import { ACTIVE_TEAM_COOKIE, activeTeamCookieOptions } from '@/lib/active-team';
+import {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
+import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -228,18 +233,32 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     }
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, createdAccount.activeTeamId, activeTeamCookieOptions());
+    cookieStore.set(
+      ACTIVE_TEAM_COOKIE,
+      serializeActiveTeamCookie(createdAccount.activeTeamId),
+      activeTeamCookieOptions(),
+    );
+
+    const attribution = readConsentedPublicAttributionCookie(cookieStore);
+    const actor = {
+      kind: 'user' as const,
+      userId: createdAccount.userId,
+      teamId: createdAccount.activeTeamId,
+    };
+    trackProductEventBestEffort(actor, 'account_registered', {
+      source: 'credentials',
+      joinedViaInvite: createdAccount.event === 'invite_accepted',
+      ...(attribution?.source ? { attributionSource: attribution.source } : {}),
+      ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),
+      ...(attribution?.campaign ? { attributionCampaign: attribution.campaign } : {}),
+    });
 
     if (createdAccount.event === 'team_created') {
-      trackProductEventBestEffort(createdAccount.userId, 'team_created', {
-        teamId: createdAccount.activeTeamId,
-        userId: createdAccount.userId,
+      trackProductEventBestEffort(actor, 'team_created', {
         source: 'signup',
       });
     } else {
-      trackProductEventBestEffort(createdAccount.userId, 'invite_accepted', {
-        teamId: createdAccount.activeTeamId,
-        userId: createdAccount.userId,
+      trackProductEventBestEffort(actor, 'invite_accepted', {
         role: createdAccount.role ?? 'member',
         source: 'signup',
       });

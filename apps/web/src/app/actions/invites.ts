@@ -8,7 +8,11 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { ACTIVE_TEAM_COOKIE, activeTeamCookieOptions } from '@/lib/active-team';
+import {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
@@ -156,13 +160,19 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
     await clearPendingInvite();
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, activeTeamCookieOptions());
-    trackProductEventBestEffort(userId, 'invite_accepted', {
-      teamId: accepted.teamId,
-      userId,
-      role: accepted.role,
-      source: 'accept_invite',
-    });
+    cookieStore.set(
+      ACTIVE_TEAM_COOKIE,
+      serializeActiveTeamCookie(accepted.teamId),
+      activeTeamCookieOptions(),
+    );
+    trackProductEventBestEffort(
+      { kind: 'user', userId, teamId: accepted.teamId },
+      'invite_accepted',
+      {
+        role: accepted.role,
+        source: 'accept_invite',
+      },
+    );
     redirect('/app/timeline');
   });
 }
@@ -285,13 +295,19 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
     }
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, accepted.teamId, activeTeamCookieOptions());
-    trackProductEventBestEffort(userId, 'invite_accepted', {
-      teamId: accepted.teamId,
-      userId,
-      role: accepted.role,
-      source: 'accept_invite',
-    });
+    cookieStore.set(
+      ACTIVE_TEAM_COOKIE,
+      serializeActiveTeamCookie(accepted.teamId),
+      activeTeamCookieOptions(),
+    );
+    trackProductEventBestEffort(
+      { kind: 'user', userId, teamId: accepted.teamId },
+      'invite_accepted',
+      {
+        role: accepted.role,
+        source: 'accept_invite',
+      },
+    );
     redirect('/app/timeline');
   });
 }

@@ -227,6 +227,36 @@ describe('getEnv', () => {
     expect(getEnv().RECALL_WORKSPACE_VERIFICATION_SECRET).toBe(secret);
   });
 
+  it('keeps server analytics credentials separate and validates the pseudonymization key', () => {
+    setBaseEnv({
+      POSTHOG_PROJECT_KEY: 'ph-server',
+      POSTHOG_HOST: 'https://eu.i.posthog.com',
+      ANALYTICS_PSEUDONYMIZATION_KEY: 'a'.repeat(32),
+      NEXT_PUBLIC_POSTHOG_KEY: 'ph-browser',
+    });
+    expect(getEnv()).toMatchObject({
+      POSTHOG_PROJECT_KEY: 'ph-server',
+      POSTHOG_HOST: 'https://eu.i.posthog.com',
+      ANALYTICS_PSEUDONYMIZATION_KEY: 'a'.repeat(32),
+      NEXT_PUBLIC_POSTHOG_KEY: 'ph-browser',
+    });
+
+    setBaseEnv({ ANALYTICS_PSEUDONYMIZATION_KEY: 'too-short' });
+    expect(() => getEnv()).toThrow(/ANALYTICS_PSEUDONYMIZATION_KEY/);
+
+    setBaseEnv({
+      POSTHOG_PROJECT_KEY: '',
+      POSTHOG_HOST: '',
+      ANALYTICS_PSEUDONYMIZATION_KEY: '',
+    });
+    expect(getEnv()).toMatchObject({ POSTHOG_HOST: 'https://eu.i.posthog.com' });
+    expect(getEnv().POSTHOG_PROJECT_KEY).toBeUndefined();
+    expect(getEnv().ANALYTICS_PSEUDONYMIZATION_KEY).toBeUndefined();
+
+    setBaseEnv({ POSTHOG_HOST: 'https://us.i.posthog.com' });
+    expect(() => getEnv()).toThrow(/reviewed EU PostHog ingestion origin/);
+  });
+
   it('limits configured Recall media retention to one hour in production', () => {
     const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
     setBaseEnv({

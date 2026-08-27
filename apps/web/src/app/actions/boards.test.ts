@@ -16,6 +16,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeReportCaughtError: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeBoards: {
     createBoard: vi.fn(),
     archiveBoard: vi.fn(),
@@ -38,18 +39,23 @@ vi.mock('@/lib/action-scope', async () => {
   };
 });
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 
 const BOARD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ITEM_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ENTITY_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeResolveScope.mockResolvedValue({
     ok: true,
     scope: { boards: fakes.fakeBoards, pins: fakes.fakePins },
+    teamId: TEAM_ID,
     userId: USER_ID,
   });
   fakes.fakeBoards.createBoard.mockResolvedValue({ id: BOARD_ID });
@@ -103,6 +109,11 @@ describe('createBoardAction', () => {
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'board_action_completed',
+      { action: 'create' },
+    );
   });
 
   it('creates a board with user-defined stages', async () => {

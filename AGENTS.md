@@ -138,14 +138,6 @@ Treat this file as an operating contract for agents, not a loose README.
   [docs/security-privacy-trust.md](docs/security-privacy-trust.md). Keep provider
   evidence and open gaps current; a public claim may be no stronger than the
   weakest evidenced code, deployment, account, or contract state.
-- **Model privacy is role-based and code-owned.** Keep every exact OpenRouter pin
-  and its `zdr_required` or `retained_no_training_exception` class in
-  `packages/shared/src/llm/models.ts`. ZDR-required roles must fail closed and
-  may use any eligible ZDR upstream, never a weaker-retention fallback. Do not
-  change the voice-note transcription pin until the non-customer, 24-language
-  quality evaluation in [docs/security-privacy-trust.md](docs/security-privacy-trust.md)
-  passes and its aggregate-only evidence artifact is locked. Recall meeting
-  transcription is a separate pipeline.
 - **Team isolation is sacred.** Every Postgres query goes through
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,

@@ -11,9 +11,13 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
   updateServer: vi.fn(),
   deleteServer: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@timeline/shared/team-scope', () => ({
@@ -105,5 +109,10 @@ describe('/api/team/mcp-servers/[id]', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
     expect(fakes.deleteServer).toHaveBeenCalledWith(SERVER_ID);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'mcp_server_remove', kind: 'mcp_inbound' },
+    );
   });
 });

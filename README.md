@@ -11,6 +11,8 @@
 <p align="center">
   <a href="https://thetimeline.cc">Website</a> ·
   <a href="https://thetimeline.cc/help">Help</a> ·
+  <a href="./SUPPORT.md">Support</a> ·
+  <a href="./CONTRIBUTING.md">Contributing</a> ·
   <a href="./plugins/timeline/skills/README.md">Agent skill</a> ·
   <a href="https://github.com/timborovkov/the-timeline-ai">GitHub</a> ·
   <a href="./docs/setup/local.html">Local setup</a> ·
@@ -168,6 +170,8 @@ agent behavior, or reconciliation have additional gates documented in
 - [Cookies and similar technologies](https://thetimeline.cc/cookies)
 - [Security, privacy, and trust operating standard](./docs/security-privacy-trust.md)
 - [Privacy and analytics implementation interface](./docs/privacy-analytics-interface.md)
+- [Help and support channels](./SUPPORT.md)
+- [Contribution guide](./CONTRIBUTING.md)
 - [Report a security vulnerability](./SECURITY.md)
 - [Demo corpus](./docs/demo-corpus.md)
 - [Documentation index](./docs/index.html)
@@ -184,12 +188,15 @@ agent behavior, or reconciliation have additional gates documented in
 
 ## Contributing
 
-Non-sensitive issues are welcome; suspected vulnerabilities belong in the
-private process in [SECURITY.md](./SECURITY.md). Because the repository does not
-yet publish a license or contribution terms, contact us before submitting code
-or documentation. Approved contributions must keep changes team-scoped,
-preserve raw evidence, update affected docs, and pass `pnpm validate`,
-`pnpm run doctor`, and the relevant tests.
+Choose the appropriate channel in [SUPPORT.md](./SUPPORT.md). Reproducible,
+non-sensitive bugs may use the structured public issue form; suspected
+vulnerabilities belong in the private process in [SECURITY.md](./SECURITY.md).
+Before substantial work, follow [CONTRIBUTING.md](./CONTRIBUTING.md), open an
+issue, and wait for maintainer agreement. Because the repository does not yet
+publish a license or general contribution terms, public visibility alone does
+not authorize changes or reuse. Approved contributions must keep changes
+team-scoped, preserve raw evidence, update affected docs, and pass
+`pnpm validate`, `pnpm run doctor`, and the relevant tests.
 
 ## Source availability
 

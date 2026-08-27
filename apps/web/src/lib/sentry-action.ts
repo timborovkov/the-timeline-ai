@@ -10,6 +10,8 @@ const PRE_ACCEPTANCE_ACTIONS = new Set([
   'submit_support_request',
 ]);
 
+const SENTRY_TRACE_HEADER = /^[0-9a-f]{32}-[0-9a-f]{16}(?:-[01])?$/i;
+
 export async function runSentryServerAction<T>(
   operation: string,
   callback: () => Promise<T> | T,
@@ -18,7 +20,7 @@ export async function runSentryServerAction<T>(
   return Sentry.withServerActionInstrumentation(
     operation,
     {
-      headers: requestHeaders,
+      headers: requestHeaders.then(sentryTraceHeaders),
     },
     async () => {
       if (!PRE_ACCEPTANCE_ACTIONS.has(operation)) {
@@ -27,6 +29,13 @@ export async function runSentryServerAction<T>(
       return callback();
     },
   );
+}
+
+function sentryTraceHeaders(input: Headers): Headers {
+  const safe = new Headers();
+  const trace = input.get('sentry-trace')?.trim();
+  if (trace && SENTRY_TRACE_HEADER.test(trace)) safe.set('sentry-trace', trace);
+  return safe;
 }
 
 async function requireCurrentLegalSession(requestHeaders: Promise<Headers>): Promise<void> {

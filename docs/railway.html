@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-08-26</span>
+        <span class="kind">Operations</span><span>Last updated 2026-08-21</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -218,7 +218,10 @@ RECALL_RETENTION=1
 RECALL_BOT_DISPLAY_NAME=Timeline
 TURNSTILE_SITE_KEY=&lt;cloudflare turnstile site key&gt;
 TURNSTILE_SECRET_KEY=&lt;cloudflare turnstile secret key&gt;
-NEXT_PUBLIC_POSTHOG_KEY=&lt;posthog project key&gt;
+POSTHOG_PROJECT_KEY=&lt;posthog server project key&gt;
+POSTHOG_HOST=https://eu.i.posthog.com
+ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
+NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
 SENTRY_DSN=&lt;sentry server/worker dsn&gt;
 NEXT_PUBLIC_SENTRY_DSN=&lt;sentry browser dsn&gt;
@@ -254,6 +257,12 @@ DOCUMENT_EXTRACT_ENABLED=false
 NODE_ENV=production
 LOG_LEVEL=info
 </code></pre>
+      <p>
+        Keep <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> secret and server-only. Leave
+        <code>NEXT_PUBLIC_POSTHOG_KEY</code> empty until the consent-gated public-browser path and
+        PostHog account have been reviewed. None of the PostHog variables belong on the
+        credential-thin <code>document-extract-orchestrator</code> service.
+      </p>
       <p>
         <code>CROSS_SOURCE_EVIDENCE_MODE</code> is a worker rollout switch. Keep production at
         <code>off</code> until generic ingest webhook shadow gates pass. Other proposal adapters do

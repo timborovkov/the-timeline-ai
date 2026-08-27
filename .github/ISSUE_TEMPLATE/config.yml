@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private support
+    url: https://thetimeline.cc/help/support
+    about: Use for account-specific questions, sensitive bugs, sales, or billing.
+  - name: Security vulnerability
+    url: https://github.com/timborovkov/the-timeline-ai/security/policy
+    about: Report vulnerabilities privately. Do not disclose them in a public issue.

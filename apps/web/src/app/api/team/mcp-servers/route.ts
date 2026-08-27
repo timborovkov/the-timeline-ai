@@ -107,16 +107,20 @@ export async function POST(req: Request): Promise<Response> {
         authConfig,
       });
       const completedFirstIntegration = await safeMarkOnboardingStep(scope, 'first_integration');
-      trackProductEventBestEffort(session.user.id, 'integration_connected', {
-        teamId: active.teamId,
+      const analyticsActor = {
+        kind: 'user' as const,
         userId: session.user.id,
-        integrationId: server.id,
+        teamId: active.teamId,
+      };
+      trackProductEventBestEffort(analyticsActor, 'integration_connected', {
         provider: 'mcp',
       });
+      trackProductEventBestEffort(analyticsActor, 'integration_management_action_completed', {
+        action: 'mcp_server_add',
+        kind: 'mcp_inbound',
+      });
       if (completedFirstIntegration) {
-        trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-          teamId: active.teamId,
-          userId: session.user.id,
+        trackProductEventBestEffort(analyticsActor, 'onboarding_step_completed', {
           step: 'first_integration',
           source: 'automatic',
         });
@@ -156,16 +160,20 @@ export async function POST(req: Request): Promise<Response> {
     if (custom.data.ownership !== 'personal') {
       completedFirstIntegration = await safeMarkOnboardingStep(scope, 'first_integration');
     }
-    trackProductEventBestEffort(session.user.id, 'integration_connected', {
-      teamId: active.teamId,
+    const analyticsActor = {
+      kind: 'user' as const,
       userId: session.user.id,
-      integrationId: server.id,
+      teamId: active.teamId,
+    };
+    trackProductEventBestEffort(analyticsActor, 'integration_connected', {
       provider: 'mcp',
     });
+    trackProductEventBestEffort(analyticsActor, 'integration_management_action_completed', {
+      action: 'mcp_server_add',
+      kind: 'mcp_inbound',
+    });
     if (completedFirstIntegration) {
-      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-        teamId: active.teamId,
-        userId: session.user.id,
+      trackProductEventBestEffort(analyticsActor, 'onboarding_step_completed', {
         step: 'first_integration',
         source: 'automatic',
       });

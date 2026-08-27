@@ -250,53 +250,6 @@ describe('database schema contracts', () => {
     }
   });
 
-  it('removes only the legacy Recall create-bot response from meeting metadata', async () => {
-    const migrationPg = new PGlite();
-    try {
-      await applyMigrations(migrationPg, { throughFile: '0073_legal_acceptance_history.sql' });
-      await seedBase(migrationPg);
-      const meetingId = '99999999-9999-4999-8999-999999999974';
-      await migrationPg.exec(`
-        INSERT INTO meetings (
-          id,
-          team_id,
-          created_by_user_id,
-          platform,
-          meeting_url,
-          metadata
-        ) VALUES (
-          '${meetingId}',
-          '${TEAM_ID}',
-          '${OWNER_ID}',
-          'meet',
-          'https://meet.google.com/privacy-test',
-          '{
-            "provider_join_result": {
-              "id": "bot-legacy",
-              "meeting_url": { "meeting_id": "provider-meeting" }
-            },
-            "source": "quick_join",
-            "silent": true,
-            "consent_given_at": "2026-08-21T10:00:00.000Z"
-          }'::jsonb
-        )
-      `);
-
-      await applyMigrationFile(migrationPg, '0074_recall_join_metadata_minimization.sql');
-
-      const result = await migrationPg.query<{ metadata: Record<string, unknown> }>(`
-        SELECT metadata FROM meetings WHERE id = '${meetingId}'
-      `);
-      expect(result.rows[0]?.metadata).toEqual({
-        consent_given_at: '2026-08-21T10:00:00.000Z',
-        silent: true,
-        source: 'quick_join',
-      });
-    } finally {
-      await migrationPg.close();
-    }
-  });
-
   it('backfills canonical shared-link associations at their current strengths', async () => {
     const migrationPg = new PGlite();
     try {

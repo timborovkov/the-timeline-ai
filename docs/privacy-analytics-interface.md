@@ -2,8 +2,8 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Normative target; runtime implementation and production evidence pending |
-| Applies to | Public Timeline routes, authenticated product routes, web/server/worker analytics, consent UX, PostHog, aggregate counters, and Sentry boundaries |
+| Status | Required contract; current source implementation present, production/provider evidence pending |
+| Applies to | Public Timeline routes, authenticated product routes, web/server/worker analytics, consent UX, PostHog, personless surface streams, and Sentry boundaries |
 | Normative parent | [Security, privacy, and trust operating standard](./security-privacy-trust.md) |
 | Legal research | [GDPR, cookies, and consent audit](./research/gdpr-cookie-consent-audit-2026-08-21.md) |
 | Runtime owner | Analytics implementation branch |
@@ -11,9 +11,10 @@
 | Version | 2026-08-21 |
 
 This document is the handoff contract between privacy policy and analytics
-implementation. It defines the target behavior and evidence needed to call that
-behavior enforced. It does **not** claim that the current worktree, a deployment,
-or a provider account already satisfies the contract.
+implementation. It defines the required behavior and evidence needed to call
+that behavior enforced. The current source implements the runtime boundary, but
+this does **not** claim that a deployment or provider account satisfies the
+contract.
 
 If runtime code, provider settings, setup documentation, public copy, or this
 interface disagree, apply the more private behavior and leave the relevant gap
@@ -21,28 +22,30 @@ open until the disagreement is reviewed.
 
 ## 1. Required data paths
 
-Timeline has five distinct measurement and reliability paths. Consent or data
+Timeline has six distinct measurement and reliability paths. Consent or data
 from one path must not silently authorize another.
 
 | Path | Surface | Consent state | Permitted behavior | Identifier boundary |
 | --- | --- | --- | --- | --- |
-| Aggregate public request counts | Allowlisted public HTTP routes, measured server-side | Always on | Increment pre-aggregated, coarse route/time/status counters | No user, team, device, session, cookie, request, IP, user-agent, referrer, or PostHog identifier |
+| Personless public surface requests | Allowlisted public HTTP routes, measured server-side | Always on | Emit a content-free event into one fixed non-visitor PostHog stream | The reserved stream ID is identical for every request; no visitor, user, team, device, session, cookie, request, IP, user-agent, referrer, campaign, or content value |
+| Personless app surface requests | Allowlisted authenticated route templates, measured server-side after Auth.js permits the request | Always on | Emit a content-free event into a separate fixed non-visitor PostHog stream | The reserved stream ID is identical for every app request; no account, user, team, device, session, request, URL parameter, or content value |
 | Optional public browser analytics | Allowlisted public pages only | Off until affirmative analytics consent | Explicit, allowlisted browser events and properties | A provider-generated pseudonymous identifier may exist only after opt-in; never identify or alias it to an account, user, or team |
 | Private workspace browser | Authenticated/private application route tree | Not applicable | Browser analytics code must not load, initialize, identify, capture, or fetch analytics-backed feature flags | No browser PostHog identifier or event is created from private-route activity |
-| Authenticated product analytics | Explicit server actions, API handlers, jobs, and workers | Separate from browser consent | Named, content-free, schema-validated server/worker events only | Default to no identifier; an opaque user/team identifier is allowed only when the approved event contract requires correlation |
+| Authenticated product analytics | Explicit server actions, API handlers, jobs, and workers | Separate from browser consent | Named, content-free, schema-validated server/worker events only | Every event uses a validated user or team actor that is HMAC-pseudonymized before capture; raw actor IDs never leave Timeline or connect to the public-browser identity |
 | Sentry reliability monitoring | Public or private routes where configured | Separate from analytics consent | Minimized error and performance diagnostics under section 10 of the parent standard | No analytics profile, replay, marketing use, or PostHog identity bridge |
 
-Declining optional browser analytics does not disable or change the
-identifier-free aggregate public request counts. The consent interface must say
-this clearly enough that a visitor does not believe **Reject** stops essential,
-aggregate service measurement.
+Declining optional browser analytics does not disable or change the personless
+server surface streams. The consent interface must say this clearly enough
+that a visitor does not believe **Reject** stops this separately disclosed
+service measurement.
 
 ## 2. Route boundary
 
 The implementation must maintain a source-controlled public-route allowlist.
-Only an allowlisted route may use aggregate public counters or consented browser
-analytics. An unknown or newly added route defaults to private: no browser
-analytics load or capture occurs until the route is reviewed and allowlisted.
+Only an allowlisted route may use personless surface measurement or consented
+browser analytics. An unknown or newly added route defaults to unmeasured: no
+browser capture or server surface event occurs until the route is reviewed and
+allowlisted.
 
 The private boundary includes:
 
@@ -63,31 +66,55 @@ paths.
 Route classification is based on data exposure and purpose, not whether a URL
 is reachable without signing in.
 
-## 3. Identifier-free aggregate public request counts
+## 3. Personless server surface requests
 
-This path is an always-on, server-side operational count. It must not depend on,
-read, write, or infer browser consent. It must not load a client SDK or create a
-browser identifier.
+This path is an always-on, server-to-server operational count. It must not
+depend on, read, write, or infer browser consent. It must not load a client SDK
+or create a browser identifier. Public and app requests use separate reserved
+stream IDs so neither stream can be mistaken for a real person.
 
-Allowed dimensions are intentionally coarse:
+The two exact events are `public_surface_requested` and
+`app_surface_requested`. Their only variable property is a source-controlled
+`surface` enum. Each capture must set `$process_person_profile: false` and
+disable GeoIP enrichment. The shared product-event helper must not be reused
+because personless events may not receive groups, feature flags, actor IDs, or
+arbitrary properties.
 
-- an allowlisted route template or route group with parameters removed;
-- a bounded time bucket;
-- HTTP method class only when needed;
-- response status class; and
-- a small, source-controlled deployment or locale dimension only after privacy
-  review.
+At the provider wire boundary, PostHog's Node SDK also supplies reviewed,
+non-request metadata required to transport an event: the project key, reserved
+stream `distinct_id`, event name, server marker, SDK name/version, event UUID/timestamp,
+batch `sent_at`, and `$geoip_disable`. These fixed or SDK-generated fields are
+not product dimensions and may not be populated from the incoming request.
+Transport-level tests pin this complete schema so an SDK change fails review
+instead of silently expanding it.
 
-Prohibited input and output include raw or hashed IP addresses, user agents,
-cookies, authorization state, request IDs, referrers, query strings, URL
-parameters, precise timestamps, device/browser fingerprints, geolocation,
-account/user/team IDs, PostHog distinct IDs, and any customer or form content.
-Hashing one of these values does not turn it into an aggregate count.
+Allowed route inputs are intentionally narrow:
 
-The implementation must aggregate before persistence or export. It must not
-create a row or third-party event for each visitor request and later call the
-result aggregate. If an analytics provider requires a synthetic `distinct_id`
-for each count, that provider path does not satisfy this contract.
+- a registry-defined public or app surface with every parameter removed;
+- canonical HTML document requests; and
+- non-prefetch framework navigation requests when the classifier can
+  distinguish them without exporting the header value.
+
+Prohibited event data includes raw or hashed IP addresses, user agents, cookies,
+authorization state, request IDs, referrers, raw paths, query strings, URL
+parameters, device/browser fingerprints, geolocation, campaign parameters,
+account/user/team IDs, and any customer or form content. Hashing one of these
+values does not make it suitable for this stream.
+
+PostHog requires a `distinct_id`, so Timeline uses the exact reserved IDs
+`__timeline_personless__:public:v1` and
+`__timeline_personless__:app:v1`. They identify only the two global event
+streams and must never be passed to identify, alias, group, person-property,
+or product-actor APIs. They do not vary by request or browser and therefore
+cannot recognize a returning visitor. PostHog unique-user, session, retention,
+and returning-user reports are invalid for these events; only total counts by
+allowlisted surface are meaningful.
+
+These per-request provider events are an explicit exception to the earlier
+pre-aggregation design. Exact event timing can permit probabilistic inference
+at very low volume even though no deterministic visitor key exists. Public
+copy therefore calls them personless, content-free surface requests rather than
+anonymous visits or aggregate visitors.
 
 Infrastructure access logs are a separate security/operations data path. Their
 possible receipt of ordinary request metadata does not permit copying that
@@ -139,7 +166,7 @@ The consent UX must implement these behaviors:
 2. The first layer offers equally clear **Accept analytics** and **Reject**
    actions. Neither is preselected or visually disguised.
 3. The explanation distinguishes optional public browser analytics from the
-   always-on identifier-free aggregate public request count.
+   always-on personless server surface streams.
 4. Declining has no effect on public content, signup, authentication, invitations,
    or authenticated product capability.
 5. A persistent, easy-to-find privacy-preferences control allows withdrawal.
@@ -165,7 +192,9 @@ without loss of the core service.
 
 Authenticated product measurement is server/worker-only. Browser components on
 private routes must not import or call PostHog, forward browser analytics
-payloads to an internal API, or use an analytics SDK for feature flags.
+payloads to an internal API, or use an analytics SDK for feature flags. The
+separate `app_surface_requested` path may run at the server request boundary,
+but its fixed stream must never contain or correlate an authenticated actor.
 
 Every authenticated event requires:
 
@@ -182,11 +211,12 @@ Every authenticated event requires:
 - a documented legal basis and public disclosure independent of browser
   consent.
 
-Identifiers are exceptional, not default. Where a reviewed event genuinely
-needs adoption or deduplication across actions, it may include only the minimum
-opaque user or team identifier named in its schema. It must not include a
-lookup property such as email or name, and it must not connect to the optional
-public-browser identity.
+Every event requires the minimum user or team actor needed for product
+correlation. The shared helper validates that actor and HMAC-pseudonymizes raw
+user and team IDs before capture; the event-property API never accepts raw
+actor IDs. Events must not include lookup properties such as email or name, and
+the pseudonymous actor must never connect to the optional public-browser
+identity.
 
 The server/worker path must not be described as anonymous merely because it is
 content-free or pseudonymous. Browser rejection does not authorize this path;
@@ -214,14 +244,15 @@ the following before the target moves from **Required** to **Enforced**:
 
 | Scenario | Required observation |
 | --- | --- |
-| New browser, public route, no choice | Aggregate counter increments; no PostHog script/request/cookie/local storage/IndexedDB/service-worker state or identifier |
-| New browser, reject | Same aggregate behavior; zero browser PostHog capture and identifier; rejection persists |
-| New browser, accept | Aggregate behavior is unchanged; only allowlisted public events/properties are sent |
+| New browser, public route, no choice | Personless server event is eligible; no browser PostHog script/request/cookie/local storage/IndexedDB/service-worker state or identifier |
+| New browser, reject | Same personless server behavior; zero browser PostHog capture and identifier; rejection persists |
+| New browser, accept | Personless server behavior is unchanged; only allowlisted browser events/properties are sent |
 | Withdraw after accepting | Capture stops before the next event; optional PostHog state is reset/cleared; rejection persists |
 | Direct private-route load after prior public opt-in | No browser analytics module, request, initialization, identification, capture, or analytics flag request |
 | Public-to-private navigation | No private-route activity reaches browser analytics and no public identity is linked to an account |
 | Authenticated product action | Only the explicit schema-valid server/worker event is eligible; no browser event is emitted |
-| Unknown/new route | Defaults to no browser analytics and no aggregate route dimension until allowlisted |
+| Authenticated app navigation | At most the fixed-stream allowlisted app surface event is eligible; no actor/team/browser identity or dynamic URL value is sent |
+| Unknown/new route | Defaults to no browser analytics and no personless surface event until allowlisted |
 | Disallowed property or arbitrary object | Runtime rejects it; the provider receives nothing |
 | Sentry event | Follows the separate scrubbed reliability path and creates no PostHog event or identity |
 
@@ -240,18 +271,18 @@ page views/page leave, heatmaps, replay, and unreviewed feature flags.
 | Item | Current state | Owner |
 | --- | --- | --- |
 | This normative interface | **Required** | Privacy documentation owner |
-| Runtime route split, aggregate counter, consent UX, PostHog initialization, server/worker event path, setup-guide correction, and tests | **Gap / pending implementation**. The Railway guides currently instruct operators to set the public PostHog key and must be corrected before deployment. | Analytics implementation branch |
-| Legacy Convex pageview code, deployment, logs, token URLs, and deletion/rotation review | **Gap** | Analytics implementation branch with security owner |
-| PostHog account configuration, contract, retention, transfer, deletion, and production evidence | **Gap** | Product privacy/vendor owner with analytics implementation branch |
+| Runtime route split, personless surface streams, consent UX, PostHog initialization, server/worker event path, setup-guide correction, and tests | **Implemented in current source with focused tests.** Release, production, and provider-account evidence remain separate gaps. | Analytics implementation branch |
+| Legacy Convex pageview code, deployment, logs, token URLs, and deletion/rotation review | **Source removal implemented; external deployment/data review remains a gap** | Analytics implementation branch with security owner |
+| PostHog account configuration, contract, retention, transfer, deletion, and production evidence | **Partial.** The 2026-08-26 account review verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, a pinned Launch dashboard shell, and queued deletion of legacy development data. Pay-as-you-go's documented seven-year retention conflicts with the 90-day target; contracts, deletion completion, dashboard insights, and production canaries remain open. See [`docs/research/posthog-rollout-evidence-2026-08-26.md`](./research/posthog-rollout-evidence-2026-08-26.md). | Product privacy/vendor owner with analytics implementation branch |
 | Sentry account and scrubber evidence | **Gap**, separate from analytics | Reliability owner |
-| Public claims and legal/cookie copy | Qualified current-gap and target disclosures may publish; any claim that the target is deployed or enforced, or any unverified retention or anonymity claim, is blocked until implementation and provider evidence pass | Privacy/legal owner |
+| Public claims and legal/cookie copy | The implemented source behavior may be described as product design; any claim that it is deployed or provider-enforced, or any unverified retention or anonymity claim, is blocked until production and provider evidence pass | Privacy/legal owner |
 
 The privacy-documentation owner owns this contract and the status language in
 the parent standard. The analytics implementation branch owns runtime code,
 configuration, environment variables, consent components, event registries,
 provider initialization, analytics tests, analytics setup documentation, and
-the evidence bundle. This documentation change intentionally does not edit or
-approve those implementation surfaces.
+the evidence bundle. Runtime and documentation changes must continue to land as
+one reviewed contract.
 
 The implementation branch may make behavior more private without coordination.
 It must not broaden routes, identifiers, properties, capture modes, provider

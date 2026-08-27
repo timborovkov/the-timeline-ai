@@ -38,7 +38,6 @@ beforeEach(() => {
   };
   resetEnvForTests();
 });
-
 afterEach(() => {
   process.env = { ...ENV_BACKUP };
   resetEnvForTests();

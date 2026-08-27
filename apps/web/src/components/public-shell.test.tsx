@@ -26,6 +26,8 @@ describe('PublicShell', () => {
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('>Try one project</a>');
     expect(html).toContain('href="/cookies"');
+    expect(html).toContain('data-public-analytics-cta="try_project"');
+    expect(html).toContain('data-public-analytics-cta="sign_in"');
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
   });
 

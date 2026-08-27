@@ -2300,10 +2300,10 @@ test('signed-in support form submits with team context', async ({ browser }) => 
   const stamp = Date.now();
   const message = `E2E signed-in support request ${stamp} needs help with team export evidence.`;
 
-  await ownerPage.goto('/help/support');
+  await ownerPage.goto('/help/support?surface=team&error=e2e-reference');
   await expect(
     ownerPage.getByRole('heading', {
-      name: 'Tell us what broke, what you need, or what you want to buy.',
+      name: 'Choose the right support channel.',
     }),
   ).toBeVisible();
   await expect(ownerPage.getByLabel('Name')).toHaveValue(e2eUsers.owner.name);
@@ -2314,11 +2314,11 @@ test('signed-in support form submits with team context', async ({ browser }) => 
   await waitForPost(ownerPage, '/help/support', () =>
     ownerPage.getByRole('button', { name: 'Send request' }).click(),
   );
-  await expect(ownerPage.getByText(/We received your request|We saved your request/)).toBeVisible();
+  await expect(ownerPage.getByText('Request received')).toBeVisible();
 
   const request = await waitForSupportRequestByMessage(message);
   expect(request).toMatchObject({
-    currentPage: expect.stringContaining('/help/support'),
+    currentPage: '/app/team',
     email: e2eUsers.owner.email,
     name: e2eUsers.owner.name,
     requestType: 'technical_support',
@@ -2326,11 +2326,14 @@ test('signed-in support form submits with team context', async ({ browser }) => 
     userId: e2eUsers.owner.id,
   });
   expect(request.context).toMatchObject({
-    teamName: e2eTeam.name,
+    errorReference: 'e2e-reference',
+    surface: 'team',
     teamRole: 'owner',
-    userEmail: e2eUsers.owner.email,
-    userName: e2eUsers.owner.name,
+    userAgent: expect.any(String),
   });
+  expect(request.context).not.toHaveProperty('teamName');
+  expect(request.context).not.toHaveProperty('userEmail');
+  expect(request.context).not.toHaveProperty('userName');
 
   await ownerPage.context().close();
 });

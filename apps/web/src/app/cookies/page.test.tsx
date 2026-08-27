@@ -26,7 +26,7 @@ describe('Cookies and similar technologies page', () => {
     const html = renderToStaticMarkup(<CookiesPage />);
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('This is a notice, not a consent control');
+    expect(html).toContain('Reading this notice alone does not accept analytics');
     expect(html).toContain('authjs.session-token');
     expect(html).toContain('30-day');
     expect(html).toContain('authjs.callback-url');
@@ -41,25 +41,27 @@ describe('Cookies and similar technologies page', () => {
     expect(html).toContain('no more than seven days');
     expect(html).toContain('timeline:chat-handoff:&lt;team&gt;');
     expect(html).toContain('up to 4,000 characters');
+    expect(html).toContain('tl_analytics_consent');
+    expect(html).toContain('tl_public_attribution');
+    expect(html).toContain('ph_timeline_public_analytics_v1');
+    expect(html).toContain('tl_posthog_consent_v1');
     expect(html).toContain('<strong>am_vid</strong>');
-    expect(html).toContain('full page URL');
-    expect(html).toContain('must not be deployed on its own');
+    expect(html).toContain('Current source no longer writes or sends these values');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/trust"');
   });
 
-  it('labels the optional public analytics design as a blocked target', () => {
+  it('documents the consent-gated browser boundary and separate surface requests', () => {
     const html = renderToStaticMarkup(<CookiesPage />);
 
-    expect(html).toContain('conditional PostHog browser integration in protected workspace routes');
-    expect(html).toContain('must remain unset');
-    expect(html).toContain('separate, current violation');
-    expect(html).toContain('separate affirmative analytics choice');
+    expect(html).toContain('after a separate affirmative choice');
     expect(html).toContain('zero PostHog browser events');
-    expect(html).toContain('identifier-free aggregate totals');
+    expect(html).toContain('personless surface-request totals');
+    expect(html).toContain('Bots and retries can contribute');
+    expect(html).toContain('not visitor or session metrics');
     expect(html).toContain('Autocapture, heatmaps, session replay');
-    expect(html).toContain('Not recorded — do not enable');
-    expect(html).toContain('There is no Cookie settings button');
+    expect(html).toContain('do not enable optional browser analytics yet');
+    expect(html).toContain('Use Cookie settings to accept, reject, or withdraw');
   });
 
   it('keeps error monitoring and anti-abuse processing separate from analytics', () => {

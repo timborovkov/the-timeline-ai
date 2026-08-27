@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import type { ReactNode } from 'react';
 
+import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import {
   PublicNavigationItems,
@@ -81,6 +82,7 @@ export function PublicShell({
               >
                 Cookies
               </Link>
+              <CookieSettingsButton />
             </nav>
           </div>
         </div>

@@ -1,7 +1,12 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 
-import { ACTIVE_TEAM_COOKIE, activeTeamCookieOptions, verifyMembership } from '@/lib/active-team';
+import {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  serializeActiveTeamCookie,
+  verifyMembership,
+} from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -24,6 +29,6 @@ export async function POST(
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, activeTeamCookieOptions());
+  cookieStore.set(ACTIVE_TEAM_COOKIE, serializeActiveTeamCookie(teamId), activeTeamCookieOptions());
   return appRedirect('/app');
 }

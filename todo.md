@@ -156,10 +156,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       grouping with uniform pulse weight. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
-      Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
-      counters for mode, filters, row-count reduction, scan pressure, missing
-      grouping metadata, AI presentation cache status, and visibility cache
-      partitioning without exposing raw content. Timeline browsing now ends at
+      Timeline page reads contribute only to the fixed, personless `timeline`
+      surface-request stream; filter and cache diagnostics are not correlated
+      to a user or team in product analytics. Timeline browsing now ends at
       the current instant by default; an explicit upcoming control and future
       date filters are bounded to seven days so recurrence materialization
       cannot crowd historical work out of the archive.
@@ -519,37 +518,42 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 
 - [x] Add the public Trust, Privacy, Terms, and Cookies surfaces; per-user
       versioned legal acceptance with immutable acceptance history; and
-      non-analytics browser-storage hardening. The Cookies notice explicitly
-      marks optional browser analytics and its settings control as a pending
-      target rather than deployed behavior.
-- [ ] Land the analytics-owned runtime against
+      non-analytics browser-storage hardening. The Cookies notice inventories
+      the implemented optional public-browser analytics choice and withdrawal
+      controls while keeping provider-account and production evidence explicit.
+- [x] Land the analytics-owned runtime against
       [`docs/privacy-analytics-interface.md`](./docs/privacy-analytics-interface.md):
-      identifier-free aggregate public counts, affirmative-consent-only public
-      PostHog, no browser analytics in private routes, minimized authenticated
-      server/worker events, working withdrawal, and removal/investigation of the
-      legacy Convex tracker. Do not deploy the privacy branch alone before that
-      merge.
+      fixed-stream personless public/app surface requests,
+      affirmative-consent-only public PostHog, no browser analytics in private
+      routes, HMAC-pseudonymous minimized server/worker events, working
+      withdrawal, strict route/property allowlists, separate minimized Sentry
+      handling, and source removal of the legacy Convex tracker.
+- [x] Expand Help into a support-channel router with a minimized private form,
+      direct email, structured non-sensitive GitHub bug reporting, private
+      vulnerability reporting, issue-first contribution guidance, aligned
+      desktop/mobile navigation, and contextual Get support actions on shared
+      error states.
+- [x] Review the PostHog Cloud EU account: enable IP discard; disable
+      autocapture, replay, heatmaps, web-vitals, dead-click, and exception
+      capture; restrict current membership; create and pin the Launch dashboard
+      shell; and queue deletion of the 127-event legacy development dataset.
+      The dated evidence memo records the pay-as-you-go retention and billing
+      constraints without storing account secrets or member details.
+- [ ] Complete the external analytics rollout and evidence: obtain
+      privacy/counsel approval for the legal basis and the seven-year
+      pay-as-you-go retention mismatch; verify deletion completion, DPA,
+      transfers, and provider access; configure the production environment; run
+      the real-browser and production payload canaries; populate the Launch
+      dashboard; and retain dated release evidence.
+- [ ] Inspect, export if necessary, and delete the legacy Convex deployment or
+      data only after confirming it is tracker-only and safe to remove.
 - [ ] Choose and commit a repository license and contribution terms after
       founder/counsel review. Until then, describe the repository as public
       source—not open source—and do not promise unrestricted self-hosting.
-- [x] Add the code-owned OpenRouter model/privacy registry, fail-closed
-      no-collection/ZDR routing for required roles, explicit cache disablement,
-      official-origin enforcement, key/guardrail/catalog/policy-bound production
-      attestation, all-pin ZDR canary, and the aggregate-only multilingual
-      transcription bake-off.
-      Keep GPT-4o Transcribe as the disclosed quality exception until that gate
-      produces a passing locked artifact. Recall remains separate: signed raw-body
-      webhooks, no outbound internal ids or stored Create Bot response, accuracy
-      mode, auto language detection, and requested one-hour retention.
-- [ ] Run and lock the non-customer 24-language transcription evaluation, then
-      capture production OpenRouter evidence: exact key model allowlist,
-      generated privacy-policy attestation, operator-only management-key proof of
-      the exact guardrail assignment and settings, all applicable ZDR guardrails,
-      prompt logging, input/output sharing, Broadcast, response caching, current
-      DPA and subprocessors. Never deploy the management key to app runtime.
-      Schedule the all-pin registry and synthetic route canaries.
-      Capture a synthetic Recall meeting request/lifecycle and one-hour provider
-      behavior before publishing verified deletion claims.
+- [ ] Capture production OpenRouter evidence: the key-to-guardrail assignment,
+      prompt logging, input/output sharing, response caching, current DPA and
+      subprocessors. Schedule the ZDR-registry/transcription canary and run the
+      multilingual live transcription evaluation before launch.
 - [ ] Have qualified counsel review the published Terms and Privacy Policy, and
       bind future acceptance events to an immutable rendered legal-text snapshot
       or digest in addition to the version, timestamp, source, IP, and user agent.

@@ -9,6 +9,15 @@ import {
 } from '@/components/marketing/editorial/content';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
+import {
+  GITHUB_BUG_REPORT_URL,
+  GITHUB_CONTRIBUTING_URL,
+  GITHUB_SECURITY_URL,
+  PUBLIC_SUPPORT_EMAIL,
+} from '@/lib/support-links';
+
+const supportLinkClass =
+  'rounded-sm text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
   return (
@@ -74,11 +83,9 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
               </summary>
               <p className="max-w-3xl pb-6 text-sm leading-7 text-fg-muted sm:text-base">
                 Timeline does not train or fine-tune models on team content. Hosted inference may be
-                enabled only after the production key, exact model allowlist, and account privacy
-                settings match the code-owned policy. Core AI roles require zero-data-retention
-                routes and reject weaker fallback. Non-meeting voice transcription is a disclosed
-                no-training but retained quality exception while multilingual alternatives are
-                evaluated. The{' '}
+                enabled only after the production key and account are verified to enforce
+                zero-data-retention, no-data-collection routing; repository controls then reject
+                weaker eligible routes. The{' '}
                 <Link className="text-fg underline underline-offset-4" href="/trust">
                   Trust page
                 </Link>{' '}
@@ -146,6 +153,50 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
               <ArrowRight aria-hidden="true" className="size-4" />
             </span>
           </Link>
+        </div>
+      </section>
+
+      <section className="border-t border-border">
+        <div className="mx-auto grid max-w-5xl gap-5 px-4 py-10 sm:px-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.02em]">Need help with this guide?</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-fg-muted">
+              Keep account details and sensitive reports private. Public issues must not contain
+              customer content, personal data, credentials, or private URLs.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold md:justify-end">
+            <Link className={supportLinkClass} href="/help/support">
+              Contact support
+            </Link>
+            <a className={supportLinkClass} href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}>
+              Email support
+            </a>
+            <a
+              className={supportLinkClass}
+              href={GITHUB_BUG_REPORT_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Report a bug
+            </a>
+            <a
+              className={supportLinkClass}
+              href={GITHUB_SECURITY_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Security
+            </a>
+            <a
+              className={supportLinkClass}
+              href={GITHUB_CONTRIBUTING_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Contribute
+            </a>
+          </div>
         </div>
       </section>
 

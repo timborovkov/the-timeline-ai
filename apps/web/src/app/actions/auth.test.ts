@@ -57,6 +57,7 @@ vi.mock('@timeline/shared/slug', () => ({
 vi.mock('@/lib/active-team', () => ({
   ACTIVE_TEAM_COOKIE: 'timeline_active_team',
   activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+  serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
 }));
 vi.mock('@/lib/analytics', () => ({
   trackProductEventBestEffort: fakes.trackProductEventBestEffort,
@@ -79,7 +80,7 @@ vi.mock('@/lib/turnstile', () => ({
   verifyTurnstileToken: fakes.verifyTurnstileToken,
 }));
 vi.mock('next/headers', () => ({
-  cookies: vi.fn().mockResolvedValue({ set: fakes.cookieSet }),
+  cookies: vi.fn().mockResolvedValue({ get: vi.fn(), set: fakes.cookieSet }),
   headers: fakes.headers,
 }));
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
@@ -196,8 +197,18 @@ describe('signUpAction legal acceptance', () => {
     });
     expect(fakes.cookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'account_registered',
+      { source: 'credentials', joinedViaInvite: false },
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_created',
+      { source: 'signup' },
     );
   });
 

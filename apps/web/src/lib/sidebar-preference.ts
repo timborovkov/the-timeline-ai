@@ -18,14 +18,15 @@ export function persistSidebarExpanded(expanded: boolean) {
 
   try {
     const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-    document.cookie = `${SIDEBAR_COOKIE_KEY}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
+    document.cookie = `${SIDEBAR_COOKIE_KEY}=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${secure}`;
     document.cookie = `${SIDEBAR_COOKIE_KEY}=${value}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
   } catch {
     // Cookies can be blocked; the in-memory toggle should still work.
   }
 }
 
-// Migrate the existing localStorage-only preference before the sidebar HTML is
-// parsed. Reloading once lets the server render the migrated cookie value, so
+// Expire the legacy root-path cookie on every route. Inside `/app`, preserve an
+// existing scoped cookie or migrate the local/legacy preference before the
+// sidebar HTML is parsed. Reloading once lets the server render that value, so
 // established users never see the old expanded-first hydration frame.
-export const SIDEBAR_PREFERENCE_BOOTSTRAP = `(()=>{if(!location.pathname.startsWith('/app'))return;try{const s=localStorage.getItem('${SIDEBAR_STORAGE_KEY}'),k='${SIDEBAR_COOKIE_KEY}=',c=document.cookie.split('; ').find(v=>v.startsWith(k))?.slice(k.length),v=c??(s==='true'||s==='false'?s:null);if(v===null)return;const q=location.protocol==='https:'?'; Secure':'';document.cookie=k+'; Path=/; Max-Age=0; SameSite=Lax'+q;document.cookie=k+v+'; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax'+q;if(c!==undefined)return;const n=document.cookie.split('; ').find(x=>x.startsWith(k))?.slice(k.length);if(n===v)location.reload()}catch{}})()`;
+export const SIDEBAR_PREFERENCE_BOOTSTRAP = `(()=>{try{const k='${SIDEBAR_COOKIE_KEY}=',a=location.pathname==='/app'||location.pathname.startsWith('/app/'),v=()=>document.cookie.split('; ').filter(x=>x.startsWith(k)).map(x=>x.slice(k.length)).find(x=>x==='true'||x==='false'),l=a?v():undefined,s=location.protocol==='https:'?'; Secure':'';document.cookie=k+'; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax'+s;if(!a)return;const c=v();if(c!==undefined)return;let p;try{p=localStorage.getItem('${SIDEBAR_STORAGE_KEY}')}catch{}const n=p==='true'||p==='false'?p:l;if(n!=='true'&&n!=='false')return;document.cookie=k+n+'; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax'+s;if(v()===n)location.reload()}catch{}})()`;

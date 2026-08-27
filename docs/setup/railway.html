@@ -125,8 +125,10 @@
         In <strong>Settings → Variables</strong>, set everything from <code>.env.example</code> that
         isn't a local-only default. Mark provider tokens and secrets (OpenRouter, Telegram, Slack,
         Postmark, Sentry, and native integration OAuth client secrets such as GitHub, Linear, and
-        Monday.com) as <strong>secret</strong>. PostHog's public project key and host are not
-        secrets, but keep them environment-specific.
+        Monday.com) as <strong>secret</strong>. PostHog's project key and host are not secrets, but
+        keep them environment-specific. The independent
+        <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> is secret and must never be exposed to the
+        browser.
       </p>
       <p>
         <code>TELEGRAM_BOT_TOKEN</code> must be available to both app services. The web service owns
@@ -174,9 +176,16 @@
         use rate limits, permission checks, and product quotas instead.
       </p>
       <p>
-        For product analytics, set <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
-        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code>. For error monitoring, set
-        <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
+        For personless surface counts and pseudonymous server/worker product analytics, set
+        <code>POSTHOG_PROJECT_KEY</code>, <code>POSTHOG_HOST=https://eu.i.posthog.com</code>, and a
+        separate high-entropy <code>ANALYTICS_PSEUDONYMIZATION_KEY</code>. Set
+        <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
+        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code> only when the consent-gated
+        public-browser path and provider account have been verified; leaving the public key empty
+        disables browser capture. Put the server analytics values only on <code>web</code> and the
+        main <code>worker</code>; the document-extract orchestrator does not emit product analytics
+        and its startup allowlist rejects them. See <a href="analytics.html">Analytics setup</a>.
+        For error monitoring, set <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
         <code>NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE</code>,
         <code>NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE</code>, <code>SENTRY_ENVIRONMENT</code>,
         <code>SENTRY_TRACES_SAMPLE_RATE</code>, <code>SENTRY_PROFILES_SAMPLE_RATE</code>, and

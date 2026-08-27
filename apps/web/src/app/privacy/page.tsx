@@ -94,9 +94,9 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
         </li>
         <li>
           <strong>Service and device data:</strong> IP address, user agent, timestamps, request and
-          response metadata, job status, security signals, diagnostics, and explicit product
-          lifecycle events. If optional public browser analytics is enabled after its stated release
-          conditions are met, this category can also include the consent preference and approved
+          response metadata, job status, security signals, diagnostics, personless surface-request
+          events, and explicit pseudonymous product lifecycle events. If you allow optional public
+          browser analytics, this category can also include the consent preference and approved
           public-page events and identifiers described in our cookies notice. We do not
           intentionally place Customer Content in product analytics.
         </li>
@@ -116,6 +116,10 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
       </p>
 
       <h2>4. Purposes and legal bases</h2>
+      <p>
+        The analytics bases below are our current intended positions and remain subject to qualified
+        privacy and legal review before this version is published in production.
+      </p>
       <table>
         <thead>
           <tr>
@@ -147,8 +151,7 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
           </tr>
           <tr>
             <td>
-              Run optional PostHog browser analytics on eligible public pages, if the currently
-              blocked design is later enabled.
+              Run optional PostHog browser analytics on eligible public pages after you allow it.
             </td>
             <td>
               Consent obtained before PostHog initializes. Policy acknowledgement, account creation,
@@ -156,11 +159,14 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
             </td>
           </tr>
           <tr>
-            <td>Keep identifier-free aggregate server counts for public page routes.</td>
             <td>
-              Our legitimate interest in understanding basic public-site operation, where that count
-              constitutes personal-data processing. The counter must not store a browser, visitor,
-              session, user, or team identifier.
+              Count requested public pages and signed-in product surfaces through fixed, non-visitor
+              server streams.
+            </td>
+            <td>
+              Our legitimate interest in understanding basic service operation, where that count
+              constitutes personal-data processing. The event contains an allowlisted surface only
+              and cannot recognize a browser, visitor, session, account, user, or team.
             </td>
           </tr>
           <tr>
@@ -224,14 +230,12 @@ function PrivacyAiAndProviderSections() {
       <p>
         Timeline does not copy raw meeting audio or video into its object storage. Hosted Timeline
         requests Recall.ai&apos;s one-hour media-retention setting for each bot. Recall.ai documents
-        that window as starting when recording status reaches done and the setting as deleting
-        provider media after one hour, but the deployed account, request-level setting, and
-        deletion-failure handling must be verified before relying on completed deletion. The
-        resulting transcript, timestamps, speakers, and derived Timeline records currently remain in
-        workspace data without an automatic meeting-retention period. A meeting-specific in-product
-        deletion control is not yet available; valid account or data-deletion requests use the
-        rights-request process below. Recall.ai separately documents seven-day retention for
-        operational logs and removal of meeting URLs 14 days after a bot terminates.
+        that setting as deleting provider media after one hour, but the deployed account,
+        request-level setting, and deletion-failure handling must be verified before relying on
+        completed deletion. The resulting transcript, timestamps, speakers, and derived Timeline
+        records remain in the workspace until an authorized user deletes them or a valid deletion
+        request applies. Recall.ai separately documents seven-day retention for operational logs and
+        removal of meeting URLs 14 days after a bot terminates.
       </p>
 
       <h2>7. Service providers</h2>
@@ -251,11 +255,9 @@ function PrivacyAiAndProviderSections() {
           <tr>
             <td>Railway</td>
             <td>
-              Application and worker hosting; PostgreSQL and Redis services; and persistent volumes
-              for Qdrant and RustFS. The required hosted topology uses private-network server
-              traffic plus an external HTTPS endpoint only for authorized, short-lived signed RustFS
-              browser transfers, with non-public buckets. The deployed network and bucket
-              configuration must be captured before treating that topology as verified.
+              Application and worker hosting; PostgreSQL and Redis services; private-network server
+              traffic and persistent volumes for Qdrant and RustFS; and an external HTTPS endpoint
+              for authorized, short-lived signed RustFS browser transfers. Buckets are not public.
             </td>
           </tr>
           <tr>
@@ -294,15 +296,15 @@ function PrivacyAiAndProviderSections() {
           <tr>
             <td>PostHog</td>
             <td>
-              Conditional product analytics and feature-flag processing. Server-side typed events
-              can include stable service identifiers but must exclude Customer Content. The current
-              repository also contains a conditional protected-route browser integration that can
-              identify a user and team and use cookie and local-storage persistence. That is not the
-              approved target and the hosted browser key must remain unset until it is removed from
-              private workspace routes. Any future browser use is limited to eligible public pages
-              after affirmative consent, with autocapture, heatmaps, and session replay off. Project
-              region, retention, DPA, deletion, access, IP handling, storage names, and the public
-              event allowlist remain unverified and must be published before enablement.
+              Personless server surface-request events, pseudonymous content-free product events,
+              and optional public-browser analytics. The personless streams use one fixed
+              non-visitor identifier each and receive only an allowlisted surface. Product-action
+              identifiers are transformed before capture and are not anonymous. Browser PostHog may
+              initialize only after affirmative consent on an eligible public page and is never
+              identified or grouped to an account, user, or team. Autocapture, heatmaps, session
+              replay, DOM capture, automatic page views, and client-side feature flags are disabled.
+              Project region, retention, DPA, deletion, access, and deployed account settings still
+              require dated provider evidence.
             </td>
           </tr>
           <tr>
@@ -361,28 +363,30 @@ function PrivacyDisclosureAndSecuritySections() {
         to optional browser analytics.
       </p>
       <p>
-        The current repository still loads a legacy Convex-hosted page tracker without an analytics
-        choice. It creates persistent browser and session identifiers and can send full URLs,
-        referrers, campaign parameters, language, screen dimensions, scroll depth, and time on page.
-        This violates the approved boundary. The analytics owner must remove it, investigate and
-        delete historical data where possible, and verify the deployed result before this privacy
-        worktree can be released.
+        A previous source version loaded a Convex-hosted page tracker globally. It could create
+        persistent browser and session identifiers and send full URLs, referrers, campaign
+        parameters, language, screen dimensions, scroll depth, and time on page. The current source
+        removes that script and guards the root layout against another hard-coded remote tracker.
+        The separate Convex deployment, historical data, and live production release still require
+        verification before we treat that incident as closed.
       </p>
       <p>
-        The approved browser-analytics target permits PostHog only on eligible public pages after a
-        separate affirmative choice, never in protected workspace routes. Rejecting or withdrawing
-        must result in no PostHog browser event, cookie, local-storage value, session identifier, or
-        visitor identifier. Autocapture, heatmaps, and session replay remain off. An identifier-free
-        aggregate server counter for public route totals can continue because it stores no browser,
-        visitor, session, user, or team identifier. Sentry error monitoring and Cloudflare Turnstile
-        abuse prevention are separate processing, not PostHog analytics.
+        Browser PostHog is limited to eligible public pages after a separate affirmative choice and
+        does not run in protected workspace routes. Rejecting or withdrawing results in no PostHog
+        browser event, cookie, local-storage value, session identifier, or visitor identifier from
+        that point forward. Autocapture, heatmaps, and session replay remain off. Separate
+        server-to-server surface events continue regardless of the browser choice. Eligible,
+        allowlisted, non-prefetch public navigations share one non-visitor stream identifier;
+        eligible app navigations count only after Auth.js permits the request and share another.
+        Only an allowlisted surface is variable, so these events cannot recognize a returning
+        visitor or account. Sentry error monitoring and Cloudflare Turnstile abuse prevention are
+        separate processing, not PostHog analytics.
       </p>
       <p>
-        That public-page consent design and its Cookie settings control are not claimed as deployed
-        today. The current conditional protected-route browser integration does not satisfy it, and
-        must remain disabled in hosted production until the route boundary, working consent and
-        withdrawal controls, exact storage inventory, account settings, retention, and provider
-        evidence are verified. We do not use behavioral advertising trackers.
+        The source includes the public-route consent and withdrawal controls, but browser capture
+        remains disabled when its public project key is absent. Provider account settings,
+        retention, processing region, access, and the production deployment remain separate evidence
+        items. We do not use behavioral advertising trackers.
       </p>
 
       <h2>11. Human access to Customer Content</h2>
@@ -397,14 +401,13 @@ function PrivacyDisclosureAndSecuritySections() {
 
       <h2>12. Security</h2>
       <p>
-        Code-enforced measures include team-scoped database and vector queries, per-record
-        visibility checks, encrypted integration secrets using authenticated encryption, signed or
-        authenticated webhooks, short-lived or controlled file access, audit records for
-        security-relevant product actions, and review of external content before it reaches the
-        agent. Hosted deployment policy additionally requires encrypted external transport and
-        isolated private-network traffic between services; those network facts require deployment
-        evidence. No system can be guaranteed completely secure. See the{' '}
-        <Link href="/trust">Trust page</Link> for a concise explanation.
+        Measures include encrypted external transport, isolated private-network traffic between
+        hosted services, team-scoped database and vector queries, per-record visibility checks,
+        encrypted integration secrets using authenticated encryption, signed or authenticated
+        webhooks, short-lived or controlled file access, audit records for security-relevant product
+        actions, and review of external content before it reaches the agent. No system can be
+        guaranteed completely secure. See the <Link href="/trust">Trust page</Link> for a concise
+        explanation.
       </p>
     </>
   );
@@ -440,10 +443,9 @@ function PrivacyRetentionSections() {
             <td>Raw meeting media at Recall.ai</td>
             <td>
               Timeline requests one-hour retention; raw media is not copied into Timeline object
-              storage. Recall.ai documents the one-hour window as starting when recording status
-              reaches done, seven-day operational-log retention, and removal of meeting URLs 14 days
-              after bot termination. Production request/account evidence and deletion-failure
-              handling remain subject to verification.
+              storage. Recall.ai documents seven-day operational-log retention and removal of
+              meeting URLs 14 days after bot termination. Production request/account evidence and
+              deletion-failure handling remain subject to verification.
             </td>
           </tr>
           <tr>
@@ -454,14 +456,7 @@ function PrivacyRetentionSections() {
             </td>
           </tr>
           <tr>
-            <td>AI content for ZDR-required roles</td>
-            <td>
-              No endpoint persistence under the required zero-data-retention route. Requests fail
-              rather than use a weaker-retention endpoint.
-            </td>
-          </tr>
-          <tr>
-            <td>Non-meeting voice-note transcription content</td>
+            <td>AI prompt and response content at inference providers</td>
             <td>{PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyRetentionDetail}</td>
           </tr>
           <tr>
@@ -509,15 +504,17 @@ function PrivacyRightsAndClosingSections({
         exemption applies or retention is legally required.
       </p>
       <p>
-        If optional public browser analytics is enabled later, a functional Cookie settings control
-        must let you reject or withdraw as easily as you accepted. Until that control is actually
-        deployed, we do not show a non-working settings button. See the{' '}
-        <Link href="/cookies">cookies notice</Link> for the current status and browser-storage
-        inventory.
+        The Cookie settings control lets you reject or withdraw optional public-browser analytics as
+        easily as you accepted. This browser choice does not govern the separately disclosed
+        personless surface streams, pseudonymous server/worker product analytics, Sentry, security
+        logs, or necessary service storage. See the <Link href="/cookies">cookies notice</Link> for
+        the browser-storage inventory.
       </p>
       <p>
-        Send requests to <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>. You also
-        have the right to complain to your local supervisory authority or the{' '}
+        Send requests to <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a> or use our{' '}
+        <Link href="/help/support">private support form</Link>. Do not put account details or a
+        privacy request in a public GitHub issue. You also have the right to complain to your local
+        supervisory authority or the{' '}
         <a href="https://www.aki.ee/en/guidelines-legislation/how-can-we-help-foreign-persons-and-authorities">
           Estonian Data Protection Inspectorate
         </a>

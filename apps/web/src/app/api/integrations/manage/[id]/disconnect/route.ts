@@ -4,6 +4,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -79,6 +80,11 @@ export async function POST(
       'disconnect',
       { provider: integration.provider },
       null,
+    );
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'integration_management_action_completed',
+      { action: 'disconnect', kind: 'native', provider: integration.provider },
     );
     return NextResponse.json({ ok: true });
   } catch (err) {

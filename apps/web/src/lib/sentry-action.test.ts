@@ -48,7 +48,11 @@ vi.mock('@sentry/nextjs', () => ({
 describe('runSentryServerAction', () => {
   beforeEach(() => {
     mocks.auth.mockReset();
-    mocks.headers.mockReturnValue(new Headers({ 'sentry-trace': 'trace' }));
+    mocks.headers.mockReturnValue(
+      new Headers({
+        'sentry-trace': '0123456789abcdef0123456789abcdef-0123456789abcdef-1',
+      }),
+    );
     mocks.redirect.mockReset();
     mocks.redirect.mockImplementation(() => {
       throw new Error('NEXT_REDIRECT');
@@ -56,7 +60,15 @@ describe('runSentryServerAction', () => {
     mocks.withServerActionInstrumentation.mockClear();
   });
 
-  it('runs server actions through Sentry with request headers for trace continuity', async () => {
+  it('passes only a valid trace header into Sentry instrumentation', async () => {
+    mocks.headers.mockReturnValue(
+      new Headers({
+        'sentry-trace': '0123456789abcdef0123456789abcdef-0123456789abcdef-1',
+        referer: 'https://timeline.test/accept-invite/secret?token=private',
+        'x-forwarded-for': '203.0.113.10',
+        'x-private-secret': 'must-not-reach-sentry',
+      }),
+    );
     await expect(
       runSentryServerAction('accept_legal', async () => {
         await Promise.resolve();
@@ -68,9 +80,25 @@ describe('runSentryServerAction', () => {
     expect(call).toBeDefined();
     if (!call) return;
     expect(call[0]).toBe('accept_legal');
-    await expect(call[1].headers).resolves.toBeInstanceOf(Headers);
+    const sentryHeaders = await call[1].headers;
+    expect(Object.fromEntries(sentryHeaders)).toEqual({
+      'sentry-trace': '0123456789abcdef0123456789abcdef-0123456789abcdef-1',
+    });
     expect(typeof call[2]).toBe('function');
     expect(mocks.auth).not.toHaveBeenCalled();
+  });
+
+  it('drops malformed trace headers instead of forwarding arbitrary text', async () => {
+    mocks.headers.mockReturnValue(
+      new Headers({ 'sentry-trace': 'person@example.test-private-project' }),
+    );
+
+    await runSentryServerAction('accept_legal', () => 'ok');
+
+    const call = mocks.withServerActionInstrumentation.mock.calls[0];
+    expect(call).toBeDefined();
+    if (!call) return;
+    expect(Object.fromEntries(await call[1].headers)).toEqual({});
   });
 
   it('runs protected actions for a current legal session', async () => {
@@ -103,20 +131,14 @@ describe('runSentryServerAction', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
-  it('leaves the token-aware legal gate to the invite acceptance action', async () => {
+  it('leaves the invite return target to the token-aware invite action', async () => {
     mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
-    mocks.auth.mockResolvedValue({
-      user: {
-        legalTermsVersion: 'old',
-        legalPrivacyVersion: 'old',
-        legalAcceptedAt: '2026-06-02T00:00:00.000Z',
-      },
-    });
     const callback = vi.fn(() => 'invite action result');
 
     await expect(runSentryServerAction('accept_invite', callback)).resolves.toBe(
       'invite action result',
     );
+    expect(mocks.auth).not.toHaveBeenCalled();
     expect(mocks.redirect).not.toHaveBeenCalled();
     expect(callback).toHaveBeenCalledOnce();
   });

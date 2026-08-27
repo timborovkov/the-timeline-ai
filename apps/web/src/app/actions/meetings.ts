@@ -227,10 +227,7 @@ export async function scheduleMeetingBotAction(
     });
     if (!started.ok) return started;
 
-    trackProductEventBestEffort(userId, 'meeting_bot_scheduled', {
-      teamId,
-      userId,
-      meetingId: meeting.id,
+    trackProductEventBestEffort({ kind: 'user', userId, teamId }, 'meeting_bot_scheduled', {
       platform,
       visibility: parsed.data.visibility,
     });

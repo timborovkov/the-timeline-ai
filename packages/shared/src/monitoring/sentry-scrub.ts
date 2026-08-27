@@ -1,5 +1,5 @@
-const SENSITIVE_HEADER_NAMES = new Set(['authorization', 'cookie', 'x-auth-token']);
-const SENSITIVE_PATH_PREDECESSORS = new Set(['accept-invite']);
+const SENSITIVE_PATH_PREDECESSORS = new Set(['accept-invite', 'verify-email']);
+const BREADCRUMB_URL_FIELD = /^(?:from|href|request_?url|to|uri|url)$/i;
 /**
  * Telegram Bot API embeds the bot token in URL paths:
  * - `https://api.telegram.org/bot<token>/method`
@@ -29,13 +29,10 @@ export function scrubSentryRequestEvent<Event extends SentryEventLike>(event: Ev
     const sanitizedUrl = sanitizeRequestUrl(event.request.url);
     if (sanitizedUrl !== undefined) event.request.url = sanitizedUrl;
     delete event.request.cookies;
-    if (event.request.headers) {
-      event.request.headers = Object.fromEntries(
-        Object.entries(event.request.headers).filter(
-          ([key]) => !SENSITIVE_HEADER_NAMES.has(key.toLowerCase()),
-        ),
-      );
-    }
+    // Request headers are not needed to diagnose application failures. A
+    // denylist cannot anticipate Referer tokens, forwarded IPs, or custom
+    // secret headers, so fail closed and remove the complete map.
+    delete event.request.headers;
   }
 
   if (event.breadcrumbs) {
@@ -78,10 +75,11 @@ export function scrubSentryBreadcrumb<Breadcrumb extends SentryBreadcrumbLike>(
   }
   if (next.data) {
     next.data = Object.fromEntries(
-      Object.entries(next.data).map(([key, value]) => [
-        key,
-        typeof value === 'string' ? redactTelegramBotTokenInUrl(value) : value,
-      ]),
+      Object.entries(next.data).map(([key, value]) => {
+        if (typeof value !== 'string') return [key, value];
+        const redacted = redactTelegramBotTokenInUrl(value);
+        return [key, BREADCRUMB_URL_FIELD.test(key) ? sanitizeRequestUrl(redacted) : redacted];
+      }),
     );
   }
   return next;

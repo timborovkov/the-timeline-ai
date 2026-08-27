@@ -1,37 +1,39 @@
 import {
   capturePostHogProductEvent,
+  reviewedPostHogHost,
+  REVIEWED_POSTHOG_EU_ORIGIN,
+  type AnalyticsActor,
   type ProductEventName,
   type ProductEventPayloads,
 } from '@timeline/shared/analytics/posthog-node';
 
-const DEFAULT_HOST = 'https://eu.i.posthog.com';
-
-function posthogHost(): string {
-  const host = process.env.NEXT_PUBLIC_POSTHOG_HOST;
-  return host === undefined || host.length === 0 ? DEFAULT_HOST : host;
-}
-
-function posthogKey(): string | undefined {
-  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-  return key && key !== 'undefined' ? key : undefined;
+function nonEmpty(value: string | undefined): string | undefined {
+  return value && value !== 'undefined' ? value : undefined;
 }
 
 function posthogConfig() {
-  return { key: posthogKey(), host: posthogHost() };
+  const configuredHost = nonEmpty(process.env.POSTHOG_HOST);
+  const host = configuredHost ? reviewedPostHogHost(configuredHost) : REVIEWED_POSTHOG_EU_ORIGIN;
+  const pseudonymizationKey = nonEmpty(process.env.ANALYTICS_PSEUDONYMIZATION_KEY);
+  return {
+    key: host ? nonEmpty(process.env.POSTHOG_PROJECT_KEY) : undefined,
+    host: host ?? REVIEWED_POSTHOG_EU_ORIGIN,
+    ...(pseudonymizationKey ? { pseudonymizationKey } : {}),
+  };
 }
 
 async function trackProductEvent<Name extends ProductEventName>(
-  distinctId: string,
+  actor: AnalyticsActor,
   event: Name,
   properties: ProductEventPayloads[Name],
 ): Promise<void> {
-  await capturePostHogProductEvent(posthogConfig(), distinctId, event, properties);
+  await capturePostHogProductEvent(posthogConfig(), actor, event, properties);
 }
 
 export function trackProductEventBestEffort<Name extends ProductEventName>(
-  distinctId: string,
+  actor: AnalyticsActor,
   event: Name,
   properties: ProductEventPayloads[Name],
 ): void {
-  void trackProductEvent(distinctId, event, properties).catch(() => undefined);
+  void trackProductEvent(actor, event, properties).catch(() => undefined);
 }

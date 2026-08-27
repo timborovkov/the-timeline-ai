@@ -1,8 +1,11 @@
 # GDPR, cookies, and consent audit
 
 **As of:** 2026-08-21
+
 **Status:** Internal legal-and-implementation research; not approved public copy or legal advice
+
 **Repository baseline audited:** `3778f4fbcd0086376df1e516a8d41a0a6ebda791`
+
 **Scope:** EU/EEA GDPR and ePrivacy requirements relevant to Timeline's public website and authenticated SaaS application, including cookies and similar technologies, analytics, legal acceptance, data-subject rights, controller/processor roles, international transfers, and accountability records
 **Source policy:** External legal conclusions below rely only on official primary or institutional sources: EUR-Lex, the European Data Protection Board (EDPB), the European Commission, the Court of Justice of the European Union (CJEU), the Estonian legislature, and the Estonian Data Protection Inspectorate (AKI)
 

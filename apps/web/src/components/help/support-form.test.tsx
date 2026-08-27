@@ -36,7 +36,6 @@ const { SupportForm } = await import('./support-form.js');
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.useActionState.mockReturnValue([{}, fakes.action, false]);
-  window.history.replaceState({}, '', '/help/support?from=settings');
 });
 
 afterEach(() => {
@@ -45,11 +44,13 @@ afterEach(() => {
 });
 
 describe('SupportForm', () => {
-  it('renders signed-in defaults, request types, and current page context', () => {
+  it('renders signed-in defaults, request types, and minimized diagnostic context', () => {
     render(
       <SupportForm
         defaultName="Ada Lovelace"
         defaultEmail="ada@example.test"
+        defaultSurface="team_integrations"
+        defaultErrorReference="sentry-reference"
         requiresTurnstile={false}
       />,
     );
@@ -61,9 +62,12 @@ describe('SupportForm', () => {
     );
     expect(screen.getByRole('option', { name: 'Sales' })).toBeTruthy();
     expect(screen.getByLabelText('Message').getAttribute('rows')).toBe('8');
+    expect(screen.getByDisplayValue('team_integrations')).toHaveProperty('name', 'surface');
+    expect(screen.getByDisplayValue('sentry-reference')).toHaveProperty('name', 'errorReference');
+    expect(document.querySelector('[name="currentPage"]')).toBeNull();
     expect(
-      screen.getByDisplayValue('http://localhost:3000/help/support?from=settings'),
-    ).toHaveProperty('name', 'currentPage');
+      screen.getByText(/Workspace content is never attached automatically/).textContent,
+    ).toContain('Your IP address may be used briefly');
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
       false,
     );
@@ -81,15 +85,17 @@ describe('SupportForm', () => {
     cleanup();
     render(<SupportForm requiresTurnstile />);
 
-    const protectionError = screen.getByText(
-      'Support form protection is unavailable in this deployment. Contact your workspace administrator.',
-    );
+    const protectionError = document.querySelector<HTMLElement>('#support-form-protection-error');
+    if (!protectionError) throw new Error('expected support form protection message');
     expect(protectionError.textContent).toBe(
-      'Support form protection is unavailable in this deployment. Contact your workspace administrator.',
+      'Support form protection is unavailable. Email contact@thetimeline.cc instead.',
     );
     expect(protectionError.id).toBe('support-form-protection-error');
     expect(protectionError.getAttribute('role')).toBeNull();
     expect(screen.queryByTestId('turnstile-widget')).toBeNull();
+    expect(screen.getByRole('link', { name: 'contact@thetimeline.cc' }).getAttribute('href')).toBe(
+      'mailto:contact@thetimeline.cc',
+    );
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' });
     expect(submit.disabled).toBe(true);
     expect(submit.getAttribute('aria-describedby')).toBe(protectionError.id);
@@ -112,5 +118,25 @@ describe('SupportForm', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send request' }).disabled).toBe(
       false,
     );
+  });
+
+  it('shows the durable request reference and delivery fallback after saving', () => {
+    fakes.useActionState.mockReturnValue([
+      {
+        ok: true,
+        requestReference: 'request-reference',
+        warning: 'Your request was saved, but email delivery is currently unavailable.',
+      },
+      fakes.action,
+      false,
+    ]);
+
+    render(<SupportForm requiresTurnstile={false} />);
+
+    expect(screen.getByRole('status').textContent).toContain('request-reference');
+    expect(screen.getByRole('status').textContent).toContain(
+      'email delivery is currently unavailable',
+    );
+    expect(screen.queryByRole('button', { name: 'Send request' })).toBeNull();
   });
 });

@@ -1,6 +1,12 @@
-import type { NextRequest } from 'next/server';
+import { NextResponse, type NextRequest } from 'next/server';
+
 import type { NextAuthConfig, Session } from 'next-auth';
 
+import {
+  ACTIVE_TEAM_COOKIE,
+  expireActiveTeamCookie,
+  shouldExpireUnverifiedActiveTeamCookie,
+} from '@/lib/active-team-cookie';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { nonEmptyEnv } from '@/lib/safe-redirect';
 
@@ -59,6 +65,17 @@ function legalGatePath(request: NextRequest): string {
   return `${LEGAL_GATE_PATH}?returnTo=${encodeURIComponent(legalReturnTo(request))}`;
 }
 
+function unauthenticatedAppRedirect(request: NextRequest): NextResponse {
+  const signInUrl = new URL('/sign-in', request.nextUrl.origin);
+  signInUrl.searchParams.set('callbackUrl', request.nextUrl.href);
+  const response = NextResponse.redirect(signInUrl);
+  const activeTeamCookie = request.cookies.get(ACTIVE_TEAM_COOKIE)?.value;
+  if (shouldExpireUnverifiedActiveTeamCookie(activeTeamCookie)) {
+    expireActiveTeamCookie(response);
+  }
+  return response;
+}
+
 export function authorizeProductRequest({
   auth,
   request,
@@ -72,7 +89,7 @@ export function authorizeProductRequest({
   const isAppRoute = isRouteWithin(path, '/app');
   const isInviteRoute = isRouteWithin(path, '/accept-invite');
 
-  if (isAppRoute && !isAuthed) return false;
+  if (isAppRoute && !isAuthed) return unauthenticatedAppRedirect(request);
   if (!isAuthed || hasCurrentLegalSession(auth?.user)) return true;
 
   if (isAppRoute || isInviteRoute) {

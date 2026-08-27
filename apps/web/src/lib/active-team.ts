@@ -2,27 +2,15 @@ import { teamMembers, teams } from '@timeline/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 
+import { ACTIVE_TEAM_COOKIE, parseActiveTeamCookie } from '@/lib/active-team-cookie';
 import { db } from '@/lib/db';
 
-export const ACTIVE_TEAM_COOKIE = 'tl_active_team';
-const ACTIVE_TEAM_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
-
-/**
- * Keep the active workspace preference no longer than the default Auth.js
- * session and never allow production traffic to send it over plain HTTP.
- *
- * The cookie must remain available to `/api` and Server Action requests because
- * those routes resolve the active team independently of the `/app` layout.
- */
-export function activeTeamCookieOptions() {
-  return {
-    httpOnly: true,
-    sameSite: 'lax' as const,
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: ACTIVE_TEAM_COOKIE_MAX_AGE_SECONDS,
-  };
-}
+export {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  parseActiveTeamCookie,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team-cookie';
 
 export interface TeamMembership {
   teamId: string;
@@ -64,7 +52,7 @@ export async function resolveActiveTeam(
   const memberships = await listMemberships(userId);
   if (memberships.length === 0) return { active: null, memberships };
   const cookieStore = await cookies();
-  const cookieTeamId = cookieStore.get(ACTIVE_TEAM_COOKIE)?.value;
+  const cookieTeamId = parseActiveTeamCookie(cookieStore.get(ACTIVE_TEAM_COOKIE)?.value)?.teamId;
   const fromCookie = cookieTeamId ? memberships.find((m) => m.teamId === cookieTeamId) : undefined;
   return { active: fromCookie ?? memberships[0] ?? null, memberships };
 }

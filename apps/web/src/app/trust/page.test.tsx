@@ -29,7 +29,9 @@ describe('Trust page', () => {
     expect(html).toContain('up to 30 days');
     expect(html).toContain('Not claimed today');
     expect(html).toContain('SOC 2, ISO 27001, or HIPAA compliance');
-    expect(html).toContain('optional public browser analytics target is not claimed as deployed');
+    expect(html).toContain('Browser analytics is confined to');
+    expect(html).toContain('protected workspace');
+    expect(html).toContain('Personless surface streams');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('href="/terms"');

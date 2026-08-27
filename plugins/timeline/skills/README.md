@@ -38,7 +38,7 @@ The plugin points to `https://thetimeline.cc/api/mcp/server`. Keep its key in an
 
 ## Install the standalone skill
 
-Use this route when you want only the skill or when your Timeline is a separately licensed self-managed deployment. Paste this into Codex:
+Use this route when you want only the skill or operate a separately licensed customer-controlled Timeline deployment. Paste this into Codex:
 
 ```text
 $skill-installer Install this Timeline skill from GitHub:
@@ -66,9 +66,9 @@ Run this in the terminal you will use for Codex. The final command launches Code
 
 Use Streamable HTTP, not legacy SSE. A default key exposes only team-visible retrieval. Private and specific-user events remain unavailable. The optional **Allow Timeline agent** scope enables paid, stateless agent turns that may call enabled team-shared custom MCP tools and create proposals for human review; it does not grant direct canonical writes. Third-party MCP tools may have their own external side effects.
 
-## Separately licensed self-managed Timeline
+## Customer-controlled Timeline
 
-The bundled plugin connection targets the hosted service. For a separately licensed self-managed deployment, install the standalone skill and replace the URL in the direct MCP command with:
+The bundled plugin connection targets the hosted service. For a separately licensed customer-controlled deployment, install the standalone skill and replace the URL in the direct MCP command with:
 
 ```text
 https://<your-timeline-origin>/api/mcp/server

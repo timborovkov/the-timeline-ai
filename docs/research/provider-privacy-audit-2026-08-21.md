@@ -1,18 +1,13 @@
 # Provider privacy and data-handling research
 
 **As of:** 2026-08-21
+
 **Status:** Internal evidence memo; not approved public or legal copy
+
 **Repository baseline audited:** `3778f4fbcd0086376df1e516a8d41a0a6ebda791`
 **Scope:** Hosted Timeline, its configurable production services, and providers to
 which customer or visitor data can actually flow from the audited code. Providers
 shown only as “coming soon” are excluded.
-
-> **Implementation decision after this audit:** the transcription recommendation
-> in this baseline memo is not an authorization to replace the production model.
-> The approved quality-first policy keeps `openai/gpt-4o-transcribe` as a
-> disclosed retained, no-training exception unless a ZDR candidate passes the
-> reproducible broad-multilingual non-inferiority gate in
-> [Transcription quality evaluation](./transcription-quality-eval.md).
 
 This memo is research, not legal advice and not a substitute for signed contracts,
 account-dashboard verification, a records-of-processing inventory, a transfer
@@ -205,17 +200,23 @@ distinguishes downstream apps using the developer platform, while OpenRouter's
 current endpoint table marks the direct route as training-eligible. Do not infer a
 no-training promise from the model name or a model-training disclosure.
 
-### ZDR transcription replacement verified on 2026-08-21
+### Historical ZDR transcription candidate screen from 2026-08-21
+
+This section records endpoint availability observed during the original audit.
+It is not promotion evidence and does not authorize a model change. The current
+production pin remains `openai/gpt-4o-transcribe` as the transparent
+`retained_no_training_exception` until a non-customer, 24-language evaluation
+meets every gate in [transcription-quality-eval.md](transcription-quality-eval.md).
 
 The live `GET /api/v1/models?output_modalities=transcription` result and
 `GET /api/v1/endpoints/zdr` registry show viable dedicated STT replacements:
 
 | Model | Current endpoints | ZDR status | Assessment |
 | --- | --- | --- | --- |
-| `openai/whisper-large-v3` | DeepInfra, Together, Groq | All three current endpoints appear in the ZDR registry. | **Recommended drop-in.** Dedicated multilingual STT; same JSON endpoint and language hint used by current code. |
-| `mistralai/voxtral-mini-transcribe` | Mistral regular and `mistral/zdr` | Only the tagged Mistral ZDR route is safe. | Viable only with account/key guardrail; default routing may select regular Mistral. |
-| `mistralai/voxtral-small-24b-2507-stt` | DeepInfra BF16 | Current route appears in ZDR registry. | Viable, but newer route and less redundancy than Whisper. |
-| `google/chirp-3` | Google Vertex | Current route appears in ZDR registry. | Viable dedicated STT, but one provider route. |
+| `openai/whisper-large-v3` | DeepInfra, Together, Groq | All three observed endpoints appeared in the ZDR registry. | Historical candidate; must pass the multilingual quality gate. |
+| `mistralai/voxtral-mini-transcribe` | Mistral regular and `mistral/zdr` | Only the tagged Mistral ZDR route appeared eligible. | Historical candidate; must pass the multilingual quality gate and fail closed to eligible routes. |
+| `mistralai/voxtral-small-24b-2507-stt` | DeepInfra BF16 | The observed route appeared in the ZDR registry. | Historical candidate; must pass the multilingual quality gate. |
+| `google/chirp-3` | Google Vertex | The observed route appeared in the ZDR registry. | Current bake-off candidate; must pass the multilingual quality gate. |
 | `openai/gpt-4o-transcribe` | OpenAI | Not in ZDR registry. | Do not use when ZDR is a hard requirement. |
 
 Gemini audio is not a drop-in STT route. OpenRouter lists
@@ -227,29 +228,12 @@ Gemini for a verbatim transcript could be built and per-request ZDR could be
 enforced on Chat Completions, but it changes fidelity, response semantics,
 testing, cost and likely timestamp behavior. It should not be the privacy fix.
 
-**Exact recommendation:**
-
-1. Change `TIMELINE_MODELS.transcription.id` from
-   `openai/gpt-4o-transcribe` to `openai/whisper-large-v3`.
-2. Bind the production OpenRouter key to a guardrail with the OpenAI model-group
-   ZDR scope enabled (`enforce_zdr_openai=true`), or enable the equivalent
-   account-level OpenAI ZDR setting. Prefer a dedicated production key/guardrail
-   whose settings cannot be weakened by application code. Enable the other
-   relevant model-group ZDR scopes for DeepSeek/non-frontier and Google as well.
-3. Do **not** rely on adding `{ provider: { zdr: true } }` to the current
-   `/audio/transcriptions` JSON body. OpenRouter's current OpenAPI `STTRequest`
-   schema exposes only `provider.options` for provider-specific passthrough;
-   unlike Chat Completions, it does not expose `ProviderPreferences` or `zdr`.
-   Account/key enforcement is the documented fail-closed control for STT today.
-4. Add a production canary that transcribes a synthetic fixture and a drift check
-   that asserts the selected model still appears in OpenRouter's live ZDR
-   registry. The registry check is defense in depth, not a substitute for the
-   account/key guardrail.
-5. Re-run the multilingual transcription live evaluation before shipping; the
-   privacy-preserving route is still a model change and can alter accuracy.
-
-This recommendation is based on current endpoint data, not a permanent property
-of Whisper. Endpoint policy is mutable and must be monitored.
+**Superseding decision:** keep the current pin until the reproducible bake-off
+produces a locked aggregate-only evidence artifact. If a ZDR candidate passes,
+pin the lowest-error passing model exactly and prohibit non-ZDR fallback. If none
+passes, keep GPT-4o Transcribe as the disclosed quality exception. Endpoint
+policy is mutable, so deployment attestation and live canaries remain required
+for every ZDR-classified role.
 
 ### Claims permitted only after controls are evidenced
 

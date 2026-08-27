@@ -10,6 +10,15 @@ import { Button } from '@/components/ui/button';
 import { auth } from '@/lib/auth';
 import { findHelpPage, HELP_PAGES } from '@/lib/help-content';
 import { publicMetadata } from '@/lib/public-metadata';
+import {
+  GITHUB_BUG_REPORT_URL,
+  GITHUB_CONTRIBUTING_URL,
+  GITHUB_SECURITY_URL,
+  PUBLIC_SUPPORT_EMAIL,
+} from '@/lib/support-links';
+
+const supportLinkClass =
+  'rounded-sm text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 interface HelpPageProps {
   params: Promise<{ slug: string }>;
@@ -115,28 +124,66 @@ export default async function HelpTopicPage({ params }: HelpPageProps) {
 
 function RelatedGuides({ related }: { related: string[] }) {
   return (
-    <section className="border-t border-border pt-8">
-      <h2 className="mb-3 text-base font-semibold text-fg">Related</h2>
-      <div className="flex flex-wrap gap-2">
-        {related.map((relatedSlug) => {
-          const relatedPage = findHelpPage(relatedSlug);
-          if (!relatedPage) return null;
-          return (
-            <Link
-              key={relatedPage.slug}
-              href={`/help/${relatedPage.slug}`}
-              className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
-            >
-              {relatedPage.title}
-            </Link>
-          );
-        })}
-        <Link
-          href="/help/support"
-          className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
-        >
-          Contact support
-        </Link>
+    <section className="space-y-7 border-t border-border pt-8">
+      <div>
+        <h2 className="mb-3 text-base font-semibold text-fg">Related</h2>
+        <div className="flex flex-wrap gap-2">
+          {related.map((relatedSlug) => {
+            const relatedPage = findHelpPage(relatedSlug);
+            if (!relatedPage) return null;
+            return (
+              <Link
+                key={relatedPage.slug}
+                href={`/help/${relatedPage.slug}`}
+                className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+              >
+                {relatedPage.title}
+              </Link>
+            );
+          })}
+          <Link
+            href="/help/support"
+            className="rounded-sm border border-border px-3 py-2 text-sm text-fg-muted transition-colors hover:border-signal/50 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fg focus-visible:ring-offset-2 focus-visible:ring-offset-bg forced-colors:focus-visible:outline forced-colors:focus-visible:outline-2"
+          >
+            Contact support
+          </Link>
+        </div>
+      </div>
+      <div>
+        <h2 className="text-base font-semibold text-fg">Need another route?</h2>
+        <p className="mt-1 max-w-[62ch] text-sm leading-6 text-fg-muted">
+          Keep account details and sensitive reports private. Public GitHub issues must not contain
+          customer content, personal data, credentials, or private URLs.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
+          <a className={supportLinkClass} href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}>
+            Email support
+          </a>
+          <a
+            className={supportLinkClass}
+            href={GITHUB_BUG_REPORT_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Report a bug
+          </a>
+          <a
+            className={supportLinkClass}
+            href={GITHUB_SECURITY_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Security
+          </a>
+          <a
+            className={supportLinkClass}
+            href={GITHUB_CONTRIBUTING_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Contribute
+          </a>
+        </div>
       </div>
     </section>
   );

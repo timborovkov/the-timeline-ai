@@ -24,7 +24,7 @@ const AGENT_INSTALL_LLM_SECTIONS = [
   },
   {
     title: 'Copy-ready skill-only prompt',
-    body: 'Use this narrower prompt when Timeline MCP is already connected or self-hosted.',
+    body: 'Use this narrower prompt when Timeline MCP is already connected or for a separately licensed customer-controlled deployment.',
     codeBlock: { content: TIMELINE_SKILL_INSTALL_PROMPT, language: 'text' },
   },
   {
@@ -82,7 +82,7 @@ const TRUST_SECTIONS = [
   },
   {
     title: 'Storage and workspace boundaries',
-    body: 'Railway hosts the application, workers, PostgreSQL and Redis services, plus Qdrant vector search and RustFS object storage. The required hosted topology keeps server traffic on Railway private networking and buckets non-public; deployed network and bucket evidence is still pending. RustFS exposes HTTPS only for authorized, short-lived signed browser transfers. Team scope and per-record visibility apply to relational, vector, and file access. Integration secrets use authenticated encryption at rest.',
+    body: 'Railway hosts the application, workers, PostgreSQL and Redis services, plus Qdrant vector search and RustFS object storage. Server traffic uses Railway private networking; RustFS also exposes HTTPS for authorized, short-lived signed browser transfers while buckets remain non-public. Team scope and per-record visibility apply to relational, vector, and file access. Integration secrets use authenticated encryption at rest.',
   },
   {
     title: 'Human access',
@@ -94,7 +94,7 @@ const TRUST_SECTIONS = [
   },
   {
     title: 'Analytics and third parties',
-    body: 'Timeline does not use behavioral advertising trackers. The approved browser-analytics target permits PostHog only on eligible public pages after affirmative consent, never in private workspace routes, with autocapture, heatmaps, and session replay off. That target and its Cookie settings control are not claimed as deployed: the current protected-route browser integration must remain unconfigured until it is removed and the consent, storage, provider, retention, and deletion evidence is complete. Identifier-free aggregate server counts for public route totals are separate. Sentry error monitoring is also separate from optional analytics.',
+    body: 'Timeline does not use behavioral advertising trackers. PostHog browser analytics may run only on reviewed public pages after affirmative consent, never in private workspace routes, with autocapture, heatmaps, and session replay off. Separate server-to-server events count allowlisted public and app surfaces through two fixed non-visitor streams, while content-free product actions use pseudonymous server identifiers. Sentry error monitoring is separate from every PostHog path. Provider account, retention, and deployed-production evidence remain pending.',
     links: [
       {
         label: 'Read the cookies and browser-storage notice',
@@ -184,7 +184,7 @@ const coreDocuments = definePublicDocuments('public-core', [
     title: 'Help',
     description: 'Public help docs for The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-08-20', reviewed: '2026-08-20' },
+    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
     capability: { kind: 'current-product' },
     sitemap: { changeFrequency: 'weekly', priority: 0.8 },
     structuredData: [{ type: 'collection-page' }],
@@ -192,8 +192,9 @@ const coreDocuments = definePublicDocuments('public-core', [
       section: 'primary',
       order: 20,
       label: 'Help center',
-      summary: 'Public product guides for users and evaluators.',
-      fullSummary: 'Public user guides.',
+      summary:
+        'Public product guides plus private, bug, security, and contribution support routes.',
+      fullSummary: 'Public user guides and support-channel routing.',
     },
   },
 ] satisfies readonly PublicDocument[]);
@@ -246,18 +247,19 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
   {
     canonicalPath: '/help/support',
     kind: 'support',
-    title: 'Support',
-    description: 'Contact The Timeline support.',
+    title: 'Help and support',
+    description:
+      'Choose private support, public bug reporting, security, or contribution guidance.',
     indexability: 'index',
-    dates: { modified: '2026-08-05', reviewed: LAST_REVIEWED },
+    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.5 },
     structuredData: [{ type: 'web-page' }],
     llms: {
       section: 'primary',
       order: 30,
-      summary: 'Contact form for support, sales, and product questions.',
-      fullSummary: 'Public support and sales contact form.',
+      summary: 'Channel router and private form for support, bugs, security, and contributions.',
+      fullSummary: 'Private support form plus safe public bug, security, and contribution routes.',
     },
   },
   {
@@ -311,9 +313,9 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
       section: 'primary',
       order: 45,
       summary:
-        'Current necessary browser storage and the blocked, consent-gated target for optional public analytics.',
+        'Current necessary browser storage and the consent controls for optional public analytics.',
       fullSummary:
-        'Cookie, local-storage, and session-storage inventory; notice-versus-consent boundary; current PostHog deployment gap; public-only browser analytics target; withdrawal requirements; and separate Sentry, Turnstile, logging, and identifier-free server counting.',
+        'Cookie, local-storage, and session-storage inventory; notice-versus-consent boundary; public-only browser analytics and withdrawal controls; personless server surface streams; and separate Sentry, Turnstile, and logging paths.',
     },
   },
   {

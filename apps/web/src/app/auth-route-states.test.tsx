@@ -102,7 +102,7 @@ describe('Auth route states', () => {
         expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
       }
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard('{Enter}');
       await user.keyboard(' ');

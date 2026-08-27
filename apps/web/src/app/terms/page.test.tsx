@@ -20,13 +20,4 @@ describe('Terms legal links', () => {
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('accepting these Terms does not consent');
   });
-
-  it('incorporates the code-owned model privacy policy without hiding the STT exception', () => {
-    const html = renderToStaticMarkup(<TermsPage />);
-
-    expect(html).toContain('model privacy policy 2026-08-21.1');
-    expect(html).toContain('openai/gpt-4o-transcribe');
-    expect(html).toContain('retained, no-training quality exception');
-    expect(html).toContain('may not downgrade to weaker retention');
-  });
 });

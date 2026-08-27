@@ -20,10 +20,11 @@ Include, where possible:
 - a minimal proof of concept, screenshots, or logs with secrets removed; and
 - a safe way to contact and credit you.
 
-We aim to acknowledge reports within three business days, provide an initial
-assessment within seven business days, and keep reporters informed through
-remediation. Complex or provider-dependent issues may take longer. We will
-coordinate disclosure timing and credit when requested and safe.
+We will acknowledge reports, provide an initial assessment when available, and
+keep reporters informed through remediation. Complex or provider-dependent
+issues may take longer. We will coordinate disclosure timing and credit when
+requested and safe. Specific response-time targets will be published after
+security-inbox ownership and escalation coverage are formally assigned.
 
 ## Safe harbor
 

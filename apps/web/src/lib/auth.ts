@@ -12,6 +12,7 @@ import { childLogger } from '@timeline/shared/logger';
 import { sendMessage } from '@timeline/shared/messaging';
 import { verifyPassword } from '@timeline/shared/passwords';
 import { eq } from 'drizzle-orm';
+import { cookies } from 'next/headers';
 import NextAuth, { CredentialsSignin, type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import GitHub from 'next-auth/providers/github';
@@ -21,6 +22,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 import { sendEmailVerification } from '@/lib/email-verification';
+import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { checkCredentialsSignInRateLimit } from '@/lib/sign-in-rate-limit';
 import { getSiteUrl } from '@/lib/site-url';
@@ -116,6 +118,12 @@ const nextAuth = NextAuth({
     },
   },
   events: {
+    signIn({ user, account }) {
+      if (!user.id) return;
+      trackProductEventBestEffort({ kind: 'user', userId: user.id }, 'authentication_succeeded', {
+        method: account?.provider === 'github' ? 'github' : 'credentials',
+      });
+    },
     // OAuth signups land here after the adapter inserts the user. Credentials
     // signups handle their own team creation in signUpAction, so this only
     // fires for first-time OAuth users — give them a default solo team so
@@ -142,8 +150,33 @@ const nextAuth = NextAuth({
         log.error({ err: (err as Error).message, userId }, 'createUser_pending_invite_read_failed');
         reportCaughtError(err, { surface: 'server_action', operation: 'pending_invite_read' });
       }
-      if (pendingInvite) return;
+      let attribution: ReturnType<typeof readConsentedPublicAttributionCookie>;
+      try {
+        attribution = readConsentedPublicAttributionCookie(await cookies());
+      } catch {
+        attribution = undefined;
+      }
+      if (pendingInvite) {
+        trackProductEventBestEffort({ kind: 'user', userId }, 'account_registered', {
+          source: 'github',
+          joinedViaInvite: true,
+          ...(attribution?.source ? { attributionSource: attribution.source } : {}),
+          ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),
+          ...(attribution?.campaign ? { attributionCampaign: attribution.campaign } : {}),
+        });
+        return;
+      }
       const teamId = await ensureSoloTeam(userId, { name: user.name, email: user.email });
+      const actor = teamId
+        ? ({ kind: 'user', userId, teamId } as const)
+        : ({ kind: 'user', userId } as const);
+      trackProductEventBestEffort(actor, 'account_registered', {
+        source: 'github',
+        joinedViaInvite: false,
+        ...(attribution?.source ? { attributionSource: attribution.source } : {}),
+        ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),
+        ...(attribution?.campaign ? { attributionCampaign: attribution.campaign } : {}),
+      });
       if (teamId) {
         const teamRows = await db
           .select({ name: teams.name })
@@ -151,11 +184,7 @@ const nextAuth = NextAuth({
           .where(eq(teams.id, teamId))
           .limit(1);
         const teamName = teamRows[0]?.name ?? 'your team';
-        trackProductEventBestEffort(userId, 'team_created', {
-          teamId,
-          userId,
-          source: 'oauth',
-        });
+        trackProductEventBestEffort(actor, 'team_created', { source: 'oauth' });
         if (user.email) {
           await Promise.all([
             sendMessage(
