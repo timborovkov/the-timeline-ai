@@ -75,7 +75,7 @@ export function ObjectContactFields({
   }
 
   return (
-    <section>
+    <section aria-label="Contact">
       <h2 className="text-xs font-normal text-fg-dim">Contact</h2>
       <div className="mt-1 space-y-1">
         {contacts.length === 0 && !adding ? (
