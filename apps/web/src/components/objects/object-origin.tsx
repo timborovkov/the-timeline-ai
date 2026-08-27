@@ -97,7 +97,7 @@ function ProvenanceGroup({
 
   return (
     <section className="min-w-0">
-      <h2 className="text-xs font-normal text-fg-dim">{title}</h2>
+      <h2 className="text-xs font-medium text-fg-dim">{title}</h2>
       <div className="mt-1 min-w-0">
         {previewEntries.length > 0 ? <ProvenanceEntryList entries={previewEntries} /> : null}
         {remainingEntries.length > 0 ? (
