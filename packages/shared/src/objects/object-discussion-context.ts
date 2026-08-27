@@ -1,6 +1,9 @@
 import type { Db } from '@timeline/db';
 
-import { readableMetadataEntries } from '#src/objects/metadata-schemas.js';
+import {
+  humanizeMetadataKey,
+  readableMetadataEntries,
+} from '#src/objects/metadata-schemas.js';
 import { withTeam } from '#src/team-scope.js';
 
 type DbOrTx = Db;
@@ -24,7 +27,7 @@ export async function buildObjectDiscussionAgentContext(input: {
   if (metadataEntries.length > 0) {
     lines.push('Metadata:');
     for (const entry of metadataEntries) {
-      lines.push(`- ${entry.key}: ${entry.value}`);
+      lines.push(`- ${humanizeMetadataKey(entry.key)}: ${entry.value}`);
     }
   }
 

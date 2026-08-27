@@ -1170,7 +1170,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     type: 'hiring_loop',
     canonicalName: 'Product designer',
     status: 'interviewing',
-    stage: 'final_round',
+    stage: 'Final round',
     ownerUserId: CORPUS_PERSON.quinn.id,
     assigneeUserId: CORPUS_PERSON.sam.id,
   },
