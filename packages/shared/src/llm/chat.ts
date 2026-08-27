@@ -493,8 +493,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
       try {
         const value = await runModel(modelId);
         const finish = finishEvent();
-        const titled =
-          accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
+        const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
         return finish ? { value: titled, finish } : { value: titled };
       } catch (err) {
         const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
@@ -504,8 +503,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
         try {
           const value = await runModel(fallbackModelId);
           const finish = finishEvent();
-          const titled =
-            accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
+          const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
           return finish ? { value: titled, finish } : { value: titled };
         } catch (fallbackErr: unknown) {
           throw new AggregateError(

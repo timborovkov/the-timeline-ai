@@ -146,10 +146,10 @@
         <code>DAYTONA_SNAPSHOT=auto</code> to resolve the content hash from
         <code>document-extract-sandbox/</code> for each deployed revision. Do
         <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
-        Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
-        Copy <code>BILLING_CHARGES_ENABLED</code> (non-secret) when live charging should apply to
-        extract AI metering. Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention, sandbox-aware pruning,
-        and optional boot create-once): ADR 0013 and
+        Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>. Copy
+        <code>BILLING_CHARGES_ENABLED</code> (non-secret) when live charging should apply to extract
+        AI metering. Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention,
+        sandbox-aware pruning, and optional boot create-once): ADR 0013 and
         <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
       <p>
