@@ -791,6 +791,7 @@ async function ingestForTeam(
           audio_filename: att.filename,
           audio_mime_type: att.contentType,
           audio_file_size: att.size,
+          ...(allowEnrichment ? {} : { transcription_deferred: true }),
         },
       });
       // Record back into the parent's attachments[] so the timeline UI

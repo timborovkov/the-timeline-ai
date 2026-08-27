@@ -41,11 +41,13 @@ export function PricingMetersExplainer({ className }: { className?: string }) {
       <article className="bg-bg p-5 sm:col-span-2 sm:p-6">
         <h3 className="text-lg font-semibold tracking-[-0.025em] text-fg">Free monthly floor</h3>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-fg-muted">
-          Every workspace starts with {formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)} AI,{' '}
-          {FREE_ALLOWANCES.recallMinutes} meeting minutes, {FREE_ALLOWANCES.emailUnits} email units,{' '}
-          {FREE_ALLOWANCES.storageGb} GB storage, and{' '}
-          {FREE_ALLOWANCES.acceptedSources.toLocaleString()} accepted sources — no card required.
-          Pay as you go keeps that allowance after you add a payment method.
+          Every verified person receives the Free monthly floor on one owned
+          workspace: {formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)} AI,{' '}
+          {FREE_ALLOWANCES.recallMinutes} meeting minutes, {FREE_ALLOWANCES.emailUnits}{' '}
+          email units, {FREE_ALLOWANCES.storageGb} GB storage, and{' '}
+          {FREE_ALLOWANCES.acceptedSources.toLocaleString()} accepted sources — no card
+          required. Additional owned workspaces stay restricted until you add a payment
+          method. Pay as you go keeps that allowance after you add a payment method.
         </p>
       </article>
     </div>

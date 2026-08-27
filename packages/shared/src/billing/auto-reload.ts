@@ -15,6 +15,99 @@ import { sendMessage } from '#src/messaging/delivery.js';
 const log = childLogger('billing:auto-reload');
 const AUTO_RELOAD_ATTEMPT_STALE_MS = 15 * 60 * 1000;
 
+type AutoReloadOwner = {
+  userId: string;
+  email: string | null;
+  name: string | null;
+};
+
+async function loadTeamOwners(
+  db: Db,
+  teamId: string,
+): Promise<{ teamName: string; owners: AutoReloadOwner[] }> {
+  const [team] = await db
+    .select({ name: teams.name })
+    .from(teams)
+    .where(eq(teams.id, teamId))
+    .limit(1);
+  const owners = await db
+    .select({
+      userId: users.id,
+      email: users.email,
+      name: users.name,
+    })
+    .from(teamMembers)
+    .innerJoin(users, eq(users.id, teamMembers.userId))
+    .where(
+      and(eq(teamMembers.teamId, teamId), eq(teamMembers.role, 'owner'), isNull(teamMembers.removedAt)),
+    );
+  return { teamName: team?.name ?? 'your workspace', owners };
+}
+
+async function stampAutoReloadStatus(input: {
+  db: Db;
+  ledgerId: string;
+  status: 'checkout_created' | 'sent';
+  checkoutUrl: string;
+}): Promise<void> {
+  await input.db
+    .update(billingUsageLedger)
+    .set({
+      metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({
+        auto_reload_status: input.status,
+        checkout_url: input.checkoutUrl,
+      })}::jsonb`,
+    })
+    .where(eq(billingUsageLedger.id, input.ledgerId));
+}
+
+async function notifyAutoReloadOwners(input: {
+  db: Db;
+  teamId: string;
+  planId: string;
+  teamName: string;
+  owners: AutoReloadOwner[];
+  checkoutUrl: string;
+  availableCents: number;
+  thresholdCents: number;
+  amountCents: number;
+  day: string;
+}): Promise<boolean> {
+  const base = appBaseUrl();
+  const ym = periodYm();
+  let notified = false;
+  for (const owner of input.owners) {
+    if (!owner.email) continue;
+    try {
+      const result = await sendMessage(
+        'billing_usage_alert',
+        {
+          to: owner.email,
+          ownerName: owner.name,
+          teamName: input.teamName,
+          kind: 'wallet_auto_reload',
+          periodYm: ym,
+          planName: input.planId,
+          detailLine: `Wallet available ${formatEuroFromCents(Math.max(0, input.availableCents))} is at or below ${formatEuroFromCents(input.thresholdCents)}. Complete this ${formatEuroFromCents(input.amountCents)} Polar top-up to reload.`,
+          usageUrl: `${base}/app/usage`,
+          billingUrl: input.checkoutUrl,
+        },
+        {
+          db: input.db,
+          teamId: input.teamId,
+          userId: owner.userId,
+          dedupeKey: `billing-alert|${input.teamId}|${input.day}|wallet_auto_reload|${owner.userId}`,
+          metadata: { billing_alert_kind: 'wallet_auto_reload', checkout_url: input.checkoutUrl },
+        },
+      );
+      if (result.ok) notified = true;
+    } catch (err) {
+      log.warn({ err, teamId: input.teamId }, 'auto-reload email failed');
+    }
+  }
+  return notified;
+}
+
 function appBaseUrl(): string {
   return (process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc').replace(
     /\/+$/u,
@@ -97,7 +190,7 @@ export async function maybeTriggerWalletAutoReload(input: {
     .returning();
   if (!ledgerRow) {
     const [existing] = await input.db
-      .select({ metadata: billingUsageLedger.metadata })
+      .select({ id: billingUsageLedger.id, metadata: billingUsageLedger.metadata })
       .from(billingUsageLedger)
       .where(
         and(
@@ -108,8 +201,33 @@ export async function maybeTriggerWalletAutoReload(input: {
       .limit(1);
     const status = existing?.metadata.auto_reload_status;
     const checkoutUrl = existing?.metadata.checkout_url;
-    if (status === 'sent' || typeof checkoutUrl === 'string') {
+    if (status === 'sent') {
       return { triggered: false, reason: 'already_triggered_today' };
+    }
+    if (typeof checkoutUrl === 'string' && checkoutUrl.length > 0) {
+      const { teamName, owners } = await loadTeamOwners(input.db, input.teamId);
+      const notified = await notifyAutoReloadOwners({
+        db: input.db,
+        teamId: input.teamId,
+        planId: account.planId,
+        teamName,
+        owners,
+        checkoutUrl,
+        availableCents: available,
+        thresholdCents: threshold,
+        amountCents: amount,
+        day,
+      });
+      if (notified && existing) {
+        await stampAutoReloadStatus({
+          db: input.db,
+          ledgerId: existing.id,
+          status: 'sent',
+          checkoutUrl,
+        });
+        return { triggered: true };
+      }
+      return { triggered: false, reason: 'notify_failed' };
     }
     if (status === 'attempting') {
       const attemptedAt = existing?.metadata.auto_reload_attempted_at;
@@ -133,26 +251,7 @@ export async function maybeTriggerWalletAutoReload(input: {
     await input.db.delete(billingUsageLedger).where(eq(billingUsageLedger.id, ledgerRow.id));
   };
 
-  const [team] = await input.db
-    .select({ name: teams.name })
-    .from(teams)
-    .where(eq(teams.id, input.teamId))
-    .limit(1);
-  const owners = await input.db
-    .select({
-      userId: users.id,
-      email: users.email,
-      name: users.name,
-    })
-    .from(teamMembers)
-    .innerJoin(users, eq(users.id, teamMembers.userId))
-    .where(
-      and(
-        eq(teamMembers.teamId, input.teamId),
-        eq(teamMembers.role, 'owner'),
-        isNull(teamMembers.removedAt),
-      ),
-    );
+  const { teamName, owners } = await loadTeamOwners(input.db, input.teamId);
   const ownerEmail = owners.find((owner) => owner.email)?.email;
   if (!ownerEmail) {
     await abandon();
@@ -181,45 +280,32 @@ export async function maybeTriggerWalletAutoReload(input: {
     return { triggered: false, reason: 'checkout_failed' };
   }
 
-  await input.db
-    .update(billingUsageLedger)
-    .set({
-      metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({
-        auto_reload_status: 'sent',
-        checkout_url: checkoutUrl,
-      })}::jsonb`,
-    })
-    .where(eq(billingUsageLedger.id, ledgerRow.id));
+  await stampAutoReloadStatus({
+    db: input.db,
+    ledgerId: ledgerRow.id,
+    status: 'checkout_created',
+    checkoutUrl,
+  });
 
-  const ym = periodYm();
-  const teamName = team?.name ?? 'your workspace';
-  for (const owner of owners) {
-    if (!owner.email) continue;
-    try {
-      await sendMessage(
-        'billing_usage_alert',
-        {
-          to: owner.email,
-          ownerName: owner.name,
-          teamName,
-          kind: 'wallet_auto_reload',
-          periodYm: ym,
-          planName: account.planId,
-          detailLine: `Wallet available ${formatEuroFromCents(Math.max(0, available))} is at or below ${formatEuroFromCents(threshold)}. Complete this ${formatEuroFromCents(amount)} Polar top-up to reload.`,
-          usageUrl: `${base}/app/usage`,
-          billingUrl: checkoutUrl,
-        },
-        {
-          db: input.db,
-          teamId: input.teamId,
-          userId: owner.userId,
-          dedupeKey: `billing-alert|${input.teamId}|${day}|wallet_auto_reload|${owner.userId}`,
-          metadata: { billing_alert_kind: 'wallet_auto_reload', checkout_url: checkoutUrl },
-        },
-      );
-    } catch (err) {
-      log.warn({ err, teamId: input.teamId }, 'auto-reload email failed');
-    }
+  const notified = await notifyAutoReloadOwners({
+    db: input.db,
+    teamId: input.teamId,
+    planId: account.planId,
+    teamName,
+    owners,
+    checkoutUrl,
+    availableCents: available,
+    thresholdCents: threshold,
+    amountCents: amount,
+    day,
+  });
+  if (notified) {
+    await stampAutoReloadStatus({
+      db: input.db,
+      ledgerId: ledgerRow.id,
+      status: 'sent',
+      checkoutUrl,
+    });
   }
   return { triggered: true };
 }

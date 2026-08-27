@@ -26,6 +26,8 @@ const fakes = vi.hoisted(() => ({
   fakeJoinMeeting: vi.fn(),
   fakeRequireRedisQueue: vi.fn(),
   fakeClaimMeetingJoinUnderRecallCap: vi.fn(),
+  fakeSettleElapsedRecall: vi.fn(),
+  fakeReleaseRecall: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -38,6 +40,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     meetings: fakes.fakeMeetings,
     timeline: { team: vi.fn(() => Promise.resolve({ name: 'Acme' })) },
+    billing: {},
   }),
 }));
 vi.mock('@timeline/shared/meeting-bots', () => ({
@@ -69,6 +72,8 @@ vi.mock('@timeline/shared/billing', () => ({
     operationId: 'recall:test',
     reservedMinutes: 60,
   }),
+  settleElapsedRecallMeetingMinutes: fakes.fakeSettleElapsedRecall,
+  releaseRecallMeetingMinutes: fakes.fakeReleaseRecall,
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -147,6 +152,38 @@ describe('cancelMeetingBotAction', () => {
       error: 'Cannot cancel this meeting while finalize queue is unavailable.',
     });
     expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
+  });
+
+  it('settles elapsed Recall minutes when cancelling without transcript chunks', async () => {
+    const startedAt = new Date('2026-08-27T08:00:00Z');
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'joining',
+      provider: 'recall',
+      providerBotId: null,
+      startedAt,
+      metadata: {
+        reserved_recall_started_at: '2026-08-27T07:58:00Z',
+        reserved_recall_minutes: 60,
+      },
+    });
+    fakes.fakeMeetings.listChunks.mockResolvedValue([]);
+    fakes.fakeSettleElapsedRecall.mockResolvedValue(undefined);
+
+    const result = await cancelMeetingBotAction(MEETING_ID);
+
+    expect(result).toEqual({ ok: true, meetingId: MEETING_ID });
+    expect(fakes.fakeSettleElapsedRecall).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        meetingId: MEETING_ID,
+        startedAt,
+        metadata: expect.objectContaining({ reserved_recall_minutes: 60 }),
+        source: 'meeting_cancel',
+      }),
+    );
+    expect(fakes.fakeReleaseRecall).not.toHaveBeenCalled();
   });
 });
 

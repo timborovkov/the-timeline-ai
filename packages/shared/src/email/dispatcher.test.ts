@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PostmarkInbound } from '#src/email/postmark-schema.js';
 
-import { createBillingScope } from '#src/billing/scope.js';
+import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
 import { handleInbound } from '#src/email/dispatcher.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
@@ -661,6 +661,28 @@ describe('email dispatcher', () => {
       teamId: TEAM_ID,
       audioKey: child?.contentAudioUrl,
     });
+  });
+
+  it('stores inbound email audio without transcribe when the email meter is denied', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const payload = inboundPayload('audio-deferred');
+    payload.TextBody = 'Voice memo context';
+    payload.Attachments = [attachment('memo.m4a', 'audio/mp4', 'audio-bytes')];
+
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    expect(attachments.uploadAudio).toHaveBeenCalledOnce();
+    expect(attachments.enqueueTranscribe).not.toHaveBeenCalled();
+    const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    const child = rows.find((r) => r.contentAudioUrl);
+    expect(child?.sourceMetadata).toMatchObject({ transcription_deferred: true });
   });
 
   it('does not create raw events or agent work for malformed, unmatched, or memberless payloads', async () => {

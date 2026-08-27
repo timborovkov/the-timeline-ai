@@ -574,7 +574,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       before applying Polar `modified_at`. Settlement above the reserved wallet or paid
       spend cap freezes the workspace. A €10 top-up or a positive spend-cap raise restores the plan's
       active state. Extra member-days persist denied charges. Terminal Recall no-shows settle
-      waiting-room minutes. Postmark success is recorded before email settlement. Meeting-finalize
+      waiting-room minutes. Cancelling a joining/active meeting with no chunks settles elapsed
+      minutes. Postmark success is recorded before email settlement. Meeting-finalize
       billing uses the system actor. Free-grant inserts do not abort the caller transaction; the
       post-verify backfill prefers oldest restricted Free workspaces. Scheduled join billing denials
       do not pause auto-join as consecutive failures. Document writes require a reservable billing state.
@@ -585,7 +586,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       accepted-source flush rotates past still-blocked rows. Document restore rechecks capacity;
       document create serializes the Free count under lock key 1. Failed structured-output
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
-      split across those periods.
+      split across those periods. Background AI metering keeps the reservation if settle fails
+      after the provider call. Paid-plan changes reuse the Polar subscription in non-active
+      paid states. Extra-member plan preview prorates from period member-days. Auto-reload
+      retries owner notification after delivery failure. Inbound email audio skipped for a
+      denied email meter is recovered by a janitor transcription flush.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

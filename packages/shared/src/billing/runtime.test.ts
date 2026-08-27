@@ -1,8 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingUsageLedger, type Db } from '@timeline/db';
+import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { runWithBillingContext } from '#src/billing/context.js';
 import {
@@ -14,7 +14,7 @@ import {
   runWorkerBilling,
   withAiMetering,
 } from '#src/billing/runtime.js';
-import { createBillingScope } from '#src/billing/scope.js';
+import * as billingScopeMod from '#src/billing/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -60,7 +60,7 @@ describe('billing runtime', () => {
       ),
     );
     expect(scoped).toBe(9);
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -68,6 +68,38 @@ describe('billing runtime', () => {
     });
     const dash = await billing.getDashboard();
     expect(dash.meters.ai).toBeDefined();
+  });
+
+  it('keeps the AI reservation when settle fails after the provider call', async () => {
+    const originalCreate = billingScopeMod.createBillingScope;
+    const settleError = new Error('settle failed after OpenRouter');
+    const spy = vi.spyOn(billingScopeMod, 'createBillingScope').mockImplementation((deps) => {
+      const scope = originalCreate(deps);
+      return {
+        ...scope,
+        settle: () => Promise.reject(settleError),
+      };
+    });
+    try {
+      await expect(
+        runWorkerBilling(db, TEAM_ID, 'embedding', () =>
+          withAiMetering({ operationClass: 'embedding' }, () =>
+            Promise.resolve({
+              value: 3,
+              finish: { usage: { cost: 0.01 } },
+            }),
+          ),
+        ),
+      ).rejects.toThrow('settle failed after OpenRouter');
+      const [row] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.teamId, TEAM_ID));
+      expect(row?.state).toBe('reserved');
+      expect(row?.operationId).toMatch(/^ai:embedding:/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('meters email units idempotently', async () => {
@@ -89,7 +121,7 @@ describe('billing runtime', () => {
       operationClass: 'email_inbound',
     });
     expect(second.ok).toBe(true);
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -111,7 +143,7 @@ describe('billing runtime', () => {
       rawEventIds: ids,
     });
     expect(result.ok).toBe(true);
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -137,7 +169,7 @@ describe('billing runtime', () => {
       cents: 1000,
     });
     expect(second.duplicate).toBe(true);
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -148,7 +180,7 @@ describe('billing runtime', () => {
   });
 
   it('accrues extra member-days on paid plans and resets included discount', async () => {
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -180,7 +212,7 @@ describe('billing runtime', () => {
   });
 
   it('accrues a member added after the first daily settlement', async () => {
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -218,7 +250,7 @@ describe('billing runtime', () => {
   });
 
   it('persists extra member-day charges when wallet admission is denied', async () => {
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -269,7 +301,7 @@ describe('billing runtime', () => {
         ),
     );
     expect(value).toBe(1);
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -280,7 +312,7 @@ describe('billing runtime', () => {
   });
 
   it('preserves the Polar renewal boundary when the janitor refills included discount', async () => {
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,
@@ -306,7 +338,7 @@ describe('billing runtime', () => {
   });
 
   it('does not overwrite a newer Polar plan or period already on the locked row', async () => {
-    const billing = createBillingScope({
+    const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
       userId: USER_ID,

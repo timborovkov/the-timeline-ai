@@ -55,14 +55,43 @@ function paygOverageFromMeters(meters: MeterTotals): number {
   return sum;
 }
 
+function extraMemberCentsForPreview(input: {
+  extraMembers: number;
+  additionalMemberCents: number;
+  activeMembers: number;
+  includedActiveMembers: number | null;
+  meters?: MeterTotals;
+}): number {
+  if (input.extraMembers <= 0 || input.additionalMemberCents <= 0) return 0;
+  const nativeUnits = input.meters?.member_days?.nativeUnits;
+  if (typeof nativeUnits !== 'number') {
+    return input.extraMembers * input.additionalMemberCents;
+  }
+  const currentCharge = listChargeCentsForMeter('member_days', nativeUnits);
+  const currentExtra = extraMembers(input.activeMembers, input.includedActiveMembers);
+  if (currentExtra <= 0) {
+    return input.extraMembers * input.additionalMemberCents;
+  }
+  return Math.round(currentCharge * (input.extraMembers / currentExtra));
+}
+
 function billForPlan(input: {
   planId: SelfServePaidPlanId;
   activeMembers: number;
   meteredSpendCents: number;
+  meters?: MeterTotals;
+  includedActiveMembers?: number | null;
 }): PlanBillPreview {
   const plan = PLAN_CATALOG[input.planId];
   const extra = extraMembers(input.activeMembers, plan.includedActiveMembers);
-  const extraMemberCents = extra * (plan.additionalMemberCents ?? 0);
+  const extraMemberCents = extraMemberCentsForPreview({
+    extraMembers: extra,
+    additionalMemberCents: plan.additionalMemberCents ?? 0,
+    activeMembers: input.activeMembers,
+    includedActiveMembers:
+      input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
+    meters: input.meters,
+  });
   const meteredAfterDiscountCents = Math.max(
     0,
     input.meteredSpendCents - plan.includedUsageDiscountCents,
@@ -88,6 +117,8 @@ export function cheapestPlanPreview(input: {
   activeMembers: number;
   meters?: MeterTotals;
   meteredSpendCents?: number;
+  /** Current plan included seats; used to prorate extra-member preview from member-days. */
+  includedActiveMembers?: number | null;
 }): CheapestPlanPreview {
   const gross = input.meters
     ? grossListChargeCentsFromMeters(input.meters)
@@ -100,16 +131,22 @@ export function cheapestPlanPreview(input: {
       planId: 'payg',
       activeMembers: input.activeMembers,
       meteredSpendCents: paygMetered,
+      meters: input.meters,
+      includedActiveMembers: input.includedActiveMembers,
     }),
     team: billForPlan({
       planId: 'team',
       activeMembers: input.activeMembers,
       meteredSpendCents: gross,
+      meters: input.meters,
+      includedActiveMembers: input.includedActiveMembers,
     }),
     business: billForPlan({
       planId: 'business',
       activeMembers: input.activeMembers,
       meteredSpendCents: gross,
+      meters: input.meters,
+      includedActiveMembers: input.includedActiveMembers,
     }),
   };
   let recommended: SelfServePaidPlanId = 'payg';

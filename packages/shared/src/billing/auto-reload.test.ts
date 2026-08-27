@@ -1,10 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { billingUsageLedger, type Db } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
+import { sendMessage } from '#src/messaging/delivery.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 vi.mock('#src/billing/polar.js', () => ({
@@ -79,6 +81,50 @@ describe('maybeTriggerWalletAutoReload', () => {
       provider,
     });
     expect(second).toEqual({ triggered: true });
+  });
+
+  it('retries owner notification after Polar checkout succeeds but delivery fails', async () => {
+    const provider = createFakeBillingProvider();
+    provider.createCheckoutSession = () =>
+      Promise.resolve({
+        id: 'chk_notify',
+        url: 'https://sandbox.polar.sh/checkout/notify',
+      });
+    vi.mocked(sendMessage).mockResolvedValueOnce({ ok: false, error: 'postmark down' });
+    const first = await maybeTriggerWalletAutoReload({
+      db,
+      teamId: TEAM_ID,
+      account,
+      meteredSpendCents: 0,
+      provider,
+    });
+    expect(first).toEqual({ triggered: true });
+    const [row] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(row?.metadata).toMatchObject({
+      auto_reload_status: 'checkout_created',
+      checkout_url: 'https://sandbox.polar.sh/checkout/notify',
+    });
+
+    vi.mocked(sendMessage).mockResolvedValueOnce({ ok: true });
+    const createCheckout = vi.fn(provider.createCheckoutSession);
+    provider.createCheckoutSession = createCheckout;
+    const second = await maybeTriggerWalletAutoReload({
+      db,
+      teamId: TEAM_ID,
+      account,
+      meteredSpendCents: 0,
+      provider,
+    });
+    expect(second).toEqual({ triggered: true });
+    expect(createCheckout).not.toHaveBeenCalled();
+    const [sent] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(sent?.metadata).toMatchObject({ auto_reload_status: 'sent' });
   });
 
   it('skips auto-reload when the spend cap is a hard stop at 0', async () => {

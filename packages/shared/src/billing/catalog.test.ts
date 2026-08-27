@@ -102,6 +102,34 @@ describe('paid plan change', () => {
         polarSubscriptionId: null,
       }),
     ).toBeUndefined();
+    expect(
+      polarSubscriptionIdForPlanChange({
+        planId: 'payg',
+        billingState: 'past_due',
+        polarSubscriptionId: 'sub_paid',
+      }),
+    ).toBe('sub_paid');
+    expect(
+      polarSubscriptionIdForPlanChange({
+        planId: 'team',
+        billingState: 'payment_retry',
+        polarSubscriptionId: 'sub_paid',
+      }),
+    ).toBe('sub_paid');
+    expect(
+      polarSubscriptionIdForPlanChange({
+        planId: 'business',
+        billingState: 'read_only',
+        polarSubscriptionId: 'sub_paid',
+      }),
+    ).toBe('sub_paid');
+    expect(
+      polarSubscriptionIdForPlanChange({
+        planId: 'payg',
+        billingState: 'canceled',
+        polarSubscriptionId: 'sub_paid',
+      }),
+    ).toBeUndefined();
 
     const provider = createFakeBillingProvider();
     const updated = await createPlanChangeSession({

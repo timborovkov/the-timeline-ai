@@ -30,6 +30,8 @@ describe('pricing blocks', () => {
     expect(html).toContain('AI');
     expect(html).toContain('Meetings');
     expect(html).toMatch(/provider token cost/i);
+    expect(html).toMatch(/one owned workspace/i);
+    expect(html).toMatch(/restricted until you add a payment method/i);
   });
 
   it('folds infrastructure ceilings behind a closed disclosure', () => {

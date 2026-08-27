@@ -25,9 +25,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
 import {
   flushDeferredAcceptedSourceEnrichment,
+  flushDeferredAudioTranscription,
   writeIntegrationEvents,
 } from '#src/integrations/event-writer.js';
-import { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob } from '#src/queue/queues.js';
+import { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob, enqueueTranscribeJob } from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -35,6 +36,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 vi.mock('#src/queue/queues.js', () => ({
   enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+  enqueueTranscribeJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
   enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
@@ -1637,6 +1639,30 @@ describe('writeIntegrationEvents visibility', () => {
     expect(flushed).toBeGreaterThanOrEqual(1);
     const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, flushableId));
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
+  it('flushes deferred email audio transcription when billing can reserve again', async () => {
+    const eventId = '00000000-0000-4000-8000-000000000099';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_audio_url, source_metadata)
+      VALUES (
+        '${eventId}',
+        '${TEAM_ID}',
+        'email',
+        'audio/${TEAM_ID}/memo.m4a',
+        '{"transcription_deferred": true, "audio_filename": "memo.m4a"}'::jsonb
+      );
+    `);
+
+    const flushed = await flushDeferredAudioTranscription(db as never);
+    expect(flushed).toBe(1);
+    expect(enqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: eventId,
+      teamId: TEAM_ID,
+      audioKey: `audio/${TEAM_ID}/memo.m4a`,
+    });
+    const [clearedAudio] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(clearedAudio?.sourceMetadata).toMatchObject({ transcription_deferred: false });
   });
 
   it('falls back to team visibility for private integration events without a connector owner', async () => {

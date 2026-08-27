@@ -95,7 +95,9 @@ credit hides margin and confuses prospects.
    zeroed a positive catalog cap, that catalog default. Extra member-days persist
    the denied charge and freeze instead of skipping the extra seat. Terminal Recall
    no-shows settle elapsed waiting-room minutes; retry no-shows still release so
-   the same meeting can reserve again. Postmark success is recorded before email
+   the same meeting can reserve again. Cancelling a joining/active meeting with no
+   transcript chunks settles elapsed waiting-room minutes instead of releasing them.
+   Postmark success is recorded before email
    settlement so a later settle failure does not resend. Meeting-finalize billing
    uses the system actor so a departed creator cannot skip settlement. Free-grant
    inserts use `ON CONFLICT DO NOTHING` so a unique race cannot abort team-create.
@@ -136,7 +138,15 @@ credit hides margin and confuses prospects.
    overwrite a newer Polar plan or period. Client-aborted Ask streams settle at
    least the reserved customer charge instead of releasing after work starts.
    `WORKER_MODE=document-extract` allows the non-secret `BILLING_CHARGES_ENABLED`
-   toggle so extract AI metering can run live. Deferred accepted-source flush
+   toggle so extract AI metering can run live. `withAiMetering` keeps the reservation
+   when settle fails after the provider call so a worker retry cannot double-pay
+   OpenRouter. Paid-plan changes reuse the Polar subscription id in `past_due`,
+   `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
+   preview prorates extra members from `member_days` rather than a full month.
+   Auto-reload marks Polar checkout created before owner email and retries
+   notification after delivery failure without opening a second checkout. Inbound
+   email audio skipped for a denied email meter is stamped `transcription_deferred`
+   and the janitor flushes transcription when billing can reserve again. Deferred accepted-source flush
    rotates past still-blocked rows. Document restore rechecks storage and
    document capacity under the same advisory lock as create (hash key 1).
    Failed structured-output attempts still contribute OpenRouter `usage.cost` to

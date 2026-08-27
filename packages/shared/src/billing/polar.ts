@@ -209,6 +209,8 @@ export function isPolarTopUpConfigured(): boolean {
   return Boolean(getEnv().POLAR_ACCESS_TOKEN && polarTopUpProductId());
 }
 
+const POLAR_PLAN_CHANGE_CANCELED_STATES = new Set(['canceled', 'deletion_scheduled']);
+
 /** Paid workspaces already have a Polar subscription; do not open a second one. */
 export function polarSubscriptionIdForPlanChange(account: {
   planId: string;
@@ -219,12 +221,7 @@ export function polarSubscriptionIdForPlanChange(account: {
   if (account.planId !== 'payg' && account.planId !== 'team' && account.planId !== 'business') {
     return undefined;
   }
-  if (
-    account.billingState !== 'payg_active' &&
-    account.billingState !== 'team_active' &&
-    account.billingState !== 'business_active' &&
-    account.billingState !== 'grace'
-  ) {
+  if (POLAR_PLAN_CHANGE_CANCELED_STATES.has(account.billingState)) {
     return undefined;
   }
   return account.polarSubscriptionId;

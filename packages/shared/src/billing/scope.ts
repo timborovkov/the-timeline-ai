@@ -279,6 +279,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const planPreview = cheapestPlanPreview({
         activeMembers: activeMemberCount,
         meters: byMeter,
+        includedActiveMembers: PLAN_CATALOG[account.planId].includedActiveMembers,
       });
       const shadowBilling = accountUsesShadowBilling(account);
       return {

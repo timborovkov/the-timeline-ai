@@ -484,30 +484,35 @@ export async function withAiMetering<T>(
     metadata: { operation_class: operationClass },
   });
   if (!reserved.ok) throw new BillingAdmissionError(reserved.code);
+  let value: T;
+  let finish: OpenRouterFinishEvent | undefined;
   try {
-    const { value, finish } = await fn();
-    const usd = finish ? openRouterUsdCostFromFinishEvent(finish) : 0;
-    const { providerCostCents, customerChargeExactCents } =
-      customerAiChargeCentsFromOpenRouterUsd(usd);
-    await billing.settle({
-      operationId,
-      meterId: 'ai',
-      nativeUnits: customerChargeExactCents,
-      customerChargeCents: Math.round(customerChargeExactCents),
-      providerCostCents,
-      operationClass,
-      provider: 'openrouter',
-      ...(input.model ? { model: input.model } : {}),
-      ...(ctx.source ? { source: ctx.source } : {}),
-      ...(ctx.deliverySurface ? { deliverySurface: ctx.deliverySurface } : {}),
-      billable: ctx.billable !== false,
-      metadata: { openrouter_usd: usd },
-    });
-    return value;
+    ({ value, finish } = await fn());
   } catch (err) {
     await billing.release(operationId);
     throw err;
   }
+  const usd = finish ? openRouterUsdCostFromFinishEvent(finish) : 0;
+  const { providerCostCents, customerChargeExactCents } =
+    customerAiChargeCentsFromOpenRouterUsd(usd);
+  // Keep the reservation if settle fails after OpenRouter work succeeded.
+  // Releasing here would let a worker retry mint a new `ai:` operation id
+  // and pay the provider a second time while the first call stays uncharged.
+  await billing.settle({
+    operationId,
+    meterId: 'ai',
+    nativeUnits: customerChargeExactCents,
+    customerChargeCents: Math.round(customerChargeExactCents),
+    providerCostCents,
+    operationClass,
+    provider: 'openrouter',
+    ...(input.model ? { model: input.model } : {}),
+    ...(ctx.source ? { source: ctx.source } : {}),
+    ...(ctx.deliverySurface ? { deliverySurface: ctx.deliverySurface } : {}),
+    billable: ctx.billable !== false,
+    metadata: { openrouter_usd: usd },
+  });
+  return value;
 }
 
 export async function snapshotTeamStorageGbMonth(input: {
