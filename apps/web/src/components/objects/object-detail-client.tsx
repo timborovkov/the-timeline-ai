@@ -1461,7 +1461,10 @@ function ObjectEditableFields({
   return (
     <section aria-label="Properties" className="flex flex-col">
       <h2 className={`px-1.5 ${DETAIL_SECTION_LABEL_CLASS}`}>Properties</h2>
-      <EditableMetadata label={`Status for ${displayText(title)}`} className="min-h-8 px-1.5">
+      <EditableMetadata
+        label={`Status for ${displayText(title)}`}
+        className="min-h-8 justify-start px-1.5 text-fg"
+      >
         <EditableMetadata.Value>
           <CollectionStatus value={detail.status} label={statusLabel(detail.status)} />
         </EditableMetadata.Value>
@@ -1485,7 +1488,10 @@ function ObjectEditableFields({
           </select>
         </EditableMetadata.Editor>
       </EditableMetadata>
-      <EditableMetadata label={`Priority for ${displayText(title)}`} className="min-h-8 px-1.5">
+      <EditableMetadata
+        label={`Priority for ${displayText(title)}`}
+        className="min-h-8 justify-start px-1.5 text-fg"
+      >
         <EditableMetadata.Value>
           <CollectionStatus
             value={detail.priority ? `p${detail.priority}` : 'none'}
@@ -1511,7 +1517,10 @@ function ObjectEditableFields({
         </EditableMetadata.Editor>
       </EditableMetadata>
       {detail.type === 'task' ? (
-        <EditableMetadata label={`Assignee for ${displayText(title)}`} className="min-h-8 px-1.5">
+        <EditableMetadata
+          label={`Assignee for ${displayText(title)}`}
+          className="min-h-8 justify-start px-1.5 text-fg"
+        >
           <EditableMetadata.Value>
             {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
           </EditableMetadata.Value>
@@ -1535,7 +1544,10 @@ function ObjectEditableFields({
         </EditableMetadata>
       ) : null}
       {isSchedulableObjectType(detail.type) ? (
-        <EditableMetadata label={`Due date for ${displayText(title)}`} className="min-h-8 px-1.5">
+        <EditableMetadata
+          label={`Due date for ${displayText(title)}`}
+          className="min-h-8 justify-start px-1.5 text-fg"
+        >
           <EditableMetadata.Value>
             <DueDateDisplay value={detail.dueAt} variant="field-hint" />
           </EditableMetadata.Value>
@@ -1594,8 +1606,8 @@ function ObjectEditableFields({
           />
         </div>
       ) : null}
-      <label className="flex min-h-8 items-center gap-3 px-2">
-        <span className="w-16 shrink-0 text-xs text-fg-dim">Stage</span>
+      <label className="flex min-h-8 items-center gap-2 px-1.5">
+        <span className="w-24 shrink-0 text-xs font-normal text-fg-dim">Stage</span>
         <input
           aria-label="Stage"
           value={stageDraft}
@@ -1611,12 +1623,12 @@ function ObjectEditableFields({
             dispatchObjectUi({ stageDraft: value });
             patch('stage', value === '' ? null : value);
           }}
-          className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          className="min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50"
           placeholder="No stage"
         />
       </label>
-      <label className="flex min-h-8 items-center gap-3 px-2">
-        <span className="w-16 shrink-0 text-xs text-fg-dim">Aliases</span>
+      <label className="flex min-h-8 items-center gap-2 px-1.5">
+        <span className="w-24 shrink-0 text-xs font-normal text-fg-dim">Aliases</span>
         <input
           aria-label="Aliases"
           value={aliasesDraft}
@@ -1633,7 +1645,7 @@ function ObjectEditableFields({
             patch('aliases', aliases);
           }}
           placeholder="No aliases"
-          className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          className="min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50"
         />
       </label>
     </section>

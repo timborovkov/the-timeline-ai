@@ -12,6 +12,12 @@ import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';
 
+const SECTION_LABEL = 'px-1.5 text-xs font-normal text-fg-dim';
+const FIELD_LABEL = 'w-24 shrink-0 truncate text-xs font-normal text-fg-dim';
+const FIELD_VALUE = 'min-w-0 flex-1 truncate text-sm font-normal leading-5 text-fg';
+const QUIET_ACTION =
+  'inline-flex min-h-8 items-center gap-1.5 px-1.5 text-xs font-normal text-fg-muted transition-colors hover:text-fg disabled:opacity-50';
+
 const FACET_KINDS = [
   'email',
   'phone',
@@ -79,109 +85,108 @@ export function ObjectContactFields({
 
   return (
     <section aria-label="Contact" className="flex flex-col">
-      <h2 className="px-1.5 text-xs font-normal text-fg-dim">Contact</h2>
-      {contacts.length === 0 && !adding ? (
-        <p className="px-1.5 py-1 text-xs text-fg-dim">No contact info yet.</p>
-      ) : null}
-      {contacts.map((facet) => {
-        const href =
-          facet.kind === 'email'
-            ? `mailto:${facet.normalizedValue}`
-            : facet.kind === 'phone'
-              ? `tel:${facet.normalizedValue}`
-              : null;
-        return (
-          <div key={facet.id} className="group flex min-h-8 items-center gap-1 px-1.5">
-            <span className="w-24 shrink-0 truncate text-xs text-fg-dim">
-              {statusLabel(facet.kind)}
-            </span>
-            {href ? (
-              <a
-                href={href}
-                className="min-w-0 flex-1 truncate px-1 text-xs text-fg hover:underline"
-              >
-                {facet.value}
-              </a>
-            ) : (
-              <span className="min-w-0 flex-1 truncate px-1 text-xs text-fg">{facet.value}</span>
-            )}
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => {
-                removeContact(facet.id);
-              }}
-              aria-label={`Remove ${facet.value}`}
-              className={cn(
-                'grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors',
-                'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100',
-                'hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50',
+      <h2 className={SECTION_LABEL}>Contact</h2>
+      <div className="mt-0.5 flex flex-col">
+        {contacts.length === 0 && !adding ? (
+          <p className="px-1.5 py-1 text-sm font-normal leading-5 text-fg-dim">
+            No contact info yet.
+          </p>
+        ) : null}
+        {contacts.map((facet) => {
+          const href =
+            facet.kind === 'email'
+              ? `mailto:${facet.normalizedValue}`
+              : facet.kind === 'phone'
+                ? `tel:${facet.normalizedValue}`
+                : null;
+          return (
+            <div key={facet.id} className="group flex min-h-8 items-center gap-2 px-1.5">
+              <span className={FIELD_LABEL}>{statusLabel(facet.kind)}</span>
+              {href ? (
+                <a href={href} className={cn(FIELD_VALUE, 'hover:underline')}>
+                  {facet.value}
+                </a>
+              ) : (
+                <span className={FIELD_VALUE}>{facet.value}</span>
               )}
-            >
-              <X aria-hidden="true" className="size-3" />
-            </button>
-          </div>
-        );
-      })}
-      {adding ? (
-        <div className="grid gap-1.5 px-1.5 py-1.5">
-          <select
-            value={kind}
-            onChange={(event) => {
-              setKind(event.target.value as (typeof FACET_KINDS)[number]);
-            }}
-            className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Contact kind"
-          >
-            {FACET_KINDS.map((option) => (
-              <option key={option} value={option}>
-                {statusLabel(option)}
-              </option>
-            ))}
-          </select>
-          <input
-            value={value}
-            onChange={(event) => {
-              setValue(event.target.value);
-            }}
-            placeholder="Contact value"
-            className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Contact value"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={busy || !value.trim()}
-              onClick={addContact}
-              className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAdding(false);
-                setValue('');
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  removeContact(facet.id);
+                }}
+                aria-label={`Remove ${facet.value}`}
+                className={cn(
+                  'grid size-7 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors',
+                  'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100',
+                  'hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50',
+                )}
+              >
+                <X aria-hidden="true" className="size-3.5" />
+              </button>
+            </div>
+          );
+        })}
+        {adding ? (
+          <div className="grid gap-1.5 px-1.5 py-1.5">
+            <select
+              value={kind}
+              onChange={(event) => {
+                setKind(event.target.value as (typeof FACET_KINDS)[number]);
               }}
-              className="text-xs text-fg-muted hover:text-fg"
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
+              aria-label="Contact kind"
             >
-              Cancel
-            </button>
+              {FACET_KINDS.map((option) => (
+                <option key={option} value={option}>
+                  {statusLabel(option)}
+                </option>
+              ))}
+            </select>
+            <input
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value);
+              }}
+              placeholder="Contact value"
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
+              aria-label="Contact value"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={busy || !value.trim()}
+                onClick={addContact}
+                className="text-xs font-normal text-fg-muted hover:text-fg disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdding(false);
+                  setValue('');
+                }}
+                className="text-xs font-normal text-fg-muted hover:text-fg"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setAdding(true);
-          }}
-          className="inline-flex min-h-8 items-center gap-1.5 px-1.5 text-xs text-fg-muted transition-colors hover:text-fg disabled:opacity-50"
-        >
-          <Plus aria-hidden="true" className="size-3" />
-          Add contact
-        </button>
-      )}
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setAdding(true);
+            }}
+            className={QUIET_ACTION}
+          >
+            <Plus aria-hidden="true" className="size-3.5" />
+            Add contact
+          </button>
+        )}
+      </div>
     </section>
   );
 }
