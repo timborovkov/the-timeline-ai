@@ -803,8 +803,9 @@ connected work,” and “Nothing here yet” cards are prohibited. Discussion k
 a borderless composer with @mentions. The right column is one Properties rail at
 `18rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
 `--border`, not raw page canvas. Board context, contact facets, type-aware
-metadata, Properties, Company (person objects), Related, recent changes, and
-Archive share that one panel and divide with hairlines. Do not nest a card per
+metadata, Properties, Company (person objects), editable contact facets (people and
+companies), Related, recent changes, and Archive share that one panel and divide with
+hairlines. Do not nest a card per
 field. The task peek and board card peek use the same rail pattern so they lift
 off the list in light and dark; both include Discussion below command fields and
 before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a

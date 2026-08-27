@@ -682,7 +682,7 @@ export async function structureContactFromBoardNotesAction(input: unknown): Prom
       if (!detail) return { error: 'Object not found' };
       const contacts = extractContactsFromText(parsed.data.notes);
       const metadataPatch: Record<string, unknown> = {};
-      if (detail.type === 'person') {
+      if (objects.objectSupportsIdentityFacets(detail.type)) {
         const facetCreates: ReturnType<typeof r.scope.objects.createIdentityFacet>[] = [];
         for (const contact of contacts) {
           if (contact.kind !== 'email' && contact.kind !== 'phone') continue;
@@ -696,14 +696,13 @@ export async function structureContactFromBoardNotesAction(input: unknown): Prom
           );
         }
         await Promise.all(facetCreates);
-      } else if (detail.type === 'company') {
+      }
+      if (detail.type === 'company') {
         const email = contacts.find((contact) => contact.kind === 'email');
-        const phone = contacts.find((contact) => contact.kind === 'phone');
         if (email) {
           const domain = email.normalizedValue.split('@')[1];
           if (domain) metadataPatch.domain = domain;
         }
-        if (phone) metadataPatch.relationship = `Phone: ${phone.displayValue}`;
       }
       if (Object.keys(metadataPatch).length > 0) {
         const validated = objects.parseObjectMetadataPatch(detail.type, metadataPatch);

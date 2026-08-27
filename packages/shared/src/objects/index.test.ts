@@ -1857,6 +1857,31 @@ describe('object scope — notes and suggestions', () => {
     });
   });
 
+  it('creates identity facets for companies', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Facet Company',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const facet = await scope.createIdentityFacet({
+      entityId: company.id,
+      kind: 'phone',
+      value: '+1 415 555 0100',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(scope.getObject(company.id)).resolves.toMatchObject({
+      identityFacets: [
+        expect.objectContaining({
+          id: facet.id,
+          kind: 'phone',
+          normalizedValue: '+14155550100',
+        }),
+      ],
+    });
+  });
+
   it('sets a single primary company for a person', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const [person, company] = await Promise.all([

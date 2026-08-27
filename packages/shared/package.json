@@ -459,6 +459,12 @@
       "development": "./src/objects/metadata-schemas.ts",
       "import": "./dist/objects/metadata-schemas.js",
       "default": "./dist/objects/metadata-schemas.js"
+    },
+    "./objects/identity-facets": {
+      "types": "./src/objects/identity-facets.ts",
+      "development": "./src/objects/identity-facets.ts",
+      "import": "./dist/objects/identity-facets.js",
+      "default": "./dist/objects/identity-facets.js"
     }
   },
   "main": "./dist/index.js",

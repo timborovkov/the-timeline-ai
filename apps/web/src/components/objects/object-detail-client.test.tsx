@@ -646,7 +646,7 @@ describe('ObjectDetailClient', () => {
     expect(html.match(new RegExp(taskTitle, 'g'))).toHaveLength(1);
   });
 
-  it('renders saved contact facets for people', () => {
+  it('renders saved contact facets for people and companies', () => {
     const html = renderObjectDetail({
       detail: {
         ...detail,
@@ -683,6 +683,32 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('ada@example.com');
     expect(html).toContain('href="mailto:ada@example.com"');
     expect(html).toContain('href="tel:+12133734253"');
+
+    const companyHtml = renderObjectDetail({
+      detail: {
+        ...detail,
+        type: 'company',
+        canonicalName: 'Northstar Works',
+        identityFacets: [
+          {
+            id: 'facet-company-phone',
+            entityId: 'object-1',
+            kind: 'phone',
+            value: '+358 40 123 4567',
+            normalizedValue: '+358401234567',
+            provider: null,
+            externalId: null,
+            linkedUserId: null,
+          },
+        ],
+      },
+      userId: 'user-1',
+      suggestions: [],
+    });
+
+    expect(companyHtml).toContain('Contact');
+    expect(companyHtml).toContain('+358 40 123 4567');
+    expect(companyHtml).toContain('href="tel:+358401234567"');
   });
 
   it('renders object summaries and provenance above evidence', () => {
