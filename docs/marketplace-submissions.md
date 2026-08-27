@@ -28,6 +28,7 @@ review requirements may change independently of this repository.
 | State | Evidence | Status |
 | --- | --- | --- |
 | Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, tests | Ready on PR branch |
+| Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open 2026-08-27; not merged |
 | Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27 |
 | Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-08-27 |
 | Production deployment | Migration `0073_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
