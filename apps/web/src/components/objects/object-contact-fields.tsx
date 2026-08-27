@@ -92,7 +92,7 @@ export function ObjectContactFields({
               : null;
         return (
           <div key={facet.id} className="group flex min-h-8 items-center gap-1 px-1.5">
-            <span className="w-16 shrink-0 truncate text-xs text-fg-dim">
+            <span className="w-24 shrink-0 truncate text-xs text-fg-dim">
               {statusLabel(facet.kind)}
             </span>
             {href ? (

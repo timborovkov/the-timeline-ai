@@ -211,7 +211,7 @@ function MetadataEditableRow({
   const display = value ? displayMetadataValue(value) : null;
   return (
     <div className="group flex min-h-8 items-center gap-1 px-1.5">
-      <span className="w-16 shrink-0 truncate text-xs text-fg-dim" title={label}>
+      <span className="w-24 shrink-0 truncate text-xs text-fg-dim" title={label}>
         {label}
       </span>
       <EditableMetadata
