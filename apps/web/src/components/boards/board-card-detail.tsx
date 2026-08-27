@@ -445,7 +445,10 @@ function BoardObjectDetails({
         label="Object priority"
         value={item.object.priority ? `P${item.object.priority}` : '-'}
       />
-      <Detail label="Object stage" value={item.object.stage ?? '-'} />
+      <Detail
+        label="Object stage"
+        value={item.object.stage ? statusLabel(item.object.stage) : '-'}
+      />
     </dl>
   );
 }
