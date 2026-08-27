@@ -64,7 +64,7 @@ import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
 loadDotEnv(resolve(process.cwd(), '.env'));
 
 const TERMS_VERSION = '2026-06-02';
-const PRIVACY_VERSION = '2026-06-02';
+const PRIVACY_VERSION = '2026-08-26';
 
 const IDS = {
   owner: '10000000-0000-4000-8000-000000000001',

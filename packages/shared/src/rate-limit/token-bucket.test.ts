@@ -88,6 +88,20 @@ describe('checkRateLimit', () => {
     expect(r.ok).toBe(true);
   });
 
+  it('can fail closed for security-sensitive mutation endpoints', async () => {
+    const broken = {
+      defineCommand: () => undefined,
+      tokenBucket: () => {
+        throw new Error('connection refused');
+      },
+    } as unknown as Redis;
+    const r = await checkRateLimit(
+      { key: 'rl:oauth:register', capacity: 1, refillPerSec: 1, failureMode: 'closed' },
+      { redis: broken, now: () => 1 },
+    );
+    expect(r).toEqual({ ok: false, retryAfterMs: 1_000, remaining: 0 });
+  });
+
   it('rateLimitKey skips empty parts', () => {
     expect(rateLimitKey('chat', 'user', 'abc')).toBe('rl:chat:user:abc');
     expect(rateLimitKey('chat', undefined, 'abc')).toBe('rl:chat:abc');

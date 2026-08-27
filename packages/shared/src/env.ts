@@ -183,6 +183,7 @@ const baseSchema = z.object({
   AUTH_URL: z.url().default('http://localhost:3000'),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
+  OPENAI_APPS_CHALLENGE_TOKEN: z.preprocess(emptyStringAsUnset, z.string().max(512).optional()),
 
   // Database
   DATABASE_URL: z.url(),

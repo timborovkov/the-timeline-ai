@@ -1,0 +1,20 @@
+{
+  "name": "timeline",
+  "displayName": "The Timeline",
+  "version": "0.2.0",
+  "description": "Use The Timeline as cited workspace memory through one general skill and its hosted MCP connection.",
+  "author": {
+    "name": "Nyxone OÜ",
+    "url": "https://thetimeline.cc"
+  },
+  "homepage": "https://thetimeline.cc/help/agents",
+  "repository": "https://github.com/timborovkov/the-timeline-ai",
+  "keywords": ["timeline", "team-memory", "workspace-search", "citations", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": {
+    "timeline": {
+      "type": "http",
+      "url": "https://thetimeline.cc/api/mcp/server"
+    }
+  }
+}

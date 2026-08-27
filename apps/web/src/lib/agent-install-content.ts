@@ -1,8 +1,8 @@
 export const TIMELINE_SKILLS_URL =
   'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills';
 
-export const TIMELINE_PLUGIN_INSTALL_URL = `${TIMELINE_SKILLS_URL}#install-the-plugin`;
-const TIMELINE_MCP_MANAGE_URL = 'https://thetimeline.cc/app/team/mcp-share';
+export const TIMELINE_CODEX_PLUGIN_INSTALL_URL = `${TIMELINE_SKILLS_URL}#install-in-codex`;
+export const TIMELINE_CLAUDE_PLUGIN_INSTALL_URL = `${TIMELINE_SKILLS_URL}#install-in-claude-code`;
 
 export const TIMELINE_PLUGIN_INSTALL_PROMPT = `Install The Timeline plugin for this Codex environment.
 
@@ -15,18 +15,18 @@ codex plugin add timeline@timeline
 
 Then verify that the timeline skill is installed.
 
-Check only whether TIMELINE_MCP_KEY is present; do not print, echo, log, or inspect its value. If it is unavailable, stop and explain that a Timeline team admin must create it at ${TIMELINE_MCP_MANAGE_URL} because its plaintext is shown only once. Tell CLI users to set it in the terminal that will launch Codex, fully exit the current Codex process, and relaunch codex from that same terminal. Tell Codex app and IDE users to store TIMELINE_MCP_KEY=<one-time key> in ~/.codex/.env, outside any repository, restrict that file to their user account, and fully restart the app or extension. A new task alone cannot import an environment variable added after Codex started.
+The bundled MCP connection uses Timeline OAuth and does not need a bearer key in the plugin manifest. Fully restart Codex, start a new task, and complete the browser flow when prompted: sign in to Timeline, choose the team to share, review the requested scopes, and approve or deny access. The default scope is read. Never request agent:ask unless I explicitly ask for paid, proposal-only Timeline agent turns and the consent screen shows that scope.
 
-Never ask me to paste the key into chat or write it to a repository file.
+When setup is ready, tell me to start a new task so Codex loads the plugin and begins OAuth authorization.`;
 
-When setup and the launch environment are ready, tell me to start a new task so Codex loads the plugin.`;
+export const TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND = `claude plugin marketplace add timborovkov/the-timeline-ai
+claude plugin install timeline@timeline`;
 
 export const TIMELINE_SKILL_INSTALL_PROMPT = `$skill-installer Install this Timeline skill from GitHub:
 - https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills/timeline`;
 
 export const TIMELINE_MCP_COMMAND = `codex mcp add timeline \\
-  --url "https://thetimeline.cc/api/mcp/server" \\
-  --bearer-token-env-var TIMELINE_MCP_KEY`;
+  --url "https://thetimeline.cc/api/mcp/server"`;
 
 export const TIMELINE_AGENT_SKILL = {
   id: 'timeline',
@@ -37,34 +37,34 @@ export const TIMELINE_AGENT_SKILL = {
 
 export const TIMELINE_AGENT_INSTALL_STEPS = [
   {
-    title: 'Run the install prompt',
-    body: 'Codex adds the sparse repository marketplace, installs the plugin, and checks the bundled Timeline skill.',
+    title: 'Install for your agent',
+    body: 'Use the Codex install prompt or run the Claude Code marketplace commands. Both packages include the Timeline skill and hosted MCP connection.',
   },
   {
-    title: 'Connect Timeline',
-    body: 'A Timeline admin creates a one-time key. Export it in the CLI launch terminal, or store it as TIMELINE_MCP_KEY in ~/.codex/.env for the app or IDE.',
+    title: 'Authorize Timeline',
+    body: 'Sign in when the browser opens, choose the team to share, review the requested scopes, and approve or deny access.',
   },
   {
-    title: 'Relaunch, then start a task',
-    body: 'If you just added the key, fully relaunch Codex from the environment that contains it. A new task then discovers the plugin skill and MCP tools.',
+    title: 'Start a Timeline-backed task',
+    body: 'After consent, start a new task or conversation so your agent uses the installed skill to retrieve and cite workspace evidence.',
   },
 ] as const;
 
 export const TIMELINE_AGENT_ACCESS_FAQS = [
   {
-    question: 'What can the key read?',
+    question: 'What can OAuth read?',
     answer:
-      'Team-visible Timeline data only. Private and specific-user evidence remains unavailable to outbound keys.',
+      'The default read grant follows your current membership and visibility in the team you choose. That includes private and specifically shared evidence you can already access. A manual static key instead represents the team and sees team-visible data only.',
   },
   {
-    question: 'Should I paste the key into the prompt?',
+    question: 'Should I paste a key into the prompt?',
     answer:
-      'No. For CLI, export it only in the terminal that launches Codex. For the app or IDE, store it in ~/.codex/.env outside any repository, restrict the file to your user account, and restart the host. The prompt tells the agent not to request or persist it.',
+      'No. The normal plugin and direct-URL flows use browser-based OAuth. Static keys are a compatibility fallback for manual clients; keep one only in that client’s protected credential storage and never paste it into chat or a repository.',
   },
   {
     question: 'Can the plugin change canonical work?',
     answer:
-      'Not by default. Standard keys are read-only. An admin can separately enable paid, stateless Timeline agent turns, which may call enabled team-shared custom MCP tools and create proposals for human review but cannot write canonical state directly. Those third-party tools may have external side effects.',
+      'Not with the default read scope. A current team owner or admin can separately approve agent:ask for paid, stateless Timeline agent turns. It may call enabled team-shared custom MCP tools and create proposals for human review, but cannot write canonical Timeline state directly. Third-party tools may have external side effects.',
   },
   {
     question: 'What about self-hosted Timeline?',
@@ -74,20 +74,21 @@ export const TIMELINE_AGENT_ACCESS_FAQS = [
   {
     question: 'Why do I need a new task?',
     answer:
-      'Codex discovers the newly installed plugin skill and MCP tools at task start. Restart Codex first if you added TIMELINE_MCP_KEY after it started; for the CLI, relaunch it from the same terminal that exported the key.',
+      'Codex and Claude Code load newly installed plugin content after restart. Restart your agent, then begin a new task or conversation; the MCP connection can open the OAuth flow from there.',
   },
 ] as const;
 
 export const TIMELINE_AGENT_HELP_SEARCH_TEXT = [
   'Connect your agent to what actually happened.',
-  'Install one general Timeline skill that teaches agents how to retrieve, verify, and cite team-visible workspace evidence.',
-  'Install The Timeline plugin. One bundle adds the Timeline skill and the hosted Timeline MCP connection.',
+  'Install one general Timeline skill that teaches agents how to retrieve, verify, and cite workspace evidence visible to the authorizing member.',
+  'Install The Timeline plugin in Codex or Claude Code. One bundle adds the Timeline skill and the hosted Timeline MCP connection.',
   'Prefer a narrower setup? Install only the skill, or connect the MCP endpoint without the plugin.',
   'Skill only. Best for self-hosted Timeline or agents that already have an MCP connection.',
-  'MCP only. Set TIMELINE_MCP_KEY in the terminal that will launch Codex, connect hosted Timeline, and relaunch Codex from that terminal.',
+  'MCP only. Add the hosted Timeline URL, then sign in, choose a team, and approve the requested OAuth scopes in the browser.',
   'One skill, the whole workspace. It routes each request to the relevant Timeline tools and preserves citations, uncertainty, visibility, and evidence boundaries.',
   'Access, without surprises. The install path and access boundary are intentionally separate.',
   TIMELINE_PLUGIN_INSTALL_PROMPT,
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_SKILL_INSTALL_PROMPT,
   TIMELINE_MCP_COMMAND,
   TIMELINE_AGENT_SKILL.id,

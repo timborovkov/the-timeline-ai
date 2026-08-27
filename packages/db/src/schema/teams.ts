@@ -47,6 +47,7 @@ export const teamMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: teamRole('role').notNull().default('member'),
+    authorizationEpoch: uuid('authorization_epoch').defaultRandom().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     removedAt: timestamp('removed_at', { withTimezone: true }),
     removedByUserId: uuid('removed_by_user_id').references(() => users.id, {

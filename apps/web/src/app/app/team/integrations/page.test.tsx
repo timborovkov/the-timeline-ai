@@ -170,7 +170,7 @@ describe('IntegrationsPageView', () => {
     );
     const agentSkillsLink = screen.getByRole('link', { name: 'Plugin source' });
     expect(agentSkillsLink.getAttribute('href')).toBe(
-      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
     );
     expect(agentSkillsLink.getAttribute('target')).toBe('_blank');
     expect(agentSkillsLink.getAttribute('rel')).toBe('noreferrer');

@@ -1,0 +1,18 @@
+{
+  "name": "timeline",
+  "owner": {
+    "name": "Nyxone OÜ",
+    "url": "https://thetimeline.cc"
+  },
+  "description": "Claude Code plugins from The Timeline.",
+  "plugins": [
+    {
+      "name": "timeline",
+      "displayName": "The Timeline",
+      "source": "./plugins/timeline",
+      "description": "Use The Timeline as cited workspace memory through one general skill and its hosted MCP connection.",
+      "category": "Productivity",
+      "tags": ["workspace-memory", "search", "citations", "mcp"]
+    }
+  ]
+}

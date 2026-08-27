@@ -4,6 +4,7 @@ import type { PublicDocument } from '@/lib/public-site';
 
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
   TIMELINE_SKILL_INSTALL_PROMPT,
@@ -54,9 +55,13 @@ describe('llms text files', () => {
       expect(text).toContain(page.description);
     }
     expect(text).toContain(
-      '[Open installation guide](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin)',
+      '[Install in Codex](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex)',
+    );
+    expect(text).toContain(
+      '[Install in Claude Code](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code)',
     );
     expect(text).toContain(TIMELINE_PLUGIN_INSTALL_PROMPT);
+    expect(text).toContain(TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND);
     expect(text).toContain(TIMELINE_SKILL_INSTALL_PROMPT);
     expect(text).toContain(TIMELINE_MCP_COMMAND);
     for (const faq of TIMELINE_AGENT_ACCESS_FAQS) {
@@ -67,12 +72,12 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-08-21',
-      reviewed: '2026-08-21',
+      modified: '2026-08-26',
+      reviewed: '2026-08-26',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
-      modified: '2026-08-21',
-      reviewed: '2026-08-21',
+      modified: '2026-08-26',
+      reviewed: '2026-08-26',
     });
   });
 
