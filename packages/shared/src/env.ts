@@ -54,6 +54,7 @@ function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'NODE_ENV',
+  'TIMELINE_DEPLOYMENT_MODE',
   'LOG_LEVEL',
   'WORKER_MODE',
   'DOCUMENT_EXTRACT_ENABLED',
@@ -164,6 +165,12 @@ function assertDocumentExtractProcessEnvAllowlist(
 
 const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /**
+   * Distinguishes Timeline-operated hosting from a separately operated
+   * deployment. Default to hosted so production-only provider restrictions
+   * fail closed unless a self-managed operator opts into its own boundary.
+   */
+  TIMELINE_DEPLOYMENT_MODE: z.enum(['hosted', 'self-managed']).default('hosted'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 
   /**
@@ -397,10 +404,11 @@ const baseSchema = z.object({
   /**
    * Recall recording-media retention for meeting bots.
    *
-   * Unset / empty => timed retention for 1 hour. Development and self-managed
-   * non-production environments can choose another positive hour count or
-   * "forever". Hosted production is constrained below to one hour because
-   * Recall's zero-retention mode is incompatible with prioritize_accuracy.
+   * Unset / empty => timed retention for 1 hour. Development and explicitly
+   * self-managed deployments can choose another positive hour count or
+   * "forever". Timeline-hosted production is constrained below to one hour
+   * because Recall's zero-retention mode is incompatible with
+   * prioritize_accuracy.
    */
   RECALL_RETENTION: z.preprocess(emptyStringAsUnset, z.string().optional()),
   /**
@@ -511,6 +519,7 @@ const schema = baseSchema
     }
     if (
       env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
       env.RECALL_API_KEY &&
       env.RECALL_RETENTION !== undefined &&
       env.RECALL_RETENTION.trim() !== '1'

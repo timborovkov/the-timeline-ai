@@ -103,16 +103,19 @@
       </ol>
       <pre><code>RECALL_API_KEY=...
 RECALL_BASE_URL=https://us-west-2.recall.ai/api/v1
+TIMELINE_DEPLOYMENT_MODE=hosted
 RECALL_RETENTION=
 </code></pre>
       <p>
         <code>RECALL_RETENTION</code> defaults to <strong>1 hour</strong> when unset or empty. The
         bot request sends <code>recording_config.retention = { type: "timed", hours: 1 }</code>,
-        which keeps Recall recording media only briefly after the meeting completes. Hosted
-        production env validation accepts only unset/empty or <code>1</code>. Development and
-        separately operated non-production environments can set a positive integer for longer timed
-        storage or <code>forever</code>, but those settings must never be copied into hosted
-        production. Zero retention values are rejected.
+        which keeps Recall recording media only briefly after the meeting completes. Production with
+        <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> accepts only unset/empty or <code>1</code>; the
+        mode defaults to <code>hosted</code> so this fails closed. Development or a separately
+        licensed and operated production deployment may explicitly select
+        <code>self-managed</code> and set a positive integer for longer timed storage or
+        <code>forever</code>. That operator owns the resulting retention policy and notices. Zero
+        retention values are rejected.
       </p>
       <p>
         Timeline always uses Recall's accuracy-prioritised multilingual transcription path with auto
@@ -229,11 +232,11 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
       </p>
       <p>
         Timeline does <strong>not</strong> copy raw meeting audio or video into Timeline-managed
-        object storage. Recall temporarily processes and retains that recording media for one hour
-        after the meeting completes so the high-quality multilingual transcript path remains
-        available. Recall separately keeps operational logs for 7 days and removes the meeting URL
-        14 days after the bot terminates. Transcript text lands on the timeline; summary metadata is
-        attached when OpenRouter generation succeeds.
+        object storage. In Timeline-hosted mode, Recall temporarily processes and retains that
+        recording media for one hour after the meeting completes so the high-quality multilingual
+        transcript path remains available. Recall separately keeps operational logs for 7 days and
+        removes the meeting URL 14 days after the bot terminates. Transcript text lands on the
+        timeline; summary metadata is attached when OpenRouter generation succeeds.
       </p>
 
       <h2 id="local-dev">Local development</h2>

@@ -20,6 +20,8 @@ describe('Trust page', () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Your work should not become someone else');
     expect(html).toContain('ZDR by role');
+    expect(html).toContain('Prohibited by policy');
+    expect(html).toContain('Production provider evidence remains pending');
     expect(html).toContain('ZDR-required roles reject endpoints with weaker retention terms');
     expect(html).toContain('data_collection: deny');
     expect(html).toContain('zdr: true');
@@ -32,6 +34,8 @@ describe('Trust page', () => {
     expect(html).toContain('Browser analytics is confined to');
     expect(html).toContain('protected workspace');
     expect(html).toContain('Personless surface streams');
+    expect(html).toContain('production networking and bucket exposure still require');
+    expect(html).toContain('access inventory, enforcement, and audit evidence are still');
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('href="/terms"');

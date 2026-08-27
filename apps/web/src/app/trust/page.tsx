@@ -26,8 +26,9 @@ const TRUST_SIGNALS = [
   },
   {
     label: 'Model training',
-    value: 'Customer content excluded',
-    detail: 'Timeline does not train or fine-tune any model on Customer Content.',
+    value: 'Prohibited by policy',
+    detail:
+      'Timeline policy prohibits training on Customer Content. Production provider evidence remains pending.',
   },
   {
     label: 'Meeting media',
@@ -64,7 +65,7 @@ const DATA_PATH = [
 const PROVIDERS = [
   [
     'Railway',
-    'App, workers, PostgreSQL, Redis, private server traffic, and the signed-file transfer endpoint',
+    'Documented app, worker, PostgreSQL, Redis, private-traffic, and signed-file design; deployed exposure evidence pending',
   ],
   ['OpenRouter', 'Privacy-filtered routing to eligible AI inference endpoints'],
   [
@@ -251,9 +252,9 @@ export default async function TrustPage() {
                 </p>
                 <p>
                   The honest answer is not “nothing leaves our servers.” Relevant content reaches
-                  specialist processors. The promise is narrower: Timeline never trains or
-                  fine-tunes models on Customer Content.{' '}
-                  {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustIntro}
+                  specialist processors. The policy is narrower: Timeline prohibits using Customer
+                  Content to train or fine-tune models. Production account and contract evidence is
+                  still being completed. {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustIntro}
                 </p>
               </div>
             </div>
@@ -346,8 +347,8 @@ export default async function TrustPage() {
                 </div>
                 <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-3">
                   {[
-                    'No model training or fine-tuning on Customer Content',
-                    'ZDR-required roles reject endpoints with weaker retention terms',
+                    'Timeline policy prohibits training or fine-tuning on Customer Content',
+                    'ZDR-required roles reject endpoints with weaker retention terms; production provider evidence remains a release gate',
                     PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustChecklist,
                   ].map((item) => (
                     <p key={item} className="flex gap-3 bg-bg p-5 text-sm leading-6 text-fg-muted">
@@ -371,11 +372,13 @@ export default async function TrustPage() {
                     Infrastructure with fewer hidden hops.
                   </h2>
                   <p className="mt-5 text-base leading-8 text-fg-muted">
-                    Railway hosts the web app, workers, PostgreSQL, and Redis. Qdrant vector search
-                    and RustFS object storage use Railway&apos;s private network for server traffic
-                    and persistent volumes. RustFS also exposes HTTPS for team-authorized,
-                    short-lived signed browser transfers; its buckets are not public. OAuth, API,
-                    and MCP secrets use AES-256-GCM authenticated encryption at rest.
+                    The documented hosted topology places the web app, workers, PostgreSQL, Redis,
+                    Qdrant vector search, and RustFS object storage on Railway. The deployment
+                    design requires private networking for server traffic and non-public RustFS
+                    buckets, with HTTPS exposed only for team-authorized, short-lived signed browser
+                    transfers. Current production networking and bucket exposure still require
+                    verification. OAuth, API, and MCP secrets use AES-256-GCM authenticated
+                    encryption at rest.
                   </p>
                 </div>
                 <div>
@@ -383,10 +386,11 @@ export default async function TrustPage() {
                     People need a reason, not curiosity.
                   </h2>
                   <p className="mt-5 text-base leading-8 text-fg-muted">
-                    Timeline personnel do not routinely browse customer workspaces. Authorized
-                    access is limited to user-requested support, reliability, security response,
-                    legal compliance, or another documented operational need. It must be
-                    minimum-necessary and time-bounded where practical.
+                    Timeline&apos;s operating standard prohibits routine browsing of customer
+                    workspaces. It permits access only for user-requested support, reliability,
+                    security response, legal compliance, or another documented operational need, and
+                    requires minimum-necessary, time-bounded access where practical. Production
+                    access inventory, enforcement, and audit evidence are still being completed.
                   </p>
                   <p className="mt-5 text-sm leading-7 text-fg-muted">
                     Inside a team, records are team-visible, private, or restricted to named users.

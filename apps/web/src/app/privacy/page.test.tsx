@@ -44,4 +44,13 @@ describe('Privacy Policy analytics disclosures', () => {
     expect(html).toContain('Provider account settings');
     expect(html).toContain('do not use behavioral advertising trackers');
   });
+
+  it('states access and infrastructure controls as policy pending deployment evidence', () => {
+    const html = renderToStaticMarkup(<PrivacyPage />);
+
+    expect(html).toContain('operating standard prohibits routine browsing');
+    expect(html).toContain('Production access inventory');
+    expect(html).toContain('hosted deployment design');
+    expect(html).toContain('public exposure still require deployment');
+  });
 });

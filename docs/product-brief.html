@@ -561,10 +561,12 @@
         </li>
       </ul>
       <p>
-        Service-to-service references in Railway use private networking. Qdrant has no public
-        endpoint. RustFS additionally needs an external HTTPS endpoint for team-authorized,
-        short-lived signed browser uploads and downloads; its buckets are not public. See
-        <a href="./railway.html">docs/railway.html</a> for the full deployment guide.
+        The deployment design routes service-to-service references through Railway private
+        networking, gives Qdrant no public endpoint, and keeps RustFS buckets non-public. RustFS
+        additionally needs an external HTTPS endpoint for team-authorized, short-lived signed
+        browser uploads and downloads. Current production networking and public exposure require
+        separate verification. See <a href="./railway.html">docs/railway.html</a> for the full
+        deployment guide.
       </p>
 
       <h2 id="out-of-scope">What's out of scope for v1</h2>

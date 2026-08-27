@@ -6,9 +6,9 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-08-26 |
-| Last evidence review | 2026-08-26 |
-| Next scheduled review | **TBD: no later than 2026-11-26** |
+| Version | 2026-08-27 |
+| Last evidence review | 2026-08-27 |
+| Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
 | Legal research | [GDPR, cookies, and consent audit](./research/gdpr-cookie-consent-audit-2026-08-21.md) |
 | Analytics interface | [Privacy and analytics implementation interface](./privacy-analytics-interface.md) |
@@ -389,10 +389,13 @@ special-category data. Do not call the path “zero retention.”
 
 Meeting capture is silent and consent-gated. The scheduler requires the host to
 confirm that participants will be informed. Recall.ai joins the call, processes
-audio/video, and produces transcript events. The hosted configuration requests a
-one-hour timed-retention setting because the
-accuracy-oriented transcription mode is incompatible with Recall's
-zero-retention option. Recall documents that window as starting when recording
+audio/video, and produces transcript events. Production with
+`TIMELINE_DEPLOYMENT_MODE=hosted` requests a one-hour timed-retention setting
+because the accuracy-oriented transcription mode is incompatible with Recall's
+zero-retention option. The mode defaults to `hosted` so the restriction fails
+closed. A separately licensed and operated deployment may explicitly use
+`self-managed` and becomes responsible for its retention choice and notice.
+Recall documents that window as starting when recording
 status reaches `done`; deployed deletion remains unverified. Timeline does not
 copy raw meeting audio/video into RustFS; it persists the transcript and derived
 meeting records under workspace visibility.
@@ -506,7 +509,7 @@ sentence.
 | --- | --- | --- |
 | Railway | Hosting, networking, service volumes, PostgreSQL/Redis templates, logs and backups | Topology documented; real regions, backup/restore, DPA and account controls are **Gap** |
 | OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | Role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, and a key/guardrail/catalog/policy-bound production attestation are **Enforced in code**; provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
-| Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Hosted production requests one-hour media retention and rejects another configured value; deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
+| Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Production with `TIMELINE_DEPLOYMENT_MODE=hosted` requests one-hour media retention and rejects another configured value; an explicit `self-managed` production mode owns its retention choice. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
 | Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
 | Postmark | Transactional/support email and inbound email payloads | Required when configured; retention, tracking, DPA and support access are **Gap** |
 | PostHog | Fixed-stream personless surface requests, consent-gated allowlisted public-browser events, and pseudonymous minimized server/worker product events | Runtime controls are implemented. The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, and a pinned Launch dashboard shell. Pay-as-you-go retention, contracts/transfers, deletion completion, populated insights, and production canaries remain **Gap**. |
@@ -574,7 +577,7 @@ a soft-delete flag alone is not a complete deletion claim.
 | Redis and BullMQ | Cache/job lifetimes vary by queue and configuration | Do not use Redis as a durable content archive; document each content-bearing queue |
 | OpenRouter ZDR-required endpoints | ZDR routes process content without endpoint persistence; OpenRouter may retain non-content operational metadata | Qualify content versus metadata and do not imply a fixed upstream |
 | OpenRouter voice transcription | Current `openai/gpt-4o-transcribe` quality exception is non-training but prompt-retaining; OpenAI documents default API abuse-monitoring retention up to 30 days | Name the exception and retention; never call hosted AI universally ZDR |
-| Recall.ai | Timeline requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
+| Recall.ai | Timeline-hosted mode requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; an explicit self-managed deployment can choose another supported duration. Operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
 | Daytona | Ephemeral sandbox state is discarded/deleted; observability data may remain three days | Never equate ephemeral compute with zero provider retention |
 | Postmark | Public default message retention is 45 days, configurable no lower than seven days; actual account setting is unverified | Name Postmark and avoid a shorter unverified promise |
 | PostHog | Current source enforces zero browser capture/identifier before valid consent or after rejection, public-route-only browser analytics after opt-in, fixed personless surface streams, and explicit minimized server/worker events. The EU account review verifies disabled automatic capture and IP discard. Pay-as-you-go documents seven-year product-event retention, which exceeds the 90-day target; production and deletion completion remain unverified. | Public copy may describe the source-enforced product design and the dated account review. Do not claim that it is deployed, that retention is 90 days, that queued deletion is complete, or that pseudonymous analytics is anonymous until G-10 closes. |
@@ -711,9 +714,9 @@ Public claims must be specific, time-bounded where needed, and tied to evidence.
 - Team admins do not receive a general product bypass for private or
   specific-user items.
 - Timeline does not copy Recall meeting audio/video into Timeline storage;
-  hosted production requests Recall's one-hour media-retention setting and
-  Timeline keeps the transcript. Completed provider deletion remains
-  unverified until G-07 is closed.
+  production with `TIMELINE_DEPLOYMENT_MODE=hosted` requests Recall's one-hour
+  media-retention setting and Timeline keeps the transcript. Completed provider
+  deletion remains unverified until G-07 is closed.
 - A separately licensed customer-controlled deployment can move infrastructure
   and staff-access decisions into the customer's boundary.
 

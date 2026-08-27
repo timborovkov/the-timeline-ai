@@ -143,9 +143,10 @@
         <code>RECALL_WORKSPACE_VERIFICATION_SECRET</code>, and the optional transcript URL and
         display-name variables documented in the
         <a href="./meeting-bots.html">Recall.ai setup guide</a>. Only older dashboard status
-        endpoints use the legacy <code>RECALL_STATUS_WEBHOOK_SECRET</code> fallback. Hosted
-        production must set <code>RECALL_RETENTION=1</code> (or leave it empty, which resolves to
-        one hour); env validation rejects longer or indefinite media retention in production.
+        endpoints use the legacy <code>RECALL_STATUS_WEBHOOK_SECRET</code> fallback. Hosted services
+        must set <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> and
+        <code>RECALL_RETENTION=1</code> (or leave retention empty, which resolves to one hour); env
+        validation rejects longer or indefinite media retention in that hosted production mode.
       </p>
       <p>
         Keep <code>CROSS_SOURCE_EVIDENCE_MODE=off</code> until the environment has passed its shadow
@@ -160,7 +161,8 @@
       <p>
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the
         Railway environment name and <code>SENTRY_ENVIRONMENT</code> for labels like
-        <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>.
+        <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>. Set
+        <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> on every Timeline-operated Railway service.
       </p>
       <p>
         Set <code>AUTH_URL</code> to the primary public origin, such as

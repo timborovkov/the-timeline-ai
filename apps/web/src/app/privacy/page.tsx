@@ -255,9 +255,11 @@ function PrivacyAiAndProviderSections() {
           <tr>
             <td>Railway</td>
             <td>
-              Application and worker hosting; PostgreSQL and Redis services; private-network server
-              traffic and persistent volumes for Qdrant and RustFS; and an external HTTPS endpoint
-              for authorized, short-lived signed RustFS browser transfers. Buckets are not public.
+              Application and worker hosting; PostgreSQL and Redis services; and persistent volumes
+              for Qdrant and RustFS. The deployment design requires private-network server traffic,
+              non-public buckets, and an external HTTPS endpoint limited to authorized, short-lived
+              signed RustFS browser transfers. Current production exposure still requires
+              verification.
             </td>
           </tr>
           <tr>
@@ -391,23 +393,24 @@ function PrivacyDisclosureAndSecuritySections() {
 
       <h2>11. Human access to Customer Content</h2>
       <p>
-        Timeline personnel do not routinely browse team workspaces. Production access is restricted
-        to authorized personnel who need it for a user-requested support case, service reliability,
-        security response, legal compliance, or another documented operational purpose. Access must
-        be minimum-necessary, time-bounded where practicable, and subject to confidentiality.
-        Product roles do not give a team administrator a general bypass into another member&apos;s
-        private items.
+        Timeline&apos;s operating standard prohibits routine browsing of team workspaces and permits
+        production access only for user-requested support, service reliability, security response,
+        legal compliance, or another documented operational purpose. It requires minimum-necessary,
+        time-bounded access where practicable and confidentiality. Production access inventory,
+        enforcement, and audit evidence are still being completed. Product roles do not give a team
+        administrator a general bypass into another member&apos;s private items.
       </p>
 
       <h2>12. Security</h2>
       <p>
-        Measures include encrypted external transport, isolated private-network traffic between
-        hosted services, team-scoped database and vector queries, per-record visibility checks,
-        encrypted integration secrets using authenticated encryption, signed or authenticated
-        webhooks, short-lived or controlled file access, audit records for security-relevant product
-        actions, and review of external content before it reaches the agent. No system can be
-        guaranteed completely secure. See the <Link href="/trust">Trust page</Link> for a concise
-        explanation.
+        Repository controls and the hosted deployment design include encrypted external transport,
+        private-network traffic required between hosted services, team-scoped database and vector
+        queries, per-record visibility checks, encrypted integration secrets using authenticated
+        encryption, signed or authenticated webhooks, short-lived or controlled file access, audit
+        records for security-relevant product actions, and review of external content before it
+        reaches the agent. Current service networking and public exposure still require deployment
+        verification. No system can be guaranteed completely secure. See the{' '}
+        <Link href="/trust">Trust page</Link> for a concise explanation.
       </p>
     </>
   );

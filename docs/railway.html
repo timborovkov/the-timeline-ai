@@ -255,6 +255,7 @@ SENTRY_INTEGRATION_CLIENT_ID=&lt;sentry oauth app client id&gt;
 SENTRY_INTEGRATION_CLIENT_SECRET=&lt;sentry oauth app client secret&gt;
 DOCUMENT_EXTRACT_ENABLED=false
 NODE_ENV=production
+TIMELINE_DEPLOYMENT_MODE=hosted
 LOG_LEVEL=info
 </code></pre>
       <p>
@@ -302,6 +303,7 @@ S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
 S3_BUCKET_DOCUMENTS=timeline-documents
 NODE_ENV=production
+TIMELINE_DEPLOYMENT_MODE=hosted
 LOG_LEVEL=info
 </code></pre>
       <p>
@@ -319,7 +321,10 @@ LOG_LEVEL=info
         Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
         Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
         labels such as <code>staging</code>; Node.js and the app env schema only accept
-        <code>development</code>, <code>test</code>, or <code>production</code>.
+        <code>development</code>, <code>test</code>, or <code>production</code>. Set
+        <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> on every Timeline-operated service; only a
+        separately licensed and operated deployment may select <code>self-managed</code> and assume
+        responsibility for different provider-retention choices.
       </p>
       <p>
         Production env validation rejects <code>LANGSMITH_TRACING=true</code> because rich traces

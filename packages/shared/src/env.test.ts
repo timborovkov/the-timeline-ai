@@ -79,6 +79,7 @@ describe('getEnv', () => {
     expect(env.OPENROUTER_API_KEY).toBeUndefined();
     expect(env.OPENROUTER_GUARDRAIL_ID).toBeUndefined();
     expect(env.OPENROUTER_PRIVACY_POLICY_ATTESTATION).toBeUndefined();
+    expect(env.TIMELINE_DEPLOYMENT_MODE).toBe('hosted');
   });
 
   it('requires a guardrail id and generated model/privacy attestation in production', () => {
@@ -257,10 +258,11 @@ describe('getEnv', () => {
     expect(() => getEnv()).toThrow(/reviewed EU PostHog ingestion origin/);
   });
 
-  it('limits configured Recall media retention to one hour in production', () => {
+  it('limits configured Recall media retention to one hour in Timeline-hosted production', () => {
     const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
     setBaseEnv({
       NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'hosted',
       RECALL_API_KEY: 'recall-test',
       RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
       RECALL_RETENTION: '24',
@@ -269,11 +271,28 @@ describe('getEnv', () => {
 
     setBaseEnv({
       NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'hosted',
       RECALL_API_KEY: 'recall-test',
       RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
       RECALL_RETENTION: '1',
     });
     expect(getEnv().RECALL_RETENTION).toBe('1');
+  });
+
+  it('permits deliberate Recall retention in self-managed production', () => {
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    setBaseEnv({
+      NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+      RECALL_RETENTION: '24',
+    });
+
+    expect(getEnv()).toMatchObject({
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      RECALL_RETENTION: '24',
+    });
   });
 
   it('keeps the legacy invite sender env var available for transactional email fallback', () => {
@@ -547,6 +566,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('OPENROUTER_PRIVACY_POLICY_ATTESTATION')).toBe(
       true,
     );
+    expect(isAllowedDocumentExtractProcessEnvKey('TIMELINE_DEPLOYMENT_MODE')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_VERSION')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_BUILT_AT')).toBe(true);
