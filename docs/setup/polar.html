@@ -134,16 +134,15 @@ BILLING_CHARGES_ENABLED=false
         owner notification after delivery failure without a second Polar checkout. Inbound email
         audio skipped for a denied email meter is flushed by the janitor when billing can reserve
         again. Deferred accepted-source flush rotates past still-blocked rows; a replay after an
-        insert crash meters the existing dedup row. Seat claims are blocked while billing is
-        paused. Enterprise settlement skips prepaid freezes so Polar meters ingest.
-        Interactive search embeddings run under billing ALS. The Free grant unassigns when its
-        owner leaves or is demoted. Member-day janitor ticks backfill missed days. Deleted
-        documents are excluded from indexed-chunk capacity; restore counts those chunks.
-        Web chat settles known compression cost when the answer stream fails.
-        <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide shadow kill switch.
-        Set
-        <code>BILLING_CHARGES_ENABLED</code> on <code>document-extract-orchestrator</code> as well
-        as web/worker; it is a non-secret allowlisted toggle, not an extra credential.
+        insert crash meters the existing dedup row. Seat claims are blocked while billing is paused.
+        Enterprise settlement skips prepaid freezes so Polar meters ingest. Interactive search
+        embeddings run under billing ALS. The Free grant unassigns when its owner leaves or is
+        demoted. Member-day janitor ticks backfill missed days. Deleted documents are excluded from
+        indexed-chunk capacity; restore counts those chunks. Web chat settles known compression cost
+        when the answer stream fails. <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide
+        shadow kill switch. Set <code>BILLING_CHARGES_ENABLED</code> on
+        <code>document-extract-orchestrator</code> as well as web/worker; it is a non-secret
+        allowlisted toggle, not an extra credential.
       </p>
 
       <h2>Public and app surfaces</h2>
