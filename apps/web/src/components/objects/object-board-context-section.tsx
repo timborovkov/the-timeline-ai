@@ -1,10 +1,12 @@
 'use client';
 
+import { objectSupportsIdentityFacets } from '@timeline/shared/objects/identity-facets';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useTransition } from 'react';
 
 import type * as boards from '@timeline/shared/boards';
+import type * as objects from '@timeline/shared/objects/types';
 
 import { structureContactFromBoardNotesAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';
@@ -24,17 +26,20 @@ function textHasContacts(text: string | null | undefined): boolean {
 export function ObjectBoardContextSection({
   rows,
   entityId,
+  objectType,
   members = EMPTY_MEMBERS,
   disabled = false,
 }: {
   rows: boards.ObjectBoardContextRow[];
   entityId: string;
+  objectType: objects.ObjectType;
   members?: { id: string; label: string }[];
   disabled?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   if (rows.length === 0) return null;
+  const canStructureContacts = objectSupportsIdentityFacets(objectType);
 
   return (
     <section aria-label="Board context" className="flex flex-col">
@@ -42,7 +47,8 @@ export function ObjectBoardContextSection({
       <ul className="mt-0.5 space-y-2 px-1.5">
         {rows.map((row) => {
           const responsible = members.find((member) => member.id === row.responsibleUserId)?.label;
-          const canStructure = row.notes ? textHasContacts(row.notes) : false;
+          const canStructure =
+            canStructureContacts && row.notes ? textHasContacts(row.notes) : false;
           return (
             <li key={row.itemId} className="grid gap-0.5">
               <Link
@@ -84,7 +90,7 @@ export function ObjectBoardContextSection({
                       if (!result.error) router.refresh();
                     });
                   }}
-                  className="text-left text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+                  className="justify-self-start text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
                 >
                   Structure contact info
                 </button>

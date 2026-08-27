@@ -1911,6 +1911,80 @@ describe('object scope — notes and suggestions', () => {
     ]);
   });
 
+  it('rejects generic related links for person↔company employment', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, company] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Guarded Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Guarded Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await expect(
+      scope.addRelationship({
+        fromEntityId: person.id,
+        toEntityId: company.id,
+        kind: 'related',
+        actorUserId: USER_OWNER,
+      }),
+    ).rejects.toThrow(/Company field/i);
+  });
+
+  it('keeps the oldest related company as primary when legacy multi-links exist', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, firstCompany, secondCompany] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Multi Company Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'First Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Second Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    // Simulate a legacy second related edge that bypassed the Company-field guard.
+    const endpoints = [person.id, secondCompany.id].sort();
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_A,
+      fromEntityId: endpoints[0]!,
+      toEntityId: endpoints[1]!,
+      kind: 'related',
+      createdBy: USER_OWNER,
+    });
+
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: firstCompany.id,
+        companyName: 'First Company',
+      }),
+    ]);
+
+    const unchanged = await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(unchanged.changed).toBe(false);
+  });
+
   it('merges metadata patches instead of replacing the whole object metadata blob', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const company = await scope.createObject({

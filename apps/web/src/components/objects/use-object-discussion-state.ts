@@ -66,7 +66,7 @@ export function useObjectDiscussionState(input: {
         loading: 'Saving comment…',
         success: 'Comment saved',
         error: 'Couldn’t save comment',
-        run: () => updateNoteAction({ noteId, body }),
+        run: () => updateNoteAction({ noteId, entityId: input.entityId, body }),
       });
       if (!result.error) {
         dispatchUi({ editingNoteId: null, editingBody: '' });
@@ -82,7 +82,7 @@ export function useObjectDiscussionState(input: {
         loading: 'Deleting comment…',
         success: 'Comment deleted',
         error: 'Couldn’t delete comment',
-        run: () => deleteNoteAction({ noteId }),
+        run: () => deleteNoteAction({ noteId, entityId: input.entityId }),
       });
       if (!result.error) router.refresh();
     });
