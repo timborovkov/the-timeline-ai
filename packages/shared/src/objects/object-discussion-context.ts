@@ -1,9 +1,6 @@
 import type { Db } from '@timeline/db';
 
-import {
-  humanizeMetadataKey,
-  readableMetadataEntries,
-} from '#src/objects/metadata-schemas.js';
+import { humanizeMetadataKey, readableMetadataEntries } from '#src/objects/metadata-schemas.js';
 import { withTeam } from '#src/team-scope.js';
 
 type DbOrTx = Db;
