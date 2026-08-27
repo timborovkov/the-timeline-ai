@@ -28,15 +28,15 @@ review requirements may change independently of this repository.
 | State | Evidence | Status |
 | --- | --- | --- |
 | Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, tests | Ready on PR branch |
-| Local package validation | Codex plugin/skill validators and strict Claude validators | Required before every push |
-| Local MCP validation | Handler, route, OAuth, database, eval, and distribution-import tests | Required before every push |
+| Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27 |
+| Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-08-27 |
 | Production deployment | Migration `0073_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
-| Production MCP smoke | OAuth discovery, consent, tools, refresh, revocation, role and membership invalidation | Pending deployment |
-| OpenAI draft | Portal draft URL and ID | Not created |
+| Production MCP smoke | OAuth discovery, consent, tools, refresh, revocation, role and membership invalidation | Blocked: production still serves the legacy MCP implementation |
+| OpenAI draft | Portal draft URL and ID | Not created; verified developer identity and production deployment required |
 | OpenAI review | Submission timestamp and review status | Not submitted |
 | OpenAI publication | Visible Plugins Directory URL | Not published |
-| Anthropic plugin submission | Submission receipt or directory URL | Not submitted |
-| Claude remote connector | Account/organization, connection date, smoke evidence | Not verified against new deployment |
+| Anthropic plugin submission | Submission receipt or directory URL | Blocked: the signed-in Free account has no access to organization directory submissions |
+| Claude remote connector | Account/organization, connection date, smoke evidence | Free-account connector form is available; blocked until the new OAuth deployment is live |
 
 Update this table only from direct evidence. A pull request, a green build, or
 an approved provider review does not by itself prove production deployment or
@@ -114,6 +114,36 @@ Starter prompts:
 
 Do not scan, attest, or submit a provider draft against the legacy production
 MCP descriptor.
+
+### Operator evidence: 2026-08-27
+
+- Both strict Claude validators, the Codex plugin validator, and the OpenAI
+  skill validator passed. Isolated Codex and Claude marketplace installs also
+  installed `timeline` version `0.2.0` and exposed one skill plus the hosted MCP
+  server.
+- The canonical `pnpm test` completed all six workspace tasks successfully in
+  40 minutes 4 seconds, including the reordered serial PGlite suite, 2,107 web
+  tests, and the worker unit and integration suites.
+- Production `GET /.well-known/oauth-authorization-server` returned `404`.
+- Production `GET /.well-known/oauth-protected-resource/api/mcp/server`
+  returned `404`.
+- A current-protocol unauthenticated `initialize` request returned `200` with
+  legacy protocol version `2024-11-05`, server version `0.1.0`, and permissive
+  `Access-Control-Allow-Origin: *`; the required OAuth challenge was absent.
+- After sign-in to an OpenAI Personal organization, **Create plugin → With MCP**
+  opened a **Complete identity verification** gate. The portal requires a
+  verified developer identity before it will create or upload a plugin. No
+  draft was created and no data was submitted.
+- After sign-in to a Claude Free account, the public directory submission route
+  opened **Organization settings** and reported that organization settings are
+  available only on Claude Team and Enterprise plans. No submission was
+  created and no data was submitted.
+- The same Claude Free account exposed **Customize → Connectors → Add custom
+  connector**, including the name and remote MCP URL fields. The connector was
+  not saved because production still serves the legacy non-OAuth MCP release.
+
+These observations are direct production and portal evidence. Signing in does
+not clear provider identity, account-plan, or production deployment gates.
 
 ## Local release checks
 
@@ -193,6 +223,12 @@ rm -f /tmp/timeline-skill.zip
 (cd plugins/timeline/skills && zip -r /tmp/timeline-skill.zip timeline)
 unzip -l /tmp/timeline-skill.zip
 ```
+
+The inspected 2026-08-27 operator bundle was
+`/tmp/timeline-skill-submission.zip`, SHA-256
+`5be6d72fb92186757df435ab60675e88e04934fe2a3cf9ee8c2f0c9a9d31085e`.
+It contained only `timeline/SKILL.md` and `timeline/agents/openai.yaml` plus
+their directory entries. Rebuild and re-hash it if either source file changes.
 
 If the portal presents a domain-verification challenge, set its exact token as
 `OPENAI_APPS_CHALLENGE_TOKEN` on the production web service, verify that
@@ -277,9 +313,9 @@ Put its credentials only in the OpenAI reviewer-credentials field.
 
 | Field | Evidence |
 | --- | --- |
-| Draft URL/ID | Pending |
-| Submitting organization | Pending |
-| Verified developer identity | Pending |
+| Draft URL/ID | Not created; identity gate appeared before draft creation |
+| Submitting organization | OpenAI Personal organization observed; final submitting organization not selected |
+| Verified developer identity | Required by portal; not completed in this run |
 | Production deployment SHA | Pending |
 | Tool scan timestamp/result | Pending |
 | Submitted for review at | Pending |
@@ -297,7 +333,9 @@ its visible listing in both ChatGPT and Codex.
 The repository marketplace is `.claude-plugin/marketplace.json`; the plugin is
 `plugins/timeline/.claude-plugin/plugin.json`. Submit the GitHub repository
 through `https://claude.ai/settings/plugins/submit` for the reviewed third-party
-marketplace. Individual developers may be routed to the Claude Console instead.
+marketplace. On 2026-08-27, the signed-in Claude Free account was routed to an
+organization submission page that requires Claude Team or Enterprise. Do not
+record a submission until an eligible organization account returns a receipt.
 
 Submission copy:
 
@@ -320,7 +358,7 @@ confirm a clean isolated marketplace install.
 
 | Field | Evidence |
 | --- | --- |
-| Submission form/receipt URL | Pending |
+| Submission form/receipt URL | No receipt; Claude Free account blocked at organization settings |
 | Submitted repository commit | Pending |
 | Submitted at | Pending |
 | Review status/notes | Pending |
@@ -333,9 +371,10 @@ This is separate from submitting the Claude Code plugin. Claude connects to a
 remote MCP server from Anthropic's cloud, so a locally reachable or branch-only
 server is insufficient.
 
-For Pro or Max, open **Customize → Connectors**, choose **+ → Add custom
-connector**, and enter `https://thetimeline.cc/api/mcp/server`. For Team or
-Enterprise, an Owner or Primary Owner first adds **Custom → Web** under
+For a personal account, open **Customize → Connectors**, choose **+ → Add custom
+connector**, and enter `https://thetimeline.cc/api/mcp/server`. This form was
+directly observed on the submitting Claude Free account on 2026-08-27. For Team
+or Enterprise, an Owner or Primary Owner first adds **Custom → Web** under
 **Organization settings → Connectors**; members then connect it individually.
 
 Leave advanced client ID and client secret fields empty for normal Timeline

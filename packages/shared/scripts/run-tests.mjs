@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const vitestBin = process.platform === 'win32' ? 'vitest.cmd' : 'vitest';
 
 const pgliteChunks = [
+  ['src/suggestions/index.test.ts'],
   [
     'src/agent/ask.test.ts',
     'src/agent/evals.test.ts',
@@ -33,7 +34,6 @@ const pgliteChunks = [
   ],
   ['src/objects/index.test.ts'],
   ['src/task-categories/state.test.ts', 'src/task-categories/evals.test.ts'],
-  ['src/suggestions/index.test.ts'],
   [
     'src/reconciliation/backfill.test.ts',
     'src/reconciliation/dashboard.test.ts',
