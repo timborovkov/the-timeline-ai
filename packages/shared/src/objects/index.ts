@@ -187,9 +187,11 @@ export {
   type IdentityFacetRow,
 } from '#src/objects/identity-facets.js';
 export {
+  isInternalMetadataKey,
   mergeObjectMetadata,
   parseObjectMetadataPatch,
   readableMetadataEntries,
+  typedMetadataKeysFor,
 } from '#src/objects/metadata-schemas.js';
 export { mentionInsertToken, type MentionMember } from '#src/objects/mentions.js';
 

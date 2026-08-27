@@ -39,4 +39,5 @@ export const CORPUS_UUID = {
   mcp: (n: number) => demoUuid('bf000000', n),
   relationship: (n: number) => demoUuid('d2000000', n),
   association: (n: number) => demoUuid('f5000000', n),
+  facet: (n: number) => demoUuid('a6000000', n),
 } as const;

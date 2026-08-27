@@ -25,6 +25,7 @@ import {
   meetings,
   meetingTranscriptChunks,
   messagePreferences,
+  objectIdentityFacets,
   providerConnections,
   rawEvents,
   reconciliationEvidence,
@@ -37,6 +38,7 @@ import {
   users,
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
+import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets';
 import { hashPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
@@ -1153,7 +1155,7 @@ async function main(): Promise<void> {
             type: 'person',
             canonicalName: 'Mika Product',
             aliases: ['Mika'],
-            metadata: { seed: true, email: 'member@timeline.dev', role: 'Product lead' },
+            metadata: { seed: true, role: 'Product lead' },
             status: 'active',
             ownerUserId: IDS.member,
           },
@@ -1240,6 +1242,36 @@ async function main(): Promise<void> {
             taskCategoryUpdatedAt: sql`excluded.task_category_updated_at`,
             sourceEventId: null,
             updatedAt: now,
+          },
+        });
+
+      await tx
+        .insert(objectIdentityFacets)
+        .values([
+          {
+            id: 'a6000000-0000-4000-8000-00000000fff1',
+            teamId: IDS.team,
+            entityId: IDS.objectPerson,
+            kind: 'email',
+            value: 'member@timeline.dev',
+            normalizedValue: normalizeIdentityFacet('email', 'member@timeline.dev'),
+            source: 'system',
+            status: 'approved',
+            metadata: { seed: true },
+            createdByUserId: IDS.member,
+          },
+        ])
+        .onConflictDoUpdate({
+          target: objectIdentityFacets.id,
+          set: {
+            entityId: sql`excluded.entity_id`,
+            kind: sql`excluded.kind`,
+            value: sql`excluded.value`,
+            normalizedValue: sql`excluded.normalized_value`,
+            status: sql`excluded.status`,
+            source: sql`excluded.source`,
+            updatedAt: now,
+            archivedAt: null,
           },
         });
 

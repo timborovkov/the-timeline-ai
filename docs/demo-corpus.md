@@ -127,15 +127,15 @@ These are not production secrets. They exist so settings screens look configured
 
 ### People (workspace objects, not always logins)
 
-- **Elena Park** — Northstar customer lead (`elena.park@northstar.example`)
-- **Priya Shah** — Northwind Capital partner
-- **Dana Cole** — Brightline Health buyer
+- **Elena Park** — Northstar customer lead (approved email identity facet `elena.park@northstar.example`)
+- **Priya Shah** — Northwind Capital partner (approved email identity facet)
+- **Dana Cole** — Brightline Health buyer (approved email identity facet)
 - **Maya Chen** — designer candidate in final round
 - **Nadia Holm** — Linden Ventures partner (pending person proposal)
 
 ### Companies and deals
 
-- **Northstar Works** — design partner. The dealflow Active lane holds the Northstar Works company; invoice `inv_2041` paid. The object discussion includes Casey’s confirmation of the 26 August review and an `@The Timeline Bot` ping to summarize blockers.
+- **Northstar Works** — design partner. The dealflow Active lane holds the Northstar Works company; invoice `inv_2041` paid. The object discussion includes Casey’s confirmation of the 26 August review and an `@The Timeline Bot` ping to summarize blockers. A pending proposal offers adding a company phone contact.
 - **Helio Retail** — Qualified, technical validation 21 August
 - **Brightline Health** — Proposal, CSV + evidence packs only. The company record is **Brightline Health account**.
 - **Moss & Co** — Qualified, wants to keep Monday.com

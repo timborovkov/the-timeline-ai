@@ -19,12 +19,13 @@ const dealMetadataPatchSchema = z.object({
   closeDate: optionalTrimmedString,
 });
 
-const METADATA_PATCH_KEYS_BY_TYPE = {
+const METADATA_TYPED_KEYS_BY_TYPE = {
   company: ['domain', 'website', 'relationship'] as const,
   person: ['role'] as const,
   deal: ['value', 'closeDate'] as const,
 } satisfies Partial<Record<ObjectType, readonly string[]>>;
 
+/** Seed / system keys — never surface or accept from the object Details UI. */
 const INTERNAL_METADATA_KEYS = new Set([
   'display_title',
   'display_title_canonical_name',
@@ -32,7 +33,31 @@ const INTERNAL_METADATA_KEYS = new Set([
   'integration_external_id',
   'agent_suggestion_item_id',
   'agent_suggestion_project_for_item_id',
+  'fixture_version',
+  'seed',
 ]);
+
+/** Contact belongs on identity facets, not schemaless metadata. */
+const CONTACT_METADATA_KEYS = new Set(['email', 'phone']);
+
+const metadataKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Metadata keys must be alphanumeric with underscores');
+
+const metadataValueSchema = z.union([z.string().trim().max(500), z.null()]);
+
+export function isInternalMetadataKey(key: string): boolean {
+  return INTERNAL_METADATA_KEYS.has(key) || CONTACT_METADATA_KEYS.has(key);
+}
+
+export function typedMetadataKeysFor(type: ObjectType): readonly string[] {
+  return type in METADATA_TYPED_KEYS_BY_TYPE
+    ? METADATA_TYPED_KEYS_BY_TYPE[type as keyof typeof METADATA_TYPED_KEYS_BY_TYPE]
+    : [];
+}
 
 export function mergeObjectMetadata(
   existing: Record<string, unknown>,
@@ -55,41 +80,77 @@ export function mergeObjectMetadata(
   return Object.fromEntries(Object.entries(next).filter(([key]) => !removals.has(key)));
 }
 
-function schemaForObjectType(type: ObjectType): z.ZodType<Record<string, unknown>> | null {
+function typedSchemaForObjectType(type: ObjectType): z.ZodType<Record<string, unknown>> | null {
   if (type === 'company') return companyMetadataPatchSchema;
   if (type === 'person') return personMetadataPatchSchema;
   if (type === 'deal') return dealMetadataPatchSchema;
   return null;
 }
 
+/**
+ * Accepts typed keys for the object type plus arbitrary user keys.
+ * Rejects internal/system keys and contact keys that belong on identity facets.
+ */
 export function parseObjectMetadataPatch(
   type: ObjectType,
   patch: unknown,
 ): { ok: true; patch: Record<string, unknown> } | { ok: false; error: string } {
-  const schema = schemaForObjectType(type);
-  if (!schema) {
-    return { ok: false, error: `Metadata editing is not supported for ${type} objects` };
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    return { ok: false, error: 'Invalid metadata patch' };
   }
-  const parsed = schema.safeParse(patch);
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid metadata patch' };
+  const raw = patch as Record<string, unknown>;
+  const typedKeys = new Set(typedMetadataKeysFor(type));
+  const typedSlice: Record<string, unknown> = {};
+  const customSlice: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(raw)) {
+    const keyParsed = metadataKeySchema.safeParse(key);
+    if (!keyParsed.success) {
+      return { ok: false, error: keyParsed.error.issues[0]?.message ?? 'Invalid metadata key' };
+    }
+    const normalizedKey = keyParsed.data;
+    if (isInternalMetadataKey(normalizedKey)) {
+      return {
+        ok: false,
+        error: CONTACT_METADATA_KEYS.has(normalizedKey)
+          ? `Use Contact for ${normalizedKey}, not Details`
+          : `Metadata key “${normalizedKey}” is reserved`,
+      };
+    }
+    const valueParsed = metadataValueSchema.safeParse(value);
+    if (!valueParsed.success) {
+      return { ok: false, error: valueParsed.error.issues[0]?.message ?? 'Invalid metadata value' };
+    }
+    if (typedKeys.has(normalizedKey)) {
+      typedSlice[normalizedKey] = valueParsed.data;
+    } else {
+      customSlice[normalizedKey] = valueParsed.data;
+    }
   }
-  const normalized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(parsed.data)) {
-    if (value === undefined) continue;
-    normalized[key] = value;
+
+  const typedSchema = typedSchemaForObjectType(type);
+  if (Object.keys(typedSlice).length > 0) {
+    if (!typedSchema) {
+      return { ok: false, error: `Typed metadata is not supported for ${type} objects` };
+    }
+    const parsed = typedSchema.safeParse(typedSlice);
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues[0]?.message ?? 'Invalid metadata patch' };
+    }
+    for (const [key, value] of Object.entries(parsed.data)) {
+      if (value === undefined) continue;
+      customSlice[key] = value;
+    }
   }
-  return { ok: true, patch: normalized };
+
+  return { ok: true, patch: customSlice };
 }
 
 export function readableMetadataEntries(
   type: ObjectType,
   metadata: Record<string, unknown>,
 ): { key: string; value: string }[] {
-  const keys =
-    type in METADATA_PATCH_KEYS_BY_TYPE
-      ? [...METADATA_PATCH_KEYS_BY_TYPE[type as keyof typeof METADATA_PATCH_KEYS_BY_TYPE]]
-      : [];
+  const keys = [...typedMetadataKeysFor(type)];
   const entries: { key: string; value: string }[] = [];
   for (const key of keys) {
     const value = metadata[key];
@@ -98,8 +159,8 @@ export function readableMetadataEntries(
     }
   }
   for (const [key, value] of Object.entries(metadata)) {
-    if (INTERNAL_METADATA_KEYS.has(key)) continue;
-    if (keys.includes(key as (typeof keys)[number])) continue;
+    if (isInternalMetadataKey(key)) continue;
+    if (keys.includes(key)) continue;
     if (typeof value === 'string' && value.trim()) {
       entries.push({ key, value: value.trim() });
     }
