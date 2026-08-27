@@ -13,9 +13,15 @@ import { useState, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects/types';
 
 import { updateObjectMetadataAction } from '@/app/actions/objects';
-import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { notifyAction } from '@/lib/notify';
 import { cn } from '@/lib/utils';
+
+const SECTION_LABEL = 'px-1.5 text-xs font-normal text-fg-dim';
+const FIELD_LABEL = 'w-24 shrink-0 truncate text-xs font-normal text-fg-dim';
+const FIELD_VALUE =
+  'min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50';
+const QUIET_ACTION =
+  'inline-flex min-h-8 items-center gap-1.5 px-1.5 text-xs font-normal text-fg-muted transition-colors hover:text-fg disabled:opacity-50';
 
 function metadataFieldLabel(key: string): string {
   return humanizeMetadataKey(key);
@@ -110,131 +116,143 @@ export function ObjectMetadataFields({
 
   return (
     <section aria-label="Metadata" className="flex flex-col">
-      <h2 className="px-1.5 text-xs font-normal text-fg-dim">Details</h2>
-      {typedKeys.map((key) => (
-        <MetadataEditableRow
-          key={key}
-          label={metadataFieldLabel(key)}
-          value={metadataValue(detail.metadata, key)}
-          disabled={busy}
-          onSave={(value) => {
-            saveField(key, value);
-          }}
-        />
-      ))}
-      {customEntries.map((entry) => (
-        <MetadataEditableRow
-          key={entry.key}
-          label={metadataFieldLabel(entry.key)}
-          value={entry.value}
-          disabled={busy}
-          onSave={(value) => {
-            saveField(entry.key, value);
-          }}
-          onRemove={() => {
-            removeCustomField(entry.key);
-          }}
-        />
-      ))}
-      {adding ? (
-        <div className="grid gap-1.5 px-1.5 py-1.5">
-          <input
-            value={newLabel}
-            onChange={(event) => {
-              setNewLabel(event.target.value);
-            }}
-            placeholder="Field name"
-            aria-label="New field name"
-            className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
-          />
-          <input
-            value={newValue}
-            onChange={(event) => {
-              setNewValue(event.target.value);
-            }}
-            placeholder="Value"
-            aria-label="New field value"
-            className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={busy || !slugifyMetadataLabel(newLabel) || !newValue.trim()}
-              onClick={addCustomField}
-              className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAdding(false);
-                setNewLabel('');
-                setNewValue('');
+      <h2 className={SECTION_LABEL}>Details</h2>
+      <div className="mt-0.5 flex flex-col">
+        {typedKeys.map((key) => {
+          const raw = metadataValue(detail.metadata, key);
+          return (
+            <RailTextField
+              key={`${key}:${raw}`}
+              label={metadataFieldLabel(key)}
+              initialValue={raw}
+              displayValue={raw ? displayMetadataValue(raw) : ''}
+              disabled={busy}
+              onSave={(value) => {
+                saveField(key, value);
               }}
-              className="text-xs text-fg-muted hover:text-fg"
-            >
-              Cancel
-            </button>
+            />
+          );
+        })}
+        {customEntries.map((entry) => (
+          <RailTextField
+            key={`${entry.key}:${entry.value}`}
+            label={metadataFieldLabel(entry.key)}
+            initialValue={entry.value}
+            displayValue={displayMetadataValue(entry.value)}
+            disabled={busy}
+            onSave={(value) => {
+              saveField(entry.key, value);
+            }}
+            onRemove={() => {
+              removeCustomField(entry.key);
+            }}
+          />
+        ))}
+        {adding ? (
+          <div className="grid gap-1.5 px-1.5 py-1.5">
+            <input
+              value={newLabel}
+              onChange={(event) => {
+                setNewLabel(event.target.value);
+              }}
+              placeholder="Field name"
+              aria-label="New field name"
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
+            />
+            <input
+              value={newValue}
+              onChange={(event) => {
+                setNewValue(event.target.value);
+              }}
+              placeholder="Value"
+              aria-label="New field value"
+              className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
+            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={busy || !slugifyMetadataLabel(newLabel) || !newValue.trim()}
+                onClick={addCustomField}
+                className="text-xs font-normal text-fg-muted hover:text-fg disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdding(false);
+                  setNewLabel('');
+                  setNewValue('');
+                }}
+                className="text-xs font-normal text-fg-muted hover:text-fg"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setAdding(true);
-          }}
-          className="inline-flex min-h-8 items-center gap-1.5 px-1.5 text-xs text-fg-muted transition-colors hover:text-fg disabled:opacity-50"
-        >
-          <Plus aria-hidden="true" className="size-3" />
-          Add field
-        </button>
-      )}
+        ) : (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              setAdding(true);
+            }}
+            className={QUIET_ACTION}
+          >
+            <Plus aria-hidden="true" className="size-3.5" />
+            Add field
+          </button>
+        )}
+      </div>
     </section>
   );
 }
 
-function MetadataEditableRow({
+function RailTextField({
   label,
-  value,
+  initialValue,
+  displayValue,
   disabled,
   onSave,
   onRemove,
 }: {
   label: string;
-  value: string;
+  initialValue: string;
+  displayValue: string;
   disabled: boolean;
   onSave: (value: string) => void;
   onRemove?: () => void;
 }) {
-  const display = value ? displayMetadataValue(value) : null;
+  const [draft, setDraft] = useState(displayValue || initialValue);
+  const [focused, setFocused] = useState(false);
+  const shown = focused ? draft : displayValue || draft;
+
   return (
-    <div className="group flex min-h-8 items-center gap-1 px-1.5">
-      <span className="w-24 shrink-0 truncate text-xs text-fg-dim" title={label}>
+    <div className="group flex min-h-8 items-center gap-2 px-1.5">
+      <span className={FIELD_LABEL} title={label}>
         {label}
       </span>
-      <EditableMetadata
-        label={label}
+      <input
+        aria-label={label}
+        value={shown}
         disabled={disabled}
-        className="min-h-8 min-w-0 flex-1 justify-start px-1"
-      >
-        <EditableMetadata.Value>
-          {display ? (
-            <span className="truncate text-xs text-fg">{display}</span>
-          ) : (
-            <span className="truncate text-xs text-fg-dim">Empty</span>
-          )}
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <MetadataTextEditor
-            label={label}
-            initialValue={value}
-            disabled={disabled}
-            onApply={onSave}
-          />
-        </EditableMetadata.Editor>
-      </EditableMetadata>
+        onFocus={() => {
+          setFocused(true);
+          setDraft(initialValue);
+        }}
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        onBlur={(event) => {
+          setFocused(false);
+          const next = event.target.value.trim();
+          setDraft(next);
+          if (next === initialValue.trim()) return;
+          onSave(next);
+        }}
+        placeholder={`No ${label.toLowerCase()}`}
+        className={FIELD_VALUE}
+      />
       {onRemove ? (
         <button
           type="button"
@@ -242,57 +260,15 @@ function MetadataEditableRow({
           onClick={onRemove}
           aria-label={`Remove ${label}`}
           className={cn(
-            'grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors',
+            'grid size-7 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors',
             'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100',
             'hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50',
           )}
         >
-          <X aria-hidden="true" className="size-3" />
+          <X aria-hidden="true" className="size-3.5" />
         </button>
-      ) : (
-        <span className="size-6 shrink-0" aria-hidden="true" />
-      )}
+      ) : null}
     </div>
-  );
-}
-
-function MetadataTextEditor({
-  label,
-  initialValue,
-  disabled,
-  onApply,
-}: {
-  label: string;
-  initialValue: string;
-  disabled: boolean;
-  onApply: (value: string) => void;
-}) {
-  return (
-    <form
-      className="flex flex-col gap-2"
-      action={(formData) => {
-        const raw = formData.get('value');
-        const next = typeof raw === 'string' ? raw : '';
-        if (next === initialValue) return;
-        onApply(next);
-      }}
-    >
-      <input
-        name="value"
-        aria-label={label}
-        defaultValue={initialValue}
-        disabled={disabled}
-        className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
-        placeholder={`Add ${label.toLowerCase()}`}
-      />
-      <button
-        type="submit"
-        disabled={disabled}
-        className="min-h-8 self-start rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg disabled:opacity-60"
-      >
-        Save
-      </button>
-    </form>
   );
 }
 

@@ -47,20 +47,22 @@ export function ObjectBoardContextSection({
             <li key={row.itemId} className="grid gap-0.5">
               <Link
                 href={`/app/boards/${row.boardId}?item=${row.itemId}`}
-                className="text-sm text-fg hover:underline"
+                className="text-sm font-normal leading-5 text-fg hover:underline"
               >
                 {displayText(row.boardName)}
               </Link>
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-dim">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-normal text-fg-dim">
                 {row.laneName ? <span>{displayText(row.laneName)}</span> : null}
                 {responsible ? <span>· {displayText(responsible)}</span> : null}
                 <DueDateDisplay value={row.dueAt} variant="compact" />
               </div>
               {row.nextStep ? (
-                <p className="text-xs text-fg-muted">{displayText(row.nextStep)}</p>
+                <p className="text-sm font-normal leading-5 text-fg-muted">
+                  {displayText(row.nextStep)}
+                </p>
               ) : null}
               {row.notes ? (
-                <p className="text-xs leading-5 text-fg">{displayText(row.notes)}</p>
+                <p className="text-sm font-normal leading-5 text-fg">{displayText(row.notes)}</p>
               ) : null}
               {canStructure ? (
                 <button
@@ -82,7 +84,7 @@ export function ObjectBoardContextSection({
                       if (!result.error) router.refresh();
                     });
                   }}
-                  className="text-left text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+                  className="text-left text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
                 >
                   Structure contact info
                 </button>
