@@ -32,6 +32,7 @@ import {
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
+  setPersonCompanyAction,
   unarchiveObjectAction,
   updateNoteAction,
   updateObjectAction,
@@ -716,6 +717,30 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     const link = selectedLink;
     if (!link) return;
     dispatchObjectUi({ error: null });
+    const isPersonCompanyEmployment =
+      linkKind === 'related' &&
+      ((detail.type === 'person' && link.type === 'company') ||
+        (detail.type === 'company' && link.type === 'person'));
+    if (isPersonCompanyEmployment) {
+      const personId = detail.type === 'person' ? detail.id : link.id;
+      const companyId = detail.type === 'company' ? detail.id : link.id;
+      dispatchLocalDetail((current) => ({
+        ...current,
+        linkQuery: '',
+        selectedLink: null,
+      }));
+      startTransition(async () => {
+        const result = await notifyAction({
+          id: `object:${detail.id}:company:${link.id}`,
+          loading: 'Setting company…',
+          success: 'Company updated',
+          error: 'Couldn’t update company',
+          run: () => setPersonCompanyAction({ id: personId, companyId }),
+        });
+        if (!result.error) router.refresh();
+      });
+      return;
+    }
     const tempId = `optimistic-relationship-${localMutationId()}`;
     const optimisticRelationship: ObjectDetail['relationships'][number] = {
       id: tempId,
@@ -946,6 +971,24 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
 
   function linkRelatedObject(other: ObjectDetail['connectedWork']['objects'][number]): void {
     dispatchObjectUi({ error: null });
+    const isPersonCompanyEmployment =
+      (detail.type === 'person' && other.type === 'company') ||
+      (detail.type === 'company' && other.type === 'person');
+    if (isPersonCompanyEmployment) {
+      const personId = detail.type === 'person' ? detail.id : other.id;
+      const companyId = detail.type === 'company' ? detail.id : other.id;
+      startTransition(async () => {
+        const result = await notifyAction({
+          id: `object:${detail.id}:company:${other.id}`,
+          loading: 'Setting company…',
+          success: 'Company updated',
+          error: 'Couldn’t update company',
+          run: () => setPersonCompanyAction({ id: personId, companyId }),
+        });
+        if (!result.error) router.refresh();
+      });
+      return;
+    }
     const tempId = `optimistic-relationship-${localMutationId()}`;
     const optimisticRelationship: ObjectDetail['relationships'][number] = {
       id: tempId,
@@ -1106,6 +1149,7 @@ function ObjectDetailView(props: Props) {
           <ObjectBoardContextSection
             rows={props.boardContext ?? EMPTY_BOARD_CONTEXT}
             entityId={view.viewDetail.id}
+            objectType={view.viewDetail.type}
             members={props.members ?? EMPTY_MEMBER_OPTIONS}
             disabled={view.pending}
           />
@@ -1806,12 +1850,15 @@ function ConnectedObjectList({
   onLinkRelatedObject: (object: ObjectDetail['connectedWork']['objects'][number]) => void;
 }) {
   if (objects.length === 0) return null;
-  const linkedIds = new Set(relationships.map((relationship) => relationship.otherId));
+  const relationshipByOtherId = new Map(
+    relationships.map((relationship) => [relationship.otherId, relationship] as const),
+  );
   return (
     <ConnectedWorkSection title="People and objects">
       <ul className="space-y-1">
         {objects.map((object) => {
-          const linked = linkedIds.has(object.id);
+          const relationship = relationshipByOtherId.get(object.id);
+          const linked = relationship !== undefined;
           return (
             <li key={object.id} className="grid gap-0.5">
               <div className="flex items-center justify-between gap-2">
@@ -1834,12 +1881,12 @@ function ConnectedObjectList({
               <span className={DETAIL_META_CLASS}>
                 {statusLabel(object.type)} · {object.factCount} fact
                 {object.factCount === 1 ? '' : 's'}
-                {linked
+                {relationship
                   ? ` · ${relationshipDisplayLabel({
-                      kind: 'related',
+                      kind: relationship.kind,
                       sourceType,
                       otherType: object.type,
-                      direction: 'out',
+                      direction: relationship.direction,
                     })}`
                   : ''}
               </span>

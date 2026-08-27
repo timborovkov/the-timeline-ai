@@ -680,28 +680,35 @@ export async function structureContactFromBoardNotesAction(input: unknown): Prom
         await import('@timeline/shared/conversational/contact-artifacts');
       const detail = await r.scope.objects.getObject(parsed.data.entityId);
       if (!detail) return { error: 'Object not found' };
-      const contacts = extractContactsFromText(parsed.data.notes);
+      if (!objects.objectSupportsIdentityFacets(detail.type)) {
+        return { error: 'Contact structuring is only available for people and companies' };
+      }
+      const contacts = extractContactsFromText(parsed.data.notes).filter(
+        (contact) => contact.kind === 'email' || contact.kind === 'phone',
+      );
+      if (contacts.length === 0) {
+        return { error: 'No email or phone numbers found in board notes' };
+      }
       const metadataPatch: Record<string, unknown> = {};
-      if (objects.objectSupportsIdentityFacets(detail.type)) {
-        const facetCreates: ReturnType<typeof r.scope.objects.createIdentityFacet>[] = [];
-        for (const contact of contacts) {
-          if (contact.kind !== 'email' && contact.kind !== 'phone') continue;
-          facetCreates.push(
-            r.scope.objects.createIdentityFacet({
-              entityId: parsed.data.entityId,
-              kind: contact.kind,
-              value: contact.displayValue,
-              actor: { kind: 'user', userId: r.userId },
-            }),
-          );
-        }
-        await Promise.all(facetCreates);
+      // Create facets sequentially so a uniqueness failure does not leave a
+      // half-applied batch from Promise.all racing independent transactions.
+      for (const contact of contacts) {
+        await r.scope.objects.createIdentityFacet({
+          entityId: parsed.data.entityId,
+          kind: contact.kind,
+          value: contact.displayValue,
+          actor: { kind: 'user', userId: r.userId },
+        });
       }
       if (detail.type === 'company') {
-        const email = contacts.find((contact) => contact.kind === 'email');
-        if (email) {
-          const domain = email.normalizedValue.split('@')[1];
-          if (domain) metadataPatch.domain = domain;
+        const existingDomain =
+          typeof detail.metadata.domain === 'string' ? detail.metadata.domain.trim() : '';
+        if (!existingDomain) {
+          const email = contacts.find((contact) => contact.kind === 'email');
+          if (email) {
+            const domain = email.normalizedValue.split('@')[1];
+            if (domain) metadataPatch.domain = domain;
+          }
         }
       }
       if (Object.keys(metadataPatch).length > 0) {

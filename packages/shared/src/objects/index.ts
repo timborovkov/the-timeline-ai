@@ -5880,6 +5880,16 @@ export async function addRelationship(
     if (isTaskProjectHierarchy) {
       throw new Error('Use the task Project field to manage a primary project');
     }
+    // Person↔company employment is owned by the Company picker (`setPersonCompany`).
+    // Generic `related` links would collide with that singular primary and get wiped
+    // when the picker changes.
+    if (
+      input.kind === 'related' &&
+      ((from?.type === 'person' && to?.type === 'company') ||
+        (from?.type === 'company' && to?.type === 'person'))
+    ) {
+      throw new Error('Use the person Company field to manage employment');
+    }
 
     const inserted = await tx
       .insert(entityRelationships)
@@ -6419,7 +6429,7 @@ export async function listPrimaryCompaniesForPeople(
 
   const people = alias(entities, 'primary_company_people');
   const companies = alias(entities, 'primary_companies');
-  return db
+  const rows = await db
     .select({
       personId: people.id,
       companyId: companies.id,
@@ -6462,26 +6472,20 @@ export async function listPrimaryCompaniesForPeople(
         eq(entityRelationships.teamId, scope.teamId),
         inArray(people.id, ids),
         eq(entityRelationships.kind, 'related'),
-        sql`1 = (
-          SELECT count(*)
-          FROM entity_relationships AS candidate_company_rel
-          INNER JOIN entities AS candidate_person
-            ON candidate_person.id IN (candidate_company_rel.from_entity_id, candidate_company_rel.to_entity_id)
-            AND candidate_person.team_id = candidate_company_rel.team_id
-          INNER JOIN entities AS candidate_company
-            ON candidate_company.id IN (candidate_company_rel.from_entity_id, candidate_company_rel.to_entity_id)
-            AND candidate_company.team_id = candidate_company_rel.team_id
-          WHERE candidate_company_rel.team_id = ${entityRelationships.teamId}
-            AND candidate_company_rel.kind = 'related'
-            AND candidate_person.id = ${people.id}
-            AND candidate_person.type = 'person'
-            AND candidate_company.type = 'company'
-            AND candidate_person.merged_into_id IS NULL
-            AND candidate_company.merged_into_id IS NULL
-        )`,
       ),
     )
     .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id));
+
+  // Prefer the oldest company link when a person has several related companies so
+  // the Company picker stays populated after Connected work "Link" adds another.
+  const seen = new Set<string>();
+  const primary: PersonPrimaryCompanyRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.personId)) continue;
+    seen.add(row.personId);
+    primary.push(row);
+  }
+  return primary;
 }
 
 export async function setPersonCompany(
@@ -6563,11 +6567,14 @@ export async function setPersonCompany(
       .where(
         and(eq(entityRelationships.teamId, scope.teamId), eq(entityRelationships.kind, 'related')),
       )
+      .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id))
       .for('update', { of: entityRelationships });
 
+    // Oldest person↔company related link is the primary (matches listPrimaryCompaniesForPeople).
+    const primary = existing[0] ?? null;
     if (
-      (existing.length === 0 && companyId === null) ||
-      (existing.length === 1 && existing[0]?.companyId === companyId)
+      (primary === null && companyId === null) ||
+      (primary !== null && primary.companyId === companyId)
     ) {
       return {
         changed: false,
@@ -6578,11 +6585,20 @@ export async function setPersonCompany(
               companyName: company.canonicalName,
               archivedAt: company.archivedAt,
             }
-          : null,
+          : primary
+            ? {
+                personId,
+                companyId: primary.companyId,
+                companyName: primary.companyName,
+                archivedAt: primary.archivedAt,
+              }
+            : null,
         touchedIds: [] as string[],
       };
     }
 
+    // Company field is exclusive: replace every person↔company related edge so the
+    // picker cannot leave stale secondary employment links behind.
     if (existing.length > 0) {
       await tx.delete(entityRelationships).where(
         inArray(
