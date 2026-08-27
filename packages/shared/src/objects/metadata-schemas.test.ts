@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  humanizeMetadataKey,
   mergeObjectMetadata,
   parseObjectMetadataPatch,
   readableMetadataEntries,
+  slugifyMetadataLabel,
 } from '#src/objects/metadata-schemas.js';
 
 describe('object metadata schemas', () => {
@@ -32,10 +34,13 @@ describe('object metadata schemas', () => {
     });
   });
 
-  it('accepts arbitrary custom metadata keys for any object type', () => {
-    expect(parseObjectMetadataPatch('project', { region: 'EMEA' })).toEqual({
+  it('slugifies human field names and accepts arbitrary keys', () => {
+    expect(slugifyMetadataLabel('Lost reason')).toBe('lostReason');
+    expect(humanizeMetadataKey('lostReason')).toBe('Lost reason');
+    expect(humanizeMetadataKey('close_date')).toBe('Close date');
+    expect(parseObjectMetadataPatch('project', { 'Lost reason': 'Requested on-prem' })).toEqual({
       ok: true,
-      patch: { region: 'EMEA' },
+      patch: { lostReason: 'Requested on-prem' },
     });
     expect(parseObjectMetadataPatch('person', { role: 'Lead', badge: 'VIP' })).toEqual({
       ok: true,
@@ -46,11 +51,15 @@ describe('object metadata schemas', () => {
   it('rejects reserved and contact metadata keys', () => {
     expect(parseObjectMetadataPatch('company', { fixture_version: 'x' })).toEqual({
       ok: false,
-      error: 'Metadata key “fixture_version” is reserved',
+      error: 'Metadata field “Fixture version” is reserved',
     });
     expect(parseObjectMetadataPatch('person', { email: 'a@b.example' })).toEqual({
       ok: false,
-      error: 'Use Contact for email, not Details',
+      error: 'Use Contact for Email, not Details',
+    });
+    expect(parseObjectMetadataPatch('task', { provider: 'linear' })).toEqual({
+      ok: false,
+      error: 'Metadata field “Provider” is reserved',
     });
   });
 
@@ -61,6 +70,7 @@ describe('object metadata schemas', () => {
         email: 'elena@example.com',
         display_title: 'hidden',
         fixture_version: 'demo-seed-v1',
+        provider: 'linear',
         note: 'Preferred contact via Slack',
       }),
     ).toEqual([

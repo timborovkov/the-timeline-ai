@@ -25,38 +25,72 @@ const METADATA_TYPED_KEYS_BY_TYPE = {
   deal: ['value', 'closeDate'] as const,
 } satisfies Partial<Record<ObjectType, readonly string[]>>;
 
-/** Seed / system keys — never surface or accept from the object Details UI. */
-const INTERNAL_METADATA_KEYS = new Set([
-  'display_title',
-  'display_title_canonical_name',
-  'integration_provider',
-  'integration_external_id',
-  'agent_suggestion_item_id',
-  'agent_suggestion_project_for_item_id',
-  'fixture_version',
+/** Seed / system / integration keys — never surface or accept from Details UI. */
+const INTERNAL_METADATA_KEY_CANONICAL = new Set([
+  'displayTitle',
+  'displayTitleCanonicalName',
+  'integrationProvider',
+  'integrationExternalId',
+  'agentSuggestionItemId',
+  'agentSuggestionProjectForItemId',
+  'fixtureVersion',
   'seed',
+  'heavy',
+  'provider',
+  'externalObjectId',
+  'targetEntityId',
+  'filename',
+  'silent',
+  'consentConfirmed',
 ]);
 
 /** Contact belongs on identity facets, not schemaless metadata. */
-const CONTACT_METADATA_KEYS = new Set(['email', 'phone']);
-
-const metadataKeySchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(64)
-  .regex(/^[a-zA-Z][a-zA-Z0-9_]*$/, 'Metadata keys must be alphanumeric with underscores');
+const CONTACT_METADATA_KEY_CANONICAL = new Set(['email', 'phone']);
 
 const metadataValueSchema = z.union([z.string().trim().max(500), z.null()]);
 
 export function isInternalMetadataKey(key: string): boolean {
-  return INTERNAL_METADATA_KEYS.has(key) || CONTACT_METADATA_KEYS.has(key);
+  const canonical = slugifyMetadataLabel(key);
+  return (
+    INTERNAL_METADATA_KEY_CANONICAL.has(canonical) || CONTACT_METADATA_KEY_CANONICAL.has(canonical)
+  );
 }
 
 export function typedMetadataKeysFor(type: ObjectType): readonly string[] {
   return type in METADATA_TYPED_KEYS_BY_TYPE
     ? METADATA_TYPED_KEYS_BY_TYPE[type as keyof typeof METADATA_TYPED_KEYS_BY_TYPE]
     : [];
+}
+
+/** Sentence-case label for a stored metadata key (`lostReason` → `Lost reason`). */
+export function humanizeMetadataKey(key: string): string {
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length === 0) return key;
+  const first = words[0] ?? key;
+  const rest = words.slice(1);
+  return `${first.charAt(0).toUpperCase()}${first.slice(1)}${rest.length > 0 ? ` ${rest.join(' ')}` : ''}`;
+}
+
+/** Turn a user-facing field name into a stable camelCase storage key. */
+export function slugifyMetadataLabel(label: string): string {
+  const parts = label
+    .trim()
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .map((part) => part.replace(/[^a-zA-Z0-9]/g, ''))
+    .filter(Boolean)
+    .map((part) => part.toLowerCase());
+  if (parts.length === 0) return '';
+  const first = parts[0] ?? '';
+  const rest = parts.slice(1);
+  return `${first}${rest.map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`).join('')}`;
 }
 
 export function mergeObjectMetadata(
@@ -89,6 +123,7 @@ function typedSchemaForObjectType(type: ObjectType): z.ZodType<Record<string, un
 
 /**
  * Accepts typed keys for the object type plus arbitrary user keys.
+ * Keys may be storage ids or human labels (`Lost reason` → `lostReason`).
  * Rejects internal/system keys and contact keys that belong on identity facets.
  */
 export function parseObjectMetadataPatch(
@@ -103,18 +138,20 @@ export function parseObjectMetadataPatch(
   const typedSlice: Record<string, unknown> = {};
   const customSlice: Record<string, unknown> = {};
 
-  for (const [key, value] of Object.entries(raw)) {
-    const keyParsed = metadataKeySchema.safeParse(key);
-    if (!keyParsed.success) {
-      return { ok: false, error: keyParsed.error.issues[0]?.message ?? 'Invalid metadata key' };
+  for (const [rawKey, value] of Object.entries(raw)) {
+    const normalizedKey = slugifyMetadataLabel(rawKey);
+    if (!normalizedKey || !/^[a-zA-Z][a-zA-Z0-9]*$/.test(normalizedKey)) {
+      return {
+        ok: false,
+        error: 'Field names must start with a letter and use letters or numbers only',
+      };
     }
-    const normalizedKey = keyParsed.data;
     if (isInternalMetadataKey(normalizedKey)) {
       return {
         ok: false,
-        error: CONTACT_METADATA_KEYS.has(normalizedKey)
-          ? `Use Contact for ${normalizedKey}, not Details`
-          : `Metadata key “${normalizedKey}” is reserved`,
+        error: CONTACT_METADATA_KEY_CANONICAL.has(normalizedKey)
+          ? `Use Contact for ${humanizeMetadataKey(normalizedKey)}, not Details`
+          : `Metadata field “${humanizeMetadataKey(normalizedKey)}” is reserved`,
       };
     }
     const valueParsed = metadataValueSchema.safeParse(value);
