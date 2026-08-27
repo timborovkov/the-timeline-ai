@@ -8,10 +8,11 @@ import {
   teamBillingAccounts,
   teamInvites,
   teamMembers,
+  teams,
   users,
   type Db,
 } from '@timeline/db';
-import { and, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 
@@ -503,15 +504,29 @@ export async function claimOwnedTeamFreeGrantsForVerifiedUser(input: {
   userId: string;
 }): Promise<void> {
   const owned = await input.db
-    .select({ teamId: teamMembers.teamId })
-    .from(teamMembers)
-    .where(
+    .select({ teamId: teams.id })
+    .from(teams)
+    .innerJoin(
+      teamMembers,
       and(
+        eq(teamMembers.teamId, teams.id),
         eq(teamMembers.userId, input.userId),
         eq(teamMembers.role, 'owner'),
         isNull(teamMembers.removedAt),
       ),
-    );
+    )
+    .leftJoin(teamBillingAccounts, eq(teamBillingAccounts.teamId, teams.id))
+    .where(
+      or(
+        isNull(teamBillingAccounts.teamId),
+        and(
+          eq(teamBillingAccounts.planId, 'free'),
+          eq(teamBillingAccounts.billingState, 'restricted'),
+          sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
+        ),
+      ),
+    )
+    .orderBy(asc(teams.createdAt));
   for (const row of owned) {
     await applyOwnedTeamFreeGrant({
       db: input.db,

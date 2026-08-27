@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { teamBillingAccounts, type Db } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -85,6 +86,45 @@ describe('billing scope', () => {
     expect(first.ok).toBe(true);
     const second = await scope.claimFreeGrant();
     expect(second.ok).toBe(true);
+  });
+
+  it('does not abort the caller transaction when a second Free grant races', async () => {
+    const extraTeamId = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+    const first = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await first.claimFreeGrant()).ok).toBe(true);
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${extraTeamId}', 'extra-grant', 'Extra Grant');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${extraTeamId}', '${USER_ID}', 'owner');
+    `);
+    await db.transaction(async (tx) => {
+      const extra = createBillingScope({
+        db: tx as unknown as Db,
+        teamId: extraTeamId,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      const result = await extra.claimFreeGrant();
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('free_grant_elsewhere');
+      await tx
+        .update(teamBillingAccounts)
+        .set({ spendCapCents: 7, updatedAt: new Date() })
+        .where(eq(teamBillingAccounts.teamId, extraTeamId));
+    });
+    const extraScope = createBillingScope({
+      db,
+      teamId: extraTeamId,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await extraScope.getAccount()).spendCapCents).toBe(7);
   });
 
   it('hard-stops Free AI allowance even while shadow billing is on', async () => {
@@ -233,6 +273,31 @@ describe('billing scope', () => {
     expect(after.walletBalanceCents).toBe(0);
     expect(after.billingState).toBe('read_only');
     expect(after.spendCapCents).toBe(0);
+
+    await scope.creditWallet({ operationId: 'topup-unfreeze', cents: 1_000, source: 'test' });
+    const restored = await scope.getAccount();
+    expect(restored.walletBalanceCents).toBe(1_000);
+    expect(restored.billingState).toBe('team_active');
+    expect(restored.spendCapCents).toBe(10_000);
+  });
+
+  it('restores a frozen paid account when the spend cap is raised', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'read_only',
+          wallet_balance_cents = 1000, spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const row = await scope.setSpendCap(2_500);
+    expect(row.billingState).toBe('payg_active');
+    expect(row.spendCapCents).toBe(2_500);
   });
 
   it('does not lock PAYG wallet for usage still inside the Free floor', async () => {

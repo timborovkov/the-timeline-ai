@@ -10,7 +10,12 @@ import {
   splitDiscountAndWallet,
   splitDurationNativeUnitsByUtcMonth,
 } from '#src/billing/charge.js';
-import { allFreeAllowancesExhausted, costBearingPausedFromAccount } from '#src/billing/status.js';
+import {
+  allFreeAllowancesExhausted,
+  costBearingPausedFromAccount,
+  restoredPaidBillingStateAfterWalletOrCapRecovery,
+  restoredSpendCapCentsAfterShortfallUnfreeze,
+} from '#src/billing/status.js';
 
 describe('billing charge split', () => {
   it('covers Team/Business included discount before the wallet', () => {
@@ -263,5 +268,46 @@ describe('costBearingPausedFromAccount', () => {
         freeRemaining,
       }),
     ).toBe(true);
+  });
+});
+
+describe('shortfall freeze recovery', () => {
+  it('restores the plan-specific active state after a wallet or cap recovery', () => {
+    expect(
+      restoredPaidBillingStateAfterWalletOrCapRecovery({
+        planId: 'team',
+        billingState: 'read_only',
+      }),
+    ).toBe('team_active');
+    expect(
+      restoredPaidBillingStateAfterWalletOrCapRecovery({
+        planId: 'payg',
+        billingState: 'balance_exhausted',
+      }),
+    ).toBe('payg_active');
+    expect(
+      restoredPaidBillingStateAfterWalletOrCapRecovery({
+        planId: 'team',
+        billingState: 'past_due',
+      }),
+    ).toBeNull();
+    expect(
+      restoredPaidBillingStateAfterWalletOrCapRecovery({
+        planId: 'free',
+        billingState: 'read_only',
+      }),
+    ).toBeNull();
+  });
+
+  it('restores a positive catalog spend cap after a shortfall freeze', () => {
+    expect(restoredSpendCapCentsAfterShortfallUnfreeze({ planId: 'payg', spendCapCents: 0 })).toBe(
+      2_500,
+    );
+    expect(
+      restoredSpendCapCentsAfterShortfallUnfreeze({ planId: 'payg', spendCapCents: 1_000 }),
+    ).toBeNull();
+    expect(
+      restoredSpendCapCentsAfterShortfallUnfreeze({ planId: 'enterprise', spendCapCents: 0 }),
+    ).toBeNull();
   });
 });

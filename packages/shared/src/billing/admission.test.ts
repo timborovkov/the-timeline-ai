@@ -11,6 +11,7 @@ import {
   reserveAskAi,
   reserveRecallMeetingMinutes,
   settleAskAiFromOpenRouterUsd,
+  settleElapsedRecallMeetingMinutes,
   settleRecallMeetingMinutes,
 } from '#src/billing/admission.js';
 import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS, FREE_ALLOWANCES } from '#src/billing/catalog.js';
@@ -135,6 +136,38 @@ describe('billing admission helpers', () => {
     const dash = await billing.getDashboard();
     expect(dash.meters.recall_minutes?.nativeUnits).toBe(12);
     expect(dash.meters.recall_minutes?.customerChargeCents).toBe(36);
+  });
+
+  it('settles elapsed waiting-room minutes and releases when none elapsed', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const billedMeetingId = 'cccccccc-dddd-4eee-8fff-000000000001';
+    const unusedMeetingId = 'cccccccc-dddd-4eee-8fff-000000000002';
+    expect((await reserveRecallMeetingMinutes(billing, { meetingId: billedMeetingId })).ok).toBe(
+      true,
+    );
+    await settleElapsedRecallMeetingMinutes(billing, {
+      meetingId: billedMeetingId,
+      joinStartedAt: '2026-08-26T12:00:00.000Z',
+      endedAt: new Date('2026-08-26T12:04:00.000Z'),
+      reservedMinutes: 120,
+    });
+    expect((await reserveRecallMeetingMinutes(billing, { meetingId: unusedMeetingId })).ok).toBe(
+      true,
+    );
+    await settleElapsedRecallMeetingMinutes(billing, {
+      meetingId: unusedMeetingId,
+      endedAt: new Date('2026-08-26T12:04:00.000Z'),
+    });
+
+    const dash = await billing.getDashboard();
+    expect(dash.meters.recall_minutes?.nativeUnits).toBe(4);
+    const unused = await billing.release(`recall:${unusedMeetingId}`);
+    expect(unused.alreadyFinal).toBe(true);
   });
 });
 

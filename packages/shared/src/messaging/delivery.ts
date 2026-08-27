@@ -24,6 +24,7 @@ import type {
 
 import { emailRecipientCount } from '#src/billing/catalog.js';
 import { getEnv } from '#src/env.js';
+import { childLogger } from '#src/logger.js';
 import {
   digestDestinationDedupeKey,
   listTeamDigestDestinations,
@@ -49,6 +50,7 @@ interface PostmarkResult {
 }
 
 const PENDING_DELIVERY_RETRY_AFTER_MS = 30_000;
+const log = childLogger('messaging:delivery');
 
 /** Postmark 406 + matching copy: hard bounce / spam complaint / manual suppression. */
 function isInactiveRecipientFailure(errorCode: number | undefined, message: string): boolean {
@@ -284,6 +286,34 @@ export function shouldMeterWorkspaceEmail(
   return Boolean(options.db && options.teamId) && !UNMETERED_WORKSPACE_EMAIL_INTENTS.has(intent);
 }
 
+async function settleMeteredEmailBestEffort(input: {
+  intent: MessageIntent;
+  options: SendMessageOptions;
+  units: number;
+  operationId: string;
+}): Promise<void> {
+  if (!shouldMeterWorkspaceEmail(input.intent, input.options)) return;
+  const db = input.options.db;
+  const teamId = input.options.teamId;
+  if (!db || !teamId) return;
+  const { settleEmailUnits } = await import('#src/billing/runtime.js');
+  try {
+    await settleEmailUnits({
+      db,
+      teamId,
+      ...(input.options.userId ? { userId: input.options.userId } : {}),
+      operationId: input.operationId,
+      units: input.units,
+      operationClass: `email_outbound:${input.intent}`,
+    });
+  } catch (err) {
+    log.warn(
+      { err, teamId, operationId: input.operationId },
+      'postmark sent; email billing settle failed',
+    );
+  }
+}
+
 export async function sendMessage<TIntent extends MessageIntent>(
   intent: TIntent,
   messageInput: MessageInput<TIntent>,
@@ -316,6 +346,14 @@ export async function sendMessage<TIntent extends MessageIntent>(
       dedupeKey: options.dedupeKey,
     });
     if (existing?.status === 'sent') {
+      const units = Math.max(1, emailRecipientCount(rendered.to));
+      const operationKey = options.dedupeKey ?? `${intent}:${rendered.to}`;
+      await settleMeteredEmailBestEffort({
+        intent,
+        options,
+        units,
+        operationId: `email_out:${operationKey}`,
+      });
       return { ok: true, deliveryId: existing.id, skipped: true, skippedStatus: 'sent' };
     }
     if (existing?.status === 'failed') {
@@ -366,8 +404,7 @@ export async function sendMessage<TIntent extends MessageIntent>(
   const operationKey = options.dedupeKey ?? `${intent}:${rendered.to}`;
   const emailOperationId = `email_out:${operationKey}`;
   if (shouldMeterEmail && options.db && options.teamId) {
-    const { reserveEmailUnits, releaseEmailUnits, settleEmailUnits } =
-      await import('#src/billing/runtime.js');
+    const { reserveEmailUnits, releaseEmailUnits } = await import('#src/billing/runtime.js');
     const reserved = await reserveEmailUnits({
       db: options.db,
       teamId: options.teamId,
@@ -395,13 +432,19 @@ export async function sendMessage<TIntent extends MessageIntent>(
       ? { ok: true as const }
       : await sendPostmarkEmail(rendered, options.fetch);
     if (result.ok) {
-      await settleEmailUnits({
-        db: options.db,
-        teamId: options.teamId,
-        ...(options.userId ? { userId: options.userId } : {}),
-        operationId: emailOperationId,
+      if (deliveryId) {
+        await markDeliveryResult({
+          db: options.db,
+          deliveryId,
+          status: 'sent',
+          ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
+        });
+      }
+      await settleMeteredEmailBestEffort({
+        intent,
+        options,
         units,
-        operationClass: `email_outbound:${intent}`,
+        operationId: emailOperationId,
       });
     } else {
       await releaseEmailUnits({
@@ -410,15 +453,14 @@ export async function sendMessage<TIntent extends MessageIntent>(
         ...(options.userId ? { userId: options.userId } : {}),
         operationId: emailOperationId,
       });
-    }
-    if (deliveryId) {
-      await markDeliveryResult({
-        db: options.db,
-        deliveryId,
-        status: result.ok ? 'sent' : 'failed',
-        ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
-        ...(result.error ? { error: result.error } : {}),
-      });
+      if (deliveryId) {
+        await markDeliveryResult({
+          db: options.db,
+          deliveryId,
+          status: 'failed',
+          ...(result.error ? { error: result.error } : {}),
+        });
+      }
     }
     return {
       ok: result.ok,

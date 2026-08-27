@@ -251,7 +251,7 @@ export async function reserveRecallMeetingMinutes(
 
 export async function settleRecallMeetingMinutes(
   billing: BillingAdmissionScope,
-  input: { meetingId: string; minutes: number },
+  input: { meetingId: string; minutes: number; source?: string },
 ): Promise<void> {
   const minutes = Math.max(0, Math.trunc(input.minutes));
   const customerChargeCents = recallChargeCents(minutes);
@@ -262,7 +262,59 @@ export async function settleRecallMeetingMinutes(
     customerChargeCents,
     operationClass: 'meeting_bot',
     provider: 'recall',
-    source: 'meeting_finalize',
+    source: input.source ?? 'meeting_finalize',
     metadata: { meeting_id: input.meetingId },
+  });
+}
+
+function reservedMinutesFromMetadata(metadata: unknown): number | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).reserved_recall_minutes;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+function joinStartedAtFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const raw = (metadata as Record<string, unknown>).reserved_recall_started_at;
+  return typeof raw === 'string' && raw.trim() !== '' ? raw : null;
+}
+
+/**
+ * Terminal no-show / waiting-room time is billable. Settle elapsed joining +
+ * in-call minutes when any elapsed; otherwise release the unused reservation.
+ * Retry no-shows must keep calling `releaseRecallMeetingMinutes` so the same
+ * `recall:{meetingId}` operation can lock again.
+ */
+export async function settleElapsedRecallMeetingMinutes(
+  billing: BillingAdmissionScope,
+  input: {
+    meetingId: string;
+    joinStartedAt?: Date | string | null;
+    startedAt?: Date | null;
+    endedAt?: Date | null;
+    reservedMinutes?: number | null;
+    metadata?: unknown;
+    source?: string;
+  },
+): Promise<void> {
+  const minutes = recallBillableMinutes({
+    joinStartedAt: input.joinStartedAt ?? joinStartedAtFromMetadata(input.metadata),
+    startedAt: input.startedAt ?? null,
+    endedAt: input.endedAt ?? null,
+    reservedMinutes: input.reservedMinutes ?? reservedMinutesFromMetadata(input.metadata),
+  });
+  if (minutes <= 0) {
+    await releaseRecallMeetingMinutes(billing, { meetingId: input.meetingId });
+    return;
+  }
+  await settleRecallMeetingMinutes(billing, {
+    meetingId: input.meetingId,
+    minutes,
+    source: input.source ?? 'meeting_no_show',
   });
 }

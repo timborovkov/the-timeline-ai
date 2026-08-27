@@ -193,6 +193,43 @@ describe('billing capacity (not Polar meters)', () => {
     expect(extraGrants).toHaveLength(0);
   });
 
+  it('assigns the Free grant to a restricted Free workspace instead of a paid one', async () => {
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name, created_at)
+      VALUES ('${EXTRA_TEAM_ID}', 'extra-restricted', 'Extra Restricted', '2020-01-01T00:00:00Z');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${EXTRA_TEAM_ID}', '${USER_ID}', 'owner');
+    `);
+    const paid = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await paid.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, spend_cap_cents)
+      VALUES ('${EXTRA_TEAM_ID}', 'free', 'restricted', 0);
+    `);
+    await claimOwnedTeamFreeGrantsForVerifiedUser({ db, userId: USER_ID });
+    const [grant] = await db
+      .select()
+      .from(billingFreeGrants)
+      .where(eq(billingFreeGrants.userId, USER_ID));
+    expect(grant?.assignedTeamId).toBe(EXTRA_TEAM_ID);
+    const extra = createBillingScope({
+      db,
+      teamId: EXTRA_TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await extra.getAccount()).billingState).toBe('free');
+    expect((await paid.getAccount()).planId).toBe('team');
+  });
+
   it('blocks document writes in non-reservable billing states even under stock limits', async () => {
     const billing = createBillingScope({
       db,

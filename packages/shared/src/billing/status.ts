@@ -130,6 +130,57 @@ export function billingStateAllowsReservation(billingState: string): boolean {
   );
 }
 
+export type PaidActiveBillingState =
+  | 'payg_active'
+  | 'team_active'
+  | 'business_active'
+  | 'enterprise_active';
+
+/** Active commercial state for a paid plan. Free / unknown plans return null. */
+export function billingStateForPaidPlan(planId: BillingPlanId): PaidActiveBillingState | null {
+  switch (planId) {
+    case 'payg':
+      return 'payg_active';
+    case 'team':
+      return 'team_active';
+    case 'business':
+      return 'business_active';
+    case 'enterprise':
+      return 'enterprise_active';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Settlement/refund shortfall freezes (`read_only` / `balance_exhausted`) restore
+ * the plan's active state. Polar delinquency, restricted Free, and canceled
+ * workspaces stay frozen until those paths resolve them.
+ */
+export function restoredPaidBillingStateAfterWalletOrCapRecovery(input: {
+  planId: BillingPlanId;
+  billingState: string;
+}): PaidActiveBillingState | null {
+  if (input.billingState !== 'read_only' && input.billingState !== 'balance_exhausted') {
+    return null;
+  }
+  return billingStateForPaidPlan(input.planId);
+}
+
+/**
+ * Settlement freeze zeros the spend cap. Restore the catalog default when that
+ * default is a positive paid ceiling so a €10 top-up can admit work again.
+ * Enterprise (catalog default €0) and an already-positive cap are left alone.
+ */
+export function restoredSpendCapCentsAfterShortfallUnfreeze(input: {
+  planId: BillingPlanId;
+  spendCapCents: number;
+}): number | null {
+  if (input.spendCapCents > 0) return null;
+  const catalogDefault = PLAN_CATALOG[input.planId].defaultSpendCapCents;
+  return catalogDefault > 0 ? catalogDefault : null;
+}
+
 export function costBearingPausedFromAccount(input: {
   planId: BillingPlanId;
   billingState: string;

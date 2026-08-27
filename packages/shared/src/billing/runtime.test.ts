@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { billingUsageLedger, type Db } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -214,6 +215,40 @@ describe('billing runtime', () => {
     const third = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
     expect(third.extraMembers).toBe(2);
     expect(third.chargeCents).toBe(0);
+  });
+
+  it('persists extra member-day charges when wallet admission is denied', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 0,
+          spend_cap_cents = 2500, shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
+        ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
+        ('41111111-2222-4333-8444-555555555555', 'm4@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member'),
+        ('${TEAM_ID}', '41111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-27' });
+    expect(accrued.extraMembers).toBe(1);
+    expect(accrued.chargeCents).toBeGreaterThan(0);
+    const after = await billing.getAccount();
+    expect(after.billingState).toBe('read_only');
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledger.some((row) => row.operationId.includes('member_days:'))).toBe(true);
   });
 
   it('skips AI metering when the caller already reserved the meter', async () => {

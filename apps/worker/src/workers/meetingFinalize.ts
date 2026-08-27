@@ -17,7 +17,11 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
-import { recallBillableMinutes, settleRecallMeetingMinutes } from '@timeline/shared/billing';
+import {
+  BILLING_SYSTEM_USER_ID,
+  recallBillableMinutes,
+  settleRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
@@ -631,15 +635,11 @@ async function settleRecallForFinalizedMeeting(input: {
   db: Db;
   teamId: string;
   meetingId: string;
-  actorUserId: string | null;
   minutes: number;
 }): Promise<void> {
-  const billingScope = withTeam(
-    input.db,
-    input.teamId,
-    input.actorUserId ?? '00000000-0000-0000-0000-000000000000',
-    input.actorUserId ? {} : { skipMembershipCheck: true },
-  );
+  const billingScope = withTeam(input.db, input.teamId, BILLING_SYSTEM_USER_ID, {
+    skipMembershipCheck: true,
+  });
   await settleRecallMeetingMinutes(billingScope.billing, {
     meetingId: input.meetingId,
     minutes: input.minutes,
@@ -702,18 +702,14 @@ export async function processMeetingFinalizeJob(
       db: deps.db,
       teamId,
       meetingId,
-      actorUserId: meeting.createdByUserId,
       minutes: usage?.minutes ?? 0,
     });
     return { skipped: 'already_completed', meetingId };
   }
   if (['failed', 'cancelled', 'skipped', 'no_show'].includes(meeting.status)) {
-    const billingScope = withTeam(
-      deps.db,
-      teamId,
-      meeting.createdByUserId ?? '00000000-0000-0000-0000-000000000000',
-      meeting.createdByUserId ? {} : { skipMembershipCheck: true },
-    );
+    const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+      skipMembershipCheck: true,
+    });
     await billingScope.billing.release(`recall:${meetingId}`).catch(() => undefined);
     return { skipped: 'terminal', meetingId };
   }
@@ -967,12 +963,9 @@ export async function processMeetingFinalizeJob(
       );
 
       try {
-        const billingScope = withTeam(
-          deps.db,
-          teamId,
-          meeting.createdByUserId ?? '00000000-0000-0000-0000-000000000000',
-          meeting.createdByUserId ? {} : { skipMembershipCheck: true },
-        );
+        const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+          skipMembershipCheck: true,
+        });
         await settleRecallMeetingMinutes(billingScope.billing, {
           meetingId,
           minutes: finalized.minutes,

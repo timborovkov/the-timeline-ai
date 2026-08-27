@@ -1,4 +1,7 @@
-import { releaseRecallMeetingMinutes } from '@timeline/shared/billing';
+import {
+  releaseRecallMeetingMinutes,
+  settleElapsedRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
@@ -203,7 +206,14 @@ export async function POST(req: Request): Promise<Response> {
   // re-enqueue finalize over a cancelled meeting. Return 200 so Recall
   // stops retrying; the event is a no-op from our perspective.
   if (TERMINAL_STATUSES.has(meeting.status)) {
-    if (meeting.status !== 'completed' && meeting.status !== 'completed_partial') {
+    if (meeting.status === 'no_show') {
+      await settleElapsedRecallMeetingMinutes(scope.billing, {
+        meetingId: meeting.id,
+        startedAt: meeting.startedAt,
+        endedAt: meeting.endedAt ?? (createdAt ? new Date(createdAt) : new Date()),
+        metadata: meeting.metadata,
+      }).catch(() => undefined);
+    } else if (meeting.status !== 'completed' && meeting.status !== 'completed_partial') {
       await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
         () => undefined,
       );
@@ -281,9 +291,12 @@ export async function POST(req: Request): Promise<Response> {
           });
         }
       } else if (noShowOutcome === 'terminal') {
-        await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
-          () => undefined,
-        );
+        await settleElapsedRecallMeetingMinutes(scope.billing, {
+          meetingId: meeting.id,
+          startedAt: meeting.startedAt,
+          endedAt: createdAt ? new Date(createdAt) : new Date(),
+          metadata: meeting.metadata,
+        }).catch(() => undefined);
       }
     } else if (isFailureEvent) {
       await scope.meetings.handleMeetingFailure({

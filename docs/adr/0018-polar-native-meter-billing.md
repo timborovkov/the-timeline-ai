@@ -90,7 +90,19 @@ credit hides margin and confuses prospects.
    older event cannot overwrite a newer one. Polar webhook bodies are bounded to
    the integration webhook size limit before signature verify. Settlement that
    exceeds the reserved wallet or paid spend cap still records the full ledger
-   charge and freezes the workspace (`read_only`, spend cap €0). Document writes
+   charge and freezes the workspace (`read_only`, spend cap €0). A €10 top-up or a
+   positive spend-cap raise restores the plan's active state and, when the freeze
+   zeroed a positive catalog cap, that catalog default. Extra member-days persist
+   the denied charge and freeze instead of skipping the extra seat. Terminal Recall
+   no-shows settle elapsed waiting-room minutes; retry no-shows still release so
+   the same meeting can reserve again. Postmark success is recorded before email
+   settlement so a later settle failure does not resend. Meeting-finalize billing
+   uses the system actor so a departed creator cannot skip settlement. Free-grant
+   inserts use `ON CONFLICT DO NOTHING` so a unique race cannot abort team-create.
+   The post-verify Free-grant backfill prefers oldest restricted Free workspaces
+   and never assigns the grant to a paid team. Scheduled join billing denials fail
+   the occurrence without advancing saved-meeting consecutive-failure pauses.
+   Document writes
    require a reservable billing state, not only non-`restricted`. Free-grant claims
    skip removed owner memberships. Storage admission casts aggregated
    `SUM(byte_size)` to a number before adding the new upload. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted

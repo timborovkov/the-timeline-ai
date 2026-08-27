@@ -389,4 +389,34 @@ describe('processMeetingSchedulerTick', () => {
     expect(savedRow?.autoJoinEnabled).toBe(false);
     expect(savedRow?.autoJoinPausedAt).toBeInstanceOf(Date);
   });
+
+  it('does not count billing denials toward saved-meeting consecutive failures', async () => {
+    const { saved, meeting } = await insertSavedAndScheduled(db, { consecutiveFailureCount: 2 });
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, spend_cap_cents, wallet_balance_cents, shadow_billing
+      )
+      VALUES ('${TEAM_ID}', 'payg', 'read_only', 0, 0, false)
+      ON CONFLICT (team_id) DO UPDATE SET
+        plan_id = 'payg',
+        billing_state = 'read_only',
+        spend_cap_cents = 0,
+        wallet_balance_cents = 0,
+        shadow_billing = false;
+    `);
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.failed).toBe(1);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const meetingRow = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(meetingRow?.status).toBe('failed');
+    expect(meetingRow?.metadata).toMatchObject({ join_error: 'usage_limit_reached' });
+    const savedRow = (
+      await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id))
+    )[0];
+    expect(savedRow?.consecutiveFailureCount).toBe(2);
+    expect(savedRow?.autoJoinEnabled).toBe(true);
+    expect(savedRow?.autoJoinPausedReason).toBeNull();
+  });
 });

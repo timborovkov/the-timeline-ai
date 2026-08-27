@@ -288,18 +288,12 @@ export async function settleTeamMeter(input: {
   provider?: string;
   source?: string;
   billable?: boolean;
+  /** Extra member-days already happened; persist the charge even if reserve would deny. */
+  persistWhenDenied?: boolean;
 }): Promise<{ ok: true; duplicate: boolean } | { ok: false; code: BillingReserveFailureCode }> {
   const userId = input.userId ?? BILLING_SYSTEM_USER_ID;
   const billing = billingScope({ db: input.db, teamId: input.teamId, userId });
-  const reserved = await billing.reserve({
-    operationId: input.operationId,
-    meterId: input.meterId,
-    reservedNativeUnits: input.nativeUnits,
-    reservedChargeCents: input.customerChargeCents,
-  });
-  if (!reserved.ok) return reserved;
-  if (reserved.alreadySettled) return { ok: true, duplicate: true };
-  const settled = await billing.settle({
+  const settleInput = {
     operationId: input.operationId,
     meterId: input.meterId,
     nativeUnits: input.nativeUnits,
@@ -308,7 +302,33 @@ export async function settleTeamMeter(input: {
     ...(input.provider ? { provider: input.provider } : {}),
     ...(input.source ? { source: input.source } : {}),
     ...(input.billable !== undefined ? { billable: input.billable } : {}),
+  };
+  if (input.persistWhenDenied) {
+    const account = await billing.getAccount();
+    if (account.securityState === 'suspended' || account.securityState === 'terminated') {
+      return { ok: false, code: 'security_blocked' };
+    }
+    if (
+      account.billingState === 'past_due' ||
+      account.billingState === 'payment_retry' ||
+      account.billingState === 'canceled' ||
+      account.billingState === 'deletion_scheduled' ||
+      account.billingState === 'restricted'
+    ) {
+      return { ok: false, code: 'usage_limit_reached' };
+    }
+    const settled = await billing.settle(settleInput);
+    return { ok: true, duplicate: settled.duplicate };
+  }
+  const reserved = await billing.reserve({
+    operationId: input.operationId,
+    meterId: input.meterId,
+    reservedNativeUnits: input.nativeUnits,
+    reservedChargeCents: input.customerChargeCents,
   });
+  if (!reserved.ok) return reserved;
+  if (reserved.alreadySettled) return { ok: true, duplicate: true };
+  const settled = await billing.settle(settleInput);
   return { ok: true, duplicate: settled.duplicate };
 }
 
@@ -608,6 +628,7 @@ export async function accrueTeamMemberDays(input: {
       operationClass: 'member_day',
       source: 'janitor',
       billable: true,
+      persistWhenDenied: true,
     });
     if (result.ok && !result.duplicate) {
       previousNative += 1;

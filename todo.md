@@ -572,7 +572,12 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       usage discount and accrue members added after the first daily tick.
       Polar webhooks bound the request body before signature verify and lock the billing account
       before applying Polar `modified_at`. Settlement above the reserved wallet or paid
-      spend cap freezes the workspace. Document writes require a reservable billing state.
+      spend cap freezes the workspace. A €10 top-up or a positive spend-cap raise restores the plan's
+      active state. Extra member-days persist denied charges. Terminal Recall no-shows settle
+      waiting-room minutes. Postmark success is recorded before email settlement. Meeting-finalize
+      billing uses the system actor. Free-grant inserts do not abort the caller transaction; the
+      post-verify backfill prefers oldest restricted Free workspaces. Scheduled join billing denials
+      do not pause auto-join as consecutive failures. Document writes require a reservable billing state.
       Free-grant claims skip removed owners; storage admission converts aggregated bytes before
       adding a new upload. Janitor included-discount resets lock the billing account against a
       newer Polar plan/period. Ask streams that abort after work starts settle the reserved

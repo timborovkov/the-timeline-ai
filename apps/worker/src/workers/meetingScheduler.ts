@@ -213,7 +213,6 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
             join_error: admission.code,
           },
         });
-        await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
         failed += 1;
         continue;
       }

@@ -64,6 +64,10 @@ vi.mock('@timeline/shared/team-scope', () => ({
         handleMeetingFailure: fakes.fakeHandleFailure,
         handleMeetingNoShow: fakes.fakeHandleNoShow,
       },
+      billing: {
+        settle: vi.fn().mockResolvedValue({ ok: true }),
+        release: vi.fn().mockResolvedValue({ ok: true }),
+      },
     };
   },
 }));

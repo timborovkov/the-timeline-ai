@@ -29,7 +29,10 @@ import {
   sql,
 } from 'drizzle-orm';
 
-import { releaseRecallMeetingMinutes } from '#src/billing/admission.js';
+import {
+  releaseRecallMeetingMinutes,
+  settleElapsedRecallMeetingMinutes,
+} from '#src/billing/admission.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { participantNames } from '#src/meetings/participants.js';
@@ -669,6 +672,9 @@ export async function lookupMeetingByBotId(
   | 'provider'
   | 'defaultVisibility'
   | 'savedMeetingId'
+  | 'startedAt'
+  | 'endedAt'
+  | 'metadata'
 > | null> {
   const rows = await db
     .select({
@@ -680,18 +686,29 @@ export async function lookupMeetingByBotId(
       provider: meetings.provider,
       defaultVisibility: meetings.defaultVisibility,
       savedMeetingId: meetings.savedMeetingId,
+      startedAt: meetings.startedAt,
+      endedAt: meetings.endedAt,
+      metadata: meetings.metadata,
     })
     .from(meetings)
     .where(eq(meetings.providerBotId, botId))
     .limit(1);
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    ...row,
+    metadata:
+      row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+        ? (row.metadata as Record<string, unknown>)
+        : {},
+  };
 }
 
 export function createMeetingScope(deps: MeetingScopeDeps) {
   const { db, teamId, userId, ensureMember } = deps;
 
-  async function releaseRecallReservation(meetingId: string): Promise<void> {
-    const billing = createBillingScope({
+  function recallBillingScope() {
+    return createBillingScope({
       db,
       teamId,
       userId,
@@ -700,7 +717,28 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         return 'member';
       },
     });
-    await releaseRecallMeetingMinutes(billing, { meetingId }).catch(() => undefined);
+  }
+
+  async function releaseRecallReservation(meetingId: string): Promise<void> {
+    await releaseRecallMeetingMinutes(recallBillingScope(), { meetingId }).catch(() => undefined);
+  }
+
+  async function settleElapsedRecallReservation(meetingId: string, endedAt: Date): Promise<void> {
+    const [row] = await db
+      .select({
+        startedAt: meetings.startedAt,
+        endedAt: meetings.endedAt,
+        metadata: meetings.metadata,
+      })
+      .from(meetings)
+      .where(eq(meetings.id, meetingId))
+      .limit(1);
+    await settleElapsedRecallMeetingMinutes(recallBillingScope(), {
+      meetingId,
+      startedAt: row?.startedAt ?? null,
+      endedAt: row?.endedAt ?? endedAt,
+      metadata: row?.metadata,
+    }).catch(() => undefined);
   }
 
   // Visibility predicate over meetings. Same shape as raw_events: team,
@@ -1607,8 +1645,10 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         }
         return 'terminal' as const;
       });
-      if (outcome === 'retry_scheduled' || outcome === 'terminal') {
+      if (outcome === 'retry_scheduled') {
         await releaseRecallReservation(input.meetingId);
+      } else if (outcome === 'terminal') {
+        await settleElapsedRecallReservation(input.meetingId, input.endedAt);
       }
       return outcome;
     },

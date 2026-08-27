@@ -27,7 +27,6 @@ import {
 } from '#src/billing/catalog.js';
 import {
   cumulativeChargeDeltaCents,
-  isUniqueViolation,
   metersPlusPendingReservations,
   paygOverageCustomerChargeCents,
   paygOverageNativeUnits,
@@ -49,6 +48,8 @@ import {
   deriveSidebarBillingSummary,
   freeAllowanceConsumedForMeter,
   freeAllowanceRemaining,
+  restoredPaidBillingStateAfterWalletOrCapRecovery,
+  restoredSpendCapCentsAfterShortfallUnfreeze,
   spendCapUtilization,
 } from '#src/billing/status.js';
 import { childLogger } from '#src/logger.js';
@@ -319,13 +320,33 @@ export function createBillingScope(deps: BillingScopeDeps) {
         throw new Error('spendCapCents must be a non-negative integer');
       }
       await ensureAccount();
-      const [row] = await db
-        .update(teamBillingAccounts)
-        .set({ spendCapCents, updatedAt: new Date() })
-        .where(eq(teamBillingAccounts.teamId, teamId))
-        .returning();
-      if (!row) throw new Error('Failed to update spend cap');
-      return row;
+      return db.transaction(async (tx) => {
+        const [account] = await tx
+          .select()
+          .from(teamBillingAccounts)
+          .where(eq(teamBillingAccounts.teamId, teamId))
+          .limit(1)
+          .for('update');
+        if (!account) throw new Error('Failed to update spend cap');
+        const restoredState =
+          spendCapCents > 0
+            ? restoredPaidBillingStateAfterWalletOrCapRecovery({
+                planId: account.planId,
+                billingState: account.billingState,
+              })
+            : null;
+        const [row] = await tx
+          .update(teamBillingAccounts)
+          .set({
+            spendCapCents,
+            ...(restoredState ? { billingState: restoredState } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(teamBillingAccounts.teamId, teamId))
+          .returning();
+        if (!row) throw new Error('Failed to update spend cap');
+        return row;
+      });
     },
 
     /**
@@ -388,32 +409,31 @@ export function createBillingScope(deps: BillingScopeDeps) {
         }
         return { ok: true as const, grant: existing[0] };
       }
-      try {
-        const [created] = await db
-          .insert(billingFreeGrants)
-          .values({ userId, assignedTeamId: teamId })
-          .returning();
-        if (!created) throw new Error('Failed to create free grant');
-        return { ok: true as const, grant: created };
-      } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
-        const [raced] = await db
-          .select()
-          .from(billingFreeGrants)
-          .where(
-            and(eq(billingFreeGrants.userId, userId), sql`${billingFreeGrants.revokedAt} IS NULL`),
-          )
-          .limit(1);
-        if (raced?.assignedTeamId && raced.assignedTeamId !== teamId) {
-          return {
-            ok: false as const,
-            reason: 'free_grant_elsewhere' as const,
-            grant: raced,
-          };
-        }
-        if (!raced) throw err;
-        return { ok: true as const, grant: raced };
+      const [created] = await db
+        .insert(billingFreeGrants)
+        .values({ userId, assignedTeamId: teamId })
+        .onConflictDoNothing({
+          target: billingFreeGrants.userId,
+          where: sql`${billingFreeGrants.revokedAt} IS NULL`,
+        })
+        .returning();
+      if (created) return { ok: true as const, grant: created };
+      const [raced] = await db
+        .select()
+        .from(billingFreeGrants)
+        .where(
+          and(eq(billingFreeGrants.userId, userId), sql`${billingFreeGrants.revokedAt} IS NULL`),
+        )
+        .limit(1);
+      if (raced?.assignedTeamId && raced.assignedTeamId !== teamId) {
+        return {
+          ok: false as const,
+          reason: 'free_grant_elsewhere' as const,
+          grant: raced,
+        };
       }
+      if (!raced) throw new Error('Failed to assign free grant');
+      return { ok: true as const, grant: raced };
     },
 
     /**
@@ -1127,13 +1147,22 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .limit(1)
           .for('update');
         if (!account) throw new Error('Missing billing account');
-        const nextState =
-          account.billingState === 'balance_exhausted' ? 'payg_active' : account.billingState;
+        const restoredState = restoredPaidBillingStateAfterWalletOrCapRecovery({
+          planId: account.planId,
+          billingState: account.billingState,
+        });
+        const restoredCap = restoredState
+          ? restoredSpendCapCentsAfterShortfallUnfreeze({
+              planId: account.planId,
+              spendCapCents: account.spendCapCents,
+            })
+          : null;
         await tx
           .update(teamBillingAccounts)
           .set({
             walletBalanceCents: sql`${teamBillingAccounts.walletBalanceCents} + ${input.cents}`,
-            billingState: nextState,
+            billingState: restoredState ?? account.billingState,
+            ...(restoredCap !== null ? { spendCapCents: restoredCap } : {}),
             updatedAt: new Date(),
           })
           .where(eq(teamBillingAccounts.teamId, teamId));
