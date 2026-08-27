@@ -988,7 +988,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Northstar'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { domain: 'northstar.example', relationship: 'design_partner' },
+    metadata: { domain: 'northstar.example', relationship: 'Design partner' },
   },
   {
     n: 2,
@@ -1007,7 +1007,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Northwind'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { domain: 'northwind.example', relationship: 'investor' },
+    metadata: { domain: 'northwind.example', relationship: 'Investor' },
   },
   {
     n: 4,
@@ -1025,7 +1025,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Linden Ventures',
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { domain: 'linden.example', relationship: 'investor' },
+    metadata: { domain: 'linden.example', relationship: 'Investor' },
   },
   {
     n: 6,
@@ -1033,7 +1033,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Harbor Peak',
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { domain: 'harborpeak.example', relationship: 'investor' },
+    metadata: { domain: 'harborpeak.example', relationship: 'Investor' },
   },
   {
     n: 7,
@@ -1113,7 +1113,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     status: 'lost',
     stage: 'lost',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { lost_reason: 'Requested on-prem' },
+    metadata: { lostReason: 'Requested on-prem' },
   },
   {
     n: 16,
@@ -1385,7 +1385,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Kite Logistics account',
     status: 'archived',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { domain: 'kite.example', reason: 'on_prem' },
+    metadata: { domain: 'kite.example', reason: 'On-prem' },
   },
   {
     n: 47,
