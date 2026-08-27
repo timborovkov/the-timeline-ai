@@ -946,6 +946,41 @@ describe('document scope — soft delete + audit trail', () => {
     expect(remaining.map((d) => d.id)).not.toContain(original.document.id);
   });
 
+  it('refuses restore when restored chunks would exceed Free indexed-chunk capacity', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const live = await scope.createDocument({
+      name: 'live.txt',
+      folderId: null,
+      filename: 'live.txt',
+      contentType: 'text/plain',
+    });
+    const deleted = await scope.createDocument({
+      name: 'gone.txt',
+      folderId: null,
+      filename: 'gone.txt',
+      contentType: 'text/plain',
+    });
+    await pg.exec(`
+      INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+      SELECT '${TEAM_ID}', '${live.document.id}', '${live.version.id}', g, 'source_text', 'chunk', 1
+      FROM generate_series(1, 2000) AS g;
+      INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+      VALUES (
+        '${TEAM_ID}',
+        '${deleted.document.id}',
+        '${deleted.version.id}',
+        0,
+        'source_text',
+        'gone chunk',
+        1
+      );
+    `);
+    await scope.softDeleteDocument(deleted.document.id);
+    await expect(scope.restoreDocument(deleted.document.id)).rejects.toBeInstanceOf(
+      BillingAdmissionError,
+    );
+  });
+
   it('soft-deleted folders are NOT reachable via getFolder (bugbot #3298903330)', async () => {
     // Same contract as documents: a direct-by-id lookup of a soft-
     // deleted folder must return null so the detail page, breadcrumbs,

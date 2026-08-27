@@ -19,6 +19,7 @@ import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
+  type BillingPlanId,
   PLAN_CATALOG,
   PREPAID_TOPUP_CENTS,
   customerAiChargeCentsFromOpenRouterUsd,
@@ -337,9 +338,10 @@ export async function meterAcceptedSources(input: {
   teamId: string;
   userId?: string;
   rawEventIds: string[];
-}): Promise<{ ok: true } | { ok: false; code: BillingReserveFailureCode }> {
-  if (input.rawEventIds.length === 0) return { ok: true };
+}): Promise<{ ok: true; duplicate: boolean } | { ok: false; code: BillingReserveFailureCode }> {
+  if (input.rawEventIds.length === 0) return { ok: true, duplicate: true };
   let previous = await currentMeterNativeUnits(input.db, input.teamId, 'accepted_sources');
+  let duplicate = true;
   for (const rawEventId of input.rawEventIds) {
     const next = previous + 1;
     const result = await settleTeamMeter({
@@ -358,9 +360,10 @@ export async function meterAcceptedSources(input: {
       source: 'event_writer',
     });
     if (!result.ok) return result;
+    if (!result.duplicate) duplicate = false;
     previous = next;
   }
-  return { ok: true };
+  return { ok: true, duplicate };
 }
 
 export async function reserveEmailUnits(input: {
@@ -554,28 +557,60 @@ export async function snapshotTeamStorageGbMonth(input: {
   return { gb, settled: result.ok };
 }
 
-export async function accrueTeamMemberDays(input: {
+function addUtcDays(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return utcDay(date);
+}
+
+function utcDaysInclusive(from: string, to: string): string[] {
+  if (from > to) return [];
+  const days: string[] = [];
+  let cursor = from;
+  while (cursor <= to) {
+    days.push(cursor);
+    cursor = addUtcDays(cursor, 1);
+  }
+  return days;
+}
+
+async function memberDayBackfillRange(db: Db, teamId: string): Promise<string[]> {
+  const today = utcDay();
+  const lookback = addUtcDays(today, -31);
+  const periodStart = `${today.slice(0, 7)}-01`;
+  const [maxRow] = await db
+    .select({ day: sql<string | null>`max(${billingMemberDayLedger.day})` })
+    .from(billingMemberDayLedger)
+    .where(eq(billingMemberDayLedger.teamId, teamId));
+  const ledgerNext = maxRow?.day ? addUtcDays(maxRow.day, 1) : lookback;
+  const start = [ledgerNext, periodStart, lookback].reduce((latest, day) =>
+    day > latest ? day : latest,
+  );
+  return utcDaysInclusive(start, today);
+}
+
+function membersActiveOnDay<T extends { createdAt: Date; removedAt: Date | null }>(
+  members: T[],
+  day: string,
+): T[] {
+  const startOfDay = new Date(`${day}T00:00:00.000Z`);
+  const endOfDay = new Date(`${day}T23:59:59.999Z`);
+  return members.filter((member) => {
+    if (member.createdAt > endOfDay) return false;
+    return member.removedAt === null || member.removedAt >= startOfDay;
+  });
+}
+
+async function accrueTeamMemberDaysForDay(input: {
   db: Db;
   teamId: string;
-  day?: string;
+  day: string;
+  planId: BillingPlanId;
+  included: number;
+  members: { userId: string; role: string }[];
 }): Promise<{ extraMembers: number; chargeCents: number }> {
-  const day = input.day ?? utcDay();
-  const [account] = await input.db
-    .select({ planId: teamBillingAccounts.planId })
-    .from(teamBillingAccounts)
-    .where(eq(teamBillingAccounts.teamId, input.teamId))
-    .limit(1);
-  const planId = account?.planId ?? 'free';
-  const included = PLAN_CATALOG[planId].includedActiveMembers ?? 0;
-  const members = await input.db
-    .select({
-      userId: teamMembers.userId,
-      role: teamMembers.role,
-    })
-    .from(teamMembers)
-    .where(and(eq(teamMembers.teamId, input.teamId), isNull(teamMembers.removedAt)));
-
-  for (const member of members) {
+  const { day, planId, included } = input;
+  for (const member of input.members) {
     await input.db
       .insert(billingMemberDayLedger)
       .values({
@@ -641,6 +676,53 @@ export async function accrueTeamMemberDays(input: {
     }
   }
   return { extraMembers: extraRows.length, chargeCents };
+}
+
+export async function accrueTeamMemberDays(input: {
+  db: Db;
+  teamId: string;
+  day?: string;
+}): Promise<{ extraMembers: number; chargeCents: number }> {
+  const [account] = await input.db
+    .select({ planId: teamBillingAccounts.planId })
+    .from(teamBillingAccounts)
+    .where(eq(teamBillingAccounts.teamId, input.teamId))
+    .limit(1);
+  const planId: BillingPlanId = account?.planId ?? 'free';
+  const included = PLAN_CATALOG[planId].includedActiveMembers ?? 0;
+  const days = input.day ? [input.day] : await memberDayBackfillRange(input.db, input.teamId);
+  if (days.length === 0) {
+    return { extraMembers: 0, chargeCents: 0 };
+  }
+
+  const roster = await input.db
+    .select({
+      userId: teamMembers.userId,
+      role: teamMembers.role,
+      createdAt: teamMembers.createdAt,
+      removedAt: teamMembers.removedAt,
+    })
+    .from(teamMembers)
+    .where(eq(teamMembers.teamId, input.teamId));
+
+  let extraMembers = 0;
+  let chargeCents = 0;
+  for (const day of days) {
+    const members = input.day
+      ? roster.filter((member) => member.removedAt === null)
+      : membersActiveOnDay(roster, day);
+    const result = await accrueTeamMemberDaysForDay({
+      db: input.db,
+      teamId: input.teamId,
+      day,
+      planId,
+      included,
+      members,
+    });
+    extraMembers = result.extraMembers;
+    chargeCents += result.chargeCents;
+  }
+  return { extraMembers, chargeCents };
 }
 
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {

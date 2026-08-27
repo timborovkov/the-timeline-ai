@@ -31,8 +31,15 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  delete process.env.BILLING_CHARGES_ENABLED;
+  resetEnvForTests();
   await pg.close();
 });
+
+function enableLiveCharging(): void {
+  process.env.BILLING_CHARGES_ENABLED = 'true';
+  resetEnvForTests();
+}
 
 describe('billing scope', () => {
   it('ensures an account, settles usage idempotently, and rolls up counters', async () => {
@@ -177,6 +184,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active'
@@ -202,6 +210,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -239,6 +248,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -289,6 +299,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'read_only',
@@ -308,6 +319,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
@@ -332,6 +344,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -363,6 +376,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -395,6 +409,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -420,6 +435,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -447,9 +463,10 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
-      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+      SET plan_id = 'team', billing_state = 'team_active',
           wallet_balance_cents = 500, included_discount_remaining_cents = 0,
           spend_cap_cents = 10000
       WHERE team_id = '${TEAM_ID}';
@@ -462,15 +479,14 @@ describe('billing scope', () => {
     });
     expect(reserved.ok).toBe(true);
     expect((await scope.getAccount()).reservedBalanceCents).toBe(80);
-    await pg.exec(`
-      UPDATE team_billing_accounts SET shadow_billing = true WHERE team_id = '${TEAM_ID}';
-    `);
+    delete process.env.BILLING_CHARGES_ENABLED;
+    resetEnvForTests();
     await scope.release('op-lock-live');
     expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
 
     await pg.exec(`
       UPDATE team_billing_accounts
-      SET shadow_billing = true, reserved_balance_cents = 0, wallet_balance_cents = 500
+      SET reserved_balance_cents = 0, wallet_balance_cents = 500
       WHERE team_id = '${TEAM_ID}';
     `);
     const shadowReserved = await scope.reserve({
@@ -481,9 +497,7 @@ describe('billing scope', () => {
     });
     expect(shadowReserved.ok).toBe(true);
     expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
-    await pg.exec(`
-      UPDATE team_billing_accounts SET shadow_billing = false WHERE team_id = '${TEAM_ID}';
-    `);
+    enableLiveCharging();
     await scope.release('op-lock-shadow');
     expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
   });
@@ -496,6 +510,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'past_due',
@@ -604,6 +619,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -638,6 +654,7 @@ describe('billing scope', () => {
       provider,
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
@@ -671,6 +688,7 @@ describe('billing scope', () => {
       provider,
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
@@ -854,6 +872,7 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
+    enableLiveCharging();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -899,5 +918,72 @@ describe('billing scope', () => {
       { period_ym: '2026-08', native_units: '60.000000' },
       { period_ym: '2026-09', native_units: '60.000000' },
     ]);
+  });
+
+  it('does not freeze Enterprise settlement against a prepaid spend cap', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active',
+          wallet_balance_cents = 0, spend_cap_cents = 0, included_discount_remaining_cents = 0,
+          polar_customer_id = 'cus_enterprise'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-enterprise-ai',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    const after = await scope.getAccount();
+    expect(after.billingState).toBe('enterprise_active');
+    expect(after.spendCapCents).toBe(0);
+    expect(after.walletBalanceCents).toBe(0);
+    expect(provider.events.length).toBeGreaterThan(0);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'pending' });
+    }
+  });
+
+  it('forces shadow mode when BILLING_CHARGES_ENABLED is off even if the row is live', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          wallet_balance_cents = 5000, polar_customer_id = 'cus_test'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const dash = await scope.getDashboard();
+    expect(dash.account.shadowBilling).toBe(true);
+    const settled = await scope.settle({
+      operationId: 'op-shadow-kill-switch',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    expect((await scope.getAccount()).walletBalanceCents).toBe(5000);
+    expect(provider.events).toHaveLength(0);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+    }
   });
 });

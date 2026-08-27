@@ -1,6 +1,7 @@
 import {
   type Db,
   billingFreeGrants,
+  billingMemberDayLedger,
   billingUsageCounters,
   billingUsageLedger,
   billingUsageReservations,
@@ -276,10 +277,22 @@ export function createBillingScope(deps: BillingScopeDeps) {
         .from(teamMembers)
         .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
       const activeMemberCount = memberCountRow?.activeMemberCount ?? 0;
+      const [memberDayRow] = await db
+        .select({
+          billableMemberDays: sql<number>`count(*)::int`,
+        })
+        .from(billingMemberDayLedger)
+        .where(
+          and(
+            eq(billingMemberDayLedger.teamId, teamId),
+            sql`${billingMemberDayLedger.day} LIKE ${`${ym}-%`}`,
+          ),
+        );
       const planPreview = cheapestPlanPreview({
         activeMembers: activeMemberCount,
         meters: byMeter,
         includedActiveMembers: PLAN_CATALOG[account.planId].includedActiveMembers,
+        billableMemberDays: memberDayRow?.billableMemberDays ?? 0,
       });
       const shadowBilling = accountUsesShadowBilling(account);
       return {
@@ -811,6 +824,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
           includedDiscountRemainingCents: account.includedDiscountRemainingCents,
           meterId: input.meterId,
         });
+        const enterpriseContract =
+          account.planId === 'enterprise' || account.billingState === 'enterprise_active';
         const eventName = polarEventNameForMeter(input.meterId);
         const shouldIngestPolar = shouldIngestPolarMeteredUsage({
           eventName,
@@ -818,8 +833,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
           shadowBilling: accountUsesShadowBilling(account),
           billable: input.billable !== false,
           polarUnits,
-          walletCents,
-          discountCents,
+          // Enterprise is invoiced on Polar, not collected from prepaid wallet
+          // or included discount. Passing those splits would skip ingest.
+          walletCents: enterpriseContract ? 0 : walletCents,
+          discountCents: enterpriseContract ? 0 : discountCents,
         });
         const polarIngestMetadata = shouldIngestPolar
           ? {
@@ -834,7 +851,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
 
         const applyCharges = !accountUsesShadowBilling(account);
         const walletShortfallCents =
-          applyCharges && walletCents > account.walletBalanceCents
+          applyCharges && !enterpriseContract && walletCents > account.walletBalanceCents
             ? walletCents - account.walletBalanceCents
             : 0;
         const periodSpendCents = countersBefore.reduce(
@@ -843,6 +860,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         );
         const spendCapExceeded =
           applyCharges &&
+          !enterpriseContract &&
           account.planId !== 'free' &&
           periodSpendCents + actualChargeCents > account.spendCapCents;
         const freezeAccount = walletShortfallCents > 0 || spendCapExceeded;

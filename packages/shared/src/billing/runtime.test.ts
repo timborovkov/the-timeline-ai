@@ -1,5 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
+import {
+  billingMemberDayLedger,
+  billingUsageLedger,
+  billingUsageReservations,
+  type Db,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,9 +17,11 @@ import {
   meterEmailUnits,
   resetIncludedDiscountIfPeriodElapsed,
   runWorkerBilling,
+  utcDay,
   withAiMetering,
 } from '#src/billing/runtime.js';
 import * as billingScopeMod from '#src/billing/scope.js';
+import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -38,6 +45,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  delete process.env.BILLING_CHARGES_ENABLED;
+  resetEnvForTests();
   await pg.close();
 });
 
@@ -257,6 +266,8 @@ describe('billing runtime', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
     await pg.exec(`
       UPDATE team_billing_accounts
       SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 0,
@@ -281,6 +292,46 @@ describe('billing runtime', () => {
       .from(billingUsageLedger)
       .where(eq(billingUsageLedger.teamId, TEAM_ID));
     expect(ledger.some((row) => row.operationId.includes('member_days:'))).toBe(true);
+  });
+
+  it('backfills member-days missed between janitor snapshots', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const today = utcDay();
+    const todayDate = new Date(`${today}T00:00:00.000Z`);
+    const twoDaysAgo = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 2),
+      ),
+    );
+    const yesterday = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 1),
+      ),
+    );
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      UPDATE team_members SET created_at = '${twoDaysAgo}T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_member_day_ledger (team_id, user_id, day, role, billable, charge_cents)
+      VALUES ('${TEAM_ID}', '${USER_ID}', '${twoDaysAgo}', 'owner', true, 0);
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    expect(accrued.extraMembers).toBe(0);
+    const days = (
+      await db
+        .select({ day: billingMemberDayLedger.day })
+        .from(billingMemberDayLedger)
+        .where(eq(billingMemberDayLedger.teamId, TEAM_ID))
+    ).map((row) => row.day);
+    expect(days).toEqual(expect.arrayContaining([twoDaysAgo, yesterday, today]));
   });
 
   it('skips AI metering when the caller already reserved the meter', async () => {

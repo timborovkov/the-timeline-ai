@@ -427,7 +427,9 @@ export async function askAgent(
         { err: safeError, teamId: input.teamId, billingOperationId },
         'ask billing settle failed',
       );
-      await releaseBillingReservation(scope.billing, billingOperationId).catch(() => undefined);
+      // Keep the reservation so a later settle of the same operation id can
+      // charge completed OpenRouter work. Releasing here restores wallet
+      // headroom while the provider call stays unpaid.
     }
   };
   const releaseBilling = async () => {

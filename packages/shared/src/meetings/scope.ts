@@ -1669,6 +1669,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           .update(meetings)
           .set({
             status: 'failed',
+            endedAt: input.failedAt,
             updatedAt: now,
             metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${metadataPatch}::jsonb`,
           })
@@ -1689,7 +1690,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         return 'failed' as const;
       });
       if (outcome === 'failed') {
-        await releaseRecallReservation(input.meetingId);
+        await settleElapsedRecallReservation(input.meetingId, input.failedAt);
       }
       return outcome;
     },

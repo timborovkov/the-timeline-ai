@@ -42,6 +42,7 @@ import type { chatStructured } from '#src/llm/chat.js';
 import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import { createAuditScope } from '#src/audit/scope.js';
+import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
@@ -1709,6 +1710,20 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     ensureMember,
     ...(billingProvider ? { provider: billingProvider } : {}),
   });
+
+  async function withSearchEmbeddingBilling<T>(fn: () => Promise<T>): Promise<T> {
+    if (getBillingContext()) return fn();
+    return runWithBillingContext(
+      {
+        db,
+        teamId,
+        userId,
+        operationClass: 'embedding',
+        source: 'search',
+      },
+      fn,
+    );
+  }
 
   const jobRecoveryScope = createJobRecoveryScope({
     db,
@@ -3782,7 +3797,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
       async embedEventQuery(query: string): Promise<number[]> {
         await ensureMember();
         const embedFn = deps.embed ?? defaultEmbed;
-        const { vector } = await embedFn({ text: query });
+        const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: query }));
         return vector;
       },
 
@@ -3796,7 +3811,11 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
             return client.search(tId, uId, vector, opts);
           });
 
-        const vector = input.queryVector ?? (await embedFn({ text: input.query })).vector;
+        const vector =
+          input.queryVector ??
+          (await withSearchEmbeddingBilling(
+            async () => (await embedFn({ text: input.query })).vector,
+          ));
         if (input.source && input.senderSource && input.source !== input.senderSource) return [];
         if (input.eventIds?.length === 0) return [];
 

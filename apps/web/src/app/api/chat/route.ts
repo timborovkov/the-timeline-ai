@@ -779,7 +779,9 @@ export async function POST(req: Request): Promise<Response> {
       });
     } catch (err) {
       log.warn({ err, teamId: active.teamId, billingOperationId }, 'chat billing settle failed');
-      await releaseBillingReservation(scope.billing, billingOperationId).catch(() => undefined);
+      // Keep the reservation so a later settle of the same operation id can
+      // charge completed OpenRouter work. Releasing here restores wallet
+      // headroom while the provider call stays unpaid.
     }
   };
   const releaseChatBilling = async () => {
@@ -871,7 +873,11 @@ export async function POST(req: Request): Promise<Response> {
         void settleChatBilling(undefined, { conservative: true });
         return;
       }
-      void releaseChatBilling();
+      if (openRouterUsd > 0) {
+        void settleChatBilling();
+      } else {
+        void releaseChatBilling();
+      }
       reportHandledEvent({
         message: 'chat_stream_ai_provider_error',
         surface: 'api',

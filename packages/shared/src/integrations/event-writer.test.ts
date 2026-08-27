@@ -5,6 +5,7 @@ import {
   artifactClusterAnchors,
   artifactClusters,
   artifactEvidenceAssociations,
+  billingUsageLedger,
   entities,
   factEntities,
   facts,
@@ -1589,6 +1590,57 @@ describe('writeIntegrationEvents visibility', () => {
     expect(enqueueExtractJob).not.toHaveBeenCalled();
     const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
+  it('meters an existing accepted source when a retry hits the dedup conflict', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-replay-meter',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const rawEventId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      VALUES (
+        '${rawEventId}',
+        '${TEAM_ID}',
+        'integration',
+        'Committed before metering',
+        '{"provider":"github","dedup_key":"github:replay-meter:1","signal_class":"captured_work"}'::jsonb
+      );
+    `);
+    const ids = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:replay-meter:1',
+          provider: 'github',
+          externalObjectId: 'repo#replay',
+          eventType: 'issue.opened',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Committed before metering',
+        },
+      ],
+    });
+    expect(ids).toEqual([]);
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledger.some((row) => row.operationId === `accepted_source:${rawEventId}`)).toBe(true);
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId,
+    });
   });
 
   it('rotates past still-blocked deferred rows to flush later events', async () => {

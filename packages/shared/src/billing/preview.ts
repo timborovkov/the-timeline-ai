@@ -61,18 +61,23 @@ function extraMemberCentsForPreview(input: {
   activeMembers: number;
   includedActiveMembers: number | null;
   meters?: MeterTotals;
+  billableMemberDays?: number;
 }): number {
   if (input.extraMembers <= 0 || input.additionalMemberCents <= 0) return 0;
   const nativeUnits = input.meters?.member_days?.nativeUnits;
-  if (typeof nativeUnits !== 'number') {
-    return input.extraMembers * input.additionalMemberCents;
-  }
-  const currentCharge = listChargeCentsForMeter('member_days', nativeUnits);
   const currentExtra = extraMembers(input.activeMembers, input.includedActiveMembers);
-  if (currentExtra <= 0) {
-    return input.extraMembers * input.additionalMemberCents;
+  if (typeof nativeUnits === 'number' && currentExtra > 0) {
+    const currentCharge = listChargeCentsForMeter('member_days', nativeUnits);
+    return Math.round(currentCharge * (input.extraMembers / currentExtra));
   }
-  return Math.round(currentCharge * (input.extraMembers / currentExtra));
+  if (typeof input.billableMemberDays === 'number' && input.activeMembers > 0) {
+    const extraDays = (input.billableMemberDays * input.extraMembers) / input.activeMembers;
+    return listChargeCentsForMeter('member_days', extraDays);
+  }
+  if (typeof nativeUnits === 'number') {
+    return 0;
+  }
+  return input.extraMembers * input.additionalMemberCents;
 }
 
 function billForPlan(input: {
@@ -81,6 +86,7 @@ function billForPlan(input: {
   meteredSpendCents: number;
   meters?: MeterTotals;
   includedActiveMembers?: number | null;
+  billableMemberDays?: number;
 }): PlanBillPreview {
   const plan = PLAN_CATALOG[input.planId];
   const extra = extraMembers(input.activeMembers, plan.includedActiveMembers);
@@ -90,6 +96,9 @@ function billForPlan(input: {
     activeMembers: input.activeMembers,
     includedActiveMembers: input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
     ...(input.meters !== undefined ? { meters: input.meters } : {}),
+    ...(input.billableMemberDays !== undefined
+      ? { billableMemberDays: input.billableMemberDays }
+      : {}),
   });
   const meteredAfterDiscountCents = Math.max(
     0,
@@ -118,6 +127,8 @@ export function cheapestPlanPreview(input: {
   meteredSpendCents?: number;
   /** Current plan included seats; used to prorate extra-member preview from member-days. */
   includedActiveMembers?: number | null;
+  /** All recorded person-days this period (not only current-plan extras). */
+  billableMemberDays?: number;
 }): CheapestPlanPreview {
   const gross = input.meters
     ? grossListChargeCentsFromMeters(input.meters)
@@ -125,33 +136,31 @@ export function cheapestPlanPreview(input: {
   const paygMetered = input.meters
     ? paygOverageFromMeters(input.meters)
     : Math.max(0, gross - freeAllowanceFloorCents());
+  const shared = {
+    activeMembers: input.activeMembers,
+    ...(input.meters !== undefined ? { meters: input.meters } : {}),
+    ...(input.includedActiveMembers !== undefined
+      ? { includedActiveMembers: input.includedActiveMembers }
+      : {}),
+    ...(input.billableMemberDays !== undefined
+      ? { billableMemberDays: input.billableMemberDays }
+      : {}),
+  };
   const bills = {
     payg: billForPlan({
       planId: 'payg',
-      activeMembers: input.activeMembers,
       meteredSpendCents: paygMetered,
-      ...(input.meters !== undefined ? { meters: input.meters } : {}),
-      ...(input.includedActiveMembers !== undefined
-        ? { includedActiveMembers: input.includedActiveMembers }
-        : {}),
+      ...shared,
     }),
     team: billForPlan({
       planId: 'team',
-      activeMembers: input.activeMembers,
       meteredSpendCents: gross,
-      ...(input.meters !== undefined ? { meters: input.meters } : {}),
-      ...(input.includedActiveMembers !== undefined
-        ? { includedActiveMembers: input.includedActiveMembers }
-        : {}),
+      ...shared,
     }),
     business: billForPlan({
       planId: 'business',
-      activeMembers: input.activeMembers,
       meteredSpendCents: gross,
-      ...(input.meters !== undefined ? { meters: input.meters } : {}),
-      ...(input.includedActiveMembers !== undefined
-        ? { includedActiveMembers: input.includedActiveMembers }
-        : {}),
+      ...shared,
     }),
   };
   let recommended: SelfServePaidPlanId = 'payg';

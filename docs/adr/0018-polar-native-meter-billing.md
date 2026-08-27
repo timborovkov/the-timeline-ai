@@ -80,8 +80,10 @@ credit hides margin and confuses prospects.
    PATCH the existing Polar subscription (or open the customer portal) instead
    of creating a second checkout. Prepaid wallet and included-discount collection
    is local; Polar meters are not ingested for those already-collected units.
-   Live charging follows `BILLING_CHARGES_ENABLED` even when existing paid rows
-   still snapshot `shadowBilling = true`. A canceled paid plan becomes `free` if
+   Live charging follows `BILLING_CHARGES_ENABLED` in both directions: `true`
+   charges immediately even when a row still snapshots `shadowBilling = true`;
+   `false` is a kill switch that shadows every reservation and settlement.
+   A canceled paid plan becomes `free` if
    this team holds the person-level Free grant, otherwise `restricted`. Paid-plan
    activation writes the catalog default spend cap when the row is still Free;
    later `subscription.updated` / renewal events preserve an administrator-selected
@@ -97,7 +99,16 @@ credit hides margin and confuses prospects.
    no-shows settle elapsed waiting-room minutes; retry no-shows still release so
    the same meeting can reserve again. Cancelling a joining/active meeting with no
    transcript chunks settles elapsed waiting-room minutes instead of releasing them.
-   Postmark success is recorded before email
+   An active bot `failed`/`fatal` path settles elapsed minutes the same way.
+   Slack/Telegram/MCP Ask and web chat keep the reservation when settlement fails
+   after OpenRouter work. Web chat also settles known compression cost when the
+   answer stream fails. Seat claims are blocked while billing is paused.
+   Enterprise settlement skips prepaid wallet/spend-cap freezes so Polar meters
+   can ingest. Interactive search embeddings run under billing ALS.
+   The person-level Free grant unassigns when its owner leaves or is demoted.
+   Janitor member-days backfill missed calendar days, restore rechecks indexed
+   chunks (deleted documents do not count), and accepted-source replay meters
+   existing dedup rows after an insert-then-crash. Postmark success is recorded before email
    settlement so a later settle failure does not resend. Meeting-finalize billing
    uses the system actor so a departed creator cannot skip settlement. Free-grant
    inserts use `ON CONFLICT DO NOTHING` so a unique race cannot abort team-create.
@@ -147,11 +158,12 @@ credit hides margin and confuses prospects.
    notification after delivery failure without opening a second checkout. Inbound
    email audio skipped for a denied email meter is stamped `transcription_deferred`
    and the janitor flushes transcription when billing can reserve again. Deferred accepted-source flush
-   rotates past still-blocked rows. Document restore rechecks storage and
-   document capacity under the same advisory lock as create (hash key 1).
+   rotates past still-blocked rows. Document restore rechecks storage,
+   document, and indexed-chunk capacity under the same advisory lock as create (hash key 1).
    Failed structured-output attempts still contribute OpenRouter `usage.cost` to
    settlement. Duration meters such as Recall minutes split native units across
-   the UTC months they span.
+   the UTC months they span. Plan preview prorates extra seats from recorded
+   person-days when the current plan has no extras.
 8. After successful `settle`, workspace **owners** get transactional email for
    spend-cap 50/75/90/100% and Free near-limit / exhaustion
    (`billing_usage_alert` intent + HTML template), deduped once per

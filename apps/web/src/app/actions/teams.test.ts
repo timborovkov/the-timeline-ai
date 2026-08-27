@@ -11,6 +11,7 @@ import {
   updateInboundEmailWhitelistAction,
   updateTeamTimezoneAction,
 } from '@/app/actions/teams';
+import { releaseFreeGrantIfOwnerLeaves } from '@timeline/shared/billing';
 
 /**
  * Server-action tests for team management. These pin the action-level contract
@@ -54,6 +55,7 @@ vi.mock('@timeline/shared/billing', () => ({
   applyOwnedTeamFreeGrant: vi.fn().mockResolvedValue({ ok: true }),
   insertRestrictedFreeBillingAccount: vi.fn().mockResolvedValue(undefined),
   assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+  releaseFreeGrantIfOwnerLeaves: vi.fn().mockResolvedValue(undefined),
   isBillingAdmissionError: () => false,
 }));
 vi.mock('@timeline/shared/integrations', () => ({
@@ -890,6 +892,11 @@ describe('removeMemberAction', () => {
 
     await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({ ok: true });
 
+    expect(releaseFreeGrantIfOwnerLeaves).toHaveBeenCalledWith({
+      db: tx,
+      teamId: TEAM_ID,
+      userId: MEMBER_ID,
+    });
     expect(fakes.fakeAssertNotLastOwner).toHaveBeenCalledWith(
       expect.anything(),
       TEAM_ID,

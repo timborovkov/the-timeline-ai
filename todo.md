@@ -587,10 +587,17 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       document create serializes the Free count under lock key 1. Failed structured-output
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
       split across those periods. Background AI metering keeps the reservation if settle fails
-      after the provider call. Paid-plan changes reuse the Polar subscription in non-active
-      paid states. Extra-member plan preview prorates from period member-days. Auto-reload
+      after the provider call; Ask and web chat do the same. Paid-plan changes reuse the Polar
+      subscription in non-active paid states. Extra-member plan preview prorates from period
+      member-days, including person-days when the current plan has no extras. Auto-reload
       retries owner notification after delivery failure. Inbound email audio skipped for a
-      denied email meter is recovered by a janitor transcription flush.
+      denied email meter is recovered by a janitor transcription flush. Seat claims are blocked
+      while billing is paused. Enterprise settlement skips prepaid freezes. Interactive search
+      embeddings run under billing ALS. The Free grant unassigns when its owner leaves or is
+      demoted. Member-day janitor ticks backfill missed days. Deleted documents are excluded
+      from indexed-chunk capacity; restore counts those chunks. Accepted-source replay meters
+      existing dedup rows. Web chat settles known compression cost when the answer stream fails.
+      `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

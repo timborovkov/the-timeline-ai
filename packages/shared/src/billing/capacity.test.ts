@@ -12,6 +12,7 @@ import {
   assertTeamWriteCapacity,
   claimOwnedTeamFreeGrantsForVerifiedUser,
   getTeamCapacityUsage,
+  releaseFreeGrantIfOwnerLeaves,
 } from '#src/billing/capacity.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { createBillingScope } from '#src/billing/scope.js';
@@ -308,5 +309,97 @@ describe('billing capacity (not Polar meters)', () => {
         authType: 'none',
       }),
     ).rejects.toBeInstanceOf(BillingAdmissionError);
+  });
+
+  it('rejects new seats when billing is paused', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'past_due', plan_id = 'team', spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      assertTeamMemberSeatCapacity({ db, teamId: TEAM_ID, additionalSeats: 1 }),
+    ).rejects.toMatchObject({
+      message:
+        "This team's billing is paused, so new members cannot be added until billing is restored.",
+    });
+
+    await pg.exec(`
+      UPDATE team_billing_accounts SET billing_state = 'read_only' WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      assertTeamMemberSeatCapacity({ db, teamId: TEAM_ID, additionalSeats: 1 }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts SET billing_state = 'payment_retry' WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      assertTeamMemberSeatCapacity({ db, teamId: TEAM_ID, additionalSeats: 1 }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+  });
+
+  it('excludes chunks from deleted documents in indexed-chunk capacity', async () => {
+    await pg.exec(`
+      INSERT INTO documents (id, team_id, name, deleted_at)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000001', '${TEAM_ID}', 'gone.txt', now());
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000002',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000001',
+        1,
+        'team/docs/gone.txt'
+      );
+      INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+      SELECT '${TEAM_ID}', 'cccccccc-dddd-4eee-8fff-000000000001',
+             'cccccccc-dddd-4eee-8fff-000000000002', g, 'source_text', 'chunk', 1
+      FROM generate_series(1, 2000) AS g;
+    `);
+    await assertTeamWriteCapacity({ db, teamId: TEAM_ID, additionalChunks: 1 });
+    const rows = await getTeamCapacityUsage({ db, teamId: TEAM_ID, planId: 'free' });
+    const chunks = rows.find((row) => row.kind === 'indexed_chunks');
+    expect(chunks).toMatchObject({ used: 0, limit: 2000 });
+  });
+
+  it('unassigns the Free grant when its owner leaves the assigned team', async () => {
+    await applyOwnedTeamFreeGrant({ db, teamId: TEAM_ID, userId: USER_ID });
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${EXTRA_TEAM_ID}', 'other-owned', 'Other Owned');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${EXTRA_TEAM_ID}', '${USER_ID}', 'owner');
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, spend_cap_cents)
+      VALUES ('${EXTRA_TEAM_ID}', 'free', 'restricted', 0);
+      UPDATE team_members SET removed_at = now()
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
+    `);
+    await releaseFreeGrantIfOwnerLeaves({ db, teamId: TEAM_ID, userId: USER_ID });
+    const [grant] = await db
+      .select()
+      .from(billingFreeGrants)
+      .where(eq(billingFreeGrants.userId, USER_ID));
+    expect(grant?.assignedTeamId).toBe(EXTRA_TEAM_ID);
+    const left = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await left.getAccount()).billingState).toBe('restricted');
+    const extra = createBillingScope({
+      db,
+      teamId: EXTRA_TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await extra.getAccount()).billingState).toBe('free');
   });
 });

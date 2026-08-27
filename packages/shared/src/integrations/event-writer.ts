@@ -343,7 +343,30 @@ export async function writeIntegrationEvents(deps: {
 
   const { inserted } = writeResult;
 
+  const insertedDedupKeys = new Set(inserted.map((row) => row.dedupKey));
+  const missingDedupKeys = writableEvents
+    .map((event) => event.dedupKey)
+    .filter((key) => !insertedDedupKeys.has(key));
+  let recoveredExisting: typeof inserted = [];
+  if (missingDedupKeys.length > 0) {
+    const existingByDedup = await loadRawEventIdsByDedupKey(deps.db, teamId, missingDedupKeys);
+    const existingIds = [...existingByDedup.values()];
+    if (existingIds.length > 0) {
+      recoveredExisting = await deps.db
+        .select({
+          id: rawEvents.id,
+          dedupKey: sql<string>`${rawEvents.sourceMetadata} ->> 'dedup_key'`,
+          sourceMetadata: rawEvents.sourceMetadata,
+        })
+        .from(rawEvents)
+        .where(inArray(rawEvents.id, existingIds));
+    }
+  }
+
   const activeInserted = inserted.filter(
+    (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
+  );
+  const activeExisting = recoveredExisting.filter(
     (row) => (row.sourceMetadata as { deleted?: unknown }).deleted !== true,
   );
   const eventByDedupKey = new Map(writableEvents.map((event) => [event.dedupKey, event]));
@@ -370,6 +393,29 @@ export async function writeIntegrationEvents(deps: {
       continue;
     }
     billableInserted.push(row);
+  }
+  for (const row of activeExisting) {
+    const metered = await meterAcceptedSources({
+      db: deps.db,
+      teamId,
+      ...(authorUserId ? { userId: authorUserId } : {}),
+      rawEventIds: [row.id],
+    });
+    if (!metered.ok) {
+      const patch = JSON.stringify({ [BILLING_ENRICHMENT_DEFERRED]: true });
+      await deps.db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
+      continue;
+    }
+    // Replay of an already-metered row is a no-op. A crash after insert and
+    // before metering has no ledger yet, so enqueue enrichment on first recover.
+    if (!metered.duplicate) {
+      billableInserted.push(row);
+    }
   }
 
   await Promise.all(

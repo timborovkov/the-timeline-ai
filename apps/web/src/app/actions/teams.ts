@@ -25,6 +25,7 @@ import {
   assertTeamMemberSeatCapacity,
   insertRestrictedFreeBillingAccount,
   isBillingAdmissionError,
+  releaseFreeGrantIfOwnerLeaves,
 } from '@timeline/shared/billing';
 import { resetSurfaceSessionsForTeamUserInTransaction } from '@timeline/shared/conversation-surfaces';
 import { getEnv } from '@timeline/shared/env';
@@ -973,6 +974,13 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
           .update(teamMembers)
           .set({ role })
           .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+        if (target.role === 'owner' && role !== 'owner') {
+          await releaseFreeGrantIfOwnerLeaves({
+            db: tx,
+            teamId: active.teamId,
+            userId: memberUserId,
+          });
+        }
         await tx.insert(auditLog).values({
           teamId: active.teamId,
           actorUserId: session.user.id,
@@ -1054,6 +1062,13 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
           .update(teamMembers)
           .set({ removedAt: new Date(), removedByUserId: session.user.id })
           .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
+        if (targetRole === 'owner') {
+          await releaseFreeGrantIfOwnerLeaves({
+            db: tx,
+            teamId: active.teamId,
+            userId: memberUserId,
+          });
+        }
         await tx
           .delete(teamCalendarSubscriptions)
           .where(

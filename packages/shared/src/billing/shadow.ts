@@ -1,14 +1,13 @@
 import { getEnv } from '#src/env.js';
 
 /**
- * Live charging is the process-wide `BILLING_CHARGES_ENABLED` toggle.
- * Webhook rows snapshot that flag, so flipping the env to true must take
- * effect immediately even when existing paid accounts still have
- * `shadowBilling = true`.
+ * Live charging is the process-wide `BILLING_CHARGES_ENABLED` toggle in both
+ * directions. `true` charges immediately even when a row still snapshots
+ * `shadowBilling = true`. `false` is a kill switch: every reservation and
+ * settlement is shadow, even if a row already recorded live charging.
  */
-export function accountUsesShadowBilling(account: { shadowBilling: boolean }): boolean {
-  if (getEnv().BILLING_CHARGES_ENABLED) return false;
-  return account.shadowBilling;
+export function accountUsesShadowBilling(_account?: { shadowBilling: boolean }): boolean {
+  return !getEnv().BILLING_CHARGES_ENABLED;
 }
 
 export function shadowBillingFromChargesEnabled(chargesEnabled = getEnv().BILLING_CHARGES_ENABLED) {

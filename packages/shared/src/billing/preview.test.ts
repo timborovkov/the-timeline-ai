@@ -53,4 +53,19 @@ describe('cheapestPlanPreview', () => {
     expect(preview.bills.payg.extraMemberCents).toBe(listChargeCentsForMeter('member_days', 3));
     expect(preview.bills.team.extraMemberCents).toBe(0);
   });
+
+  it('prorates candidate seats from person-days when the current plan has no extras', async () => {
+    const preview = cheapestPlanPreview({
+      activeMembers: 8,
+      includedActiveMembers: 25,
+      meters: {
+        ai: { nativeUnits: 0, customerChargeCents: 0 },
+        member_days: { nativeUnits: 0, customerChargeCents: 0 },
+      },
+      billableMemberDays: 8,
+    });
+    expect(preview.bills.payg.extraMemberCents).toBe(listChargeCentsForMeter('member_days', 5));
+    expect(preview.bills.payg.extraMemberCents).not.toBe(1_000);
+    expect(preview.bills.team.extraMemberCents).toBe(0);
+  });
 });

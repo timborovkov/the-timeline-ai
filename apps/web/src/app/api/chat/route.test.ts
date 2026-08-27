@@ -1342,6 +1342,55 @@ describe('POST /api/chat', () => {
     expect(releaseBillingReservation).not.toHaveBeenCalled();
   });
 
+  it('keeps the chat reservation when settlement fails after the stream finishes', async () => {
+    vi.mocked(settleAskAiFromOpenRouterUsd).mockRejectedValueOnce(new Error('settle down'));
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+    expect(response.status).toBe(200);
+    await capturedOnFinish?.({
+      text: 'Answer',
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+      model: { modelId: 'agent-model' },
+      response: { modelId: 'agent-model' },
+    });
+    await Promise.resolve();
+    expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalled();
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
+  });
+
+  it('settles completed compression usage when the answer stream fails', async () => {
+    fakes.fakeCompressMessagesForContext.mockResolvedValueOnce({
+      compressed: true,
+      messages: [{ role: 'user', content: 'What happened?' }],
+      openRouterUsd: 0.02,
+    });
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+    expect(response.status).toBe(200);
+    expect(capturedOnError).toBeTypeOf('function');
+    capturedOnError?.({
+      error: {
+        timelineAi: true,
+        operation: 'llm.streamChat',
+        model: 'agent-model',
+        causeName: 'AI_APICallError',
+        causeMessage: 'OpenRouter 503',
+      },
+    });
+    await vi.waitFor(() => {
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalled();
+    });
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
+    expect(fakes.fakeReportHandledEvent).toHaveBeenCalledWith({
+      message: 'chat_stream_ai_provider_error',
+      surface: 'api',
+      operation: 'chat_stream',
+      tags: expect.objectContaining({
+        requestedModel: 'agent-model',
+        reason: 'AI_APICallError',
+      }),
+    });
+  });
+
   it('releases the Ask reservation when the client aborts before work starts', async () => {
     const controller = new AbortController();
     controller.abort();

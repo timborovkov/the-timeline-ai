@@ -1,4 +1,5 @@
 import {
+  billingFreeGrants,
   billingUsageReservations,
   documentChunks,
   documentVersions,
@@ -168,13 +169,14 @@ export async function assertTeamWriteCapacity(input: {
   }
 
   if (cap.indexedChunks !== null && (input.additionalChunks ?? 0) > 0) {
-    const filters = [eq(documentChunks.teamId, input.teamId)];
+    const filters = [eq(documentChunks.teamId, input.teamId), isNull(documents.deletedAt)];
     if (input.excludeDocumentVersionId) {
       filters.push(ne(documentChunks.documentVersionId, input.excludeDocumentVersionId));
     }
     const [row] = await input.db
       .select({ n: sql<number>`count(*)::int` })
       .from(documentChunks)
+      .innerJoin(documents, eq(documents.id, documentChunks.documentId))
       .where(and(...filters));
     if ((row?.n ?? 0) + (input.additionalChunks ?? 0) > cap.indexedChunks) {
       throw new BillingAdmissionError(code, 'Indexed chunk limit reached for this plan');
@@ -199,6 +201,12 @@ export async function assertTeamMemberSeatCapacity(input: {
   await input.db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 4))`);
   const billing = billingScopeForDb(input.db, input.teamId);
   const account = await billing.getAccount();
+  if (!billingStateAllowsReservation(account.billingState)) {
+    throw new BillingAdmissionError(
+      'usage_limit_reached',
+      "This team's billing is paused, so new members cannot be added until billing is restored.",
+    );
+  }
   const max = PLAN_CATALOG[account.planId].maxActiveMembers;
   if (max === null) return;
   const [memberRow] = await input.db
@@ -297,7 +305,8 @@ export async function getTeamCapacityUsage(input: {
       input.db
         .select({ n: sql<number>`count(*)::int` })
         .from(documentChunks)
-        .where(eq(documentChunks.teamId, input.teamId))
+        .innerJoin(documents, eq(documents.id, documentChunks.documentId))
+        .where(and(eq(documentChunks.teamId, input.teamId), isNull(documents.deletedAt)))
         .then((rows) => rows[0]),
       input.db
         .select({ n: sql<number>`count(*)::int` })
@@ -534,4 +543,53 @@ export async function claimOwnedTeamFreeGrantsForVerifiedUser(input: {
       userId: input.userId,
     });
   }
+}
+
+/**
+ * Person-level Free grant follows the owner, not the leftover membership.
+ * Unassign on owner leave/demotion so they can claim another owned workspace;
+ * the abandoned Free team becomes restricted until a remaining owner claims it.
+ */
+export async function releaseFreeGrantIfOwnerLeaves(input: {
+  db: Pick<Db, 'select' | 'insert' | 'update'>;
+  teamId: string;
+  userId: string;
+}): Promise<void> {
+  const [grant] = await input.db
+    .select({ id: billingFreeGrants.id })
+    .from(billingFreeGrants)
+    .where(
+      and(
+        eq(billingFreeGrants.userId, input.userId),
+        eq(billingFreeGrants.assignedTeamId, input.teamId),
+        isNull(billingFreeGrants.revokedAt),
+      ),
+    )
+    .limit(1);
+  if (!grant) return;
+
+  await input.db
+    .update(billingFreeGrants)
+    .set({ assignedTeamId: null })
+    .where(eq(billingFreeGrants.id, grant.id));
+
+  await input.db
+    .update(teamBillingAccounts)
+    .set({
+      billingState: 'restricted',
+      spendCapCents: 0,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(teamBillingAccounts.teamId, input.teamId),
+        eq(teamBillingAccounts.planId, 'free'),
+        sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
+      ),
+    );
+
+  await claimOwnedTeamFreeGrantsForVerifiedUser({
+    db: input.db as unknown as Db,
+    userId: input.userId,
+  });
 }

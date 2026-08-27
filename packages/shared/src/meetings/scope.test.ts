@@ -818,6 +818,35 @@ describe('meetings scope', () => {
     expect(dash.meters.recall_minutes?.nativeUnits).toBeGreaterThanOrEqual(1);
   });
 
+  it('settles elapsed Recall minutes when an active bot fails', async () => {
+    const team = withTeam(db as never, TEAM_ID, USER_A);
+    const meeting = await team.meetings.createMeeting({
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/fail-bot',
+      status: 'joining',
+      metadata: {
+        reserved_recall_started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+        reserved_recall_minutes: 120,
+      },
+    });
+    await team.meetings.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-fail',
+    });
+    expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+      true,
+    );
+    await expect(
+      team.meetings.handleMeetingFailure({
+        meetingId: meeting.id,
+        providerBotId: 'bot-fail',
+        code: 'fatal',
+        failedAt: new Date(),
+      }),
+    ).resolves.toBe('failed');
+    const dash = await team.billing.getDashboard();
+    expect(dash.meters.recall_minutes?.nativeUnits).toBeGreaterThanOrEqual(1);
+  });
+
   it('applies lifecycle updates and failures only to the current provider bot', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const saved = await scope.createSavedMeeting({

@@ -12,6 +12,7 @@ import {
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
+import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
@@ -813,6 +814,20 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
+  async function withSearchEmbeddingBilling<T>(fn: () => Promise<T>): Promise<T> {
+    if (getBillingContext()) return fn();
+    return runWithBillingContext(
+      {
+        db,
+        teamId,
+        userId,
+        operationClass: 'embedding',
+        source: 'search',
+      },
+      fn,
+    );
+  }
+
   async function searchDocumentChunksPage(
     input: SearchDocumentChunksInput,
   ): Promise<DocumentChunkSearchPage> {
@@ -827,7 +842,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     const limit = input.limit ?? 12;
     const offset = input.offset ?? 0;
-    const { vector } = await embedFn({ text: input.query });
+    const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
     const searchOpts: SearchOpts = {
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
@@ -1662,11 +1677,16 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           })
           .from(documentVersions)
           .where(eq(documentVersions.documentId, document.id));
+        const [chunkRow] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(documentChunks)
+          .where(eq(documentChunks.documentId, document.id));
         await assertTeamWriteCapacity({
           db: tx as unknown as Db,
           teamId,
           additionalDocuments: 1,
           additionalBytes: Number(bytesRow?.bytes ?? 0),
+          additionalChunks: chunkRow?.n ?? 0,
         });
         await tx
           .update(documents)
