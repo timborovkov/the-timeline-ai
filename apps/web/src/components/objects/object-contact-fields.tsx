@@ -147,13 +147,6 @@ export function ObjectContactFields({
             placeholder="Contact value"
             className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
             aria-label="Contact value"
-            autoFocus
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                addContact();
-              }
-            }}
           />
           <div className="flex items-center gap-2">
             <button
