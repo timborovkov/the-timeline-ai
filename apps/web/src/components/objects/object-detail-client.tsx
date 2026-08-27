@@ -1458,196 +1458,218 @@ function ObjectEditableFields({
   const options = statusOptions(detail.type);
   const assignee = members.find((member) => member.id === detail.assigneeUserId);
   const title = displayObjectTitle(detail);
+  const propertyLabel = 'w-24 shrink-0 text-xs font-normal text-fg-dim';
   return (
     <section aria-label="Properties" className="flex flex-col">
       <h2 className={`px-1.5 ${DETAIL_SECTION_LABEL_CLASS}`}>Properties</h2>
-      <EditableMetadata
-        label={`Status for ${displayText(title)}`}
-        className="min-h-8 justify-start px-1.5 text-fg"
-      >
-        <EditableMetadata.Value>
-          <CollectionStatus value={detail.status} label={statusLabel(detail.status)} />
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <select
-            value={detail.status}
-            onChange={(event) => {
-              patch('status', event.target.value);
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Status"
+      <div className="mt-0.5 flex flex-col">
+        <div className="flex min-h-8 items-center gap-2 px-1.5">
+          <span className={propertyLabel}>Status</span>
+          <EditableMetadata
+            label={`Status for ${displayText(title)}`}
+            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
           >
-            {options.map((status) => (
-              <option key={status} value={status}>
-                {statusLabel(status)}
-              </option>
-            ))}
-            {options.includes(detail.status) ? null : (
-              <option value={detail.status}>{statusLabel(detail.status)}</option>
-            )}
-          </select>
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      <EditableMetadata
-        label={`Priority for ${displayText(title)}`}
-        className="min-h-8 justify-start px-1.5 text-fg"
-      >
-        <EditableMetadata.Value>
-          <CollectionStatus
-            value={detail.priority ? `p${detail.priority}` : 'none'}
-            tone={priorityTone(detail.priority)}
-            label={detail.priority ? `P${detail.priority}` : 'No priority'}
-          />
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <select
-            value={detail.priority ?? ''}
-            onChange={(event) => {
-              patch('priority', event.target.value === '' ? null : Number(event.target.value));
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Priority"
+            <EditableMetadata.Value>
+              <CollectionStatus
+                value={detail.status}
+                label={statusLabel(detail.status)}
+                className="text-sm"
+              />
+            </EditableMetadata.Value>
+            <EditableMetadata.Editor>
+              <select
+                value={detail.status}
+                onChange={(event) => {
+                  patch('status', event.target.value);
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+                aria-label="Status"
+              >
+                {options.map((status) => (
+                  <option key={status} value={status}>
+                    {statusLabel(status)}
+                  </option>
+                ))}
+                {options.includes(detail.status) ? null : (
+                  <option value={detail.status}>{statusLabel(detail.status)}</option>
+                )}
+              </select>
+            </EditableMetadata.Editor>
+          </EditableMetadata>
+        </div>
+        <div className="flex min-h-8 items-center gap-2 px-1.5">
+          <span className={propertyLabel}>Priority</span>
+          <EditableMetadata
+            label={`Priority for ${displayText(title)}`}
+            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
           >
-            <option value="">None</option>
-            <option value="1">P1</option>
-            <option value="2">P2</option>
-            <option value="3">P3</option>
-            <option value="4">P4</option>
-          </select>
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      {detail.type === 'task' ? (
-        <EditableMetadata
-          label={`Assignee for ${displayText(title)}`}
-          className="min-h-8 justify-start px-1.5 text-fg"
-        >
-          <EditableMetadata.Value>
-            {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <select
-              value={detail.assigneeUserId ?? ''}
-              onChange={(event) => {
-                patch('assigneeUserId', event.target.value || null);
-              }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Assignee"
+            <EditableMetadata.Value>
+              <CollectionStatus
+                value={detail.priority ? `p${detail.priority}` : 'none'}
+                tone={priorityTone(detail.priority)}
+                label={detail.priority ? `P${detail.priority}` : 'No priority'}
+                className="text-sm"
+              />
+            </EditableMetadata.Value>
+            <EditableMetadata.Editor>
+              <select
+                value={detail.priority ?? ''}
+                onChange={(event) => {
+                  patch('priority', event.target.value === '' ? null : Number(event.target.value));
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+                aria-label="Priority"
+              >
+                <option value="">None</option>
+                <option value="1">P1</option>
+                <option value="2">P2</option>
+                <option value="3">P3</option>
+                <option value="4">P4</option>
+              </select>
+            </EditableMetadata.Editor>
+          </EditableMetadata>
+        </div>
+        {detail.type === 'task' ? (
+          <div className="flex min-h-8 items-center gap-2 px-1.5">
+            <span className={propertyLabel}>Assignee</span>
+            <EditableMetadata
+              label={`Assignee for ${displayText(title)}`}
+              className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
             >
-              <option value="">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.label}
-                </option>
-              ))}
-            </select>
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-      ) : null}
-      {isSchedulableObjectType(detail.type) ? (
-        <EditableMetadata
-          label={`Due date for ${displayText(title)}`}
-          className="min-h-8 justify-start px-1.5 text-fg"
-        >
-          <EditableMetadata.Value>
-            <DueDateDisplay value={detail.dueAt} variant="field-hint" />
-          </EditableMetadata.Value>
-          <EditableMetadata.Editor>
-            <MetadataDateEditor
-              defaultValue={dueDraft}
-              onApply={(value) => {
-                focusedDraftsRef.current.dueAt = false;
-                dispatchObjectUi({ dueDraft: value });
-                patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
-              }}
-            />
-          </EditableMetadata.Editor>
-        </EditableMetadata>
-      ) : null}
-      {detail.type === 'task' && detail.archivedAt ? (
-        <p className="px-1.5 py-1 text-xs text-fg-muted">
-          Unarchive this task to change its project or category.
-        </p>
-      ) : detail.type === 'task' ? (
-        <>
-          <div className="px-1.5">
-            <TaskProjectSelect
-              taskId={detail.id}
-              projectId={primaryProject?.projectId ?? null}
-              currentProjectLabel={primaryProject?.projectName}
-              projectArchived={Boolean(primaryProject?.archivedAt)}
-              projects={projects}
-              quiet
-            />
+              <EditableMetadata.Value>
+                <span className="text-sm font-normal leading-5 text-fg">
+                  {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
+                </span>
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
+                <select
+                  value={detail.assigneeUserId ?? ''}
+                  onChange={(event) => {
+                    patch('assigneeUserId', event.target.value || null);
+                  }}
+                  className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+                  aria-label="Assignee"
+                >
+                  <option value="">Unassigned</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.label}
+                    </option>
+                  ))}
+                </select>
+              </EditableMetadata.Editor>
+            </EditableMetadata>
           </div>
-          {taskCategoriesEnabled ? (
+        ) : null}
+        {isSchedulableObjectType(detail.type) ? (
+          <div className="flex min-h-8 items-center gap-2 px-1.5">
+            <span className={propertyLabel}>Due</span>
+            <EditableMetadata
+              label={`Due date for ${displayText(title)}`}
+              className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+            >
+              <EditableMetadata.Value>
+                <DueDateDisplay value={detail.dueAt} variant="field-hint" />
+              </EditableMetadata.Value>
+              <EditableMetadata.Editor>
+                <MetadataDateEditor
+                  defaultValue={dueDraft}
+                  onApply={(value) => {
+                    focusedDraftsRef.current.dueAt = false;
+                    dispatchObjectUi({ dueDraft: value });
+                    patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+                  }}
+                />
+              </EditableMetadata.Editor>
+            </EditableMetadata>
+          </div>
+        ) : null}
+        {detail.type === 'task' && detail.archivedAt ? (
+          <p className="px-1.5 py-1 text-xs text-fg-muted">
+            Unarchive this task to change its project or category.
+          </p>
+        ) : detail.type === 'task' ? (
+          <>
             <div className="px-1.5">
-              <TaskCategorySelect
+              <TaskProjectSelect
                 taskId={detail.id}
-                category={detail.taskCategory}
-                mode={detail.taskCategoryMode}
-                status={detail.taskCategoryStatus}
-                updatedAt={detail.taskCategoryUpdatedAt}
+                projectId={primaryProject?.projectId ?? null}
+                currentProjectLabel={primaryProject?.projectName}
+                projectArchived={Boolean(primaryProject?.archivedAt)}
+                projects={projects}
                 quiet
               />
             </div>
-          ) : null}
-        </>
-      ) : null}
-      {detail.type === 'person' && !detail.archivedAt ? (
-        <div className="px-1.5">
-          <span className="mb-1 block text-xs text-fg-dim">Company</span>
-          <PersonCompanySelect
-            personId={detail.id}
-            companyId={primaryCompany?.companyId ?? null}
-            currentCompanyLabel={primaryCompany?.companyName}
-            currentCompanyArchived={Boolean(primaryCompany?.archivedAt)}
-            companies={companies}
-            quiet
+            {taskCategoriesEnabled ? (
+              <div className="px-1.5">
+                <TaskCategorySelect
+                  taskId={detail.id}
+                  category={detail.taskCategory}
+                  mode={detail.taskCategoryMode}
+                  status={detail.taskCategoryStatus}
+                  updatedAt={detail.taskCategoryUpdatedAt}
+                  quiet
+                />
+              </div>
+            ) : null}
+          </>
+        ) : null}
+        {detail.type === 'person' && !detail.archivedAt ? (
+          <div className="px-1.5">
+            <span className="mb-1 block text-xs text-fg-dim">Company</span>
+            <PersonCompanySelect
+              personId={detail.id}
+              companyId={primaryCompany?.companyId ?? null}
+              currentCompanyLabel={primaryCompany?.companyName}
+              currentCompanyArchived={Boolean(primaryCompany?.archivedAt)}
+              companies={companies}
+              quiet
+            />
+          </div>
+        ) : null}
+        <label className="flex min-h-8 items-center gap-2 px-1.5">
+          <span className={propertyLabel}>Stage</span>
+          <input
+            aria-label="Stage"
+            value={stageDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.stage = true;
+            }}
+            onChange={(event) => {
+              dispatchObjectUi({ stageDraft: event.target.value });
+            }}
+            onBlur={(event) => {
+              focusedDraftsRef.current.stage = false;
+              const value = event.target.value.trim();
+              dispatchObjectUi({ stageDraft: value });
+              patch('stage', value === '' ? null : value);
+            }}
+            className="min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50"
+            placeholder="No stage"
           />
-        </div>
-      ) : null}
-      <label className="flex min-h-8 items-center gap-2 px-1.5">
-        <span className="w-24 shrink-0 text-xs font-normal text-fg-dim">Stage</span>
-        <input
-          aria-label="Stage"
-          value={stageDraft}
-          onFocus={() => {
-            focusedDraftsRef.current.stage = true;
-          }}
-          onChange={(event) => {
-            dispatchObjectUi({ stageDraft: event.target.value });
-          }}
-          onBlur={(event) => {
-            focusedDraftsRef.current.stage = false;
-            const value = event.target.value.trim();
-            dispatchObjectUi({ stageDraft: value });
-            patch('stage', value === '' ? null : value);
-          }}
-          className="min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50"
-          placeholder="No stage"
-        />
-      </label>
-      <label className="flex min-h-8 items-center gap-2 px-1.5">
-        <span className="w-24 shrink-0 text-xs font-normal text-fg-dim">Aliases</span>
-        <input
-          aria-label="Aliases"
-          value={aliasesDraft}
-          onFocus={() => {
-            focusedDraftsRef.current.aliases = true;
-          }}
-          onChange={(event) => {
-            dispatchObjectUi({ aliasesDraft: event.target.value });
-          }}
-          onBlur={(event) => {
-            focusedDraftsRef.current.aliases = false;
-            const aliases = parseAliases(event.target.value, editableObjectName(detail));
-            dispatchObjectUi({ aliasesDraft: aliases.join(', ') });
-            patch('aliases', aliases);
-          }}
-          placeholder="No aliases"
-          className="min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50"
-        />
-      </label>
+        </label>
+        <label className="flex min-h-8 items-center gap-2 px-1.5">
+          <span className={propertyLabel}>Aliases</span>
+          <input
+            aria-label="Aliases"
+            value={aliasesDraft}
+            onFocus={() => {
+              focusedDraftsRef.current.aliases = true;
+            }}
+            onChange={(event) => {
+              dispatchObjectUi({ aliasesDraft: event.target.value });
+            }}
+            onBlur={(event) => {
+              focusedDraftsRef.current.aliases = false;
+              const aliases = parseAliases(event.target.value, editableObjectName(detail));
+              dispatchObjectUi({ aliasesDraft: aliases.join(', ') });
+              patch('aliases', aliases);
+            }}
+            placeholder="No aliases"
+            className="min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50"
+          />
+        </label>
+      </div>
     </section>
   );
 }
