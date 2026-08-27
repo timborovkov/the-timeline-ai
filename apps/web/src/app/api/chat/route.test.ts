@@ -63,6 +63,7 @@ vi.mock('@timeline/shared/rate-limit', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
+    billing: {},
     timeline: {
       team: fakes.fakeTeam,
       currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
@@ -1157,7 +1158,7 @@ describe('POST /api/chat', () => {
     });
   });
 
-  it('does not title a new session when persisting the first turn fails', async () => {
+  it('still titles a new session when persisting the first turn fails', async () => {
     fakes.fakeAppendChatMessages.mockRejectedValue(new Error('append failed'));
 
     const response = await POST(request(validBody({ startNewSession: true })));
@@ -1176,7 +1177,11 @@ describe('POST /api/chat', () => {
       );
     });
 
-    expect(fakes.fakeSetUniqueChatSessionTitle).not.toHaveBeenCalled();
+    expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(
+      SESSION_ID,
+      'Generated chat title',
+      { touchUpdatedAt: false },
+    );
   });
 
   it('tolerates new-session creation and MCP discovery failures by streaming without persistence', async () => {
@@ -1332,7 +1337,7 @@ describe('POST /api/chat', () => {
     expect(fakes.fakeReportHandledEvent).not.toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
-        expect.anything(),
+        expect.objectContaining({}),
         expect.objectContaining({ minCustomerChargeCents: 250 }),
       );
     });
@@ -1365,7 +1370,7 @@ describe('POST /api/chat', () => {
     controller.abort();
     await vi.waitFor(() => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
-        expect.anything(),
+        expect.objectContaining({}),
         expect.objectContaining({ minCustomerChargeCents: 250 }),
       );
     });
