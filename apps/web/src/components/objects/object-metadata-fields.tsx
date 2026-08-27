@@ -6,6 +6,7 @@ import {
   slugifyMetadataLabel,
   typedMetadataKeysFor,
 } from '@timeline/shared/objects/metadata-schemas';
+import { X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -136,9 +137,10 @@ export function ObjectMetadataFields({
               onClick={() => {
                 removeCustomField(entry.key);
               }}
-              className="shrink-0 text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+              aria-label={`Remove ${metadataFieldLabel(entry.key)}`}
+              className="grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50"
             >
-              Remove
+              <X aria-hidden="true" className="size-3" />
             </button>
           </div>
         ))}
