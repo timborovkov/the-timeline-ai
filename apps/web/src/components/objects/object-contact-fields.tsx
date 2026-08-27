@@ -1,6 +1,7 @@
 'use client';
 
 import { objectSupportsIdentityFacets } from '@timeline/shared/objects/identity-facets';
+import { X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -108,9 +109,10 @@ export function ObjectContactFields({
                   onClick={() => {
                     removeContact(facet.id);
                   }}
-                  className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+                  aria-label={`Remove ${facet.value}`}
+                  className="grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50"
                 >
-                  Remove
+                  <X aria-hidden="true" className="size-3" />
                 </button>
               </div>
             </div>
