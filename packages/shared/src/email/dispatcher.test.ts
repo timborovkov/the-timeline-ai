@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PostmarkInbound } from '#src/email/postmark-schema.js';
 
 import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
+import { createBillingScope } from '#src/billing/scope.js';
 import { handleInbound } from '#src/email/dispatcher.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
