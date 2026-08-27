@@ -98,6 +98,7 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
   normalizeIdentityFacet,
+  objectSupportsIdentityFacets,
   validateIdentityFacetValue,
   type ActorKind,
   type IdentityFacetInput,
@@ -179,6 +180,7 @@ export {
 export const OBJECT_TYPES: ObjectType[] = [...CLIENT_OBJECT_TYPES];
 export {
   normalizeIdentityFacet,
+  objectSupportsIdentityFacets,
   type ActorKind,
   type IdentityFacetInput,
   type IdentityFacetKind,
@@ -8009,7 +8011,9 @@ export async function createIdentityFacet(
       .for('update')
       .limit(1);
     if (!ent[0]) throw new Error('Object not found');
-    if (ent[0].type !== 'person') throw new Error('Identity facets can only be added to people');
+    if (!objectSupportsIdentityFacets(ent[0].type)) {
+      throw new Error('Identity facets can only be added to people and companies');
+    }
 
     const duplicateConditions = [
       and(
@@ -8059,7 +8063,7 @@ export async function createIdentityFacet(
       .limit(1);
     if (existing[0]) {
       if (existing[0].entityId !== input.entityId) {
-        throw new Error('Identity facet already belongs to another person');
+        throw new Error('Identity facet already belongs to another object');
       }
       const mergedMetadata = {
         ...((existing[0].metadata && typeof existing[0].metadata === 'object'

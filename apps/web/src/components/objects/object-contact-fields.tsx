@@ -1,5 +1,6 @@
 'use client';
 
+import { objectSupportsIdentityFacets } from '@timeline/shared/objects/identity-facets';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -32,7 +33,7 @@ export function ObjectContactFields({
   const [kind, setKind] = useState<(typeof FACET_KINDS)[number]>('email');
   const [value, setValue] = useState('');
 
-  if (detail.type !== 'person') return null;
+  if (!objectSupportsIdentityFacets(detail.type)) return null;
 
   const contacts = detail.identityFacets;
 

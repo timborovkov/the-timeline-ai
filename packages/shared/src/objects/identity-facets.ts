@@ -12,6 +12,12 @@ export type IdentityFacetKind =
   | 'timeline_user'
   | 'other';
 
+const IDENTITY_FACET_OBJECT_TYPES = new Set(['person', 'company']);
+
+export function objectSupportsIdentityFacets(type: string): boolean {
+  return IDENTITY_FACET_OBJECT_TYPES.has(type);
+}
+
 export interface IdentityFacetInput {
   entityId: string;
   kind: IdentityFacetKind;
