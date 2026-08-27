@@ -8,7 +8,7 @@ import {
 } from '@timeline/shared/objects/metadata-schemas';
 import { Plus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useId, useState, useTransition } from 'react';
+import { useState, useTransition } from 'react';
 
 import type * as objects from '@timeline/shared/objects/types';
 
@@ -146,7 +146,6 @@ export function ObjectMetadataFields({
             placeholder="Field name"
             aria-label="New field name"
             className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
-            autoFocus
           />
           <input
             value={newValue}
@@ -156,12 +155,6 @@ export function ObjectMetadataFields({
             placeholder="Value"
             aria-label="New field value"
             className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                addCustomField();
-              }
-            }}
           />
           <div className="flex items-center gap-2">
             <button
@@ -215,7 +208,6 @@ function MetadataEditableRow({
   onSave: (value: string) => void;
   onRemove?: () => void;
 }) {
-  const inputId = useId();
   const display = value ? displayMetadataValue(value) : null;
   return (
     <div className="group flex min-h-8 items-center gap-1 px-1.5">
@@ -236,7 +228,6 @@ function MetadataEditableRow({
         </EditableMetadata.Value>
         <EditableMetadata.Editor>
           <MetadataTextEditor
-            id={inputId}
             label={label}
             initialValue={value}
             disabled={disabled}
@@ -266,47 +257,37 @@ function MetadataEditableRow({
 }
 
 function MetadataTextEditor({
-  id,
   label,
   initialValue,
   disabled,
   onApply,
 }: {
-  id: string;
   label: string;
   initialValue: string;
   disabled: boolean;
   onApply: (value: string) => void;
 }) {
-  const [draft, setDraft] = useState(initialValue);
   return (
     <form
       className="flex flex-col gap-2"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (draft === initialValue) return;
-        onApply(draft);
+      action={(formData) => {
+        const raw = formData.get('value');
+        const next = typeof raw === 'string' ? raw : '';
+        if (next === initialValue) return;
+        onApply(next);
       }}
     >
       <input
-        id={id}
+        name="value"
         aria-label={label}
-        value={draft}
+        defaultValue={initialValue}
         disabled={disabled}
-        autoFocus
-        onChange={(event) => {
-          setDraft(event.target.value);
-        }}
-        onBlur={() => {
-          if (draft === initialValue) return;
-          onApply(draft);
-        }}
         className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
         placeholder={`Add ${label.toLowerCase()}`}
       />
       <button
         type="submit"
-        disabled={disabled || draft === initialValue}
+        disabled={disabled}
         className="min-h-8 self-start rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg disabled:opacity-60"
       >
         Save
