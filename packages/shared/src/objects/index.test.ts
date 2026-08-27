@@ -1961,11 +1961,12 @@ describe('object scope — notes and suggestions', () => {
       userId: USER_OWNER,
     });
     // Simulate a legacy second related edge that bypassed the Company-field guard.
-    const endpoints = [person.id, secondCompany.id].sort();
+    const [fromEntityId, toEntityId] = [person.id, secondCompany.id].sort();
+    if (!fromEntityId || !toEntityId) throw new Error('expected relationship endpoints');
     await db.insert(entityRelationships).values({
       teamId: TEAM_A,
-      fromEntityId: endpoints[0]!,
-      toEntityId: endpoints[1]!,
+      fromEntityId,
+      toEntityId,
       kind: 'related',
       createdBy: USER_OWNER,
     });

@@ -690,15 +690,24 @@ export async function structureContactFromBoardNotesAction(input: unknown): Prom
         return { error: 'No email or phone numbers found in board notes' };
       }
       const metadataPatch: Record<string, unknown> = {};
-      // Create facets sequentially so a uniqueness failure does not leave a
-      // half-applied batch from Promise.all racing independent transactions.
-      for (const contact of contacts) {
-        await r.scope.objects.createIdentityFacet({
-          entityId: parsed.data.entityId,
-          kind: contact.kind,
-          value: contact.displayValue,
-          actor: { kind: 'user', userId: r.userId },
-        });
+      const existingFacets = await r.scope.objects.listIdentityFacets(parsed.data.entityId);
+      const existingKeys = new Set(
+        existingFacets.map((facet) => `${facet.kind}:${facet.normalizedValue}`),
+      );
+      const contactsToCreate = contacts.filter(
+        (contact) => !existingKeys.has(`${contact.kind}:${contact.normalizedValue}`),
+      );
+      if (contactsToCreate.length > 0) {
+        await Promise.all(
+          contactsToCreate.map((contact) =>
+            r.scope.objects.createIdentityFacet({
+              entityId: parsed.data.entityId,
+              kind: contact.kind,
+              value: contact.displayValue,
+              actor: { kind: 'user', userId: r.userId },
+            }),
+          ),
+        );
       }
       if (detail.type === 'company') {
         const existingDomain =
