@@ -749,7 +749,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         >();
         for (const row of countersBeforeRows) {
           const current = metersByPeriod.get(row.periodYm) ?? {};
-          current[row.meterId as BillingMeterId] = {
+          current[row.meterId] = {
             nativeUnits: Number(row.nativeUnits),
             customerChargeCents: row.customerChargeCents,
           };

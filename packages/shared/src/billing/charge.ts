@@ -234,7 +234,7 @@ export function splitDurationNativeUnitsByUtcMonth(input: {
     const nativeUnits = isLast ? remaining : Math.min(remaining, Math.floor(rawUnits));
     if (nativeUnits > 0 || segments.length === 0) {
       const last = segments.at(-1);
-      if (last && last.periodYm === ym) last.nativeUnits += nativeUnits;
+      if (last?.periodYm === ym) last.nativeUnits += nativeUnits;
       else segments.push({ periodYm: ym, nativeUnits });
       remaining -= nativeUnits;
     }
