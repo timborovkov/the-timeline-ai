@@ -1384,10 +1384,14 @@ describe('POST /api/chat', () => {
       message: 'chat_stream_ai_provider_error',
       surface: 'api',
       operation: 'chat_stream',
-      tags: expect.objectContaining({
+      tags: {
         requestedModel: 'agent-model',
+        fallbackModels: 'fallback-agent-model',
         reason: 'AI_APICallError',
-      }),
+        aiOperation: 'llm.streamChat',
+        aiModel: 'agent-model',
+        aiCauseName: 'AI_APICallError',
+      },
     });
   });
 

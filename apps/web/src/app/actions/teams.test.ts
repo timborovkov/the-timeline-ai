@@ -1,3 +1,4 @@
+import { releaseFreeGrantIfOwnerLeaves } from '@timeline/shared/billing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -11,7 +12,6 @@ import {
   updateInboundEmailWhitelistAction,
   updateTeamTimezoneAction,
 } from '@/app/actions/teams';
-import { releaseFreeGrantIfOwnerLeaves } from '@timeline/shared/billing';
 
 /**
  * Server-action tests for team management. These pin the action-level contract
