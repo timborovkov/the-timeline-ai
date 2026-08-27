@@ -37,9 +37,9 @@ export function ObjectBoardContextSection({
   if (rows.length === 0) return null;
 
   return (
-    <section aria-label="Board context">
-      <h2 className="text-xs font-normal text-fg-dim">Board context</h2>
-      <ul className="mt-1 space-y-2">
+    <section aria-label="Board context" className="flex flex-col">
+      <h2 className="px-1.5 text-xs font-normal text-fg-dim">Board context</h2>
+      <ul className="mt-0.5 space-y-2 px-1.5">
         {rows.map((row) => {
           const responsible = members.find((member) => member.id === row.responsibleUserId)?.label;
           const canStructure = row.notes ? textHasContacts(row.notes) : false;

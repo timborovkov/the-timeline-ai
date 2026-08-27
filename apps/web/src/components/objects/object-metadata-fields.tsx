@@ -6,17 +6,27 @@ import {
   slugifyMetadataLabel,
   typedMetadataKeysFor,
 } from '@timeline/shared/objects/metadata-schemas';
-import { X } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useId, useState, useTransition } from 'react';
 
 import type * as objects from '@timeline/shared/objects/types';
 
 import { updateObjectMetadataAction } from '@/app/actions/objects';
+import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { notifyAction } from '@/lib/notify';
+import { cn } from '@/lib/utils';
 
 function metadataFieldLabel(key: string): string {
   return humanizeMetadataKey(key);
+}
+
+/** Soften leftover snake_case seed values for display only. */
+function displayMetadataValue(value: string): string {
+  if (/^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$/.test(value)) {
+    return humanizeMetadataKey(value);
+  }
+  return value;
 }
 
 export function ObjectMetadataFields({
@@ -35,6 +45,7 @@ export function ObjectMetadataFields({
   const entries = readableMetadataEntries(detail.type, detail.metadata);
   const knownKeys = new Set(typedKeys);
   const customEntries = entries.filter((entry) => !knownKeys.has(entry.key));
+  const busy = disabled || pending;
 
   function saveField(key: string, rawValue: string): void {
     const label = metadataFieldLabel(key);
@@ -98,166 +109,209 @@ export function ObjectMetadataFields({
   }
 
   return (
-    <section aria-label="Metadata">
+    <section aria-label="Metadata" className="flex flex-col">
       <h2 className="px-1.5 text-xs font-normal text-fg-dim">Details</h2>
-      <div className="mt-0.5 flex flex-col">
-        {typedKeys.map((key) => (
-          <MetadataFieldRow
-            key={key}
-            label={metadataFieldLabel(key)}
-            initialValue={metadataValue(detail.metadata, key)}
-            disabled={disabled || pending}
-            onSave={(value) => {
-              saveField(key, value);
+      {typedKeys.map((key) => (
+        <MetadataEditableRow
+          key={key}
+          label={metadataFieldLabel(key)}
+          value={metadataValue(detail.metadata, key)}
+          disabled={busy}
+          onSave={(value) => {
+            saveField(key, value);
+          }}
+        />
+      ))}
+      {customEntries.map((entry) => (
+        <MetadataEditableRow
+          key={entry.key}
+          label={metadataFieldLabel(entry.key)}
+          value={entry.value}
+          disabled={busy}
+          onSave={(value) => {
+            saveField(entry.key, value);
+          }}
+          onRemove={() => {
+            removeCustomField(entry.key);
+          }}
+        />
+      ))}
+      {adding ? (
+        <div className="grid gap-1.5 px-1.5 py-1.5">
+          <input
+            value={newLabel}
+            onChange={(event) => {
+              setNewLabel(event.target.value);
+            }}
+            placeholder="Field name"
+            aria-label="New field name"
+            className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
+            autoFocus
+          />
+          <input
+            value={newValue}
+            onChange={(event) => {
+              setNewValue(event.target.value);
+            }}
+            placeholder="Value"
+            aria-label="New field value"
+            className="h-9 rounded-sm border border-border bg-bg px-2 text-xs"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addCustomField();
+              }
             }}
           />
-        ))}
-        {customEntries.map((entry) => (
-          <div key={entry.key} className="flex min-h-8 items-center gap-2 px-1.5">
-            <label className="flex min-w-0 flex-1 items-center gap-3">
-              <span
-                className="w-28 shrink-0 truncate text-xs text-fg-dim"
-                title={metadataFieldLabel(entry.key)}
-              >
-                {metadataFieldLabel(entry.key)}
-              </span>
-              <CustomMetadataInput
-                key={`${entry.key}:${entry.value}`}
-                label={metadataFieldLabel(entry.key)}
-                initialValue={entry.value}
-                disabled={disabled || pending}
-                onSave={(value) => {
-                  saveField(entry.key, value);
-                }}
-              />
-            </label>
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              disabled={disabled || pending}
-              onClick={() => {
-                removeCustomField(entry.key);
-              }}
-              aria-label={`Remove ${metadataFieldLabel(entry.key)}`}
-              className="grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50"
+              disabled={busy || !slugifyMetadataLabel(newLabel) || !newValue.trim()}
+              onClick={addCustomField}
+              className="text-xs text-fg-muted hover:text-fg disabled:opacity-50"
             >
-              <X aria-hidden="true" className="size-3" />
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(false);
+                setNewLabel('');
+                setNewValue('');
+              }}
+              className="text-xs text-fg-muted hover:text-fg"
+            >
+              Cancel
             </button>
           </div>
-        ))}
-        {adding ? (
-          <div className="grid gap-1.5 px-1.5 pt-1">
-            <input
-              value={newLabel}
-              onChange={(event) => {
-                setNewLabel(event.target.value);
-              }}
-              placeholder="Field name"
-              aria-label="New field name"
-              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-            />
-            <input
-              value={newValue}
-              onChange={(event) => {
-                setNewValue(event.target.value);
-              }}
-              placeholder="Value"
-              aria-label="New field value"
-              className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={
-                  disabled || pending || !slugifyMetadataLabel(newLabel) || !newValue.trim()
-                }
-                onClick={addCustomField}
-                className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAdding(false);
-                  setNewLabel('');
-                  setNewValue('');
-                }}
-                className="text-xs text-fg-muted hover:text-fg hover:underline"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            disabled={disabled || pending}
-            onClick={() => {
-              setAdding(true);
-            }}
-            className="px-1.5 pt-1 text-left text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
-          >
-            Add field
-          </button>
-        )}
-      </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setAdding(true);
+          }}
+          className="inline-flex min-h-8 items-center gap-1.5 px-1.5 text-xs text-fg-muted transition-colors hover:text-fg disabled:opacity-50"
+        >
+          <Plus aria-hidden="true" className="size-3" />
+          Add field
+        </button>
+      )}
     </section>
   );
 }
 
-function MetadataFieldRow({
+function MetadataEditableRow({
   label,
-  initialValue,
+  value,
   disabled,
   onSave,
+  onRemove,
 }: {
   label: string;
-  initialValue: string;
+  value: string;
   disabled: boolean;
   onSave: (value: string) => void;
+  onRemove?: () => void;
 }) {
+  const inputId = useId();
+  const display = value ? displayMetadataValue(value) : null;
   return (
-    <label className="flex min-h-8 items-center gap-3 px-1.5">
-      <span className="w-28 shrink-0 text-xs text-fg-dim">{label}</span>
-      <CustomMetadataInput
-        key={initialValue}
+    <div className="group flex min-h-8 items-center gap-1 px-1.5">
+      <span className="w-16 shrink-0 truncate text-xs text-fg-dim" title={label}>
+        {label}
+      </span>
+      <EditableMetadata
         label={label}
-        initialValue={initialValue}
         disabled={disabled}
-        onSave={onSave}
-      />
-    </label>
+        className="min-h-8 min-w-0 flex-1 justify-start px-1"
+      >
+        <EditableMetadata.Value>
+          {display ? (
+            <span className="truncate text-xs text-fg">{display}</span>
+          ) : (
+            <span className="truncate text-xs text-fg-dim">Empty</span>
+          )}
+        </EditableMetadata.Value>
+        <EditableMetadata.Editor>
+          <MetadataTextEditor
+            id={inputId}
+            label={label}
+            initialValue={value}
+            disabled={disabled}
+            onApply={onSave}
+          />
+        </EditableMetadata.Editor>
+      </EditableMetadata>
+      {onRemove ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onRemove}
+          aria-label={`Remove ${label}`}
+          className={cn(
+            'grid size-6 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors',
+            'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100',
+            'hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50',
+          )}
+        >
+          <X aria-hidden="true" className="size-3" />
+        </button>
+      ) : (
+        <span className="size-6 shrink-0" aria-hidden="true" />
+      )}
+    </div>
   );
 }
 
-function CustomMetadataInput({
+function MetadataTextEditor({
+  id,
   label,
   initialValue,
   disabled,
-  onSave,
+  onApply,
 }: {
+  id: string;
   label: string;
   initialValue: string;
   disabled: boolean;
-  onSave: (value: string) => void;
+  onApply: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(initialValue);
   return (
-    <input
-      aria-label={label}
-      value={draft}
-      disabled={disabled}
-      onChange={(event) => {
-        setDraft(event.target.value);
+    <form
+      className="flex flex-col gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (draft === initialValue) return;
+        onApply(draft);
       }}
-      onBlur={(event) => {
-        const value = event.target.value;
-        if (value === initialValue) return;
-        onSave(value);
-      }}
-      placeholder={`Add ${label.toLowerCase()}`}
-      className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
-    />
+    >
+      <input
+        id={id}
+        aria-label={label}
+        value={draft}
+        disabled={disabled}
+        autoFocus
+        onChange={(event) => {
+          setDraft(event.target.value);
+        }}
+        onBlur={() => {
+          if (draft === initialValue) return;
+          onApply(draft);
+        }}
+        className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs disabled:opacity-60"
+        placeholder={`Add ${label.toLowerCase()}`}
+      />
+      <button
+        type="submit"
+        disabled={disabled || draft === initialValue}
+        className="min-h-8 self-start rounded-sm bg-signal px-3 text-xs font-medium text-signal-fg disabled:opacity-60"
+      >
+        Save
+      </button>
+    </form>
   );
 }
 
