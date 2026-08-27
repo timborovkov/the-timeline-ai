@@ -1,3 +1,4 @@
+import { TIMELINE_AI_PRIVACY_POLICY_VERSION } from '@timeline/shared/llm';
 import Link from 'next/link';
 
 import type { Metadata } from 'next';
@@ -12,6 +13,7 @@ import {
   getLegalContactEmail,
 } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
+import { PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS } from '@/lib/trust-claims';
 
 export const metadata: Metadata = publicMetadata({
   title: 'Privacy Policy',
@@ -22,6 +24,25 @@ export const metadata: Metadata = publicMetadata({
 export const dynamic = 'force-dynamic';
 
 type LegalContactEmail = ReturnType<typeof getLegalContactEmail>;
+
+function TranscriptionRetentionSources() {
+  const sources = PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.retentionSources;
+  if (sources.length === 0) return null;
+
+  return (
+    <>
+      {' '}
+      Source policies:{' '}
+      {sources.map((source, index) => (
+        <span key={source.href}>
+          {index > 0 ? '; ' : null}
+          <a href={source.href}>{source.label}</a>
+        </span>
+      ))}
+      .
+    </>
+  );
+}
 
 function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: LegalContactEmail }) {
   return (
@@ -171,22 +192,25 @@ function PrivacyAiAndProviderSections() {
         Hosted Timeline sends only the content needed for the requested feature to OpenRouter, which
         routes it to an eligible upstream inference endpoint. This covers generation, extraction,
         summarization, embeddings, media text extraction, and transcription. Model families may
-        change as quality and availability change.
+        change as quality and availability change; current exact model IDs and their roles are
+        published on the <Link href="/trust">Trust page</Link>.
       </p>
       <p>
-        Our production OpenRouter key must be bound to a guardrail that enforces zero data retention
-        across every model group Timeline uses. Chat, media, and embedding requests also carry
-        per-request no-collection and zero-retention filters as defense in depth. Speech-to-text
-        uses a model whose current endpoints are all listed as zero-retention. If no compliant
-        endpoint is available, the request fails instead of falling back to a less-private route.
-        Under that policy, providers may process the request transiently—and may use temporary
-        in-memory prompt caching—but may not persist the prompt or response or use it to train
-        models. Hosted production must keep OpenRouter prompt logging and model-improvement sharing
-        disabled and allow only caching compatible with the enforced zero-retention policy. The
-        account settings and key-to-guardrail assignment must be captured and verified before
-        deployment; repository code cannot independently prove the dashboard state. OpenRouter may
-        retain non-content request metadata such as model, token count, cost, latency, and account
-        identifiers for operations and billing.
+        Model privacy policy {TIMELINE_AI_PRIVACY_POLICY_VERSION} classifies{' '}
+        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList} as zero-data-retention required.
+        Supported requests send <code>data_collection: deny</code>, <code>zdr: true</code>, and an
+        explicit cache-disable control. OpenRouter may select among eligible ZDR upstreams, but
+        these roles fail closed instead of falling back to an endpoint with weaker retention. The
+        production key must be restricted to the code-owned model catalog and attested to this exact
+        policy version. Prompt logging, input/output sharing, Broadcast, and persistent response
+        caching must remain disabled. Repository code cannot independently prove those account
+        settings, so the deployment evidence must be captured before publication of a verified
+        hosted guarantee. OpenRouter may retain non-content request metadata such as model, token
+        count, cost, latency, and account identifiers for operations and billing.
+      </p>
+      <p>
+        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyDetail}
+        <TranscriptionRetentionSources />
       </p>
       <p>
         We do not use Customer Content to train or fine-tune any model, or to build model-training
@@ -240,10 +264,7 @@ function PrivacyAiAndProviderSections() {
           </tr>
           <tr>
             <td>OpenRouter and eligible inference endpoints</td>
-            <td>
-              Deployment-gated zero-data-retention routing for prompts, relevant Customer Content,
-              embeddings, media extraction, and transcription, plus non-content usage metadata.
-            </td>
+            <td>{PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyProviderPurpose}</td>
           </tr>
           <tr>
             <td>Recall.ai</td>
@@ -439,7 +460,7 @@ function PrivacyRetentionSections() {
           </tr>
           <tr>
             <td>AI prompt and response content at inference providers</td>
-            <td>No persistent retention under the enforced zero-data-retention route.</td>
+            <td>{PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyRetentionDetail}</td>
           </tr>
           <tr>
             <td>Operational, security, support, and email records</td>

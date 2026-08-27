@@ -9,10 +9,12 @@ import {
   buildSlackEventCaptureCanaryPayload,
   buildTelegramCaptureCanaryPayload,
   completeLiveIntegrationCanaryCleanup,
+  buildOpenRouterZdrCanaryTargets,
   formatLiveIntegrationCanaryReport,
   getProvider,
   inspectOpenRouterZdrRegistry,
   isExpectedSpeechTranscriptionCanaryText,
+  runOpenRouterZdrCanaries,
   type NativeProviderId,
   redactLiveIntegrationCanaryText,
   signSlackCanaryRequest,
@@ -21,10 +23,9 @@ import {
   validateSlackEventCaptureCanaryUrl,
   validateTelegramCaptureCanaryUrl,
 } from '@timeline/shared/integrations';
-import { TIMELINE_MODELS, chatStructured, transcribeAudio } from '@timeline/shared/llm';
+import { transcribeAudio } from '@timeline/shared/llm';
 import { listRecallBotsForCanary } from '@timeline/shared/meeting-bots';
 import { SlackApi } from '@timeline/shared/slack';
-import { z } from 'zod';
 
 const args = process.argv.slice(2);
 const strict = args.includes('--strict');
@@ -97,10 +98,10 @@ async function readJson(response: Response): Promise<{ body: unknown; text: stri
   }
 }
 
-async function checkOpenRouter(): Promise<LiveIntegrationCanaryResult> {
+async function checkOpenRouterZdrRequests(): Promise<LiveIntegrationCanaryResult> {
   if (!configured('OPENROUTER_API_KEY')) {
     return {
-      name: 'OpenRouter',
+      name: 'OpenRouter ZDR requests',
       status: 'skip',
       detail: 'OPENROUTER_API_KEY missing',
       envKeys: ['OPENROUTER_API_KEY'],
@@ -108,38 +109,53 @@ async function checkOpenRouter(): Promise<LiveIntegrationCanaryResult> {
     };
   }
   try {
-    const result = await chatStructured({
-      schema: z.object({
-        status: z.literal('ok'),
-        surface: z.literal('openrouter'),
-      }),
-      system: 'Return only the requested structured object.',
-      prompt: 'Run a Timeline live integration canary.',
+    const outcomes = await runOpenRouterZdrCanaries({
+      apiKey: process.env.OPENROUTER_API_KEY ?? '',
     });
-    if (result.object.status === 'ok' && result.object.surface === 'openrouter') {
-      return { name: 'OpenRouter', status: 'ok', detail: 'shared structured LLM path succeeded' };
+    const failures = outcomes.filter((outcome) => !outcome.ok);
+    if (failures.length === 0) {
+      return {
+        name: 'OpenRouter ZDR requests',
+        status: 'ok',
+        detail: outcomes
+          .map(
+            (outcome) =>
+              `${outcome.kind} ${outcome.modelId} [${outcome.roles.join(', ')}] ${String(
+                outcome.durationMs,
+              )}ms`,
+          )
+          .join(', '),
+      };
     }
-  } catch (err) {
     return {
-      name: 'OpenRouter',
+      name: 'OpenRouter ZDR requests',
       status: 'warn',
-      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
-      action: 'verify the OpenRouter key and model access',
+      detail: failures
+        .map(
+          (failure) =>
+            `${failure.kind} ${failure.modelId} [${failure.roles.join(', ')}]: ${
+              failure.reason ?? 'failed'
+            }${failure.status === undefined ? '' : ` (${String(failure.status)})`}`,
+        )
+        .join(', '),
+      action:
+        'verify the shared OpenRouter key allowlist, assigned guardrail, ZDR endpoints, and exact code-owned model pins',
+      docs: 'docs/setup/openrouter.html',
+    };
+  } catch {
+    return {
+      name: 'OpenRouter ZDR requests',
+      status: 'warn',
+      detail: 'canary target construction failed before a provider response was recorded',
+      action: 'add a synthetic canary surface for every ZDR-required model role',
       docs: 'docs/setup/openrouter.html',
     };
   }
-  return {
-    name: 'OpenRouter',
-    status: 'warn',
-    detail: 'structured response failed validation',
-    action: 'verify the configured model returns structured responses',
-    docs: 'docs/setup/openrouter.html',
-  };
 }
 
 async function checkOpenRouterZdrRegistry(): Promise<LiveIntegrationCanaryResult> {
   const docs = 'docs/setup/openrouter.html#model-pins';
-  const modelId = TIMELINE_MODELS.transcription.id;
+  const modelIds = [...new Set(buildOpenRouterZdrCanaryTargets().map((target) => target.modelId))];
   try {
     const response = await fetch('https://openrouter.ai/api/v1/endpoints/zdr', {
       headers: { accept: 'application/json' },
@@ -148,39 +164,43 @@ async function checkOpenRouterZdrRegistry(): Promise<LiveIntegrationCanaryResult
     const { body, text } = await readJson(response);
     if (!response.ok) {
       return {
-        name: 'OpenRouter transcription ZDR registry',
+        name: 'OpenRouter ZDR model registry',
         status: 'warn',
         detail: shortProviderError(response.status, body, text),
-        action: 'retry the public ZDR registry check before relying on transcription in production',
+        action: 'retry the public ZDR registry check before relying on hosted AI in production',
         docs,
       };
     }
 
-    const inspection = inspectOpenRouterZdrRegistry(body, modelId);
+    const inspection = inspectOpenRouterZdrRegistry(body, modelIds);
     if (!inspection.ok) {
       return {
-        name: 'OpenRouter transcription ZDR registry',
+        name: 'OpenRouter ZDR model registry',
         status: 'warn',
         detail: inspection.detail,
         action:
-          inspection.reason === 'model_absent'
-            ? 'choose a ZDR-listed transcription model before production use and re-confirm the key guardrail'
-            : 'retry the public ZDR registry check and verify OpenRouter endpoint status',
+          inspection.reason === 'models_absent'
+            ? 'replace or reclassify every missing model and re-attest the shared OpenRouter key before production use'
+            : inspection.reason === 'invalid_request'
+              ? 'classify at least one code-owned model as ZDR-required before relying on the hosted AI policy'
+              : 'retry the public ZDR registry check and verify OpenRouter endpoint status',
         docs,
       };
     }
 
     return {
-      name: 'OpenRouter transcription ZDR registry',
+      name: 'OpenRouter ZDR model registry',
       status: 'ok',
-      detail: `${modelId} has ${String(inspection.endpointCount)} listed ZDR endpoint(s)`,
+      detail: inspection.models
+        .map(({ endpointCount, modelId }) => `${modelId} (${String(endpointCount)})`)
+        .join(', '),
     };
   } catch (error) {
     return {
-      name: 'OpenRouter transcription ZDR registry',
+      name: 'OpenRouter ZDR model registry',
       status: 'warn',
       detail: safeCanaryDetail(error instanceof Error ? error.message : String(error)),
-      action: 'retry the public ZDR registry check before relying on transcription in production',
+      action: 'retry the public ZDR registry check before relying on hosted AI in production',
       docs,
     };
   }
@@ -212,17 +232,15 @@ async function checkOpenRouterTranscription(): Promise<LiveIntegrationCanaryResu
     return {
       name: 'OpenRouter transcription',
       status: 'warn',
-      detail: `speech transcription response missed the expected canary words: ${safeCanaryDetail(
-        result.text,
-      )}`,
+      detail: 'speech transcription response missed the expected canary words',
       action: 'verify the configured transcription model can decode the pinned speech fixture',
       docs: 'docs/setup/openrouter.html#phase-3',
     };
-  } catch (err) {
+  } catch {
     return {
       name: 'OpenRouter transcription',
       status: 'warn',
-      detail: safeCanaryDetail(err instanceof Error ? err.message : String(err)),
+      detail: 'speech transcription request failed without recording provider response content',
       action: 'verify the OpenRouter key can access the pinned transcription model',
       docs: 'docs/setup/openrouter.html#phase-3',
     };
@@ -1142,7 +1160,7 @@ loadEnvFile(envFile);
 const results: LiveIntegrationCanaryResult[] = [
   ...(await Promise.all([
     checkOpenRouterZdrRegistry(),
-    checkOpenRouter(),
+    checkOpenRouterZdrRequests(),
     checkOpenRouterTranscription(),
     checkGithubApp(),
     checkSentry(),

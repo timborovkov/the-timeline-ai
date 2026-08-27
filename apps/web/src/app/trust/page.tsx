@@ -10,15 +10,19 @@ import { getLegalContactEmail } from '@/lib/legal-versions';
 import { buildPublicStructuredData, metadataForPublicDocument } from '@/lib/public-site';
 import { TRUST_DOCUMENT } from '@/lib/public-site/documents';
 import { getSiteUrl } from '@/lib/site-url';
-import { TRUST_AI_ROUTES } from '@/lib/trust-claims';
+import {
+  PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS,
+  TRUST_AI_PRIVACY_LABELS,
+  TRUST_AI_ROUTES,
+} from '@/lib/trust-claims';
 
 export const metadata = metadataForPublicDocument(TRUST_DOCUMENT);
 
 const TRUST_SIGNALS = [
   {
     label: 'AI content retention',
-    value: 'Deployment-gated ZDR',
-    detail: 'Hosted AI may start only after an operator confirms the key-bound ZDR guardrail.',
+    value: PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustSignalValue,
+    detail: PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustSignalDetail,
   },
   {
     label: 'Model training',
@@ -50,7 +54,7 @@ const DATA_PATH = [
   },
   {
     title: 'Inference is transient',
-    body: 'Only the content needed for a feature leaves Timeline. Hosted AI is deployment-gated on a key-bound guardrail; supported requests add ZDR filters and stop rather than request a weaker route.',
+    body: PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustDataPath,
   },
   {
     title: 'Answers stay inspectable',
@@ -249,9 +253,8 @@ export default async function TrustPage() {
                 <p>
                   The honest answer is not “nothing leaves our servers.” Relevant content reaches
                   specialist processors. The policy is narrower: Timeline prohibits using Customer
-                  Content to train or fine-tune models, and hosted AI may be enabled only after a
-                  production key is bound to a zero-retention guardrail covering every model group
-                  Timeline uses. Production account and contract evidence is still being completed.
+                  Content to train or fine-tune models. Production account and contract evidence is
+                  still being completed. {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustIntro}
                 </p>
               </div>
             </div>
@@ -311,14 +314,15 @@ export default async function TrustPage() {
                     </h2>
                     <p className="mt-5 text-base leading-8 text-fg-muted">
                       OpenRouter and an upstream endpoint transiently process the necessary input.
-                      The deployment policy requires a ZDR guardrail covering every model group
-                      Timeline uses, bound to the production key, with prompt logging, input/output
-                      sharing, and persistent response caching off. Application startup requires an
-                      operator attestation; the live canary checks the pinned speech model against
-                      OpenRouter&apos;s ZDR registry. Chat, media, and embedding calls also send{' '}
-                      <code>data_collection: deny</code> and <code>zdr: true</code> per request.
-                      Temporary in-memory provider caching can still occur; non-content metadata
-                      such as model, tokens, latency, and cost can be retained.
+                      Text, multimodal, and embedding roles require eligible ZDR endpoints and fail
+                      closed instead of using weaker retention. Supported calls send{' '}
+                      <code>data_collection: deny</code>, <code>zdr: true</code>, and an explicit
+                      cache-disable control. OpenRouter may select among eligible ZDR upstreams. The
+                      production key must match the code-owned model catalog, with prompt logging,
+                      input/output sharing, Broadcast, and persistent response caching disabled.
+                    </p>
+                    <p className="mt-5 text-sm leading-7 text-fg-muted">
+                      {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustDetail}
                     </p>
                   </div>
                   <div className="border-t border-border">
@@ -328,9 +332,15 @@ export default async function TrustPage() {
                         className="grid gap-3 border-b border-border py-6 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.95fr)] sm:gap-8"
                       >
                         <p className="font-medium text-fg">{route.job}</p>
-                        <code className="break-all text-xs leading-6 text-fg-muted">
-                          {route.model}
-                        </code>
+                        <div>
+                          <code className="break-all text-xs leading-6 text-fg-muted">
+                            {route.model}
+                          </code>
+                          <p className="mt-2 text-xs font-semibold text-fg">
+                            {TRUST_AI_PRIVACY_LABELS[route.privacyMode]}
+                          </p>
+                          <p className="mt-1 text-xs leading-5 text-fg-muted">{route.selection}</p>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -338,8 +348,8 @@ export default async function TrustPage() {
                 <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-3">
                   {[
                     'Timeline policy prohibits training or fine-tuning on Customer Content',
-                    'Selected ZDR endpoints prohibit persistent prompt and response storage',
-                    'Production provider and account evidence remains a release gate',
+                    'ZDR-required roles reject endpoints with weaker retention terms; production provider evidence remains a release gate',
+                    PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustChecklist,
                   ].map((item) => (
                     <p key={item} className="flex gap-3 bg-bg p-5 text-sm leading-6 text-fg-muted">
                       <Check aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-signal" />

@@ -331,7 +331,9 @@ describe('chatStructured', () => {
 
   it('requests OpenRouter json_schema structured output for extraction', async () => {
     const requests: unknown[] = [];
+    const requestHeaders: Headers[] = [];
     const fetchStub: typeof fetch = (_url, init) => {
+      requestHeaders.push(new Headers(init?.headers));
       if (typeof init?.body === 'string') {
         const parsed: unknown = JSON.parse(init.body);
         requests.push(parsed);
@@ -390,6 +392,7 @@ describe('chatStructured', () => {
       mentions: [{ name: 'Mikael Rintala', type: 'person', role: 'subject' }],
     });
     expect(requests).toHaveLength(1);
+    expect(requestHeaders[0]?.get('X-OpenRouter-Cache')).toBe('false');
     const body = openRouterRequestSchema.parse(requests[0]);
     expect(body.model).toBe('deepseek/deepseek-v4-flash-0731');
     expect(

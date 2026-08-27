@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TRANSCRIPTION_SPEECH_CANARY_TEXT,
+  buildOpenRouterZdrCanaryRequest,
+  buildOpenRouterZdrCanaryTargets,
   buildSpeechTranscriptionCanaryMp3,
   buildPostmarkInboundCaptureCanaryPayload,
   buildSlackEventCaptureCanaryPayload,
@@ -12,42 +14,249 @@ import {
   inspectOpenRouterZdrRegistry,
   isExpectedSpeechTranscriptionCanaryText,
   redactLiveIntegrationCanaryText,
+  runOpenRouterZdrCanaries,
   signSlackCanaryRequest,
   validatePostmarkInboundCaptureCanaryUrl,
   validateSlackEventCaptureCanaryUrl,
   validateTelegramCaptureCanaryUrl,
 } from '#src/integrations/canary.js';
+import { TIMELINE_MODELS, timelineModelEntries } from '#src/llm/models.js';
+import {
+  OPENROUTER_DISABLE_CACHE_HEADERS,
+  OPENROUTER_OFFICIAL_BASE_URL,
+  OPENROUTER_PRIVATE_PROVIDER_ROUTING,
+} from '#src/llm/privacy.js';
+
+function serializedRequestBody(body: unknown): string {
+  if (typeof body !== 'string') throw new Error('Expected a serialized JSON request body');
+  return body;
+}
+
+function requestInputUrl(input: unknown): string {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.toString();
+  if (input && typeof input === 'object' && 'url' in input && typeof input.url === 'string') {
+    return input.url;
+  }
+  throw new Error('Expected a URL-compatible fetch input');
+}
+
+// These tests prove the live probe reaches every current ZDR-required model
+// surface with the shared fail-closed policy and never returns provider content.
+describe('OpenRouter authenticated ZDR model canaries', () => {
+  it('covers every ZDR-required role once per unique model surface and excludes transcription', () => {
+    const targets = buildOpenRouterZdrCanaryTargets();
+
+    expect(targets).toEqual([
+      {
+        kind: 'structured',
+        modelId: 'deepseek/deepseek-v4-flash-0731',
+        roles: ['extraction', 'agent', 'summarization', 'taskCategorization'],
+      },
+      {
+        kind: 'structured',
+        modelId: 'deepseek/deepseek-v4-pro',
+        roles: ['structuredFallback'],
+      },
+      {
+        kind: 'vision',
+        modelId: 'google/gemini-3.5-flash',
+        roles: ['vision'],
+      },
+      {
+        kind: 'embedding',
+        modelId: 'openai/text-embedding-3-small',
+        roles: ['embedding'],
+        embeddingDimensions: 1536,
+      },
+    ]);
+    expect(targets.flatMap((target) => target.roles).sort()).toEqual(
+      timelineModelEntries()
+        .filter(([, model]) => model.privacyMode === 'zdr_required')
+        .map(([role]) => role)
+        .sort(),
+    );
+    expect(targets.map((target) => target.modelId)).not.toContain(TIMELINE_MODELS.transcription.id);
+  });
+
+  it('serializes every request to the official origin with ZDR, deny, and cache controls', () => {
+    for (const target of buildOpenRouterZdrCanaryTargets()) {
+      const request = buildOpenRouterZdrCanaryRequest(target, 'shared-openrouter-key');
+      const headers = new Headers(request.init.headers);
+      const body = JSON.parse(serializedRequestBody(request.init.body)) as Record<string, unknown>;
+      const provider = body.provider as Record<string, unknown>;
+
+      expect(request.url.startsWith(`${OPENROUTER_OFFICIAL_BASE_URL}/`)).toBe(true);
+      expect(request.url).toBe(
+        `${OPENROUTER_OFFICIAL_BASE_URL}/${
+          target.kind === 'embedding' ? 'embeddings' : 'chat/completions'
+        }`,
+      );
+      expect(headers.get('authorization')).toBe('Bearer shared-openrouter-key');
+      expect(headers.get('x-openrouter-cache')).toBe(
+        OPENROUTER_DISABLE_CACHE_HEADERS['X-OpenRouter-Cache'],
+      );
+      expect(body.model).toBe(target.modelId);
+      expect(provider).toMatchObject(OPENROUTER_PRIVATE_PROVIDER_ROUTING);
+      expect(provider.only).toBeUndefined();
+      expect(provider.order).toBeUndefined();
+      expect(provider.ignore).toBeUndefined();
+      expect(body.user).toBeUndefined();
+      expect(body.models).toBeUndefined();
+
+      if (target.kind === 'embedding') {
+        expect(body.dimensions).toBe(1536);
+      } else {
+        expect(provider.require_parameters).toBe(true);
+        expect(body.response_format).toBeDefined();
+      }
+      if (target.kind === 'vision') {
+        expect(JSON.stringify(body)).toContain('data:image/png;base64,');
+      }
+    }
+  });
+
+  it('issues all authenticated requests with one key and returns content-free outcomes', async () => {
+    const requests: { body: Record<string, unknown>; headers: Headers; url: string }[] = [];
+    const providerOnlyContent = 'provider-output-must-not-be-recorded';
+    const fetchImpl: typeof globalThis.fetch = (input, init) => {
+      const url = requestInputUrl(input);
+      const body = JSON.parse(serializedRequestBody(init?.body)) as Record<string, unknown>;
+      requests.push({ body, headers: new Headers(init?.headers), url });
+      if (url.endsWith('/embeddings')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: [{ embedding: new Array<number>(1536).fill(0.01) }] }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            providerOnlyContent,
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({ status: 'ok' }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+      );
+    };
+
+    const outcomes = await runOpenRouterZdrCanaries({
+      apiKey: 'one-shared-key',
+      fetch: fetchImpl,
+    });
+
+    expect(requests).toHaveLength(4);
+    expect(
+      requests.every(({ headers }) => headers.get('authorization') === 'Bearer one-shared-key'),
+    ).toBe(true);
+    expect(outcomes.every((outcome) => outcome.ok)).toBe(true);
+    expect(JSON.stringify(outcomes)).not.toContain(providerOnlyContent);
+    expect(outcomes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ modelId: TIMELINE_MODELS.structuredFallback.id, ok: true }),
+        expect.objectContaining({ modelId: TIMELINE_MODELS.vision.id, ok: true }),
+        expect.objectContaining({ modelId: TIMELINE_MODELS.embedding.id, ok: true }),
+      ]),
+    );
+  });
+
+  it('reports only bounded status metadata when a provider returns content or an error body', async () => {
+    const sensitiveBody = 'provider-secret-or-echoed-content';
+    const fetchImpl: typeof globalThis.fetch = (_input, init) => {
+      const body = JSON.parse(serializedRequestBody(init?.body)) as Record<string, unknown>;
+      if (body.model === TIMELINE_MODELS.structuredFallback.id) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: { message: sensitiveBody } }), { status: 403 }),
+        );
+      }
+      if (body.model === TIMELINE_MODELS.embedding.id) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ data: [{ embedding: new Array<number>(1536).fill(0.01) }] }),
+            { status: 200 },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: JSON.stringify({ status: 'ok' }) } }] }),
+          { status: 200 },
+        ),
+      );
+    };
+
+    const outcomes = await runOpenRouterZdrCanaries({ apiKey: 'shared-key', fetch: fetchImpl });
+
+    expect(outcomes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          modelId: TIMELINE_MODELS.structuredFallback.id,
+          ok: false,
+          reason: 'http_error',
+          status: 403,
+        }),
+      ]),
+    );
+    expect(JSON.stringify(outcomes)).not.toContain(sensitiveBody);
+  });
+});
 
 describe('inspectOpenRouterZdrRegistry', () => {
-  it('counts the endpoints registered for the exact pinned model id', () => {
+  it('counts endpoints for every exact ZDR-classified model id', () => {
     expect(
       inspectOpenRouterZdrRegistry(
         {
           data: [
-            { model_id: 'openai/whisper-large-v3', provider_name: 'Groq' },
-            { model_id: 'openai/gpt-4.1', provider_name: 'OpenAI' },
-            { model_id: 'openai/whisper-large-v3', provider_name: 'Together' },
+            { model_id: 'deepseek/deepseek-v4-flash-0731', provider_name: 'Provider A' },
+            { model_id: 'google/gemini-3.5-flash', provider_name: 'Provider B' },
+            { model_id: 'deepseek/deepseek-v4-flash-0731', provider_name: 'Provider C' },
           ],
         },
-        'openai/whisper-large-v3',
+        ['deepseek/deepseek-v4-flash-0731', 'google/gemini-3.5-flash'],
       ),
     ).toEqual({
       ok: true,
-      endpointCount: 2,
-      modelId: 'openai/whisper-large-v3',
+      models: [
+        { endpointCount: 2, modelId: 'deepseek/deepseek-v4-flash-0731' },
+        { endpointCount: 1, modelId: 'google/gemini-3.5-flash' },
+      ],
     });
   });
 
-  it('reports a valid registry that no longer lists the pinned model', () => {
+  it('reports every ZDR-classified model missing from a valid registry', () => {
     expect(
       inspectOpenRouterZdrRegistry(
-        { data: [{ model_id: 'openai/gpt-4.1', provider_name: 'OpenAI' }] },
-        'openai/whisper-large-v3',
+        {
+          data: [{ model_id: 'deepseek/deepseek-v4-flash-0731', provider_name: 'Provider A' }],
+        },
+        [
+          'deepseek/deepseek-v4-flash-0731',
+          'google/gemini-3.5-flash',
+          'openai/text-embedding-3-small',
+        ],
       ),
     ).toEqual({
       ok: false,
-      reason: 'model_absent',
-      detail: 'openai/whisper-large-v3 has no endpoint in the public ZDR registry',
+      reason: 'models_absent',
+      detail:
+        'Public ZDR registry has no endpoint for: google/gemini-3.5-flash, openai/text-embedding-3-small',
+      missingModelIds: ['google/gemini-3.5-flash', 'openai/text-embedding-3-small'],
+    });
+  });
+
+  it('fails closed when the canary is not given a ZDR-required model', () => {
+    expect(inspectOpenRouterZdrRegistry({ data: [] }, [])).toEqual({
+      ok: false,
+      reason: 'invalid_request',
+      detail: 'At least one non-empty ZDR-required model id must be inspected',
     });
   });
 
@@ -63,7 +272,7 @@ describe('inspectOpenRouterZdrRegistry', () => {
       detail: 'ZDR registry response.data[0].model_id is not a non-empty string',
     },
   ])('rejects a malformed registry payload: $detail', ({ payload, detail }) => {
-    expect(inspectOpenRouterZdrRegistry(payload, 'openai/whisper-large-v3')).toEqual({
+    expect(inspectOpenRouterZdrRegistry(payload, ['deepseek/deepseek-v4-flash-0731'])).toEqual({
       ok: false,
       reason: 'invalid_response',
       detail,

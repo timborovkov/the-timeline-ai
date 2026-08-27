@@ -18,6 +18,7 @@ export function persistSidebarExpanded(expanded: boolean) {
 
   try {
     const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${SIDEBAR_COOKIE_KEY}=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${secure}`;
     document.cookie = `${SIDEBAR_COOKIE_KEY}=${value}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
   } catch {
     // Cookies can be blocked; the in-memory toggle should still work.

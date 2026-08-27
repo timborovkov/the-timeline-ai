@@ -82,6 +82,7 @@ describe('transcribeAudio', () => {
       headers: {
         Authorization: 'Bearer sk-test-key',
         'Content-Type': 'application/json',
+        'X-OpenRouter-Cache': 'false',
       },
     });
     expect(JSON.parse(init.body)).toEqual({
@@ -108,7 +109,7 @@ describe('transcribeAudio', () => {
       { model: makeMockModel('ok') },
     );
     expect(result.model).toBe(TIMELINE_MODELS.transcription.id);
-    expect(TIMELINE_MODELS.transcription.id).toBe('openai/whisper-large-v3');
+    expect(TIMELINE_MODELS.transcription.id).toBe('openai/gpt-4o-transcribe');
   });
 
   it('throws when OPENROUTER_API_KEY is missing AND no model is injected', async () => {

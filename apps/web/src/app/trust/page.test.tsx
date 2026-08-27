@@ -19,13 +19,16 @@ describe('Trust page', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Your work should not become someone else');
-    expect(html).toContain('Deployment-gated ZDR');
+    expect(html).toContain('ZDR by role');
     expect(html).toContain('Prohibited by policy');
     expect(html).toContain('Production provider evidence remains pending');
-    expect(html).toContain('ZDR guardrail covering every model group');
+    expect(html).toContain('ZDR-required roles reject endpoints with weaker retention terms');
     expect(html).toContain('data_collection: deny');
     expect(html).toContain('zdr: true');
-    expect(html).toContain('openai/whisper-large-v3');
+    expect(html).toContain('cache-disable control');
+    expect(html).toContain('openai/gpt-4o-transcribe');
+    expect(html).toContain('Retained, no-training quality exception');
+    expect(html).toContain('up to 30 days');
     expect(html).toContain('Not claimed today');
     expect(html).toContain('SOC 2, ISO 27001, or HIPAA compliance');
     expect(html).toContain('Browser analytics is confined to');

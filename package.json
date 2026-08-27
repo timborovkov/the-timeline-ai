@@ -17,6 +17,7 @@
     "test:suggestions-eval:live": "SUGGESTIONS_LIVE_EVAL=1 NODE_OPTIONS=--conditions=development pnpm --filter @timeline/worker exec vitest run src/workers/suggestions.live-eval.test.ts --project live --maxWorkers=1 --no-file-parallelism",
     "test:proposal-engine:live": "PROPOSAL_ENGINE_LIVE_EVAL=1 NODE_OPTIONS=--conditions=development pnpm --filter @timeline/worker exec vitest run src/workers/proposal-engine.live-eval.test.ts --project live --maxWorkers=1 --no-file-parallelism",
     "test:transcribe-eval:live": "TRANSCRIBE_LIVE_EVAL=1 NODE_OPTIONS=--conditions=development pnpm --filter @timeline/worker exec vitest run src/workers/transcribe.live-eval.test.ts --project live --maxWorkers=1 --no-file-parallelism",
+    "eval:transcription-quality:live": "TRANSCRIPTION_QUALITY_EVAL_LIVE=1 NODE_OPTIONS=--conditions=development pnpm --filter @timeline/worker exec tsx src/scripts/transcription-quality-eval.ts",
     "test:reconciliation-eval": "NODE_OPTIONS=--conditions=development pnpm --filter @timeline/shared exec vitest run src/reconciliation/index.test.ts src/reconciliation/authority.test.ts src/reconciliation/dev-seed-contract.test.ts src/reconciliation/evals.test.ts src/reconciliation/live-artifacts.test.ts src/reconciliation/planner.test.ts src/reconciliation/production-sampling.test.ts src/reconciliation/stable-json.test.ts --project unit --maxWorkers=1 --no-file-parallelism && NODE_OPTIONS=--conditions=development pnpm --filter @timeline/shared exec vitest run src/reconciliation/normalization.test.ts src/reconciliation/backfill.test.ts src/reconciliation/dashboard.test.ts src/reconciliation/mcp-capture.test.ts src/reconciliation/resolver.test.ts --project pglite --maxWorkers=1 --no-file-parallelism && NODE_OPTIONS=--conditions=development pnpm --filter @timeline/worker exec vitest run src/scripts/reconciliation-production-sampling.test.ts src/scripts/reconciliation-legacy-provenance.test.ts --project unit --maxWorkers=1 --no-file-parallelism",
     "test:reconciliation-eval:live": "RECONCILIATION_LIVE_EVAL=1 NODE_OPTIONS=--conditions=development pnpm --filter @timeline/shared exec vitest run src/reconciliation/live-eval.test.ts --project unit --maxWorkers=1 --no-file-parallelism",
     "test:dist-imports": "pnpm --filter @timeline/db build && pnpm --filter @timeline/shared build && node scripts/check-dist-imports.mjs",
@@ -27,6 +28,7 @@
     "e2e:prod-smoke": "tsx scripts/run-e2e-prod-smoke.ts",
     "canary:integrations": "NODE_OPTIONS=--conditions=development tsx scripts/check-live-integrations.ts",
     "canary:integrations:strict": "NODE_OPTIONS=--conditions=development tsx scripts/check-live-integrations.ts --strict",
+    "openrouter:attestation": "NODE_OPTIONS=--conditions=development node --import tsx scripts/print-openrouter-privacy-attestation.ts",
     "repair:monday": "NODE_OPTIONS=--conditions=development tsx scripts/repair-monday-helper-boards.ts",
     "e2e:setup": "tsx scripts/run-e2e-command.ts pnpm exec tsx e2e/setup.ts",
     "e2e:cleanup": "tsx scripts/run-e2e-command.ts pnpm exec tsx e2e/cleanup.ts",
@@ -64,8 +66,7 @@
     "tsx": "^4.22.4",
     "turbo": "^2.9.18",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1",
-    "zod": "^4.4.3"
+    "typescript-eslint": "^8.61.1"
   },
   "engines": {
     "node": ">=24.0.0",

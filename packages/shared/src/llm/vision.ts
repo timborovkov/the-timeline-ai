@@ -4,7 +4,11 @@ import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
+import {
+  OPENROUTER_DISABLE_CACHE_HEADERS,
+  OPENROUTER_OFFICIAL_BASE_URL,
+  openRouterPrivateProviderOptions,
+} from '#src/llm/privacy.js';
 import {
   generateText,
   sanitizeAiSdkInputs,
@@ -60,22 +64,26 @@ export interface ExtractTextFromMediaResult {
 export interface VisionDeps {
   /** Inject a pre-built LanguageModel — used by tests. */
   model?: LanguageModel;
+  /** Inject transport for provider-boundary tests. */
+  fetch?: typeof globalThis.fetch;
 }
 
 function resolveVisionModelId(): string {
   return TIMELINE_MODELS.vision.id;
 }
 
-function buildDefaultModel(modelId: string): LanguageModel {
+function buildDefaultModel(modelId: string, fetchImpl?: typeof globalThis.fetch): LanguageModel {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.extractTextFromMedia');
   }
-  const baseURL = env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+  const baseURL = env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL;
   const provider = createOpenAICompatible({
     name: 'openrouter',
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
+    headers: OPENROUTER_DISABLE_CACHE_HEADERS,
+    ...(fetchImpl ? { fetch: fetchImpl } : {}),
   });
   return provider(modelId);
 }
@@ -152,7 +160,7 @@ export async function extractTextFromMedia(
   const result = await wrapAiFailure(
     { operation: 'llm.extractTextFromMedia', model: modelId },
     async () => {
-      const model = deps.model ?? buildDefaultModel(modelId);
+      const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
       return generateText({
         model,
         system: SYSTEM_PROMPT,

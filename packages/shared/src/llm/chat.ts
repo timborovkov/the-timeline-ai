@@ -19,7 +19,11 @@ import {
   type TimelineAiErrorMetadata,
 } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
+import {
+  OPENROUTER_DISABLE_CACHE_HEADERS,
+  OPENROUTER_OFFICIAL_BASE_URL,
+  openRouterPrivateProviderOptions,
+} from '#src/llm/privacy.js';
 import {
   generateObject,
   generateText,
@@ -271,11 +275,12 @@ export function buildOpenRouterLanguageModel(
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.chat');
   }
-  const baseURL = env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+  const baseURL = env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL;
   const provider = createOpenAICompatible({
     name: 'openrouter',
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
+    headers: OPENROUTER_DISABLE_CACHE_HEADERS,
     supportsStructuredOutputs: options.supportsStructuredOutputs ?? true,
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });

@@ -62,7 +62,7 @@ describe('quick meeting capture', () => {
     });
     joinMeetingMock.mockImplementation(async () => {
       await joinReleased;
-      return { botId: 'bot-1', raw: { id: 'bot-1' } };
+      return { botId: 'bot-1' };
     });
 
     const prompt = await createRawUrlQuickJoinConfirmation({
@@ -100,6 +100,8 @@ describe('quick meeting capture', () => {
     expect(joinMeetingMock).toHaveBeenCalledTimes(1);
     const rows = await db.select().from(meetings).where(eq(meetings.teamId, TEAM_ID));
     expect(rows).toHaveLength(1);
+    expect(rows[0]?.metadata).toMatchObject({ source: 'quick_join' });
+    expect(rows[0]?.metadata).not.toHaveProperty('provider_join_result');
   });
 
   it('leaves raw-url confirmations pending when capacity blocks the join', async () => {
@@ -162,7 +164,7 @@ describe('quick meeting capture', () => {
     const [meeting] = await db.select().from(meetings).where(eq(meetings.teamId, TEAM_ID));
     expect(meeting?.status).toBe('failed');
     expect(meeting?.metadata).toMatchObject({
-      join_error: 'provider unavailable',
+      join_error: 'provider_request_failed',
       source: 'quick_join',
     });
     const [confirmation] = await db
@@ -174,7 +176,7 @@ describe('quick meeting capture', () => {
   });
 
   it('reuses a due saved scheduled occurrence when confirming the same raw URL', async () => {
-    joinMeetingMock.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
+    joinMeetingMock.mockResolvedValue({ botId: 'bot-1' });
     const scope = withTeam(db as never, TEAM_ID, USER_ID).meetings;
     const saved = await scope.createSavedMeeting({
       title: 'Raw URL daily',

@@ -194,6 +194,51 @@ describe('extractTextFromMedia', () => {
     expect(text).toMatch(/SUGGESTED_TITLE/);
   });
 
+  it('enforces ZDR routing and disables OpenRouter response caching at the HTTP boundary', async () => {
+    let requestBody: unknown;
+    let requestHeaders: Headers | undefined;
+    const fetch: typeof globalThis.fetch = (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
+      requestBody = JSON.parse(init.body) as unknown;
+      requestHeaders = new Headers(init.headers);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-vision-test',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.vision.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content:
+                    'SUGGESTED_TITLE:\nSynthetic scan\n\nSOURCE_TEXT:\nhello\n\nVISUAL_DESCRIPTION:\nA synthetic scan.',
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    await expect(
+      extractTextFromMedia(
+        { body: Buffer.from([0xff, 0xd8, 0xff]), mediaType: 'image/jpeg' },
+        { fetch },
+      ),
+    ).resolves.toMatchObject({ text: 'hello', model: TIMELINE_MODELS.vision.id });
+    expect(requestBody).toMatchObject({
+      model: TIMELINE_MODELS.vision.id,
+      provider: { data_collection: 'deny', zdr: true },
+    });
+    expect(requestHeaders?.get('X-OpenRouter-Cache')).toBe('false');
+  });
+
   it('resolveVisionModelId uses the predefined vision model catalog entry', () => {
     expect(resolveVisionModelId()).toBe(TIMELINE_MODELS.vision.id);
   });

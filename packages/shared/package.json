@@ -233,6 +233,12 @@
       "import": "./dist/llm/index.js",
       "default": "./dist/llm/index.js"
     },
+    "./llm/privacy-attestation": {
+      "types": "./src/llm/privacy-attestation.ts",
+      "development": "./src/llm/privacy-attestation.ts",
+      "import": "./dist/llm/privacy-attestation.js",
+      "default": "./dist/llm/privacy-attestation.js"
+    },
     "./mcp": {
       "types": "./src/mcp/index.ts",
       "development": "./src/mcp/index.ts",

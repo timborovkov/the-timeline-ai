@@ -14,9 +14,9 @@
       <p class="tldr">
         Paste a Google Meet, Microsoft Teams, or Zoom link into
         <code>/app/meetings</code>, save a reusable meeting link, or use a Slack/Telegram join
-        command. A silent <strong>Recall.ai</strong> bot joins, transcribes via Recall's Whisper
-        engine (auto language detection), and the meeting appears as a single event on the timeline
-        with summary, speakers, and action items.
+        command. A silent <strong>Recall.ai</strong> bot joins, uses Recall's streaming
+        transcription with automatic language detection, and the meeting appears as a single event
+        on the timeline with summary, speakers, and action items.
       </p>
 
       <p>
@@ -144,18 +144,33 @@ RECALL_RETENTION=
 
       <h2 id="webhooks">3. Webhook endpoints</h2>
       <p>
-        Two webhooks. Status events are Svix-signed; transcript events are unsigned and validated by
-        bot id lookup.
+        Recall signs both dashboard status webhooks and per-bot realtime transcript webhooks. Create
+        a workspace verification secret in the same Recall region as the API key, then copy the
+        exact provider-issued value. Timeline requires canonical <code>whsec_</code> encoding with
+        at least 24 decoded secret bytes and rejects hand-written weak values.
+      </p>
+      <pre><code>RECALL_WORKSPACE_VERIFICATION_SECRET=whsec_...
+</code></pre>
+      <p>
+        Timeline verifies the exact raw request body, webhook id, and timestamp before parsing, rate
+        limiting, bot lookup, or database access. Signatures more than five minutes from the server
+        clock are rejected. See
+        <a href="https://docs.recall.ai/docs/authenticating-requests-from-recallai"
+          >Recall's request-authentication guide</a
+        >.
       </p>
       <ol>
         <li>
-          <strong>Status webhook</strong> (Svix-signed). In the Recall dashboard, configure the
-          webhook URL to:
+          <strong>Status webhook.</strong> In the Recall dashboard, configure the webhook URL to:
           <pre><code>https://thetimeline.cc/api/webhooks/recall/status
 </code></pre>
-          Copy the Svix signing secret it generates. Set:
+          Newer Recall accounts use the workspace secret above. Accounts created before 15 December
+          2025 may still require the endpoint-specific legacy Svix secret for dashboard status
+          events; set it only in that compatibility case:
           <pre><code>RECALL_STATUS_WEBHOOK_SECRET=whsec_...
 </code></pre>
+          When both are configured, Timeline accepts a status delivery signed by either secret
+          without revealing which matched. The legacy secret never authenticates transcript events.
         </li>
         <li>
           <strong>Transcript webhook</strong>. We pass this URL to Recall on every
@@ -169,13 +184,12 @@ RECALL_RETENTION=
           <pre><code># Optional — defaults to AUTH_URL + /api/webhooks/recall/transcript
 RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcript
 </code></pre>
-          This endpoint is NOT Svix-signed — Recall does not sign realtime transcript events.
-          Authentication relies on:
+          The workspace verification secret authenticates this per-bot realtime endpoint. Additional
+          defenses are:
           <ul>
             <li>
-              <strong>Bot id lookup</strong> — bots are issued by Recall after our authenticated
-              <code>joinMeeting</code> call. A forged bot id can't match any meeting in our
-              database.
+              <strong>Bot id lookup</strong> — the signed bot id is resolved to the meeting and team
+              that Timeline recorded after its authenticated <code>joinMeeting</code> call.
             </li>
             <li><strong>Zod validation</strong> — malformed payloads are rejected.</li>
             <li><strong>Rate limit</strong> — 600 transcript events/minute per bot.</li>
@@ -256,11 +270,11 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
           for <code>web:api:recall:transcript</code> entries.
         </li>
         <li>
-          <strong>401 on status webhook</strong> — Svix signature mismatch. Re-copy the signing
-          secret from the Recall dashboard into <code>RECALL_STATUS_WEBHOOK_SECRET</code>. The web
-          app reports these failures to Sentry as
-          <code>recall_status_svix_verification_failed</code> warnings tagged with the verification
-          reason.
+          <strong>401 on a Recall webhook</strong> — signature or timestamp mismatch. Re-copy the
+          same-region workspace secret into <code>RECALL_WORKSPACE_VERIFICATION_SECRET</code> and
+          verify the web-service clock. For a pre-15-December-2025 dashboard status endpoint, also
+          verify <code>RECALL_STATUS_WEBHOOK_SECRET</code>. The web app reports status and
+          transcript verification failures to Sentry using content-free reason tags.
         </li>
       </ul>
     </main>

@@ -1,8 +1,18 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { getEnv, isAllowedDocumentExtractProcessEnvKey, resetEnvForTests } from '#src/env.js';
+import { buildOpenRouterPrivacyAttestationToken } from '#src/llm/privacy-attestation.js';
 
 const ENV_BACKUP = { ...process.env };
+const TEST_OPENROUTER_API_KEY = 'sk-or-test';
+const TEST_OPENROUTER_GUARDRAIL_ID = 'guardrail-test-production';
+
+function testOpenRouterAttestation(
+  apiKey = TEST_OPENROUTER_API_KEY,
+  guardrailId = TEST_OPENROUTER_GUARDRAIL_ID,
+): string {
+  return buildOpenRouterPrivacyAttestationToken({ apiKey, guardrailId });
+}
 
 function setBaseEnv(overrides: Record<string, string | undefined> = {}): void {
   const next: Record<string, string | undefined> = {
@@ -30,8 +40,9 @@ function setExtractProductionEnv(overrides: Record<string, string | undefined> =
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
     REDIS_URL: 'redis://localhost:6379',
     DAYTONA_API_KEY: 'dtn_test',
-    OPENROUTER_API_KEY: 'sk-or-test',
-    OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: 'true',
+    OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+    OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+    OPENROUTER_PRIVACY_POLICY_ATTESTATION: testOpenRouterAttestation(),
     S3_ENDPOINT: 'http://localhost:9000',
     S3_REGION: 'us-east-1',
     S3_ACCESS_KEY_ID: 'key',
@@ -66,27 +77,83 @@ describe('getEnv', () => {
 
     const env = getEnv();
     expect(env.OPENROUTER_API_KEY).toBeUndefined();
-    expect(env).toMatchObject({
-      OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: false,
-      TIMELINE_DEPLOYMENT_MODE: 'hosted',
-    });
+    expect(env.OPENROUTER_GUARDRAIL_ID).toBeUndefined();
+    expect(env.OPENROUTER_PRIVACY_POLICY_ATTESTATION).toBeUndefined();
+    expect(env.TIMELINE_DEPLOYMENT_MODE).toBe('hosted');
   });
 
-  it('requires acknowledgement of ZDR coverage for every used model group in production', () => {
+  it('requires a guardrail id and generated model/privacy attestation in production', () => {
     setBaseEnv({
       NODE_ENV: 'production',
-      OPENROUTER_API_KEY: 'sk-or-test',
-      OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: undefined,
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: undefined,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: undefined,
     });
-
-    expect(() => getEnv()).toThrow(/OPENROUTER_ZDR_GUARDRAIL_CONFIRMED/);
+    expect(() => getEnv()).toThrow(/OPENROUTER_GUARDRAIL_ID/);
 
     setBaseEnv({
       NODE_ENV: 'production',
-      OPENROUTER_API_KEY: 'sk-or-test',
-      OPENROUTER_ZDR_GUARDRAIL_CONFIRMED: 'true',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: undefined,
     });
-    expect(getEnv().OPENROUTER_ZDR_GUARDRAIL_CONFIRMED).toBe(true);
+    expect(() => getEnv()).toThrow(/OPENROUTER_PRIVACY_POLICY_ATTESTATION/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: '2026-08-21.1',
+    });
+    expect(() => getEnv()).toThrow(/must be regenerated/u);
+
+    const attestation = testOpenRouterAttestation();
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: attestation,
+    });
+    expect(getEnv().OPENROUTER_PRIVACY_POLICY_ATTESTATION).toBe(attestation);
+  });
+
+  it('invalidates the production attestation on key rotation or guardrail change', () => {
+    const staleAttestation = testOpenRouterAttestation();
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: `${TEST_OPENROUTER_API_KEY}-rotated`,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: staleAttestation,
+    });
+    expect(() => getEnv()).toThrow(/must be regenerated/u);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: `${TEST_OPENROUTER_GUARDRAIL_ID}-replacement`,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: staleAttestation,
+    });
+    expect(() => getEnv()).toThrow(/must be regenerated/u);
+  });
+
+  it('allows only the official OpenRouter API boundary in production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: testOpenRouterAttestation(),
+      OPENROUTER_BASE_URL: 'https://proxy.example.test/api/v1',
+    });
+    expect(() => getEnv()).toThrow(/OPENROUTER_BASE_URL/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: testOpenRouterAttestation(),
+      OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1/',
+    });
+    expect(getEnv().OPENROUTER_BASE_URL).toBe('https://openrouter.ai/api/v1/');
   });
 
   it('ignores legacy model env vars because model config is code-owned', () => {
@@ -116,6 +183,49 @@ describe('getEnv', () => {
     setBaseEnv({ RECALL_TRANSCRIPT_WEBHOOK_URL: '' });
 
     expect(getEnv().RECALL_TRANSCRIPT_WEBHOOK_URL).toBeUndefined();
+  });
+
+  it('accepts canonical Recall webhook secrets and rejects malformed values', () => {
+    const workspaceSecret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    const legacyStatusSecret = `whsec_${Buffer.alloc(24, 0x62).toString('base64')}`;
+    setBaseEnv({
+      RECALL_WORKSPACE_VERIFICATION_SECRET: workspaceSecret,
+      RECALL_STATUS_WEBHOOK_SECRET: legacyStatusSecret,
+    });
+    expect(getEnv()).toMatchObject({
+      RECALL_WORKSPACE_VERIFICATION_SECRET: workspaceSecret,
+      RECALL_STATUS_WEBHOOK_SECRET: legacyStatusSecret,
+    });
+
+    for (const invalid of [
+      'plain-text',
+      'whsec_',
+      'whsec_not/base64!',
+      'whsec_YQ=',
+      'whsec_YQ==',
+      `whsec_${Buffer.alloc(23, 0x61).toString('base64')}`,
+    ]) {
+      setBaseEnv({ RECALL_WORKSPACE_VERIFICATION_SECRET: invalid });
+      expect(() => getEnv()).toThrow(/RECALL_WORKSPACE_VERIFICATION_SECRET/);
+    }
+  });
+
+  it('requires the Recall workspace verification secret with the production API key', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: undefined,
+      RECALL_STATUS_WEBHOOK_SECRET: `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`,
+    });
+    expect(() => getEnv()).toThrow(/RECALL_WORKSPACE_VERIFICATION_SECRET is required/);
+
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    setBaseEnv({
+      NODE_ENV: 'production',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+    });
+    expect(getEnv().RECALL_WORKSPACE_VERIFICATION_SECRET).toBe(secret);
   });
 
   it('keeps server analytics credentials separate and validates the pseudonymization key', () => {
@@ -149,10 +259,12 @@ describe('getEnv', () => {
   });
 
   it('limits configured Recall media retention to one hour in Timeline-hosted production', () => {
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
     setBaseEnv({
       NODE_ENV: 'production',
       TIMELINE_DEPLOYMENT_MODE: 'hosted',
       RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
       RECALL_RETENTION: '24',
     });
     expect(() => getEnv()).toThrow(/RECALL_RETENTION must be unset or 1/);
@@ -161,16 +273,19 @@ describe('getEnv', () => {
       NODE_ENV: 'production',
       TIMELINE_DEPLOYMENT_MODE: 'hosted',
       RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
       RECALL_RETENTION: '1',
     });
     expect(getEnv().RECALL_RETENTION).toBe('1');
   });
 
   it('permits deliberate Recall retention in self-managed production', () => {
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
     setBaseEnv({
       NODE_ENV: 'production',
       TIMELINE_DEPLOYMENT_MODE: 'self-managed',
       RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
       RECALL_RETENTION: '24',
     });
 
@@ -447,7 +562,10 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_API_KEY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_SNAPSHOT_ENSURE')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('S3_SECRET_ACCESS_KEY')).toBe(true);
-    expect(isAllowedDocumentExtractProcessEnvKey('OPENROUTER_ZDR_GUARDRAIL_CONFIRMED')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('OPENROUTER_GUARDRAIL_ID')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('OPENROUTER_PRIVACY_POLICY_ATTESTATION')).toBe(
+      true,
+    );
     expect(isAllowedDocumentExtractProcessEnvKey('TIMELINE_DEPLOYMENT_MODE')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_VERSION')).toBe(true);

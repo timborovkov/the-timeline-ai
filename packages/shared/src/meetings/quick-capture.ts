@@ -68,14 +68,15 @@ async function startBot(input: {
     });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
-      metadata: { provider_join_result: join.raw ?? {}, source: 'quick_join' },
+      metadata: { source: 'quick_join' },
     });
     return { ok: true, meetingId: claimed.id, botName };
   } catch (err) {
+    const joinErrorCode = meetingBots.meetingBotErrorCode(err);
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
-        join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+        join_error: joinErrorCode,
         source: 'quick_join',
       },
     });

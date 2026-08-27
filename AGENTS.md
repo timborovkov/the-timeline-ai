@@ -39,6 +39,12 @@ After **any** code, configuration, or documentation change:
    - Run `pnpm test:task-category-eval:live` with
      `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
      taxonomy, classifier packet, prompt, schema, or pinned model changes.
+   - Run `pnpm eval:transcription-quality:live -- --manifest=/path/to/manifest.json
+     --out=/path/to/new-evidence.json --candidate=<model-id>` before changing the
+     non-meeting transcription pin. The approved corpus must contain no customer
+     data and satisfy the 24-language quality gate documented in
+     [docs/research/transcription-quality-eval.md](docs/research/transcription-quality-eval.md).
+     A live registry entry or single-language smoke test is not promotion evidence.
    - Run `pnpm test:reconciliation-eval` when a change touches reconciliation
      schema, source refs, evidence associations, visibility floors, authority
      policy, or reconciliation output planning. Run

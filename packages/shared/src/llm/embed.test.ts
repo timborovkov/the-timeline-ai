@@ -38,7 +38,6 @@ beforeEach(() => {
   };
   resetEnvForTests();
 });
-
 afterEach(() => {
   process.env = { ...ENV_BACKUP };
   resetEnvForTests();
@@ -58,10 +57,12 @@ describe('llm.embed', () => {
 
   it('injects no-collection and ZDR routing into the serialized OpenRouter request', async () => {
     let requestBody: unknown;
+    let requestHeaders: Headers | undefined;
     const vector = embeddingVector(1);
     const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
       if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
       requestBody = JSON.parse(init.body) as unknown;
+      requestHeaders = new Headers(init.headers);
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -80,8 +81,9 @@ describe('llm.embed', () => {
     expect(requestBody).toMatchObject({
       model: TIMELINE_MODELS.embedding.id,
       input: ['synthetic'],
-      provider: { data_collection: 'deny', zdr: true },
+      provider: { allow_fallbacks: true, data_collection: 'deny', zdr: true },
     });
+    expect(requestHeaders?.get('X-OpenRouter-Cache')).toBe('false');
   });
 
   it('truncates text before sending it to the embedding model budget', async () => {

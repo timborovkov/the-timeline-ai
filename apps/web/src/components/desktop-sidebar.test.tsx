@@ -7,7 +7,11 @@ import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
 
 import { DesktopSidebar } from '@/components/desktop-sidebar';
-import { SIDEBAR_PREFERENCE_BOOTSTRAP, sidebarExpandedFromCookie } from '@/lib/sidebar-preference';
+import {
+  SIDEBAR_PREFERENCE_BOOTSTRAP,
+  persistSidebarExpanded,
+  sidebarExpandedFromCookie,
+} from '@/lib/sidebar-preference';
 
 function sidebarCookieDocument(
   pathname: string,
@@ -104,6 +108,38 @@ describe('DesktopSidebar', () => {
     expect(sidebarExpandedFromCookie(undefined)).toBe(true);
     expect(sidebarExpandedFromCookie('true')).toBe(true);
     expect(sidebarExpandedFromCookie('false')).toBe(false);
+  });
+
+  it('expires the legacy root cookie before persisting a scoped preference', () => {
+    const cookie = sidebarCookieDocument('/app/timeline', { root: 'true' });
+    const previousDocument = globalThis.document;
+    const previousWindow = globalThis.window;
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: cookie.document });
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        localStorage: { setItem: vi.fn() },
+        location: { protocol: 'https:' },
+      },
+    });
+
+    try {
+      persistSidebarExpanded(false);
+    } finally {
+      Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: previousDocument,
+      });
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: previousWindow,
+      });
+    }
+
+    expect(cookie.read()).toEqual({ app: 'false', root: undefined });
+    expect(cookie.writes[0]).toContain('Path=/; Max-Age=0');
+    expect(cookie.writes[1]).toContain('Path=/app');
+    expect(cookie.writes[1]).toContain('Secure');
   });
 
   it('migrates the existing local preference before rendering and reloads only once', () => {

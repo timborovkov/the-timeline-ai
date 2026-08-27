@@ -92,13 +92,16 @@
         document-extract consumer (ADR 0013). Set <code>WORKER_MODE=document-extract</code>,
         <code>DAYTONA_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>,
         <code>REDIS_URL</code>, and S3 document-bucket variables. Set
-        <code>OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true</code> only after assigning the production
-        OpenRouter key a ZDR guardrail covering every model group Timeline uses. Set
-        <code>DAYTONA_SNAPSHOT=auto</code> so each deployed extractor resolves its matching content
-        hash. <code>DAYTONA_SNAPSHOT_ENSURE=true</code> (default) create-once if missing; it does
-        not rebuild every restart. Push CI never deletes snapshots: idle deployed extractors have no
-        persistent Daytona sandbox to reveal the hash they still need. For manual cleanup, pass
-        every production/staging deployed hash as the workflow's
+        <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code> only after an operator-only
+        management-key check verifies the exact inference-key assignment, model allowlist,
+        guardrail/ZDR settings, and account privacy settings. Never add the management key to
+        Railway runtime variables. See <a href="./openrouter.html">OpenRouter setup</a> for the
+        generation command. Set <code>DAYTONA_SNAPSHOT=auto</code> so each deployed extractor
+        resolves its matching content hash. <code>DAYTONA_SNAPSHOT_ENSURE=true</code> (default)
+        create-once if missing; it does not rebuild every restart. Push CI never deletes snapshots:
+        idle deployed extractors have no persistent Daytona sandbox to reveal the hash they still
+        need. For manual cleanup, pass every production/staging deployed hash as the workflow's
         <code>deployed_snapshots</code> input (or <code>DAYTONA_ACTIVE_SNAPSHOTS</code> locally).
         Collect each hash from that environment's successful orchestrator startup log entry (<code
           >document-extract Daytona snapshot ensured</code
@@ -137,9 +140,11 @@
       </p>
       <p>
         Meeting capture also requires <code>RECALL_API_KEY</code>, <code>RECALL_BASE_URL</code>,
-        <code>RECALL_STATUS_WEBHOOK_SECRET</code>, and the optional transcript URL and display-name
-        variables documented in the <a href="./meeting-bots.html">Recall.ai setup guide</a>. Hosted
-        services must set <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> and
+        <code>RECALL_WORKSPACE_VERIFICATION_SECRET</code>, and the optional transcript URL and
+        display-name variables documented in the
+        <a href="./meeting-bots.html">Recall.ai setup guide</a>. Only older dashboard status
+        endpoints use the legacy <code>RECALL_STATUS_WEBHOOK_SECRET</code> fallback. Hosted services
+        must set <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> and
         <code>RECALL_RETENTION=1</code> (or leave retention empty, which resolves to one hour); env
         validation rejects longer or indefinite media retention in that hosted production mode.
       </p>
@@ -195,9 +200,14 @@
         Keep <code>LANGSMITH_TRACING=false</code> in hosted production. Env validation rejects
         production tracing because rich traces can include private prompt and output content. Use it
         only in controlled development or evaluation environments with synthetic or explicitly
-        approved data. The production OpenRouter key must instead be bound to a guardrail with ZDR
-        enabled for every model group Timeline uses; set
-        <code>OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true</code> only after verifying that assignment.
+        approved data. The production OpenRouter key must be restricted to the code-owned model
+        catalog with applicable ZDR guardrails for every <code>zdr_required</code> role. Production
+        also requires <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code>. The token invalidates on inference-key,
+        guardrail, catalog, or policy drift, but provider-side assignment and settings still require
+        a separate management-key deployment check and dated evidence. Never deploy that management
+        key to the app. The voice-transcription role remains the separately disclosed retained,
+        no-training quality exception.
       </p>
       <p>
         A release that changes <code>TERMS_VERSION</code> or <code>PRIVACY_VERSION</code> forces

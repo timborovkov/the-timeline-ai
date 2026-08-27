@@ -9,7 +9,11 @@ import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { OPENROUTER_PRIVATE_PROVIDER_ROUTING } from '#src/llm/privacy.js';
+import {
+  OPENROUTER_DISABLE_CACHE_HEADERS,
+  OPENROUTER_OFFICIAL_BASE_URL,
+  openRouterPrivateProviderRouting,
+} from '#src/llm/privacy.js';
 
 export interface EmbedInput {
   text: string;
@@ -116,15 +120,16 @@ function privateEmbeddingFetch(fetchImpl: typeof globalThis.fetch): typeof globa
       throw new Error('OpenRouter embedding request body was not a JSON object');
     }
 
-    const existingProvider = isJsonObject(parsed.provider) ? parsed.provider : {};
+    // JSON.parse guarantees JSON-compatible member values; the object guard
+    // narrows only the container shape for TypeScript.
+    const existingProvider = (isJsonObject(parsed.provider) ? parsed.provider : {}) as Parameters<
+      typeof openRouterPrivateProviderRouting
+    >[0];
     return fetchImpl(input, {
       ...init,
       body: JSON.stringify({
         ...parsed,
-        provider: {
-          ...existingProvider,
-          ...OPENROUTER_PRIVATE_PROVIDER_ROUTING,
-        },
+        provider: openRouterPrivateProviderRouting(existingProvider),
       }),
     });
   };
@@ -138,11 +143,12 @@ function buildDefaultModel(
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.embed');
   }
-  const baseURL = env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+  const baseURL = env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL;
   const provider = createOpenAICompatible({
     name: 'openrouter',
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
+    headers: OPENROUTER_DISABLE_CACHE_HEADERS,
     // The installed compatible adapter only serializes `dimensions` and
     // `user` for embeddings. Inject the OpenRouter routing policy at the HTTP
     // boundary and fail closed if that request shape changes.

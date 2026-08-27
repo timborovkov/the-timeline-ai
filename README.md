@@ -140,7 +140,10 @@ The Timeline is a pnpm/Turborepo monorepo:
 | `docs` | Product, architecture, setup, and deployment documentation |
 
 The core services are Postgres, Redis, Qdrant, and S3-compatible object storage.
-Model calls go through OpenRouter behind a shared inference layer.
+Model calls go through OpenRouter behind a shared inference layer. Exact pins and
+their `zdr_required` or `retained_no_training_exception` policy live together in
+`packages/shared/src/llm/models.ts`; Recall.ai meeting transcription is a separate
+pipeline from OpenRouter voice-note transcription.
 
 Two boundaries are non-negotiable:
 

@@ -51,9 +51,9 @@ export function resolveTranscriptWebhookUrl(): string {
 export function isMeetingBotConfigured(): boolean {
   const env = getEnv();
   // AUTH_URL is required by the schema, so resolveTranscriptWebhookUrl
-  // always produces a value — the only thing that can be missing is the
-  // Recall API key + status secret.
-  return Boolean(env.RECALL_API_KEY && env.RECALL_STATUS_WEBHOOK_SECRET);
+  // always produces a value. A workspace secret is required because it
+  // authenticates the realtime transcript endpoint as well as status events.
+  return Boolean(env.RECALL_API_KEY && env.RECALL_WORKSPACE_VERIFICATION_SECRET);
 }
 
 export function meetingBotDisplayName(teamName: string | null | undefined): string {

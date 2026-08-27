@@ -441,7 +441,7 @@ describe('handleUpdate telegram edit visibility', () => {
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.RECALL_API_KEY = 'recall-test-key';
     process.env.RECALL_BASE_URL = 'https://recall.test/api/v1';
-    process.env.RECALL_STATUS_WEBHOOK_SECRET = `whsec_${Buffer.from('telegram-status').toString('base64')}`;
+    process.env.RECALL_WORKSPACE_VERIFICATION_SECRET = `whsec_${Buffer.from('telegram-workspace-for-tests').toString('base64')}`;
     // Dispatcher tests must not inherit a developer's live LLM configuration:
     // the /ask group-routing case intentionally exercises the unconfigured reply.
     delete process.env.OPENROUTER_API_KEY;

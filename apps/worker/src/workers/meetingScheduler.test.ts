@@ -118,7 +118,7 @@ describe('processMeetingSchedulerTick', () => {
 
   beforeEach(async () => {
     joinMeetingMock.mockReset();
-    joinMeetingMock.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
+    joinMeetingMock.mockResolvedValue({ botId: 'bot-1' });
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seed(pg);
@@ -146,6 +146,7 @@ describe('processMeetingSchedulerTick', () => {
     const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
     expect(row?.status).toBe('joining');
     expect(row?.providerBotId).toBe('bot-1');
+    expect(row?.metadata).toEqual({ source: 'test', scheduler_claimed: true });
   });
 
   it('still starts captures when the repeatable scheduler tick is more than a minute late', async () => {
@@ -263,7 +264,7 @@ describe('processMeetingSchedulerTick', () => {
     });
     joinMeetingMock.mockImplementation(async () => {
       await joinReleased;
-      return { botId: 'bot-1', raw: { id: 'bot-1' } };
+      return { botId: 'bot-1' };
     });
 
     const firstTick = processMeetingSchedulerTick({ db: db as never });

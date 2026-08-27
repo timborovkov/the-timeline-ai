@@ -13,6 +13,7 @@ import {
   getLegalContactEmail,
 } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
+import { PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS } from '@/lib/trust-claims';
 
 export const metadata: Metadata = publicMetadata({
   title: 'Terms of Use',
@@ -133,6 +134,11 @@ function TermsContentAndAiSections() {
         under the privacy controls described in the <Link href="/privacy">Privacy Policy</Link>.
         Timeline does not use Customer Content to train or fine-tune any model. Creating embeddings
         for retrieval is processing for the Service, not model training.
+      </p>
+      <p>
+        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyZdrRoleList} require zero-data-retention
+        processing and cannot downgrade to weaker retention during an outage.{' '}
+        {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.termsDetail}
       </p>
       <p>
         AI output can be inaccurate, incomplete, delayed, or based on incomplete evidence. Citations

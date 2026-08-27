@@ -131,6 +131,18 @@ describe('runSentryServerAction', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
+  it('leaves the invite return target to the token-aware invite action', async () => {
+    mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
+    const callback = vi.fn(() => 'invite action result');
+
+    await expect(runSentryServerAction('accept_invite', callback)).resolves.toBe(
+      'invite action result',
+    );
+    expect(mocks.auth).not.toHaveBeenCalled();
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
   it('leaves unauthenticated rejection to the action itself', async () => {
     mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
     mocks.auth.mockResolvedValue(null);

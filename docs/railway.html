@@ -74,27 +74,27 @@
           </tr>
           <tr>
             <td><code>postgres</code></td>
-            <td>Plugin</td>
+            <td>Database template</td>
             <td>—</td>
-            <td>(Railway-managed)</td>
+            <td>(customer-operated service)</td>
           </tr>
           <tr>
             <td><code>redis</code></td>
-            <td>Plugin</td>
+            <td>Database template</td>
             <td>—</td>
-            <td>(Railway-managed)</td>
+            <td>(customer-operated service)</td>
           </tr>
           <tr>
             <td><code>qdrant</code></td>
-            <td>Custom</td>
-            <td><code>infra/qdrant/Dockerfile</code></td>
-            <td>(image-based, see below)</td>
+            <td>Docker image</td>
+            <td><code>qdrant/qdrant:v1.12.4</code></td>
+            <td>(configured in Railway)</td>
           </tr>
           <tr>
             <td><code>rustfs</code></td>
-            <td>Custom</td>
-            <td><code>infra/rustfs/Dockerfile</code></td>
-            <td>(image-based, see below)</td>
+            <td>Docker image</td>
+            <td><code>rustfs/rustfs:latest</code></td>
+            <td>(configured in Railway)</td>
           </tr>
         </tbody>
       </table>
@@ -145,10 +145,13 @@
         <code>document-extract-orchestrator</code>, set <code>WORKER_MODE=document-extract</code>,
         <code>DAYTONA_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>,
         <code>REDIS_URL</code>, and S3 document-bucket variables. Set
-        <code>OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true</code> only after assigning the production key
-        a ZDR guardrail covering every model group Timeline uses. Set
-        <code>DAYTONA_SNAPSHOT=auto</code> to resolve the content hash from
-        <code>document-extract-sandbox/</code> for each deployed revision. Do
+        <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code> only after an operator-only
+        management-key check verifies the exact inference-key assignment, model allowlist,
+        guardrail/ZDR settings, and account privacy settings. Never add the management key to
+        Railway runtime variables. See <a href="./setup/openrouter.html">OpenRouter setup</a> for
+        the generation command. Set <code>DAYTONA_SNAPSHOT=auto</code> to resolve the content hash
+        from <code>document-extract-sandbox/</code> for each deployed revision. Do
         <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
         Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
         Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention, sandbox-aware pruning,
@@ -194,7 +197,9 @@ S3_BUCKET_EXPORTS=timeline-exports
 AUTH_SECRET=&lt;32-byte random, generate per env&gt;
 AUTH_URL=https://thetimeline.cc
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
-OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_GUARDRAIL_ID=&lt;official guardrail id&gt;
+OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
 CROSS_SOURCE_EVIDENCE_MODE=off
 LANGSMITH_TRACING=false
 TELEGRAM_BOT_TOKEN=&lt;botfather token&gt;
@@ -206,7 +211,8 @@ SUPPORT_EMAIL=contact@thetimeline.cc
 INBOUND_EMAIL_DOMAIN=in.thetimeline.cc
 RECALL_API_KEY=&lt;recall api key&gt;
 RECALL_BASE_URL=https://us-west-2.recall.ai/api/v1
-RECALL_STATUS_WEBHOOK_SECRET=&lt;recall svix signing secret&gt;
+RECALL_WORKSPACE_VERIFICATION_SECRET=&lt;exact provider-issued workspace whsec_ secret; at least 24 decoded bytes&gt;
+RECALL_STATUS_WEBHOOK_SECRET=&lt;legacy dashboard status whsec_ secret, if required&gt;
 RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcript
 RECALL_RETENTION=1
 RECALL_BOT_DISPLAY_NAME=Timeline
@@ -287,7 +293,9 @@ DOCUMENT_EXTRACT_MAX_VISION_PAGES=20
 DATABASE_URL=${{ Postgres.DATABASE_URL }}
 REDIS_URL=${{ Redis.REDIS_URL }}
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
-OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_GUARDRAIL_ID=&lt;official guardrail id&gt;
+OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
 S3_ENDPOINT=http://${{ RustFS.RAILWAY_PRIVATE_DOMAIN }}:9000
 S3_ACCESS_KEY_ID=&lt;from RustFS service vars&gt;
 S3_SECRET_ACCESS_KEY=&lt;from RustFS service vars&gt;
@@ -322,9 +330,16 @@ LOG_LEVEL=info
         Production env validation rejects <code>LANGSMITH_TRACING=true</code> because rich traces
         can include private prompt and output content. Use LangSmith only in controlled development
         or evaluation environments with synthetic or explicitly approved data. The hosted production
-        OpenRouter key must instead be bound to a guardrail with ZDR enabled for every model group
-        Timeline uses; <code>OPENROUTER_ZDR_GUARDRAIL_CONFIRMED=true</code> is an operator
-        acknowledgement of that verified assignment, not a mechanism that creates it.
+        OpenRouter key must be restricted to the code-owned model catalog with applicable ZDR
+        guardrails for every <code>zdr_required</code> role. Production also requires
+        <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code>. The token invalidates on inference-key,
+        guardrail, catalog, or policy drift; it does not create or prove the provider settings.
+        Verify the actual key assignment, <code>allowed_models</code>, and guardrail settings with a
+        separate operator-only management-key deployment check and dated evidence. Never store the
+        management key in web, worker, or document-extract runtime variables. The
+        voice-transcription role remains the separately disclosed retained, no-training quality
+        exception.
       </p>
       <p>
         Use Railway's "shared variables" feature at the project level for anything used by 2+

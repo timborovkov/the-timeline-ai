@@ -8,7 +8,7 @@
 | Control owner | **TBD: named security/privacy owner** |
 | Version | 2026-08-27 |
 | Last evidence review | 2026-08-27 |
-| Next scheduled review | **TBD: no later than 2026-11-21** |
+| Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
 | Legal research | [GDPR, cookies, and consent audit](./research/gdpr-cookie-consent-audit-2026-08-21.md) |
 | Analytics interface | [Privacy and analytics implementation interface](./privacy-analytics-interface.md) |
@@ -239,23 +239,39 @@ rejects a stale or missing version before recording evidence.
 
 ## 7. AI inference and training-data policy
 
-All hosted inference goes through the shared `packages/shared/src/llm` layer and
-OpenRouter. Application and worker code must not create a second inference path
-or call a model provider directly.
+Timeline-controlled hosted inference goes through the shared
+`packages/shared/src/llm` layer and OpenRouter. Application and worker code must
+not create a second direct model-provider path. Recall's provider-managed
+meeting transcription is the deliberate exception: it stays behind the shared
+meeting-bots provider boundary and is not a voice-note model route.
+
+`packages/shared/src/llm/models.ts` is the source of truth for each exact model
+pin and its privacy class. The current policy version is `2026-08-21.1`. Each
+role must be classified as one of:
+
+- `zdr_required`: generation, structured extraction, summarization, task
+  classification, multimodal extraction, and embeddings. A request must use an
+  endpoint OpenRouter identifies as zero data retention or fail closed. It must
+  never downgrade to weaker retention during an outage.
+- `retained_no_training_exception`: the non-meeting voice-note transcription
+  role may retain its quality-proven model when no ZDR candidate passes the
+  documented multilingual non-inferiority gate. The exception must name the
+  exact model and retention terms publicly and must not weaken any other role.
 
 The required hosted routing policy is:
 
-- every chat, structured, summarization, vision, embedding, and transcription
-  request uses a model endpoint that OpenRouter identifies as zero data
-  retention;
 - requests that expose provider routing send `data_collection: "deny"` and
-  `zdr: true`; privacy properties override caller-supplied values;
-- a request fails when no compliant endpoint is available; availability must not
-  silently weaken privacy;
-- production refuses to start with an OpenRouter key unless an operator has
-  confirmed that the key or account is bound to the required ZDR guardrail;
-- production prompt logging, input/output sharing for model improvement, and
-  response caching or presets that store content must remain disabled; and
+  `zdr: true` for every `zdr_required` role; privacy properties override
+  caller-supplied values;
+- every supported API surface explicitly disables persistent response caching;
+- OpenRouter may select any eligible ZDR upstream for a `zdr_required` model;
+  Timeline does not pin an infrastructure provider;
+- the single production key is restricted to the exact code-owned model
+  catalog and production refuses to start unless its generated attestation
+  binds the current policy version, canonical model-catalog SHA-256, inference
+  key SHA-256 fingerprint, and configured OpenRouter guardrail id;
+- production prompt logging, input/output sharing for model improvement,
+  Broadcast, and persistent response caching or presets remain disabled; and
 - LangSmith prompt/output tracing is prohibited in production. Development or
   evaluation tracing uses synthetic or specifically approved data only.
 
@@ -266,24 +282,59 @@ caching may also be compatible with a provider's ZDR definition. Timeline stores
 the source records and generated results needed to provide the product.
 
 A model identifier is not a privacy control because OpenRouter can change or
-add endpoints. Before changing a model, fallback, API surface, provider key, or
-guardrail, the change owner must:
+add endpoints. Before changing a model, fallback, privacy class, API surface,
+provider key, or guardrail, the change owner must:
 
 1. confirm the live endpoint appears in OpenRouter's ZDR registry and does not
    permit training;
-2. verify every relevant model group is covered by the production key/account
-   guardrail;
+2. verify every `zdr_required` model group is covered by the production
+   key/account guardrail and every catalog model is on the key allowlist. This
+   is a separate management-key deployment check: record the returned guardrail
+   settings and key assignment/allowlist as dated evidence, and never place the
+   management key in a web or worker runtime environment;
 3. run boundary tests that inspect the outbound request and a synthetic live
    canary;
 4. verify prompt logging, data sharing, and response caching remain off;
 5. update the provider evidence memo and this register; and
 6. run quality and cost evaluations because privacy-safe routing can change
-   model behavior.
+   model behavior; and
+7. bump the privacy-policy version whenever the hosted model/privacy contract
+   changes, regenerate `OPENROUTER_PRIVACY_POLICY_ATTESTATION` with
+   `pnpm openrouter:attestation`, then update deployment evidence and public
+   copy from the registry.
 
-The current code pins `openai/whisper-large-v3` for dedicated transcription
-because its endpoints were present in the live ZDR registry on 2026-08-21. That
-is dated evidence, not a permanent property; quarterly drift checks remain
-required.
+The generated attestation is a local drift detector, not proof that OpenRouter
+accepted the intended configuration. Provider-side guardrail assignment,
+`allowed_models`, ZDR enforcement, logging, sharing, Broadcast, and cache
+settings require the separate management-key canary/deployment check and dated
+evidence. OpenRouter management credentials are operator-only and must never be
+stored in application, web, worker, or document-extract runtime environments.
+
+Dedicated voice-note transcription is separate from Recall meeting
+transcription. The current code keeps `openai/gpt-4o-transcribe` as the
+`retained_no_training_exception` quality baseline. OpenRouter currently lists
+OpenAI as not training on prompts but retaining them; OpenAI documents default
+API abuse-monitoring retention of up to 30 days. This is not ZDR and must never
+be described as such.
+
+A ZDR transcription candidate may replace that baseline only after a
+reproducible, non-customer bake-off covers at least 24 representative languages,
+every accepted audio format, accents, background noise, silence, names,
+numbers, long low-bitrate recordings, and code-switching. It passes only when:
+
+- macro WER/CER is within 0.5 absolute points of the baseline;
+- no language or source slice regresses by more than 2 absolute points;
+- entity and number accuracy remains within 1 point;
+- hallucination, empty-output, truncation, and format-error rates do not
+  increase; and
+- p95 latency remains within 15% of baseline and inside the existing request
+  budget.
+
+Among passing candidates, choose the lowest error rate, then entity accuracy,
+coverage, latency, availability, and finally cost. The live evaluation stores
+only aggregate quality, latency, route, and cost metrics—never audio or
+transcript content. Until a candidate passes and its evidence artifact is
+locked, changing the production transcription pin is prohibited.
 
 ## 8. Infrastructure and storage
 
@@ -339,13 +390,22 @@ special-category data. Do not call the path “zero retention.”
 Meeting capture is silent and consent-gated. The scheduler requires the host to
 confirm that participants will be informed. Recall.ai joins the call, processes
 audio/video, and produces transcript events. Production with
-`TIMELINE_DEPLOYMENT_MODE=hosted` retains Recall meeting media for one hour
+`TIMELINE_DEPLOYMENT_MODE=hosted` requests a one-hour timed-retention setting
 because the accuracy-oriented transcription mode is incompatible with Recall's
 zero-retention option. The mode defaults to `hosted` so the restriction fails
 closed. A separately licensed and operated deployment may explicitly use
 `self-managed` and becomes responsible for its retention choice and notice.
-Timeline does not copy raw meeting audio/video into RustFS; it persists the
-transcript and derived meeting records under workspace visibility.
+Recall documents that window as starting when recording
+status reaches `done`; deployed deletion remains unverified. Timeline does not
+copy raw meeting audio/video into RustFS; it persists the transcript and derived
+meeting records under workspace visibility.
+
+Timeline keeps only Recall's bot identifier from a successful Create Bot
+response. Non-success response bodies are discarded rather than attached to
+errors, logs, or meeting metadata; persisted join failures contain only a
+content-free status/category. Signed status and transcript webhooks resolve a
+Recall bot before constructing the team scope, and the lookup fails closed if an
+unexpected duplicate bot identifier exists across teams.
 
 Uploaded voice notes are different from meeting recordings: Timeline stores the
 voice-note object in RustFS so the capture can be processed and used as workspace
@@ -448,7 +508,7 @@ sentence.
 | Provider | Purpose and data | Current control/evidence state |
 | --- | --- | --- |
 | Railway | Hosting, networking, service volumes, PostgreSQL/Redis templates, logs and backups | Topology documented; real regions, backup/restore, DPA and account controls are **Gap** |
-| OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | Per-request no-collection/ZDR and production guardrail acknowledgement are **Enforced**; account, contract and live canary evidence are **Gap** |
+| OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | Role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, and a key/guardrail/catalog/policy-bound production attestation are **Enforced in code**; provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
 | Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Production with `TIMELINE_DEPLOYMENT_MODE=hosted` requests one-hour media retention and rejects another configured value; an explicit `self-managed` production mode owns its retention choice. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
 | Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
 | Postmark | Transactional/support email and inbound email payloads | Required when configured; retention, tracking, DPA and support access are **Gap** |
@@ -515,8 +575,9 @@ a soft-delete flag alone is not a complete deletion claim.
 | Qdrant vectors | Derived points are team-scoped and many deletion paths remove them; full propagation test remains open | Do not claim every vector is deleted immediately |
 | RustFS files and exports | Active objects have application deletion helpers and signed access; backup/version deletion is not yet end-to-end verified | Distinguish active object deletion from backup expiry |
 | Redis and BullMQ | Cache/job lifetimes vary by queue and configuration | Do not use Redis as a durable content archive; document each content-bearing queue |
-| OpenRouter endpoints | ZDR routes process content without endpoint persistence; OpenRouter may retain non-content operational metadata | Qualify content versus metadata |
-| Recall.ai | Timeline-hosted meeting media defaults to one hour; an explicit self-managed deployment can choose another supported duration. Operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists. | Never say call media is deleted instantly |
+| OpenRouter ZDR-required endpoints | ZDR routes process content without endpoint persistence; OpenRouter may retain non-content operational metadata | Qualify content versus metadata and do not imply a fixed upstream |
+| OpenRouter voice transcription | Current `openai/gpt-4o-transcribe` quality exception is non-training but prompt-retaining; OpenAI documents default API abuse-monitoring retention up to 30 days | Name the exception and retention; never call hosted AI universally ZDR |
+| Recall.ai | Timeline-hosted mode requests one-hour meeting-media retention, which Recall documents as starting at recording `done`; an explicit self-managed deployment can choose another supported duration. Operational logs can remain seven days and meeting URLs fourteen days after termination; Timeline transcript persists | Never say call media is deleted or provider deletion is verified until deployed evidence exists |
 | Daytona | Ephemeral sandbox state is discarded/deleted; observability data may remain three days | Never equate ephemeral compute with zero provider retention |
 | Postmark | Public default message retention is 45 days, configurable no lower than seven days; actual account setting is unverified | Name Postmark and avoid a shorter unverified promise |
 | PostHog | Current source enforces zero browser capture/identifier before valid consent or after rejection, public-route-only browser analytics after opt-in, fixed personless surface streams, and explicit minimized server/worker events. The EU account review verifies disabled automatic capture and IP discard. Pay-as-you-go documents seven-year product-event retention, which exceeds the 90-day target; production and deletion completion remain unverified. | Public copy may describe the source-enforced product design and the dated account review. Do not claim that it is deployed, that retention is 90 days, that queued deletion is complete, or that pseudonymous analytics is anonymous until G-10 closes. |
@@ -593,8 +654,9 @@ Every change must preserve these rules:
   caches, exports, background jobs, and agent tools.
 - Source-ingested raw event content remains immutable; corrections are derived
   and auditable.
-- All AI requests use the shared inference layer and the fail-closed privacy
-  routing in section 7.
+- All Timeline-controlled AI requests use the shared inference layer and the
+  fail-closed privacy routing in section 7. Recall meeting transcription stays
+  exclusively behind the meeting-bots provider boundary described there.
 - Production tracing of prompts or outputs remains disabled.
 - Credentials use the shared secret-encryption or one-way hashing path; no
   plaintext secret persistence.
@@ -636,10 +698,16 @@ Public claims must be specific, time-bounded where needed, and tied to evidence.
   must contact Timeline before submitting a pull request. Public source
   improves transparency but is not an independent security audit.
 - Repository controls and deployment policy require no-collection, ZDR
-  endpoints and fail-closed routing. This may be described as a hosted-product
-  guarantee only after the current production key, account settings, and
-  recurring canary evidence are captured. OpenRouter and endpoints still
-  process content transiently and may retain operational metadata.
+  endpoints, cache disablement, and fail-closed routing for every
+  `zdr_required` role. This may be described as a hosted-product guarantee only
+  after the current production key, account settings, and recurring canary
+  evidence are captured. OpenRouter and endpoints still process content
+  transiently and may retain operational metadata.
+- Non-meeting voice transcription may be described as the explicit
+  `openai/gpt-4o-transcribe` no-training quality exception, including
+  OpenRouter's prompt-retaining classification and OpenAI's documented default
+  API abuse-monitoring retention of up to 30 days. Do not imply that exception
+  is ZDR.
 - Qdrant and RustFS run as self-hosted software in the documented Railway
   topology.
 - Integration and MCP credentials use AES-256-GCM at rest in Timeline.
@@ -656,8 +724,10 @@ Public claims must be specific, time-bounded where needed, and tied to evidence.
 
 - “Fully private,” “your data never leaves Timeline,” or “no third party sees
   data.”
-- “No one can train on or retain your data” without current production account,
-  cache, key-guardrail, endpoint, and contract evidence.
+- “No one can train on or retain your data,” “all hosted AI is ZDR,” or another
+  blanket claim that hides the voice-transcription exception. A no-training
+  claim must still be scoped to the evidenced model/provider policies and
+  Timeline's own enforceable conduct.
 - “Meeting recordings are never stored” or “deleted instantly.”
 - “All data stays in the EU” without service, volume, backup, support, analytics,
   and provider-region evidence.
@@ -668,7 +738,7 @@ Public claims must be specific, time-bounded where needed, and tied to evidence.
   and providers.
 - “No browser tracking,” “rejecting creates no identifier,” or “private routes
   never load analytics” as a deployed fact until G-10's provider-account and
-  production evidence is complete.
+  deployment evidence is complete.
 - “Anonymous analytics” when stable user or team identifiers are processed.
 - “Open source” or “anyone may self-host” until a repository license grants those
   rights.
@@ -691,7 +761,7 @@ item requires dated evidence stored in the internal control file.
 | ID | Status | Owner | Gap / completion evidence | Claim or risk blocked |
 | --- | --- | --- | --- | --- |
 | G-01 | **OPEN / blocker** | **TBD: founders + counsel** | Choose repository license after contributor/IP review; commit the license and contribution terms | “Open source” and general self-hosting rights |
-| G-02 | **PARTIAL: code + canary implemented** | **TBD: AI/platform** | Capture production OpenRouter key-to-guardrail evidence, logging/sharing/cache settings, current DPA/subprocessors, and schedule the synthetic transcription plus ZDR-registry canary | Unqualified no-training/no-retention claim |
+| G-02 | **PARTIAL: role policy + canary code implemented** | **TBD: AI/platform** | Run and lock the 24-language transcription bake-off; generate the key/guardrail/catalog/policy-bound runtime attestation; use an operator-only management key to capture dated evidence of the exact inference-key assignment, `allowed_models`, guardrail/ZDR settings, logging/sharing/Broadcast/cache settings, current DPA/subprocessors, and scheduled synthetic plus registry canaries. Never deploy the management key to web or worker runtime. | Verified hosted ZDR-by-role and no-training claims; any transcription-model migration |
 | G-03 | **PARTIAL: source removed** | **TBD: analytics + security** | Current source and regression tests remove the legacy Convex pageview import. Verify the deployed path; inspect prior logs/ownership and token URLs, export anything that must be retained, delete tracker-only data/deployment where proven safe, rotate still-valid credentials if affected, and retain dated evidence. | Complete tracker inventory and legacy analytics incident closure |
 | G-04 | **OPEN / blocker** | **TBD: founders + counsel** | Resolve Railway and Daytona special-category-data DPA mismatch or technically restrict unsupported data | Regulated/special-category hosted use |
 | G-05 | **OPEN** | **TBD: infrastructure** | Record Railway region per service/volume, public networking, storage encryption, log retention, backup schedule, and successful restore test | Residency, encryption, backup, and recovery claims |

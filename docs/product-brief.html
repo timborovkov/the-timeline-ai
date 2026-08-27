@@ -215,7 +215,8 @@
         <li>
           <strong>Transcription</strong> (if audio). OpenRouter
           <code>/audio/transcriptions</code> for short memos; larger stored audio is transcoded into
-          provider-sized speech chunks before transcription.
+          provider-sized speech chunks before transcription. This voice-note path is separate from
+          Recall.ai meeting transcription.
         </li>
         <li>
           <strong>File processing</strong> (if file/document). Store immutable file versions in
@@ -496,17 +497,26 @@
         </li>
         <li>
           <strong>Transcription</strong>: OpenRouter speech-to-text via its JSON/base64 audio API.
-          The model id is pinned in the same catalog; output is text and remains auditable on the
-          raw event.
+          The quality baseline is <code>openai/gpt-4o-transcribe</code>, pinned in the same catalog;
+          output is text and remains auditable on the raw event. It stays pinned until a ZDR
+          candidate passes the documented broad-multilingual non-inferiority evaluation.
         </li>
       </ul>
       <p>
-        Timeline does not use Customer Content to train or fine-tune any model. Hosted production
-        must bind its OpenRouter key to a zero-data-retention guardrail covering every model group
-        Timeline uses, keep provider prompt logging and model-improvement sharing off, and add
-        per-request no-collection/ZDR preferences on APIs that support them. The deployment
-        acknowledgement is a fail-closed configuration gate, not proof of the external dashboard
-        state; operators must preserve that evidence and monitor endpoint drift. See the
+        Timeline does not use Customer Content to train or fine-tune any model. The code-owned
+        registry classifies generation, extraction, summarization, multimodal, and embedding roles
+        as <code>zdr_required</code>; those requests fail rather than use weaker retention. The
+        current voice-note transcription route is the disclosed
+        <code>retained_no_training_exception</code>: OpenRouter lists OpenAI as no-training but
+        prompt-retaining, and OpenAI documents default API abuse-monitoring retention up to 30 days.
+        The required hosted configuration restricts one OpenRouter key to the exact catalog, keeps
+        prompt logging, input/output sharing, Broadcast, and persistent response caching off, and
+        requires a generated attestation bound to the policy version, catalog digest, inference-key
+        fingerprint, and official guardrail id. Provider-side key assignment and settings evidence
+        is still pending. The attestation is a fail-closed local drift gate, not proof of those
+        provider controls; operators must verify them with a separate operator-only management-key
+        deployment check, preserve dated evidence, and never place the management key in app
+        runtime. See the
         <a href="./security-privacy-trust.md">security, privacy, and trust standard</a> for the
         control and its open evidence gaps.
       </p>
