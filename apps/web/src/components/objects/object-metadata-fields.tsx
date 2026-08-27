@@ -19,6 +19,7 @@ const FIELD_LABELS: Record<string, string> = {
   role: 'Role',
   value: 'Value',
   closeDate: 'Close date',
+  lostReason: 'Lost reason',
 };
 
 export function ObjectMetadataFields({

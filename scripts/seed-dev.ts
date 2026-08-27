@@ -1168,7 +1168,7 @@ async function main(): Promise<void> {
             metadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
               customer: 'Northstar Works',
-              review_date: '2026-07-15',
+              reviewDate: '2026-07-15',
             },
             status: DEMO_ENTITIES[0].status,
             stage: DEMO_ENTITIES[0].stage,
