@@ -54,7 +54,7 @@ describe('cheapestPlanPreview', () => {
     expect(preview.bills.team.extraMemberCents).toBe(0);
   });
 
-  it('prorates candidate seats from person-days when the current plan has no extras', async () => {
+  it('prorates candidate seats from person-days when the current plan has no extras', () => {
     const preview = cheapestPlanPreview({
       activeMembers: 8,
       includedActiveMembers: 25,
