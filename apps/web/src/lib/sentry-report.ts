@@ -1,5 +1,7 @@
 import * as Sentry from '@sentry/nextjs';
 
+import { isStaleServerActionError } from '@/lib/stale-server-action';
+
 type SentryTagValue = string | number | boolean | null | undefined;
 
 interface ReportOptions {
@@ -25,6 +27,7 @@ export function shouldReportToSentry(
   err: unknown,
   options?: Pick<ReportOptions, 'surface' | 'operation'>,
 ): boolean {
+  if (isStaleServerActionError(err)) return false;
   if (isExpectedAuthCredentialsRateLimitError(err, options)) return false;
   if (isExpectedAuthCredentialsSigninError(err, options)) return false;
   return true;
