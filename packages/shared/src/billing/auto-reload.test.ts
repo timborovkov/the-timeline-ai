@@ -109,7 +109,10 @@ describe('maybeTriggerWalletAutoReload', () => {
     });
 
     vi.mocked(sendMessage).mockResolvedValueOnce({ ok: true });
-    const createCheckout = vi.fn(provider.createCheckoutSession);
+    const createCheckout = vi.fn().mockResolvedValue({
+      id: 'chk_notify',
+      url: 'https://sandbox.polar.sh/checkout/notify',
+    });
     provider.createCheckoutSession = createCheckout;
     const second = await maybeTriggerWalletAutoReload({
       db,

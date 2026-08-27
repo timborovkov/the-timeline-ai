@@ -15,11 +15,11 @@ import { sendMessage } from '#src/messaging/delivery.js';
 const log = childLogger('billing:auto-reload');
 const AUTO_RELOAD_ATTEMPT_STALE_MS = 15 * 60 * 1000;
 
-type AutoReloadOwner = {
+interface AutoReloadOwner {
   userId: string;
   email: string | null;
   name: string | null;
-};
+}
 
 async function loadTeamOwners(
   db: Db,
@@ -39,7 +39,11 @@ async function loadTeamOwners(
     .from(teamMembers)
     .innerJoin(users, eq(users.id, teamMembers.userId))
     .where(
-      and(eq(teamMembers.teamId, teamId), eq(teamMembers.role, 'owner'), isNull(teamMembers.removedAt)),
+      and(
+        eq(teamMembers.teamId, teamId),
+        eq(teamMembers.role, 'owner'),
+        isNull(teamMembers.removedAt),
+      ),
     );
   return { teamName: team?.name ?? 'your workspace', owners };
 }

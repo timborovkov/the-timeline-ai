@@ -28,7 +28,12 @@ import {
   flushDeferredAudioTranscription,
   writeIntegrationEvents,
 } from '#src/integrations/event-writer.js';
-import { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob, enqueueTranscribeJob } from '#src/queue/queues.js';
+import {
+  enqueueEmbedJob,
+  enqueueExtractJob,
+  enqueueObjectSummaryJob,
+  enqueueTranscribeJob,
+} from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';

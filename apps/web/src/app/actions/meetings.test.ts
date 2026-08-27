@@ -174,15 +174,12 @@ describe('cancelMeetingBotAction', () => {
     const result = await cancelMeetingBotAction(MEETING_ID);
 
     expect(result).toEqual({ ok: true, meetingId: MEETING_ID });
-    expect(fakes.fakeSettleElapsedRecall).toHaveBeenCalledWith(
-      {},
-      expect.objectContaining({
-        meetingId: MEETING_ID,
-        startedAt,
-        metadata: expect.objectContaining({ reserved_recall_minutes: 60 }),
-        source: 'meeting_cancel',
-      }),
-    );
+    expect(fakes.fakeSettleElapsedRecall.mock.calls[0]?.[1]).toMatchObject({
+      meetingId: MEETING_ID,
+      startedAt,
+      metadata: { reserved_recall_minutes: 60 },
+      source: 'meeting_cancel',
+    });
     expect(fakes.fakeReleaseRecall).not.toHaveBeenCalled();
   });
 });

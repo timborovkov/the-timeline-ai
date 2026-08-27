@@ -88,9 +88,8 @@ function billForPlan(input: {
     extraMembers: extra,
     additionalMemberCents: plan.additionalMemberCents ?? 0,
     activeMembers: input.activeMembers,
-    includedActiveMembers:
-      input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
-    meters: input.meters,
+    includedActiveMembers: input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
+    ...(input.meters !== undefined ? { meters: input.meters } : {}),
   });
   const meteredAfterDiscountCents = Math.max(
     0,
@@ -131,22 +130,28 @@ export function cheapestPlanPreview(input: {
       planId: 'payg',
       activeMembers: input.activeMembers,
       meteredSpendCents: paygMetered,
-      meters: input.meters,
-      includedActiveMembers: input.includedActiveMembers,
+      ...(input.meters !== undefined ? { meters: input.meters } : {}),
+      ...(input.includedActiveMembers !== undefined
+        ? { includedActiveMembers: input.includedActiveMembers }
+        : {}),
     }),
     team: billForPlan({
       planId: 'team',
       activeMembers: input.activeMembers,
       meteredSpendCents: gross,
-      meters: input.meters,
-      includedActiveMembers: input.includedActiveMembers,
+      ...(input.meters !== undefined ? { meters: input.meters } : {}),
+      ...(input.includedActiveMembers !== undefined
+        ? { includedActiveMembers: input.includedActiveMembers }
+        : {}),
     }),
     business: billForPlan({
       planId: 'business',
       activeMembers: input.activeMembers,
       meteredSpendCents: gross,
-      meters: input.meters,
-      includedActiveMembers: input.includedActiveMembers,
+      ...(input.meters !== undefined ? { meters: input.meters } : {}),
+      ...(input.includedActiveMembers !== undefined
+        ? { includedActiveMembers: input.includedActiveMembers }
+        : {}),
     }),
   };
   let recommended: SelfServePaidPlanId = 'payg';

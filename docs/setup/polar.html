@@ -108,34 +108,33 @@ BILLING_CHARGES_ENABLED=false
         persist a denied charge and freeze rather than skipping the extra seat. Terminal Recall
         no-shows settle elapsed waiting-room minutes; a retry still releases so the same meeting can
         reserve again. Cancelling a joining/active meeting with no transcript chunks settles elapsed
-        waiting-room minutes instead of releasing them. Postmark success is recorded before email settlement. Meeting-finalize
-        billing uses the system actor so a departed creator cannot skip settlement. Free-grant
-        inserts use <code>ON CONFLICT DO NOTHING</code> so a unique race cannot abort team-create.
-        The post-verify Free-grant backfill prefers oldest restricted Free workspaces and never
-        assigns the grant to a paid team. Scheduled join billing denials fail the occurrence without
-        pausing auto-join as consecutive failures. Document uploads are blocked in every
-        non-reservable billing state. Refunds of the €10 top-up debit the prepaid wallet, serialize
-        concurrent <code>refund.created</code> / <code>order.refunded</code> totals, and freeze the
-        workspace if that credit was already spent. Refunds that arrive before
-        <code>order.paid</code> are stored and applied when the top-up credits. Local usage
-        settlement is independent of Polar ingest: prepaid wallet and included discount already
-        collect locally, so those units are not sent to Polar meters. Remaining Polar ingest uses a
-        ledger outbox that claims a row before ingesting, Polar receives a stable event id, and a
-        failed ingest does not undo a committed charge. Janitor included-discount resets lock the
-        billing account so they cannot overwrite a newer Polar plan or period. Ask streams that
-        abort after work starts settle at least the reserved customer charge. Failed
-        structured-output attempts still contribute OpenRouter <code>usage.cost</code>. Recall
-        minutes that cross a UTC month are attributed to each month they span. Document create and
-        restore serialize capacity under advisory lock key 1. Background AI metering
-        keeps the reservation when settle fails after the provider call. Paid-plan
-        changes reuse the Polar subscription in non-active paid states. Extra-member
-        plan preview prorates from period member-days. Auto-reload retries owner
-        notification after delivery failure without a second Polar checkout. Inbound
-        email audio skipped for a denied email meter is flushed by the janitor when
-        billing can reserve again. Deferred accepted-source flush rotates
-        past still-blocked rows. Set <code>BILLING_CHARGES_ENABLED</code> on
-        <code>document-extract-orchestrator</code> as well as web/worker; it is a non-secret
-        allowlisted toggle, not an extra credential.
+        waiting-room minutes instead of releasing them. Postmark success is recorded before email
+        settlement. Meeting-finalize billing uses the system actor so a departed creator cannot skip
+        settlement. Free-grant inserts use <code>ON CONFLICT DO NOTHING</code> so a unique race
+        cannot abort team-create. The post-verify Free-grant backfill prefers oldest restricted Free
+        workspaces and never assigns the grant to a paid team. Scheduled join billing denials fail
+        the occurrence without pausing auto-join as consecutive failures. Document uploads are
+        blocked in every non-reservable billing state. Refunds of the €10 top-up debit the prepaid
+        wallet, serialize concurrent <code>refund.created</code> /
+        <code>order.refunded</code> totals, and freeze the workspace if that credit was already
+        spent. Refunds that arrive before <code>order.paid</code> are stored and applied when the
+        top-up credits. Local usage settlement is independent of Polar ingest: prepaid wallet and
+        included discount already collect locally, so those units are not sent to Polar meters.
+        Remaining Polar ingest uses a ledger outbox that claims a row before ingesting, Polar
+        receives a stable event id, and a failed ingest does not undo a committed charge. Janitor
+        included-discount resets lock the billing account so they cannot overwrite a newer Polar
+        plan or period. Ask streams that abort after work starts settle at least the reserved
+        customer charge. Failed structured-output attempts still contribute OpenRouter
+        <code>usage.cost</code>. Recall minutes that cross a UTC month are attributed to each month
+        they span. Document create and restore serialize capacity under advisory lock key 1.
+        Background AI metering keeps the reservation when settle fails after the provider call.
+        Paid-plan changes reuse the Polar subscription in non-active paid states. Extra-member plan
+        preview prorates from period member-days. Auto-reload retries owner notification after
+        delivery failure without a second Polar checkout. Inbound email audio skipped for a denied
+        email meter is flushed by the janitor when billing can reserve again. Deferred
+        accepted-source flush rotates past still-blocked rows. Set
+        <code>BILLING_CHARGES_ENABLED</code> on <code>document-extract-orchestrator</code> as well
+        as web/worker; it is a non-secret allowlisted toggle, not an extra credential.
       </p>
 
       <h2>Public and app surfaces</h2>
@@ -144,14 +143,14 @@ BILLING_CHARGES_ENABLED=false
         <li>Team usage: <code>/app/usage</code></li>
         <li>
           Team settings: <code>/app/team?section=billing</code> (owner/admin) — plan, €10 top-up on
-          wallet-backed plans, auto-reload Polar checkout email (Polar checkout is
-          marked created before owner mail; delivery failure retries the same URL the
-          same UTC day without a second checkout; skipped unless remaining spend-cap
-          headroom covers the full €10 product, including a €0 spend cap), cheapest-plan preview,
-          spend cap. Selecting another paid plan updates the existing Polar subscription (or the
-          customer portal) instead of opening a second checkout, including when the workspace is
-          past due, in payment retry, or read-only. Submitted Polar discount codes must
-          match <code>POLAR_DISCOUNT_CODE</code> before <code>POLAR_DISCOUNT_ID</code> is attached.
+          wallet-backed plans, auto-reload Polar checkout email (Polar checkout is marked created
+          before owner mail; delivery failure retries the same URL the same UTC day without a second
+          checkout; skipped unless remaining spend-cap headroom covers the full €10 product,
+          including a €0 spend cap), cheapest-plan preview, spend cap. Selecting another paid plan
+          updates the existing Polar subscription (or the customer portal) instead of opening a
+          second checkout, including when the workspace is past due, in payment retry, or read-only.
+          Submitted Polar discount codes must match <code>POLAR_DISCOUNT_CODE</code> before
+          <code>POLAR_DISCOUNT_ID</code> is attached.
         </li>
         <li>
           Owner emails: spend-cap 50/75/90/100% and Free near-limit / exhaustion (<code

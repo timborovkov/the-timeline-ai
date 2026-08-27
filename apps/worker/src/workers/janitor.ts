@@ -9,7 +9,10 @@ import {
 import { childLogger, queue } from '@timeline/shared';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
-import { flushDeferredAcceptedSourceEnrichment, flushDeferredAudioTranscription } from '@timeline/shared/integrations';
+import {
+  flushDeferredAcceptedSourceEnrichment,
+  flushDeferredAudioTranscription,
+} from '@timeline/shared/integrations';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
