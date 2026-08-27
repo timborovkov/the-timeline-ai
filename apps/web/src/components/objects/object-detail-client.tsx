@@ -166,10 +166,13 @@ const EMPTY_MEMBER_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_BOARD_CONTEXT: boards.ObjectBoardContextRow[] = [];
 const DETAIL_ACTION_CLASS =
   'text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:cursor-not-allowed disabled:opacity-60';
-const DETAIL_SECTION_LABEL_CLASS = 'text-xs font-normal text-fg-dim';
+/** Top-level main-column / rail section titles. */
+const DETAIL_SECTION_LABEL_CLASS = 'text-xs font-medium text-fg-dim';
+/** Nested group labels under a section (Open tasks, Documents). */
+const DETAIL_GROUP_LABEL_CLASS = 'text-xs font-normal text-fg-muted';
 const DETAIL_BODY_CLASS = 'text-sm font-normal leading-5 text-fg';
 const DETAIL_META_CLASS = 'text-xs font-normal text-fg-dim';
-const DETAIL_LINK_CLASS = 'text-sm font-normal text-fg hover:underline';
+const DETAIL_LINK_CLASS = 'text-sm font-normal leading-5 text-fg hover:underline';
 
 function statusOptions(type: string): string[] {
   return STATUS_BY_TYPE[type] ?? ['open', 'active', 'archived'];
@@ -1045,7 +1048,7 @@ function ObjectDetailView(props: Props) {
       />
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-        <main className="min-w-0 space-y-2">
+        <main className="min-w-0 space-y-3">
           {view.suggestions.length > 0 ? (
             <ApprovalsClient
               suggestions={view.suggestions}
@@ -1702,9 +1705,9 @@ function ObjectConnectedWorkSection({
     connectedWork.capturedFiles.length > 0;
   if (!hasWork) return null;
   return (
-    <section>
+    <section aria-label="Connected work">
       <h2 className={DETAIL_SECTION_LABEL_CLASS}>Connected work</h2>
-      <div className="mt-1 space-y-2">
+      <div className="mt-1 divide-y divide-border">
         <ConnectedTaskList title="Open tasks" tasks={connectedWork.openTasks} />
         <ConnectedCalendarList events={connectedWork.calendarEvents} />
         <ConnectedObjectList
@@ -1727,8 +1730,8 @@ function ObjectConnectedWorkSection({
 
 function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="min-w-0">
-      <h3 className={`mb-0.5 ${DETAIL_SECTION_LABEL_CLASS}`}>{title}</h3>
+    <section className="min-w-0 py-2 first:pt-1.5">
+      <h3 className={`mb-1 ${DETAIL_GROUP_LABEL_CLASS}`}>{title}</h3>
       {children}
     </section>
   );
@@ -1865,7 +1868,7 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
                 {displayText(board.boardName)}
               </a>
               <span className={`flex flex-wrap items-center gap-1.5 ${DETAIL_META_CLASS}`}>
-                <span>{board.laneName ?? 'no lane'}</span>
+                <span>{board.laneName ?? 'No lane'}</span>
                 <DueDateDisplay value={board.dueAt} variant="compact" />
                 {board.priority !== null ? <span>· P{board.priority}</span> : null}
               </span>
@@ -1901,7 +1904,7 @@ function ConnectedApprovalList({
                 {displayText(approval.title)}
               </Link>
               <span className={DETAIL_META_CLASS}>
-                {approval.operation} · {approval.targetKind}
+                {statusLabel(approval.operation)} · {statusLabel(approval.targetKind)}
               </span>
             </li>
           ))}
@@ -1934,7 +1937,7 @@ function ConnectedDocumentList({
                 {displayText(truncateFilenameMiddle(document.name))}
               </a>
               <span className={DETAIL_META_CLASS}>
-                {document.fileKind} · updated{' '}
+                {statusLabel(document.fileKind)} · updated{' '}
                 {formatDisplayDateTime(document.updatedAt, { timezone })}
               </span>
             </li>

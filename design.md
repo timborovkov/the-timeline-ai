@@ -795,11 +795,16 @@ The full object page is a Linear-style issue view, not a work-index. It has no
 editable title. Board placement is a muted header line, not a standalone
 section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
 shared floating binder. Repair memory and Add task live in the overflow
-menu. The main column uses an 8px section stack and 14px body at 1.35
+menu. The main column uses a 12px section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
-evidence / facts groups that have items. Empty “Not enough object memory,” “No
-connected work,” and “Nothing here yet” cards are prohibited. Discussion keeps
+evidence / facts groups that have items. Top-level section titles use 12px
+medium `--fg-dim`; nested Connected work groups use quieter 12px `--fg-muted`
+and hairline dividers so Open tasks / Documents / Evidence do not compete.
+Row titles stay 14px `--fg`; supporting meta is 12px `--fg-dim` and sentence
+case (`Create · Identity facet`, never raw `create · identity_facet`). Empty
+“Not enough object memory,” “No connected work,” and “Nothing here yet” cards
+are prohibited. Discussion keeps
 a borderless composer with @mentions. The right column is one Properties rail at
 `18rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
 `--border`, not raw page canvas. Board context, editable contact facets (people and
