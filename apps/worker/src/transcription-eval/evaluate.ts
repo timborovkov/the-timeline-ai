@@ -194,6 +194,7 @@ export interface RunTranscriptionQualityEvalInput {
 export interface RunTranscriptionQualityEvalDeps {
   transport: TranscriptionEvalTransport;
   readAudio?: (path: string) => Promise<Buffer>;
+  resolveAudioPath?: (manifestDirectory: string, audioPath: string) => Promise<string>;
   now?: () => Date;
 }
 
@@ -262,16 +263,14 @@ function validateInput(input: RunTranscriptionQualityEvalInput): void {
 async function bufferCorpus(
   loaded: LoadedTranscriptionEvalManifest,
   readAudio: (path: string) => Promise<Buffer>,
+  resolveAudioPath: (manifestDirectory: string, audioPath: string) => Promise<string>,
 ): Promise<{ fixtures: BufferedFixture[]; audioSha256: string }> {
   const fixtures: BufferedFixture[] = [];
   const hash = createHash('sha256');
   let totalBytes = 0;
 
   for (const fixture of loaded.manifest.cases) {
-    const audioPath = resolveTranscriptionEvalAudioPath(
-      loaded.manifestDirectory,
-      fixture.audioPath,
-    );
+    const audioPath = await resolveAudioPath(loaded.manifestDirectory, fixture.audioPath);
     let audio: Buffer;
     try {
       audio = await readAudio(audioPath);
@@ -696,7 +695,12 @@ export async function runTranscriptionQualityEval(
 ): Promise<TranscriptionQualityEvalReport> {
   validateInput(input);
   const readAudio = deps.readAudio ?? readFile;
-  const { fixtures, audioSha256 } = await bufferCorpus(input.loadedManifest, readAudio);
+  const resolveAudioPath = deps.resolveAudioPath ?? resolveTranscriptionEvalAudioPath;
+  const { fixtures, audioSha256 } = await bufferCorpus(
+    input.loadedManifest,
+    readAudio,
+    resolveAudioPath,
+  );
   const allModelIds = [input.baselineModelId, ...input.candidateModelIds];
   const zdrRoutes = await deps.transport.inspectZdrRoutes(input.candidateModelIds);
   const modelRuns: ModelRun[] = allModelIds.map((modelId, index) => ({

@@ -19,7 +19,9 @@ one of these origins:
 The manifest must also set `containsCustomerData` to `false` and
 `approvedForExternalModelEvaluation` to `true`. Validation finishes and every
 audio file is buffered before the first paid request. Audio stays outside the
-repository and every path must remain below the manifest directory.
+repository and every path must remain below the manifest directory after
+filesystem real-path resolution. A fixture symlink that resolves outside that
+approved corpus root is rejected before any audio is read or sent.
 
 The evidence artifact contains only:
 
@@ -175,12 +177,13 @@ and whitespace collapse. WER uses `Intl.Segmenter` word boundaries with a
 deterministic whitespace fallback. CER excludes normalized whitespace. Both are
 macro-averaged per case, so long recordings do not silently dominate.
 
-Entity and number accuracy measure listed expected terms found in the normalized
-hypothesis. Hallucination means non-empty output for a silence case. Empty output
-means empty output for a non-silence case. Likely truncation is measured only on
-`long_low_bitrate` cases: an output shorter than 75% of the reference whose own
-content is at least 85% aligned with the reference prefix. Request errors and
-format errors are separate rates.
+Entity and number accuracy require each listed expected term to match a complete
+normalized token or contiguous token sequence in the hypothesis; substrings of
+different words or numbers do not count. Hallucination means non-empty output
+for a silence case. Empty output means empty output for a non-silence case.
+Likely truncation is measured only on `long_low_bitrate` cases: an output shorter
+than 75% of the reference whose own content is at least 85% aligned with the
+reference prefix. Request errors and format errors are separate rates.
 
 A candidate is eligible only when every check passes:
 

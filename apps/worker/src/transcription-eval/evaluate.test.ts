@@ -94,6 +94,10 @@ function audioReader(
   };
 }
 
+function syntheticAudioPathResolver(manifestDirectory: string, audioPath: string): Promise<string> {
+  return Promise.resolve(path.resolve(manifestDirectory, audioPath));
+}
+
 function transcriptFromAudio(audio: Buffer): string {
   const value = audio.toString('utf8');
   return value === '__synthetic_silence__' ? '' : value;
@@ -137,7 +141,12 @@ describe('transcription quality evaluation', () => {
         requestBudgetMs: 120_000,
         concurrency: 3,
       },
-      { transport, readAudio: audioReader(loaded), now: () => new Date('2026-08-21T10:00:00Z') },
+      {
+        transport,
+        readAudio: audioReader(loaded),
+        resolveAudioPath: syntheticAudioPathResolver,
+        now: () => new Date('2026-08-21T10:00:00Z'),
+      },
     );
 
     expect(report.selection).toEqual({
@@ -209,7 +218,11 @@ describe('transcription quality evaluation', () => {
         privacyPolicyAttestation: PRIVACY_ATTESTATION,
         requestBudgetMs: 120_000,
       },
-      { transport, readAudio: audioReader(loaded) },
+      {
+        transport,
+        readAudio: audioReader(loaded),
+        resolveAudioPath: syntheticAudioPathResolver,
+      },
     );
 
     expect(transcribe).toHaveBeenCalledTimes(24);
@@ -256,7 +269,11 @@ describe('transcription quality evaluation', () => {
         privacyPolicyAttestation: PRIVACY_ATTESTATION,
         requestBudgetMs: 120_000,
       },
-      { transport: { inspectZdrRoutes, transcribe }, readAudio: audioReader(loaded) },
+      {
+        transport: { inspectZdrRoutes, transcribe },
+        readAudio: audioReader(loaded),
+        resolveAudioPath: syntheticAudioPathResolver,
+      },
     );
 
     expect(inspectZdrRoutes).toHaveBeenCalledWith(['mistralai/voxtral-mini-transcribe']);
@@ -327,7 +344,11 @@ describe('transcription quality evaluation', () => {
         privacyPolicyAttestation: PRIVACY_ATTESTATION,
         requestBudgetMs: 120_000,
       },
-      { transport, readAudio: audioReader(loaded) },
+      {
+        transport,
+        readAudio: audioReader(loaded),
+        resolveAudioPath: syntheticAudioPathResolver,
+      },
     );
     const candidate = report.models[1];
 
@@ -366,7 +387,11 @@ describe('transcription quality evaluation', () => {
     await expect(
       runTranscriptionQualityEval(
         { ...baseInput, baselineModelId: 'example/stale-baseline' },
-        { transport, readAudio: audioReader(loaded) },
+        {
+          transport,
+          readAudio: audioReader(loaded),
+          resolveAudioPath: syntheticAudioPathResolver,
+        },
       ),
     ).rejects.toThrow(/production transcription model/u);
     await expect(
@@ -378,7 +403,11 @@ describe('transcription quality evaluation', () => {
             catalogSha256: 'f'.repeat(64),
           },
         },
-        { transport, readAudio: audioReader(loaded) },
+        {
+          transport,
+          readAudio: audioReader(loaded),
+          resolveAudioPath: syntheticAudioPathResolver,
+        },
       ),
     ).rejects.toThrow(/current model catalog and privacy policy/u);
     expect(inspectZdrRoutes).not.toHaveBeenCalled();
@@ -415,7 +444,11 @@ describe('transcription quality evaluation', () => {
         privacyPolicyAttestation: PRIVACY_ATTESTATION,
         requestBudgetMs: 120_000,
       },
-      { transport, readAudio: audioReader(loaded) },
+      {
+        transport,
+        readAudio: audioReader(loaded),
+        resolveAudioPath: syntheticAudioPathResolver,
+      },
     );
     const candidate = report.models[1];
 

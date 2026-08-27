@@ -135,6 +135,30 @@ describe('cancelMeetingBotAction', () => {
     });
   });
 
+  it('claims cancellation before Recall can advance the meeting to processing', async () => {
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'active',
+      provider: 'recall',
+      providerBotId: 'bot-1',
+    });
+    fakes.fakeLeaveMeeting.mockImplementation(() => {
+      fakes.fakeMeetings.cancelMeetingCapture.mockResolvedValue({
+        outcome: 'not_cancellable',
+        status: 'processing',
+      });
+      return Promise.resolve();
+    });
+
+    const result = await cancelMeetingBotAction(MEETING_ID);
+
+    expect(result).toEqual({ ok: true, meetingId: MEETING_ID });
+    expect(fakes.fakeMeetings.cancelMeetingCapture.mock.invocationCallOrder[0]).toBeLessThan(
+      fakes.fakeLeaveMeeting.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+  });
+
   it('does not move partial captures to processing when the finalize queue is unavailable', async () => {
     fakes.fakeMeetings.getMeeting.mockResolvedValue({
       id: MEETING_ID,

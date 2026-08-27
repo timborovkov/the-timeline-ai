@@ -18,6 +18,7 @@ export function persistSidebarExpanded(expanded: boolean) {
 
   try {
     const secure = window.location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = `${SIDEBAR_COOKIE_KEY}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
     document.cookie = `${SIDEBAR_COOKIE_KEY}=${value}; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax${secure}`;
   } catch {
     // Cookies can be blocked; the in-memory toggle should still work.
@@ -27,4 +28,4 @@ export function persistSidebarExpanded(expanded: boolean) {
 // Migrate the existing localStorage-only preference before the sidebar HTML is
 // parsed. Reloading once lets the server render the migrated cookie value, so
 // established users never see the old expanded-first hydration frame.
-export const SIDEBAR_PREFERENCE_BOOTSTRAP = `(()=>{if(!location.pathname.startsWith('/app'))return;try{const s=localStorage.getItem('${SIDEBAR_STORAGE_KEY}');if(s!=='true'&&s!=='false')return;const k='${SIDEBAR_COOKIE_KEY}=',c=document.cookie.split('; ').find(v=>v.startsWith(k))?.slice(k.length);if(c!==undefined)return;document.cookie=k+s+'; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax'+(location.protocol==='https:'?'; Secure':'');const n=document.cookie.split('; ').find(v=>v.startsWith(k))?.slice(k.length);if(n===s)location.reload()}catch{}})()`;
+export const SIDEBAR_PREFERENCE_BOOTSTRAP = `(()=>{if(!location.pathname.startsWith('/app'))return;try{const s=localStorage.getItem('${SIDEBAR_STORAGE_KEY}'),k='${SIDEBAR_COOKIE_KEY}=',c=document.cookie.split('; ').find(v=>v.startsWith(k))?.slice(k.length),v=c??(s==='true'||s==='false'?s:null);if(v===null)return;const q=location.protocol==='https:'?'; Secure':'';document.cookie=k+'; Path=/; Max-Age=0; SameSite=Lax'+q;document.cookie=k+v+'; Path=${COOKIE_PATH}; Max-Age=${COOKIE_MAX_AGE_SECONDS}; SameSite=Lax'+q;if(c!==undefined)return;const n=document.cookie.split('; ').find(x=>x.startsWith(k))?.slice(k.length);if(n===v)location.reload()}catch{}})()`;

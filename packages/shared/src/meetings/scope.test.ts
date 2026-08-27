@@ -539,6 +539,64 @@ describe('meetings scope', () => {
     expect(meetingMeta.summary_stale_at).toBeUndefined();
   });
 
+  it.each(['completed', 'completed_partial'] as const)(
+    'appendMeetingChunk attaches a distinct late delivery after %s finalization',
+    async (status) => {
+      const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
+      const meeting = await scope.createMeeting({
+        platform: 'zoom',
+        meetingUrl: `https://zoom.us/j/late-${status}`,
+        metadata: { summary: 'Now stale', action_items: [{ text: 'Old action' }] },
+      });
+      const first = await scope.appendMeetingChunk({
+        meetingId: meeting.id,
+        speaker: 'Alice',
+        text: 'first chunk',
+        startMs: 0,
+        endMs: 1000,
+        providerChunkId: `first-${status}`,
+      });
+      await scope.updateMeetingStatus(meeting.id, status);
+      const eventRows = await db
+        .insert(rawEvents)
+        .values({
+          teamId: TEAM_ID,
+          authorUserId: USER_A,
+          source: 'meeting',
+          contentText: '[0s] Alice: first chunk',
+          occurredAt: new Date('2026-05-25T10:00:00Z'),
+          visibility: 'team',
+          sourceMetadata: {
+            meeting_id: meeting.id,
+            meeting_chunk_provider_id: `meeting-finalized:${meeting.id}`,
+            summary: 'Now stale',
+            action_items: [{ text: 'Old action' }],
+          },
+        })
+        .returning({ id: rawEvents.id });
+      const rawEventId = eventRows[0]?.id;
+      if (!rawEventId || !first) throw new Error('missing finalized fixture');
+
+      const late = await scope.appendMeetingChunk({
+        meetingId: meeting.id,
+        speaker: 'Bob',
+        text: 'distinct late chunk',
+        startMs: 2000,
+        endMs: 3000,
+        providerChunkId: `late-${status}`,
+      });
+
+      expect(late?.deduplicated).toBe(false);
+      const chunks = await scope.listChunks(meeting.id);
+      expect(chunks).toHaveLength(2);
+      expect(chunks.find((chunk) => chunk.id === late?.chunkId)?.rawEventId).toBe(rawEventId);
+      const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
+      expect(event?.contentText).toContain('distinct late chunk');
+      expect(event?.sourceMetadata).toMatchObject({ chunk_count: 2 });
+      expect(event?.sourceMetadata).not.toMatchObject({ summary: 'Now stale' });
+    },
+  );
+
   it('updateMeetingStatus flips status and merges metadata', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const m = await scope.createMeeting({

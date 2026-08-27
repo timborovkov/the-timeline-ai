@@ -20,14 +20,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:recall:transcript');
-const TERMINAL_MEETING_STATUSES = new Set([
-  'completed',
-  'completed_partial',
-  'failed',
-  'skipped',
-  'no_show',
-  'cancelled',
-]);
+const TERMINAL_MEETING_STATUSES = new Set(['failed', 'skipped', 'no_show', 'cancelled']);
 
 // Workspace-signed realtime transcript webhook from Recall.ai. Authentication
 // covers the exact raw body and runs before parsing, rate limiting, bot lookup,

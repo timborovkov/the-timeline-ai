@@ -176,9 +176,13 @@ export function characterErrorRate(reference: string, hypothesis: string): numbe
 }
 
 function expectedTermFound(hypothesis: string, expected: string): boolean {
-  const compactHypothesis = compactNormalizedText(hypothesis);
-  const compactExpected = compactNormalizedText(expected);
-  return compactExpected.length > 0 && compactHypothesis.includes(compactExpected);
+  const hypothesisTokens = wordTokens(hypothesis, 'und');
+  const expectedTokens = wordTokens(expected, 'und');
+  if (expectedTokens.length === 0 || expectedTokens.length > hypothesisTokens.length) return false;
+
+  return hypothesisTokens.some((_, start) =>
+    expectedTokens.every((token, offset) => hypothesisTokens[start + offset] === token),
+  );
 }
 
 function countExpectedTerms(hypothesis: string, expected: readonly string[] | undefined): number {

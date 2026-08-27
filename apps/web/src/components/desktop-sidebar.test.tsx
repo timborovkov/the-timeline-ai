@@ -94,16 +94,18 @@ describe('DesktopSidebar', () => {
     runInNewContext(SIDEBAR_PREFERENCE_BOOTSTRAP, context);
 
     expect(cookie).toBe('timeline_sidebar_expanded=false');
-    expect(cookieWrites[0]).toContain('Path=/app');
-    expect(cookieWrites[0]).toContain('Secure');
+    expect(cookieWrites).toContainEqual(expect.stringContaining('Path=/app'));
+    expect(cookieWrites).toContainEqual(expect.stringContaining('Secure'));
     expect(reload).toHaveBeenCalledOnce();
   });
 
   it('keeps an existing cookie when local storage is stale', () => {
     let cookie = 'timeline_sidebar_expanded=true';
+    const cookieWrites: string[] = [];
     const document = Object.defineProperty({}, 'cookie', {
       get: () => cookie,
       set: (value: string) => {
+        cookieWrites.push(value);
         cookie = value.split(';')[0] ?? '';
       },
     });
@@ -116,6 +118,12 @@ describe('DesktopSidebar', () => {
     });
 
     expect(cookie).toBe('timeline_sidebar_expanded=true');
+    expect(cookieWrites).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('timeline_sidebar_expanded=; Path=/; Max-Age=0'),
+        expect.stringContaining('timeline_sidebar_expanded=true; Path=/app'),
+      ]),
+    );
     expect(reload).not.toHaveBeenCalled();
   });
 

@@ -99,4 +99,21 @@ describe('transcription quality metrics', () => {
     expect(metrics.errorCategories).toEqual([{ category: 'format', count: 3 }]);
     expect(metrics.availabilityRate).toBeLessThan(1);
   });
+
+  it('requires expected entities and numbers to match complete token sequences', () => {
+    const manifest = buildValidTranscriptionEvalManifest();
+    const observations: TranscriptionEvalObservation[] = manifest.cases.map((fixture) => {
+      const text = fixture.scenarios.includes('names')
+        ? 'Malice meets Bobby at Timelines'
+        : fixture.scenarios.includes('numbers')
+          ? 'Project 1420 closes in 12026'
+          : fixture.referenceText;
+      return { fixture, outcome: { ok: true, text, latencyMs: 20 } };
+    });
+
+    const metrics = aggregateTranscriptionEvalMetrics(observations);
+
+    expect(metrics.entityAccuracy).toBe(0);
+    expect(metrics.numberAccuracy).toBe(0);
+  });
 });

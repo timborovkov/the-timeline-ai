@@ -441,26 +441,13 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
       };
     }
 
-    if (meeting.providerBotId) {
-      try {
-        const provider = meetingBots.getMeetingBotProvider(meeting.provider);
-        await provider.leaveMeeting(meeting.providerBotId);
-      } catch (err) {
-        const leaveErrorCode = meetingBots.meetingBotErrorCode(err);
-        log.warn({ leaveErrorCode, meetingId }, 'recall_leave_failed');
-        reportCaughtError(err, { surface: 'server_action', operation: 'recall_leave_meeting' });
-        // Preserve the existing user-facing cancellation behavior when Recall
-        // is temporarily unavailable. Local terminalization still stops new
-        // transcript persistence; the provider failure remains observable.
-      }
-    }
     let cancellation = await scope.meetings.cancelMeetingCapture(meetingId, {
       allowPartialProcessing: false,
     });
+    let finalizeQueue: Awaited<ReturnType<typeof requireRedisQueue>> | null = null;
     if (cancellation.outcome === 'requires_finalize_queue') {
-      let queue: Awaited<ReturnType<typeof requireRedisQueue>>;
       try {
-        queue = await requireRedisQueue();
+        finalizeQueue = await requireRedisQueue();
       } catch (err) {
         log.warn({ err, meetingId }, 'partial_cancel_finalize_queue_unavailable');
         reportCaughtError(err, {
@@ -475,17 +462,6 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
       cancellation = await scope.meetings.cancelMeetingCapture(meetingId, {
         allowPartialProcessing: true,
       });
-      if (cancellation.outcome === 'processing') {
-        try {
-          await queue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
-        } catch (err) {
-          log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');
-          reportCaughtError(err, {
-            surface: 'server_action',
-            operation: 'partial_cancel_finalize_enqueue',
-          });
-        }
-      }
     }
     if (cancellation.outcome === 'not_found') {
       return { ok: false, error: 'Meeting not found' };
@@ -498,6 +474,30 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
     }
     if (cancellation.outcome === 'requires_finalize_queue') {
       return { ok: false, error: 'Cannot finalize the partial meeting capture.' };
+    }
+    if (meeting.providerBotId) {
+      try {
+        const provider = meetingBots.getMeetingBotProvider(meeting.provider);
+        await provider.leaveMeeting(meeting.providerBotId);
+      } catch (err) {
+        const leaveErrorCode = meetingBots.meetingBotErrorCode(err);
+        log.warn({ leaveErrorCode, meetingId }, 'recall_leave_failed');
+        reportCaughtError(err, { surface: 'server_action', operation: 'recall_leave_meeting' });
+        // Preserve the existing user-facing cancellation behavior when Recall
+        // is temporarily unavailable. Local terminalization still stops new
+        // transcript persistence; the provider failure remains observable.
+      }
+    }
+    if (cancellation.outcome === 'processing' && finalizeQueue) {
+      try {
+        await finalizeQueue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
+      } catch (err) {
+        log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'partial_cancel_finalize_enqueue',
+        });
+      }
     }
     revalidatePath('/app/meetings');
     revalidatePath(`/app/meetings/${meetingId}`);

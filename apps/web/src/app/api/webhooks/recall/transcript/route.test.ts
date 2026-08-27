@@ -287,7 +287,7 @@ describe('POST /api/webhooks/recall/transcript — meeting lookup', () => {
     expect(fakes.fakeAppendChunk).not.toHaveBeenCalled();
   });
 
-  it.each(['completed', 'completed_partial', 'failed', 'skipped', 'no_show', 'cancelled'])(
+  it.each(['failed', 'skipped', 'no_show', 'cancelled'])(
     'does not append a chunk when the correlated meeting is %s',
     async (status) => {
       fakes.fakeLookup.mockResolvedValueOnce({
@@ -326,6 +326,42 @@ describe('POST /api/webhooks/recall/transcript — meeting lookup', () => {
       });
       expect(fakes.fakeWithTeam).not.toHaveBeenCalled();
       expect(fakes.fakeAppendChunk).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['completed', 'completed_partial'])(
+    'preserves a distinct late transcript delivery when the meeting is %s',
+    async (status) => {
+      fakes.fakeLookup.mockResolvedValueOnce({
+        id: 'meeting-1',
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        status,
+        platform: 'meet',
+        provider: 'recall',
+        defaultVisibility: 'team',
+      });
+      fakes.fakeAppendChunk.mockResolvedValueOnce({
+        chunkId: 'late-chunk',
+        deduplicated: false,
+        refreshedCalendarEventId: 'calendar-1',
+      });
+
+      const response = await POST(
+        makeRequest(
+          transcriptBody({
+            words: [{ text: 'Late delivery', startSec: 2, endSec: 3 }],
+          }),
+          { 'webhook-id': `msg-late-${status}` },
+        ),
+      );
+
+      await expect(response.json()).resolves.toMatchObject({ ok: true, chunkId: 'late-chunk' });
+      expect(fakes.fakeAppendChunk).toHaveBeenCalledWith(
+        expect.objectContaining({ providerChunkId: `msg-late-${status}` }),
+      );
+      expect(fakes.fakeEnqueueMeetingChunk).toHaveBeenCalledWith(TEAM_ID, 'late-chunk');
+      expect(fakes.fakeEnqueueCalendarEvent).toHaveBeenCalledWith(TEAM_ID, 'calendar-1');
     },
   );
 });

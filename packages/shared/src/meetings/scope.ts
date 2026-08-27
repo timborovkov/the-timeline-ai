@@ -67,6 +67,7 @@ const TERMINAL_MEETING_STATUSES: MeetingStatus[] = [
   'cancelled',
   'failed',
 ];
+const LATE_CHUNK_MEETING_STATUSES: MeetingStatus[] = ['completed', 'completed_partial'];
 
 export interface MeetingScopeDeps {
   db: Db;
@@ -604,9 +605,12 @@ async function appendMeetingChunkTx(
     .limit(1);
   const rawEventId = eventRows[0]?.id ?? null;
 
-  if (TERMINAL_MEETING_STATUSES.includes(meetingStatus)) {
+  const acceptsLateChunk =
+    rawEventId !== null && LATE_CHUNK_MEETING_STATUSES.includes(meetingStatus);
+  if (TERMINAL_MEETING_STATUSES.includes(meetingStatus) && !acceptsLateChunk) {
     // A retry of content already stored before terminalization is still a
-    // successful no-op. New content must never be appended after terminal.
+    // successful no-op. Only completed captures with an existing consolidated
+    // event may accept distinct late provider deliveries.
     if (!args.providerChunkId) return null;
     const existing = await tx
       .select({ id: meetingTranscriptChunks.id })

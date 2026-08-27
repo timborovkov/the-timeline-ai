@@ -3,6 +3,10 @@
  * provider call. These unit tests use synthetic metadata only and touch no files,
  * customer data, or external services.
  */
+import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -58,7 +62,7 @@ describe('transcription eval manifest', () => {
     expect(() => parseTranscriptionEvalManifest(missingCoverage)).toThrow(/audio format/u);
   });
 
-  it('rejects path traversal both at schema validation and resolution time', () => {
+  it('rejects path traversal both at schema validation and resolution time', async () => {
     const manifest = buildValidTranscriptionEvalManifest();
     const unsafe = {
       ...manifest,
@@ -66,9 +70,28 @@ describe('transcription eval manifest', () => {
     };
 
     expect(() => parseTranscriptionEvalManifest(unsafe)).toThrow(TranscriptionEvalManifestError);
-    expect(() => resolveTranscriptionEvalAudioPath('/tmp/corpus', '../private.wav')).toThrow(
-      /escapes/u,
-    );
+    await expect(
+      resolveTranscriptionEvalAudioPath('/tmp/corpus', '../private.wav'),
+    ).rejects.toThrow(/escapes/u);
+  });
+
+  it('rejects an audio symlink that resolves outside the approved corpus', async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), 'timeline-transcription-eval-'));
+    const corpus = path.join(parent, 'corpus');
+    const outside = path.join(parent, 'customer-audio.wav');
+    try {
+      await mkdir(path.join(corpus, 'audio'), { recursive: true });
+      await writeFile(outside, 'not real audio');
+      await symlink(outside, path.join(corpus, 'audio', 'fixture.wav'));
+
+      await expect(resolveTranscriptionEvalAudioPath(corpus, 'audio/fixture.wav')).rejects.toThrow(
+        /escapes/u,
+      );
+      const realOutside = await realpath(outside);
+      await expect(realpath(path.join(corpus, 'audio', 'fixture.wav'))).resolves.toBe(realOutside);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 
   it('requires entity and number targets for the corresponding accuracy slices', () => {

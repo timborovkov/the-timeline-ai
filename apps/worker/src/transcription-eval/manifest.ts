@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import { z } from 'zod';
@@ -209,9 +209,11 @@ export function parseTranscriptionEvalManifest(input: unknown): TranscriptionEva
 export async function loadTranscriptionEvalManifest(
   manifestPath: string,
 ): Promise<LoadedTranscriptionEvalManifest> {
+  let resolvedManifestPath: string;
   let bytes: Buffer;
   try {
-    bytes = await readFile(manifestPath);
+    resolvedManifestPath = await realpath(manifestPath);
+    bytes = await readFile(resolvedManifestPath);
   } catch (error) {
     throw new TranscriptionEvalManifestError(
       `Could not read corpus manifest (${error instanceof Error ? error.name : 'unknown error'})`,
@@ -227,19 +229,32 @@ export async function loadTranscriptionEvalManifest(
 
   return {
     manifest: parseTranscriptionEvalManifest(input),
-    manifestDirectory: path.dirname(path.resolve(manifestPath)),
+    manifestDirectory: path.dirname(resolvedManifestPath),
     manifestSha256: createHash('sha256').update(bytes).digest('hex'),
   };
 }
 
-export function resolveTranscriptionEvalAudioPath(
+export async function resolveTranscriptionEvalAudioPath(
   manifestDirectory: string,
   audioPath: string,
-): string {
+): Promise<string> {
   const root = path.resolve(manifestDirectory);
   const resolved = path.resolve(root, audioPath);
   if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
     throw new TranscriptionEvalManifestError('Audio path escapes the corpus directory');
   }
-  return resolved;
+
+  let realRoot: string;
+  let realAudioPath: string;
+  try {
+    [realRoot, realAudioPath] = await Promise.all([realpath(root), realpath(resolved)]);
+  } catch (error) {
+    throw new TranscriptionEvalManifestError(
+      `Could not resolve corpus audio path (${error instanceof Error ? error.name : 'unknown error'})`,
+    );
+  }
+  if (realAudioPath !== realRoot && !realAudioPath.startsWith(`${realRoot}${path.sep}`)) {
+    throw new TranscriptionEvalManifestError('Audio path escapes the corpus directory');
+  }
+  return realAudioPath;
 }

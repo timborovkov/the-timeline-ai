@@ -103,6 +103,24 @@ describe('runSentryServerAction', () => {
     expect(callback).not.toHaveBeenCalled();
   });
 
+  it('leaves the token-aware legal gate to the invite acceptance action', async () => {
+    mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
+    mocks.auth.mockResolvedValue({
+      user: {
+        legalTermsVersion: 'old',
+        legalPrivacyVersion: 'old',
+        legalAcceptedAt: '2026-06-02T00:00:00.000Z',
+      },
+    });
+    const callback = vi.fn(() => 'invite action result');
+
+    await expect(runSentryServerAction('accept_invite', callback)).resolves.toBe(
+      'invite action result',
+    );
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledOnce();
+  });
+
   it('leaves unauthenticated rejection to the action itself', async () => {
     mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
     mocks.auth.mockResolvedValue(null);
