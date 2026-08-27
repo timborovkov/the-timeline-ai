@@ -1,7 +1,9 @@
 'use client';
 
 import {
+  humanizeMetadataKey,
   readableMetadataEntries,
+  slugifyMetadataLabel,
   typedMetadataKeysFor,
 } from '@timeline/shared/objects/metadata-schemas';
 import { useRouter } from 'next/navigation';
@@ -12,15 +14,9 @@ import type * as objects from '@timeline/shared/objects/types';
 import { updateObjectMetadataAction } from '@/app/actions/objects';
 import { notifyAction } from '@/lib/notify';
 
-const FIELD_LABELS: Record<string, string> = {
-  domain: 'Domain',
-  website: 'Website',
-  relationship: 'Relationship',
-  role: 'Role',
-  value: 'Value',
-  closeDate: 'Close date',
-  lostReason: 'Lost reason',
-};
+function metadataFieldLabel(key: string): string {
+  return humanizeMetadataKey(key);
+}
 
 export function ObjectMetadataFields({
   detail,
@@ -32,7 +28,7 @@ export function ObjectMetadataFields({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [adding, setAdding] = useState(false);
-  const [newKey, setNewKey] = useState('');
+  const [newLabel, setNewLabel] = useState('');
   const [newValue, setNewValue] = useState('');
   const typedKeys = typedMetadataKeysFor(detail.type);
   const entries = readableMetadataEntries(detail.type, detail.metadata);
@@ -40,8 +36,8 @@ export function ObjectMetadataFields({
   const customEntries = entries.filter((entry) => !knownKeys.has(entry.key));
 
   function saveField(key: string, rawValue: string): void {
+    const label = metadataFieldLabel(key);
     startTransition(async () => {
-      const label = FIELD_LABELS[key] ?? key;
       const result = await notifyAction({
         id: `object:${detail.id}:metadata:${key}`,
         loading: `Updating ${label}…`,
@@ -58,9 +54,10 @@ export function ObjectMetadataFields({
   }
 
   function addCustomField(): void {
-    const key = newKey.trim();
+    const label = newLabel.trim();
     const value = newValue.trim();
-    if (!key || !value) return;
+    const key = slugifyMetadataLabel(label);
+    if (!label || !value || !key) return;
     startTransition(async () => {
       const result = await notifyAction({
         id: `object:${detail.id}:metadata:add:${key}`,
@@ -70,12 +67,12 @@ export function ObjectMetadataFields({
         run: () =>
           updateObjectMetadataAction({
             id: detail.id,
-            metadata: { [key]: value },
+            metadata: { [label]: value },
           }),
       });
       if (!result.error) {
         setAdding(false);
-        setNewKey('');
+        setNewLabel('');
         setNewValue('');
         router.refresh();
       }
@@ -106,7 +103,7 @@ export function ObjectMetadataFields({
         {typedKeys.map((key) => (
           <MetadataFieldRow
             key={key}
-            label={FIELD_LABELS[key] ?? key}
+            label={metadataFieldLabel(key)}
             initialValue={metadataValue(detail.metadata, key)}
             disabled={disabled || pending}
             onSave={(value) => {
@@ -117,11 +114,15 @@ export function ObjectMetadataFields({
         {customEntries.map((entry) => (
           <div key={entry.key} className="flex min-h-8 items-center gap-2 px-1.5">
             <label className="flex min-w-0 flex-1 items-center gap-3">
-              <span className="w-20 shrink-0 truncate text-xs text-fg-dim" title={entry.key}>
-                {FIELD_LABELS[entry.key] ?? entry.key}
+              <span
+                className="w-20 shrink-0 truncate text-xs text-fg-dim"
+                title={metadataFieldLabel(entry.key)}
+              >
+                {metadataFieldLabel(entry.key)}
               </span>
               <CustomMetadataInput
-                label={FIELD_LABELS[entry.key] ?? entry.key}
+                key={`${entry.key}:${entry.value}`}
+                label={metadataFieldLabel(entry.key)}
                 initialValue={entry.value}
                 disabled={disabled || pending}
                 onSave={(value) => {
@@ -144,12 +145,12 @@ export function ObjectMetadataFields({
         {adding ? (
           <div className="grid gap-1.5 px-1.5 pt-1">
             <input
-              value={newKey}
+              value={newLabel}
               onChange={(event) => {
-                setNewKey(event.target.value);
+                setNewLabel(event.target.value);
               }}
               placeholder="Field name"
-              aria-label="New metadata key"
+              aria-label="New field name"
               className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
             />
             <input
@@ -158,13 +159,15 @@ export function ObjectMetadataFields({
                 setNewValue(event.target.value);
               }}
               placeholder="Value"
-              aria-label="New metadata value"
+              aria-label="New field value"
               className="h-8 rounded-sm border border-border bg-bg px-2 text-xs"
             />
             <div className="flex gap-2">
               <button
                 type="button"
-                disabled={disabled || pending}
+                disabled={
+                  disabled || pending || !slugifyMetadataLabel(newLabel) || !newValue.trim()
+                }
                 onClick={addCustomField}
                 className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
               >
@@ -174,7 +177,7 @@ export function ObjectMetadataFields({
                 type="button"
                 onClick={() => {
                   setAdding(false);
-                  setNewKey('');
+                  setNewLabel('');
                   setNewValue('');
                 }}
                 className="text-xs text-fg-muted hover:text-fg hover:underline"
@@ -215,6 +218,7 @@ function MetadataFieldRow({
     <label className="flex min-h-8 items-center gap-3 px-1.5">
       <span className="w-20 shrink-0 text-xs text-fg-dim">{label}</span>
       <CustomMetadataInput
+        key={initialValue}
         label={label}
         initialValue={initialValue}
         disabled={disabled}

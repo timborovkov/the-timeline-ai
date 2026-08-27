@@ -1385,7 +1385,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Kite Logistics account',
     status: 'archived',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { domain: 'kite.example', reason: 'On-prem' },
+    metadata: { domain: 'kite.example', note: 'Lost — requested on-prem' },
   },
   {
     n: 47,

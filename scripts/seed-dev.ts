@@ -1110,7 +1110,7 @@ async function main(): Promise<void> {
             type: 'task',
             canonicalName: 'Approve vendor security appendix',
             aliases: ['Vendor contract review'],
-            metadata: { seed: true, source: 'email' },
+            metadata: { seed: true, note: 'Captured from email' },
             status: 'open',
             stage: 'in_progress',
             priority: 2,
