@@ -115,7 +115,7 @@ export function ObjectMetadataFields({
           <div key={entry.key} className="flex min-h-8 items-center gap-2 px-1.5">
             <label className="flex min-w-0 flex-1 items-center gap-3">
               <span
-                className="w-20 shrink-0 truncate text-xs text-fg-dim"
+                className="w-28 shrink-0 truncate text-xs text-fg-dim"
                 title={metadataFieldLabel(entry.key)}
               >
                 {metadataFieldLabel(entry.key)}
@@ -216,7 +216,7 @@ function MetadataFieldRow({
 }) {
   return (
     <label className="flex min-h-8 items-center gap-3 px-1.5">
-      <span className="w-20 shrink-0 text-xs text-fg-dim">{label}</span>
+      <span className="w-28 shrink-0 text-xs text-fg-dim">{label}</span>
       <CustomMetadataInput
         key={initialValue}
         label={label}
