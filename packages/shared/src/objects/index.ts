@@ -98,6 +98,7 @@ import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { childLogger } from '#src/logger.js';
 import {
   normalizeIdentityFacet,
+  objectSupportsIdentityFacets,
   validateIdentityFacetValue,
   type ActorKind,
   type IdentityFacetInput,
@@ -108,6 +109,7 @@ import {
   persistObjectNoteMentions,
   pingObjectDiscussionAgent,
 } from '#src/objects/mention-fanout.js';
+import { mergeObjectMetadata } from '#src/objects/metadata-schemas.js';
 import { suggestedProjectIsUnusedCondition } from '#src/objects/suggested-projects.js';
 import {
   enqueueObjectSummaryRefresh,
@@ -124,6 +126,7 @@ import {
   type ObjectRow,
   type ObjectSearchFilter,
   type ObjectType,
+  type PersonPrimaryCompanyRow,
   type TaskPrimaryProjectRow,
 } from '#src/objects/types.js';
 import { decodeCursor, pageWindow } from '#src/pagination.js';
@@ -169,6 +172,7 @@ export {
   type ObjectRow,
   type ObjectSearchFilter,
   type ObjectType,
+  type PersonPrimaryCompanyRow,
   type TaskPrimaryProjectRow,
 } from '#src/objects/types.js';
 
@@ -176,11 +180,21 @@ export {
 export const OBJECT_TYPES: ObjectType[] = [...CLIENT_OBJECT_TYPES];
 export {
   normalizeIdentityFacet,
+  objectSupportsIdentityFacets,
   type ActorKind,
   type IdentityFacetInput,
   type IdentityFacetKind,
   type IdentityFacetRow,
 } from '#src/objects/identity-facets.js';
+export {
+  humanizeMetadataKey,
+  isInternalMetadataKey,
+  mergeObjectMetadata,
+  parseObjectMetadataPatch,
+  readableMetadataEntries,
+  slugifyMetadataLabel,
+  typedMetadataKeysFor,
+} from '#src/objects/metadata-schemas.js';
 export { mentionInsertToken, type MentionMember } from '#src/objects/mentions.js';
 
 const embedLog = childLogger('objects:embed');
@@ -323,6 +337,28 @@ async function lockActiveProject(tx: DbTx, teamId: string, projectId: string) {
     .for('update')
     .limit(1);
   return project ?? null;
+}
+
+async function lockActiveCompany(tx: DbTx, teamId: string, companyId: string) {
+  const [company] = await tx
+    .select({
+      id: entities.id,
+      canonicalName: entities.canonicalName,
+      archivedAt: entities.archivedAt,
+    })
+    .from(entities)
+    .where(
+      and(
+        eq(entities.teamId, teamId),
+        eq(entities.id, companyId),
+        eq(entities.type, 'company'),
+        isNull(entities.archivedAt),
+        isNull(entities.mergedIntoId),
+      ),
+    )
+    .for('update')
+    .limit(1);
+  return company ?? null;
 }
 
 async function invalidateLinkedTaskCategoriesForProject(
@@ -1724,6 +1760,7 @@ export interface ObjectDetail extends ObjectRow {
       dueAt: Date | null;
       priority: number | null;
       nextStep: string | null;
+      notes: string | null;
     }[];
     pendingApprovals: {
       suggestionId: string;
@@ -2811,6 +2848,7 @@ async function getConnectedWork(
         dueAt: boardItems.dueAt,
         priority: boardItems.priority,
         nextStep: boardItems.nextStep,
+        notes: boardItems.notes,
       })
       .from(boardItems)
       .innerJoin(boards, eq(boardItems.boardId, boards.id))
@@ -3469,6 +3507,7 @@ export async function getObject(
           eq(objectIdentityFacets.teamId, scope.teamId),
           eq(objectIdentityFacets.entityId, entityRow.id),
           eq(objectIdentityFacets.status, 'approved'),
+          isNull(objectIdentityFacets.archivedAt),
         ),
       )
       .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value),
@@ -4654,7 +4693,10 @@ export async function updateObject(
     if (patch.assigneeUserId !== undefined) diff('assigneeUserId', patch.assigneeUserId);
     if (patch.dueAt !== undefined) diff('dueAt', patch.dueAt);
     if (patch.aliases !== undefined) diff('aliases', patch.aliases);
-    if (patch.metadata !== undefined) diff('metadata', patch.metadata);
+    if (patch.metadata !== undefined) {
+      const currentMetadata = recordFromUnknown(current.metadata);
+      diff('metadata', mergeObjectMetadata(currentMetadata, patch.metadata));
+    }
     if (patch.archivedAt !== undefined) diff('archivedAt', patch.archivedAt);
     if (patch.type !== undefined) diff('type', patch.type);
 
@@ -5838,6 +5880,16 @@ export async function addRelationship(
     if (isTaskProjectHierarchy) {
       throw new Error('Use the task Project field to manage a primary project');
     }
+    // Person↔company employment is owned by the Company picker (`setPersonCompany`).
+    // Generic `related` links would collide with that singular primary and get wiped
+    // when the picker changes.
+    if (
+      input.kind === 'related' &&
+      ((from?.type === 'person' && to?.type === 'company') ||
+        (from?.type === 'company' && to?.type === 'person'))
+    ) {
+      throw new Error('Use the person Company field to manage employment');
+    }
 
     const inserted = await tx
       .insert(entityRelationships)
@@ -6364,6 +6416,336 @@ export async function setTaskProject(
   if (postCommitEffects) postCommitEffects.push(runPostCommitEffects);
   else runPostCommitEffects();
   return { changed: result.changed, project: result.project, touchedIds: result.touchedIds };
+}
+
+export async function listPrimaryCompaniesForPeople(
+  db: Db,
+  scope: TeamScopeCore,
+  personIds: string[],
+): Promise<PersonPrimaryCompanyRow[]> {
+  await scope.requireMembership();
+  const ids = Array.from(new Set(personIds.filter((id) => UUID_RE.test(id)))).slice(0, 500);
+  if (ids.length === 0) return [];
+
+  const people = alias(entities, 'primary_company_people');
+  const companies = alias(entities, 'primary_companies');
+  const rows = await db
+    .select({
+      personId: people.id,
+      companyId: companies.id,
+      companyName: companies.canonicalName,
+      archivedAt: companies.archivedAt,
+    })
+    .from(entityRelationships)
+    .innerJoin(
+      people,
+      and(
+        eq(people.teamId, entityRelationships.teamId),
+        or(
+          eq(people.id, entityRelationships.fromEntityId),
+          eq(people.id, entityRelationships.toEntityId),
+        ),
+        eq(people.type, 'person'),
+        isNull(people.mergedIntoId),
+      ),
+    )
+    .innerJoin(
+      companies,
+      and(
+        eq(companies.teamId, entityRelationships.teamId),
+        or(
+          and(
+            eq(entityRelationships.fromEntityId, people.id),
+            eq(companies.id, entityRelationships.toEntityId),
+          ),
+          and(
+            eq(entityRelationships.toEntityId, people.id),
+            eq(companies.id, entityRelationships.fromEntityId),
+          ),
+        ),
+        eq(companies.type, 'company'),
+        isNull(companies.mergedIntoId),
+      ),
+    )
+    .where(
+      and(
+        eq(entityRelationships.teamId, scope.teamId),
+        inArray(people.id, ids),
+        eq(entityRelationships.kind, 'related'),
+      ),
+    )
+    .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id));
+
+  // Prefer the oldest company link when a person has several related companies so
+  // the Company picker stays populated after Connected work "Link" adds another.
+  const seen = new Set<string>();
+  const primary: PersonPrimaryCompanyRow[] = [];
+  for (const row of rows) {
+    if (seen.has(row.personId)) continue;
+    seen.add(row.personId);
+    primary.push(row);
+  }
+  return primary;
+}
+
+export async function setPersonCompany(
+  db: Db,
+  scope: TeamScopeCore,
+  personId: string,
+  companyId: string | null,
+  actor: UpdateActor,
+  options?: ObjectMutationOptions,
+): Promise<{ changed: boolean; company: PersonPrimaryCompanyRow | null; touchedIds: string[] }> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(personId) || (companyId !== null && !UUID_RE.test(companyId))) {
+    throw new Error('Invalid entity id');
+  }
+
+  const result = await (options?.transactionClient ?? db).transaction(async (tx) => {
+    const company = companyId ? await lockActiveCompany(tx, scope.teamId, companyId) : null;
+    if (companyId && !company) throw new Error('Company not found');
+
+    const [person] = await tx
+      .select({
+        id: entities.id,
+        canonicalName: entities.canonicalName,
+        type: entities.type,
+      })
+      .from(entities)
+      .where(
+        and(
+          eq(entities.teamId, scope.teamId),
+          eq(entities.id, personId),
+          isNull(entities.mergedIntoId),
+          isNull(entities.archivedAt),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (person?.type !== 'person') throw new Error('Person not found');
+
+    const people = alias(entities, 'existing_company_people');
+    const companies = alias(entities, 'existing_companies');
+    const existing = await tx
+      .select({
+        id: entityRelationships.id,
+        companyId: companies.id,
+        companyName: companies.canonicalName,
+        archivedAt: companies.archivedAt,
+      })
+      .from(entityRelationships)
+      .innerJoin(
+        people,
+        and(
+          eq(people.teamId, entityRelationships.teamId),
+          or(
+            eq(people.id, entityRelationships.fromEntityId),
+            eq(people.id, entityRelationships.toEntityId),
+          ),
+          eq(people.id, personId),
+          eq(people.type, 'person'),
+        ),
+      )
+      .innerJoin(
+        companies,
+        and(
+          eq(companies.teamId, entityRelationships.teamId),
+          or(
+            and(
+              eq(entityRelationships.fromEntityId, personId),
+              eq(companies.id, entityRelationships.toEntityId),
+            ),
+            and(
+              eq(entityRelationships.toEntityId, personId),
+              eq(companies.id, entityRelationships.fromEntityId),
+            ),
+          ),
+          eq(companies.type, 'company'),
+          isNull(companies.mergedIntoId),
+        ),
+      )
+      .where(
+        and(eq(entityRelationships.teamId, scope.teamId), eq(entityRelationships.kind, 'related')),
+      )
+      .orderBy(asc(entityRelationships.createdAt), asc(entityRelationships.id))
+      .for('update', { of: entityRelationships });
+
+    // Oldest person↔company related link is the primary (matches listPrimaryCompaniesForPeople).
+    const primary = existing[0] ?? null;
+    if (
+      (primary === null && companyId === null) ||
+      (primary !== null && primary.companyId === companyId)
+    ) {
+      return {
+        changed: false,
+        company: company
+          ? {
+              personId,
+              companyId: company.id,
+              companyName: company.canonicalName,
+              archivedAt: company.archivedAt,
+            }
+          : primary
+            ? {
+                personId,
+                companyId: primary.companyId,
+                companyName: primary.companyName,
+                archivedAt: primary.archivedAt,
+              }
+            : null,
+        touchedIds: [] as string[],
+      };
+    }
+
+    // Company field is exclusive: replace every person↔company related edge so the
+    // picker cannot leave stale secondary employment links behind.
+    if (existing.length > 0) {
+      await tx.delete(entityRelationships).where(
+        inArray(
+          entityRelationships.id,
+          existing.map((row) => row.id),
+        ),
+      );
+    }
+
+    const endpoints =
+      company !== null ? canonicalRelationshipEndpoints(personId, company.id, 'related') : null;
+    const [created] =
+      company && endpoints
+        ? await tx
+            .insert(entityRelationships)
+            .values({
+              teamId: scope.teamId,
+              fromEntityId: endpoints.fromEntityId,
+              toEntityId: endpoints.toEntityId,
+              kind: 'related',
+              createdBy: actor.userId,
+            })
+            .returning({ id: entityRelationships.id })
+        : [];
+
+    const previous = existing.map((row) => ({ id: row.companyId, name: row.companyName }));
+    const eventText = company
+      ? `Set company for person ${person.canonicalName}: ${company.canonicalName}`
+      : `Removed company from person ${person.canonicalName}`;
+    const rawEventId = randomUUID();
+    const [event] = await tx
+      .insert(rawEvents)
+      .values({
+        id: rawEventId,
+        teamId: scope.teamId,
+        authorUserId: actor.kind === 'user' ? actor.userId : null,
+        source: 'system',
+        contentText: eventText,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
+          kind: company ? 'relationship_create' : 'relationship_delete',
+          metadata: {
+            person_id: personId,
+            previous_company_ids: previous.map((row) => row.id),
+            company_id: company?.id ?? null,
+          },
+          snapshot: {
+            person_id: personId,
+            person_name: person.canonicalName,
+            previous_companies: previous,
+            company_id: company?.id ?? null,
+            company_name: company?.canonicalName ?? null,
+            actor_kind: actor.kind,
+            actor_user_id: actor.userId,
+          },
+        }),
+      })
+      .returning({ id: rawEvents.id });
+    const sourceEventId = event?.id ?? null;
+    await normalizeSystemRawEventEvidence({
+      db: tx,
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+    });
+    await reconcileObjectAuditLinks(tx, {
+      teamId: scope.teamId,
+      rawEventId: sourceEventId,
+      text: eventText,
+    });
+
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: personId,
+      actorUserId: actor.userId,
+      actorKind: actor.kind,
+      status: 'applied',
+      field: 'primaryCompanyId',
+      previousValue: previous.length === 1 ? previous[0]?.id : previous.map((row) => row.id),
+      newValue: company?.id ?? null,
+      sourceEventId: null,
+    });
+
+    for (const old of existing) {
+      const oldEndpoints = canonicalRelationshipEndpoints(personId, old.companyId, 'related');
+      await emitRelationshipDirectWriteOutput({
+        db: tx,
+        teamId: scope.teamId,
+        relationshipId: old.id,
+        fromEntityId: oldEndpoints.fromEntityId,
+        toEntityId: oldEndpoints.toEntityId,
+        relationshipKind: 'related',
+        actor,
+        sourceEventId,
+        operation: 'unlink',
+        systemEventKind: 'relationship_delete',
+      });
+    }
+    if (created && company && endpoints) {
+      await emitRelationshipDirectWriteOutput({
+        db: tx,
+        teamId: scope.teamId,
+        relationshipId: created.id,
+        fromEntityId: endpoints.fromEntityId,
+        toEntityId: endpoints.toEntityId,
+        relationshipKind: 'related',
+        actor,
+        sourceEventId,
+        operation: 'link',
+        systemEventKind: 'relationship_create',
+      });
+    }
+
+    return {
+      changed: true,
+      company: company
+        ? {
+            personId,
+            companyId: company.id,
+            companyName: company.canonicalName,
+            archivedAt: company.archivedAt,
+          }
+        : null,
+      touchedIds: [
+        personId,
+        ...existing.map((row) => row.companyId),
+        ...(company ? [company.id] : []),
+      ],
+    };
+  });
+
+  const runPostCommitEffects = () => {
+    const effectsDb = scope.postCommitDb ?? db;
+    for (const objectId of new Set(result.touchedIds)) {
+      void fireAndForgetObjectSummaryRefresh(effectsDb, scope, objectId, {
+        teamId: scope.teamId,
+        objectId,
+        personId,
+        op: 'setPersonCompany',
+      });
+    }
+  };
+  const postCommitEffects = options?.postCommitEffects ?? scope.postCommitEffects;
+  if (postCommitEffects) postCommitEffects.push(runPostCommitEffects);
+  else runPostCommitEffects();
+  return { changed: result.changed, company: result.company, touchedIds: result.touchedIds };
 }
 
 async function taskCategoryPacketForRow(
@@ -7576,6 +7958,7 @@ export async function listIdentityFacets(
         eq(objectIdentityFacets.teamId, scope.teamId),
         eq(objectIdentityFacets.entityId, entityId),
         eq(objectIdentityFacets.status, 'approved'),
+        isNull(objectIdentityFacets.archivedAt),
       ),
     )
     .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value);
@@ -7606,6 +7989,7 @@ export async function listIdentityFacetsForUser(
         eq(objectIdentityFacets.teamId, scope.teamId),
         eq(objectIdentityFacets.linkedUserId, linkedUserId),
         eq(objectIdentityFacets.status, 'approved'),
+        isNull(objectIdentityFacets.archivedAt),
       ),
     )
     .orderBy(objectIdentityFacets.kind, objectIdentityFacets.value);
@@ -7647,7 +8031,9 @@ export async function createIdentityFacet(
       .for('update')
       .limit(1);
     if (!ent[0]) throw new Error('Object not found');
-    if (ent[0].type !== 'person') throw new Error('Identity facets can only be added to people');
+    if (!objectSupportsIdentityFacets(ent[0].type)) {
+      throw new Error('Identity facets can only be added to people and companies');
+    }
 
     const duplicateConditions = [
       and(
@@ -7697,7 +8083,7 @@ export async function createIdentityFacet(
       .limit(1);
     if (existing[0]) {
       if (existing[0].entityId !== input.entityId) {
-        throw new Error('Identity facet already belongs to another person');
+        throw new Error('Identity facet already belongs to another object');
       }
       const mergedMetadata = {
         ...((existing[0].metadata && typeof existing[0].metadata === 'object'
@@ -7941,6 +8327,160 @@ export async function createIdentityFacet(
     });
   });
   return result;
+}
+
+export async function archiveIdentityFacet(
+  db: Db,
+  scope: TeamScopeCore,
+  facetId: string,
+  actor: UpdateActor,
+): Promise<boolean> {
+  await scope.requireMembership();
+  if (!UUID_RE.test(facetId)) return false;
+
+  const archivedEntityId = await db.transaction(async (tx) => {
+    const [facet] = await tx
+      .select({
+        id: objectIdentityFacets.id,
+        entityId: objectIdentityFacets.entityId,
+        kind: objectIdentityFacets.kind,
+        value: objectIdentityFacets.value,
+        normalizedValue: objectIdentityFacets.normalizedValue,
+        provider: objectIdentityFacets.provider,
+        externalId: objectIdentityFacets.externalId,
+        linkedUserId: objectIdentityFacets.linkedUserId,
+        status: objectIdentityFacets.status,
+      })
+      .from(objectIdentityFacets)
+      .innerJoin(
+        entities,
+        and(
+          eq(entities.teamId, objectIdentityFacets.teamId),
+          eq(entities.id, objectIdentityFacets.entityId),
+          isNull(entities.mergedIntoId),
+        ),
+      )
+      .where(
+        and(
+          eq(objectIdentityFacets.teamId, scope.teamId),
+          eq(objectIdentityFacets.id, facetId),
+          eq(objectIdentityFacets.status, 'approved'),
+          isNull(objectIdentityFacets.archivedAt),
+        ),
+      )
+      .for('update')
+      .limit(1);
+    if (!facet) return null;
+
+    const [person] = await tx
+      .select({ canonicalName: entities.canonicalName })
+      .from(entities)
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, facet.entityId)))
+      .limit(1);
+
+    await tx
+      .update(objectIdentityFacets)
+      .set({
+        status: 'archived',
+        archivedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(objectIdentityFacets.id, facet.id));
+
+    const summary = `Archived ${facet.kind} identity for ${person?.canonicalName ?? 'person'}: ${facet.value}`;
+    const rawEventId = randomUUID();
+    const [event] = await tx
+      .insert(rawEvents)
+      .values({
+        id: rawEventId,
+        teamId: scope.teamId,
+        authorUserId: actor.kind === 'user' ? actor.userId : null,
+        source: 'system',
+        contentText: summary,
+        occurredAt: new Date(),
+        visibility: 'team',
+        sourceMetadata: systemDirectWriteSourceMetadata({
+          rawEventId,
+          kind: 'identity_facet_update',
+          metadata: {
+            entity_id: facet.entityId,
+            identity_facet_id: facet.id,
+            identity_facet_kind: facet.kind,
+          },
+          snapshot: {
+            entity_id: facet.entityId,
+            identity_facet_id: facet.id,
+            identity_facet_kind: facet.kind,
+            value: facet.value,
+            normalized_value: facet.normalizedValue,
+            archived: true,
+            actor_kind: actor.kind,
+            actor_user_id: actor.userId,
+          },
+        }),
+      })
+      .returning({ id: rawEvents.id });
+    const sourceEventId = event?.id ?? null;
+
+    await tx.insert(objectChanges).values({
+      teamId: scope.teamId,
+      entityId: facet.entityId,
+      actorUserId: actor.userId,
+      actorKind: actor.kind,
+      status: 'applied',
+      field: '__identity_facet_update__',
+      previousValue: {
+        kind: facet.kind,
+        value: facet.value,
+        normalizedValue: facet.normalizedValue,
+      },
+      newValue: {
+        kind: facet.kind,
+        value: facet.value,
+        normalizedValue: facet.normalizedValue,
+        archived: true,
+      },
+      sourceEventId: null,
+    });
+
+    await emitIdentityFacetDirectWriteOutput({
+      db: tx,
+      teamId: scope.teamId,
+      entityId: facet.entityId,
+      identityFacetId: facet.id,
+      identityFacetKind: facet.kind,
+      actor,
+      sourceEventId,
+      operation: 'update',
+      systemEventKind: 'identity_facet_update',
+      value: facet.value,
+      normalizedValue: facet.normalizedValue,
+      provider: facet.provider,
+      externalId: facet.externalId,
+      linkedUserId: facet.linkedUserId,
+      previous: {
+        value: facet.value,
+        normalizedValue: facet.normalizedValue,
+        provider: facet.provider,
+        externalId: facet.externalId,
+        linkedUserId: facet.linkedUserId,
+      },
+    });
+
+    return facet.entityId;
+  });
+
+  if (archivedEntityId) {
+    runOrDeferPostCommit(scope, () => {
+      const effectsDb = scope.postCommitDb ?? db;
+      void fireAndForgetObjectSummaryRefresh(effectsDb, scope, archivedEntityId, {
+        teamId: scope.teamId,
+        identityFacetId: facetId,
+        op: 'archiveIdentityFacet',
+      });
+    });
+  }
+  return archivedEntityId !== null;
 }
 
 export async function updateNote(
@@ -9276,6 +9816,14 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
       actor: UpdateActor,
       options?: Parameters<typeof setTaskProject>[5],
     ) => setTaskProject(db, scope, taskId, projectId, actor, options),
+    listPrimaryCompaniesForPeople: (personIds: string[]) =>
+      listPrimaryCompaniesForPeople(db, scope, personIds),
+    setPersonCompany: (
+      personId: string,
+      companyId: string | null,
+      actor: UpdateActor,
+      options?: Parameters<typeof setPersonCompany>[5],
+    ) => setPersonCompany(db, scope, personId, companyId, actor, options),
     getTaskCategoryClassificationInput: (taskId: string) =>
       getTaskCategoryClassificationInput(db, scope, taskId),
     refreshTaskCategoryClassificationRequest: (taskId: string, expectedInputHash: string) =>
@@ -9300,6 +9848,8 @@ export function createObjectScope(db: Db, scope: TeamScopeCore) {
     addRelationship: (input: Parameters<typeof addRelationship>[2]) =>
       addRelationship(db, scope, input),
     createIdentityFacet: (input: IdentityFacetInput) => createIdentityFacet(db, scope, input),
+    archiveIdentityFacet: (facetId: string, actor: UpdateActor) =>
+      archiveIdentityFacet(db, scope, facetId, actor),
     listIdentityFacets: (entityId: string) => listIdentityFacets(db, scope, entityId),
     listIdentityFacetsForUser: (linkedUserId: string) =>
       listIdentityFacetsForUser(db, scope, linkedUserId),

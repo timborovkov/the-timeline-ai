@@ -12,6 +12,7 @@ describe('object type export contracts', () => {
     expectTypeOf<objectIndex.ObjectSearchFilter>().toEqualTypeOf<objectTypes.ObjectSearchFilter>();
     expectTypeOf<objectIndex.ObjectRow>().toEqualTypeOf<objectTypes.ObjectRow>();
     expectTypeOf<objectIndex.TaskPrimaryProjectRow>().toEqualTypeOf<objectTypes.TaskPrimaryProjectRow>();
+    expectTypeOf<objectIndex.PersonPrimaryCompanyRow>().toEqualTypeOf<objectTypes.PersonPrimaryCompanyRow>();
     expectTypeOf<rootObjects.ObjectRow>().toEqualTypeOf<objectTypes.ObjectRow>();
     expectTypeOf<rootObjects.ObjectListFilter>().toEqualTypeOf<objectTypes.ObjectListFilter>();
   });

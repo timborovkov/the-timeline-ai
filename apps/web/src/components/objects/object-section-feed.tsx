@@ -9,6 +9,7 @@ import { EvidenceLink } from '@/components/evidence-link';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
+import { statusLabel } from '@/lib/status-labels';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
 
 interface Props {
@@ -24,17 +25,17 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
   if (!query.isPending && items.length === 0) return null;
   return (
     <section>
-      {showTitle ? <h2 className="mb-1 text-xs font-normal text-fg-dim">{title}</h2> : null}
+      {showTitle ? <h2 className="mb-1.5 text-xs font-medium text-fg-dim">{title}</h2> : null}
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm font-normal text-fg-dim">Loading…</p>
+        <p className="text-sm font-normal leading-5 text-fg-dim">Loading…</p>
       ) : (
         <VirtualList
           items={items}
           getItemKey={(item, index) => sectionItemKey(item, index)}
-          estimateSize={48}
-          gap={4}
+          estimateSize={56}
+          gap={8}
           renderItem={(item) => (
-            <div className="text-sm font-normal text-fg">
+            <div className="text-sm font-normal leading-5 text-fg">
               <ObjectSectionItem section={section} item={item} />
             </div>
           )}
@@ -63,7 +64,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         <a href={`/app/objects/${String(row.id)}`} className="text-fg hover:underline">
           {text(row.canonicalName, 'Task')}
         </a>
-        <span className="text-xs text-fg-dim">{text(row.status)}</span>
+        <span className="text-xs font-normal text-fg-dim">{statusLabel(text(row.status))}</span>
       </div>
     );
   }
@@ -73,8 +74,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         <a href={`/app/objects/${String(row.otherId)}`} className="text-fg hover:underline">
           {text(row.otherName, 'Object')}
         </a>
-        <span className="text-xs text-fg-dim">
-          {text(row.direction)} · {text(row.kind)}
+        <span className="text-xs font-normal text-fg-dim">
+          {statusLabel(text(row.direction))} · {statusLabel(text(row.kind))}
         </span>
       </div>
     );
@@ -125,8 +126,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
             </EvidenceLink>
           ) : null}
         </div>
-        <p className="text-xs text-fg-dim">
-          {formatDisplayDateTime(occurredAt, { timezone })} · {source}
+        <p className="text-xs font-normal text-fg-dim">
+          {formatDisplayDateTime(occurredAt, { timezone })} · {statusLabel(source || 'unknown')}
         </p>
       </div>
     );
@@ -135,8 +136,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words text-fg">{changeFieldLabel(text(row.field))}</span>
-        <span className="shrink-0 text-xs text-fg-dim">
-          {text(row.actorKind)} · {text(row.status)}
+        <span className="shrink-0 text-xs font-normal text-fg-dim">
+          {statusLabel(text(row.actorKind))} · {statusLabel(text(row.status))}
         </span>
       </div>
       <p className="mt-1 break-words text-xs text-fg-dim">
