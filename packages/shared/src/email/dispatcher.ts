@@ -1188,14 +1188,19 @@ export interface DeferredEmailEnrichmentIo {
 async function defaultDeferredEmailEnrichmentIo(): Promise<DeferredEmailEnrichmentIo> {
   const queues = await import('#src/queue/queues.js');
   const io: DeferredEmailEnrichmentIo = {
-    enqueueExtract: (input) => queues.enqueueExtractJob(input),
-    enqueueEmbed: (input) =>
-      queues.enqueueEmbedJob({
+    enqueueExtract: async (input) => {
+      await queues.enqueueExtractJob(input);
+    },
+    enqueueEmbed: async (input) => {
+      await queues.enqueueEmbedJob({
         scope: 'raw_event',
         teamId: input.teamId,
         rawEventId: input.rawEventId,
-      }),
-    enqueueSuggestion: (input) => queues.enqueueSuggestionJob(input),
+      });
+    },
+    enqueueSuggestion: async (input) => {
+      await queues.enqueueSuggestionJob(input);
+    },
   };
   try {
     const { getAttachmentsBucket, getDocumentsBucket, getS3Client } =
@@ -1215,7 +1220,9 @@ async function defaultDeferredEmailEnrichmentIo(): Promise<DeferredEmailEnrichme
           contentType: input.contentType,
         });
       },
-      enqueueExtract: (input) => queues.enqueueDocumentExtractJob(input),
+      enqueueExtract: async (input) => {
+        await queues.enqueueDocumentExtractJob(input);
+      },
     };
   } catch (err) {
     log.warn({ err }, 'deferred email flush: document/S3 deps unavailable');
