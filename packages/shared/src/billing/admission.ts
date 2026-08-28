@@ -16,7 +16,8 @@ export type BillingReserveFailureCode =
   | 'security_blocked'
   | 'free_allowance_reached'
   | 'usage_limit_reached'
-  | 'spend_cap_reached';
+  | 'spend_cap_reached'
+  | 'costly_worker_busy';
 
 export type AskBillingError = BillingReserveFailureCode;
 
@@ -53,6 +54,7 @@ export interface BillingAdmissionScope {
     missing: boolean;
     alreadyFinal?: boolean;
   }>;
+  patchReservationMetadata(operationId: string, metadata: Record<string, unknown>): Promise<void>;
 }
 
 export function askOperationId(deliverySurface: string, turnId: string = randomUUID()): string {
@@ -77,6 +79,8 @@ export function askBillingUserMessage(error: AskBillingError): string {
       return 'Usage balance is too low for this Ask. Top up or raise the spend cap in Billing.';
     case 'spend_cap_reached':
       return 'This workspace hit its spend cap. Raise the cap in Billing to continue Ask.';
+    case 'costly_worker_busy':
+      return 'This workspace is running other billed jobs. Retry shortly.';
   }
 }
 
@@ -90,6 +94,8 @@ export function recallBillingUserMessage(code: BillingReserveFailureCode): strin
       return 'Usage balance is too low to start a meeting notetaker. Top up or raise the spend cap in Billing.';
     case 'spend_cap_reached':
       return 'This workspace hit its spend cap. Raise the cap in Billing before inviting a notetaker.';
+    case 'costly_worker_busy':
+      return 'This workspace is running other billed jobs. Retry shortly.';
   }
 }
 
@@ -166,7 +172,15 @@ export async function abortRecallJoinAfterProviderAccept(input: {
   botId?: string;
 }): Promise<void> {
   if (input.botId && input.leaveMeeting) {
-    await input.leaveMeeting(input.botId).catch(() => undefined);
+    try {
+      await input.leaveMeeting(input.botId);
+    } catch {
+      await input.billing.patchReservationMetadata(input.operationId, {
+        pending_recall_leave_bot_id: input.botId,
+        pending_recall_leave_at: new Date().toISOString(),
+      });
+      return;
+    }
   }
   await releaseBillingReservation(input.billing, input.operationId).catch(() => undefined);
 }

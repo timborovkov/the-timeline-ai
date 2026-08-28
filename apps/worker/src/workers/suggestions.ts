@@ -46,7 +46,7 @@ import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from 'drizzle-
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
-import { withWorkerAiBilling } from '#src/billing-context.js';
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:suggestions');
@@ -4543,8 +4543,12 @@ export function startSuggestionWorker(deps: SuggestionWorkerDeps): Worker<queue.
   const worker = new Worker<queue.SuggestionJobData>(
     queue.QUEUE_NAMES.suggestions,
     async (job: Job<queue.SuggestionJobData>, token?: string) => {
-      const result = await withWorkerAiBilling(deps.db, job.data.teamId, 'suggestion', () =>
-        processSuggestionJobForTests(deps, job.data),
+      const result = await withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'suggestion',
+        () => processSuggestionJobForTests(deps, job.data),
+        workerBillingJobOptions(job, token),
       );
       if (integrations.isDelayedIngestResult(result)) {
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);

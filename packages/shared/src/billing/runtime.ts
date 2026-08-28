@@ -11,7 +11,7 @@ import {
   teams,
   type Db,
 } from '@timeline/db';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 
@@ -95,7 +95,7 @@ export async function runWorkerBilling<T>(
   teamId: string,
   operationClass: string,
   fn: () => Promise<T>,
-  options?: { skipMeters?: ReadonlySet<BillingMeterId> },
+  options?: { skipMeters?: ReadonlySet<BillingMeterId>; operationId?: string },
 ): Promise<T> {
   return runWithBillingContext(
     {
@@ -106,6 +106,7 @@ export async function runWorkerBilling<T>(
       source: 'worker',
       deliverySurface: 'worker',
       ...(options?.skipMeters ? { skipMeters: options.skipMeters } : {}),
+      ...(options?.operationId ? { operationId: options.operationId } : {}),
     },
     fn,
   );
@@ -475,7 +476,7 @@ export async function withAiMetering<T>(
     return (await fn()).value;
   }
   const operationClass = input.operationClass ?? ctx.operationClass;
-  const operationId = `ai:${operationClass}:${randomUUID()}`;
+  const operationId = ctx.operationId ?? `ai:${operationClass}:${randomUUID()}`;
   const reservedChargeCents =
     input.reservedChargeCents ?? BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS;
   const billing = billingScope(ctx);
@@ -484,7 +485,10 @@ export async function withAiMetering<T>(
     meterId: 'ai',
     reservedNativeUnits: reservedChargeCents,
     reservedChargeCents,
-    metadata: { operation_class: operationClass },
+    metadata: {
+      operation_class: operationClass,
+      source: ctx.source ?? 'worker',
+    },
   });
   if (!reserved.ok) throw new BillingAdmissionError(reserved.code);
   let value: T;
@@ -521,8 +525,40 @@ export async function withAiMetering<T>(
 export async function snapshotTeamStorageGbMonth(input: {
   db: Db;
   teamId: string;
+  day?: string;
 }): Promise<{ gb: number; settled: boolean }> {
-  const [row] = await input.db
+  const days = input.day ? [input.day] : storageSnapshotBackfillRange();
+  let lastGb = 0;
+  let settled = false;
+  for (const day of days) {
+    const gb = await storageGbOnUtcDay(input.db, input.teamId, day);
+    lastGb = gb;
+    if (gb <= 0) continue;
+    const gbMonthSlice = gb / daysInUtcMonth(new Date(`${day}T00:00:00.000Z`));
+    const previous = await currentMeterNativeUnits(input.db, input.teamId, 'storage_gb_month');
+    const result = await settleTeamMeter({
+      db: input.db,
+      teamId: input.teamId,
+      operationId: `storage_gb:${input.teamId}:${day}`,
+      meterId: 'storage_gb_month',
+      nativeUnits: gbMonthSlice,
+      customerChargeCents: cumulativeChargeDeltaCents({
+        meterId: 'storage_gb_month',
+        previousNativeUnits: previous,
+        nextNativeUnits: previous + gbMonthSlice,
+      }),
+      operationClass: 'storage_snapshot',
+      source: 'janitor',
+    });
+    settled = result.ok || settled;
+  }
+  return { gb: lastGb, settled };
+}
+
+async function storageGbOnUtcDay(db: Db, teamId: string, day: string): Promise<number> {
+  const startOfDay = new Date(`${day}T00:00:00.000Z`);
+  const endOfDay = new Date(`${day}T23:59:59.999Z`);
+  const [row] = await db
     .select({
       bytes: sql<number>`COALESCE(SUM(${documentVersions.byteSize}), 0)`,
     })
@@ -530,31 +566,21 @@ export async function snapshotTeamStorageGbMonth(input: {
     .innerJoin(documents, eq(documents.id, documentVersions.documentId))
     .where(
       and(
-        eq(documentVersions.teamId, input.teamId),
-        isNull(documents.deletedAt),
+        eq(documentVersions.teamId, teamId),
         sql`${documentVersions.byteSize} IS NOT NULL`,
+        sql`${documentVersions.createdAt} <= ${endOfDay}`,
+        or(isNull(documents.deletedAt), sql`${documents.deletedAt} >= ${startOfDay}`),
       ),
     );
-  const gb = (row?.bytes ?? 0) / GIB;
-  if (gb <= 0) return { gb: 0, settled: false };
-  const day = utcDay();
-  const gbMonthSlice = gb / daysInUtcMonth();
-  const previous = await currentMeterNativeUnits(input.db, input.teamId, 'storage_gb_month');
-  const result = await settleTeamMeter({
-    db: input.db,
-    teamId: input.teamId,
-    operationId: `storage_gb:${input.teamId}:${day}`,
-    meterId: 'storage_gb_month',
-    nativeUnits: gbMonthSlice,
-    customerChargeCents: cumulativeChargeDeltaCents({
-      meterId: 'storage_gb_month',
-      previousNativeUnits: previous,
-      nextNativeUnits: previous + gbMonthSlice,
-    }),
-    operationClass: 'storage_snapshot',
-    source: 'janitor',
-  });
-  return { gb, settled: result.ok };
+  return (row?.bytes ?? 0) / GIB;
+}
+
+function storageSnapshotBackfillRange(): string[] {
+  const today = utcDay();
+  const lookback = addUtcDays(today, -31);
+  const periodStart = `${today.slice(0, 7)}-01`;
+  const start = periodStart > lookback ? periodStart : lookback;
+  return utcDaysInclusive(start, today);
 }
 
 function addUtcDays(day: string, days: number): string {
@@ -574,18 +600,11 @@ function utcDaysInclusive(from: string, to: string): string[] {
   return days;
 }
 
-async function memberDayBackfillRange(db: Db, teamId: string): Promise<string[]> {
+function memberDayBackfillRange(): string[] {
   const today = utcDay();
   const lookback = addUtcDays(today, -31);
   const periodStart = `${today.slice(0, 7)}-01`;
-  const [maxRow] = await db
-    .select({ day: sql<string | null>`max(${billingMemberDayLedger.day})` })
-    .from(billingMemberDayLedger)
-    .where(eq(billingMemberDayLedger.teamId, teamId));
-  const ledgerNext = maxRow?.day ? addUtcDays(maxRow.day, 1) : lookback;
-  const start = [ledgerNext, periodStart, lookback].reduce((latest, day) =>
-    day > latest ? day : latest,
-  );
+  const start = periodStart > lookback ? periodStart : lookback;
   return utcDaysInclusive(start, today);
 }
 
@@ -690,7 +709,7 @@ export async function accrueTeamMemberDays(input: {
     .limit(1);
   const planId: BillingPlanId = account?.planId ?? 'free';
   const included = PLAN_CATALOG[planId].includedActiveMembers ?? 0;
-  const days = input.day ? [input.day] : await memberDayBackfillRange(input.db, input.teamId);
+  const days = input.day ? [input.day] : memberDayBackfillRange();
   if (days.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
   }

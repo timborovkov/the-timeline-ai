@@ -35,6 +35,8 @@ const fakes = vi.hoisted(() => ({
   fakeUpdateStatusForBot: vi.fn(),
   fakeUpdateStatus: vi.fn(),
   fakeWithTeam: vi.fn(),
+  fakeBillingSettle: vi.fn(),
+  fakeBillingRelease: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
@@ -65,8 +67,8 @@ vi.mock('@timeline/shared/team-scope', () => ({
         handleMeetingNoShow: fakes.fakeHandleNoShow,
       },
       billing: {
-        settle: vi.fn().mockResolvedValue({ ok: true }),
-        release: vi.fn().mockResolvedValue({ ok: true }),
+        settle: fakes.fakeBillingSettle,
+        release: fakes.fakeBillingRelease,
       },
     };
   },
@@ -161,6 +163,8 @@ beforeEach(() => {
   fakes.fakeHandleNoShow.mockResolvedValue('ignored');
   fakes.fakeHandleFailure.mockResolvedValue('ignored');
   fakes.fakeUpdateStatusForBot.mockResolvedValue(true);
+  fakes.fakeBillingSettle.mockResolvedValue({ ok: true, duplicate: false });
+  fakes.fakeBillingRelease.mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
@@ -234,6 +238,27 @@ describe('POST /api/webhooks/recall/status — terminal-state guard', () => {
     expect(fakes.fakeEnqueueFinalize).not.toHaveBeenCalled();
   });
 
+  it('returns 503 when terminal Recall settlement fails', async () => {
+    fakes.fakeBillingSettle.mockRejectedValueOnce(new Error('settle failed'));
+    fakes.fakeLookup.mockResolvedValueOnce({
+      id: 'meeting-1',
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      status: 'failed',
+      platform: 'meet',
+      provider: 'recall',
+      savedMeetingId: null,
+      startedAt: new Date('2026-08-26T12:00:00.000Z'),
+      endedAt: new Date('2026-08-26T12:05:00.000Z'),
+    });
+    const r = await POST(signedRequest(statusBody('bot.call_ended', 'call_ended')));
+    expect(r.status).toBe(503);
+    const json = (await r.json()) as { reason?: string };
+    expect(json.reason).toBe('handler_error');
+    expect(fakes.fakeBillingSettle).toHaveBeenCalled();
+    expect(fakes.fakeBillingRelease).not.toHaveBeenCalled();
+  });
+
   it('short-circuits with 200 when meeting is already failed (user cancelled)', async () => {
     fakes.fakeLookup.mockResolvedValueOnce({
       id: 'meeting-1',
@@ -253,6 +278,8 @@ describe('POST /api/webhooks/recall/status — terminal-state guard', () => {
   it('short-circuits newer terminal product states too', async () => {
     for (const status of ['completed_partial', 'no_show', 'cancelled', 'skipped'] as const) {
       vi.clearAllMocks();
+      fakes.fakeBillingSettle.mockResolvedValue({ ok: true, duplicate: true });
+      fakes.fakeBillingRelease.mockResolvedValue({ ok: true });
       fakes.fakeLookup.mockResolvedValueOnce({
         id: 'meeting-1',
         teamId: TEAM_ID,

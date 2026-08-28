@@ -587,7 +587,16 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       document create serializes the Free count under lock key 1. Failed structured-output
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
       split across those periods. Background AI metering keeps the reservation if settle fails
-      after the provider call; Ask and web chat do the same. Paid-plan changes reuse the Polar
+      after the provider call and reuses the BullMQ job id; Ask and web chat keep the reservation
+      the same way. A €10 top-up collects outstanding wallet shortfalls before crediting the
+      remainder. Enterprise settlement does not debit a prepaid wallet. Member-day janitor ticks
+      retry unsettled facts across the current period / 31-day window after billing recovery.
+      Aborting a Recall join after provider accept keeps the reservation when leave fails.
+      Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep
+      the leftover team unrestricted. Re-accepting a removed member stamps a new `createdAt`.
+      Storage snapshots backfill missed days. Reactivating a reservation resets `createdAt`.
+      Restore takes advisory lock 1 then 2. Worker AI concurrency follows
+      `costlyWorkerConcurrency` and delays a busy job. Paid-plan changes reuse the Polar
       subscription in non-active paid states. Extra-member plan preview prorates from period
       member-days, including person-days when the current plan has no extras. Auto-reload
       retries owner notification after delivery failure. Inbound email audio skipped for a

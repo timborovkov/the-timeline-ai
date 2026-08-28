@@ -14,6 +14,8 @@ export interface BillingAlsContext {
   source?: string;
   deliverySurface?: string;
   billable?: boolean;
+  /** Stable id reused across worker retries of the same job. */
+  operationId?: string;
   /** Meters already reserved/settled by the caller (Ask + Recall). */
   skipMeters?: ReadonlySet<BillingMeterId>;
 }

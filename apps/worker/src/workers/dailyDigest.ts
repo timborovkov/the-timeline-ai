@@ -2,7 +2,7 @@ import { type Db } from '@timeline/db';
 import { childLogger, messaging, queue } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
 
-import { withWorkerAiBilling } from '#src/billing-context.js';
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:daily-digest');
@@ -135,13 +135,14 @@ function digestBillingTeamId(job: queue.DailyDigestJobData): string | undefined 
 export function startDailyDigestWorker(deps: { db: Db }): Worker<queue.DailyDigestJobData> {
   const worker = new Worker<queue.DailyDigestJobData>(
     queue.QUEUE_NAMES.dailyDigest,
-    async (job: Job<queue.DailyDigestJobData>) => {
+    async (job: Job<queue.DailyDigestJobData>, token?: string) => {
       const startedAt = Date.now();
       const result = await withWorkerAiBilling(
         deps.db,
         digestBillingTeamId(job.data),
         'digest',
         () => processDailyDigestJob(deps, job.data),
+        workerBillingJobOptions(job, token),
       );
       log.info(
         { jobId: job.id, ...result, durationMs: Date.now() - startedAt },

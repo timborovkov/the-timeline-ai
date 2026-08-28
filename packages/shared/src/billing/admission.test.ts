@@ -1,9 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  abortRecallJoinAfterProviderAccept,
   askOperationId,
   meetingReserveMinutesForPlan,
   recallBillableMinutes,
@@ -168,6 +169,28 @@ describe('billing admission helpers', () => {
     expect(dash.meters.recall_minutes?.nativeUnits).toBe(4);
     const unused = await billing.release(`recall:${unusedMeetingId}`);
     expect(unused.alreadyFinal).toBe(true);
+  });
+
+  it('keeps the Recall reservation when bot leave fails after provider accept', async () => {
+    const billing = {
+      patchReservationMetadata: vi.fn().mockResolvedValue(undefined),
+      release: vi.fn().mockResolvedValue({ ok: true, missing: false }),
+    };
+    const leaveMeeting = vi.fn().mockRejectedValue(new Error('recall leave failed'));
+    await abortRecallJoinAfterProviderAccept({
+      billing: billing as never,
+      operationId: 'recall:meeting-keep',
+      botId: 'bot-keep',
+      leaveMeeting,
+    });
+    expect(leaveMeeting).toHaveBeenCalledWith('bot-keep');
+    expect(billing.patchReservationMetadata).toHaveBeenCalledWith(
+      'recall:meeting-keep',
+      expect.objectContaining({
+        pending_recall_leave_bot_id: 'bot-keep',
+      }),
+    );
+    expect(billing.release).not.toHaveBeenCalled();
   });
 });
 

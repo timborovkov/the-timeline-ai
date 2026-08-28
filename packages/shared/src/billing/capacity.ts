@@ -169,6 +169,7 @@ export async function assertTeamWriteCapacity(input: {
   }
 
   if (cap.indexedChunks !== null && (input.additionalChunks ?? 0) > 0) {
+    await input.db.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 2))`);
     const filters = [eq(documentChunks.teamId, input.teamId), isNull(documents.deletedAt)];
     if (input.excludeDocumentVersionId) {
       filters.push(ne(documentChunks.documentVersionId, input.excludeDocumentVersionId));
@@ -573,20 +574,29 @@ export async function releaseFreeGrantIfOwnerLeaves(input: {
     .set({ assignedTeamId: null })
     .where(eq(billingFreeGrants.id, grant.id));
 
-  await input.db
-    .update(teamBillingAccounts)
-    .set({
-      billingState: 'restricted',
-      spendCapCents: 0,
-      updatedAt: new Date(),
-    })
+  const [remainingGrant] = await input.db
+    .select({ id: billingFreeGrants.id })
+    .from(billingFreeGrants)
     .where(
-      and(
-        eq(teamBillingAccounts.teamId, input.teamId),
-        eq(teamBillingAccounts.planId, 'free'),
-        sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
-      ),
-    );
+      and(eq(billingFreeGrants.assignedTeamId, input.teamId), isNull(billingFreeGrants.revokedAt)),
+    )
+    .limit(1);
+  if (!remainingGrant) {
+    await input.db
+      .update(teamBillingAccounts)
+      .set({
+        billingState: 'restricted',
+        spendCapCents: 0,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(teamBillingAccounts.teamId, input.teamId),
+          eq(teamBillingAccounts.planId, 'free'),
+          sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
+        ),
+      );
+  }
 
   await claimOwnedTeamFreeGrantsForVerifiedUser({
     db: input.db as unknown as Db,

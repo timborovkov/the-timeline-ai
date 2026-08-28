@@ -1663,6 +1663,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       await ensureMember();
       await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 2))`);
         const existing = await tx
           .select()
           .from(documents)

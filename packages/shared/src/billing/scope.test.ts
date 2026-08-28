@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { teamBillingAccounts, type Db } from '@timeline/db';
+import { billingUsageReservations, teamBillingAccounts, type Db } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -286,9 +286,45 @@ describe('billing scope', () => {
 
     await scope.creditWallet({ operationId: 'topup-unfreeze', cents: 1_000, source: 'test' });
     const restored = await scope.getAccount();
-    expect(restored.walletBalanceCents).toBe(1_000);
+    expect(restored.walletBalanceCents).toBe(880);
     expect(restored.billingState).toBe('team_active');
     expect(restored.spendCapCents).toBe(10_000);
+  });
+
+  it('keeps a frozen paid account frozen until the top-up covers the shortfall', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, wallet_balance_cents = 80,
+          spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-partial-topup',
+      meterId: 'ai',
+      reservedNativeUnits: 80,
+      reservedChargeCents: 80,
+    });
+    expect(reserved.ok).toBe(true);
+    const settled = await scope.settle({
+      operationId: 'op-partial-topup',
+      meterId: 'ai',
+      nativeUnits: 200,
+      customerChargeCents: 200,
+    });
+    expect(settled.ok).toBe(true);
+    await scope.creditWallet({ operationId: 'topup-partial', cents: 50, source: 'test' });
+    const stillFrozen = await scope.getAccount();
+    expect(stillFrozen.walletBalanceCents).toBe(0);
+    expect(stillFrozen.billingState).toBe('read_only');
   });
 
   it('restores a frozen paid account when the spend cap is raised', async () => {
@@ -934,7 +970,7 @@ describe('billing scope', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET plan_id = 'enterprise', billing_state = 'enterprise_active',
-          wallet_balance_cents = 0, spend_cap_cents = 0, included_discount_remaining_cents = 0,
+          wallet_balance_cents = 500, spend_cap_cents = 0, included_discount_remaining_cents = 0,
           polar_customer_id = 'cus_enterprise'
       WHERE team_id = '${TEAM_ID}';
     `);
@@ -948,7 +984,7 @@ describe('billing scope', () => {
     const after = await scope.getAccount();
     expect(after.billingState).toBe('enterprise_active');
     expect(after.spendCapCents).toBe(0);
-    expect(after.walletBalanceCents).toBe(0);
+    expect(after.walletBalanceCents).toBe(500);
     expect(provider.events.length).toBeGreaterThan(0);
     if (!settled.duplicate) {
       expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'pending' });
@@ -985,5 +1021,73 @@ describe('billing scope', () => {
     if (!settled.duplicate) {
       expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
     }
+  });
+
+  it('resets reservation createdAt when reactivating a released row', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const first = await scope.reserve({
+      operationId: 'op-reactivate',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    expect(first.ok).toBe(true);
+    await scope.release('op-reactivate');
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET created_at = '2026-07-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = 'op-reactivate';
+    `);
+    const retry = await scope.reserve({
+      operationId: 'op-reactivate',
+      meterId: 'email_units',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 0,
+    });
+    expect(retry.ok).toBe(true);
+    const [row] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, 'op-reactivate'));
+    expect(row?.createdAt.getTime()).toBeGreaterThan(Date.parse('2026-07-02T00:00:00Z'));
+  });
+
+  it('rejects a second concurrent worker AI reservation on Free', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const first = await scope.reserve({
+      operationId: 'op-worker-1',
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+      metadata: { source: 'worker' },
+    });
+    expect(first.ok).toBe(true);
+    const second = await scope.reserve({
+      operationId: 'op-worker-2',
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+      metadata: { source: 'worker' },
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('costly_worker_busy');
+    const search = await scope.reserve({
+      operationId: 'op-search-1',
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+      metadata: { source: 'search' },
+    });
+    expect(search.ok).toBe(true);
   });
 });

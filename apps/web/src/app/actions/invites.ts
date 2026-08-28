@@ -86,7 +86,12 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           })
           .onConflictDoUpdate({
             target: [teamMembers.teamId, teamMembers.userId],
-            set: { role: invite.role, removedAt: null, removedByUserId: null },
+            set: {
+              role: invite.role,
+              removedAt: null,
+              removedByUserId: null,
+              createdAt: new Date(),
+            },
           });
         await tx
           .update(teamInvites)
@@ -274,7 +279,12 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
           })
           .onConflictDoUpdate({
             target: [teamMembers.teamId, teamMembers.userId],
-            set: { role: invite.role, removedAt: null, removedByUserId: null },
+            set: {
+              role: invite.role,
+              removedAt: null,
+              removedByUserId: null,
+              createdAt: new Date(),
+            },
           });
         await tx
           .update(teamInvites)

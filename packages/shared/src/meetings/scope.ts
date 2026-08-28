@@ -738,7 +738,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
       startedAt: row?.startedAt ?? null,
       endedAt: row?.endedAt ?? endedAt,
       metadata: row?.metadata,
-    }).catch(() => undefined);
+    });
   }
 
   // Visibility predicate over meetings. Same shape as raw_events: team,

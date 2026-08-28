@@ -8,7 +8,7 @@ import {
   teamBillingAccounts,
   teamMembers,
 } from '@timeline/db';
-import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
@@ -108,6 +108,22 @@ function polarIngestEventFromMetadata(
 
 function polarUsageEventId(teamId: string, operationId: string): string {
   return `timeline:${teamId}:${operationId}`;
+}
+
+function reservationWorkerSource(
+  metadata: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!metadata) return null;
+  const source = metadata.source;
+  return typeof source === 'string' && source.length > 0 ? source : null;
+}
+
+function outstandingWalletShortfallCents(metadata: Record<string, unknown>): number {
+  const shortfall = metadata.wallet_shortfall_cents;
+  const collected = metadata.wallet_shortfall_collected_cents;
+  const owed = typeof shortfall === 'number' && Number.isFinite(shortfall) ? shortfall : 0;
+  const paid = typeof collected === 'number' && Number.isFinite(collected) ? collected : 0;
+  return Math.max(0, Math.trunc(owed) - Math.trunc(paid));
 }
 
 const POLAR_INGEST_CLAIM_STALE_MS = 15 * 60 * 1000;
@@ -530,6 +546,19 @@ export function createBillingScope(deps: BillingScopeDeps) {
               ),
             )
         ).filter((row) => row.operationId !== input.operationId);
+        const costlyWorkerCap = CAPACITY_BY_PLAN[locked.planId].costlyWorkerConcurrency;
+        if (
+          costlyWorkerCap !== null &&
+          input.meterId === 'ai' &&
+          reservationWorkerSource(input.metadata) === 'worker'
+        ) {
+          const inFlight = pending.filter(
+            (row) => row.meterId === 'ai' && reservationWorkerSource(row.metadata) === 'worker',
+          ).length;
+          if (inFlight >= costlyWorkerCap) {
+            return { kind: 'reject' as const, code: 'costly_worker_busy' as const };
+          }
+        }
         const byMeter = Object.fromEntries(
           countersTx.map((row) => [
             row.meterId,
@@ -679,6 +708,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             state: 'reserved',
             expiresAt,
             metadata: reservationMetadata,
+            createdAt: new Date(),
             updatedAt: new Date(),
           })
           .where(
@@ -977,7 +1007,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                     reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
                   }
                 : {}),
-              ...(applyCharges && (walletCents > 0 || discountCents > 0)
+              ...(applyCharges && !enterpriseContract && (walletCents > 0 || discountCents > 0)
                 ? {
                     walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${walletCents})`,
                     includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
@@ -1133,6 +1163,25 @@ export function createBillingScope(deps: BillingScopeDeps) {
       });
     },
 
+    async patchReservationMetadata(operationId: string, metadata: Record<string, unknown>) {
+      await ensureMember();
+      await ensureAccount();
+      const patch = JSON.stringify(metadata);
+      await db
+        .update(billingUsageReservations)
+        .set({
+          metadata: sql`COALESCE(${billingUsageReservations.metadata}, '{}'::jsonb) || ${patch}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(billingUsageReservations.teamId, teamId),
+            eq(billingUsageReservations.operationId, operationId),
+            eq(billingUsageReservations.state, 'reserved'),
+          ),
+        );
+    },
+
     async creditWallet(input: { operationId: string; cents: number; source?: string }) {
       await ensureMember('admin');
       if (!Number.isInteger(input.cents) || input.cents <= 0) {
@@ -1166,20 +1215,76 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .limit(1)
           .for('update');
         if (!account) throw new Error('Missing billing account');
-        const restoredState = restoredPaidBillingStateAfterWalletOrCapRecovery({
-          planId: account.planId,
-          billingState: account.billingState,
-        });
+        const shortfallRows = await tx
+          .select({
+            id: billingUsageLedger.id,
+            metadata: billingUsageLedger.metadata,
+          })
+          .from(billingUsageLedger)
+          .where(
+            and(
+              eq(billingUsageLedger.teamId, teamId),
+              inArray(billingUsageLedger.kind, ['settlement', 'reversal']),
+            ),
+          )
+          .orderBy(asc(billingUsageLedger.createdAt));
+        let remainingCollection = input.cents;
+        let collectedCents = 0;
+        for (const row of shortfallRows) {
+          const outstanding = outstandingWalletShortfallCents(row.metadata);
+          if (outstanding <= 0 || remainingCollection <= 0) continue;
+          const take = Math.min(outstanding, remainingCollection);
+          remainingCollection -= take;
+          collectedCents += take;
+          const already =
+            typeof row.metadata.wallet_shortfall_collected_cents === 'number'
+              ? row.metadata.wallet_shortfall_collected_cents
+              : 0;
+          const patch = JSON.stringify({
+            wallet_shortfall_collected_cents: already + take,
+          });
+          await tx
+            .update(billingUsageLedger)
+            .set({
+              metadata: sql`COALESCE(${billingUsageLedger.metadata}, '{}'::jsonb) || ${patch}::jsonb`,
+            })
+            .where(eq(billingUsageLedger.id, row.id));
+        }
+        const creditCents = input.cents - collectedCents;
+        const remainingDebt =
+          shortfallRows.reduce(
+            (sum, row) => sum + outstandingWalletShortfallCents(row.metadata),
+            0,
+          ) - collectedCents;
+        const restoredState =
+          remainingDebt <= 0
+            ? restoredPaidBillingStateAfterWalletOrCapRecovery({
+                planId: account.planId,
+                billingState: account.billingState,
+              })
+            : null;
         const restoredCap = restoredState
           ? restoredSpendCapCentsAfterShortfallUnfreeze({
               planId: account.planId,
               spendCapCents: account.spendCapCents,
             })
           : null;
+        if (collectedCents > 0) {
+          const topUpPatch = JSON.stringify({
+            cents: input.cents,
+            shortfall_collected_cents: collectedCents,
+          });
+          await tx
+            .update(billingUsageLedger)
+            .set({
+              metadata: sql`COALESCE(${billingUsageLedger.metadata}, '{}'::jsonb) || ${topUpPatch}::jsonb`,
+            })
+            .where(eq(billingUsageLedger.id, ledgerRow.id));
+        }
         await tx
           .update(teamBillingAccounts)
           .set({
-            walletBalanceCents: sql`${teamBillingAccounts.walletBalanceCents} + ${input.cents}`,
+            walletBalanceCents: sql`${teamBillingAccounts.walletBalanceCents} + ${creditCents}`,
             billingState: restoredState ?? account.billingState,
             ...(restoredCap !== null ? { spendCapCents: restoredCap } : {}),
             updatedAt: new Date(),

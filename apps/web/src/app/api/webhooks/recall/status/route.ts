@@ -206,17 +206,23 @@ export async function POST(req: Request): Promise<Response> {
   // re-enqueue finalize over a cancelled meeting. Return 200 so Recall
   // stops retrying; the event is a no-op from our perspective.
   if (TERMINAL_STATUSES.has(meeting.status)) {
-    if (meeting.status === 'no_show') {
-      await settleElapsedRecallMeetingMinutes(scope.billing, {
-        meetingId: meeting.id,
-        startedAt: meeting.startedAt,
-        endedAt: meeting.endedAt ?? (createdAt ? new Date(createdAt) : new Date()),
-        metadata: meeting.metadata,
-      }).catch(() => undefined);
-    } else if (meeting.status !== 'completed' && meeting.status !== 'completed_partial') {
-      await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
-        () => undefined,
-      );
+    if (
+      meeting.status === 'no_show' ||
+      meeting.status === 'failed' ||
+      meeting.status === 'cancelled'
+    ) {
+      try {
+        await settleElapsedRecallMeetingMinutes(scope.billing, {
+          meetingId: meeting.id,
+          startedAt: meeting.startedAt,
+          endedAt: meeting.endedAt ?? (createdAt ? new Date(createdAt) : new Date()),
+          metadata: meeting.metadata,
+        });
+      } catch (err) {
+        log.error({ err, botId, event: parsed.event }, 'status_handler_error');
+        reportCaughtError(err, { surface: 'api', operation: 'recall_status_handler' });
+        return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
+      }
     }
     log.info(
       { botId, event: parsed.event, currentStatus: meeting.status },
@@ -296,7 +302,7 @@ export async function POST(req: Request): Promise<Response> {
           startedAt: meeting.startedAt,
           endedAt: createdAt ? new Date(createdAt) : new Date(),
           metadata: meeting.metadata,
-        }).catch(() => undefined);
+        });
       }
     } else if (isFailureEvent) {
       await scope.meetings.handleMeetingFailure({
@@ -305,9 +311,6 @@ export async function POST(req: Request): Promise<Response> {
         code: code ?? 'unknown',
         failedAt: createdAt ? new Date(createdAt) : new Date(),
       });
-      await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
-        () => undefined,
-      );
     } else if (shouldEnqueueFinalize) {
       shouldFinalizeCurrentAttempt = await scope.meetings.updateMeetingStatusForBot(
         meeting.id,

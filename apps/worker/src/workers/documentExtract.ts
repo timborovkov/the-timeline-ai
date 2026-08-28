@@ -15,7 +15,7 @@ import { assertTeamWriteCapacity, isBillingAdmissionError } from '@timeline/shar
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq, sql } from 'drizzle-orm';
 
-import { withWorkerAiBilling } from '#src/billing-context.js';
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import {
   ANYDOC_SANDBOX_MODEL,
   extractOfficeForDocument,
@@ -545,9 +545,13 @@ export function startDocumentExtractWorker(
   const io = defaultIO();
   const worker = new Worker<queue.DocumentExtractJobData>(
     queue.QUEUE_NAMES.documentExtract,
-    async (job: Job<queue.DocumentExtractJobData>) =>
-      withWorkerAiBilling(deps.db, job.data.teamId, 'document_extract', () =>
-        processDocumentExtractJob(deps, job.data, io),
+    async (job: Job<queue.DocumentExtractJobData>, token?: string) =>
+      withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'document_extract',
+        () => processDocumentExtractJob(deps, job.data, io),
+        workerBillingJobOptions(job, token),
       ),
     {
       connection: queue.getRedisConnection(),

@@ -402,4 +402,30 @@ describe('billing capacity (not Polar meters)', () => {
     });
     expect((await extra.getAccount()).billingState).toBe('free');
   });
+
+  it('does not restrict a Free team when another owner grant remains', async () => {
+    const otherOwner = '22222222-3333-4444-8555-666666666666';
+    await applyOwnedTeamFreeGrant({ db, teamId: TEAM_ID, userId: USER_ID });
+    await pg.exec(`
+      INSERT INTO users (id, email, "emailVerified")
+      VALUES ('${otherOwner}', 'other-owner@example.test', now());
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${otherOwner}', 'owner');
+      INSERT INTO billing_free_grants (user_id, assigned_team_id)
+      VALUES ('${otherOwner}', '${TEAM_ID}');
+    `);
+    await releaseFreeGrantIfOwnerLeaves({ db, teamId: TEAM_ID, userId: USER_ID });
+    const remaining = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await remaining.getAccount()).billingState).toBe('free');
+    const [leftGrant] = await db
+      .select()
+      .from(billingFreeGrants)
+      .where(eq(billingFreeGrants.userId, USER_ID));
+    expect(leftGrant?.assignedTeamId).toBeNull();
+  });
 });

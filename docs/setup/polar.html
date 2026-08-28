@@ -103,46 +103,55 @@ BILLING_CHARGES_ENABLED=false
         spend cap (€25/€100/€500) when the workspace is still on Free; later subscription updates
         preserve an administrator-selected paid cap, including €0 as a hard stop. Settlement that
         exceeds the reserved wallet or paid spend cap still records the full ledger charge and
-        freezes the workspace. A €10 top-up or a positive spend-cap raise restores the plan's active
-        state (and the catalog default cap when a shortfall freeze had zeroed it). Extra member-days
-        persist a denied charge and freeze rather than skipping the extra seat. Terminal Recall
-        no-shows settle elapsed waiting-room minutes; a retry still releases so the same meeting can
-        reserve again. Cancelling a joining/active meeting with no transcript chunks settles elapsed
-        waiting-room minutes instead of releasing them. Postmark success is recorded before email
-        settlement. Meeting-finalize billing uses the system actor so a departed creator cannot skip
-        settlement. Free-grant inserts use <code>ON CONFLICT DO NOTHING</code> so a unique race
-        cannot abort team-create. The post-verify Free-grant backfill prefers oldest restricted Free
-        workspaces and never assigns the grant to a paid team. Scheduled join billing denials fail
-        the occurrence without pausing auto-join as consecutive failures. Document uploads are
-        blocked in every non-reservable billing state. Refunds of the €10 top-up debit the prepaid
-        wallet, serialize concurrent <code>refund.created</code> /
-        <code>order.refunded</code> totals, and freeze the workspace if that credit was already
-        spent. Refunds that arrive before <code>order.paid</code> are stored and applied when the
-        top-up credits. Local usage settlement is independent of Polar ingest: prepaid wallet and
-        included discount already collect locally, so those units are not sent to Polar meters.
-        Remaining Polar ingest uses a ledger outbox that claims a row before ingesting, Polar
-        receives a stable event id, and a failed ingest does not undo a committed charge. Janitor
-        included-discount resets lock the billing account so they cannot overwrite a newer Polar
-        plan or period. Ask streams that abort after work starts settle at least the reserved
-        customer charge. Failed structured-output attempts still contribute OpenRouter
+        freezes the workspace. A €10 top-up first collects outstanding wallet shortfalls, then
+        credits any remainder and restores the plan's active state only when remaining debt is 0
+        (and the catalog default cap when a shortfall freeze had zeroed it). Extra member-days
+        persist a denied charge and freeze rather than skipping the extra seat. Janitor member-day
+        ticks retry unsettled facts across the current period / 31-day window after billing
+        recovery. Terminal Recall no-shows settle elapsed waiting-room minutes; a retry still
+        releases so the same meeting can reserve again. Cancelling a joining/active meeting with no
+        transcript chunks settles elapsed waiting-room minutes instead of releasing them. Postmark
+        success is recorded before email settlement. Meeting-finalize billing uses the system actor
+        so a departed creator cannot skip settlement. Free-grant inserts use
+        <code>ON CONFLICT DO NOTHING</code> so a unique race cannot abort team-create. The
+        post-verify Free-grant backfill prefers oldest restricted Free workspaces and never assigns
+        the grant to a paid team. Scheduled join billing denials fail the occurrence without pausing
+        auto-join as consecutive failures. Document uploads are blocked in every non-reservable
+        billing state. Refunds of the €10 top-up debit the prepaid wallet, serialize concurrent
+        <code>refund.created</code> / <code>order.refunded</code> totals, and freeze the workspace
+        if that credit was already spent. Refunds that arrive before <code>order.paid</code> are
+        stored and applied when the top-up credits. Local usage settlement is independent of Polar
+        ingest: prepaid wallet and included discount already collect locally, so those units are not
+        sent to Polar meters. Remaining Polar ingest uses a ledger outbox that claims a row before
+        ingesting, Polar receives a stable event id, and a failed ingest does not undo a committed
+        charge. Janitor included-discount resets lock the billing account so they cannot overwrite a
+        newer Polar plan or period. Ask streams that abort after work starts settle at least the
+        reserved customer charge. Failed structured-output attempts still contribute OpenRouter
         <code>usage.cost</code>. Recall minutes that cross a UTC month are attributed to each month
-        they span. Document create and restore serialize capacity under advisory lock key 1.
-        Background AI metering keeps the reservation when settle fails after the provider call.
-        Slack/Telegram/MCP Ask and web chat do the same. Paid-plan changes reuse the Polar
-        subscription in non-active paid states. Extra-member plan preview prorates from period
-        member-days, including person-days when the current plan has no extras. Auto-reload retries
-        owner notification after delivery failure without a second Polar checkout. Inbound email
-        audio skipped for a denied email meter is flushed by the janitor when billing can reserve
-        again. Deferred accepted-source flush rotates past still-blocked rows; a replay after an
-        insert crash meters the existing dedup row. Seat claims are blocked while billing is paused.
-        Enterprise settlement skips prepaid freezes so Polar meters ingest. Interactive search
-        embeddings run under billing ALS. The Free grant unassigns when its owner leaves or is
-        demoted. Member-day janitor ticks backfill missed days. Deleted documents are excluded from
-        indexed-chunk capacity; restore counts those chunks. Web chat settles known compression cost
-        when the answer stream fails. <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide
-        shadow kill switch. Set <code>BILLING_CHARGES_ENABLED</code> on
-        <code>document-extract-orchestrator</code> as well as web/worker; it is a non-secret
-        allowlisted toggle, not an extra credential.
+        they span. Document create serializes capacity under advisory lock key 1; restore takes key
+        1 then key 2 so restored chunks serialize with extraction writes. Worker AI reservations
+        count against plan <code>costlyWorkerConcurrency</code> and delay the job when busy.
+        Background AI metering keeps the reservation when settle fails after the provider call and
+        reuses the BullMQ job id. Aborting a Recall join after the bot is accepted keeps the
+        reservation when leave fails so the janitor can retry. Terminal Recall settlement errors
+        propagate so the status webhook can 503 and retry. Re-accepting a removed member stamps a
+        new membership <code>createdAt</code>. A leftover Free team stays unrestricted while another
+        owner's grant remains assigned. Storage snapshots backfill missed days. Slack/Telegram/MCP
+        Ask and web chat also keep the reservation when settlement fails. Paid-plan changes reuse
+        the Polar subscription in non-active paid states. Extra-member plan preview prorates from
+        period member-days, including person-days when the current plan has no extras. Auto-reload
+        retries owner notification after delivery failure without a second Polar checkout. Inbound
+        email audio skipped for a denied email meter is flushed by the janitor when billing can
+        reserve again. Deferred accepted-source flush rotates past still-blocked rows; a replay
+        after an insert crash meters the existing dedup row. Seat claims are blocked while billing
+        is paused. Enterprise settlement skips prepaid freezes and does not debit a prepaid wallet
+        so Polar meters ingest. Interactive search embeddings run under billing ALS. The Free grant
+        unassigns when its owner leaves or is demoted. Member-day janitor ticks backfill missed
+        days. Deleted documents are excluded from indexed-chunk capacity; restore counts those
+        chunks. Web chat settles known compression cost when the answer stream fails.
+        <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide shadow kill switch. Set
+        <code>BILLING_CHARGES_ENABLED</code> on <code>document-extract-orchestrator</code> as well
+        as web/worker; it is a non-secret allowlisted toggle, not an extra credential.
       </p>
 
       <h2>Public and app surfaces</h2>

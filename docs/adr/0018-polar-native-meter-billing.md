@@ -92,21 +92,30 @@ credit hides margin and confuses prospects.
    older event cannot overwrite a newer one. Polar webhook bodies are bounded to
    the integration webhook size limit before signature verify. Settlement that
    exceeds the reserved wallet or paid spend cap still records the full ledger
-   charge and freezes the workspace (`read_only`, spend cap €0). A €10 top-up or a
-   positive spend-cap raise restores the plan's active state and, when the freeze
-   zeroed a positive catalog cap, that catalog default. Extra member-days persist
-   the denied charge and freeze instead of skipping the extra seat. Terminal Recall
+   charge and freezes the workspace (`read_only`, spend cap €0). A €10 top-up first
+   collects outstanding wallet shortfalls, then credits any remainder and restores
+   the plan's active state only when remaining debt is 0 (and, when the freeze
+   zeroed a positive catalog cap, that catalog default). Extra member-days persist
+   the denied charge and freeze instead of skipping the extra seat. Janitor
+   member-day ticks retry unsettled `member_days:<team>:<day>:<user>` facts across
+   the current period / 31-day window after billing recovery instead of advancing
+   past denied days. Terminal Recall
    no-shows settle elapsed waiting-room minutes; retry no-shows still release so
    the same meeting can reserve again. Cancelling a joining/active meeting with no
    transcript chunks settles elapsed waiting-room minutes instead of releasing them.
    An active bot `failed`/`fatal` path settles elapsed minutes the same way.
-   Slack/Telegram/MCP Ask and web chat keep the reservation when settlement fails
-   after OpenRouter work. Web chat also settles known compression cost when the
+   Settlement errors on those terminal paths propagate so Recall webhooks can 503
+   and retry; aborting a join after Recall accepted keeps the reservation when
+   leave fails so the janitor can retry leave. Slack/Telegram/MCP Ask and web chat keep the reservation when settlement fails
+   after OpenRouter work. Worker AI metering reuses the BullMQ job id as the
+   durable operation id. Web chat also settles known compression cost when the
    answer stream fails. Seat claims are blocked while billing is paused.
-   Enterprise settlement skips prepaid wallet/spend-cap freezes so Polar meters
-   can ingest. Interactive search embeddings run under billing ALS.
-   The person-level Free grant unassigns when its owner leaves or is demoted.
-   Janitor member-days backfill missed calendar days, restore rechecks indexed
+   Enterprise settlement skips prepaid wallet/spend-cap freezes and does not debit
+   a prepaid wallet so Polar meters can ingest. Interactive search embeddings run under billing ALS.
+   The person-level Free grant unassigns when its owner leaves or is demoted, but
+   does not restrict the leftover team while another owner's grant remains assigned.
+   Re-accepting a removed member stamps a new membership `createdAt` so gap days
+   are not billed as continuous. Janitor member-days backfill missed calendar days, restore rechecks indexed
    chunks (deleted documents do not count), and accepted-source replay meters
    existing dedup rows after an insert-then-crash. Postmark success is recorded before email
    settlement so a later settle failure does not resend. Meeting-finalize billing
@@ -151,7 +160,12 @@ credit hides margin and confuses prospects.
    `WORKER_MODE=document-extract` allows the non-secret `BILLING_CHARGES_ENABLED`
    toggle so extract AI metering can run live. `withAiMetering` keeps the reservation
    when settle fails after the provider call so a worker retry cannot double-pay
-   OpenRouter. Paid-plan changes reuse the Polar subscription id in `past_due`,
+   OpenRouter. Reactivating a released or expired reservation resets `createdAt`
+   so a later retry is attributed to the new attempt. Worker AI reservations
+   (`metadata.source=worker`) count against `costlyWorkerConcurrency`; a busy
+   workspace delays the BullMQ job instead of failing it. Janitor storage
+   snapshots backfill missed days in the current period / 31-day window using
+   historical document bytes. Paid-plan changes reuse the Polar subscription id in `past_due`,
    `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
    preview prorates extra members from `member_days` rather than a full month.
    Auto-reload marks Polar checkout created before owner email and retries
@@ -159,7 +173,8 @@ credit hides margin and confuses prospects.
    email audio skipped for a denied email meter is stamped `transcription_deferred`
    and the janitor flushes transcription when billing can reserve again. Deferred accepted-source flush
    rotates past still-blocked rows. Document restore rechecks storage,
-   document, and indexed-chunk capacity under the same advisory lock as create (hash key 1).
+   document, and indexed-chunk capacity under advisory lock key 1 then key 2
+   (chunk admission reuses key 2).
    Failed structured-output attempts still contribute OpenRouter `usage.cost` to
    settlement. Duration meters such as Recall minutes split native units across
    the UTC months they span. Plan preview prorates extra seats from recorded

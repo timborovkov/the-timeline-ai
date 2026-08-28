@@ -19,7 +19,7 @@ import { withTeam } from '@timeline/shared/team-scope';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, asc, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 
-import { withWorkerAiBilling } from '#src/billing-context.js';
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:extract');
@@ -551,8 +551,12 @@ export function startExtractWorker(deps: ExtractWorkerDeps): Worker<queue.Extrac
   const worker = new Worker<queue.ExtractJobData>(
     queue.QUEUE_NAMES.extract,
     async (job: Job<queue.ExtractJobData>, token?: string) => {
-      const result = await withWorkerAiBilling(deps.db, job.data.teamId, 'extraction', () =>
-        processExtractJobForTests(deps, job.data),
+      const result = await withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'extraction',
+        () => processExtractJobForTests(deps, job.data),
+        workerBillingJobOptions(job, token),
       );
       if (integrations.isDelayedIngestResult(result)) {
         await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
