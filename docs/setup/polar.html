@@ -136,14 +136,14 @@ BILLING_CHARGES_ENABLED=false
         reservation when leave fails so the janitor can retry. Terminal Recall settlement errors
         propagate so the status webhook can 503 and retry. Re-accepting a removed member stamps a
         new membership <code>createdAt</code> and appends the previous interval to
-        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another
-        owner's grant remains assigned. Storage snapshots backfill missed days. Slack/Telegram/MCP
-        Ask and web chat also keep the reservation when settlement fails. Paid-plan changes reuse
-        the Polar subscription in non-active paid states. Extra-member plan preview prorates from
-        period member-days, including person-days when the current plan has no extras. Auto-reload
-        retries owner notification after delivery failure without a second Polar checkout. Inbound
-        email audio skipped for a denied email meter is flushed by the janitor when billing can
-        reserve again. Denied inbound-email parent enrichment is stamped
+        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
+        grant remains assigned. Storage snapshots backfill missed days. Slack/Telegram/MCP Ask and
+        web chat also keep the reservation when settlement fails. Paid-plan changes reuse the Polar
+        subscription in non-active paid states. Extra-member plan preview prorates from period
+        member-days, including person-days when the current plan has no extras. Auto-reload retries
+        owner notification after delivery failure without a second Polar checkout. Inbound email
+        audio skipped for a denied email meter is flushed by the janitor when billing can reserve
+        again. Denied inbound-email parent enrichment is stamped
         <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
         accepted-source meter. Deferred accepted-source flush rotates past still-blocked rows; a
         replay after an insert crash meters the existing dedup row. Seat claims are blocked while
@@ -159,8 +159,8 @@ BILLING_CHARGES_ENABLED=false
         object when admission fails. Captured Slack/Telegram/email attachments assert document and
         storage capacity. Free in-allowance usage is not wallet-billable when live charging is
         enabled. Janitor Recall leave retries run before reservation expiry, and expiry skips rows
-        with <code>pending_recall_leave_bot_id</code>. Interactive search embeddings run
-        under billing ALS. The Free grant unassigns when its owner leaves or is demoted. Member-day
+        with <code>pending_recall_leave_bot_id</code>. Interactive search embeddings run under
+        billing ALS. The Free grant unassigns when its owner leaves or is demoted. Member-day
         janitor ticks backfill missed days. Deleted documents are excluded from indexed-chunk
         capacity; restore counts those chunks. Web chat settles known compression cost when the
         answer stream fails. <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide shadow
