@@ -96,7 +96,9 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
         >
           {text(row.canonicalName, 'Task')}
         </a>
-        <span className={cn(OBJECT_MONO_META_CLASS, 'shrink-0')}>{statusLabel(text(row.status))}</span>
+        <span className={cn(OBJECT_MONO_META_CLASS, 'shrink-0')}>
+          {statusLabel(text(row.status))}
+        </span>
       </div>
     );
   }

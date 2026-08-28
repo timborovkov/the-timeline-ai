@@ -152,7 +152,9 @@ function ProvenanceEntryList({
             {timelinePreview(entry.title, 160)}
           </p>
           {entry.reason ? (
-            <p className={cn(OBJECT_ROW_META_CLASS, 'mt-0.5 line-clamp-2 break-words text-fg-muted')}>
+            <p
+              className={cn(OBJECT_ROW_META_CLASS, 'mt-0.5 line-clamp-2 break-words text-fg-muted')}
+            >
               {displayText(entry.reason)}
             </p>
           ) : null}
@@ -174,7 +176,10 @@ function ProvenanceSourceLinks({ evidence }: { evidence: ProvenanceEntry['eviden
       {remainingEvidence.length > 0 ? (
         <details>
           <summary
-            className={cn(OBJECT_CONTROL_CLASS, 'cursor-pointer list-none text-fg-dim hover:text-fg')}
+            className={cn(
+              OBJECT_CONTROL_CLASS,
+              'cursor-pointer list-none text-fg-dim hover:text-fg',
+            )}
           >
             Review {remainingEvidence.length} more source
             {remainingEvidence.length === 1 ? '' : 's'}

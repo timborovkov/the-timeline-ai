@@ -66,7 +66,12 @@ export function ObjectBoardContextSection({
               >
                 {displayText(row.boardName)}
               </Link>
-              <div className={cn('flex min-w-0 flex-wrap items-center gap-x-1.5', OBJECT_ROW_META_CLASS)}>
+              <div
+                className={cn(
+                  'flex min-w-0 flex-wrap items-center gap-x-1.5',
+                  OBJECT_ROW_META_CLASS,
+                )}
+              >
                 {meta.length > 0 ? <span className="truncate">{meta.join(' · ')}</span> : null}
                 <DueDateDisplay value={row.dueAt} variant="compact" />
               </div>
