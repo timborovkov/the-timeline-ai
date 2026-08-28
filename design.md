@@ -795,17 +795,29 @@ The full object page is a Linear-style issue view, not a work-index. It has no
 editable title. Board placement is a muted header line, not a standalone
 section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
 shared floating binder. Repair memory and Add task live in the overflow
-menu. The main column uses an 8px section stack and 14px body at 1.35
+menu. The main column uses a 12px section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
-evidence / facts groups that have items. Empty “Not enough object memory,” “No
-connected work,” and “Nothing here yet” cards are prohibited. Discussion keeps
-a borderless composer with @mentions. The right column is one Properties rail: a 6px-radius
-`--surface` panel with a hairline `--border`, not raw page canvas. Properties,
-Related, recent changes, and Archive share that one panel and divide with
-hairlines. Do not nest a card per field. The task peek uses the same rail so
-it lifts off the list in light and dark. An empty summary is a single
-Generate summary control, not a “ready to generate” block. Evidence uses a
+evidence / facts groups that have items. Top-level section titles use 12px
+medium `--fg-dim`; nested Connected work groups use quieter 12px `--fg-muted`
+and hairline dividers so Open tasks / Documents / Evidence do not compete.
+Row titles stay 14px `--fg`; supporting meta is 12px `--fg-dim` and sentence
+case (`Create · Identity facet`, never raw `create · identity_facet`). Empty
+“Not enough object memory,” “No connected work,” and “Nothing here yet” cards
+are prohibited. Discussion keeps
+a borderless composer with @mentions. The right column is one Properties rail at
+`20rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
+`--border`, not raw page canvas. Board context, editable contact facets (people and
+companies), type-aware Details fields (same 32px property rows as Stage/Aliases:
+`6.75rem` `--fg-dim` labels, 14px `--fg` values, blur-to-save inputs, `No …` placeholders;
+arbitrary Add field with human labels stored as camelCase; hover-only ghost × to clear
+custom fields; `fixture_version` and other internal keys stay hidden), Properties,
+Company (person objects), Related, recent changes, and Archive share that one panel
+and divide with hairlines. Status and Priority keep a toned icon with quiet `--fg`
+value text so they match Stage/Aliases. Do not nest a card per
+field. The task peek and board card peek use the same rail pattern so they lift
+off the list in light and dark; both include Discussion below command fields and
+before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
 quiet text control, not a signal chip. Section labels, supporting copy, and
 timestamps use 12px `--fg-dim`. Body and links use 14px `--fg` at regular
 weight. Quiet actions use 12px `--fg-muted`. `--signal` is reserved for
@@ -1211,3 +1223,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |
+| 2026-08-28 | Object Properties rail polish | Widens the object rail to `20rem`, shares one labeled field chrome across Contact/Details/Properties, keeps status icons toned with quiet value text, and drops empty contact chrome plus boxed add forms. |
