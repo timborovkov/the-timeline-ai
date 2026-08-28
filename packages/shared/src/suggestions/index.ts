@@ -7853,10 +7853,7 @@ ${JSON.stringify(evidence)}`,
           const [current] = await tx
             .select({ item: agentSuggestionItems })
             .from(agentSuggestionItems)
-            .innerJoin(
-              agentSuggestions,
-              eq(agentSuggestions.id, agentSuggestionItems.suggestionId),
-            )
+            .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
             .where(
               and(
                 eq(agentSuggestionItems.id, input.itemId),
