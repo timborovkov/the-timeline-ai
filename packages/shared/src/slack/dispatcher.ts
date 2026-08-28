@@ -16,6 +16,8 @@ import { and, asc, desc, eq, isNull, ne, sql } from 'drizzle-orm';
 import { askAgent, TEAM_BOT_ACTOR_USER_ID, type AskAgentDeps } from '#src/agent/ask.js';
 import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import { askBillingUserMessage } from '#src/billing/admission.js';
+import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -1695,56 +1697,75 @@ async function createSlackDocumentAttachment(
 ): Promise<void> {
   const documentDeps = deps.documents;
   if (!documentDeps) return;
-  const created = await deps.db.transaction(async (tx) => {
-    const docRows = await tx
-      .insert(documents)
-      .values({
+  let created: { key: string; versionId: string };
+  try {
+    created = await deps.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 1))`);
+      await assertTeamWriteCapacity({
+        db: tx as unknown as typeof deps.db,
         teamId: input.teamId,
-        fileKind: 'captured',
-        name: input.filename,
-        ownerUserId: input.parentAuthorUserId ?? input.sourceOwnerUserId,
-        visibility: input.visibility,
-        sourceRawEventId: input.parentRawEventId,
-        metadata: {
-          source: 'slack',
-          slack_file_id: input.file.id,
-          slack_workspace_id: input.workspace.id,
-          slack_channel_id: input.channelId,
-          slack_message_ts: input.messageTs,
-          parent_raw_event_id: input.parentRawEventId,
-        },
-      })
-      .returning({ id: documents.id });
-    const doc = docRows[0];
-    if (!doc) throw new Error('slack_document_insert_failed');
-    const key = buildDocumentObjectKey({
-      teamId: input.teamId,
-      documentId: doc.id,
-      version: 1,
-      filename: input.filename,
-    });
-    const versionRows = await tx
-      .insert(documentVersions)
-      .values({
+        additionalDocuments: 1,
+        additionalBytes: input.bytes.length,
+      });
+      const docRows = await tx
+        .insert(documents)
+        .values({
+          teamId: input.teamId,
+          fileKind: 'captured',
+          name: input.filename,
+          ownerUserId: input.parentAuthorUserId ?? input.sourceOwnerUserId,
+          visibility: input.visibility,
+          sourceRawEventId: input.parentRawEventId,
+          metadata: {
+            source: 'slack',
+            slack_file_id: input.file.id,
+            slack_workspace_id: input.workspace.id,
+            slack_channel_id: input.channelId,
+            slack_message_ts: input.messageTs,
+            parent_raw_event_id: input.parentRawEventId,
+          },
+        })
+        .returning({ id: documents.id });
+      const doc = docRows[0];
+      if (!doc) throw new Error('slack_document_insert_failed');
+      const key = buildDocumentObjectKey({
         teamId: input.teamId,
         documentId: doc.id,
         version: 1,
-        objectKey: key,
-        byteSize: input.bytes.length,
-        contentType: input.contentType,
-        uploadedByUserId: input.parentAuthorUserId,
-        sourceEventId: input.parentRawEventId,
-        processingStatus: 'pending',
-      })
-      .returning({ id: documentVersions.id, objectKey: documentVersions.objectKey });
-    const version = versionRows[0];
-    if (!version) throw new Error('slack_document_version_insert_failed');
-    await tx
-      .update(documents)
-      .set({ currentVersionId: version.id })
-      .where(eq(documents.id, doc.id));
-    return { key, versionId: version.id };
-  });
+        filename: input.filename,
+      });
+      const versionRows = await tx
+        .insert(documentVersions)
+        .values({
+          teamId: input.teamId,
+          documentId: doc.id,
+          version: 1,
+          objectKey: key,
+          byteSize: input.bytes.length,
+          contentType: input.contentType,
+          uploadedByUserId: input.parentAuthorUserId,
+          sourceEventId: input.parentRawEventId,
+          processingStatus: 'pending',
+        })
+        .returning({ id: documentVersions.id, objectKey: documentVersions.objectKey });
+      const version = versionRows[0];
+      if (!version) throw new Error('slack_document_version_insert_failed');
+      await tx
+        .update(documents)
+        .set({ currentVersionId: version.id })
+        .where(eq(documents.id, doc.id));
+      return { key, versionId: version.id };
+    });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      log.warn(
+        { teamId: input.teamId, code: err.code, filename: input.filename },
+        'slack document attachment skipped; write capacity denied',
+      );
+      return;
+    }
+    throw err;
+  }
   await documentDeps.upload({
     key: created.key,
     body: input.bytes,

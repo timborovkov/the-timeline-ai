@@ -61,12 +61,19 @@ export async function startBillingCheckout(input: {
       return { ok: false, error: 'That discount code is not valid.' };
     }
   }
+  const account = await gate.scope.billing.getAccount();
+  if (account.planId === 'enterprise') {
+    return {
+      ok: false,
+      error:
+        'Enterprise plan changes go through support or the Polar customer portal, not self-serve checkout.',
+    };
+  }
   await provider.ensureCustomer({
     externalId: gate.active.teamId,
     email: gate.email,
     name: gate.active.teamName,
   });
-  const account = await gate.scope.billing.getAccount();
   const checkout = await createPlanChangeSession({
     provider,
     account,
@@ -112,7 +119,7 @@ export async function startWalletTopUp(): Promise<
     return {
       ok: false,
       error:
-        'Prepaid top-up is available on paid plans. Free workspaces stop at native allowances.',
+        'Prepaid top-up is available on PAYG, Team, and Business. Free workspaces stop at native allowances; Enterprise invoices usage without a prepaid wallet.',
     };
   }
 

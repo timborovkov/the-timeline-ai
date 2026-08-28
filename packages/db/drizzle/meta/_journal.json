@@ -540,6 +540,13 @@
       "when": 1795654920000,
       "tag": "0076_billing_polar_clock_and_unverified_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1795654980000,
+      "tag": "0077_billing_member_day_plan_and_membership_intervals",
+      "breakpoints": true
     }
   ]
 }

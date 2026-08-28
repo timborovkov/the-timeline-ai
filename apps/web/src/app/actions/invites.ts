@@ -1,6 +1,6 @@
 'use server';
 
-import { teamInvites, teamMembers, users } from '@timeline/db';
+import { teamInvites, teamMembers, users, type TeamMemberPriorInterval } from '@timeline/db';
 import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -21,6 +21,62 @@ const log = childLogger('web:actions:invites');
 
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
 const recipientInviteSchema = z.object({ inviteId: z.uuid() });
+
+type InviteDbTx = {
+  select: typeof db.select;
+  insert: typeof db.insert;
+  update: typeof db.update;
+};
+
+async function acceptTeamMembership(
+  tx: InviteDbTx,
+  input: { teamId: string; userId: string; role: 'admin' | 'member' },
+): Promise<void> {
+  const existing = await tx
+    .select({
+      role: teamMembers.role,
+      removedAt: teamMembers.removedAt,
+      createdAt: teamMembers.createdAt,
+      priorIntervals: teamMembers.priorIntervals,
+    })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, input.teamId), eq(teamMembers.userId, input.userId)))
+    .limit(1)
+    .for('update');
+  const membership = existing[0];
+  if (membership && !membership.removedAt) {
+    throw new Error('already-member');
+  }
+  if (membership) {
+    const priorIntervals: TeamMemberPriorInterval[] = [
+      ...(membership.priorIntervals ?? []),
+      ...(membership.removedAt
+        ? [
+            {
+              startedAt: membership.createdAt.toISOString(),
+              endedAt: membership.removedAt.toISOString(),
+            },
+          ]
+        : []),
+    ];
+    await tx
+      .update(teamMembers)
+      .set({
+        role: input.role,
+        removedAt: null,
+        removedByUserId: null,
+        createdAt: new Date(),
+        priorIntervals,
+      })
+      .where(and(eq(teamMembers.teamId, input.teamId), eq(teamMembers.userId, input.userId)));
+    return;
+  }
+  await tx.insert(teamMembers).values({
+    teamId: input.teamId,
+    userId: input.userId,
+    role: input.role,
+  });
+}
 
 export async function acceptInviteAction(formData: FormData): Promise<void> {
   return runSentryServerAction('accept_invite', async () => {
@@ -77,22 +133,11 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
           additionalSeats: 1,
           includePendingInvites: false,
         });
-        await tx
-          .insert(teamMembers)
-          .values({
-            teamId: invite.teamId,
-            userId,
-            role: invite.role,
-          })
-          .onConflictDoUpdate({
-            target: [teamMembers.teamId, teamMembers.userId],
-            set: {
-              role: invite.role,
-              removedAt: null,
-              removedByUserId: null,
-              createdAt: new Date(),
-            },
-          });
+        await acceptTeamMembership(tx, {
+          teamId: invite.teamId,
+          userId,
+          role: invite.role,
+        });
         await tx
           .update(teamInvites)
           .set({ acceptedAt: new Date(), acceptedByUserId: userId })
@@ -270,22 +315,11 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
           includePendingInvites: false,
         });
 
-        await tx
-          .insert(teamMembers)
-          .values({
-            teamId: invite.teamId,
-            userId,
-            role: invite.role,
-          })
-          .onConflictDoUpdate({
-            target: [teamMembers.teamId, teamMembers.userId],
-            set: {
-              role: invite.role,
-              removedAt: null,
-              removedByUserId: null,
-              createdAt: new Date(),
-            },
-          });
+        await acceptTeamMembership(tx, {
+          teamId: invite.teamId,
+          userId,
+          role: invite.role,
+        });
         await tx
           .update(teamInvites)
           .set({ acceptedAt: new Date(), acceptedByUserId: userId })

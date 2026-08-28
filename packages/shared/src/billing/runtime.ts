@@ -10,6 +10,7 @@ import {
   teamMembers,
   teams,
   type Db,
+  type TeamMemberPriorInterval,
 } from '@timeline/db';
 import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 
@@ -459,6 +460,20 @@ export async function meterEmailUnits(input: {
   return settleEmailUnits(input);
 }
 
+function jsonSafeProviderValue(value: unknown): unknown {
+  try {
+    return JSON.parse(JSON.stringify(value)) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function reservationMetadataRecord(
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  return metadata ?? {};
+}
+
 /**
  * Wrap a provider AI call: reserve worst-case, run, settle exact OpenRouter USD.
  * No-ops when no billing ALS is set (tests, unmetered internal paths).
@@ -491,6 +506,40 @@ export async function withAiMetering<T>(
     },
   });
   if (!reserved.ok) throw new BillingAdmissionError(reserved.code);
+  const existingMeta = reservationMetadataRecord(
+    reserved.reservation.metadata as Record<string, unknown> | null,
+  );
+  const skipProvider =
+    Boolean(reserved.alreadySettled) ||
+    Boolean(reserved.reused && existingMeta.provider_completed === true);
+
+  const settleCached = async (usd: number) => {
+    const { providerCostCents, customerChargeExactCents } =
+      customerAiChargeCentsFromOpenRouterUsd(usd);
+    await billing.settle({
+      operationId,
+      meterId: 'ai',
+      nativeUnits: customerChargeExactCents,
+      customerChargeCents: Math.round(customerChargeExactCents),
+      providerCostCents,
+      operationClass,
+      provider: 'openrouter',
+      ...(input.model ? { model: input.model } : {}),
+      ...(ctx.source ? { source: ctx.source } : {}),
+      ...(ctx.deliverySurface ? { deliverySurface: ctx.deliverySurface } : {}),
+      billable: ctx.billable !== false,
+      metadata: { openrouter_usd: usd },
+    });
+  };
+
+  if (skipProvider) {
+    if (!reserved.alreadySettled) {
+      const usd = typeof existingMeta.openrouter_usd === 'number' ? existingMeta.openrouter_usd : 0;
+      await settleCached(usd);
+    }
+    return existingMeta.provider_value as T;
+  }
+
   let value: T;
   let finish: OpenRouterFinishEvent | undefined;
   try {
@@ -500,25 +549,16 @@ export async function withAiMetering<T>(
     throw err;
   }
   const usd = finish ? openRouterUsdCostFromFinishEvent(finish) : 0;
-  const { providerCostCents, customerChargeExactCents } =
-    customerAiChargeCentsFromOpenRouterUsd(usd);
+  const providerValue = jsonSafeProviderValue(value);
+  await billing.patchReservationMetadata(operationId, {
+    provider_completed: true,
+    openrouter_usd: usd,
+    ...(providerValue === undefined ? {} : { provider_value: providerValue }),
+  });
   // Keep the reservation if settle fails after OpenRouter work succeeded.
   // Releasing here would let a worker retry mint a new `ai:` operation id
   // and pay the provider a second time while the first call stays uncharged.
-  await billing.settle({
-    operationId,
-    meterId: 'ai',
-    nativeUnits: customerChargeExactCents,
-    customerChargeCents: Math.round(customerChargeExactCents),
-    providerCostCents,
-    operationClass,
-    provider: 'openrouter',
-    ...(input.model ? { model: input.model } : {}),
-    ...(ctx.source ? { source: ctx.source } : {}),
-    ...(ctx.deliverySurface ? { deliverySurface: ctx.deliverySurface } : {}),
-    billable: ctx.billable !== false,
-    metadata: { openrouter_usd: usd },
-  });
+  await settleCached(usd);
   return value;
 }
 
@@ -608,16 +648,51 @@ function memberDayBackfillRange(): string[] {
   return utcDaysInclusive(start, today);
 }
 
-function membersActiveOnDay<T extends { createdAt: Date; removedAt: Date | null }>(
-  members: T[],
-  day: string,
-): T[] {
+function intervalOverlapsUtcDay(startedAt: Date, endedAt: Date | null, day: string): boolean {
   const startOfDay = new Date(`${day}T00:00:00.000Z`);
   const endOfDay = new Date(`${day}T23:59:59.999Z`);
+  if (startedAt > endOfDay) return false;
+  return endedAt === null || endedAt >= startOfDay;
+}
+
+function membersActiveOnDay<
+  T extends {
+    createdAt: Date;
+    removedAt: Date | null;
+    priorIntervals?: TeamMemberPriorInterval[] | null;
+  },
+>(members: T[], day: string): T[] {
   return members.filter((member) => {
-    if (member.createdAt > endOfDay) return false;
-    return member.removedAt === null || member.removedAt >= startOfDay;
+    if (intervalOverlapsUtcDay(member.createdAt, member.removedAt, day)) return true;
+    return (member.priorIntervals ?? []).some((interval) =>
+      intervalOverlapsUtcDay(new Date(interval.startedAt), new Date(interval.endedAt), day),
+    );
   });
+}
+
+function isBillingPlanId(value: string): value is BillingPlanId {
+  return value in PLAN_CATALOG;
+}
+
+async function planEntitlementForMemberDay(input: {
+  db: Db;
+  teamId: string;
+  day: string;
+  currentPlanId: BillingPlanId;
+}): Promise<{ planId: BillingPlanId; included: number }> {
+  const [existing] = await input.db
+    .select({ planId: billingMemberDayLedger.planId })
+    .from(billingMemberDayLedger)
+    .where(
+      and(
+        eq(billingMemberDayLedger.teamId, input.teamId),
+        eq(billingMemberDayLedger.day, input.day),
+      ),
+    )
+    .limit(1);
+  const planId =
+    existing?.planId && isBillingPlanId(existing.planId) ? existing.planId : input.currentPlanId;
+  return { planId, included: PLAN_CATALOG[planId].includedActiveMembers ?? 0 };
 }
 
 async function accrueTeamMemberDaysForDay(input: {
@@ -636,6 +711,7 @@ async function accrueTeamMemberDaysForDay(input: {
         teamId: input.teamId,
         userId: member.userId,
         day,
+        planId,
         role: member.role,
         billable: planId !== 'free',
         chargeCents: 0,
@@ -708,7 +784,6 @@ export async function accrueTeamMemberDays(input: {
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
   const planId: BillingPlanId = account?.planId ?? 'free';
-  const included = PLAN_CATALOG[planId].includedActiveMembers ?? 0;
   const days = input.day ? [input.day] : memberDayBackfillRange();
   if (days.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
@@ -720,6 +795,7 @@ export async function accrueTeamMemberDays(input: {
       role: teamMembers.role,
       createdAt: teamMembers.createdAt,
       removedAt: teamMembers.removedAt,
+      priorIntervals: teamMembers.priorIntervals,
     })
     .from(teamMembers)
     .where(eq(teamMembers.teamId, input.teamId));
@@ -730,12 +806,18 @@ export async function accrueTeamMemberDays(input: {
     const members = input.day
       ? roster.filter((member) => member.removedAt === null)
       : membersActiveOnDay(roster, day);
+    const entitlement = await planEntitlementForMemberDay({
+      db: input.db,
+      teamId: input.teamId,
+      day,
+      currentPlanId: planId,
+    });
     const result = await accrueTeamMemberDaysForDay({
       db: input.db,
       teamId: input.teamId,
       day,
-      planId,
-      included,
+      planId: entitlement.planId,
+      included: entitlement.included,
       members,
     });
     extraMembers = result.extraMembers;
@@ -745,8 +827,8 @@ export async function accrueTeamMemberDays(input: {
 }
 
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {
-  await expireStaleBillingReservations({ db });
   await leaveOverdueRecallBots(db);
+  await expireStaleBillingReservations({ db });
   await reconcileShadowBillingFromChargesEnabled(db);
   const polarProvider = createPolarBillingProvider();
   if (polarProvider) {

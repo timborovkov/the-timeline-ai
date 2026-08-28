@@ -117,6 +117,48 @@ describe('billing runtime', () => {
     }
   });
 
+  it('skips the OpenRouter call when a durable AI operation already completed', async () => {
+    const originalCreate = billingScopeMod.createBillingScope;
+    const settleError = new Error('settle failed after OpenRouter');
+    let settleCalls = 0;
+    const spy = vi.spyOn(billingScopeMod, 'createBillingScope').mockImplementation((deps) => {
+      const scope = originalCreate(deps);
+      return {
+        ...scope,
+        settle: (...args: Parameters<typeof scope.settle>) => {
+          settleCalls += 1;
+          if (settleCalls === 1) return Promise.reject(settleError);
+          return scope.settle(...args);
+        },
+      };
+    });
+    let providerCalls = 0;
+    const run = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding' }, () => {
+            providerCalls += 1;
+            return Promise.resolve({
+              value: { text: 'cached-embedding' },
+              finish: { usage: { cost: 0.01 } },
+            });
+          }),
+        { operationId: 'embedding:skip-provider' },
+      );
+    try {
+      await expect(run()).rejects.toThrow('settle failed after OpenRouter');
+      expect(providerCalls).toBe(1);
+      const retried = await run();
+      expect(retried).toEqual({ text: 'cached-embedding' });
+      expect(providerCalls).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('meters email units idempotently', async () => {
     const first = await meterEmailUnits({
       db,
@@ -326,8 +368,98 @@ describe('billing runtime', () => {
       WHERE team_id = '${TEAM_ID}';
       UPDATE team_members SET created_at = '${twoDaysAgo}T00:00:00Z'
       WHERE team_id = '${TEAM_ID}';
-      INSERT INTO billing_member_day_ledger (team_id, user_id, day, role, billable, charge_cents)
-      VALUES ('${TEAM_ID}', '${USER_ID}', '${twoDaysAgo}', 'owner', true, 0);
+      INSERT INTO billing_member_day_ledger (team_id, user_id, day, role, billable, charge_cents, plan_id)
+      VALUES ('${TEAM_ID}', '${USER_ID}', '${twoDaysAgo}', 'owner', true, 0, 'payg');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
+    expect(accrued.extraMembers).toBe(0);
+    const days = (
+      await db
+        .select({ day: billingMemberDayLedger.day })
+        .from(billingMemberDayLedger)
+        .where(eq(billingMemberDayLedger.teamId, TEAM_ID))
+    ).map((row) => row.day);
+    expect(days).toEqual(expect.arrayContaining([twoDaysAgo, yesterday, today]));
+  });
+
+  it('settles historical member-days with the plan stamped on that day', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const extraIds = [
+      '21111111-2222-4333-8444-555555555555',
+      '31111111-2222-4333-8444-555555555555',
+      '41111111-2222-4333-8444-555555555555',
+      '51111111-2222-4333-8444-555555555555',
+      '61111111-2222-4333-8444-555555555555',
+      '71111111-2222-4333-8444-555555555555',
+      '81111111-2222-4333-8444-555555555555',
+    ];
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', included_discount_remaining_cents = 0,
+          wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'm${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const teamDay = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-10' });
+    expect(teamDay.extraMembers).toBe(0);
+    const stamped = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped.every((row) => row.planId === 'team')).toBe(true);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const revisited = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-10' });
+    expect(revisited.extraMembers).toBe(0);
+    expect(revisited.chargeCents).toBe(0);
+    const after = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(after.every((row) => row.planId === 'team')).toBe(true);
+  });
+
+  it('backfills member-days from preserved prior membership intervals', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const today = utcDay();
+    const todayDate = new Date(`${today}T00:00:00.000Z`);
+    const twoDaysAgo = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 2),
+      ),
+    );
+    const yesterday = utcDay(
+      new Date(
+        Date.UTC(todayDate.getUTCFullYear(), todayDate.getUTCMonth(), todayDate.getUTCDate() - 1),
+      ),
+    );
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
+      WHERE team_id = '${TEAM_ID}';
+      UPDATE team_members
+      SET created_at = '${today}T12:00:00Z',
+          prior_intervals = '[{"startedAt":"${twoDaysAgo}T00:00:00.000Z","endedAt":"${yesterday}T12:00:00.000Z"}]'::jsonb
+      WHERE team_id = '${TEAM_ID}';
     `);
     const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID });
     expect(accrued.extraMembers).toBe(0);

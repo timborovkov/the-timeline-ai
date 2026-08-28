@@ -230,6 +230,7 @@ export function polarSubscriptionIdForPlanChange(account: {
 /**
  * Free → paid uses Polar checkout. Paid → paid updates the existing
  * subscription (or the customer portal when Polar cannot PATCH in place).
+ * Enterprise is contractual — never open a second self-serve checkout.
  */
 export async function createPlanChangeSession(input: {
   provider: BillingProvider;
@@ -245,6 +246,11 @@ export async function createPlanChangeSession(input: {
   portalReturnUrl: string;
   discountId?: string;
 }): Promise<{ url: string }> {
+  if (input.account.planId === 'enterprise') {
+    throw new Error(
+      'Enterprise plan changes go through support or the Polar customer portal, not self-serve checkout.',
+    );
+  }
   const subscriptionId = polarSubscriptionIdForPlanChange(input.account);
   if (subscriptionId) {
     try {

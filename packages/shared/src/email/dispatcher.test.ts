@@ -17,7 +17,7 @@ import type { PostmarkInbound } from '#src/email/postmark-schema.js';
 
 import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
 import { createBillingScope } from '#src/billing/scope.js';
-import { handleInbound } from '#src/email/dispatcher.js';
+import { flushDeferredEmailEnrichment, handleInbound } from '#src/email/dispatcher.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
 
@@ -561,6 +561,71 @@ describe('email dispatcher', () => {
     expect(captured).toHaveLength(0);
     expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
     expect(queues.embed.enqueueEmbed).not.toHaveBeenCalled();
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(parent?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+  });
+
+  it('flushes deferred inbound-email enrichment after billing is lifted', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const queues = textQueueDeps();
+    const payload = inboundPayload('deferred-flush');
+    await expect(
+      handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+    expect(queues.extract.enqueueExtract).not.toHaveBeenCalled();
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const flushed = await flushDeferredEmailEnrichment(db as never, 50, {
+      enqueueExtract: queues.extract.enqueueExtract,
+      enqueueEmbed: queues.embed.enqueueEmbed,
+      enqueueSuggestion: queues.suggestions.enqueueSuggestion,
+    });
+    expect(flushed).toBe(1);
+    expect(queues.extract.enqueueExtract).toHaveBeenCalledOnce();
+    expect(queues.embed.enqueueEmbed).toHaveBeenCalledOnce();
+    expect(queues.suggestions.enqueueSuggestion).toHaveBeenCalledOnce();
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(parent?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
+  it('refuses a captured email attachment when the document cap is reached', async () => {
+    await pg.exec(`
+      INSERT INTO documents (team_id, name)
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 100) AS g;
+    `);
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const document = documentDeps();
+    const payload = inboundPayload('over-doc-cap');
+    payload.Attachments = [attachment('rollout-plan.pdf', 'application/pdf', '%PDF-1.7')];
+
+    await expect(
+      handleInbound(
+        {
+          db: db as never,
+          inboundDomain: 'inbound.test',
+          attachments,
+          documents: document,
+          ...queues,
+        },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+
+    expect(document.upload).not.toHaveBeenCalled();
+    expect(document.enqueueExtract).not.toHaveBeenCalled();
+    const captured = await db.select().from(documents).where(eq(documents.teamId, TEAM_ID));
+    expect(captured).toHaveLength(100);
+    const [parent] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(parent?.sourceMetadata).toMatchObject({
+      attachments: [
+        expect.objectContaining({ filename: 'rollout-plan.pdf', document_failed: true }),
+      ],
+    });
   });
 
   it('repairs missing captured documents on duplicate email delivery replay', async () => {
@@ -682,7 +747,9 @@ describe('email dispatcher', () => {
     expect(attachments.uploadAudio).toHaveBeenCalledOnce();
     expect(attachments.enqueueTranscribe).not.toHaveBeenCalled();
     const rows = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    const parent = rows.find((r) => r.contentText === 'Voice memo context');
     const child = rows.find((r) => r.contentAudioUrl);
+    expect(parent?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
     expect(child?.sourceMetadata).toMatchObject({ transcription_deferred: true });
   });
 

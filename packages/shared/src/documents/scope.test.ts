@@ -1,8 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, reconciliationEvidence, reconciliationEvidenceAnchors } from '@timeline/db';
+import {
+  type Db,
+  documentVersions,
+  reconciliationEvidence,
+  reconciliationEvidenceAnchors,
+} from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
@@ -10,6 +15,18 @@ import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+const s3Fakes = vi.hoisted(() => ({
+  deleteObject: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('#src/s3/objects.js', () => ({
+  deleteObject: (...args: unknown[]) => s3Fakes.deleteObject(...args),
+}));
+vi.mock('#src/s3/client.js', () => ({
+  getS3Client: () => ({}),
+  getDocumentsBucket: () => 'timeline-documents',
+}));
 
 /**
  * Real-DB integration tests for the Phase 9 document scope. Uses pglite
@@ -56,6 +73,7 @@ let pg: PGlite;
 let db: AnyDb;
 
 beforeEach(async () => {
+  s3Fakes.deleteObject.mockClear();
   pg = new PGlite();
   await applyDbMigrations(pg);
   await seedTeamAndMembers(pg);
@@ -798,6 +816,44 @@ describe('document scope — visibility filter', () => {
     expect(failed).toHaveLength(1);
     expect(failed[0]?.status === 'rejected' ? failed[0].reason : undefined).toBeInstanceOf(
       BillingAdmissionError,
+    );
+  });
+
+  it('does not stamp byte_size when storage-cap finalization rejects an upload', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const original = await scope.createDocument({
+      name: 'full.bin',
+      folderId: null,
+      filename: 'full.bin',
+      contentType: 'application/octet-stream',
+    });
+    await scope.finalizeDocumentVersion({
+      versionId: original.version.id,
+      byteSize: 1024 ** 3,
+      contentType: 'application/octet-stream',
+    });
+    const extra = await scope.createDocument({
+      name: 'extra.bin',
+      folderId: null,
+      filename: 'extra.bin',
+      contentType: 'application/octet-stream',
+    });
+    await expect(
+      scope.finalizeDocumentVersion({
+        versionId: extra.version.id,
+        byteSize: 1,
+        contentType: 'application/octet-stream',
+      }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+    const [version] = await db
+      .select()
+      .from(documentVersions)
+      .where(eq(documentVersions.id, extra.version.id));
+    expect(version?.byteSize).toBeNull();
+    expect(s3Fakes.deleteObject).toHaveBeenCalledWith(
+      expect.anything(),
+      'timeline-documents',
+      extra.version.objectKey,
     );
   });
 

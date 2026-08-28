@@ -8,6 +8,7 @@ import {
 } from '@timeline/db';
 import { childLogger, queue } from '@timeline/shared';
 import { runBillingMaintenanceTick } from '@timeline/shared/billing';
+import { flushDeferredEmailEnrichment } from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
 import {
   flushDeferredAcceptedSourceEnrichment,
@@ -385,6 +386,7 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
         await runBillingMaintenanceTick(deps.db);
         await flushDeferredAcceptedSourceEnrichment(deps.db);
         await flushDeferredAudioTranscription(deps.db);
+        await flushDeferredEmailEnrichment(deps.db);
       } catch (err: unknown) {
         log.warn({ err }, 'janitor: billing maintenance tick failed');
       }

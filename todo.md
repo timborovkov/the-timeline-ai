@@ -607,6 +607,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       from indexed-chunk capacity; restore counts those chunks. Accepted-source replay meters
       existing dedup rows. Web chat settles known compression cost when the answer stream fails.
       `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
+      Enterprise is not a prepaid-wallet plan (no top-up/auto-reload, no self-serve
+      checkout). `withAiMetering` skips OpenRouter when the durable operation already
+      completed. Member-day ticks reuse the `plan_id` stamped on that day. Refund
+      reversals persist `wallet_shortfall_cents`; a cap raise does not unfreeze while
+      that debt remains. Re-accept appends `prior_intervals`. Denied inbound email
+      enrichment is recoverable via `billing_enrichment_deferred`. Storage-cap
+      finalization deletes the rejected object. Captured chat attachments enforce
+      document/storage limits. Free in-allowance usage is not wallet-billable under
+      live charging. Recall leave retries run before reservation expiry.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

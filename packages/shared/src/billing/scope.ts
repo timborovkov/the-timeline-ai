@@ -126,6 +126,22 @@ function outstandingWalletShortfallCents(metadata: Record<string, unknown>): num
   return Math.max(0, Math.trunc(owed) - Math.trunc(paid));
 }
 
+async function teamOutstandingWalletShortfallCents(
+  dbOrTx: { select: Db['select'] },
+  teamId: string,
+): Promise<number> {
+  const rows = await dbOrTx
+    .select({ metadata: billingUsageLedger.metadata })
+    .from(billingUsageLedger)
+    .where(
+      and(
+        eq(billingUsageLedger.teamId, teamId),
+        inArray(billingUsageLedger.kind, ['settlement', 'reversal']),
+      ),
+    );
+  return rows.reduce((sum, row) => sum + outstandingWalletShortfallCents(row.metadata), 0);
+}
+
 const POLAR_INGEST_CLAIM_STALE_MS = 15 * 60 * 1000;
 
 async function markPolarIngestStatus(
@@ -358,8 +374,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .limit(1)
           .for('update');
         if (!account) throw new Error('Failed to update spend cap');
+        const remainingShortfall = await teamOutstandingWalletShortfallCents(tx, teamId);
         const restoredState =
-          spendCapCents > 0
+          spendCapCents > 0 && remainingShortfall === 0
             ? restoredPaidBillingStateAfterWalletOrCapRecovery({
                 planId: account.planId,
                 billingState: account.billingState,
@@ -598,20 +615,23 @@ export function createBillingScope(deps: BillingScopeDeps) {
           0,
           locked.includedDiscountRemainingCents - pendingDiscount,
         );
+        const inFreeNativeAllowance =
+          locked.planId === 'free' && locked.billingState !== 'enterprise_active';
+        const walletBillableChargeCents = inFreeNativeAllowance ? 0 : billableChargeCents;
         const { walletCents, discountCents } = splitDiscountAndWallet({
-          chargeCents: billableChargeCents,
+          chargeCents: walletBillableChargeCents,
           includedDiscountRemainingCents: remainingDiscount,
           meterId: input.meterId,
         });
         const blocking =
           !accountUsesShadowBilling(locked) &&
           locked.billingState !== 'enterprise_active' &&
-          billableChargeCents > 0;
+          walletBillableChargeCents > 0;
         const walletLockCents = blocking && walletCents > 0 ? walletCents : 0;
         const reservationMetadata = {
           ...(input.metadata ?? {}),
           list_charge_cents: input.reservedChargeCents,
-          billable_charge_cents: billableChargeCents,
+          billable_charge_cents: walletBillableChargeCents,
           discount_reserved_cents: discountCents,
           wallet_reserved_cents: walletCents,
           wallet_lock_cents: walletLockCents,
@@ -1336,6 +1356,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const debit = Math.min(account.walletBalanceCents, input.cents);
         const shortfallCents = Math.max(0, input.cents - debit);
         const freeze = Boolean(input.freezeOnShortfall) && shortfallCents > 0;
+        if (shortfallCents > 0) {
+          const shortfallPatch = JSON.stringify({ wallet_shortfall_cents: shortfallCents });
+          await tx
+            .update(billingUsageLedger)
+            .set({
+              metadata: sql`COALESCE(${billingUsageLedger.metadata}, '{}'::jsonb) || ${shortfallPatch}::jsonb`,
+            })
+            .where(eq(billingUsageLedger.id, ledgerRow.id));
+        }
         await tx
           .update(teamBillingAccounts)
           .set({

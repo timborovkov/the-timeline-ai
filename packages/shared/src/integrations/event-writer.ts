@@ -842,6 +842,7 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
       .from(rawEvents)
       .where(
         and(
+          sql`${rawEvents.source} <> 'email'`,
           sql`${rawEvents.sourceMetadata}->>'billing_enrichment_deferred' = 'true'`,
           sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
         ),

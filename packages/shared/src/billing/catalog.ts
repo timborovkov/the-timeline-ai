@@ -318,7 +318,7 @@ export function acceptedSourcesChargeCents(items: number): number {
 
 /** Wallet-backed plans can spend prepaid top-ups; Free hard-stops on native floors. */
 export function planUsesPrepaidWallet(planId: string): boolean {
-  return planId === 'payg' || planId === 'team' || planId === 'business' || planId === 'enterprise';
+  return planId === 'payg' || planId === 'team' || planId === 'business';
 }
 
 export function polarEventNameForMeter(meter: BillingMeterId): string | null {

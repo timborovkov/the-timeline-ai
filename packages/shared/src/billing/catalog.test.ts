@@ -15,6 +15,7 @@ import {
   emailRecipientCount,
   formatEuroFromCents,
   polarEventNameForMeter,
+  planUsesPrepaidWallet,
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   MEETING_MAX_DURATION_MINUTES_BY_PLAN,
@@ -45,6 +46,11 @@ describe('billing catalog', () => {
     expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
+    expect(planUsesPrepaidWallet('payg')).toBe(true);
+    expect(planUsesPrepaidWallet('team')).toBe(true);
+    expect(planUsesPrepaidWallet('business')).toBe(true);
+    expect(planUsesPrepaidWallet('enterprise')).toBe(false);
+    expect(planUsesPrepaidWallet('free')).toBe(false);
   });
 
   it('prices native meters from the rate card', () => {
@@ -181,6 +187,26 @@ describe('paid plan change', () => {
       portalReturnUrl: 'https://timeline.test/portal',
     });
     expect(result.url).toContain('/portal/fake');
+  });
+
+  it('refuses self-serve checkout for Enterprise contracts', async () => {
+    const provider = createFakeBillingProvider();
+    await expect(
+      createPlanChangeSession({
+        provider,
+        account: {
+          planId: 'enterprise',
+          billingState: 'enterprise_active',
+          polarSubscriptionId: 'sub_enterprise',
+        },
+        productId: 'prod_team',
+        externalCustomerId: 'team-1',
+        customerEmail: 'owner@example.test',
+        successUrl: 'https://timeline.test/success',
+        portalReturnUrl: 'https://timeline.test/portal',
+      }),
+    ).rejects.toThrow(/Enterprise plan changes/);
+    expect(provider.subscriptionUpdates).toHaveLength(0);
   });
 });
 

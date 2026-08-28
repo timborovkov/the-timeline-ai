@@ -201,7 +201,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
             </dd>
           </div>
         </dl>
-        {props.canManage ? (
+        {props.canManage && props.planId !== 'enterprise' ? (
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
@@ -234,10 +234,15 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
               Business · €199/mo
             </button>
           </div>
+        ) : props.canManage ? (
+          <p className="mt-3 text-sm text-fg-muted">
+            Enterprise plan changes go through support or the Polar customer portal, not self-serve
+            checkout.
+          </p>
         ) : (
           <p className="mt-3 text-sm text-fg-muted">Only owners and admins can change billing.</p>
         )}
-        {!props.polarConfigured ? (
+        {props.planId === 'enterprise' ? null : !props.polarConfigured ? (
           <p className="mt-3 text-sm text-fg-muted">
             Polar checkout is not configured in this environment. Usage still records locally.
           </p>

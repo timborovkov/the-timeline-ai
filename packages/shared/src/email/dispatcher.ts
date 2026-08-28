@@ -7,8 +7,9 @@ import {
   teams,
   users,
 } from '@timeline/db';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
+import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { meterEmailUnits } from '#src/billing/runtime.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
 import {
@@ -37,6 +38,8 @@ import { withTeam } from '#src/team-scope.js';
 
 const log = childLogger('email');
 const EMAIL_SOURCE_SNAPSHOT_VERSION = 'email-source-snapshot-2026-07';
+const BILLING_ENRICHMENT_DEFERRED = 'billing_enrichment_deferred';
+const BILLING_ENRICHMENT_CHECKED_AT = 'billing_enrichment_checked_at';
 
 /**
  * Shape of an attachment upload dependency, mirroring `AudioIngestDeps` from
@@ -718,6 +721,8 @@ async function ingestForTeam(
       ) {
         await patchEmailParentAttachments(deps.db, createResult.id, attachmentsRecords);
       }
+    } else {
+      await stampEmailBillingEnrichmentDeferred(deps.db, createResult.id);
     }
     return false;
   }
@@ -737,6 +742,7 @@ async function ingestForTeam(
       { teamId: team.id, code: emailMeter.code, messageId },
       'inbound email stored without AI enrichment; email meter admission failed',
     );
+    await stampEmailBillingEnrichmentDeferred(deps.db, parentEventId);
   }
   let parentAttachmentsDirty = false;
 
@@ -886,7 +892,7 @@ async function processEmailDocumentCandidates(
   let dirty = false;
   for (const candidate of input.candidates) {
     try {
-      const created = await createEmailDocumentAttachment(deps, documentDeps, {
+      const created = await createEmailDocumentAttachment(deps.db, documentDeps, {
         teamId: input.teamId,
         parentRawEventId: input.parentRawEventId,
         parentAuthorUserId: input.parentAuthorUserId,
@@ -924,7 +930,7 @@ interface AttachmentRecordForDocument {
 }
 
 async function createEmailDocumentAttachment(
-  deps: DispatcherDeps,
+  db: Db,
   documentDeps: EmailDocumentDeps,
   input: {
     teamId: string;
@@ -936,7 +942,7 @@ async function createEmailDocumentAttachment(
     attachment: DecodedAttachment;
   },
 ): Promise<{ documentId: string; versionId: string }> {
-  const existing = await deps.db
+  const existing = await db
     .select({ documentId: documents.id, versionId: documents.currentVersionId })
     .from(documents)
     .where(
@@ -952,7 +958,14 @@ async function createEmailDocumentAttachment(
     return { documentId: existing[0].documentId, versionId: existing[0].versionId };
   }
 
-  const created = await deps.db.transaction(async (tx) => {
+  const created = await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.teamId}, 1))`);
+    await assertTeamWriteCapacity({
+      db: tx as unknown as typeof db,
+      teamId: input.teamId,
+      additionalDocuments: 1,
+      additionalBytes: input.attachment.size,
+    });
     const docRows = await tx
       .insert(documents)
       .values({
@@ -1152,6 +1165,261 @@ function stripRawForStorage(payload: PostmarkInbound): Record<string, unknown> {
     }));
   }
   return clone;
+}
+
+async function stampEmailBillingEnrichmentDeferred(db: Db, eventId: string): Promise<void> {
+  const patch = JSON.stringify({ [BILLING_ENRICHMENT_DEFERRED]: true });
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+    })
+    .where(eq(rawEvents.id, eventId));
+}
+
+export interface DeferredEmailEnrichmentIo {
+  enqueueExtract?(input: { rawEventId: string; teamId: string }): Promise<void>;
+  enqueueEmbed?(input: { rawEventId: string; teamId: string }): Promise<void>;
+  enqueueSuggestion?(input: { rawEventId: string; teamId: string }): Promise<void>;
+  documents?: EmailDocumentDeps;
+  readAttachment?(input: { key: string }): Promise<Buffer>;
+}
+
+async function defaultDeferredEmailEnrichmentIo(): Promise<DeferredEmailEnrichmentIo> {
+  const queues = await import('#src/queue/queues.js');
+  const io: DeferredEmailEnrichmentIo = {
+    enqueueExtract: (input) => queues.enqueueExtractJob(input),
+    enqueueEmbed: (input) =>
+      queues.enqueueEmbedJob({
+        scope: 'raw_event',
+        teamId: input.teamId,
+        rawEventId: input.rawEventId,
+      }),
+    enqueueSuggestion: (input) => queues.enqueueSuggestionJob(input),
+  };
+  try {
+    const { getAttachmentsBucket, getDocumentsBucket, getS3Client } =
+      await import('#src/s3/client.js');
+    const { getObjectBuffer, putObject } = await import('#src/s3/objects.js');
+    const client = getS3Client();
+    io.readAttachment = async ({ key }) => {
+      const { body } = await getObjectBuffer(client, getAttachmentsBucket(), key);
+      return body;
+    };
+    io.documents = {
+      async upload(input) {
+        await putObject(client, {
+          bucket: getDocumentsBucket(),
+          key: input.key,
+          body: input.body,
+          contentType: input.contentType,
+        });
+      },
+      enqueueExtract: (input) => queues.enqueueDocumentExtractJob(input),
+    };
+  } catch (err) {
+    log.warn({ err }, 'deferred email flush: document/S3 deps unavailable');
+  }
+  return io;
+}
+
+function emailMessageIdFromMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const messageId = (metadata as Record<string, unknown>).message_id;
+  return typeof messageId === 'string' && messageId.trim() ? messageId : null;
+}
+
+function pendingEmailDocumentRecords(metadata: unknown): AttachmentRecordForDocument[] {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
+  const attachments = (metadata as Record<string, unknown>).attachments;
+  if (!Array.isArray(attachments)) return [];
+  const pending: AttachmentRecordForDocument[] = [];
+  for (const item of attachments) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    if (typeof record.filename !== 'string' || typeof record.content_type !== 'string') continue;
+    if (record.bucket === 'audio') continue;
+    if (typeof record.document_id === 'string') continue;
+    if (record.upload_failed === true) continue;
+    pending.push({
+      filename: record.filename,
+      content_type: record.content_type,
+      size_bytes: typeof record.size_bytes === 'number' ? record.size_bytes : 0,
+      bucket: 'attachments',
+      key: typeof record.key === 'string' ? record.key : '',
+    });
+  }
+  return pending;
+}
+
+/**
+ * Retry inbound-email extract/embed/suggestions (and captured documents) after
+ * a denied `email_units` meter. Tests pass `io` so this does not need Redis/S3.
+ */
+export async function flushDeferredEmailEnrichment(
+  db: Db,
+  limit = 50,
+  io?: DeferredEmailEnrichmentIo,
+): Promise<number> {
+  const resolved = io ?? (await defaultDeferredEmailEnrichmentIo());
+  let flushed = 0;
+  const maxScan = Math.max(limit * 20, 200);
+  let scanned = 0;
+  while (flushed < limit && scanned < maxScan) {
+    const rows = await db
+      .select({
+        id: rawEvents.id,
+        teamId: rawEvents.teamId,
+        authorUserId: rawEvents.authorUserId,
+        contentText: rawEvents.contentText,
+        visibility: rawEvents.visibility,
+        visibilityOwnerUserId: rawEvents.visibilityOwnerUserId,
+        sourceMetadata: rawEvents.sourceMetadata,
+      })
+      .from(rawEvents)
+      .where(
+        and(
+          eq(rawEvents.source, 'email'),
+          isNull(rawEvents.contentAudioUrl),
+          sql`${rawEvents.sourceMetadata}->>'billing_enrichment_deferred' = 'true'`,
+          sql`COALESCE(${rawEvents.sourceMetadata}->>'deleted', 'false') <> 'true'`,
+        ),
+      )
+      .orderBy(
+        sql`COALESCE(${rawEvents.sourceMetadata}->>'billing_enrichment_checked_at', '')`,
+        asc(rawEvents.id),
+      )
+      .limit(Math.min(limit, maxScan - scanned));
+    if (rows.length === 0) break;
+    let progressed = false;
+    for (const row of rows) {
+      scanned += 1;
+      const messageId = emailMessageIdFromMetadata(row.sourceMetadata);
+      if (!messageId) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const metered = await meterEmailUnits({
+        db,
+        teamId: row.teamId,
+        ...(row.authorUserId ? { userId: row.authorUserId } : {}),
+        operationId: `email_in:${messageId}`,
+        units: 1,
+        operationClass: 'email_inbound',
+      });
+      if (!metered.ok) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const clear = JSON.stringify({
+        [BILLING_ENRICHMENT_DEFERRED]: false,
+        [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
+      await maybeEnqueueExtract(
+        {
+          db,
+          ...(resolved.enqueueExtract
+            ? { extract: { enqueueExtract: resolved.enqueueExtract } }
+            : {}),
+        },
+        row.id,
+        row.teamId,
+      );
+      await maybeEnqueueEmbed(
+        {
+          db,
+          ...(resolved.enqueueEmbed ? { embed: { enqueueEmbed: resolved.enqueueEmbed } } : {}),
+        },
+        row.id,
+        row.teamId,
+      );
+      if (row.contentText?.trim()) {
+        await maybeEnqueueSuggestion(
+          {
+            db,
+            ...(resolved.enqueueSuggestion
+              ? { suggestions: { enqueueSuggestion: resolved.enqueueSuggestion } }
+              : {}),
+          },
+          row.id,
+          row.teamId,
+        );
+      }
+      const documents = resolved.documents;
+      if (documents) {
+        const pending = pendingEmailDocumentRecords(row.sourceMetadata);
+        const updated: AttachmentRecordForDocument[] = [];
+        for (const record of pending) {
+          let body: Buffer | undefined;
+          if (record.key) {
+            try {
+              body = await resolved.readAttachment?.({ key: record.key });
+            } catch (err) {
+              log.warn(
+                { err, key: record.key, eventId: row.id },
+                'deferred email attachment read failed',
+              );
+            }
+          }
+          if (!body) continue;
+          try {
+            const created = await createEmailDocumentAttachment(db, documents, {
+              teamId: row.teamId,
+              parentRawEventId: row.id,
+              parentAuthorUserId: row.authorUserId,
+              visibility: row.visibility === 'private' ? 'private' : 'team',
+              visibilityOwnerUserId: row.visibilityOwnerUserId,
+              messageId,
+              attachment: {
+                filename: record.filename,
+                contentType: record.content_type,
+                size: body.length,
+                body,
+              },
+            });
+            updated.push({
+              ...record,
+              document_id: created.documentId,
+              document_version_id: created.versionId,
+            });
+          } catch (err) {
+            log.error({ err, eventId: row.id }, 'deferred email document attachment failed');
+            updated.push({ ...record, document_failed: true });
+          }
+        }
+        if (updated.length > 0) {
+          await patchEmailParentAttachments(db, row.id, updated);
+        }
+      }
+      flushed += 1;
+      progressed = true;
+      if (flushed >= limit) break;
+    }
+    if (!progressed && rows.length < limit) break;
+  }
+  return flushed;
 }
 
 /**

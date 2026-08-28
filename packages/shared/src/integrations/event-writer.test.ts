@@ -1592,6 +1592,23 @@ describe('writeIntegrationEvents visibility', () => {
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
 
+  it('does not flush deferred inbound-email rows through accepted-source enrichment', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      VALUES (
+        '00000000-0000-4000-8000-eeeeeeeeeee1',
+        '${TEAM_ID}',
+        'email',
+        'deferred inbound email',
+        '{"billing_enrichment_deferred": true, "message_id": "deferred@example.net"}'::jsonb
+      );
+    `);
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never);
+    expect(flushed).toBe(0);
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(row?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+  });
+
   it('meters an existing accepted source when a retry hits the dedup conflict', async () => {
     const [integration] = await db
       .insert(integrations)

@@ -1,5 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingUsageReservations, teamBillingAccounts, type Db } from '@timeline/db';
+import {
+  billingUsageLedger,
+  billingUsageReservations,
+  teamBillingAccounts,
+  type Db,
+} from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -347,6 +352,104 @@ describe('billing scope', () => {
     expect(row.spendCapCents).toBe(2_500);
   });
 
+  it('keeps a shortfall-frozen account paused when the spend cap is raised', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'read_only',
+          wallet_balance_cents = 0, spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'refund-shortfall',
+      kind: 'reversal',
+      meterId: 'ai',
+      nativeUnits: '0',
+      customerChargeCents: 0,
+      billable: false,
+      nonBillableReason: 'wallet_refund',
+      operationClass: 'wallet_refund',
+      metadata: { cents: 1000, wallet_shortfall_cents: 400 },
+    });
+    const row = await scope.setSpendCap(10_000);
+    expect(row.billingState).toBe('read_only');
+    expect(row.spendCapCents).toBe(10_000);
+  });
+
+  it('does not take a Free wallet lock for in-allowance usage when live charging is on', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'free', billing_state = 'free',
+          wallet_balance_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-free-live',
+      meterId: 'ai',
+      reservedNativeUnits: 100,
+      reservedChargeCents: 100,
+    });
+    expect(reserved.ok).toBe(true);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
+    const [row] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, 'op-free-live'));
+    expect(row?.metadata).toMatchObject({
+      billable_charge_cents: 0,
+      wallet_reserved_cents: 0,
+      wallet_lock_cents: 0,
+    });
+  });
+
+  it('persists wallet_shortfall_cents on a refund reversal before freezing', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          wallet_balance_cents = 200
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const result = await scope.debitWallet({
+      operationId: 'polar_refund:order-1',
+      cents: 1_000,
+      freezeOnShortfall: true,
+    });
+    expect(result.duplicate).toBe(false);
+    if (!result.duplicate) expect(result.shortfallCents).toBe(800);
+    const [row] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, 'polar_refund:order-1'));
+    expect(row?.metadata).toMatchObject({ cents: 1_000, wallet_shortfall_cents: 800 });
+    const after = await scope.getAccount();
+    expect(after.walletBalanceCents).toBe(0);
+    expect(after.billingState).toBe('read_only');
+  });
+
   it('does not lock PAYG wallet for usage still inside the Free floor', async () => {
     const scope = createBillingScope({
       db,
@@ -402,6 +505,45 @@ describe('billing scope', () => {
     const expired = await expireStaleBillingReservations({ db, teamId: TEAM_ID });
     expect(expired).toBe(1);
     expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
+  });
+
+  it('does not expire reservations that still need a Recall leave retry', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 500, included_discount_remaining_cents = 0,
+          spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-recall-leave',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: 30,
+      reservedChargeCents: 90,
+      ttlMs: 1,
+    });
+    expect(reserved.ok).toBe(true);
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"pending_recall_leave_bot_id":"bot-keep"}'::jsonb,
+          expires_at = NOW() - INTERVAL '1 hour'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = 'op-recall-leave';
+    `);
+    const expired = await expireStaleBillingReservations({ db, teamId: TEAM_ID });
+    expect(expired).toBe(0);
+    const [row] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, 'op-recall-leave'));
+    expect(row?.state).toBe('reserved');
   });
 
   it('counts pending reservations against the spend cap', async () => {

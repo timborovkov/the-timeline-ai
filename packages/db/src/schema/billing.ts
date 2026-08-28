@@ -234,6 +234,7 @@ export const billingMemberDayLedger = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     day: text('day').notNull(),
+    planId: billingPlanId('plan_id').notNull(),
     role: text('role').notNull(),
     billable: boolean('billable').notNull().default(true),
     chargeCents: integer('charge_cents').notNull().default(0),

@@ -111,11 +111,20 @@ credit hides margin and confuses prospects.
    durable operation id. Web chat also settles known compression cost when the
    answer stream fails. Seat claims are blocked while billing is paused.
    Enterprise settlement skips prepaid wallet/spend-cap freezes and does not debit
-   a prepaid wallet so Polar meters can ingest. Interactive search embeddings run under billing ALS.
+   a prepaid wallet so Polar meters can ingest. Enterprise is not a prepaid-wallet
+   plan: Billing hides Add €10 / auto-reload and refuses self-serve checkout (plan
+   changes go through support or the Polar portal). `withAiMetering` skips the
+   OpenRouter call when the durable operation is already settled or the reservation
+   is reused with `provider_completed`. Member-day ledger rows stamp `plan_id`; later
+   janitor ticks reuse that day's included-member count after a plan change. Refund
+   reversals persist `wallet_shortfall_cents` before freezing; a spend-cap raise does
+   not restore the paid active state while that debt remains. Re-accepting a removed
+   member appends the previous interval to `prior_intervals` and stamps a new
+   `createdAt`. Interactive search embeddings run under billing ALS.
    The person-level Free grant unassigns when its owner leaves or is demoted, but
    does not restrict the leftover team while another owner's grant remains assigned.
    Re-accepting a removed member stamps a new membership `createdAt` so gap days
-   are not billed as continuous. Janitor member-days backfill missed calendar days, restore rechecks indexed
+   are not billed as continuous, preserving earlier intervals on `prior_intervals`. Janitor member-days backfill missed calendar days, restore rechecks indexed
    chunks (deleted documents do not count), and accepted-source replay meters
    existing dedup rows after an insert-then-crash. Postmark success is recorded before email
    settlement so a later settle failure does not resend. Meeting-finalize billing
@@ -171,10 +180,17 @@ credit hides margin and confuses prospects.
    Auto-reload marks Polar checkout created before owner email and retries
    notification after delivery failure without opening a second checkout. Inbound
    email audio skipped for a denied email meter is stamped `transcription_deferred`
-   and the janitor flushes transcription when billing can reserve again. Deferred accepted-source flush
+   and the janitor flushes transcription when billing can reserve again. Denied inbound-email
+   parent enrichment stamps `billing_enrichment_deferred`; the janitor retries `email_units`
+   then extract/embed/suggestions (and captured documents) separately from accepted-source
+   flush. Deferred accepted-source flush
    rotates past still-blocked rows. Document restore rechecks storage,
    document, and indexed-chunk capacity under advisory lock key 1 then key 2
-   (chunk admission reuses key 2).
+   (chunk admission reuses key 2). Storage-cap finalization deletes the uploaded
+   object when admission fails. Captured Slack/Telegram/email attachments assert
+   document and storage capacity. Free in-allowance usage is not wallet-billable
+   when live charging is enabled. Janitor Recall leave retries run before reservation
+   expiry, and expiry skips rows with `pending_recall_leave_bot_id`.
    Failed structured-output attempts still contribute OpenRouter `usage.cost` to
    settlement. Duration meters such as Recall minutes split native units across
    the UTC months they span. Plan preview prorates extra seats from recorded
