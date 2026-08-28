@@ -1211,3 +1211,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |
+| 2026-08-28 | Home team email field | Surfaces the inbound address on Home as one readonly copyable field, and keeps the same control on Team → Email for every member. |

@@ -24,6 +24,7 @@ import {
 } from '@/app/actions/teams';
 import { CollectionRow } from '@/components/collections/collection-row';
 import { CollectionStatus } from '@/components/collections/collection-status';
+import { CopyableTextField } from '@/components/copyable-text-field';
 import { FormActionToast } from '@/components/form-action-toast';
 import { RedirectActionToast } from '@/components/redirect-action-toast';
 import { RelativeTimestamp } from '@/components/relative-timestamp';
@@ -293,12 +294,13 @@ export function InboundEmailWhitelistForm({
       : undefined;
   return (
     <form action={action} className="space-y-3">
-      <div className="space-y-1">
-        <Label size="sm">Team email address</Label>
-        <code className="block break-all font-mono text-[12px] text-fg-muted">
-          {inboundEmail ?? 'Not configured'}
-        </code>
-      </div>
+      <CopyableTextField
+        id="team-inbound-email"
+        label="Team email address"
+        value={inboundEmail}
+        copyLabel="Copy team email"
+        description="Forward, CC, or BCC mail to this address to capture it on the timeline."
+      />
       <label className="flex min-h-9 items-center gap-2 text-sm">
         <input
           type="checkbox"
