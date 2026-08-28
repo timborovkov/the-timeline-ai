@@ -68,6 +68,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { DetailRail } from '@/components/ui/detail-rail';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { ShowMoreList } from '@/components/ui/show-more-list';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
@@ -1765,10 +1766,25 @@ function ObjectConnectedWorkSection({
   );
 }
 
-function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
+const CONNECTED_PREVIEW_COUNT = 3;
+
+function ConnectedWorkSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: number;
+  children: ReactNode;
+}) {
   return (
     <section className="min-w-0 py-2 first:pt-1.5">
-      <h3 className={`mb-1 ${DETAIL_GROUP_LABEL_CLASS}`}>{title}</h3>
+      <h3 className={`mb-1 ${DETAIL_GROUP_LABEL_CLASS}`}>
+        {title}
+        {typeof count === 'number' && count > 0 ? (
+          <span className="font-normal text-fg-dim"> · {count}</span>
+        ) : null}
+      </h3>
       {children}
     </section>
   );
@@ -1783,10 +1799,13 @@ function ConnectedTaskList({
 }) {
   if (tasks.length === 0) return null;
   return (
-    <ConnectedWorkSection title={title}>
-      <ul className="space-y-1">
-        {tasks.map((task) => (
-          <li key={task.id} className="grid gap-0.5">
+    <ConnectedWorkSection title={title} count={tasks.length}>
+      <ShowMoreList
+        items={tasks}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(task) => task.id}
+        renderItem={(task) => (
+          <div className="grid gap-0.5">
             <a href={`/app/objects/${task.id}`} className={DETAIL_LINK_CLASS}>
               {displayText(displayObjectTitle(task))}
             </a>
@@ -1794,9 +1813,9 @@ function ConnectedTaskList({
               <span>{statusLabel(task.status)}</span>
               <DueDateDisplay value={task.dueAt} variant="compact" />
             </span>
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1809,10 +1828,13 @@ function ConnectedCalendarList({
   const timezone = useWorkspaceTimezone();
   if (events.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Calendar">
-      <ul className="space-y-1">
-        {events.map((event) => (
-          <li key={event.id} className="grid gap-0.5">
+    <ConnectedWorkSection title="Calendar" count={events.length}>
+      <ShowMoreList
+        items={events}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(event) => event.id}
+        renderItem={(event) => (
+          <div className="grid gap-0.5">
             <Link
               href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
               className={DETAIL_LINK_CLASS}
@@ -1822,9 +1844,9 @@ function ConnectedCalendarList({
             <span className={DETAIL_META_CLASS}>
               {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
             </span>
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1847,13 +1869,16 @@ function ConnectedObjectList({
     relationships.map((relationship) => [relationship.otherId, relationship] as const),
   );
   return (
-    <ConnectedWorkSection title="People and objects">
-      <ul className="space-y-1">
-        {objects.map((object) => {
+    <ConnectedWorkSection title="People and objects" count={objects.length}>
+      <ShowMoreList
+        items={objects}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(object) => object.id}
+        renderItem={(object) => {
           const relationship = relationshipByOtherId.get(object.id);
           const linked = relationship !== undefined;
           return (
-            <li key={object.id} className="grid gap-0.5">
+            <div className="grid gap-0.5">
               <div className="flex items-center justify-between gap-2">
                 <a href={`/app/objects/${object.id}`} className={DETAIL_LINK_CLASS}>
                   {displayText(object.canonicalName)}
@@ -1883,10 +1908,10 @@ function ConnectedObjectList({
                     })}`
                   : ''}
               </span>
-            </li>
+            </div>
           );
-        })}
-      </ul>
+        }}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1894,34 +1919,37 @@ function ConnectedObjectList({
 function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork']['boards'] }) {
   if (boards.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Boards">
-      {boards.length === 0 ? (
-        <p className="text-sm text-fg-dim">No board context found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {boards.map((board) => (
-            <li key={board.itemId} className="grid gap-0.5">
-              <a
-                href={`/app/boards/${board.boardId}?item=${board.itemId}`}
-                className={DETAIL_LINK_CLASS}
-              >
-                {displayText(board.boardName)}
-              </a>
-              <span className={`flex flex-wrap items-center gap-1.5 ${DETAIL_META_CLASS}`}>
-                <span>{board.laneName ?? 'No lane'}</span>
-                <DueDateDisplay value={board.dueAt} variant="compact" />
-                {board.priority !== null ? <span>· P{board.priority}</span> : null}
+    <ConnectedWorkSection title="Boards" count={boards.length}>
+      <ShowMoreList
+        items={boards}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(board) => board.itemId}
+        renderItem={(board) => (
+          <div className="grid gap-0.5">
+            <a
+              href={`/app/boards/${board.boardId}?item=${board.itemId}`}
+              className={DETAIL_LINK_CLASS}
+            >
+              {displayText(board.boardName)}
+            </a>
+            <span className={`flex flex-wrap items-center gap-1.5 ${DETAIL_META_CLASS}`}>
+              <span>{board.laneName ?? 'No lane'}</span>
+              <DueDateDisplay value={board.dueAt} variant="compact" />
+              {board.priority !== null ? <span>· P{board.priority}</span> : null}
+            </span>
+            {board.nextStep ? (
+              <span className={`line-clamp-1 ${DETAIL_META_CLASS}`}>
+                {displayText(board.nextStep)}
               </span>
-              {board.nextStep ? (
-                <span className={DETAIL_META_CLASS}>{displayText(board.nextStep)}</span>
-              ) : null}
-              {board.notes ? (
-                <span className={DETAIL_META_CLASS}>{displayText(board.notes)}</span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
+            ) : null}
+            {board.notes ? (
+              <span className={`line-clamp-1 ${DETAIL_META_CLASS}`}>
+                {displayText(board.notes)}
+              </span>
+            ) : null}
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1933,23 +1961,22 @@ function ConnectedApprovalList({
 }) {
   if (approvals.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Pending approvals">
-      {approvals.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related approvals found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {approvals.map((approval) => (
-            <li key={approval.itemId} className="grid gap-0.5">
-              <Link href="/app/approvals" className={DETAIL_LINK_CLASS}>
-                {displayText(approval.title)}
-              </Link>
-              <span className={DETAIL_META_CLASS}>
-                {statusLabel(approval.operation)} · {statusLabel(approval.targetKind)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Pending approvals" count={approvals.length}>
+      <ShowMoreList
+        items={approvals}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(approval) => approval.itemId}
+        renderItem={(approval) => (
+          <div className="grid gap-0.5">
+            <Link href="/app/approvals" className={DETAIL_LINK_CLASS}>
+              {displayText(approval.title)}
+            </Link>
+            <span className={DETAIL_META_CLASS}>
+              {statusLabel(approval.operation)} · {statusLabel(approval.targetKind)}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1962,28 +1989,27 @@ function ConnectedDocumentList({
   const timezone = useWorkspaceTimezone();
   if (documents.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Documents">
-      {documents.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related documents found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {documents.map((document) => (
-            <li key={document.id} className="grid gap-0.5">
-              <a
-                href={`/app/documents/${document.id}`}
-                title={document.name}
-                className={DETAIL_LINK_CLASS}
-              >
-                {displayText(truncateFilenameMiddle(document.name))}
-              </a>
-              <span className={DETAIL_META_CLASS}>
-                {statusLabel(document.fileKind)} · updated{' '}
-                {formatDisplayDateTime(document.updatedAt, { timezone })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Documents" count={documents.length}>
+      <ShowMoreList
+        items={documents}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(document) => document.id}
+        renderItem={(document) => (
+          <div className="grid gap-0.5">
+            <a
+              href={`/app/documents/${document.id}`}
+              title={document.name}
+              className={DETAIL_LINK_CLASS}
+            >
+              {displayText(truncateFilenameMiddle(document.name))}
+            </a>
+            <span className={DETAIL_META_CLASS}>
+              {statusLabel(document.fileKind)} · updated{' '}
+              {formatDisplayDateTime(document.updatedAt, { timezone })}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1992,33 +2018,32 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
   const timezone = useWorkspaceTimezone();
   if (links.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Links">
-      {links.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related links found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {links.map((link) => (
-            <li key={link.id} className="grid gap-0.5">
-              {link.canonicalUrl ? (
-                <a
-                  href={link.canonicalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={DETAIL_LINK_CLASS}
-                >
-                  {displayText(link.displayUrl ?? link.canonicalName)}
-                </a>
-              ) : (
-                <span className={DETAIL_BODY_CLASS}>{displayText(link.canonicalName)}</span>
-              )}
-              <span className={DETAIL_META_CLASS}>
-                {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
-                {formatDisplayDateTime(link.updatedAt, { timezone })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Links" count={links.length}>
+      <ShowMoreList
+        items={links}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(link) => link.id}
+        renderItem={(link) => (
+          <div className="grid gap-0.5">
+            {link.canonicalUrl ? (
+              <a
+                href={link.canonicalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={DETAIL_LINK_CLASS}
+              >
+                {displayText(link.displayUrl ?? link.canonicalName)}
+              </a>
+            ) : (
+              <span className={DETAIL_BODY_CLASS}>{displayText(link.canonicalName)}</span>
+            )}
+            <span className={DETAIL_META_CLASS}>
+              {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
+              {formatDisplayDateTime(link.updatedAt, { timezone })}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -2031,24 +2056,23 @@ function ConnectedCapturedFileList({
   const timezone = useWorkspaceTimezone();
   if (files.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Files">
-      {files.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related files found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {files.map((file) => (
-            <li key={file.id} className="grid gap-0.5">
-              <Link href="/app/documents/captured" className={DETAIL_LINK_CLASS}>
-                {displayText(truncateFilenameMiddle(file.name))}
-              </Link>
-              <span className={DETAIL_META_CLASS}>
-                {file.contentType ?? 'captured file'} · updated{' '}
-                {formatDisplayDateTime(file.updatedAt, { timezone })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Files" count={files.length}>
+      <ShowMoreList
+        items={files}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(file) => file.id}
+        renderItem={(file) => (
+          <div className="grid gap-0.5">
+            <Link href="/app/documents/captured" className={DETAIL_LINK_CLASS}>
+              {displayText(truncateFilenameMiddle(file.name))}
+            </Link>
+            <span className={DETAIL_META_CLASS}>
+              {file.contentType ?? 'captured file'} · updated{' '}
+              {formatDisplayDateTime(file.updatedAt, { timezone })}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
