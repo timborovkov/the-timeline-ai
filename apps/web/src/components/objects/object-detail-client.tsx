@@ -52,11 +52,8 @@ import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-pa
 import { ObjectMetadataFields } from '@/components/objects/object-metadata-fields';
 import { ObjectOrigin, ObjectProvenanceGroups } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
-import {
-  ObjectRailRow,
-  ObjectRailSection,
-  RAIL_FIELD_VALUE,
-} from '@/components/objects/object-rail-chrome';
+import { ObjectRailRow, ObjectRailSection } from '@/components/objects/object-rail-chrome';
+import { RAIL_FIELD_VALUE } from '@/components/objects/object-rail-tokens';
 import {
   type ObjectSearchResponse,
   type ObjectSearchResult,

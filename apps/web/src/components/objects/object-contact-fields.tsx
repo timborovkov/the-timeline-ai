@@ -8,13 +8,12 @@ import { useId, useState, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects/types';
 
 import { archiveIdentityFacetAction, createIdentityFacetAction } from '@/app/actions/objects';
+import { ObjectRailRow, ObjectRailSection } from '@/components/objects/object-rail-chrome';
 import {
-  ObjectRailRow,
-  ObjectRailSection,
   RAIL_GHOST_ICON_BUTTON,
   RAIL_QUIET_ACTION,
   RAIL_UNDERLINE_CONTROL,
-} from '@/components/objects/object-rail-chrome';
+} from '@/components/objects/object-rail-tokens';
 import { notifyAction } from '@/lib/notify';
 import { statusLabel } from '@/lib/status-labels';
 import { cn } from '@/lib/utils';

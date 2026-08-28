@@ -10,7 +10,8 @@ import type * as objects from '@timeline/shared/objects/types';
 
 import { structureContactFromBoardNotesAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';
-import { ObjectRailSection, RAIL_QUIET_ACTION } from '@/components/objects/object-rail-chrome';
+import { ObjectRailSection } from '@/components/objects/object-rail-chrome';
+import { RAIL_QUIET_ACTION } from '@/components/objects/object-rail-tokens';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
 
@@ -51,7 +52,7 @@ export function ObjectBoardContextSection({
           const meta = [
             row.laneName ? displayText(row.laneName) : null,
             responsible ? displayText(responsible) : null,
-          ].filter(Boolean);
+          ].filter((part): part is string => Boolean(part));
           return (
             <li key={row.itemId} className="grid gap-0.5">
               <Link
@@ -61,12 +62,7 @@ export function ObjectBoardContextSection({
                 {displayText(row.boardName)}
               </Link>
               <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs font-normal leading-4 text-fg-dim">
-                {meta.map((part, index) => (
-                  <span key={`${row.itemId}-meta-${index}`} className="truncate">
-                    {index > 0 ? <span aria-hidden="true">· </span> : null}
-                    {part}
-                  </span>
-                ))}
+                {meta.length > 0 ? <span className="truncate">{meta.join(' · ')}</span> : null}
                 <DueDateDisplay value={row.dueAt} variant="compact" />
               </div>
               {row.nextStep ? (
