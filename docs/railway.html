@@ -259,6 +259,13 @@ TIMELINE_DEPLOYMENT_MODE=hosted
 LOG_LEVEL=info
 </code></pre>
       <p>
+        In hosted production, startup validation accepts only Recall's documented HTTPS regional
+        <code>/api/v1</code> hosts. The transcript webhook must use the same HTTPS origin as
+        <code>AUTH_URL</code>, the exact <code>/api/webhooks/recall/transcript</code> path, and no
+        query or fragment. Alternate Recall proxies or webhook ingress remain explicit
+        self-managed/development choices.
+      </p>
+      <p>
         Keep <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> secret and server-only. Leave
         <code>NEXT_PUBLIC_POSTHOG_KEY</code> empty until the consent-gated public-browser path and
         PostHog account have been reviewed. None of the PostHog variables belong on the

@@ -34,8 +34,10 @@ export function getMeetingBotProvider(provider = 'recall'): MeetingBotProvider {
  * `AUTH_URL` (the app's public origin — Auth.js requires it to be the
  * publicly-reachable HTTPS endpoint anyway) plus the fixed route path,
  * so most installs need only one env var. `RECALL_TRANSCRIPT_WEBHOOK_URL`
- * remains an explicit override for setups where the webhook should hit a
- * different origin (proxy, tunnel for local dev, separate ingress).
+ * remains an explicit override for local development and self-managed setups
+ * where the webhook should hit a proxy, tunnel, or separate ingress. Hosted
+ * production env validation pins it to AUTH_URL's HTTPS origin and this exact
+ * route so transcripts cannot be redirected by a stale or unsafe override.
  *
  * The trailing slash on AUTH_URL is normalised so `getAuthUrl() + path`
  * produces the same string regardless of how the operator set it.

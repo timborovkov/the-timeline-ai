@@ -38,6 +38,43 @@ const reviewedPostHogServerHost = z.url().refine((value) => {
   return !url.username && !url.password && url.origin === 'https://eu.i.posthog.com';
 }, 'POSTHOG_HOST must use the reviewed EU PostHog ingestion origin');
 
+const OFFICIAL_RECALL_API_HOSTS = new Set([
+  'us-west-2.recall.ai',
+  'us-east-1.recall.ai',
+  'eu-central-1.recall.ai',
+  'ap-northeast-1.recall.ai',
+]);
+
+function isOfficialHostedRecallBaseUrl(value: string): boolean {
+  const url = new URL(value);
+  return (
+    url.protocol === 'https:' &&
+    !url.username &&
+    !url.password &&
+    OFFICIAL_RECALL_API_HOSTS.has(url.hostname) &&
+    (url.pathname === '/api/v1' || url.pathname === '/api/v1/') &&
+    !url.search &&
+    !url.hash
+  );
+}
+
+function isHostedRecallTranscriptWebhookUrl(value: string | undefined, authUrl: string): boolean {
+  const appUrl = new URL(authUrl);
+  const callbackUrl = value
+    ? new URL(value)
+    : new URL('/api/webhooks/recall/transcript', appUrl.origin);
+  return (
+    appUrl.protocol === 'https:' &&
+    callbackUrl.protocol === 'https:' &&
+    !callbackUrl.username &&
+    !callbackUrl.password &&
+    callbackUrl.origin === appUrl.origin &&
+    callbackUrl.pathname === '/api/webhooks/recall/transcript' &&
+    !callbackUrl.search &&
+    !callbackUrl.hash
+  );
+}
+
 function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return {
     ...raw,
@@ -528,6 +565,32 @@ const schema = baseSchema
         code: 'custom',
         path: ['RECALL_RETENTION'],
         message: 'RECALL_RETENTION must be unset or 1 in hosted production',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.RECALL_API_KEY &&
+      !isOfficialHostedRecallBaseUrl(env.RECALL_BASE_URL)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_BASE_URL'],
+        message:
+          'RECALL_BASE_URL must use an official Recall regional /api/v1 HTTPS endpoint in hosted production',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.RECALL_API_KEY &&
+      !isHostedRecallTranscriptWebhookUrl(env.RECALL_TRANSCRIPT_WEBHOOK_URL, env.AUTH_URL)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_TRANSCRIPT_WEBHOOK_URL'],
+        message:
+          'Hosted production Recall transcripts must use the AUTH_URL HTTPS origin and exact /api/webhooks/recall/transcript path',
       });
     }
     if (

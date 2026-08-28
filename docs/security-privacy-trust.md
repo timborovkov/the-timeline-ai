@@ -403,9 +403,16 @@ meeting records under workspace visibility.
 Timeline keeps only Recall's bot identifier from a successful Create Bot
 response. Non-success response bodies are discarded rather than attached to
 errors, logs, or meeting metadata; persisted join failures contain only a
-content-free status/category. Signed status and transcript webhooks resolve a
+content-free status/category, and the migration removes legacy raw response and
+error fields. Hosted production accepts only Recall's documented HTTPS regional
+API hosts and pins realtime transcripts to the exact callback path on the
+configured application origin. Signed status and transcript webhooks resolve a
 Recall bot before constructing the team scope, and the lookup fails closed if an
-unexpected duplicate bot identifier exists across teams.
+unexpected duplicate bot identifier exists across teams. Cancellation first
+writes an atomic transcript-closed timestamp that blocks buffered and late
+persistence while any existing partial transcript finishes processing. It is
+reported as successful only after Recall confirms the bot leave command; failed
+confirmations remain durable for the meeting scheduler to retry.
 
 Uploaded voice notes are different from meeting recordings: Timeline stores the
 voice-note object in RustFS so the capture can be processed and used as workspace
@@ -509,7 +516,7 @@ sentence.
 | --- | --- | --- |
 | Railway | Hosting, networking, service volumes, PostgreSQL/Redis templates, logs and backups | Topology documented; real regions, backup/restore, DPA and account controls are **Gap** |
 | OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | Role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, and a key/guardrail/catalog/policy-bound production attestation are **Enforced in code**; provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
-| Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Production with `TIMELINE_DEPLOYMENT_MODE=hosted` requests one-hour media retention and rejects another configured value; an explicit `self-managed` production mode owns its retention choice. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
+| Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Hosted production requests one-hour media retention, allows only documented HTTPS regional API hosts, pins transcripts to the application callback, closes local transcript acceptance atomically, and reports cancellation success only after provider confirmation; failed confirmations are retried. An explicit `self-managed` mode owns alternate endpoints and retention. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
 | Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
 | Postmark | Transactional/support email and inbound email payloads | Required when configured; retention, tracking, DPA and support access are **Gap** |
 | PostHog | Fixed-stream personless surface requests, consent-gated allowlisted public-browser events, and pseudonymous minimized server/worker product events | Runtime controls are implemented. The [2026-08-26 account review](./research/posthog-rollout-evidence-2026-08-26.md) verifies the EU project, IP discard, disabled automatic capture/replay/heatmaps/errors, restricted current membership, and a pinned Launch dashboard shell. Pay-as-you-go retention, contracts/transfers, deletion completion, populated insights, and production canaries remain **Gap**. |

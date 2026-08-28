@@ -107,6 +107,13 @@ TIMELINE_DEPLOYMENT_MODE=hosted
 RECALL_RETENTION=
 </code></pre>
       <p>
+        Recall currently documents four data-isolated API regions:
+        <code>us-west-2.recall.ai</code>, <code>us-east-1.recall.ai</code>,
+        <code>eu-central-1.recall.ai</code>, and <code>ap-northeast-1.recall.ai</code>. Hosted
+        production accepts only HTTPS <code>/api/v1</code> endpoints on those hosts. Development and
+        explicitly self-managed production may use an operator-owned alternative endpoint.
+      </p>
+      <p>
         <code>RECALL_RETENTION</code> defaults to <strong>1 hour</strong> when unset or empty. The
         bot request sends <code>recording_config.retention = { type: "timed", hours: 1 }</code>,
         which keeps Recall recording media only briefly after the meeting completes. Production with
@@ -178,9 +185,10 @@ RECALL_RETENTION=
           <strong>By default it is derived from <code>AUTH_URL</code></strong> (your app's public
           origin, already required by Auth.js) plus the fixed route path, so most installs need no
           additional config — the bot posts to
-          <code>${AUTH_URL}/api/webhooks/recall/transcript</code>. Set
-          <code>RECALL_TRANSCRIPT_WEBHOOK_URL</code> only when transcripts should hit a different
-          origin (proxy, tunnel for local dev, separate webhook ingress):
+          <code>${AUTH_URL}/api/webhooks/recall/transcript</code>. Hosted production permits an
+          explicit <code>RECALL_TRANSCRIPT_WEBHOOK_URL</code> only when it has that same HTTPS
+          origin, exact path, and no query or fragment. A different proxy, tunnel, or webhook
+          ingress is a development or explicitly self-managed option:
           <pre><code># Optional — defaults to AUTH_URL + /api/webhooks/recall/transcript
 RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcript
 </code></pre>
@@ -196,6 +204,14 @@ RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcr
           </ul>
         </li>
       </ol>
+      <p>
+        Timeline first writes an atomic transcript-closed timestamp under the same database lock
+        used for chunk inserts, then asks Recall to leave. Buffered or late deliveries therefore
+        cannot extend a cancelled capture while an existing partial transcript is being finalized.
+        The UI acknowledges cancellation only after Recall confirms the leave; failed confirmations
+        remain durable and the two-minute meeting scheduler retries them. Missed finalize enqueues
+        remain recoverable by the worker janitor.
+      </p>
 
       <h2 id="display-name">4. Bot display name</h2>
       <p>

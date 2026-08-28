@@ -226,7 +226,9 @@ describe('meetings scope', () => {
       platform: 'zoom',
       meetingUrl: 'https://zoom.us/j/atomic-partial-cancel',
     });
-    await scope.updateMeetingStatus(partialMeeting.id, 'active');
+    await scope.updateMeetingStatus(partialMeeting.id, 'active', {
+      providerBotId: 'bot-partial-cancel',
+    });
     await scope.appendMeetingChunk({
       meetingId: partialMeeting.id,
       speaker: 'Alice',
@@ -249,7 +251,29 @@ describe('meetings scope', () => {
     expect(transitioned?.metadata).toMatchObject({
       partial_capture: true,
       capture_status: 'completed_partial',
+      provider_leave_pending: true,
     });
+    expect(transitioned?.metadata.transcript_closed_at).toBeTypeOf('string');
+
+    await expect(
+      scope.appendMeetingChunk({
+        meetingId: partialMeeting.id,
+        speaker: 'Alice',
+        text: 'buffered after cancellation',
+        startMs: 1001,
+        endMs: 2000,
+        providerChunkId: 'partial-after-cancel',
+      }),
+    ).resolves.toBeNull();
+    await expect(scope.listChunks(partialMeeting.id)).resolves.toHaveLength(1);
+
+    await expect(
+      scope.confirmMeetingProviderLeave(partialMeeting.id, 'bot-partial-cancel'),
+    ).resolves.toBe(true);
+    const confirmed = await scope.getMeeting(partialMeeting.id);
+    expect(confirmed?.metadata).not.toHaveProperty('provider_leave_pending');
+    expect(confirmed?.metadata.provider_leave_confirmed_at).toBeTypeOf('string');
+    expect(confirmed?.metadata.transcript_closed_at).toBeTypeOf('string');
   });
 
   it('serializes cancellation against a concurrent transcript append', async () => {

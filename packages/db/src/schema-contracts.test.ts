@@ -250,6 +250,43 @@ describe('database schema contracts', () => {
     }
   });
 
+  it('removes historical Recall response and error content without deleting sibling metadata', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0073_legal_acceptance_history.sql' });
+      await seedBase(migrationPg);
+      const meetingId = '99999999-9999-4999-8999-999999999974';
+      await migrationPg.query(
+        `INSERT INTO meetings (id, team_id, created_by_user_id, platform, meeting_url, metadata)
+         VALUES ($1, $2, $3, 'meet', 'https://meet.google.com/example', $4::jsonb)`,
+        [
+          meetingId,
+          TEAM_ID,
+          OWNER_ID,
+          JSON.stringify({
+            provider_join_result: { echoed_meeting_url: 'https://meet.google.com/private' },
+            join_error: 'provider failed: https://meet.google.com/private',
+            consent_given_at: '2026-08-21T10:15:00.000Z',
+            source: 'scheduled',
+          }),
+        ],
+      );
+
+      await applyMigrationFile(migrationPg, '0074_recall_join_metadata_minimization.sql');
+
+      const rows = await migrationPg.query<{ metadata: Record<string, unknown> }>(
+        `SELECT metadata FROM meetings WHERE id = $1`,
+        [meetingId],
+      );
+      expect(rows.rows[0]?.metadata).toEqual({
+        consent_given_at: '2026-08-21T10:15:00.000Z',
+        source: 'scheduled',
+      });
+    } finally {
+      await migrationPg.close();
+    }
+  });
+
   it('backfills canonical shared-link associations at their current strengths', async () => {
     const migrationPg = new PGlite();
     try {

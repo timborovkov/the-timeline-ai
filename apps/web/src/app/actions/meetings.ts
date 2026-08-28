@@ -426,66 +426,87 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
     const meeting = await scope.meetings.getMeeting(meetingId);
     if (!meeting) return { ok: false, error: 'Meeting not found' };
 
-    // Only meetings that have not yet finished can be cancelled. `processing`
-    // is excluded because the finalize worker is mid-flight — cancelling
-    // there would race the worker and stamp `failed` on top of `completed`
-    // a moment later. `completed` and `failed` are terminal.
+    const meetingMetadata = meeting.metadata;
+    const transcriptAlreadyClosed = typeof meetingMetadata.transcript_closed_at === 'string';
+    const providerLeavePending = meetingMetadata.provider_leave_pending === true;
+
+    // Only meetings that have not yet finished can claim a new cancellation.
+    // A prior attempt may already have closed local transcript acceptance but
+    // still be waiting to confirm the provider leave; that retry is allowed.
+    // Processing without that marker is excluded because the finalize worker
+    // is mid-flight. Completed and failed captures are terminal.
     const cancellable: (typeof meeting.status)[] = ['pending', 'joining', 'active'];
-    if (!cancellable.includes(meeting.status)) {
+    if (!cancellable.includes(meeting.status) && !transcriptAlreadyClosed) {
       return {
         ok: false,
         error: `Cannot cancel a meeting in status '${meeting.status}'.`,
       };
     }
 
-    let cancellation = await scope.meetings.cancelMeetingCapture(meetingId, {
-      allowPartialProcessing: false,
-    });
+    let cancellation: Awaited<ReturnType<typeof scope.meetings.cancelMeetingCapture>> | null = null;
     let finalizeQueue: Awaited<ReturnType<typeof requireRedisQueue>> | null = null;
-    if (cancellation.outcome === 'requires_finalize_queue') {
-      try {
-        finalizeQueue = await requireRedisQueue();
-      } catch (err) {
-        log.warn({ err, meetingId }, 'partial_cancel_finalize_queue_unavailable');
-        reportCaughtError(err, {
-          surface: 'server_action',
-          operation: 'partial_cancel_finalize_queue_unavailable',
+    if (!transcriptAlreadyClosed) {
+      cancellation = await scope.meetings.cancelMeetingCapture(meetingId, {
+        allowPartialProcessing: false,
+      });
+      if (cancellation.outcome === 'requires_finalize_queue') {
+        try {
+          finalizeQueue = await requireRedisQueue();
+        } catch (err) {
+          // The next transaction still closes transcript acceptance. The
+          // existing janitor recovers a missed finalize enqueue.
+          log.warn({ err, meetingId }, 'partial_cancel_finalize_queue_unavailable');
+          reportCaughtError(err, {
+            surface: 'server_action',
+            operation: 'partial_cancel_finalize_queue_unavailable',
+          });
+        }
+        cancellation = await scope.meetings.cancelMeetingCapture(meetingId, {
+          allowPartialProcessing: true,
         });
+      }
+      if (cancellation.outcome === 'not_found') {
+        return { ok: false, error: 'Meeting not found' };
+      }
+      if (cancellation.outcome === 'not_cancellable') {
         return {
           ok: false,
-          error: 'Cannot cancel this meeting while finalize queue is unavailable.',
+          error: `Cannot cancel a meeting in status '${cancellation.status}'.`,
         };
       }
-      cancellation = await scope.meetings.cancelMeetingCapture(meetingId, {
-        allowPartialProcessing: true,
-      });
+      if (cancellation.outcome === 'requires_finalize_queue') {
+        return { ok: false, error: 'Cannot finalize the partial meeting capture.' };
+      }
     }
-    if (cancellation.outcome === 'not_found') {
-      return { ok: false, error: 'Meeting not found' };
-    }
-    if (cancellation.outcome === 'not_cancellable') {
-      return {
-        ok: false,
-        error: `Cannot cancel a meeting in status '${cancellation.status}'.`,
-      };
-    }
-    if (cancellation.outcome === 'requires_finalize_queue') {
-      return { ok: false, error: 'Cannot finalize the partial meeting capture.' };
-    }
-    if (meeting.providerBotId) {
+
+    const shouldConfirmProviderLeave =
+      Boolean(meeting.providerBotId) && (!transcriptAlreadyClosed || providerLeavePending);
+    if (meeting.providerBotId && shouldConfirmProviderLeave) {
       try {
         const provider = meetingBots.getMeetingBotProvider(meeting.provider);
         await provider.leaveMeeting(meeting.providerBotId);
+        await scope.meetings.confirmMeetingProviderLeave(meetingId, meeting.providerBotId);
       } catch (err) {
         const leaveErrorCode = meetingBots.meetingBotErrorCode(err);
         log.warn({ leaveErrorCode, meetingId }, 'recall_leave_failed');
         reportCaughtError(err, { surface: 'server_action', operation: 'recall_leave_meeting' });
-        // Preserve the existing user-facing cancellation behavior when Recall
-        // is temporarily unavailable. Local terminalization still stops new
-        // transcript persistence; the provider failure remains observable.
+        try {
+          const recoveryQueue = finalizeQueue ?? (await requireRedisQueue());
+          await recoveryQueue.enqueueMeetingSchedulerTick();
+        } catch (recoveryErr) {
+          log.warn({ meetingId }, 'recall_leave_retry_enqueue_failed');
+          reportCaughtError(recoveryErr, {
+            surface: 'server_action',
+            operation: 'recall_leave_retry_enqueue',
+          });
+        }
+        return {
+          ok: false,
+          error: 'Meeting capture is closing, but provider confirmation is still pending.',
+        };
       }
     }
-    if (cancellation.outcome === 'processing' && finalizeQueue) {
+    if (cancellation?.outcome === 'processing' && finalizeQueue) {
       try {
         await finalizeQueue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
       } catch (err) {

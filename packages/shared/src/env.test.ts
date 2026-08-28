@@ -213,6 +213,7 @@ describe('getEnv', () => {
   it('requires the Recall workspace verification secret with the production API key', () => {
     setBaseEnv({
       NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
       RECALL_API_KEY: 'recall-test',
       RECALL_WORKSPACE_VERIFICATION_SECRET: undefined,
       RECALL_STATUS_WEBHOOK_SECRET: `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`,
@@ -222,6 +223,7 @@ describe('getEnv', () => {
     const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
     setBaseEnv({
       NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
       RECALL_API_KEY: 'recall-test',
       RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
     });
@@ -262,6 +264,7 @@ describe('getEnv', () => {
     const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
     setBaseEnv({
       NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
       TIMELINE_DEPLOYMENT_MODE: 'hosted',
       RECALL_API_KEY: 'recall-test',
       RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
@@ -271,6 +274,7 @@ describe('getEnv', () => {
 
     setBaseEnv({
       NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
       TIMELINE_DEPLOYMENT_MODE: 'hosted',
       RECALL_API_KEY: 'recall-test',
       RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
@@ -279,13 +283,61 @@ describe('getEnv', () => {
     expect(getEnv().RECALL_RETENTION).toBe('1');
   });
 
+  it('allows only official Recall API regions and the app transcript ingress in hosted production', () => {
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    const base = {
+      NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'hosted',
+      AUTH_URL: 'https://timeline.example.test',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+    };
+
+    for (const recallBaseUrl of [
+      'http://us-west-2.recall.ai/api/v1',
+      'https://proxy.example.test/api/v1',
+      'https://us-west-2.recall.ai/not-api',
+    ]) {
+      setBaseEnv({ ...base, RECALL_BASE_URL: recallBaseUrl });
+      expect(() => getEnv()).toThrow(/official Recall regional/u);
+    }
+
+    setBaseEnv({
+      ...base,
+      RECALL_BASE_URL: 'https://eu-central-1.recall.ai/api/v1/',
+    });
+    expect(getEnv().RECALL_BASE_URL).toBe('https://eu-central-1.recall.ai/api/v1/');
+
+    for (const transcriptUrl of [
+      'http://timeline.example.test/api/webhooks/recall/transcript',
+      'https://ingress.example.test/api/webhooks/recall/transcript',
+      'https://timeline.example.test/api/webhooks/recall/transcript?token=secret',
+      'https://timeline.example.test/api/webhooks/recall/status',
+    ]) {
+      setBaseEnv({ ...base, RECALL_TRANSCRIPT_WEBHOOK_URL: transcriptUrl });
+      expect(() => getEnv()).toThrow(/AUTH_URL HTTPS origin/u);
+    }
+
+    setBaseEnv({
+      ...base,
+      RECALL_TRANSCRIPT_WEBHOOK_URL: 'https://timeline.example.test/api/webhooks/recall/transcript',
+    });
+    expect(getEnv().RECALL_TRANSCRIPT_WEBHOOK_URL).toBe(
+      'https://timeline.example.test/api/webhooks/recall/transcript',
+    );
+  });
+
   it('permits deliberate Recall retention in self-managed production', () => {
     const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
     setBaseEnv({
       NODE_ENV: 'production',
       TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      AUTH_URL: 'http://self-managed.internal',
       RECALL_API_KEY: 'recall-test',
       RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+      RECALL_BASE_URL: 'http://recall-proxy.internal/api/v1',
+      RECALL_TRANSCRIPT_WEBHOOK_URL:
+        'http://webhook-ingress.internal/api/webhooks/recall/transcript',
       RECALL_RETENTION: '24',
     });
 

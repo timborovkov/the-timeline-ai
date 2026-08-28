@@ -584,13 +584,22 @@ async function appendMeetingChunkTx(
   // the write transaction. The webhook route also pre-checks for a cheap
   // no-op, but only this row lock closes the lookup-to-insert race.
   const meetingRows = await tx
-    .select({ status: meetings.status })
+    .select({ status: meetings.status, metadata: meetings.metadata })
     .from(meetings)
     .where(and(eq(meetings.id, args.meetingId), eq(meetings.teamId, args.teamId)))
     .for('update')
     .limit(1);
   const meetingStatus = meetingRows[0]?.status;
   if (!meetingStatus) return null;
+  const meetingMetadata = meetingRows[0]?.metadata;
+  if (
+    meetingMetadata !== null &&
+    typeof meetingMetadata === 'object' &&
+    !Array.isArray(meetingMetadata) &&
+    typeof (meetingMetadata as Record<string, unknown>).transcript_closed_at === 'string'
+  ) {
+    return null;
+  }
 
   const dedupKey = `meeting-finalized:${args.meetingId}`;
   const eventRows = await tx
@@ -1757,7 +1766,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
 
         const meetingRows = await tx
-          .select({ status: meetings.status })
+          .select({ status: meetings.status, providerBotId: meetings.providerBotId })
           .from(meetings)
           .where(and(eq(meetings.id, meetingId), eq(meetings.teamId, teamId), meetingVisibility))
           .for('update')
@@ -1785,14 +1794,22 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
 
         const now = new Date();
         const nextStatus: MeetingStatus = hasPartialCapture ? 'processing' : 'cancelled';
+        const providerLeavePending = Boolean(meetingRows[0]?.providerBotId);
         const metadataPatch = JSON.stringify(
           hasPartialCapture
             ? {
                 cancelled_at: now.toISOString(),
+                transcript_closed_at: now.toISOString(),
+                ...(providerLeavePending ? { provider_leave_pending: true } : {}),
                 partial_capture: true,
                 capture_status: 'completed_partial',
               }
-            : { cancelled_at: now.toISOString(), capture_status: 'cancelled' },
+            : {
+                cancelled_at: now.toISOString(),
+                transcript_closed_at: now.toISOString(),
+                ...(providerLeavePending ? { provider_leave_pending: true } : {}),
+                capture_status: 'cancelled',
+              },
         );
         await tx
           .update(meetings)
@@ -1806,6 +1823,28 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
 
         return { outcome: nextStatus };
       });
+    },
+
+    async confirmMeetingProviderLeave(meetingId: string, providerBotId: string): Promise<boolean> {
+      await ensureMember();
+      const confirmedPatch = JSON.stringify({
+        provider_leave_confirmed_at: new Date().toISOString(),
+      });
+      const updated = await db
+        .update(meetings)
+        .set({
+          metadata: sql`(COALESCE(${meetings.metadata}, '{}'::jsonb) - 'provider_leave_pending') || ${confirmedPatch}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(meetings.id, meetingId),
+            eq(meetings.teamId, teamId),
+            eq(meetings.providerBotId, providerBotId),
+          ),
+        )
+        .returning({ id: meetings.id });
+      return updated.length > 0;
     },
 
     async updateMeetingStatus(
