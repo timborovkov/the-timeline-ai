@@ -83,7 +83,10 @@ describe('InboundEmailWhitelistForm', () => {
       />,
     );
 
-    expect(screen.getByText('acme@inbound.timeline.dev')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('Team email address').value).toBe(
+      'acme@inbound.timeline.dev',
+    );
+    expect(screen.getByRole('button', { name: 'Copy team email' })).toBeTruthy();
     expect(
       screen.getByRole<HTMLInputElement>('checkbox', { name: 'Enable sender whitelist' }).checked,
     ).toBe(true);
@@ -98,7 +101,9 @@ describe('InboundEmailWhitelistForm', () => {
 
     render(<InboundEmailWhitelistForm inboundEmail={null} enabled={false} senders={[]} />);
 
-    expect(screen.getByText('Not configured')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('Team email address').value).toBe(
+      'Not configured',
+    );
     const submit = screen.getByRole<HTMLButtonElement>('button', { name: 'Working…' });
     expect(submit.disabled).toBe(true);
     const enabledCheckbox = screen.getByRole('checkbox', { name: 'Enable sender whitelist' });

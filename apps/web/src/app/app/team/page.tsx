@@ -17,6 +17,7 @@ import type { Metadata } from 'next';
 import type { ComponentProps } from 'react';
 
 import { ActionChip } from '@/components/action-chip';
+import { CopyableTextField } from '@/components/copyable-text-field';
 import {
   DigestDestinationsForm,
   type DigestDestinationOption,
@@ -37,6 +38,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
+import { displayInboundEmail } from '@/lib/hub-status';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -87,19 +89,23 @@ export default async function TeamSettingsPage({
     }),
     listTeamDigestDestinations(db, active.teamId),
   ]);
-  const inboundEmailSettings: InboundEmailWhitelistSettings = isAdmin
-    ? ((
-        await db
-          .select({
-            inboundEmail: teams.inboundEmail,
-            enabled: teams.inboundSenderWhitelistEnabled,
-            senders: teams.inboundSenderWhitelist,
-          })
-          .from(teams)
-          .where(eq(teams.id, active.teamId))
-          .limit(1)
-      )[0] ?? { inboundEmail: null, enabled: false, senders: [] })
-    : { inboundEmail: null, enabled: false, senders: [] };
+  const inboundEmailSettings: InboundEmailWhitelistSettings = (
+    (
+      await db
+        .select({
+          inboundEmail: teams.inboundEmail,
+          enabled: teams.inboundSenderWhitelistEnabled,
+          senders: teams.inboundSenderWhitelist,
+        })
+        .from(teams)
+        .where(eq(teams.id, active.teamId))
+        .limit(1)
+    )[0] ?? { inboundEmail: null, enabled: false, senders: [] }
+  );
+  const inboundEmail = displayInboundEmail(
+    { slug: active.teamSlug, inboundEmail: inboundEmailSettings.inboundEmail },
+    process.env.POSTMARK_INBOUND_ADDRESS,
+  );
   if (isAdmin) {
     await db
       .update(teamExports)
@@ -268,13 +274,25 @@ export default async function TeamSettingsPage({
             </SettingsSection>
           ) : null}
           {section === 'email' ? (
-            <SettingsSection title="Email sender whitelist">
+            <SettingsSection title="Team email">
               {isAdmin ? (
-                <InboundEmailWhitelistForm {...inboundEmailSettings} />
+                <InboundEmailWhitelistForm
+                  {...inboundEmailSettings}
+                  inboundEmail={inboundEmail}
+                />
               ) : (
-                <p className="text-sm text-fg-muted">
-                  Only team administrators can change inbound email settings.
-                </p>
+                <div className="space-y-3">
+                  <CopyableTextField
+                    id="team-inbound-email"
+                    label="Team email address"
+                    value={inboundEmail}
+                    copyLabel="Copy team email"
+                    description="Forward, CC, or BCC mail to this address to capture it on the timeline."
+                  />
+                  <p className="text-sm text-fg-muted">
+                    Only team administrators can change the sender whitelist.
+                  </p>
+                </div>
               )}
             </SettingsSection>
           ) : null}
