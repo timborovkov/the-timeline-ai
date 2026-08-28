@@ -804,7 +804,10 @@ and hairline dividers so Open tasks / Documents / Evidence do not compete.
 Row titles stay 14px `--fg`; supporting meta is 12px `--fg-dim` and sentence
 case (`Create · Identity facet`, never raw `create · identity_facet`). Empty
 “Not enough object memory,” “No connected work,” and “Nothing here yet” cards
-are prohibited. Discussion keeps
+are prohibited. Long Evidence, Facts, Documents, and other Connected work lists
+preview three rows, then fold the rest behind a quiet `Show N more` disclosure
+(with hairline row dividers and two-line evidence clamps) so the main column
+does not become a wall of text. Discussion keeps
 a borderless composer with @mentions. The right column is one Properties rail at
 `20rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
 `--border`, not raw page canvas. Board context, editable contact facets (people and
@@ -1224,3 +1227,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |
 | 2026-08-28 | Object Properties rail polish | Widens the object rail to `20rem`, shares one labeled field chrome across Contact/Details/Properties, keeps status icons toned with quiet value text, and drops empty contact chrome plus boxed add forms. |
+| 2026-08-28 | Object detail list folds | Evidence, Facts, Documents, and other Connected work lists preview three rows then fold behind `Show N more`, with hairline dividers and tighter evidence clamps. |
