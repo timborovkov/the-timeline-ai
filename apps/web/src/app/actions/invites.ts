@@ -22,11 +22,11 @@ const log = childLogger('web:actions:invites');
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
 const recipientInviteSchema = z.object({ inviteId: z.uuid() });
 
-type InviteDbTx = {
+interface InviteDbTx {
   select: typeof db.select;
   insert: typeof db.insert;
   update: typeof db.update;
-};
+}
 
 async function acceptTeamMembership(
   tx: InviteDbTx,
@@ -49,15 +49,11 @@ async function acceptTeamMembership(
   }
   if (membership) {
     const priorIntervals: TeamMemberPriorInterval[] = [
-      ...(membership.priorIntervals ?? []),
-      ...(membership.removedAt
-        ? [
-            {
-              startedAt: membership.createdAt.toISOString(),
-              endedAt: membership.removedAt.toISOString(),
-            },
-          ]
-        : []),
+      ...membership.priorIntervals,
+      {
+        startedAt: membership.createdAt.toISOString(),
+        endedAt: membership.removedAt.toISOString(),
+      },
     ];
     await tx
       .update(teamMembers)
