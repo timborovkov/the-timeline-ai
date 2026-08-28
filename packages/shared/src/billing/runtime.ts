@@ -506,12 +506,10 @@ export async function withAiMetering<T>(
     },
   });
   if (!reserved.ok) throw new BillingAdmissionError(reserved.code);
-  const existingMeta = reservationMetadataRecord(
-    reserved.reservation.metadata as Record<string, unknown> | null,
-  );
+  const existingMeta = reservationMetadataRecord(reserved.reservation.metadata);
   const skipProvider =
-    Boolean(reserved.alreadySettled) ||
-    Boolean(reserved.reused && existingMeta.provider_completed === true);
+    reserved.alreadySettled === true ||
+    (reserved.reused && existingMeta.provider_completed === true);
 
   const settleCached = async (usd: number) => {
     const { providerCostCents, customerChargeExactCents } =

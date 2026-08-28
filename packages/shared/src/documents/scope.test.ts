@@ -21,7 +21,9 @@ const s3Fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('#src/s3/objects.js', () => ({
-  deleteObject: (...args: unknown[]) => s3Fakes.deleteObject(...args),
+  deleteObject: async (...args: unknown[]) => {
+    await s3Fakes.deleteObject(...args);
+  },
 }));
 vi.mock('#src/s3/client.js', () => ({
   getS3Client: () => ({}),

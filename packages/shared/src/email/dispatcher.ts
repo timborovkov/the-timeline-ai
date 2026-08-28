@@ -1348,7 +1348,14 @@ export async function flushDeferredEmailEnrichment(
         {
           db,
           ...(resolved.enqueueExtract
-            ? { extract: { enqueueExtract: resolved.enqueueExtract } }
+            ? {
+                extract: {
+                  enqueueExtract: (input) => {
+                    const enqueue = resolved.enqueueExtract;
+                    return enqueue ? enqueue(input) : Promise.resolve();
+                  },
+                },
+              }
             : {}),
         },
         row.id,
@@ -1357,7 +1364,16 @@ export async function flushDeferredEmailEnrichment(
       await maybeEnqueueEmbed(
         {
           db,
-          ...(resolved.enqueueEmbed ? { embed: { enqueueEmbed: resolved.enqueueEmbed } } : {}),
+          ...(resolved.enqueueEmbed
+            ? {
+                embed: {
+                  enqueueEmbed: (input) => {
+                    const enqueue = resolved.enqueueEmbed;
+                    return enqueue ? enqueue(input) : Promise.resolve();
+                  },
+                },
+              }
+            : {}),
         },
         row.id,
         row.teamId,
@@ -1367,7 +1383,14 @@ export async function flushDeferredEmailEnrichment(
           {
             db,
             ...(resolved.enqueueSuggestion
-              ? { suggestions: { enqueueSuggestion: resolved.enqueueSuggestion } }
+              ? {
+                  suggestions: {
+                    enqueueSuggestion: (input) => {
+                      const enqueue = resolved.enqueueSuggestion;
+                      return enqueue ? enqueue(input) : Promise.resolve();
+                    },
+                  },
+                }
               : {}),
           },
           row.id,
