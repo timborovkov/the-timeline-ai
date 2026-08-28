@@ -473,7 +473,10 @@ the remaining count. Off Home, a matching quiet header chip returns to the
 panel until the member hides it or every step is done. The account menu also
 reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
-work surface. Attention has no visible heading; the region is named for
+work surface. Directly under the checklist, Home shows the team inbound email
+as one readonly copyable field with a quiet link to Team → Email settings, so
+forwarding the address does not require hunting through settings. Attention has
+no visible heading; the region is named for
 assistive tech only.
 It shows only non-zero groups: pending approvals, overdue work, open tasks,
 open objects, recoverable jobs, and connection issues. Overdue work stays the
@@ -1211,3 +1214,4 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |
+| 2026-08-28 | Home team email field | Surfaces the inbound address on Home as one readonly copyable field, and keeps the same control on Team → Email for every member. |
