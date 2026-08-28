@@ -4,12 +4,15 @@ import { presentDueDate } from '@timeline/shared/time';
 import { ExternalLink } from 'lucide-react';
 
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
-import { VirtualList } from '@/components/collections/virtual-list';
 import { EvidenceLink } from '@/components/evidence-link';
+import { ShowMoreList } from '@/components/ui/show-more-list';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
+import { statusLabel } from '@/lib/status-labels';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
+
+const SECTION_PREVIEW_COUNT = 3;
 
 interface Props {
   objectId: string;
@@ -22,34 +25,51 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
   const query = useObjectSectionQuery(objectId, section);
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   if (!query.isPending && items.length === 0) return null;
+
+  const loadedCount = items.length;
+  const countLabel =
+    loadedCount === 0 ? null : query.hasNextPage ? `${loadedCount}+` : String(loadedCount);
+
   return (
     <section>
-      {showTitle ? <h2 className="mb-1 text-xs font-normal text-fg-dim">{title}</h2> : null}
+      {showTitle ? (
+        <h2 className="mb-1.5 text-xs font-medium text-fg-dim">
+          {title}
+          {countLabel ? <span className="font-normal text-fg-muted"> · {countLabel}</span> : null}
+        </h2>
+      ) : null}
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm font-normal text-fg-dim">Loading…</p>
+        <p className="text-sm font-normal leading-5 text-fg-dim">Loading…</p>
       ) : (
-        <VirtualList
+        <ShowMoreList
           items={items}
-          getItemKey={(item, index) => sectionItemKey(item, index)}
-          estimateSize={48}
-          gap={4}
-          renderItem={(item) => (
-            <div className="text-sm font-normal text-fg">
+          previewCount={SECTION_PREVIEW_COUNT}
+          hasMore={query.hasNextPage}
+          getKey={(item, index) => sectionItemKey(item, index)}
+          moreLabel={(hidden, { hasMore }) =>
+            hidden > 0 ? `Show ${hidden}${hasMore ? '+' : ''} more` : 'Show more'
+          }
+          Item={({ item }) => (
+            <div className="text-sm font-normal leading-5 text-fg">
               <ObjectSectionItem section={section} item={item} />
             </div>
           )}
+          footer={
+            query.hasNextPage || query.isFetchingNextPage || query.isFetchNextPageError ? (
+              <InfiniteScroll
+                hasMore={query.hasNextPage}
+                loading={query.isFetchingNextPage}
+                error={query.isFetchNextPageError ? 'Could not load more.' : null}
+                onLoadMore={() => {
+                  void query.fetchNextPage();
+                }}
+                boundLabel="No more matching activity"
+                hideBound={items.length === 0}
+              />
+            ) : null
+          }
         />
       )}
-      <InfiniteScroll
-        hasMore={query.hasNextPage}
-        loading={query.isFetchingNextPage}
-        error={query.isFetchNextPageError ? 'Could not load more.' : null}
-        onLoadMore={() => {
-          void query.fetchNextPage();
-        }}
-        boundLabel="No more matching activity"
-        hideBound={items.length === 0}
-      />
     </section>
   );
 }
@@ -59,22 +79,30 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   const row = item as Record<string, unknown>;
   if (section === 'tasks') {
     return (
-      <div className="flex items-center justify-between">
-        <a href={`/app/objects/${String(row.id)}`} className="text-fg hover:underline">
+      <div className="flex items-center justify-between gap-3">
+        <a
+          href={`/app/objects/${String(row.id)}`}
+          className="min-w-0 truncate text-fg hover:underline"
+        >
           {text(row.canonicalName, 'Task')}
         </a>
-        <span className="text-xs text-fg-dim">{text(row.status)}</span>
+        <span className="shrink-0 text-xs font-normal text-fg-dim">
+          {statusLabel(text(row.status))}
+        </span>
       </div>
     );
   }
   if (section === 'relationships') {
     return (
-      <div className="flex items-center justify-between">
-        <a href={`/app/objects/${String(row.otherId)}`} className="text-fg hover:underline">
+      <div className="flex items-center justify-between gap-3">
+        <a
+          href={`/app/objects/${String(row.otherId)}`}
+          className="min-w-0 truncate text-fg hover:underline"
+        >
           {text(row.otherName, 'Object')}
         </a>
-        <span className="text-xs text-fg-dim">
-          {text(row.direction)} · {text(row.kind)}
+        <span className="shrink-0 text-xs font-normal text-fg-dim">
+          {statusLabel(text(row.direction))} · {statusLabel(text(row.kind))}
         </span>
       </div>
     );
@@ -90,7 +118,7 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     return (
       <div className="space-y-1">
         <div className="flex flex-wrap items-start gap-2">
-          <p className="min-w-0 flex-1 leading-5 text-fg">{text(row.statement)}</p>
+          <p className="line-clamp-3 min-w-0 flex-1 leading-5 text-fg">{text(row.statement)}</p>
           {sharedObjects.length > 0 ? <SharedFactObjects objects={sharedObjects} /> : null}
         </div>
         <p className="text-xs text-fg-dim">
@@ -108,8 +136,8 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     const source = text(row.source);
     return (
       <div className="grid gap-1">
-        <div className="flex min-w-0 items-start gap-2">
-          <p className="line-clamp-5 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-5 text-fg">
+        <div className="flex min-w-0 items-start gap-3">
+          <p className="line-clamp-2 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-5 text-fg">
             {contentText}
           </p>
           {eventId ? (
@@ -121,12 +149,12 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
               className="inline-flex shrink-0 items-center gap-1 border-0 bg-transparent px-0 py-0 font-sans text-xs font-normal text-fg-muted no-underline hover:bg-transparent hover:text-fg hover:underline"
             >
               <ExternalLink className="size-3" />
-              View evidence
+              View
             </EvidenceLink>
           ) : null}
         </div>
-        <p className="text-xs text-fg-dim">
-          {formatDisplayDateTime(occurredAt, { timezone })} · {source}
+        <p className="text-xs font-normal text-fg-dim">
+          {formatDisplayDateTime(occurredAt, { timezone })} · {statusLabel(source || 'unknown')}
         </p>
       </div>
     );
@@ -135,11 +163,11 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <span className="min-w-0 break-words text-fg">{changeFieldLabel(text(row.field))}</span>
-        <span className="shrink-0 text-xs text-fg-dim">
-          {text(row.actorKind)} · {text(row.status)}
+        <span className="shrink-0 text-xs font-normal text-fg-dim">
+          {statusLabel(text(row.actorKind))} · {statusLabel(text(row.status))}
         </span>
       </div>
-      <p className="mt-1 break-words text-xs text-fg-dim">
+      <p className="mt-1 line-clamp-2 break-words text-xs text-fg-dim">
         {formatChangeValue(text(row.field), row.previousValue, timezone)} →{' '}
         {formatChangeValue(text(row.field), row.newValue, timezone)}
       </p>

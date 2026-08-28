@@ -32,6 +32,7 @@ import {
   rejectObjectChangeAction,
   removeRelationshipAction,
   repairObjectMemoryAction,
+  setPersonCompanyAction,
   unarchiveObjectAction,
   updateNoteAction,
   updateObjectAction,
@@ -45,15 +46,21 @@ import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectBoardContext } from '@/components/objects/object-board-context';
+import { ObjectBoardContextSection } from '@/components/objects/object-board-context-section';
+import { ObjectContactFields } from '@/components/objects/object-contact-fields';
 import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
+import { ObjectMetadataFields } from '@/components/objects/object-metadata-fields';
 import { ObjectOrigin, ObjectProvenanceGroups } from '@/components/objects/object-origin';
 import { ObjectPinButton } from '@/components/objects/object-pin-button';
+import { ObjectRailRow, ObjectRailSection } from '@/components/objects/object-rail-chrome';
+import { RAIL_FIELD_VALUE } from '@/components/objects/object-rail-tokens';
 import {
   type ObjectSearchResponse,
   type ObjectSearchResult,
   visibleObjectSearchResultsForQuery,
 } from '@/components/objects/object-search-results';
 import { ObjectSectionFeed } from '@/components/objects/object-section-feed';
+import { PersonCompanySelect } from '@/components/objects/person-company-select';
 import { LiveTaskCategoryBadge } from '@/components/tasks/task-category-badge';
 import { TaskCategorySelect } from '@/components/tasks/task-category-select';
 import { TaskProjectSelect } from '@/components/tasks/task-project-select';
@@ -61,6 +68,7 @@ import { TechnicalDetails } from '@/components/technical-details';
 import { DetailRail } from '@/components/ui/detail-rail';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { ItemActionGroup, ItemOverflowMenu } from '@/components/ui/item-actions';
+import { ShowMoreList } from '@/components/ui/show-more-list';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { isInternalIdentifier } from '@/lib/display-labels';
@@ -70,6 +78,7 @@ import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { displayObjectTitle } from '@/lib/object-title';
 import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
+import { relationshipDisplayLabel } from '@/lib/relationship-display-label';
 import { statusLabel } from '@/lib/status-labels';
 
 const RELATIONSHIP_KINDS = [
@@ -100,8 +109,10 @@ interface Props {
   initialPinned?: boolean;
   suggestions: LocalSuggestion[];
   projects?: { id: string; label: string }[];
+  companies?: { id: string; label: string }[];
   members?: { id: string; label: string; name?: string; email?: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
+  primaryCompany?: objects.PersonPrimaryCompanyRow | null;
   taskCategoriesEnabled?: boolean;
   boardContext?: boards.ObjectBoardContextRow[];
   highlightCommentId?: string | null;
@@ -154,14 +165,18 @@ const STATUS_BY_TYPE: Record<string, string[]> = {
   decision: ['draft', 'proposed', 'accepted', 'rejected'],
 };
 const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
+const EMPTY_COMPANY_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_MEMBER_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_BOARD_CONTEXT: boards.ObjectBoardContextRow[] = [];
 const DETAIL_ACTION_CLASS =
   'text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:cursor-not-allowed disabled:opacity-60';
-const DETAIL_SECTION_LABEL_CLASS = 'text-xs font-normal text-fg-dim';
+/** Top-level main-column / rail section titles. */
+const DETAIL_SECTION_LABEL_CLASS = 'text-xs font-medium text-fg-dim';
+/** Nested group labels under a section (Open tasks, Documents). */
+const DETAIL_GROUP_LABEL_CLASS = 'text-xs font-normal text-fg-muted';
 const DETAIL_BODY_CLASS = 'text-sm font-normal leading-5 text-fg';
 const DETAIL_META_CLASS = 'text-xs font-normal text-fg-dim';
-const DETAIL_LINK_CLASS = 'text-sm font-normal text-fg hover:underline';
+const DETAIL_LINK_CLASS = 'text-sm font-normal leading-5 text-fg hover:underline';
 
 function statusOptions(type: string): string[] {
   return STATUS_BY_TYPE[type] ?? ['open', 'active', 'archived'];
@@ -705,6 +720,30 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     const link = selectedLink;
     if (!link) return;
     dispatchObjectUi({ error: null });
+    const isPersonCompanyEmployment =
+      linkKind === 'related' &&
+      ((detail.type === 'person' && link.type === 'company') ||
+        (detail.type === 'company' && link.type === 'person'));
+    if (isPersonCompanyEmployment) {
+      const personId = detail.type === 'person' ? detail.id : link.id;
+      const companyId = detail.type === 'company' ? detail.id : link.id;
+      dispatchLocalDetail((current) => ({
+        ...current,
+        linkQuery: '',
+        selectedLink: null,
+      }));
+      startTransition(async () => {
+        const result = await notifyAction({
+          id: `object:${detail.id}:company:${link.id}`,
+          loading: 'Setting company…',
+          success: 'Company updated',
+          error: 'Couldn’t update company',
+          run: () => setPersonCompanyAction({ id: personId, companyId }),
+        });
+        if (!result.error) router.refresh();
+      });
+      return;
+    }
     const tempId = `optimistic-relationship-${localMutationId()}`;
     const optimisticRelationship: ObjectDetail['relationships'][number] = {
       id: tempId,
@@ -933,6 +972,65 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     });
   }
 
+  function linkRelatedObject(other: ObjectDetail['connectedWork']['objects'][number]): void {
+    dispatchObjectUi({ error: null });
+    const isPersonCompanyEmployment =
+      (detail.type === 'person' && other.type === 'company') ||
+      (detail.type === 'company' && other.type === 'person');
+    if (isPersonCompanyEmployment) {
+      const personId = detail.type === 'person' ? detail.id : other.id;
+      const companyId = detail.type === 'company' ? detail.id : other.id;
+      startTransition(async () => {
+        const result = await notifyAction({
+          id: `object:${detail.id}:company:${other.id}`,
+          loading: 'Setting company…',
+          success: 'Company updated',
+          error: 'Couldn’t update company',
+          run: () => setPersonCompanyAction({ id: personId, companyId }),
+        });
+        if (!result.error) router.refresh();
+      });
+      return;
+    }
+    const tempId = `optimistic-relationship-${localMutationId()}`;
+    const optimisticRelationship: ObjectDetail['relationships'][number] = {
+      id: tempId,
+      direction: 'out',
+      kind: 'related',
+      otherId: other.id,
+      otherName: other.canonicalName,
+      otherType: other.type,
+    };
+    dispatchLocalDetail((current) => ({
+      ...current,
+      pendingRelationships: [optimisticRelationship, ...current.pendingRelationships],
+    }));
+    startTransition(async () => {
+      const result = await notifyAction({
+        id: `object:${detail.id}:relationship:${other.id}`,
+        loading: 'Linking object…',
+        success: 'Object linked',
+        error: 'Couldn’t link object',
+        run: () =>
+          addRelationshipAction({
+            fromEntityId: detail.id,
+            toEntityId: other.id,
+            kind: 'related',
+          }),
+      });
+      if (result.error) {
+        dispatchLocalDetail((current) => ({
+          ...current,
+          pendingRelationships: current.pendingRelationships.filter(
+            (relationship) => relationship.id !== tempId,
+          ),
+        }));
+      } else {
+        router.refresh();
+      }
+    });
+  }
+
   return {
     acceptChange,
     addNote,
@@ -949,6 +1047,7 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
     aliasesDraft,
     linkKind,
     linkQuery,
+    linkRelatedObject,
     localDetail,
     nameDraft,
     noteBody,
@@ -994,8 +1093,8 @@ function ObjectDetailView(props: Props) {
         onRepairMemory={view.repairMemory}
       />
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_14rem]">
-        <main className="min-w-0 space-y-2">
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+        <main className="min-w-0 space-y-3">
           {view.suggestions.length > 0 ? (
             <ApprovalsClient
               suggestions={view.suggestions}
@@ -1023,6 +1122,10 @@ function ObjectDetailView(props: Props) {
           <ObjectConnectedWorkSection
             connectedWork={view.detail.connectedWork}
             hiddenBoardItemIds={hiddenBoardItemIds}
+            relationships={view.viewDetail.relationships}
+            sourceType={view.viewDetail.type}
+            pending={view.pending}
+            onLinkRelatedObject={view.linkRelatedObject}
           />
 
           <ObjectSectionFeed objectId={view.detail.id} section="events" title="Evidence" />
@@ -1045,8 +1148,16 @@ function ObjectDetailView(props: Props) {
           />
         </main>
 
-        <DetailRail className="min-w-0 divide-y divide-border xl:sticky xl:top-2 [&>footer]:px-2 [&>footer]:py-1.5 [&>section]:px-1 [&>section]:py-1.5">
-          <ObjectContactSection detail={view.viewDetail} />
+        <DetailRail className="min-w-0 divide-y divide-border xl:sticky xl:top-2 [&>footer]:px-2 [&>footer]:py-2 [&>section]:py-2">
+          <ObjectBoardContextSection
+            rows={props.boardContext ?? EMPTY_BOARD_CONTEXT}
+            entityId={view.viewDetail.id}
+            objectType={view.viewDetail.type}
+            members={props.members ?? EMPTY_MEMBER_OPTIONS}
+            disabled={view.pending}
+          />
+          <ObjectContactFields detail={view.viewDetail} disabled={view.pending} />
+          <ObjectMetadataFields detail={view.viewDetail} disabled={view.pending} />
 
           <ObjectEditableFields
             detail={view.localDetail}
@@ -1057,8 +1168,10 @@ function ObjectDetailView(props: Props) {
             patch={view.patch}
             dispatchObjectUi={view.dispatchObjectUi}
             projects={props.projects}
+            companies={props.companies}
             members={props.members}
             primaryProject={props.primaryProject}
+            primaryCompany={props.primaryCompany}
             taskCategoriesEnabled={props.taskCategoriesEnabled}
           />
 
@@ -1096,37 +1209,6 @@ function ObjectDetailView(props: Props) {
         </DetailRail>
       </div>
     </div>
-  );
-}
-
-function ObjectContactSection({ detail }: { detail: ObjectDetail }) {
-  const contacts = detail.identityFacets.filter(
-    (facet) => facet.kind === 'email' || facet.kind === 'phone',
-  );
-  if (detail.type !== 'person' || contacts.length === 0) return null;
-
-  return (
-    <section>
-      <h2 className={DETAIL_SECTION_LABEL_CLASS}>Contact</h2>
-      <div className="mt-1 space-y-1">
-        {contacts.map((facet) => {
-          const href =
-            facet.kind === 'email'
-              ? `mailto:${facet.normalizedValue}`
-              : `tel:${facet.normalizedValue}`;
-          return (
-            <a
-              key={facet.id}
-              href={href}
-              className={`flex min-w-0 items-center justify-between gap-2 ${DETAIL_LINK_CLASS}`}
-            >
-              <span className="min-w-0 truncate">{facet.value}</span>
-              <span className={`shrink-0 ${DETAIL_META_CLASS}`}>{statusLabel(facet.kind)}</span>
-            </a>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -1403,8 +1485,10 @@ function ObjectEditableFields({
   patch,
   dispatchObjectUi,
   projects = EMPTY_PROJECT_OPTIONS,
+  companies = EMPTY_COMPANY_OPTIONS,
   members = EMPTY_MEMBER_OPTIONS,
   primaryProject = null,
+  primaryCompany = null,
   taskCategoriesEnabled = true,
 }: {
   detail: ObjectDetail;
@@ -1415,113 +1499,143 @@ function ObjectEditableFields({
   patch: (field: EditableField, value: EditableValue) => void;
   dispatchObjectUi: Dispatch<ObjectDetailUiAction>;
   projects?: { id: string; label: string }[];
+  companies?: { id: string; label: string }[];
   members?: { id: string; label: string }[];
   primaryProject?: objects.TaskPrimaryProjectRow | null;
+  primaryCompany?: objects.PersonPrimaryCompanyRow | null;
   taskCategoriesEnabled?: boolean;
 }) {
   const options = statusOptions(detail.type);
   const assignee = members.find((member) => member.id === detail.assigneeUserId);
   const title = displayObjectTitle(detail);
   return (
-    <section aria-label="Properties" className="flex flex-col">
-      <h2 className={`px-1.5 ${DETAIL_SECTION_LABEL_CLASS}`}>Properties</h2>
-      <EditableMetadata label={`Status for ${displayText(title)}`} className="min-h-8 px-1.5">
-        <EditableMetadata.Value>
-          <CollectionStatus value={detail.status} label={statusLabel(detail.status)} />
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <select
-            value={detail.status}
-            onChange={(event) => {
-              patch('status', event.target.value);
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Status"
-          >
-            {options.map((status) => (
-              <option key={status} value={status}>
-                {statusLabel(status)}
-              </option>
-            ))}
-            {options.includes(detail.status) ? null : (
-              <option value={detail.status}>{statusLabel(detail.status)}</option>
-            )}
-          </select>
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      <EditableMetadata label={`Priority for ${displayText(title)}`} className="min-h-8 px-1.5">
-        <EditableMetadata.Value>
-          <CollectionStatus
-            value={detail.priority ? `p${detail.priority}` : 'none'}
-            tone={priorityTone(detail.priority)}
-            label={detail.priority ? `P${detail.priority}` : 'No priority'}
-          />
-        </EditableMetadata.Value>
-        <EditableMetadata.Editor>
-          <select
-            value={detail.priority ?? ''}
-            onChange={(event) => {
-              patch('priority', event.target.value === '' ? null : Number(event.target.value));
-            }}
-            className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-            aria-label="Priority"
-          >
-            <option value="">None</option>
-            <option value="1">P1</option>
-            <option value="2">P2</option>
-            <option value="3">P3</option>
-            <option value="4">P4</option>
-          </select>
-        </EditableMetadata.Editor>
-      </EditableMetadata>
-      {detail.type === 'task' ? (
-        <EditableMetadata label={`Assignee for ${displayText(title)}`} className="min-h-8 px-1.5">
+    <ObjectRailSection label="Properties" aria-label="Properties">
+      <ObjectRailRow label="Status">
+        <EditableMetadata
+          label={`Status for ${displayText(title)}`}
+          className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+        >
           <EditableMetadata.Value>
-            {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
+            <CollectionStatus
+              value={detail.status}
+              label={statusLabel(detail.status)}
+              quietText
+              className="text-sm"
+            />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>
             <select
-              value={detail.assigneeUserId ?? ''}
+              value={detail.status}
               onChange={(event) => {
-                patch('assigneeUserId', event.target.value || null);
+                patch('status', event.target.value);
               }}
-              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-xs"
-              aria-label="Assignee"
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+              aria-label="Status"
             >
-              <option value="">Unassigned</option>
-              {members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.label}
+              {options.map((status) => (
+                <option key={status} value={status}>
+                  {statusLabel(status)}
                 </option>
               ))}
+              {options.includes(detail.status) ? null : (
+                <option value={detail.status}>{statusLabel(detail.status)}</option>
+              )}
             </select>
           </EditableMetadata.Editor>
         </EditableMetadata>
-      ) : null}
-      {isSchedulableObjectType(detail.type) ? (
-        <EditableMetadata label={`Due date for ${displayText(title)}`} className="min-h-8 px-1.5">
+      </ObjectRailRow>
+      <ObjectRailRow label="Priority">
+        <EditableMetadata
+          label={`Priority for ${displayText(title)}`}
+          className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+        >
           <EditableMetadata.Value>
-            <DueDateDisplay value={detail.dueAt} variant="field-hint" />
+            <CollectionStatus
+              value={detail.priority ? `p${detail.priority}` : 'none'}
+              tone={priorityTone(detail.priority)}
+              label={detail.priority ? `P${detail.priority}` : 'No priority'}
+              quietText
+              className="text-sm"
+            />
           </EditableMetadata.Value>
           <EditableMetadata.Editor>
-            <MetadataDateEditor
-              defaultValue={dueDraft}
-              onApply={(value) => {
-                focusedDraftsRef.current.dueAt = false;
-                dispatchObjectUi({ dueDraft: value });
-                patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+            <select
+              value={detail.priority ?? ''}
+              onChange={(event) => {
+                patch('priority', event.target.value === '' ? null : Number(event.target.value));
               }}
-            />
+              className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+              aria-label="Priority"
+            >
+              <option value="">None</option>
+              <option value="1">P1</option>
+              <option value="2">P2</option>
+              <option value="3">P3</option>
+              <option value="4">P4</option>
+            </select>
           </EditableMetadata.Editor>
         </EditableMetadata>
+      </ObjectRailRow>
+      {detail.type === 'task' ? (
+        <ObjectRailRow label="Assignee">
+          <EditableMetadata
+            label={`Assignee for ${displayText(title)}`}
+            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+          >
+            <EditableMetadata.Value>
+              <span className="text-sm font-normal leading-5 text-fg">
+                {assignee?.label ?? (detail.assigneeUserId ? 'Assigned' : 'Unassigned')}
+              </span>
+            </EditableMetadata.Value>
+            <EditableMetadata.Editor>
+              <select
+                value={detail.assigneeUserId ?? ''}
+                onChange={(event) => {
+                  patch('assigneeUserId', event.target.value || null);
+                }}
+                className="h-10 w-full rounded-sm border border-border bg-bg px-2 text-sm"
+                aria-label="Assignee"
+              >
+                <option value="">Unassigned</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.label}
+                  </option>
+                ))}
+              </select>
+            </EditableMetadata.Editor>
+          </EditableMetadata>
+        </ObjectRailRow>
+      ) : null}
+      {isSchedulableObjectType(detail.type) ? (
+        <ObjectRailRow label="Due">
+          <EditableMetadata
+            label={`Due date for ${displayText(title)}`}
+            className="min-h-8 min-w-0 flex-1 justify-start px-0 text-sm text-fg"
+          >
+            <EditableMetadata.Value>
+              <DueDateDisplay value={detail.dueAt} variant="field-hint" />
+            </EditableMetadata.Value>
+            <EditableMetadata.Editor>
+              <MetadataDateEditor
+                defaultValue={dueDraft}
+                onApply={(value) => {
+                  focusedDraftsRef.current.dueAt = false;
+                  dispatchObjectUi({ dueDraft: value });
+                  patch('dueAt', value === '' ? null : new Date(`${value}T00:00:00.000Z`));
+                }}
+              />
+            </EditableMetadata.Editor>
+          </EditableMetadata>
+        </ObjectRailRow>
       ) : null}
       {detail.type === 'task' && detail.archivedAt ? (
-        <p className="px-1.5 py-1 text-xs text-fg-muted">
+        <p className="px-2 py-1 text-xs text-fg-muted">
           Unarchive this task to change its project or category.
         </p>
       ) : detail.type === 'task' ? (
         <>
-          <div className="px-1.5">
+          <div className="px-2">
             <TaskProjectSelect
               taskId={detail.id}
               projectId={primaryProject?.projectId ?? null}
@@ -1532,7 +1646,7 @@ function ObjectEditableFields({
             />
           </div>
           {taskCategoriesEnabled ? (
-            <div className="px-1.5">
+            <div className="px-2">
               <TaskCategorySelect
                 taskId={detail.id}
                 category={detail.taskCategory}
@@ -1545,8 +1659,19 @@ function ObjectEditableFields({
           ) : null}
         </>
       ) : null}
-      <label className="flex min-h-8 items-center gap-3 px-2">
-        <span className="w-16 shrink-0 text-xs text-fg-dim">Stage</span>
+      {detail.type === 'person' && !detail.archivedAt ? (
+        <ObjectRailRow label="Company">
+          <PersonCompanySelect
+            personId={detail.id}
+            companyId={primaryCompany?.companyId ?? null}
+            currentCompanyLabel={primaryCompany?.companyName}
+            currentCompanyArchived={Boolean(primaryCompany?.archivedAt)}
+            companies={companies}
+            quiet
+          />
+        </ObjectRailRow>
+      ) : null}
+      <ObjectRailRow label="Stage">
         <input
           aria-label="Stage"
           value={stageDraft}
@@ -1562,12 +1687,11 @@ function ObjectEditableFields({
             dispatchObjectUi({ stageDraft: value });
             patch('stage', value === '' ? null : value);
           }}
-          className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          className={RAIL_FIELD_VALUE}
           placeholder="No stage"
         />
-      </label>
-      <label className="flex min-h-8 items-center gap-3 px-2">
-        <span className="w-16 shrink-0 text-xs text-fg-dim">Aliases</span>
+      </ObjectRailRow>
+      <ObjectRailRow label="Aliases">
         <input
           aria-label="Aliases"
           value={aliasesDraft}
@@ -1584,19 +1708,27 @@ function ObjectEditableFields({
             patch('aliases', aliases);
           }}
           placeholder="No aliases"
-          className="min-w-0 flex-1 bg-transparent text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+          className={RAIL_FIELD_VALUE}
         />
-      </label>
-    </section>
+      </ObjectRailRow>
+    </ObjectRailSection>
   );
 }
 
 function ObjectConnectedWorkSection({
   connectedWork,
   hiddenBoardItemIds,
+  relationships,
+  sourceType,
+  pending,
+  onLinkRelatedObject,
 }: {
   connectedWork: ObjectDetail['connectedWork'];
   hiddenBoardItemIds: ReadonlySet<string>;
+  relationships: ObjectDetail['relationships'];
+  sourceType: ObjectDetail['type'];
+  pending: boolean;
+  onLinkRelatedObject: (object: ObjectDetail['connectedWork']['objects'][number]) => void;
 }) {
   const boards = connectedWork.boards.filter((board) => !hiddenBoardItemIds.has(board.itemId));
   const hasWork =
@@ -1611,12 +1743,18 @@ function ObjectConnectedWorkSection({
     connectedWork.capturedFiles.length > 0;
   if (!hasWork) return null;
   return (
-    <section>
+    <section aria-label="Connected work">
       <h2 className={DETAIL_SECTION_LABEL_CLASS}>Connected work</h2>
-      <div className="mt-1 space-y-2">
+      <div className="mt-1 divide-y divide-border">
         <ConnectedTaskList title="Open tasks" tasks={connectedWork.openTasks} />
         <ConnectedCalendarList events={connectedWork.calendarEvents} />
-        <ConnectedObjectList objects={connectedWork.objects} />
+        <ConnectedObjectList
+          objects={connectedWork.objects}
+          relationships={relationships}
+          sourceType={sourceType}
+          pending={pending}
+          onLinkRelatedObject={onLinkRelatedObject}
+        />
         <ConnectedBoardList boards={boards} />
         <ConnectedApprovalList approvals={connectedWork.pendingApprovals} />
         <ConnectedTaskList title="Recent history" tasks={connectedWork.recentTasks} />
@@ -1628,10 +1766,25 @@ function ObjectConnectedWorkSection({
   );
 }
 
-function ConnectedWorkSection({ title, children }: { title: string; children: ReactNode }) {
+const CONNECTED_PREVIEW_COUNT = 3;
+
+function ConnectedWorkSection({
+  title,
+  count,
+  children,
+}: {
+  title: string;
+  count?: number;
+  children: ReactNode;
+}) {
   return (
-    <section className="min-w-0">
-      <h3 className={`mb-0.5 ${DETAIL_SECTION_LABEL_CLASS}`}>{title}</h3>
+    <section className="min-w-0 py-2 first:pt-1.5">
+      <h3 className={`mb-1 ${DETAIL_GROUP_LABEL_CLASS}`}>
+        {title}
+        {typeof count === 'number' && count > 0 ? (
+          <span className="font-normal text-fg-dim"> · {count}</span>
+        ) : null}
+      </h3>
       {children}
     </section>
   );
@@ -1646,10 +1799,13 @@ function ConnectedTaskList({
 }) {
   if (tasks.length === 0) return null;
   return (
-    <ConnectedWorkSection title={title}>
-      <ul className="space-y-1">
-        {tasks.map((task) => (
-          <li key={task.id} className="grid gap-0.5">
+    <ConnectedWorkSection title={title} count={tasks.length}>
+      <ShowMoreList
+        items={tasks}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(task) => task.id}
+        Item={({ item: task }) => (
+          <div className="grid gap-0.5">
             <a href={`/app/objects/${task.id}`} className={DETAIL_LINK_CLASS}>
               {displayText(displayObjectTitle(task))}
             </a>
@@ -1657,9 +1813,9 @@ function ConnectedTaskList({
               <span>{statusLabel(task.status)}</span>
               <DueDateDisplay value={task.dueAt} variant="compact" />
             </span>
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1672,10 +1828,13 @@ function ConnectedCalendarList({
   const timezone = useWorkspaceTimezone();
   if (events.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Calendar">
-      <ul className="space-y-1">
-        {events.map((event) => (
-          <li key={event.id} className="grid gap-0.5">
+    <ConnectedWorkSection title="Calendar" count={events.length}>
+      <ShowMoreList
+        items={events}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(event) => event.id}
+        Item={({ item: event }) => (
+          <div className="grid gap-0.5">
             <Link
               href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
               className={DETAIL_LINK_CLASS}
@@ -1685,30 +1844,74 @@ function ConnectedCalendarList({
             <span className={DETAIL_META_CLASS}>
               {formatDisplayDateTime(event.startAt, { timezone })} · {statusLabel(event.showAs)}
             </span>
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
 
-function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork']['objects'] }) {
+function ConnectedObjectList({
+  objects,
+  relationships,
+  sourceType,
+  pending,
+  onLinkRelatedObject,
+}: {
+  objects: ObjectDetail['connectedWork']['objects'];
+  relationships: ObjectDetail['relationships'];
+  sourceType: ObjectDetail['type'];
+  pending: boolean;
+  onLinkRelatedObject: (object: ObjectDetail['connectedWork']['objects'][number]) => void;
+}) {
   if (objects.length === 0) return null;
+  const relationshipByOtherId = new Map(
+    relationships.map((relationship) => [relationship.otherId, relationship] as const),
+  );
   return (
-    <ConnectedWorkSection title="People and objects">
-      <ul className="space-y-1">
-        {objects.map((object) => (
-          <li key={object.id} className="grid gap-0.5">
-            <a href={`/app/objects/${object.id}`} className={DETAIL_LINK_CLASS}>
-              {displayText(object.canonicalName)}
-            </a>
-            <span className={DETAIL_META_CLASS}>
-              {statusLabel(object.type)} · {object.factCount} fact
-              {object.factCount === 1 ? '' : 's'}
-            </span>
-          </li>
-        ))}
-      </ul>
+    <ConnectedWorkSection title="People and objects" count={objects.length}>
+      <ShowMoreList
+        items={objects}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(object) => object.id}
+        Item={({ item: object }) => {
+          const relationship = relationshipByOtherId.get(object.id);
+          const linked = relationship !== undefined;
+          return (
+            <div className="grid gap-0.5">
+              <div className="flex items-center justify-between gap-2">
+                <a href={`/app/objects/${object.id}`} className={DETAIL_LINK_CLASS}>
+                  {displayText(object.canonicalName)}
+                </a>
+                {linked ? null : (
+                  <button
+                    type="button"
+                    disabled={pending}
+                    onClick={() => {
+                      onLinkRelatedObject(object);
+                    }}
+                    className={DETAIL_ACTION_CLASS}
+                  >
+                    Link
+                  </button>
+                )}
+              </div>
+              <span className={DETAIL_META_CLASS}>
+                {statusLabel(object.type)} · {object.factCount} fact
+                {object.factCount === 1 ? '' : 's'}
+                {relationship
+                  ? ` · ${relationshipDisplayLabel({
+                      kind: relationship.kind,
+                      sourceType,
+                      otherType: object.type,
+                      direction: relationship.direction,
+                    })}`
+                  : ''}
+              </span>
+            </div>
+          );
+        }}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1716,31 +1919,37 @@ function ConnectedObjectList({ objects }: { objects: ObjectDetail['connectedWork
 function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork']['boards'] }) {
   if (boards.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Boards">
-      {boards.length === 0 ? (
-        <p className="text-sm text-fg-dim">No board context found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {boards.map((board) => (
-            <li key={board.itemId} className="grid gap-0.5">
-              <a
-                href={`/app/boards/${board.boardId}?item=${board.itemId}`}
-                className={DETAIL_LINK_CLASS}
-              >
-                {displayText(board.boardName)}
-              </a>
-              <span className={`flex flex-wrap items-center gap-1.5 ${DETAIL_META_CLASS}`}>
-                <span>{board.laneName ?? 'no lane'}</span>
-                <DueDateDisplay value={board.dueAt} variant="compact" />
-                {board.priority !== null ? <span>· P{board.priority}</span> : null}
+    <ConnectedWorkSection title="Boards" count={boards.length}>
+      <ShowMoreList
+        items={boards}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(board) => board.itemId}
+        Item={({ item: board }) => (
+          <div className="grid gap-0.5">
+            <a
+              href={`/app/boards/${board.boardId}?item=${board.itemId}`}
+              className={DETAIL_LINK_CLASS}
+            >
+              {displayText(board.boardName)}
+            </a>
+            <span className={`flex flex-wrap items-center gap-1.5 ${DETAIL_META_CLASS}`}>
+              <span>{board.laneName ?? 'No lane'}</span>
+              <DueDateDisplay value={board.dueAt} variant="compact" />
+              {board.priority !== null ? <span>· P{board.priority}</span> : null}
+            </span>
+            {board.nextStep ? (
+              <span className={`line-clamp-1 ${DETAIL_META_CLASS}`}>
+                {displayText(board.nextStep)}
               </span>
-              {board.nextStep ? (
-                <span className={DETAIL_META_CLASS}>{displayText(board.nextStep)}</span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
+            ) : null}
+            {board.notes ? (
+              <span className={`line-clamp-1 ${DETAIL_META_CLASS}`}>
+                {displayText(board.notes)}
+              </span>
+            ) : null}
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1752,23 +1961,22 @@ function ConnectedApprovalList({
 }) {
   if (approvals.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Pending approvals">
-      {approvals.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related approvals found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {approvals.map((approval) => (
-            <li key={approval.itemId} className="grid gap-0.5">
-              <Link href="/app/approvals" className={DETAIL_LINK_CLASS}>
-                {displayText(approval.title)}
-              </Link>
-              <span className={DETAIL_META_CLASS}>
-                {approval.operation} · {approval.targetKind}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Pending approvals" count={approvals.length}>
+      <ShowMoreList
+        items={approvals}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(approval) => approval.itemId}
+        Item={({ item: approval }) => (
+          <div className="grid gap-0.5">
+            <Link href="/app/approvals" className={DETAIL_LINK_CLASS}>
+              {displayText(approval.title)}
+            </Link>
+            <span className={DETAIL_META_CLASS}>
+              {statusLabel(approval.operation)} · {statusLabel(approval.targetKind)}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1781,28 +1989,27 @@ function ConnectedDocumentList({
   const timezone = useWorkspaceTimezone();
   if (documents.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Documents">
-      {documents.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related documents found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {documents.map((document) => (
-            <li key={document.id} className="grid gap-0.5">
-              <a
-                href={`/app/documents/${document.id}`}
-                title={document.name}
-                className={DETAIL_LINK_CLASS}
-              >
-                {displayText(truncateFilenameMiddle(document.name))}
-              </a>
-              <span className={DETAIL_META_CLASS}>
-                {document.fileKind} · updated{' '}
-                {formatDisplayDateTime(document.updatedAt, { timezone })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Documents" count={documents.length}>
+      <ShowMoreList
+        items={documents}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(document) => document.id}
+        Item={({ item: document }) => (
+          <div className="grid gap-0.5">
+            <a
+              href={`/app/documents/${document.id}`}
+              title={document.name}
+              className={DETAIL_LINK_CLASS}
+            >
+              {displayText(truncateFilenameMiddle(document.name))}
+            </a>
+            <span className={DETAIL_META_CLASS}>
+              {statusLabel(document.fileKind)} · updated{' '}
+              {formatDisplayDateTime(document.updatedAt, { timezone })}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1811,33 +2018,32 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
   const timezone = useWorkspaceTimezone();
   if (links.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Links">
-      {links.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related links found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {links.map((link) => (
-            <li key={link.id} className="grid gap-0.5">
-              {link.canonicalUrl ? (
-                <a
-                  href={link.canonicalUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={DETAIL_LINK_CLASS}
-                >
-                  {displayText(link.displayUrl ?? link.canonicalName)}
-                </a>
-              ) : (
-                <span className={DETAIL_BODY_CLASS}>{displayText(link.canonicalName)}</span>
-              )}
-              <span className={DETAIL_META_CLASS}>
-                {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
-                {formatDisplayDateTime(link.updatedAt, { timezone })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Links" count={links.length}>
+      <ShowMoreList
+        items={links}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(link) => link.id}
+        Item={({ item: link }) => (
+          <div className="grid gap-0.5">
+            {link.canonicalUrl ? (
+              <a
+                href={link.canonicalUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={DETAIL_LINK_CLASS}
+              >
+                {displayText(link.displayUrl ?? link.canonicalName)}
+              </a>
+            ) : (
+              <span className={DETAIL_BODY_CLASS}>{displayText(link.canonicalName)}</span>
+            )}
+            <span className={DETAIL_META_CLASS}>
+              {link.provider ?? link.domain ?? 'shared link'} · updated{' '}
+              {formatDisplayDateTime(link.updatedAt, { timezone })}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1850,24 +2056,23 @@ function ConnectedCapturedFileList({
   const timezone = useWorkspaceTimezone();
   if (files.length === 0) return null;
   return (
-    <ConnectedWorkSection title="Files">
-      {files.length === 0 ? (
-        <p className="text-sm text-fg-dim">No related files found.</p>
-      ) : (
-        <ul className="space-y-1">
-          {files.map((file) => (
-            <li key={file.id} className="grid gap-0.5">
-              <Link href="/app/documents/captured" className={DETAIL_LINK_CLASS}>
-                {displayText(truncateFilenameMiddle(file.name))}
-              </Link>
-              <span className={DETAIL_META_CLASS}>
-                {file.contentType ?? 'captured file'} · updated{' '}
-                {formatDisplayDateTime(file.updatedAt, { timezone })}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+    <ConnectedWorkSection title="Files" count={files.length}>
+      <ShowMoreList
+        items={files}
+        previewCount={CONNECTED_PREVIEW_COUNT}
+        getKey={(file) => file.id}
+        Item={({ item: file }) => (
+          <div className="grid gap-0.5">
+            <Link href="/app/documents/captured" className={DETAIL_LINK_CLASS}>
+              {displayText(truncateFilenameMiddle(file.name))}
+            </Link>
+            <span className={DETAIL_META_CLASS}>
+              {file.contentType ?? 'captured file'} · updated{' '}
+              {formatDisplayDateTime(file.updatedAt, { timezone })}
+            </span>
+          </div>
+        )}
+      />
     </ConnectedWorkSection>
   );
 }
@@ -1904,9 +2109,8 @@ function ObjectRelationshipsSection({
     ? RELATIONSHIP_KINDS.filter((kind) => kind !== 'child')
     : RELATIONSHIP_KINDS;
   return (
-    <section>
-      <h2 className={DETAIL_SECTION_LABEL_CLASS}>Related</h2>
-      <div className="mt-1 grid gap-1.5">
+    <ObjectRailSection label="Related" aria-label="Related">
+      <div className="mt-0.5 grid gap-1.5 px-2">
         <label>
           <span className="sr-only">Link to object</span>
           <input
@@ -1948,12 +2152,12 @@ function ObjectRelationshipsSection({
         </div>
       </div>
       {selectedLink ? (
-        <p className={`mb-1.5 ${DETAIL_META_CLASS}`}>
+        <p className={`mb-1.5 px-2 ${DETAIL_META_CLASS}`}>
           Selected {displayText(selectedLink.canonicalName)} · {statusLabel(selectedLink.type)}
           {projectFieldOwnsLink ? ' · use the Project field for primary membership' : ''}
         </p>
       ) : linkResults.length > 0 ? (
-        <ul className="mb-1.5 grid gap-0.5">
+        <ul className="mb-1.5 grid gap-0.5 px-2">
           {linkResults.map((result) => (
             <li key={result.id}>
               <button
@@ -1972,7 +2176,7 @@ function ObjectRelationshipsSection({
         </ul>
       ) : null}
       {relationships.length === 0 ? null : (
-        <ul className="space-y-1">
+        <ul className="space-y-1 px-2">
           {relationships.map((relationship) => (
             <li key={`${relationship.direction}-${relationship.id}`} className="grid gap-0.5">
               <a
@@ -1983,11 +2187,12 @@ function ObjectRelationshipsSection({
               </a>
               <div className="flex items-center justify-between gap-3">
                 <span className={DETAIL_META_CLASS}>
-                  {relationship.kind === 'related'
-                    ? statusLabel(relationship.kind)
-                    : relationship.direction === 'out'
-                      ? statusLabel(relationship.kind)
-                      : `← ${statusLabel(relationship.kind)}`}{' '}
+                  {relationshipDisplayLabel({
+                    kind: relationship.kind,
+                    sourceType,
+                    otherType: relationship.otherType,
+                    direction: relationship.direction,
+                  })}{' '}
                   · {statusLabel(relationship.otherType)}
                 </span>
                 {(relationship.direction === 'out' || relationship.kind === 'related') &&
@@ -2017,7 +2222,7 @@ function ObjectRelationshipsSection({
           ))}
         </ul>
       )}
-    </section>
+    </ObjectRailSection>
   );
 }
 
@@ -2034,9 +2239,8 @@ function ObjectRecentChangesSection({
 }) {
   if (changes.length === 0) return null;
   return (
-    <section>
-      <h2 className={DETAIL_SECTION_LABEL_CLASS}>Recent changes</h2>
-      <ul className="mt-1 space-y-1 text-sm">
+    <ObjectRailSection label="Recent changes" aria-label="Recent changes">
+      <ul className="space-y-1 px-2 text-sm">
         {changes.slice(0, 20).map((change) => (
           <ObjectRecentChangeItem
             key={change.id}
@@ -2047,7 +2251,7 @@ function ObjectRecentChangesSection({
           />
         ))}
       </ul>
-    </section>
+    </ObjectRailSection>
   );
 }
 

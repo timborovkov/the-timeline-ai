@@ -55,6 +55,7 @@ const HOSTILE_INSTRUCTION_RE =
 export function resolveAgentPresentation(deliverySurface: string): AgentPresentationProfile {
   if (deliverySurface === 'web') return 'web_rich';
   if (deliverySurface === 'mcp') return 'mcp_agent';
+  if (deliverySurface === 'object_discussion') return 'web_rich';
   return 'external_chat';
 }
 

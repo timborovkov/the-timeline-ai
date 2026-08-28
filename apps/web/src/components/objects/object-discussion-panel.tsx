@@ -245,7 +245,7 @@ export function ObjectDiscussionPanel({
 
   return (
     <section>
-      <h2 className="mb-1 text-xs font-normal text-fg-dim">Discussion</h2>
+      <h2 className="mb-1.5 text-xs font-medium text-fg-dim">Discussion</h2>
       <ol className="space-y-2">
         {feed.map((item) => {
           if (item.kind === 'activity') {
