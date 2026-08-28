@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -8,7 +8,7 @@ export function ShowMoreList<T>({
   items,
   previewCount = 3,
   getKey,
-  renderItem,
+  Item,
   moreLabel,
   hasMore = false,
   className,
@@ -19,7 +19,7 @@ export function ShowMoreList<T>({
   items: readonly T[];
   previewCount?: number;
   getKey: (item: T, index: number) => string;
-  renderItem: (item: T, index: number) => ReactNode;
+  Item: ComponentType<{ item: T; index: number }>;
   moreLabel?: (hiddenCount: number, options: { hasMore: boolean }) => string;
   /** Keep a fold control even when every loaded item fits the preview (e.g. pagination). */
   hasMore?: boolean;
@@ -46,7 +46,7 @@ export function ShowMoreList<T>({
         <ul className={cn('divide-y divide-border', listClassName)}>
           {preview.map((item, index) => (
             <li key={getKey(item, index)} className={cn('min-w-0 py-2 first:pt-0', itemClassName)}>
-              {renderItem(item, index)}
+              <Item item={item} index={index} />
             </li>
           ))}
         </ul>
@@ -64,7 +64,7 @@ export function ShowMoreList<T>({
                     key={getKey(item, safePreview + index)}
                     className={cn('min-w-0 py-2', itemClassName)}
                   >
-                    {renderItem(item, safePreview + index)}
+                    <Item item={item} index={safePreview + index} />
                   </li>
                 ))}
               </ul>

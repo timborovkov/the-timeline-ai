@@ -44,12 +44,12 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
         <ShowMoreList
           items={items}
           previewCount={SECTION_PREVIEW_COUNT}
-          hasMore={Boolean(query.hasNextPage)}
+          hasMore={query.hasNextPage}
           getKey={(item, index) => sectionItemKey(item, index)}
           moreLabel={(hidden, { hasMore }) =>
             hidden > 0 ? `Show ${hidden}${hasMore ? '+' : ''} more` : 'Show more'
           }
-          renderItem={(item) => (
+          Item={({ item }) => (
             <div className="text-sm font-normal leading-5 text-fg">
               <ObjectSectionItem section={section} item={item} />
             </div>
