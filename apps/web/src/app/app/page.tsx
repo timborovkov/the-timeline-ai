@@ -181,8 +181,6 @@ export default async function HomeDashboardPage() {
 
       <OnboardingChecklist initialData={initialChecklist} />
 
-      <HomeTeamEmail inboundEmail={inboundEmail} />
-
       <HomeAttention
         groups={[
           {
@@ -238,6 +236,8 @@ export default async function HomeDashboardPage() {
       />
 
       <PinnedWorkspacePreview initialItems={pinnedPage.items} />
+
+      <HomeTeamEmail inboundEmail={inboundEmail} />
 
       <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
 

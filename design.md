@@ -473,10 +473,7 @@ the remaining count. Off Home, a matching quiet header chip returns to the
 panel until the member hides it or every step is done. The account menu also
 reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
-work surface. Directly under the checklist, Home shows the team inbound email
-as one readonly copyable field with a quiet link to Team → Email settings, so
-forwarding the address does not require hunting through settings. Attention has
-no visible heading; the region is named for
+work surface. Attention has no visible heading; the region is named for
 assistive tech only.
 It shows only non-zero groups: pending approvals, overdue work, open tasks,
 open objects, recoverable jobs, and connection issues. Overdue work stays the
