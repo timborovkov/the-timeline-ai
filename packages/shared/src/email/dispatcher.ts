@@ -1178,11 +1178,11 @@ async function stampEmailBillingEnrichmentDeferred(db: Db, eventId: string): Pro
 }
 
 export interface DeferredEmailEnrichmentIo {
-  enqueueExtract?(input: { rawEventId: string; teamId: string }): Promise<void>;
-  enqueueEmbed?(input: { rawEventId: string; teamId: string }): Promise<void>;
-  enqueueSuggestion?(input: { rawEventId: string; teamId: string }): Promise<void>;
+  enqueueExtract?: (input: { rawEventId: string; teamId: string }) => Promise<void>;
+  enqueueEmbed?: (input: { rawEventId: string; teamId: string }) => Promise<void>;
+  enqueueSuggestion?: (input: { rawEventId: string; teamId: string }) => Promise<void>;
   documents?: EmailDocumentDeps;
-  readAttachment?(input: { key: string }): Promise<Buffer>;
+  readAttachment?: (input: { key: string }) => Promise<Buffer>;
 }
 
 async function defaultDeferredEmailEnrichmentIo(): Promise<DeferredEmailEnrichmentIo> {
@@ -1348,14 +1348,7 @@ export async function flushDeferredEmailEnrichment(
         {
           db,
           ...(resolved.enqueueExtract
-            ? {
-                extract: {
-                  enqueueExtract: (input) => {
-                    const enqueue = resolved.enqueueExtract;
-                    return enqueue ? enqueue(input) : Promise.resolve();
-                  },
-                },
-              }
+            ? { extract: { enqueueExtract: resolved.enqueueExtract } }
             : {}),
         },
         row.id,
@@ -1364,16 +1357,7 @@ export async function flushDeferredEmailEnrichment(
       await maybeEnqueueEmbed(
         {
           db,
-          ...(resolved.enqueueEmbed
-            ? {
-                embed: {
-                  enqueueEmbed: (input) => {
-                    const enqueue = resolved.enqueueEmbed;
-                    return enqueue ? enqueue(input) : Promise.resolve();
-                  },
-                },
-              }
-            : {}),
+          ...(resolved.enqueueEmbed ? { embed: { enqueueEmbed: resolved.enqueueEmbed } } : {}),
         },
         row.id,
         row.teamId,
@@ -1383,14 +1367,7 @@ export async function flushDeferredEmailEnrichment(
           {
             db,
             ...(resolved.enqueueSuggestion
-              ? {
-                  suggestions: {
-                    enqueueSuggestion: (input) => {
-                      const enqueue = resolved.enqueueSuggestion;
-                      return enqueue ? enqueue(input) : Promise.resolve();
-                    },
-                  },
-                }
+              ? { suggestions: { enqueueSuggestion: resolved.enqueueSuggestion } }
               : {}),
           },
           row.id,
