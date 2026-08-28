@@ -90,18 +90,16 @@ export default async function TeamSettingsPage({
     listTeamDigestDestinations(db, active.teamId),
   ]);
   const inboundEmailSettings: InboundEmailWhitelistSettings = (
-    (
-      await db
-        .select({
-          inboundEmail: teams.inboundEmail,
-          enabled: teams.inboundSenderWhitelistEnabled,
-          senders: teams.inboundSenderWhitelist,
-        })
-        .from(teams)
-        .where(eq(teams.id, active.teamId))
-        .limit(1)
-    )[0] ?? { inboundEmail: null, enabled: false, senders: [] }
-  );
+    await db
+      .select({
+        inboundEmail: teams.inboundEmail,
+        enabled: teams.inboundSenderWhitelistEnabled,
+        senders: teams.inboundSenderWhitelist,
+      })
+      .from(teams)
+      .where(eq(teams.id, active.teamId))
+      .limit(1)
+  )[0] ?? { inboundEmail: null, enabled: false, senders: [] };
   const inboundEmail = displayInboundEmail(
     { slug: active.teamSlug, inboundEmail: inboundEmailSettings.inboundEmail },
     process.env.POSTMARK_INBOUND_ADDRESS,
@@ -276,10 +274,7 @@ export default async function TeamSettingsPage({
           {section === 'email' ? (
             <SettingsSection title="Team email">
               {isAdmin ? (
-                <InboundEmailWhitelistForm
-                  {...inboundEmailSettings}
-                  inboundEmail={inboundEmail}
-                />
+                <InboundEmailWhitelistForm {...inboundEmailSettings} inboundEmail={inboundEmail} />
               ) : (
                 <div className="space-y-3">
                   <CopyableTextField
