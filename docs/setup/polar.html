@@ -135,7 +135,8 @@ BILLING_CHARGES_ENABLED=false
         reuses the BullMQ job id. Aborting a Recall join after the bot is accepted keeps the
         reservation when leave fails so the janitor can retry. Terminal Recall settlement errors
         propagate so the status webhook can 503 and retry. Re-accepting a removed member stamps a
-        new membership <code>createdAt</code>. A leftover Free team stays unrestricted while another
+        new membership <code>createdAt</code> and appends the previous interval to
+        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another
         owner's grant remains assigned. Storage snapshots backfill missed days. Slack/Telegram/MCP
         Ask and web chat also keep the reservation when settlement fails. Paid-plan changes reuse
         the Polar subscription in non-active paid states. Extra-member plan preview prorates from
@@ -149,7 +150,16 @@ BILLING_CHARGES_ENABLED=false
         billing is paused. Enterprise settlement skips prepaid freezes and does not debit a prepaid
         wallet so Polar meters can ingest. Enterprise is not a prepaid-wallet plan, so Billing does
         not offer top-ups or auto-reload and does not open a second self-serve checkout; plan
-        changes go through support or the Polar customer portal. Interactive search embeddings run
+        changes go through support or the Polar customer portal. Background AI metering skips
+        OpenRouter when the durable operation is already settled or the reservation is reused with
+        <code>provider_completed</code>. Member-day ledger rows stamp <code>plan_id</code>; later
+        ticks reuse that day's included-member count. Refund reversals persist
+        <code>wallet_shortfall_cents</code> before freezing; a spend-cap raise does not restore the
+        paid active state while that debt remains. Storage-cap finalization deletes the uploaded
+        object when admission fails. Captured Slack/Telegram/email attachments assert document and
+        storage capacity. Free in-allowance usage is not wallet-billable when live charging is
+        enabled. Janitor Recall leave retries run before reservation expiry, and expiry skips rows
+        with <code>pending_recall_leave_bot_id</code>. Interactive search embeddings run
         under billing ALS. The Free grant unassigns when its owner leaves or is demoted. Member-day
         janitor ticks backfill missed days. Deleted documents are excluded from indexed-chunk
         capacity; restore counts those chunks. Web chat settles known compression cost when the
