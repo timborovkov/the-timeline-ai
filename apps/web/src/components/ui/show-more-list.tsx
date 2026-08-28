@@ -4,8 +4,7 @@ import type { ComponentType, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
-const FOLD_CONTROL_CLASS =
-  'text-xs font-medium text-fg-muted transition-colors hover:text-fg';
+const FOLD_CONTROL_CLASS = 'text-xs font-medium text-fg-muted transition-colors hover:text-fg';
 
 export function ShowMoreList<T>({
   items,

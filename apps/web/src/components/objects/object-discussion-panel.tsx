@@ -278,7 +278,9 @@ export function ObjectDiscussionPanel({
                 highlightCommentId === note.id && 'bg-signal/10',
               )}
             >
-              <div className={cn('flex items-baseline justify-between gap-2', OBJECT_ROW_META_CLASS)}>
+              <div
+                className={cn('flex items-baseline justify-between gap-2', OBJECT_ROW_META_CLASS)}
+              >
                 <span className={OBJECT_ROW_TITLE_CLASS}>{author}</span>
                 <RelativeTime at={new Date(note.createdAt)} timezone={timezone} />
               </div>
