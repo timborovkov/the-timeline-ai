@@ -13,14 +13,13 @@ import { useId, useState, useTransition } from 'react';
 import type * as objects from '@timeline/shared/objects/types';
 
 import { updateObjectMetadataAction } from '@/app/actions/objects';
+import { ObjectRailRow, ObjectRailSection } from '@/components/objects/object-rail-chrome';
 import {
-  ObjectRailRow,
-  ObjectRailSection,
   RAIL_FIELD_VALUE,
   RAIL_GHOST_ICON_BUTTON,
   RAIL_QUIET_ACTION,
   RAIL_UNDERLINE_CONTROL,
-} from '@/components/objects/object-rail-chrome';
+} from '@/components/objects/object-rail-tokens';
 import { notifyAction } from '@/lib/notify';
 
 function metadataFieldLabel(key: string): string {
