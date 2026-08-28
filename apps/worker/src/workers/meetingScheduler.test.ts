@@ -19,6 +19,7 @@ import { processMeetingSchedulerTick } from '#src/workers/meetingScheduler.js';
  */
 
 const joinMeetingMock = vi.hoisted(() => vi.fn());
+const leaveMeetingMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@timeline/shared', async () => {
   const actual = await vi.importActual<typeof SharedModule>('@timeline/shared');
@@ -27,7 +28,11 @@ vi.mock('@timeline/shared', async () => {
     childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
     meetingBots: {
       ...actual.meetingBots,
-      getMeetingBotProvider: vi.fn(() => ({ name: 'recall', joinMeeting: joinMeetingMock })),
+      getMeetingBotProvider: vi.fn(() => ({
+        name: 'recall',
+        joinMeeting: joinMeetingMock,
+        leaveMeeting: leaveMeetingMock,
+      })),
       resolveTranscriptWebhookUrl: vi.fn(
         () => 'https://timeline.test/api/webhooks/recall/transcript',
       ),
@@ -118,7 +123,9 @@ describe('processMeetingSchedulerTick', () => {
 
   beforeEach(async () => {
     joinMeetingMock.mockReset();
-    joinMeetingMock.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
+    joinMeetingMock.mockResolvedValue({ botId: 'bot-1' });
+    leaveMeetingMock.mockReset();
+    leaveMeetingMock.mockResolvedValue(undefined);
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seed(pg);
@@ -146,6 +153,37 @@ describe('processMeetingSchedulerTick', () => {
     const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
     expect(row?.status).toBe('joining');
     expect(row?.providerBotId).toBe('bot-1');
+    expect(row?.metadata).toEqual({ source: 'test', scheduler_claimed: true });
+  });
+
+  it('retries and confirms a durable provider leave request', async () => {
+    const [meeting] = await db
+      .insert(meetings)
+      .values({
+        teamId: TEAM_ID,
+        createdByUserId: USER_ID,
+        provider: 'recall',
+        providerBotId: 'bot-leave-pending',
+        platform: 'meet',
+        meetingUrl: 'https://meet.google.com/leave-pending',
+        status: 'cancelled',
+        metadata: {
+          transcript_closed_at: new Date().toISOString(),
+          provider_leave_pending: true,
+        },
+      })
+      .returning();
+    if (!meeting) throw new Error('missing pending-leave meeting');
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.providerLeavesConfirmed).toBe(1);
+    expect(leaveMeetingMock).toHaveBeenCalledWith('bot-leave-pending');
+    const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(row?.metadata).not.toHaveProperty('provider_leave_pending');
+    const metadata = row?.metadata as Record<string, unknown> | undefined;
+    expect(metadata?.transcript_closed_at).toBeTypeOf('string');
+    expect(metadata?.provider_leave_confirmed_at).toBeTypeOf('string');
   });
 
   it('still starts captures when the repeatable scheduler tick is more than a minute late', async () => {
@@ -263,7 +301,7 @@ describe('processMeetingSchedulerTick', () => {
     });
     joinMeetingMock.mockImplementation(async () => {
       await joinReleased;
-      return { botId: 'bot-1', raw: { id: 'bot-1' } };
+      return { botId: 'bot-1' };
     });
 
     const firstTick = processMeetingSchedulerTick({ db: db as never });

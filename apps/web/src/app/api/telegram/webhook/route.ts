@@ -1,3 +1,4 @@
+import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -172,13 +173,15 @@ export async function POST(req: Request): Promise<Response> {
       tg: api,
       agentDeps: {
         onApprovalDecision: ({ teamId, userId, decision, itemCount, isBulk }) => {
-          trackProductEventBestEffort(userId, 'approval_decision_submitted', {
-            teamId,
-            userId,
-            decision,
-            itemCount,
-            isBulk,
-          });
+          trackProductEventBestEffort(
+            { kind: 'user', userId, teamId },
+            'approval_decision_submitted',
+            {
+              decision,
+              itemCountBucket: bucketAnalyticsCount(itemCount),
+              isBulk,
+            },
+          );
         },
       },
       onAgentToolError(err, context) {

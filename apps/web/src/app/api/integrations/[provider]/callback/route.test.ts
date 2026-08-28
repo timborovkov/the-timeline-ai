@@ -107,14 +107,14 @@ describe('GET /api/integrations/[provider]/callback', () => {
       tokens: { accessToken: 'encrypted' },
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'integration_connected',
-      {
-        teamId: TEAM_ID,
-        userId: USER_ID,
-        providerConnectionId: CONNECTION_ID,
-        provider: 'github',
-      },
+      { provider: 'github' },
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'connect', kind: 'native', provider: 'github' },
     );
   });
 

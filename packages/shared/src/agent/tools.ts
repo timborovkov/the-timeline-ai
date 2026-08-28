@@ -1675,23 +1675,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               stale_fields: staleFields,
             };
           }
-          const item = await scope.boards.updateBoardItem(
+          const update = await scope.boards.updateBoardItem(
             input.itemId,
             buildBoardItemPatch(input.patch),
             { kind: 'agent', userId: scope.userId },
           );
-          if (!item) return { ok: false, error: 'not_found' };
-          const changedFields = Object.keys(input.patch).filter((field) => {
-            const previous = normalizeBoardItemComparableValue(
-              field,
-              currentBoardItemValue(current, field),
-            );
-            const next = normalizeBoardItemComparableValue(
-              field,
-              currentBoardItemValue(item, field),
-            );
-            return !valuesMatchForApproval(previous, next);
-          });
+          if (!update) return { ok: false, error: 'not_found' };
+          const { item } = update;
+          const changedFields = update.changedFields;
           return {
             ok: true,
             board_id: item.boardId,

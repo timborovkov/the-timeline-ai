@@ -48,6 +48,11 @@ vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaugh
 
 const ITEM_ID = '11111111-1111-4111-8111-111111111111';
 const SUGGESTION_ID = '22222222-2222-4222-8222-222222222222';
+const ANALYTICS_ACTOR = {
+  kind: 'user',
+  teamId: '44444444-4444-4444-8444-444444444444',
+  userId: '33333333-3333-4333-8333-333333333333',
+} as const;
 
 const SURFACES = [
   ['/app', 'layout'],
@@ -172,13 +177,11 @@ describe('suggestion item actions', () => {
 
     expect(fakes.fakeSuggestions.acceptSuggestionItemWithOutcome).toHaveBeenCalledWith(ITEM_ID);
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
       {
-        teamId: '44444444-4444-4444-8444-444444444444',
-        userId: '33333333-3333-4333-8333-333333333333',
         decision: 'accepted',
-        itemCount: 1,
+        itemCountBucket: 'one',
         isBulk: false,
       },
     );
@@ -190,9 +193,9 @@ describe('suggestion item actions', () => {
 
     expect(fakes.fakeSuggestions.rejectSuggestionItem).toHaveBeenCalledWith(ITEM_ID);
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
-      expect.objectContaining({ decision: 'rejected', itemCount: 1, isBulk: false }),
+      expect.objectContaining({ decision: 'rejected', itemCountBucket: 'one', isBulk: false }),
     );
     expectSuggestionSurfacesRevalidated();
   });
@@ -219,9 +222,9 @@ describe('suggestion item actions', () => {
       feedback: 'Miku made this promise, not Tim.',
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
-      expect.objectContaining({ decision: 'revised', itemCount: 1, isBulk: false }),
+      expect.objectContaining({ decision: 'revised', itemCountBucket: 'one', isBulk: false }),
     );
     expectSuggestionSurfacesRevalidated();
   });
@@ -241,9 +244,9 @@ describe('suggestion item actions', () => {
       project: { kind: 'create', projectName: 'Faba website redesign' },
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
-      expect.objectContaining({ decision: 'revised', itemCount: 1, isBulk: false }),
+      expect.objectContaining({ decision: 'revised', itemCountBucket: 'one', isBulk: false }),
     );
     expectSuggestionSurfacesRevalidated();
   });
@@ -376,9 +379,13 @@ describe('accept-all suggestion action', () => {
     expect(fakes.fakeSuggestions.acceptAll).toHaveBeenCalledWith(SUGGESTION_ID);
     expect(fakes.fakeSuggestions.acceptSelected).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
-      expect.objectContaining({ decision: 'accepted', itemCount: 2, isBulk: true }),
+      expect.objectContaining({
+        decision: 'accepted',
+        itemCountBucket: 'two_to_five',
+        isBulk: true,
+      }),
     );
     expectSuggestionSurfacesRevalidated();
   });
@@ -462,9 +469,13 @@ describe('accept-visible suggestions action', () => {
     expect(fakes.fakeSuggestions.acceptSuggestionItemWithOutcome).not.toHaveBeenCalled();
     expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
-      expect.objectContaining({ decision: 'accepted', itemCount: 2, isBulk: true }),
+      expect.objectContaining({
+        decision: 'accepted',
+        itemCountBucket: 'two_to_five',
+        isBulk: true,
+      }),
     );
     expectSuggestionSurfacesRevalidated();
   });
@@ -550,9 +561,9 @@ describe('reject-visible suggestions action', () => {
     ).resolves.toEqual({ ok: true });
 
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
-      expect.objectContaining({ decision: 'rejected', itemCount: 1, isBulk: true }),
+      expect.objectContaining({ decision: 'rejected', itemCountBucket: 'one', isBulk: true }),
     );
   });
 
@@ -571,9 +582,13 @@ describe('reject-visible suggestions action', () => {
     expect(fakes.fakeSuggestions.acceptAll).not.toHaveBeenCalled();
     expect(fakes.fakeSuggestions.acceptSelected).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      '33333333-3333-4333-8333-333333333333',
+      ANALYTICS_ACTOR,
       'approval_decision_submitted',
-      expect.objectContaining({ decision: 'rejected', itemCount: 2, isBulk: true }),
+      expect.objectContaining({
+        decision: 'rejected',
+        itemCountBucket: 'two_to_five',
+        isBulk: true,
+      }),
     );
     expectSuggestionSurfacesRevalidated();
   });

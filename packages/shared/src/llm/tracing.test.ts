@@ -65,7 +65,7 @@ describe('llm LangSmith tracing', () => {
   it('enables LangSmith provider options when configured', () => {
     process.env = {
       ...process.env,
-      NODE_ENV: 'production',
+      NODE_ENV: 'test',
       LANGSMITH_TRACING: 'true',
       LANGSMITH_API_KEY: 'lsv2_test_key',
       LANGSMITH_PROJECT: 'timeline-production',

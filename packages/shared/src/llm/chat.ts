@@ -20,6 +20,11 @@ import {
 } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
+  OPENROUTER_DISABLE_CACHE_HEADERS,
+  OPENROUTER_OFFICIAL_BASE_URL,
+  openRouterPrivateProviderOptions,
+} from '#src/llm/privacy.js';
+import {
   generateObject,
   generateText,
   streamText,
@@ -110,24 +115,16 @@ ${jsonSchema}`;
 }
 
 function openRouterRequireParametersOptions(): GenerateObjectProviderOptions {
-  return {
-    openrouter: {
-      provider: {
-        require_parameters: true,
-      },
-    },
-  };
+  return openRouterPrivateProviderOptions({
+    provider: { require_parameters: true },
+  });
 }
 
 function openRouterJsonObjectOptions(): GenerateObjectProviderOptions {
-  return {
-    openrouter: {
-      provider: {
-        require_parameters: true,
-      },
-      response_format: { type: 'json_object' },
-    },
-  };
+  return openRouterPrivateProviderOptions({
+    provider: { require_parameters: true },
+    response_format: { type: 'json_object' },
+  });
 }
 
 export function streamChatFallbackModelIds(modelId: string): string[] {
@@ -150,12 +147,9 @@ function openRouterModelFallbackOptions(
   modelId: string,
 ): GenerateObjectProviderOptions | undefined {
   const fallbackModelIds = streamChatFallbackModelIds(modelId);
-  if (fallbackModelIds.length === 0) return undefined;
-  return {
-    openrouter: {
-      models: [modelId, ...fallbackModelIds],
-    },
-  };
+  return openRouterPrivateProviderOptions({
+    ...(fallbackModelIds.length > 0 ? { models: [modelId, ...fallbackModelIds] } : {}),
+  });
 }
 
 function errorMessage(err: unknown): string {
@@ -281,11 +275,12 @@ export function buildOpenRouterLanguageModel(
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.chat');
   }
-  const baseURL = env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1';
+  const baseURL = env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL;
   const provider = createOpenAICompatible({
     name: 'openrouter',
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
+    headers: OPENROUTER_DISABLE_CACHE_HEADERS,
     supportsStructuredOutputs: options.supportsStructuredOutputs ?? true,
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });

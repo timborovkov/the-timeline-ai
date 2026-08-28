@@ -1,6 +1,6 @@
 'use client';
 
-import { BookOpen, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ExternalLink, LifeBuoy } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
@@ -125,7 +125,7 @@ export function DesktopSidebar({
               href="/help"
               target="_blank"
               rel="noreferrer"
-              aria-label="Open help docs in a new tab"
+              aria-label="Open Help & support in a new tab"
               className={cn(
                 'rounded-sm text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
@@ -134,16 +134,16 @@ export function DesktopSidebar({
                   : 'grid size-9 place-items-center',
               )}
             >
-              <BookOpen aria-hidden="true" className="size-4" />
+              <LifeBuoy aria-hidden="true" className="size-4" />
               {expanded ? (
                 <>
-                  <span className="min-w-0 flex-1 truncate">Help</span>
+                  <span className="min-w-0 flex-1 truncate">Help &amp; support</span>
                   <ExternalLink aria-hidden="true" className="size-3.5 shrink-0" />
                 </>
               ) : null}
             </Link>
           </TooltipTrigger>
-          {!expanded ? <TooltipContent side="right">Help docs</TooltipContent> : null}
+          {!expanded ? <TooltipContent side="right">Help &amp; support</TooltipContent> : null}
         </Tooltip>
         <TeamSwitcher
           active={active}

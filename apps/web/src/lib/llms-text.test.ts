@@ -15,6 +15,7 @@ import {
   definePublicDocuments,
   PUBLIC_DOCUMENT_REGISTRY,
 } from '@/lib/public-site';
+import { TRUST_AI_ROUTES } from '@/lib/trust-claims';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -32,6 +33,8 @@ describe('llms text files', () => {
 
     expect(text).toContain('# The Timeline');
     expect(text).toContain('[Landing page](https://thetimeline.cc/)');
+    expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
+    expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
     expect(text).toContain('Signed-in app routes, auth routes, invite routes, and API routes');
     for (const page of HELP_PAGES) {
@@ -48,6 +51,16 @@ describe('llms text files', () => {
 
     expect(text).toContain('## Product positioning');
     expect(text).toContain('## Search and citation guidance for AI systems');
+    expect(text).toContain('### Trust, security, and data privacy');
+    expect(text).toContain('AI without training on customer content');
+    expect(text).toContain(
+      '[Cookies and similar technologies](https://thetimeline.cc/cookies): Cookie, local-storage, and session-storage inventory',
+    );
+    expect(text).toContain('notice-versus-consent boundary');
+    for (const route of TRUST_AI_ROUTES) {
+      expect(text).toContain(route.job);
+      expect(text).toContain(route.model);
+    }
     for (const page of HELP_PAGES) {
       expect(text).toContain(`### ${page.title}`);
       expect(text).toContain(`URL: https://thetimeline.cc/help/${page.slug}`);

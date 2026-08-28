@@ -1,16 +1,57 @@
 import * as Sentry from '@sentry/nextjs';
 
+const PRE_ACCEPTANCE_ACTIONS = new Set([
+  'accept_invite',
+  'accept_legal',
+  'resend_email_verification',
+  'sign_in',
+  'sign_in_with_git_hub',
+  'sign_up',
+  'submit_support_request',
+]);
+
+const SENTRY_TRACE_HEADER = /^[0-9a-f]{32}-[0-9a-f]{16}(?:-[01])?$/i;
+
 export async function runSentryServerAction<T>(
   operation: string,
   callback: () => Promise<T> | T,
 ): Promise<T> {
+  const requestHeaders = readRequestHeaders();
   return Sentry.withServerActionInstrumentation(
     operation,
     {
-      headers: readRequestHeaders(),
+      headers: requestHeaders.then(sentryTraceHeaders),
     },
-    callback,
+    async () => {
+      if (!PRE_ACCEPTANCE_ACTIONS.has(operation)) {
+        await requireCurrentLegalSession(requestHeaders);
+      }
+      return callback();
+    },
   );
+}
+
+function sentryTraceHeaders(input: Headers): Headers {
+  const safe = new Headers();
+  const trace = input.get('sentry-trace')?.trim();
+  if (trace && SENTRY_TRACE_HEADER.test(trace)) safe.set('sentry-trace', trace);
+  return safe;
+}
+
+async function requireCurrentLegalSession(requestHeaders: Promise<Headers>): Promise<void> {
+  // Unit tests invoke exported functions directly, outside the Next.js action
+  // transport. Dedicated tests supply Next-Action and exercise this boundary.
+  if (process.env.NODE_ENV === 'test' && !(await requestHeaders).has('next-action')) return;
+  const [{ auth }, { hasCurrentLegalSession }, { redirect }] = await Promise.all([
+    import('@/lib/auth'),
+    import('@/lib/auth.config'),
+    import('next/navigation'),
+  ]);
+  const session = await auth();
+  // Individual actions remain responsible for authentication and authorization.
+  // This shared boundary adds the current-document gate for authenticated users.
+  if (!session?.user || hasCurrentLegalSession(session.user)) return;
+  redirect('/legal/accept?returnTo=%2Fapp');
 }
 
 async function readRequestHeaders(): Promise<Headers> {

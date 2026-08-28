@@ -35,13 +35,19 @@ import { hasSlackInstallForTeam, listSlackConversationsForTeam } from '@timeline
 import { buildInboundEmail, randomSlugSuffix, randomToken, slugify } from '@timeline/shared/slug';
 import { assertNotLastOwner } from '@timeline/shared/team-roles';
 import { withTeam } from '@timeline/shared/team-scope';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 
-import { ACTIVE_TEAM_COOKIE, resolveActiveTeam } from '@/lib/active-team';
+import {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  resolveActiveTeam,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { safeMarkOnboardingStep } from '@/lib/onboarding';
@@ -114,11 +120,13 @@ export async function createTeamAction(
     }
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, teamId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 365,
+    cookieStore.set(
+      ACTIVE_TEAM_COOKIE,
+      serializeActiveTeamCookie(teamId),
+      activeTeamCookieOptions(),
+    );
+    trackProductEventBestEffort({ kind: 'user', userId: session.user.id, teamId }, 'team_created', {
+      source: 'manual',
     });
     revalidatePath('/app');
     redirect('/app/timeline');
@@ -152,12 +160,15 @@ export async function renameTeamAction(
       return { error: 'Only admins can rename a team' };
     }
 
+    let changed: boolean;
     try {
-      await db.transaction(async (tx) => {
-        await tx
+      changed = await db.transaction(async (tx) => {
+        const updated = await tx
           .update(teams)
           .set({ name: parsed.data.name })
-          .where(eq(teams.id, parsed.data.teamId));
+          .where(and(eq(teams.id, parsed.data.teamId), ne(teams.name, parsed.data.name)))
+          .returning({ id: teams.id });
+        if (!updated[0]) return false;
         await tx.insert(auditLog).values({
           teamId: parsed.data.teamId,
           actorUserId: session.user.id,
@@ -167,11 +178,19 @@ export async function renameTeamAction(
           targetVisibility: 'team',
           metadata: { setting: 'team.name' },
         });
+        return true;
       });
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'rename_team' });
       return { error: 'Failed to rename team' };
     }
+
+    if (!changed) return { ok: true };
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: parsed.data.teamId },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
 
     revalidatePath('/app', 'layout');
     revalidatePath('/app/team');
@@ -251,15 +270,26 @@ export async function updateInboundEmailWhitelistAction(
       return { error: 'Only admins can update email ingest settings' };
     }
 
+    let changed: boolean;
     try {
-      await db.transaction(async (tx) => {
-        await tx
+      changed = await db.transaction(async (tx) => {
+        const updated = await tx
           .update(teams)
           .set({
             inboundSenderWhitelistEnabled: enabled,
             inboundSenderWhitelist: whitelist,
           })
-          .where(eq(teams.id, active.teamId));
+          .where(
+            and(
+              eq(teams.id, active.teamId),
+              or(
+                ne(teams.inboundSenderWhitelistEnabled, enabled),
+                sql<boolean>`${teams.inboundSenderWhitelist} IS DISTINCT FROM ${JSON.stringify(whitelist)}::jsonb`,
+              ),
+            ),
+          )
+          .returning({ id: teams.id });
+        if (!updated[0]) return false;
         await tx.insert(auditLog).values({
           teamId: active.teamId,
           actorUserId: session.user.id,
@@ -273,6 +303,7 @@ export async function updateInboundEmailWhitelistAction(
             senderCount: whitelist.length,
           },
         });
+        return true;
       });
     } catch (err) {
       reportCaughtError(err, {
@@ -281,6 +312,13 @@ export async function updateInboundEmailWhitelistAction(
       });
       return { error: 'Failed to update email sender whitelist' };
     }
+
+    if (!changed) return { ok: true };
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
 
     revalidatePath('/app/team');
     return { ok: true };
@@ -307,7 +345,10 @@ export async function updateDigestPreferenceAction(
 
     const enabled = formData.get('dailyDigestEnabled') === 'on';
     const existing = await db
-      .select({ id: messagePreferences.id })
+      .select({
+        id: messagePreferences.id,
+        dailyDigestEnabled: messagePreferences.dailyDigestEnabled,
+      })
       .from(messagePreferences)
       .where(
         and(
@@ -317,11 +358,15 @@ export async function updateDigestPreferenceAction(
       )
       .limit(1);
 
-    if (existing[0]) {
+    const preference = existing[0];
+    const changed = preference ? preference.dailyDigestEnabled !== enabled : !enabled;
+    if (!changed) return { ok: true };
+
+    if (preference) {
       await db
         .update(messagePreferences)
         .set({ dailyDigestEnabled: enabled, updatedAt: new Date() })
-        .where(eq(messagePreferences.id, existing[0].id));
+        .where(eq(messagePreferences.id, preference.id));
     } else {
       const calendarSettings = await scope.calendar.getCalendarSettings();
       await db.insert(messagePreferences).values({
@@ -334,6 +379,11 @@ export async function updateDigestPreferenceAction(
     }
 
     await safeMarkOnboardingStep(scope, 'daily_digest');
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
     revalidatePath('/app');
     revalidatePath('/app/team');
     return { ok: true };
@@ -452,6 +502,12 @@ export async function addDigestDestinationAction(
       },
     });
 
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+
     revalidatePath('/app/team');
     return { ok: true };
   });
@@ -503,6 +559,12 @@ export async function removeDigestDestinationAction(
       },
     });
 
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+
     revalidatePath('/app/team');
     return { ok: true };
   });
@@ -534,6 +596,8 @@ export async function updateTeamTimezoneAction(
     }
 
     try {
+      const current = await scope.calendar.getCalendarSettings();
+      if (current.defaultTimezone === parsed.data.timezone) return { ok: true };
       await db.transaction(async (tx) => {
         const updatedAt = new Date();
         await tx
@@ -568,6 +632,12 @@ export async function updateTeamTimezoneAction(
       reportCaughtError(err, { surface: 'server_action', operation: 'update_team_timezone' });
       return { error: 'Failed to update team timezone' };
     }
+
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
 
     revalidatePath('/app', 'layout');
     revalidatePath('/app/team');
@@ -781,6 +851,11 @@ export async function inviteMemberAction(
       return { error: 'Failed to create invite' };
     }
 
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'invite_create' },
+    );
     const result = await deliverInviteEmail(delivery);
     revalidatePath('/app/team');
     return result;
@@ -899,6 +974,11 @@ export async function revokeInviteAction(formData: FormData): Promise<TeamMutati
       return { ok: true };
     });
     if (outcome.error) return outcome;
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'invite_revoke' },
+    );
     revalidatePath('/app/team');
     return { ok: true };
   });
@@ -926,46 +1006,51 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
     }
 
     try {
-      const outcome = await db.transaction(async (tx): Promise<TeamMutationResult> => {
-        const targetRows = await tx
-          .select({ role: teamMembers.role })
-          .from(teamMembers)
-          .where(
-            and(
-              eq(teamMembers.teamId, active.teamId),
-              eq(teamMembers.userId, memberUserId),
-              isNull(teamMembers.removedAt),
-            ),
-          )
-          .limit(1)
-          .for('update');
-        const target = targetRows[0];
-        if (!target) return { error: 'That member is no longer on this team' };
-        if (target.role === role) return { ok: true };
-        if (target.role === 'owner' && role !== 'owner') {
-          await assertNotLastOwner(tx, active.teamId, memberUserId);
-        }
-        await tx
-          .update(teamMembers)
-          .set({ role })
-          .where(and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)));
-        await tx.insert(auditLog).values({
-          teamId: active.teamId,
-          actorUserId: session.user.id,
-          action: 'settings.change',
-          targetType: 'team',
-          targetId: active.teamId,
-          targetVisibility: 'team',
-          metadata: {
-            setting: 'team.member_role',
-            memberUserId,
-            previousRole: target.role,
-            role,
-          },
-        });
-        return { ok: true };
-      });
+      const outcome = await db.transaction(
+        async (tx): Promise<TeamMutationResult & { changed?: boolean }> => {
+          const targetRows = await tx
+            .select({ role: teamMembers.role })
+            .from(teamMembers)
+            .where(
+              and(
+                eq(teamMembers.teamId, active.teamId),
+                eq(teamMembers.userId, memberUserId),
+                isNull(teamMembers.removedAt),
+              ),
+            )
+            .limit(1)
+            .for('update');
+          const target = targetRows[0];
+          if (!target) return { error: 'That member is no longer on this team' };
+          if (target.role === role) return { ok: true, changed: false };
+          if (target.role === 'owner' && role !== 'owner') {
+            await assertNotLastOwner(tx, active.teamId, memberUserId);
+          }
+          await tx
+            .update(teamMembers)
+            .set({ role })
+            .where(
+              and(eq(teamMembers.teamId, active.teamId), eq(teamMembers.userId, memberUserId)),
+            );
+          await tx.insert(auditLog).values({
+            teamId: active.teamId,
+            actorUserId: session.user.id,
+            action: 'settings.change',
+            targetType: 'team',
+            targetId: active.teamId,
+            targetVisibility: 'team',
+            metadata: {
+              setting: 'team.member_role',
+              memberUserId,
+              previousRole: target.role,
+              role,
+            },
+          });
+          return { ok: true, changed: true };
+        },
+      );
       if (outcome.error) return outcome;
+      if (!outcome.changed) return { ok: true };
     } catch (e) {
       if (e instanceof Error && e.message === 'last_owner') {
         reportCaughtError(e, { surface: 'server_action', operation: 'change_member_role' });
@@ -973,6 +1058,11 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
       }
       throw e;
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'member_role_change' },
+    );
     revalidatePath('/app/team');
     return { ok: true };
   });
@@ -1371,6 +1461,11 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
         });
       }
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'team_management_action_completed',
+      { action: 'member_remove' },
+    );
     revalidatePath('/app/team');
     return { ok: true };
   });

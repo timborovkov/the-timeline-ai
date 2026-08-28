@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Railway deployment setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-21</span></div>
       <p class="tldr">
         Project + environment provisioning for staging and production. For the full service
         architecture see <a href="../railway.html">docs/railway.html</a>.
@@ -37,14 +37,17 @@
         </li>
       </ol>
 
-      <h2 id="managed-plugins">2. Managed plugins</h2>
+      <h2 id="database-templates">2. Database templates</h2>
       <p>Add via <strong>+ New → Database</strong>:</p>
       <ul>
         <li>
-          <strong>Postgres</strong> — Railway plugin. Copy <code>DATABASE_URL</code> from the
-          plugin's <strong>Connect</strong> tab into the project's shared variables.
+          <strong>PostgreSQL</strong> — Railway database template. Copy
+          <code>DATABASE_URL</code> from the service's <strong>Connect</strong> tab into the
+          project's shared variables.
         </li>
-        <li><strong>Redis</strong> — Railway plugin. Copy <code>REDIS_URL</code> likewise.</li>
+        <li>
+          <strong>Redis</strong> — Railway database template. Copy <code>REDIS_URL</code> likewise.
+        </li>
       </ul>
 
       <h2 id="custom-services">3. Custom services</h2>
@@ -89,11 +92,16 @@
         document-extract consumer (ADR 0013). Set <code>WORKER_MODE=document-extract</code>,
         <code>DAYTONA_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>,
         <code>REDIS_URL</code>, and S3 document-bucket variables. Set
-        <code>DAYTONA_SNAPSHOT=auto</code> so each deployed extractor resolves its matching content
-        hash. <code>DAYTONA_SNAPSHOT_ENSURE=true</code> (default) create-once if missing; it does
-        not rebuild every restart. Push CI never deletes snapshots: idle deployed extractors have no
-        persistent Daytona sandbox to reveal the hash they still need. For manual cleanup, pass
-        every production/staging deployed hash as the workflow's
+        <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code> only after an operator-only
+        management-key check verifies the exact inference-key assignment, model allowlist,
+        guardrail/ZDR settings, and account privacy settings. Never add the management key to
+        Railway runtime variables. See <a href="./openrouter.html">OpenRouter setup</a> for the
+        generation command. Set <code>DAYTONA_SNAPSHOT=auto</code> so each deployed extractor
+        resolves its matching content hash. <code>DAYTONA_SNAPSHOT_ENSURE=true</code> (default)
+        create-once if missing; it does not rebuild every restart. Push CI never deletes snapshots:
+        idle deployed extractors have no persistent Daytona sandbox to reveal the hash they still
+        need. For manual cleanup, pass every production/staging deployed hash as the workflow's
         <code>deployed_snapshots</code> input (or <code>DAYTONA_ACTIVE_SNAPSHOTS</code> locally).
         Collect each hash from that environment's successful orchestrator startup log entry (<code
           >document-extract Daytona snapshot ensured</code
@@ -117,8 +125,10 @@
         In <strong>Settings → Variables</strong>, set everything from <code>.env.example</code> that
         isn't a local-only default. Mark provider tokens and secrets (OpenRouter, Telegram, Slack,
         Postmark, Sentry, and native integration OAuth client secrets such as GitHub, Linear, and
-        Monday.com) as <strong>secret</strong>. PostHog's public project key and host are not
-        secrets, but keep them environment-specific.
+        Monday.com) as <strong>secret</strong>. PostHog's project key and host are not secrets, but
+        keep them environment-specific. The independent
+        <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> is secret and must never be exposed to the
+        browser.
       </p>
       <p>
         <code>TELEGRAM_BOT_TOKEN</code> must be available to both app services. The web service owns
@@ -127,6 +137,19 @@
         refresh and final Telegram reply. Slack delivery reconstructs its worker adapter from
         encrypted installed-workspace tokens using <code>SECRETS_ENCRYPTION_KEY</code>, so do not
         add a separate Slack bot token variable.
+      </p>
+      <p>
+        Meeting capture also requires <code>RECALL_API_KEY</code>, <code>RECALL_BASE_URL</code>,
+        <code>RECALL_WORKSPACE_VERIFICATION_SECRET</code>, and the optional transcript URL and
+        display-name variables documented in the
+        <a href="./meeting-bots.html">Recall.ai setup guide</a>. Only older dashboard status
+        endpoints use the legacy <code>RECALL_STATUS_WEBHOOK_SECRET</code> fallback. Hosted services
+        must set <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> and
+        <code>RECALL_RETENTION=1</code> (or leave retention empty, which resolves to one hour); env
+        validation rejects longer or indefinite media retention in that hosted production mode. It
+        also accepts only Recall's documented HTTPS regional <code>/api/v1</code> endpoints and pins
+        the transcript callback to <code>AUTH_URL</code>'s origin plus
+        <code>/api/webhooks/recall/transcript</code> with no query or fragment.
       </p>
       <p>
         Keep <code>CROSS_SOURCE_EVIDENCE_MODE=off</code> until the environment has passed its shadow
@@ -141,7 +164,8 @@
       <p>
         Keep <code>NODE_ENV</code> as <code>production</code> for both Railway environments. Use the
         Railway environment name and <code>SENTRY_ENVIRONMENT</code> for labels like
-        <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>.
+        <code>staging</code>; the app rejects <code>NODE_ENV=staging</code>. Set
+        <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> on every Timeline-operated Railway service.
       </p>
       <p>
         Set <code>AUTH_URL</code> to the primary public origin, such as
@@ -157,9 +181,16 @@
         use rate limits, permission checks, and product quotas instead.
       </p>
       <p>
-        For product analytics, set <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
-        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code>. For error monitoring, set
-        <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
+        For personless surface counts and pseudonymous server/worker product analytics, set
+        <code>POSTHOG_PROJECT_KEY</code>, <code>POSTHOG_HOST=https://eu.i.posthog.com</code>, and a
+        separate high-entropy <code>ANALYTICS_PSEUDONYMIZATION_KEY</code>. Set
+        <code>NEXT_PUBLIC_POSTHOG_KEY</code> and
+        <code>NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com</code> only when the consent-gated
+        public-browser path and provider account have been verified; leaving the public key empty
+        disables browser capture. Put the server analytics values only on <code>web</code> and the
+        main <code>worker</code>; the document-extract orchestrator does not emit product analytics
+        and its startup allowlist rejects them. See <a href="analytics.html">Analytics setup</a>.
+        For error monitoring, set <code>SENTRY_DSN</code>, <code>NEXT_PUBLIC_SENTRY_DSN</code>,
         <code>NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE</code>,
         <code>NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE</code>, <code>SENTRY_ENVIRONMENT</code>,
         <code>SENTRY_TRACES_SAMPLE_RATE</code>, <code>SENTRY_PROFILES_SAMPLE_RATE</code>, and
@@ -169,15 +200,28 @@
         upload and worker <code>sentry-cli</code> upload.
       </p>
       <p>
-        For LLM observability, set <code>LANGSMITH_TRACING=true</code>,
-        <code>LANGSMITH_API_KEY</code>, and <code>LANGSMITH_PROJECT=timeline-production</code>. Keep
-        <code>LANGSMITH_ENDPOINT=https://api.smith.langchain.com</code> unless the workspace uses
-        another LangSmith region, and set <code>LANGSMITH_WORKSPACE_ID</code> when using an
-        org-scoped API key. Rich LangSmith traces include private prompt and output content from
-        timeline events, documents, meetings, and integrations, so treat LangSmith access as
-        sensitive operational access. Set <code>LANGSMITH_TRACING_SAMPLING_RATE</code> to a value
-        between <code>0</code> and <code>1</code> to cap trace volume. Raw media/audio bytes are
-        redacted from traces, and embeddings are not sent to LangSmith by default.
+        Keep <code>LANGSMITH_TRACING=false</code> in hosted production. Env validation rejects
+        production tracing because rich traces can include private prompt and output content. Use it
+        only in controlled development or evaluation environments with synthetic or explicitly
+        approved data. The production OpenRouter key must be restricted to the code-owned model
+        catalog with applicable ZDR guardrails for every <code>zdr_required</code> role. Hosted
+        production also requires <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code>. The token invalidates on inference-key,
+        guardrail, catalog, or policy drift, but provider-side assignment and settings still require
+        a separate management-key deployment check and dated evidence. Never deploy that management
+        key to the app. The voice-transcription role remains the separately disclosed retained,
+        no-training quality exception.
+      </p>
+      <p>
+        Keep <code>LEGAL_PUBLICATION_READY=false</code> until G-20 in the security/privacy/trust
+        register is resolved and dated official registry evidence is retained. In production that
+        default withholds the binding Terms, legal acceptance, and first-time account signup. The
+        <code>true</code> value is only an operator attestation after evidence exists, not a
+        substitute for evidence. Once ready, a release that changes <code>TERMS_VERSION</code> or
+        <code>PRIVACY_VERSION</code> forces existing people through <code>/legal/accept</code> and
+        makes human product APIs return <code>428 legal_acceptance_required</code> until acceptance.
+        Publish and review the legal text before deploying that bump, brief support/API consumers,
+        and verify the append-only acceptance migration first.
       </p>
 
       <h2 id="healthchecks">6. Healthchecks</h2>

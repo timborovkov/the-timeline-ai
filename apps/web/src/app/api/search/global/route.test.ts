@@ -26,11 +26,15 @@ const fakes = vi.hoisted(() => ({
   fakeIsPinnedMany: vi.fn(),
   fakeCheckRateLimit: vi.fn(),
   fakeGetEnv: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
@@ -268,6 +272,23 @@ describe('POST /api/search/global', () => {
     expect(data.results[0]?.id).toBe('github-integration');
     expect(fakes.fakeSearchEvents).toHaveBeenCalled();
     expect(fakes.fakeSearchDocumentChunksPage).toHaveBeenCalled();
+    const analyticsCall = fakes.trackProductEventBestEffort.mock.calls.at(-1) as
+      | unknown[]
+      | undefined;
+    expect(analyticsCall?.[0]).toEqual({ kind: 'user', teamId: TEAM_ID, userId: USER_ID });
+    expect(analyticsCall?.[1]).toBe('search_performed');
+    const analyticsProperties = analyticsCall?.[2];
+    expect(analyticsProperties).toMatchObject({ surface: 'global', hasFilters: false });
+    if (
+      analyticsProperties === null ||
+      typeof analyticsProperties !== 'object' ||
+      !('resultCountBucket' in analyticsProperties)
+    ) {
+      throw new TypeError('Expected search analytics to include a result-count bucket.');
+    }
+    expect(analyticsProperties.resultCountBucket).toMatch(
+      /^(one_to_ten|eleven_to_fifty|fifty_one_plus)$/,
+    );
   });
 
   it('does not run semantic search for short preview queries', async () => {

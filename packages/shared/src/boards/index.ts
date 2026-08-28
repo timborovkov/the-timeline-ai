@@ -276,6 +276,12 @@ export interface BoardItemPatch {
   customFields?: Record<string, unknown>;
 }
 
+export interface BoardItemUpdateResult {
+  item: BoardItemRow;
+  changed: boolean;
+  changedFields: (keyof BoardItemPatch)[];
+}
+
 export interface BoardReadOptions {
   itemLimit?: number | 'all';
   itemFilter?: BoardItemFilter;
@@ -1871,7 +1877,7 @@ export function createBoardScope({
       itemId: string,
       patch: BoardItemPatch,
       actor: { kind: ActorKind; userId?: string | null },
-    ): Promise<BoardItemRow | null> {
+    ): Promise<BoardItemUpdateResult | null> {
       if (!UUID_RE.test(itemId)) return null;
       const current = await itemWithObject(itemId);
       if (!current || current.archivedAt) return null;
@@ -1892,7 +1898,8 @@ export function createBoardScope({
         if (value === undefined) return false;
         return !stableEqual(current[key], value);
       });
-      if (changed.length === 0) return current;
+      if (changed.length === 0) return { item: current, changed: false, changedFields: [] };
+      const changedFields = changed.map(([field]) => field);
       const dueDateCalendarSync = await db.transaction(async (tx) => {
         const now = new Date();
         const updatedRows = await tx
@@ -1939,7 +1946,6 @@ export function createBoardScope({
           previousValue: current[field],
           newValue: value,
         }));
-        const changedFields = boardChanges.map((change) => change.field);
         const sourceEventId = await createBoardSystemRawEvent({
           db: tx,
           teamId: scope.teamId,
@@ -1978,7 +1984,9 @@ export function createBoardScope({
         return result;
       });
       await afterDueDateCalendarSync(scope.teamId, dueDateCalendarSync);
-      return itemWithObject(itemId);
+      const item = await itemWithObject(itemId);
+      if (!item) throw new Error('Board item not found after update');
+      return { item, changed: true, changedFields };
     },
 
     async removeBoardItem(

@@ -59,7 +59,7 @@ describe('intercepted merge route states', () => {
     expect(html).toContain('No objects have been merged. Your saved object data is unchanged.');
 
     render(<MergeObjectModalError error={new Error('preview failed')} reset={reset} />);
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
 

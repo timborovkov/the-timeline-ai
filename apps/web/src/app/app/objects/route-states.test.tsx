@@ -34,7 +34,7 @@ describe('Objects route states', () => {
       screen.getByText('Objects could not be loaded. Check your connection, then try again.'),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
 

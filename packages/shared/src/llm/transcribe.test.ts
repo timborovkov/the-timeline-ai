@@ -82,6 +82,7 @@ describe('transcribeAudio', () => {
       headers: {
         Authorization: 'Bearer sk-test-key',
         'Content-Type': 'application/json',
+        'X-OpenRouter-Cache': 'false',
       },
     });
     expect(JSON.parse(init.body)).toEqual({

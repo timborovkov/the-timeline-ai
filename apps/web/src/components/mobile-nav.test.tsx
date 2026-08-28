@@ -51,7 +51,7 @@ describe('MobileNav', () => {
     expect(screen.getByRole('dialog', { name: 'Navigation' })).toBeTruthy();
     expect(document.body.style.overflow).toBe('hidden');
 
-    const helpLink = screen.getByRole('link', { name: 'Open help docs in a new tab' });
+    const helpLink = screen.getByRole('link', { name: 'Open Help & support in a new tab' });
     helpLink.addEventListener('click', (event) => {
       event.preventDefault();
     });

@@ -1,6 +1,7 @@
 import * as email from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
+import * as meetingBots from '@timeline/shared/meeting-bots';
 import * as meetingsScope from '@timeline/shared/meetings';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -19,18 +20,16 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const log = childLogger('web:api:recall:transcript');
+const TERMINAL_MEETING_STATUSES = new Set(['failed', 'skipped', 'no_show', 'cancelled']);
 
-// Unsigned realtime transcript webhook from Recall.ai. Security relies on:
-//   * botId lookup — bots are issued by Recall after our authenticated
-//     joinMeeting() call, so a forged botId cannot match any meeting.
-//   * Zod validation — malformed payloads are rejected without DB writes.
-//   * Per-bot rate limit — caps a runaway / spoofed sender.
-//
-// We deliberately do NOT sign this endpoint. Recall does not Svix-sign
-// realtime transcript events; the proof-of-association IS the botId.
+// Workspace-signed realtime transcript webhook from Recall.ai. Authentication
+// covers the exact raw body and runs before parsing, rate limiting, bot lookup,
+// or team-scoped persistence. Bot-id correlation and rate limits remain
+// defense in depth after the provider signature is accepted.
 //
 // Status-code contract:
-//   - 503 when not configured.
+//   - 503 when the API key or workspace verification secret is not configured.
+//   - 401 on a missing, stale, malformed, or invalid signature.
 //   - 200 on bad payload, unknown bot, dedup — Recall must not retry.
 //   - 200 on successful chunk insert.
 //   - 503 only on top-level handler crash.
@@ -42,6 +41,12 @@ const transcriptSchema = z
       .object({
         bot: z.object({ id: z.string() }).optional(),
         bot_id: z.string().optional(),
+        transcript: z
+          .object({
+            id: z.string().nullable().optional(),
+          })
+          .loose()
+          .optional(),
         data: z
           .object({
             words: z
@@ -65,11 +70,6 @@ const transcriptSchema = z
                 id: z.number().or(z.string()).nullable().optional(),
               })
               .optional(),
-            transcript: z
-              .object({
-                id: z.string().nullable().optional(),
-              })
-              .optional(),
           })
           .loose()
           .optional(),
@@ -88,7 +88,6 @@ function buildChunkFromPayload(payload: z.infer<typeof transcriptSchema>): {
   text: string;
   startMs: number;
   endMs: number;
-  providerChunkId: string | null;
 } | null {
   const botId = payload.data.bot?.id ?? payload.data.bot_id;
   if (!botId) return null;
@@ -111,14 +110,19 @@ function buildChunkFromPayload(payload: z.infer<typeof transcriptSchema>): {
     text,
     startMs,
     endMs,
-    providerChunkId: d.transcript?.id ?? null,
   };
 }
 
-// react-doctor-disable-next-line react-doctor/webhook-signature-risk -- Recall realtime transcript events are unsigned by provider design; botId lookup, schema validation, and IP/bot rate limits are the endpoint's proof-of-association controls.
+function signedDeliveryId(headers: Headers): string {
+  // A successful signature verification guarantees one of these aliases is a
+  // non-empty part of the signed payload. This delivery id, unlike Recall's
+  // transcript resource id, is stable across retries of one webhook message.
+  return headers.get('svix-id') ?? headers.get('webhook-id') ?? '';
+}
+
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
-  if (!env.RECALL_API_KEY) {
+  if (!env.RECALL_API_KEY || !env.RECALL_WORKSPACE_VERIFICATION_SECRET) {
     reportHandledEvent({
       message: 'recall_transcript_webhook_disabled',
       surface: 'api',
@@ -129,11 +133,38 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
 
+  const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.recallTranscript);
+  if (bodyResult.tooLarge) return payloadTooLargeResponse();
+  const body = bodyResult.text;
+  const verify = meetingBots.verifySvixSignature({
+    body,
+    headers: req.headers,
+    secret: env.RECALL_WORKSPACE_VERIFICATION_SECRET,
+  });
+  if (!verify.ok) {
+    log.warn({ reason: verify.reason }, 'webhook_verification_failed');
+    reportHandledEvent({
+      message: 'recall_transcript_webhook_verification_failed',
+      surface: 'api',
+      operation: 'recall_transcript_webhook_verification',
+      level: 'warning',
+      tags: {
+        reason: verify.reason,
+        has_webhook_id: req.headers.has('webhook-id') || req.headers.has('svix-id'),
+        has_webhook_timestamp:
+          req.headers.has('webhook-timestamp') || req.headers.has('svix-timestamp'),
+        has_webhook_signature:
+          req.headers.has('webhook-signature') || req.headers.has('svix-signature'),
+      },
+    });
+    return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
+  }
+  const providerChunkId = signedDeliveryId(req.headers);
+
   // Per-IP gate. Sits in front of the meeting lookup so an attacker
   // rotating random botIds can't burn Postgres capacity hammering the
-  // `provider_bot_id` index. Recall's transcript webhook is unsigned by
-  // design; the per-bot bucket below handles per-meeting burst, but only
-  // for known bot ids. Always return 200 so the sender doesn't retry-storm.
+  // `provider_bot_id` index. The per-bot bucket below handles per-meeting
+  // bursts. Always return 200 so the sender doesn't retry-storm.
   const clientIp = email.clientIpFromHeaders(req.headers);
   if (clientIp) {
     const ipRl = await rateLimit.checkRateLimit({
@@ -146,11 +177,9 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.recallTranscript);
-  if (bodyResult.tooLarge) return payloadTooLargeResponse();
   let raw: unknown;
   try {
-    raw = JSON.parse(bodyResult.text);
+    raw = JSON.parse(body);
   } catch {
     reportHandledEvent({
       message: 'recall_transcript_invalid_json',
@@ -200,12 +229,23 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, reason: 'rate_limited' }, { status: 200 });
   }
 
-  // Look up meeting by botId. No team scope on the lookup itself — bot
-  // ids are globally unique (Recall UUIDs).
+  // Look up the meeting by Recall bot id before constructing a team scope.
+  // The lookup fails closed if an unexpected cross-team duplicate exists.
   const meeting = await meetingsScope.lookupMeetingByBotId(db, chunk.botId);
   if (!meeting) {
     log.info({ botId: chunk.botId }, 'no_meeting_for_bot');
     return Response.json({ ok: true, reason: 'no_meeting' }, { status: 200 });
+  }
+
+  if (TERMINAL_MEETING_STATUSES.has(meeting.status)) {
+    log.info(
+      { botId: chunk.botId, meetingId: meeting.id, currentStatus: meeting.status },
+      'ignoring_transcript_terminal_status',
+    );
+    return Response.json(
+      { ok: true, reason: 'terminal_status', status: meeting.status },
+      { status: 200 },
+    );
   }
 
   try {
@@ -216,7 +256,7 @@ export async function POST(req: Request): Promise<Response> {
       text: chunk.text,
       startMs: chunk.startMs,
       endMs: chunk.endMs,
-      providerChunkId: chunk.providerChunkId,
+      providerChunkId,
     });
     if (!result) {
       return Response.json({ ok: true, reason: 'insert_failed' }, { status: 200 });

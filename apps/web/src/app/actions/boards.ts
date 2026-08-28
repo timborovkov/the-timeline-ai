@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { type ActionState, resolveScope, uuidSchema } from '@/lib/action-scope';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { publicActionError } from '@/lib/public-error';
 import { runSentryServerAction } from '@/lib/sentry-action';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -107,6 +108,11 @@ export async function createBoardAction(input: unknown): Promise<ActionState> {
           boardDomain.defaultBoardRecommendedTypes(templateKind),
         lanes: parsed.data.lanes ?? boardDomain.defaultBoardLanes(templateKind),
       });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'board_action_completed',
+        { action: 'create' },
+      );
       revalidateBoardSurfaces(board.id);
       return { ok: true, id: board.id };
     } catch (err) {
@@ -123,6 +129,13 @@ export async function deleteBoardAction(input: unknown): Promise<ActionState> {
     if (!r.ok) return { error: r.error };
     try {
       const ok = await r.scope.boards.archiveBoard(parsed.data.id);
+      if (ok) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'board_action_completed',
+          { action: 'delete' },
+        );
+      }
       revalidateBoardSurfaces(parsed.data.id);
       return ok ? { ok: true } : { error: 'Board not found' };
     } catch (err) {
@@ -140,6 +153,11 @@ export async function renameBoardAction(input: unknown): Promise<ActionState> {
     try {
       const ok = await r.scope.boards.renameBoard(parsed.data);
       if (!ok) return { error: 'Board not found' };
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'board_action_completed',
+        { action: 'update' },
+      );
       revalidateBoardSurfaces(parsed.data.id);
       return { ok: true };
     } catch (err) {
@@ -157,6 +175,11 @@ export async function updateBoardSettingsAction(input: unknown): Promise<ActionS
     try {
       const ok = await r.scope.boards.updateBoardSettings(parsed.data);
       if (!ok) return { error: 'Board not found' };
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'board_action_completed',
+        { action: 'update' },
+      );
       revalidateBoardSurfaces(parsed.data.id);
       return { ok: true };
     } catch (err) {
@@ -179,6 +202,11 @@ export async function addBoardItemAction(
         laneId: parsed.data.laneId ?? null,
         actor: { kind: 'user', userId: r.userId },
       });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'board_action_completed',
+        { action: 'item_add' },
+      );
       revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
       return { ok: true, id: item.id, item };
     } catch (err) {
@@ -207,6 +235,11 @@ export async function quickCreateBoardItemAction(
           actor: { kind: 'user', userId: r.userId },
         },
       );
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'board_action_completed',
+        { action: 'item_add' },
+      );
       revalidateBoardSurfaces(parsed.data.boardId, item.entityId);
       return { ok: true, id: item.id, item };
     } catch (err) {
@@ -223,7 +256,7 @@ export async function updateBoardItemAction(input: unknown): Promise<ActionState
     if (!r.ok) return { error: r.error };
     const { id, dueAt, ...rest } = parsed.data;
     try {
-      const item = await r.scope.boards.updateBoardItem(
+      const result = await r.scope.boards.updateBoardItem(
         id,
         {
           ...rest,
@@ -231,8 +264,15 @@ export async function updateBoardItemAction(input: unknown): Promise<ActionState
         },
         { kind: 'user', userId: r.userId },
       );
-      if (!item) return { error: 'Board item not found' };
-      revalidateBoardSurfaces(item.boardId, item.entityId);
+      if (!result) return { error: 'Board item not found' };
+      if (result.changed) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'board_action_completed',
+          { action: 'item_update' },
+        );
+        revalidateBoardSurfaces(result.item.boardId, result.item.entityId);
+      }
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'update_board_item') };
@@ -251,6 +291,13 @@ export async function removeBoardItemAction(input: unknown): Promise<ActionState
         kind: 'user',
         userId: r.userId,
       });
+      if (item) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'board_action_completed',
+          { action: 'item_remove' },
+        );
+      }
       revalidateBoardSurfaces(item?.boardId, item?.entityId);
       return item ? { ok: true } : { error: 'Board item not found' };
     } catch (err) {

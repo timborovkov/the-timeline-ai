@@ -1,5 +1,7 @@
 'use server';
 
+import { createHash, createHmac } from 'node:crypto';
+
 import { supportRequests } from '@timeline/db';
 import { getEnv } from '@timeline/shared/env';
 import { sendMessage } from '@timeline/shared/messaging';
@@ -13,11 +15,19 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 import { runSentryServerAction } from '@/lib/sentry-action';
+import {
+  parseErrorReference,
+  parseSupportSurface,
+  SUPPORT_SURFACES,
+  supportSurfacePath,
+} from '@/lib/support-context';
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
 
 export interface SupportFormState {
   ok?: boolean;
   error?: string;
+  warning?: string;
+  requestReference?: string;
 }
 
 const requestTypes = ['technical_support', 'sales', 'billing', 'security', 'other'] as const;
@@ -27,9 +37,31 @@ const supportSchema = z.object({
   name: z.string().trim().min(1).max(120),
   email: z.string().trim().toLowerCase().max(240).pipe(z.email()),
   message: z.string().trim().min(20).max(5000),
-  currentPage: z.string().trim().max(2048).pipe(z.url()).optional().or(z.literal('')),
+  surface: z.enum(SUPPORT_SURFACES).optional().or(z.literal('')),
+  errorReference: z
+    .string()
+    .trim()
+    .max(128)
+    .regex(/^[a-zA-Z0-9._:-]+$/)
+    .optional()
+    .or(z.literal('')),
   company: z.string().trim().max(0),
 });
+
+function boundedDiagnostic(value: string | null | undefined, maxLength: number): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function supportRateLimitDigest(kind: 'identity' | 'ip', value: string): string {
+  const input = `${kind}\0${value}`;
+  const secret = [process.env.AUTH_SECRET, process.env.NEXTAUTH_SECRET]
+    .map((candidate) => candidate?.trim())
+    .find((candidate) => candidate !== undefined && candidate.length > 0);
+  return secret
+    ? createHmac('sha256', secret).update(input).digest('base64url')
+    : createHash('sha256').update(`timeline-support-rate-limit\0${input}`).digest('base64url');
+}
 
 export async function submitSupportRequestAction(
   _prev: SupportFormState,
@@ -41,7 +73,8 @@ export async function submitSupportRequestAction(
       name: formData.get('name'),
       email: formData.get('email'),
       message: formData.get('message'),
-      currentPage: formData.get('currentPage') ?? undefined,
+      surface: formData.get('surface') ?? undefined,
+      errorReference: formData.get('errorReference') ?? undefined,
       company: formData.get('company') ?? '',
     });
     if (!parsed.success) {
@@ -52,7 +85,7 @@ export async function submitSupportRequestAction(
     const ip = clientIpFromHeaders(h);
     const ipKey = ip ?? 'unknown';
     const ipLimited = await rateLimit.checkRateLimit({
-      key: rateLimit.rateLimitKey('support', 'ip', ipKey),
+      key: rateLimit.rateLimitKey('support', 'ip', supportRateLimitDigest('ip', ipKey)),
       ...rateLimit.RATE_LIMITS.supportForm,
     });
     if (!ipLimited.ok) {
@@ -73,9 +106,15 @@ export async function submitSupportRequestAction(
     const userId = session ? session.user.id : null;
     const active = userId ? (await resolveActiveTeam(userId)).active : null;
     const identity = userId ?? parsed.data.email;
-    const currentPage = parsed.data.currentPage === '' ? null : (parsed.data.currentPage ?? null);
+    const surface = parseSupportSurface(parsed.data.surface);
+    const currentPage = surface ? supportSurfacePath(surface) : null;
+    const errorReference = parseErrorReference(parsed.data.errorReference);
     const identityLimited = await rateLimit.checkRateLimit({
-      key: rateLimit.rateLimitKey('support', 'identity', identity),
+      key: rateLimit.rateLimitKey(
+        'support',
+        'identity',
+        supportRateLimitDigest('identity', identity),
+      ),
       ...rateLimit.RATE_LIMITS.supportForm,
     });
     if (!identityLimited.ok) {
@@ -85,6 +124,8 @@ export async function submitSupportRequestAction(
     }
 
     const env = getEnv();
+    const release = boundedDiagnostic(env.SENTRY_RELEASE, 160);
+    const userAgent = boundedDiagnostic(h.get('user-agent'), 512);
     const row = await db
       .insert(supportRequests)
       .values({
@@ -96,14 +137,11 @@ export async function submitSupportRequestAction(
         userId,
         teamId: active?.teamId ?? null,
         context: {
-          userEmail: session ? session.user.email : null,
-          userName: session ? session.user.name : null,
-          teamName: active?.teamName ?? null,
-          teamSlug: active?.teamSlug ?? null,
           teamRole: active?.role ?? null,
-          ip: ipKey,
-          userAgent: h.get('user-agent'),
-          referer: h.get('referer'),
+          surface,
+          errorReference,
+          release,
+          userAgent,
         },
       })
       .returning({ id: supportRequests.id });
@@ -117,8 +155,9 @@ export async function submitSupportRequestAction(
         .set({ emailError: 'Support delivery is not configured.' })
         .where(eq(supportRequests.id, requestId));
       return {
-        error:
-          'We saved your request, but support email delivery is not configured. The team can inspect it in the database.',
+        ok: true,
+        requestReference: requestId,
+        warning: 'Your request was saved, but email delivery is currently unavailable.',
       };
     }
 
@@ -131,10 +170,12 @@ export async function submitSupportRequestAction(
         name: parsed.data.name,
         email: parsed.data.email,
         message: parsed.data.message,
-        currentPage,
+        surface,
+        errorReference,
+        release,
         userId,
         teamId: active?.teamId ?? null,
-        teamName: active?.teamName ?? null,
+        teamRole: active?.role ?? null,
       },
       {
         db,
@@ -150,8 +191,9 @@ export async function submitSupportRequestAction(
         .set({ emailError: sent.error })
         .where(eq(supportRequests.id, requestId));
       return {
-        error:
-          'We saved your request, but email delivery failed. The team can still inspect it in the database.',
+        ok: true,
+        requestReference: requestId,
+        warning: 'Your request was saved, but email delivery is currently unavailable.',
       };
     }
 
@@ -160,6 +202,6 @@ export async function submitSupportRequestAction(
       .set({ emailSentAt: new Date(), emailError: null })
       .where(eq(supportRequests.id, requestId));
 
-    return { ok: true };
+    return { ok: true, requestReference: requestId };
   });
 }

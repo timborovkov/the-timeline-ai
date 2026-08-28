@@ -33,6 +33,7 @@ describe('Landing route states', () => {
     expect(html).toContain('aria-label="The Timeline loading placeholder"');
     expect(html).toContain('href="/help"');
     expect(html).toContain('href="/help/support"');
+    expect(html).toContain('href="/cookies"');
 
     render(<LandingLoading />);
 
@@ -73,7 +74,7 @@ describe('Landing route states', () => {
       ),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     await user.keyboard('[Space]');

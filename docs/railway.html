@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-07-18</span>
+        <span class="kind">Operations</span><span>Last updated 2026-08-21</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -74,43 +74,45 @@
           </tr>
           <tr>
             <td><code>postgres</code></td>
-            <td>Plugin</td>
+            <td>Database template</td>
             <td>—</td>
-            <td>(Railway-managed)</td>
+            <td>(customer-operated service)</td>
           </tr>
           <tr>
             <td><code>redis</code></td>
-            <td>Plugin</td>
+            <td>Database template</td>
             <td>—</td>
-            <td>(Railway-managed)</td>
+            <td>(customer-operated service)</td>
           </tr>
           <tr>
             <td><code>qdrant</code></td>
-            <td>Custom</td>
-            <td><code>infra/qdrant/Dockerfile</code></td>
-            <td>(image-based, see below)</td>
+            <td>Docker image</td>
+            <td><code>qdrant/qdrant:v1.12.4</code></td>
+            <td>(configured in Railway)</td>
           </tr>
           <tr>
             <td><code>rustfs</code></td>
-            <td>Custom</td>
-            <td><code>infra/rustfs/Dockerfile</code></td>
-            <td>(image-based, see below)</td>
+            <td>Docker image</td>
+            <td><code>rustfs/rustfs:latest</code></td>
+            <td>(configured in Railway)</td>
           </tr>
         </tbody>
       </table>
       <p>
-        Railway provisions Postgres and Redis as managed plugins (one click). Qdrant and RustFS are
-        deployed as custom services using their official Docker images. Portable app Dockerfiles
-        live under <code>docker/</code> for local/container-platform builds; keep the repo root free
-        of an app <code>Dockerfile</code> so Railpack follows the service
-        <code>railway.json</code> files.
+        Railway provisions PostgreSQL and Redis from database templates. They remain
+        customer-operated services rather than managed databases. Qdrant and RustFS are deployed as
+        custom services using their official Docker images. Portable app Dockerfiles live under
+        <code>docker/</code> for local/container-platform builds; keep the repo root free of an app
+        <code>Dockerfile</code> so Railpack follows the service <code>railway.json</code> files.
       </p>
 
       <h2 id="initial-setup">Initial setup</h2>
       <ol>
         <li>Create Railway project linked to this GitHub repo.</li>
-        <li>Add Postgres plugin. Connection string injected as <code>DATABASE_URL</code>.</li>
-        <li>Add Redis plugin. Connection string injected as <code>REDIS_URL</code>.</li>
+        <li>
+          Add the PostgreSQL template. Inject its connection string as <code>DATABASE_URL</code>.
+        </li>
+        <li>Add the Redis template. Inject its connection string as <code>REDIS_URL</code>.</li>
         <li>
           Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.12.4</code>.
           Persistent volume at <code>/qdrant/storage</code>. Set
@@ -143,8 +145,13 @@
         <code>document-extract-orchestrator</code>, set <code>WORKER_MODE=document-extract</code>,
         <code>DAYTONA_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>,
         <code>REDIS_URL</code>, and S3 document-bucket variables. Set
-        <code>DAYTONA_SNAPSHOT=auto</code> to resolve the content hash from
-        <code>document-extract-sandbox/</code> for each deployed revision. Do
+        <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code> only after an operator-only
+        management-key check verifies the exact inference-key assignment, model allowlist,
+        guardrail/ZDR settings, and account privacy settings. Never add the management key to
+        Railway runtime variables. See <a href="./setup/openrouter.html">OpenRouter setup</a> for
+        the generation command. Set <code>DAYTONA_SNAPSHOT=auto</code> to resolve the content hash
+        from <code>document-extract-sandbox/</code> for each deployed revision. Do
         <strong>not</strong> set <code>SECRETS_ENCRYPTION_KEY</code>, Auth secrets, or
         Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
         Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention, sandbox-aware pruning,
@@ -190,12 +197,11 @@ S3_BUCKET_EXPORTS=timeline-exports
 AUTH_SECRET=&lt;32-byte random, generate per env&gt;
 AUTH_URL=https://thetimeline.cc
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_GUARDRAIL_ID=&lt;official guardrail id&gt;
+OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
 CROSS_SOURCE_EVIDENCE_MODE=off
-LANGSMITH_TRACING=true
-LANGSMITH_TRACING_SAMPLING_RATE=0.05
-LANGSMITH_API_KEY=&lt;langsmith key&gt;
-LANGSMITH_PROJECT=timeline-production
-LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_TRACING=false
 TELEGRAM_BOT_TOKEN=&lt;botfather token&gt;
 TELEGRAM_WEBHOOK_SECRET=&lt;32-byte random&gt;
 POSTMARK_SERVER_TOKEN=&lt;postmark token&gt;
@@ -203,9 +209,19 @@ TRANSACTIONAL_EMAIL_FROM="The Timeline &lt;noreply@thetimeline.cc&gt;"
 POSTMARK_WEBHOOK_SECRET=&lt;postmark secret&gt;
 SUPPORT_EMAIL=contact@thetimeline.cc
 INBOUND_EMAIL_DOMAIN=in.thetimeline.cc
+RECALL_API_KEY=&lt;recall api key&gt;
+RECALL_BASE_URL=https://us-west-2.recall.ai/api/v1
+RECALL_WORKSPACE_VERIFICATION_SECRET=&lt;exact provider-issued workspace whsec_ secret; at least 24 decoded bytes&gt;
+RECALL_STATUS_WEBHOOK_SECRET=&lt;legacy dashboard status whsec_ secret, if required&gt;
+RECALL_TRANSCRIPT_WEBHOOK_URL=https://thetimeline.cc/api/webhooks/recall/transcript
+RECALL_RETENTION=1
+RECALL_BOT_DISPLAY_NAME=Timeline
 TURNSTILE_SITE_KEY=&lt;cloudflare turnstile site key&gt;
 TURNSTILE_SECRET_KEY=&lt;cloudflare turnstile secret key&gt;
-NEXT_PUBLIC_POSTHOG_KEY=&lt;posthog project key&gt;
+POSTHOG_PROJECT_KEY=&lt;posthog server project key&gt;
+POSTHOG_HOST=https://eu.i.posthog.com
+ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
+NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
 SENTRY_DSN=&lt;sentry server/worker dsn&gt;
 NEXT_PUBLIC_SENTRY_DSN=&lt;sentry browser dsn&gt;
@@ -239,8 +255,22 @@ SENTRY_INTEGRATION_CLIENT_ID=&lt;sentry oauth app client id&gt;
 SENTRY_INTEGRATION_CLIENT_SECRET=&lt;sentry oauth app client secret&gt;
 DOCUMENT_EXTRACT_ENABLED=false
 NODE_ENV=production
+TIMELINE_DEPLOYMENT_MODE=hosted
 LOG_LEVEL=info
 </code></pre>
+      <p>
+        In hosted production, startup validation accepts only Recall's documented HTTPS regional
+        <code>/api/v1</code> hosts. The transcript webhook must use the same HTTPS origin as
+        <code>AUTH_URL</code>, the exact <code>/api/webhooks/recall/transcript</code> path, and no
+        query or fragment. Alternate Recall proxies or webhook ingress remain explicit
+        self-managed/development choices.
+      </p>
+      <p>
+        Keep <code>ANALYTICS_PSEUDONYMIZATION_KEY</code> secret and server-only. Leave
+        <code>NEXT_PUBLIC_POSTHOG_KEY</code> empty until the consent-gated public-browser path and
+        PostHog account have been reviewed. None of the PostHog variables belong on the
+        credential-thin <code>document-extract-orchestrator</code> service.
+      </p>
       <p>
         <code>CROSS_SOURCE_EVIDENCE_MODE</code> is a worker rollout switch. Keep production at
         <code>off</code> until generic ingest webhook shadow gates pass. Other proposal adapters do
@@ -270,6 +300,9 @@ DOCUMENT_EXTRACT_MAX_VISION_PAGES=20
 DATABASE_URL=${{ Postgres.DATABASE_URL }}
 REDIS_URL=${{ Redis.REDIS_URL }}
 OPENROUTER_API_KEY=&lt;openrouter key&gt;
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_GUARDRAIL_ID=&lt;official guardrail id&gt;
+OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
 S3_ENDPOINT=http://${{ RustFS.RAILWAY_PRIVATE_DOMAIN }}:9000
 S3_ACCESS_KEY_ID=&lt;from RustFS service vars&gt;
 S3_SECRET_ACCESS_KEY=&lt;from RustFS service vars&gt;
@@ -277,6 +310,7 @@ S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
 S3_BUCKET_DOCUMENTS=timeline-documents
 NODE_ENV=production
+TIMELINE_DEPLOYMENT_MODE=hosted
 LOG_LEVEL=info
 </code></pre>
       <p>
@@ -294,16 +328,25 @@ LOG_LEVEL=info
         Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
         Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
         labels such as <code>staging</code>; Node.js and the app env schema only accept
-        <code>development</code>, <code>test</code>, or <code>production</code>.
+        <code>development</code>, <code>test</code>, or <code>production</code>. Set
+        <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> on every Timeline-operated service; only a
+        separately licensed and operated deployment may select <code>self-managed</code> and assume
+        responsibility for different provider-retention choices.
       </p>
       <p>
-        LangSmith is opt-in via <code>LANGSMITH_TRACING=true</code>. Rich traces include the prompt
-        and output text sent through the shared LLM wrapper, including private timeline, document,
-        meeting, and integration content. Treat LangSmith project access as sensitive operational
-        access. Set <code>LANGSMITH_TRACING_SAMPLING_RATE</code> to a value between
-        <code>0</code> and <code>1</code> to cap trace volume. Raw media/audio bytes are redacted
-        from traces, and embeddings are not sent to LangSmith by default. Set
-        <code>LANGSMITH_WORKSPACE_ID</code> too when using an org-scoped LangSmith API key.
+        Production env validation rejects <code>LANGSMITH_TRACING=true</code> because rich traces
+        can include private prompt and output content. Use LangSmith only in controlled development
+        or evaluation environments with synthetic or explicitly approved data. The hosted production
+        OpenRouter key must be restricted to the code-owned model catalog with applicable ZDR
+        guardrails for every <code>zdr_required</code> role. Hosted production also requires
+        <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code>. The token invalidates on inference-key,
+        guardrail, catalog, or policy drift; it does not create or prove the provider settings.
+        Verify the actual key assignment, <code>allowed_models</code>, and guardrail settings with a
+        separate operator-only management-key deployment check and dated evidence. Never store the
+        management key in web, worker, or document-extract runtime variables. The
+        voice-transcription role remains the separately disclosed retained, no-training quality
+        exception.
       </p>
       <p>
         Use Railway's "shared variables" feature at the project level for anything used by 2+
@@ -367,7 +410,11 @@ LOG_LEVEL=info
           </tr>
         </tbody>
       </table>
-      <p>Postgres and Redis volumes are managed by Railway plugins automatically.</p>
+      <p>
+        PostgreSQL and Redis are Railway database templates rather than managed database services.
+        Timeline remains responsible for their operation, persistence, backup configuration, and
+        restore verification. Record the deployed volume and backup settings for each environment.
+      </p>
 
       <h2 id="rustfs-bucket-initialization">RustFS bucket initialization</h2>
       <p>After first RustFS deploy, create buckets. Run once per environment:</p>
@@ -388,20 +435,26 @@ mc version enable timeline-prod/timeline-exports
 
       <h2 id="backups">Backups</h2>
       <p>
-        Railway Postgres plugin includes automated daily backups. Confirm retention period in plugin
-        settings.
+        Do not assume a PostgreSQL backup exists from the template alone. Enable and inventory the
+        production backup mechanism, record its schedule and retention, and prove a restore in an
+        isolated environment before making a durability claim. The current repository cannot verify
+        the deployed Railway dashboard state.
       </p>
       <p>
-        RustFS has no built-in backup. Set up a scheduled service (Railway cron) running nightly:
+        RustFS backup is an operating task, not a shipped repository guarantee. After choosing the
+        secondary store, set up a scheduled service (Railway cron), for example:
       </p>
       <pre><code>rclone sync s3:timeline-audio backblaze-b2:timeline-backup-audio
 rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
+rclone sync s3:timeline-documents backblaze-b2:timeline-backup-documents
+rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
 </code></pre>
       <p>Backblaze B2 or any cheap S3-compatible store works. Test restores quarterly.</p>
       <p>
-        Qdrant: nightly snapshot via Qdrant's snapshot API, uploaded to RustFS or B2. Vector data
-        can technically be regenerated by re-embedding raw events, but a snapshot avoids that cost
-        when the only failure is Qdrant data loss.
+        Qdrant snapshots are also an operating task. Add a nightly job through Qdrant's snapshot API
+        and upload the result to an independently protected store such as B2. Vector data can be
+        regenerated by re-embedding source records, but a tested snapshot avoids that cost when the
+        only failure is Qdrant data loss.
       </p>
 
       <h2 id="webhooks">Webhooks</h2>
@@ -525,11 +578,26 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
           </p>
           <p>
             <strong>SSL note.</strong> Inside a Railway project, <code>DATABASE_URL</code> resolves
-            to the Postgres plugin's internal hostname and uses plain TCP. If you ever point this at
-            the <em>external</em> Postgres proxy (e.g., to run <code>pnpm db:migrate</code> from
+            to the PostgreSQL service's internal hostname and uses plain TCP. If you ever point this
+            at the <em>external</em> Postgres proxy (e.g., to run <code>pnpm db:migrate</code> from
             your laptop against staging), append <code>?sslmode=require</code> to the URL —
             <code>postgres-js</code> follows the connection string, not an out-of-band env var.
           </p>
+        </li>
+        <li>
+          <strong>Legal-version release warning.</strong> Changing the current Terms or Privacy
+          version intentionally makes every existing human session stale, but production first
+          defaults <code>LEGAL_PUBLICATION_READY=false</code>. Keep it false until G-20 in the
+          security/privacy/trust register is resolved and dated official registry evidence is
+          retained; that default withholds binding Terms, legal acceptance, and first-time account
+          signup. Set it to true only as an operator attestation after the evidence exists. Then
+          signed-in app and invite routes redirect to <code>/legal/accept</code>; human product APIs
+          return a no-store <code>428 legal_acceptance_required</code> response until the person
+          accepts. Before a version bump, publish and review both documents, notify support and API
+          consumers, and confirm the immutable acceptance-history migration is deployed. Service
+          webhooks, cron jobs, health checks, inbound email, calendar feeds, and
+          bearer-authenticated outbound MCP remain exempt because they cannot complete human
+          clickwrap.
         </li>
         <li>
           Services restart with new image. Healthcheck on
