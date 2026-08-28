@@ -6485,6 +6485,121 @@ describe('suggestion scope', () => {
     expect(chatStructured).toHaveBeenCalledTimes(2);
   });
 
+  it('applies reviewer feedback when only the proposal timestamp changed during the rewrite', async () => {
+    let itemId = '';
+    const chatStructured = vi.fn(async () => {
+      if (chatStructured.mock.calls.length === 1 && itemId) {
+        await db
+          .update(agentSuggestionItems)
+          .set({
+            updatedAt: new Date('2026-08-28T14:06:22.000Z'),
+            metadata: { reconciliation_run_id: 'run-during-revision' },
+          })
+          .where(eq(agentSuggestionItems.id, itemId));
+      }
+      return {
+        object: {
+          title: 'Assign Framer website edits to Otto',
+          description: 'Otto owns the Certor Framer work.',
+          proposedPayload: {
+            canonicalName: 'Learn to use Framer to edit Certor website',
+            assigneeUserId: REVIEWER_ID,
+          },
+          explanation: 'Assigned the task to Otto as requested.',
+        },
+        model: 'test-timestamp-only-proposal-revision',
+      };
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Framer website edits',
+      dedupeKey: 'timestamp-only-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Learn to use Framer to edit Certor website',
+          dedupeKey: 'timestamp-only-reviewer-revision:item',
+          proposedPayload: {
+            canonicalName: 'Learn to use Framer to edit Certor website',
+          },
+        },
+      ],
+    });
+    itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: 'Assign this to Otto',
+      }),
+    ).resolves.toMatchObject({
+      title: 'Assign Framer website edits to Otto',
+      proposedPayload: {
+        canonicalName: 'Learn to use Framer to edit Certor website',
+        assigneeUserId: REVIEWER_ID,
+      },
+    });
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+    const [item] = await db
+      .select({ metadata: agentSuggestionItems.metadata })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    const metadata = item?.metadata as Record<string, unknown>;
+    expect(metadata.reconciliation_run_id).toBe('run-during-revision');
+    expect(metadata.proposal_edited_by_user_id).toBe(USER_ID);
+  });
+
+  it('applies reviewer feedback when the stored updated_at has sub-millisecond precision', async () => {
+    const chatStructured = vi.fn(() =>
+      Promise.resolve({
+        object: {
+          title: 'Call Tecci',
+          description: 'Corrected the company name.',
+          proposedPayload: { canonicalName: 'Call Tecci' },
+          explanation: 'Corrected Tec to Tecci.',
+        },
+        model: 'test-microsecond-proposal-revision',
+      }),
+    );
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Tec',
+      dedupeKey: 'microsecond-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Tec',
+          dedupeKey: 'microsecond-reviewer-revision:item',
+          proposedPayload: { canonicalName: 'Call Tec' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    await db
+      .update(agentSuggestionItems)
+      .set({ updatedAt: sql`TIMESTAMPTZ '2026-08-28 14:06:22.123456+00'` })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: "It's Tecci, not Tec",
+      }),
+    ).resolves.toMatchObject({
+      title: 'Call Tecci',
+      proposedPayload: { canonicalName: 'Call Tecci' },
+    });
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves concurrent category and project revisions to the same task proposal', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);

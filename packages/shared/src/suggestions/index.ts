@@ -1140,6 +1140,29 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     : {};
 }
 
+const PROPOSAL_REVISION_CONFLICT_MESSAGE =
+  'Proposal changed repeatedly while it was being revised. Try again.';
+
+type ProposalRevisionSnapshot = Pick<
+  typeof agentSuggestionItems.$inferSelect,
+  'operation' | 'targetKind' | 'targetId' | 'title' | 'description' | 'proposedPayload'
+>;
+
+function proposalRevisionSnapshotMatches(
+  current: ProposalRevisionSnapshot,
+  snapshot: ProposalRevisionSnapshot,
+): boolean {
+  // Ignore updatedAt: JS Date loses Postgres microseconds, and no-op merges bump it.
+  return (
+    current.operation === snapshot.operation &&
+    current.targetKind === snapshot.targetKind &&
+    current.targetId === snapshot.targetId &&
+    current.title === snapshot.title &&
+    (current.description ?? null) === (snapshot.description ?? null) &&
+    stableStringify(current.proposedPayload) === stableStringify(snapshot.proposedPayload)
+  );
+}
+
 function stringArrayFromUnknown(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
@@ -7826,61 +7849,85 @@ ${JSON.stringify(evidence)}`,
           proposedPayload: normalized.proposedPayload,
         });
 
-        const metadata = recordFromUnknown(row.item.metadata);
-        const existingHistory: unknown[] = Array.isArray(metadata.proposal_revision_history)
-          ? (metadata.proposal_revision_history as unknown[]).slice(-9)
-          : [];
-        const revisedAt = new Date();
-        const revision = {
-          revised_at: revisedAt.toISOString(),
-          revised_by_user_id: userId,
-          feedback,
-          model: result.model,
-          explanation: result.object.explanation,
-          previous: {
-            title: row.item.title,
-            description: row.item.description,
-            proposed_payload: row.item.proposedPayload,
-          },
-        };
-        const [updated] = await db
-          .update(agentSuggestionItems)
-          .set({
-            title: normalized.title,
-            description: normalized.description ?? null,
-            proposedPayload: normalized.proposedPayload,
-            failureReason: null,
-            metadata: {
-              ...metadata,
-              proposal_edited_by_user_id: userId,
-              proposal_edited_at: revisedAt.toISOString(),
-              proposal_revision_history: [...existingHistory, revision],
+        const applied = await db.transaction(async (tx) => {
+          const [current] = await tx
+            .select({ item: agentSuggestionItems })
+            .from(agentSuggestionItems)
+            .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
+            .where(
+              and(
+                eq(agentSuggestionItems.id, input.itemId),
+                inArray(agentSuggestionItems.status, ['pending', 'failed']),
+                isNull(agentSuggestionItems.resolvedAt),
+                suggestionVisibilityPredicate(teamId, userId),
+              ),
+            )
+            .for('update', { of: agentSuggestionItems })
+            .limit(1);
+          if (!current) return { kind: 'missing' as const };
+          if (!proposalRevisionSnapshotMatches(current.item, row.item)) {
+            return { kind: 'conflict' as const };
+          }
+
+          const metadata = recordFromUnknown(current.item.metadata);
+          const existingHistory: unknown[] = Array.isArray(metadata.proposal_revision_history)
+            ? (metadata.proposal_revision_history as unknown[]).slice(-9)
+            : [];
+          const revisedAt = new Date();
+          const revision = {
+            revised_at: revisedAt.toISOString(),
+            revised_by_user_id: userId,
+            feedback,
+            model: result.model,
+            explanation: result.object.explanation,
+            previous: {
+              title: current.item.title,
+              description: current.item.description,
+              proposed_payload: current.item.proposedPayload,
             },
-            updatedAt: revisedAt,
-          })
-          .where(
-            and(
-              eq(agentSuggestionItems.id, input.itemId),
-              eq(agentSuggestionItems.updatedAt, row.item.updatedAt),
-              inArray(agentSuggestionItems.status, ['pending', 'failed']),
-              isNull(agentSuggestionItems.resolvedAt),
-            ),
-          )
-          .returning({
-            id: agentSuggestionItems.id,
-            status: agentSuggestionItems.status,
-            title: agentSuggestionItems.title,
-            description: agentSuggestionItems.description,
-            proposedPayload: agentSuggestionItems.proposedPayload,
-          });
-        if (updated) {
-          return {
-            ...updated,
-            proposedPayload: updated.proposedPayload as Record<string, unknown>,
           };
-        }
+          const [updated] = await tx
+            .update(agentSuggestionItems)
+            .set({
+              title: normalized.title,
+              description: normalized.description ?? null,
+              proposedPayload: normalized.proposedPayload,
+              failureReason: null,
+              metadata: {
+                ...metadata,
+                proposal_edited_by_user_id: userId,
+                proposal_edited_at: revisedAt.toISOString(),
+                proposal_revision_history: [...existingHistory, revision],
+              },
+              updatedAt: revisedAt,
+            })
+            .where(
+              and(
+                eq(agentSuggestionItems.id, input.itemId),
+                inArray(agentSuggestionItems.status, ['pending', 'failed']),
+                isNull(agentSuggestionItems.resolvedAt),
+              ),
+            )
+            .returning({
+              id: agentSuggestionItems.id,
+              status: agentSuggestionItems.status,
+              title: agentSuggestionItems.title,
+              description: agentSuggestionItems.description,
+              proposedPayload: agentSuggestionItems.proposedPayload,
+            });
+          if (!updated) return { kind: 'missing' as const };
+          return {
+            kind: 'applied' as const,
+            updated: {
+              ...updated,
+              proposedPayload: updated.proposedPayload as Record<string, unknown>,
+            },
+          };
+        });
+        if (applied.kind === 'applied') return applied.updated;
+        if (applied.kind === 'missing') return null;
       }
-      throw new Error('Proposal changed repeatedly while it was being revised. Try again.');
+      throw new Error(PROPOSAL_REVISION_CONFLICT_MESSAGE);
     },
 
     async reviseTaskSuggestionItem(input: {
