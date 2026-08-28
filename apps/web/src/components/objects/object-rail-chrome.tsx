@@ -4,8 +4,7 @@ import { cn } from '@/lib/utils';
 
 /** Shared object/task Properties rail field chrome (design.md Linear density). */
 export const RAIL_SECTION_LABEL = 'px-2 text-xs font-medium text-fg-dim';
-export const RAIL_FIELD_LABEL =
-  'w-[6.75rem] shrink-0 text-xs font-normal leading-4 text-fg-dim';
+export const RAIL_FIELD_LABEL = 'w-[6.75rem] shrink-0 text-xs font-normal leading-4 text-fg-dim';
 export const RAIL_FIELD_VALUE =
   'min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50';
 export const RAIL_ROW = 'group flex min-h-8 items-center gap-2 px-2';

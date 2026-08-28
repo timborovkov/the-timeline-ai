@@ -10,10 +10,7 @@ import type * as objects from '@timeline/shared/objects/types';
 
 import { structureContactFromBoardNotesAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';
-import {
-  ObjectRailSection,
-  RAIL_QUIET_ACTION,
-} from '@/components/objects/object-rail-chrome';
+import { ObjectRailSection, RAIL_QUIET_ACTION } from '@/components/objects/object-rail-chrome';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
 
@@ -73,7 +70,10 @@ export function ObjectBoardContextSection({
                 <DueDateDisplay value={row.dueAt} variant="compact" />
               </div>
               {row.nextStep ? (
-                <p className="truncate text-xs font-normal leading-4 text-fg-muted" title={row.nextStep}>
+                <p
+                  className="truncate text-xs font-normal leading-4 text-fg-muted"
+                  title={row.nextStep}
+                >
                   {displayText(row.nextStep)}
                 </p>
               ) : null}
