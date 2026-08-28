@@ -10,6 +10,7 @@ import type * as objects from '@timeline/shared/objects/types';
 import { archiveIdentityFacetAction, createIdentityFacetAction } from '@/app/actions/objects';
 import { ObjectRailRow, ObjectRailSection } from '@/components/objects/object-rail-chrome';
 import {
+  RAIL_FIELD_VALUE,
   RAIL_GHOST_ICON_BUTTON,
   RAIL_QUIET_ACTION,
   RAIL_UNDERLINE_CONTROL,
@@ -115,15 +116,12 @@ export function ObjectContactFields({
               <a
                 href={href}
                 title={facet.value}
-                className="min-w-0 flex-1 truncate text-sm font-normal leading-5 text-fg hover:underline"
+                className={cn(RAIL_FIELD_VALUE, 'hover:underline')}
               >
                 {facet.value}
               </a>
             ) : (
-              <span
-                title={facet.value}
-                className="min-w-0 flex-1 truncate text-sm font-normal leading-5 text-fg"
-              >
+              <span title={facet.value} className={cn(RAIL_FIELD_VALUE, 'truncate')}>
                 {facet.value}
               </span>
             )}

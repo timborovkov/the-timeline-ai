@@ -48,6 +48,16 @@ import { DueDateDisplay } from '@/components/due-date-display';
 import { ObjectBoardContext } from '@/components/objects/object-board-context';
 import { ObjectBoardContextSection } from '@/components/objects/object-board-context-section';
 import { ObjectContactFields } from '@/components/objects/object-contact-fields';
+import {
+  OBJECT_BODY_CLASS,
+  OBJECT_CONTROL_CLASS,
+  OBJECT_GROUP_CLASS,
+  OBJECT_MONO_META_CLASS,
+  OBJECT_ROW_META_CLASS,
+  OBJECT_ROW_TITLE_CLASS,
+  OBJECT_SECTION_CLASS,
+  OBJECT_TITLE_CLASS,
+} from '@/components/objects/object-detail-type';
 import { ObjectDiscussionPanel } from '@/components/objects/object-discussion-panel';
 import { ObjectMetadataFields } from '@/components/objects/object-metadata-fields';
 import { ObjectOrigin, ObjectProvenanceGroups } from '@/components/objects/object-origin';
@@ -80,6 +90,7 @@ import { readJson } from '@/lib/paginated-api';
 import { queryKeys } from '@/lib/query-keys';
 import { relationshipDisplayLabel } from '@/lib/relationship-display-label';
 import { statusLabel } from '@/lib/status-labels';
+import { cn } from '@/lib/utils';
 
 const RELATIONSHIP_KINDS = [
   'related',
@@ -168,15 +179,18 @@ const EMPTY_PROJECT_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_COMPANY_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_MEMBER_OPTIONS: { id: string; label: string }[] = [];
 const EMPTY_BOARD_CONTEXT: boards.ObjectBoardContextRow[] = [];
-const DETAIL_ACTION_CLASS =
-  'text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:cursor-not-allowed disabled:opacity-60';
-/** Top-level main-column / rail section titles. */
-const DETAIL_SECTION_LABEL_CLASS = 'text-xs font-medium text-fg-dim';
+const DETAIL_ACTION_CLASS = cn(
+  OBJECT_CONTROL_CLASS,
+  'hover:underline disabled:cursor-not-allowed disabled:opacity-60',
+);
+/** Top-level main-column section titles. */
+const DETAIL_SECTION_LABEL_CLASS = OBJECT_SECTION_CLASS;
 /** Nested group labels under a section (Open tasks, Documents). */
-const DETAIL_GROUP_LABEL_CLASS = 'text-xs font-normal text-fg-muted';
-const DETAIL_BODY_CLASS = 'text-sm font-normal leading-5 text-fg';
-const DETAIL_META_CLASS = 'text-xs font-normal text-fg-dim';
-const DETAIL_LINK_CLASS = 'text-sm font-normal leading-5 text-fg hover:underline';
+const DETAIL_GROUP_LABEL_CLASS = OBJECT_GROUP_CLASS;
+const DETAIL_BODY_CLASS = OBJECT_BODY_CLASS;
+const DETAIL_META_CLASS = OBJECT_ROW_META_CLASS;
+const DETAIL_LINK_CLASS = cn(OBJECT_ROW_TITLE_CLASS, 'hover:underline');
+const DETAIL_COUNT_CLASS = OBJECT_MONO_META_CLASS;
 
 function statusOptions(type: string): string[] {
   return STATUS_BY_TYPE[type] ?? ['open', 'active', 'archived'];
@@ -1110,7 +1124,7 @@ function ObjectDetailView(props: Props) {
                 summaryClassName: 'cursor-pointer list-none py-1.5',
                 bodyClassName: 'border-t border-border py-2',
                 titleClassName: DETAIL_SECTION_LABEL_CLASS,
-                countClassName: `mt-0.5 ${DETAIL_META_CLASS}`,
+                countClassName: `mt-0.5 ${DETAIL_COUNT_CLASS}`,
                 openLabelClassName: DETAIL_META_CLASS,
               }}
             />
@@ -1415,7 +1429,10 @@ function ObjectDetailHeader({
               if (value === editableObjectName(detail)) return;
               onNameCommit(value);
             }}
-            className="mt-0.5 w-full bg-transparent text-lg font-semibold leading-snug tracking-tight text-fg outline-none focus-visible:ring-2 focus-visible:ring-signal/50"
+            className={cn(
+              OBJECT_TITLE_CLASS,
+              'mt-0.5 w-full bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+            )}
           />
           {visibleAliases.length > 0 ? (
             <p className={`mt-0.5 ${DETAIL_META_CLASS}`}>
@@ -1782,7 +1799,7 @@ function ConnectedWorkSection({
       <h3 className={`mb-1 ${DETAIL_GROUP_LABEL_CLASS}`}>
         {title}
         {typeof count === 'number' && count > 0 ? (
-          <span className="font-normal text-fg-dim"> · {count}</span>
+          <span className={DETAIL_COUNT_CLASS}> · {count}</span>
         ) : null}
       </h3>
       {children}

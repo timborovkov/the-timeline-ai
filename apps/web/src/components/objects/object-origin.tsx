@@ -4,8 +4,17 @@ import Link from 'next/link';
 
 import type { ObjectDetail } from '@timeline/shared/objects/types';
 
+import {
+  OBJECT_BODY_CLASS,
+  OBJECT_CONTROL_CLASS,
+  OBJECT_MONO_META_CLASS,
+  OBJECT_ROW_META_CLASS,
+  OBJECT_ROW_TITLE_CLASS,
+  OBJECT_SECTION_CLASS,
+} from '@/components/objects/object-detail-type';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
+import { cn } from '@/lib/utils';
 
 type Provenance = ObjectDetail['provenance'];
 type ProvenanceEntry = Provenance['whyThisExists'][number];
@@ -32,9 +41,7 @@ export function ObjectOrigin({
 
   return (
     <section className={compact ? 'px-3 py-1.5' : undefined} aria-label="Why this exists">
-      <p className="text-sm font-normal leading-5 text-fg">
-        {timelinePreview(body, compact ? 220 : 360)}
-      </p>
+      <p className={OBJECT_BODY_CLASS}>{timelinePreview(body, compact ? 220 : 360)}</p>
       <ProvenanceSourceLinks evidence={why.evidence} />
     </section>
   );
@@ -97,12 +104,17 @@ function ProvenanceGroup({
 
   return (
     <section className="min-w-0">
-      <h2 className="text-xs font-medium text-fg-dim">{title}</h2>
+      <h2 className={OBJECT_SECTION_CLASS}>{title}</h2>
       <div className="mt-1 min-w-0">
         {previewEntries.length > 0 ? <ProvenanceEntryList entries={previewEntries} /> : null}
         {remainingEntries.length > 0 ? (
           <details className={previewEntries.length > 0 ? 'mt-1' : undefined}>
-            <summary className="cursor-pointer list-none text-xs font-normal text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50">
+            <summary
+              className={cn(
+                OBJECT_CONTROL_CLASS,
+                'cursor-pointer list-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+              )}
+            >
               {reviewLabel}
             </summary>
             <div className="mt-1 max-h-80 overflow-y-auto overscroll-contain">
@@ -129,14 +141,18 @@ function ProvenanceEntryList({
   return (
     <ul className="space-y-1.5">
       {entries.map((entry) => (
-        <li key={`${entry.targetKind}:${entry.operation}:${entry.id}`} className="min-w-0 text-sm">
+        <li key={`${entry.targetKind}:${entry.operation}:${entry.id}`} className="min-w-0">
           <p
-            className={`line-clamp-2 break-words text-sm font-normal leading-5 ${muted ? 'text-fg-muted' : 'text-fg'}`}
+            className={cn(
+              OBJECT_ROW_TITLE_CLASS,
+              'line-clamp-2 break-words',
+              muted && 'text-fg-muted',
+            )}
           >
             {timelinePreview(entry.title, 160)}
           </p>
           {entry.reason ? (
-            <p className="mt-0.5 line-clamp-2 break-words text-xs font-normal leading-4 text-fg-muted">
+            <p className={cn(OBJECT_ROW_META_CLASS, 'mt-0.5 line-clamp-2 break-words text-fg-muted')}>
               {displayText(entry.reason)}
             </p>
           ) : null}
@@ -157,7 +173,9 @@ function ProvenanceSourceLinks({ evidence }: { evidence: ProvenanceEntry['eviden
       ))}
       {remainingEvidence.length > 0 ? (
         <details>
-          <summary className="cursor-pointer list-none text-xs font-normal text-fg-dim hover:text-fg">
+          <summary
+            className={cn(OBJECT_CONTROL_CLASS, 'cursor-pointer list-none text-fg-dim hover:text-fg')}
+          >
             Review {remainingEvidence.length} more source
             {remainingEvidence.length === 1 ? '' : 's'}
           </summary>
@@ -177,9 +195,15 @@ function ProvenanceSourceLink({ source }: { source: ProvenanceEntry['evidence'][
   return (
     <Link
       href={`/app/timeline?event=${source.rawEventId}#ev-${source.rawEventId}`}
-      className="block break-words text-xs font-normal text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+      className={cn(
+        OBJECT_ROW_META_CLASS,
+        'block break-words text-fg-muted underline-offset-2 hover:text-fg hover:underline',
+      )}
     >
-      {displayText(source.source)} · {formatDisplayDateTime(source.occurredAt, { timezone })}
+      {displayText(source.source)} ·{' '}
+      <span className={OBJECT_MONO_META_CLASS}>
+        {formatDisplayDateTime(source.occurredAt, { timezone })}
+      </span>
     </Link>
   );
 }
