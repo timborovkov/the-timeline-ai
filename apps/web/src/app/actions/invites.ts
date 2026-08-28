@@ -1,6 +1,7 @@
 'use server';
 
-import { teamInvites, teamMembers, users } from '@timeline/db';
+import { teamInvites, teamMembers, users, type TeamMemberPriorInterval } from '@timeline/db';
+import { assertTeamMemberSeatCapacity, isBillingAdmissionError } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
@@ -20,6 +21,60 @@ const log = childLogger('web:actions:invites');
 
 const acceptSchema = z.object({ token: z.string().min(1).max(256) });
 const recipientInviteSchema = z.object({ inviteId: z.uuid() });
+
+interface InviteDbTx {
+  select: typeof db.select;
+  insert: typeof db.insert;
+  update: typeof db.update;
+}
+
+async function acceptTeamMembership(
+  tx: InviteDbTx,
+  input: { teamId: string; userId: string; role: 'admin' | 'member' },
+): Promise<void> {
+  const existing = await tx
+    .select({
+      role: teamMembers.role,
+      removedAt: teamMembers.removedAt,
+      createdAt: teamMembers.createdAt,
+      priorIntervals: teamMembers.priorIntervals,
+    })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, input.teamId), eq(teamMembers.userId, input.userId)))
+    .limit(1)
+    .for('update');
+  const membership = existing[0];
+  if (membership && !membership.removedAt) {
+    throw new Error('already-member');
+  }
+  if (membership) {
+    const endedAt = membership.removedAt;
+    if (!endedAt) throw new Error('already-member');
+    const priorIntervals: TeamMemberPriorInterval[] = [
+      ...membership.priorIntervals,
+      {
+        startedAt: membership.createdAt.toISOString(),
+        endedAt: endedAt.toISOString(),
+      },
+    ];
+    await tx
+      .update(teamMembers)
+      .set({
+        role: input.role,
+        removedAt: null,
+        removedByUserId: null,
+        createdAt: new Date(),
+        priorIntervals,
+      })
+      .where(and(eq(teamMembers.teamId, input.teamId), eq(teamMembers.userId, input.userId)));
+    return;
+  }
+  await tx.insert(teamMembers).values({
+    teamId: input.teamId,
+    userId: input.userId,
+    role: input.role,
+  });
+}
 
 export async function acceptInviteAction(formData: FormData): Promise<void> {
   return runSentryServerAction('accept_invite', async () => {
@@ -70,17 +125,17 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
         if (membership && !membership.removedAt) {
           throw new Error('already-member');
         }
-        await tx
-          .insert(teamMembers)
-          .values({
-            teamId: invite.teamId,
-            userId,
-            role: invite.role,
-          })
-          .onConflictDoUpdate({
-            target: [teamMembers.teamId, teamMembers.userId],
-            set: { role: invite.role, removedAt: null, removedByUserId: null },
-          });
+        await assertTeamMemberSeatCapacity({
+          db: tx as unknown as typeof db,
+          teamId: invite.teamId,
+          additionalSeats: 1,
+          includePendingInvites: false,
+        });
+        await acceptTeamMembership(tx, {
+          teamId: invite.teamId,
+          userId,
+          role: invite.role,
+        });
         await tx
           .update(teamInvites)
           .set({ acceptedAt: new Date(), acceptedByUserId: userId })
@@ -104,7 +159,14 @@ export async function acceptInviteAction(formData: FormData): Promise<void> {
       // collapses to 'failed' so we never emit an unbounded error string.
       const raw = e instanceof Error ? e.message : '';
       const reason =
-        raw === 'invalid' || raw === 'wrong-account' || raw === 'already-member' ? raw : 'failed';
+        raw === 'invalid' ||
+        raw === 'wrong-account' ||
+        raw === 'already-member' ||
+        raw === 'member-limit'
+          ? raw
+          : isBillingAdmissionError(e)
+            ? 'member-limit'
+            : 'failed';
       reportCaughtError(e, {
         surface: 'server_action',
         operation: 'accept_invite',
@@ -244,17 +306,18 @@ export async function acceptRecipientInviteAction(formData: FormData): Promise<v
           throw new Error('already-member');
         }
 
-        await tx
-          .insert(teamMembers)
-          .values({
-            teamId: invite.teamId,
-            userId,
-            role: invite.role,
-          })
-          .onConflictDoUpdate({
-            target: [teamMembers.teamId, teamMembers.userId],
-            set: { role: invite.role, removedAt: null, removedByUserId: null },
-          });
+        await assertTeamMemberSeatCapacity({
+          db: tx as unknown as typeof db,
+          teamId: invite.teamId,
+          additionalSeats: 1,
+          includePendingInvites: false,
+        });
+
+        await acceptTeamMembership(tx, {
+          teamId: invite.teamId,
+          userId,
+          role: invite.role,
+        });
         await tx
           .update(teamInvites)
           .set({ acceptedAt: new Date(), acceptedByUserId: userId })

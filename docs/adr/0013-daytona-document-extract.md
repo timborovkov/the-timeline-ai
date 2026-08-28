@@ -49,7 +49,9 @@ authored by a trusted teammate.
    is never routed through anydoc.
 5. **Credential boundary.** The orchestrator env is limited to Daytona,
    OpenRouter, Database, Redis, and S3 document-bucket access (`S3_ENDPOINT`,
-   `S3_REGION`, access keys, `S3_BUCKET_DOCUMENTS`). In production
+   `S3_REGION`, access keys, `S3_BUCKET_DOCUMENTS`), plus the non-secret
+   `BILLING_CHARGES_ENABLED` toggle so extract AI metering can follow live
+   charging. In production
    `WORKER_MODE=document-extract`, `getEnv()` requires those credentials and
    enforces an allowlist against raw `process.env` so copied Railway vars
    (including unparsed secrets like `SLACK_CANARY_*`,

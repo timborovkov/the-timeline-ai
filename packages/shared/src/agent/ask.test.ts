@@ -437,6 +437,30 @@ describe('askAgent', () => {
     ).resolves.toEqual({ ok: false, error: 'not_a_member' });
   });
 
+  it('rejects Ask when Free AI allowance is exhausted', async () => {
+    const { withTeam } = await import('#src/team-scope.js');
+    const billing = withTeam(db as never, TEAM_ID, USER_ID).billing;
+    await billing.settle({
+      operationId: 'fill-ai',
+      meterId: 'ai',
+      nativeUnits: 500,
+      customerChargeCents: 500,
+    });
+
+    await expect(
+      askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          deliverySurface: 'telegram',
+          question: 'should not run',
+        },
+        { model: makeAskAgentTextModel('should not run') },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'free_allowance_reached' });
+  });
+
   it('maps empty model output and thrown model failures to failed', async () => {
     await expect(
       askAgent(

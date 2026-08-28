@@ -16,6 +16,7 @@ const pgliteTests = [
   'src/agent/evals.test.ts',
   'src/agent/surface-evals.test.ts',
   'src/artifacts/index.test.ts',
+  'src/billing/scope.test.ts',
   'src/boards/index.test.ts',
   'src/calendar/raw-events.test.ts',
   'src/calendar/scope.test.ts',

@@ -5,6 +5,7 @@ import * as taskCategories from '@timeline/shared/task-categories';
 import { withTeam } from '@timeline/shared/team-scope';
 import { DelayedError, Worker, type Job } from 'bullmq';
 
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
@@ -125,9 +126,16 @@ export function startTaskCategoryWorker(
     async (job: Job<queue.TaskCategoryJobData>, token?: string) => {
       const startedAt = Date.now();
       try {
-        const result = await processTaskCategoryJobForTests(deps, job.data, {
-          acquireTeamPermit: acquireTeamRateLimitPermit,
-        });
+        const result = await withWorkerAiBilling(
+          deps.db,
+          job.data.teamId,
+          'task_category',
+          () =>
+            processTaskCategoryJobForTests(deps, job.data, {
+              acquireTeamPermit: acquireTeamRateLimitPermit,
+            }),
+          workerBillingJobOptions(job, token),
+        );
         if (result.status === 'rate_limited') {
           await job.moveToDelayed(Date.now() + result.retryAfterMs, token);
           throw new DelayedError();

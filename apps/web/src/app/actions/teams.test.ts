@@ -1,3 +1,4 @@
+import { releaseFreeGrantIfOwnerLeaves } from '@timeline/shared/billing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -49,6 +50,13 @@ vi.mock('@/lib/db', () => ({
     update: fakes.fakeDbUpdate,
     insert: fakes.fakeDbInsert,
   },
+}));
+vi.mock('@timeline/shared/billing', () => ({
+  applyOwnedTeamFreeGrant: vi.fn().mockResolvedValue({ ok: true }),
+  insertRestrictedFreeBillingAccount: vi.fn().mockResolvedValue(undefined),
+  assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+  releaseFreeGrantIfOwnerLeaves: vi.fn().mockResolvedValue(undefined),
+  isBillingAdmissionError: () => false,
 }));
 vi.mock('@timeline/shared/integrations', () => ({
   adminRecordConnectionAttention: fakes.fakeAdminRecordConnectionAttention,
@@ -884,6 +892,11 @@ describe('removeMemberAction', () => {
 
     await expect(removeMemberAction(form({ userId: MEMBER_ID }))).resolves.toEqual({ ok: true });
 
+    expect(releaseFreeGrantIfOwnerLeaves).toHaveBeenCalledWith({
+      db: tx,
+      teamId: TEAM_ID,
+      userId: MEMBER_ID,
+    });
     expect(fakes.fakeAssertNotLastOwner).toHaveBeenCalledWith(
       expect.anything(),
       TEAM_ID,

@@ -63,6 +63,7 @@ vi.mock('@timeline/shared/rate-limit', () => ({
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: fakes.fakeRequireMembership,
+    billing: {},
     timeline: {
       team: fakes.fakeTeam,
       currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
@@ -121,6 +122,16 @@ vi.mock('@timeline/shared/llm', () => ({
   }),
   streamChat: fakes.fakeStreamChat,
 }));
+vi.mock('@timeline/shared/billing', () => ({
+  askBillingUserMessage: (error: string) => error,
+  askOperationId: () => 'ask:web:test',
+  ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS: 250,
+  mapAskBillingError: (code: string) => code,
+  openRouterUsdCostFromFinishEvent: () => 0,
+  releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
+  reserveAskAi: vi.fn().mockResolvedValue({ ok: true }),
+  settleAskAiFromOpenRouterUsd: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('@/lib/sentry-report', () => ({
   reportCaughtError: fakes.fakeReportCaughtError,
   reportHandledEvent: fakes.fakeReportHandledEvent,
@@ -133,6 +144,8 @@ vi.mock('ai', () => ({
 }));
 
 const { POST } = await import('./route.js');
+const { releaseBillingReservation, settleAskAiFromOpenRouterUsd } =
+  await import('@timeline/shared/billing');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -145,13 +158,18 @@ const followUpMessage = {
   role: 'user',
   parts: [{ type: 'text', text: 'What changed since then?' }],
 };
-let capturedOnFinish: ((event: Record<string, unknown>) => void) | null = null;
+let capturedOnFinish: ((event: Record<string, unknown>) => void | Promise<void>) | null = null;
 let capturedOnError: ((event: { error: unknown }) => void) | null = null;
 
-function request(body: unknown, url = 'https://timeline.test/api/chat'): Request {
+function request(
+  body: unknown,
+  url = 'https://timeline.test/api/chat',
+  init: RequestInit = {},
+): Request {
   return new Request(url, {
     method: 'POST',
     body: JSON.stringify(body),
+    ...init,
   });
 }
 
@@ -271,12 +289,13 @@ beforeEach(() => {
   fakes.fakeCompressMessagesForContext.mockResolvedValue({
     compressed: false,
     messages: [{ role: 'user', content: 'What happened?' }],
+    openRouterUsd: 0,
   });
   fakes.fakeChatStructured.mockResolvedValue({ object: { title: 'Generated chat title' } });
   fakes.fakeStreamChat.mockImplementation(
     (input: {
       onError?: (event: { error: unknown }) => void;
-      onFinish?: (event: Record<string, unknown>) => void;
+      onFinish?: (event: Record<string, unknown>) => void | Promise<void>;
     }) => {
       capturedOnError = input.onError ?? null;
       capturedOnFinish = input.onFinish ?? null;
@@ -739,7 +758,7 @@ describe('POST /api/chat', () => {
       suggest_task: { type: 'native' },
     });
 
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'I can update this once you confirm the exact status.',
       toolCalls: [],
       finishReason: 'stop',
@@ -984,7 +1003,7 @@ describe('POST /api/chat', () => {
     const response = await POST(request(validBody({ startNewSession: true })));
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1008,7 +1027,7 @@ describe('POST /api/chat', () => {
 
     fakes.fakeSetUniqueChatSessionTitle.mockClear();
     await POST(request(validBody({ sessionId: SESSION_ID })));
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1030,7 +1049,7 @@ describe('POST /api/chat', () => {
     );
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1067,7 +1086,7 @@ describe('POST /api/chat', () => {
     );
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1090,7 +1109,7 @@ describe('POST /api/chat', () => {
     fakes.fakeChatStructured.mockRejectedValue(new Error('title model down'));
 
     await POST(request(validBody({ startNewSession: true })));
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1123,7 +1142,7 @@ describe('POST /api/chat', () => {
     fakes.fakeChatStructured.mockRejectedValue(new Error('title model down'));
 
     await POST(request(validBody({ messages: [longMessage], startNewSession: true })));
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1137,13 +1156,13 @@ describe('POST /api/chat', () => {
     });
   });
 
-  it('does not title a new session when persisting the first turn fails', async () => {
+  it('still titles a new session when persisting the first turn fails', async () => {
     fakes.fakeAppendChatMessages.mockRejectedValue(new Error('append failed'));
 
     const response = await POST(request(validBody({ startNewSession: true })));
 
     expect(response.status).toBe(200);
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [],
       finishReason: 'stop',
@@ -1156,7 +1175,11 @@ describe('POST /api/chat', () => {
       );
     });
 
-    expect(fakes.fakeSetUniqueChatSessionTitle).not.toHaveBeenCalled();
+    expect(fakes.fakeSetUniqueChatSessionTitle).toHaveBeenCalledWith(
+      SESSION_ID,
+      'Generated chat title',
+      { touchUpdatedAt: false },
+    );
   });
 
   it('tolerates new-session creation and MCP discovery failures by streaming without persistence', async () => {
@@ -1231,7 +1254,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     expect(capturedOnFinish).toBeTypeOf('function');
-    capturedOnFinish?.({
+    await capturedOnFinish?.({
       text: 'Answer',
       toolCalls: [{ toolName: 'search_timeline' }],
       finishReason: 'stop',
@@ -1310,5 +1333,98 @@ describe('POST /api/chat', () => {
 
     expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
     expect(fakes.fakeReportHandledEvent).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+        expect.objectContaining({ minCustomerChargeCents: 250 }),
+      );
+    });
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
+  });
+
+  it('keeps the chat reservation when settlement fails after the stream finishes', async () => {
+    vi.mocked(settleAskAiFromOpenRouterUsd).mockRejectedValueOnce(new Error('settle down'));
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+    expect(response.status).toBe(200);
+    await capturedOnFinish?.({
+      text: 'Answer',
+      finishReason: 'stop',
+      usage: { inputTokens: 10, outputTokens: 5 },
+      model: { modelId: 'agent-model' },
+      response: { modelId: 'agent-model' },
+    });
+    await Promise.resolve();
+    expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalled();
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
+  });
+
+  it('settles completed compression usage when the answer stream fails', async () => {
+    fakes.fakeCompressMessagesForContext.mockResolvedValueOnce({
+      compressed: true,
+      messages: [{ role: 'user', content: 'What happened?' }],
+      openRouterUsd: 0.02,
+    });
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+    expect(response.status).toBe(200);
+    expect(capturedOnError).toBeTypeOf('function');
+    capturedOnError?.({
+      error: {
+        timelineAi: true,
+        operation: 'llm.streamChat',
+        model: 'agent-model',
+        causeName: 'AI_APICallError',
+        causeMessage: 'OpenRouter 503',
+      },
+    });
+    await vi.waitFor(() => {
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalled();
+    });
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
+    expect(fakes.fakeReportHandledEvent).toHaveBeenCalledWith({
+      message: 'chat_stream_ai_provider_error',
+      surface: 'api',
+      operation: 'chat_stream',
+      tags: {
+        requestedModel: 'agent-model',
+        fallbackModels: 'fallback-agent-model',
+        reason: 'AI_APICallError',
+        aiOperation: 'llm.streamChat',
+        aiModel: 'agent-model',
+        aiCauseName: 'AI_APICallError',
+      },
+    });
+  });
+
+  it('releases the Ask reservation when the client aborts before work starts', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const response = await POST(
+      request(validBody({ sessionId: SESSION_ID }), 'https://timeline.test/api/chat', {
+        signal: controller.signal,
+      }),
+    );
+    expect(response.status).toBe(499);
+    expect(fakes.fakeStreamChat).not.toHaveBeenCalled();
+    expect(releaseBillingReservation).toHaveBeenCalled();
+    expect(settleAskAiFromOpenRouterUsd).not.toHaveBeenCalled();
+  });
+
+  it('conservatively settles streamed usage when the client aborts after work starts', async () => {
+    const controller = new AbortController();
+    const response = await POST(
+      request(validBody({ sessionId: SESSION_ID }), 'https://timeline.test/api/chat', {
+        signal: controller.signal,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(fakes.fakeStreamChat).toHaveBeenCalled();
+    controller.abort();
+    await vi.waitFor(() => {
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+        expect.objectContaining({ minCustomerChargeCents: 250 }),
+      );
+    });
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
   });
 });

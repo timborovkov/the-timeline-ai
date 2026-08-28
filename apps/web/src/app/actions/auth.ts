@@ -1,6 +1,11 @@
 'use server';
 
 import { teamInvites, teamMembers, teams, users } from '@timeline/db';
+import {
+  assertTeamMemberSeatCapacity,
+  insertRestrictedFreeBillingAccount,
+  isBillingAdmissionError,
+} from '@timeline/shared/billing';
 import { insertDefaultDigestDestination, sendMessage } from '@timeline/shared/messaging';
 import { hashPassword } from '@timeline/shared/passwords';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -147,6 +152,12 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           if (invite.email.toLowerCase() !== email) {
             throw new Error(INVITE_WRONG_EMAIL);
           }
+          await assertTeamMemberSeatCapacity({
+            db: tx as unknown as typeof db,
+            teamId: invite.teamId,
+            additionalSeats: 1,
+            includePendingInvites: false,
+          });
           await tx.insert(teamMembers).values({
             teamId: invite.teamId,
             userId,
@@ -185,8 +196,12 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           .returning({ id: teams.id });
         const teamId = teamRows[0]?.id;
         if (!teamId) throw new Error('Failed to create team');
+        // react-doctor-disable-next-line react-doctor/async-parallel -- Team membership insert must precede digest and restricted billing writes on this transaction client.
         await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
         await insertDefaultDigestDestination(tx, teamId);
+        // Credentials signup does not set emailVerified. Keep the workspace
+        // restricted until verifyEmailToken claims the person-level Free grant.
+        await insertRestrictedFreeBillingAccount({ db: tx, teamId });
         return { activeTeamId: teamId, userId, event: 'team_created' as const };
       });
     } catch (e) {
@@ -200,6 +215,16 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
         return {
           error:
             'This invite was sent to a different email. Sign up with the email it was sent to.',
+        };
+      }
+      if (isBillingAdmissionError(e)) {
+        reportCaughtError(e, {
+          surface: 'server_action',
+          operation: 'sign_up_invite_member_limit',
+        });
+        return {
+          error:
+            'This plan’s member limit is reached. Ask an owner to upgrade before you join with this invite.',
         };
       }
       reportCaughtError(e, { surface: 'server_action', operation: 'sign_up' });

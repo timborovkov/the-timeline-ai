@@ -61,6 +61,7 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'SENTRY_RELEASE',
   'SENTRY_ORG',
   'SENTRY_PROJECT',
+  'BILLING_CHARGES_ENABLED',
 ]);
 
 /** Exact shell/runtime keys (not prefixes — avoid `LANG` matching `LANGSMITH_*`). */
@@ -354,6 +355,26 @@ const baseSchema = z.object({
    * generic provider name.
    */
   RECALL_BOT_DISPLAY_NAME: z.string().default('Timeline'),
+
+  // Polar usage billing (sandbox or production). Blank = billing UI + ledger
+  // still work in shadow mode; checkout/portal/ingest stay disabled.
+  POLAR_ACCESS_TOKEN: z.string().optional(),
+  POLAR_SERVER: z.preprocess(
+    emptyStringAsUnset,
+    z.enum(['sandbox', 'production']).default('sandbox'),
+  ),
+  POLAR_ORGANIZATION_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_WEBHOOK_SECRET: z.string().optional(),
+  POLAR_WEBHOOK_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_PRODUCT_ID_PAYG: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_PRODUCT_ID_TEAM: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_PRODUCT_ID_BUSINESS: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /** One-time €10 prepaid top-up product (PAYG first collection). */
+  POLAR_PRODUCT_ID_TOPUP: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_DISCOUNT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POLAR_DISCOUNT_CODE: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /** When true, wallet/spend-cap gates block costly work. Default shadow = record only. */
+  BILLING_CHARGES_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
 
   // Phase 11 — Third-party integrations + custom MCPs.
   //

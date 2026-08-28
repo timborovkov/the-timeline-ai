@@ -1,6 +1,6 @@
 # The Timeline — Design System
 
-**Version:** v3.27 · Installed-app splash (2026-08-26). Replaces v3.26 Dedicated animated platform flow.
+**Version:** v3.29 · Installed-app splash (2026-08-26). Replaces v3.28 Folded infrastructure limits.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -138,11 +138,11 @@ for long-form prose. Article text is limited to 65–70ch.
 ## Layout and navigation
 
 The authenticated product keeps eight primary destinations: Home, Timeline,
-Ask, Work, Documents, Meetings, Connections, and Team.
+Ask, Work, Documents, Meetings, Connections, Usage, and Team.
 
 - Desktop and mobile primary navigation keep that destination order in three
   labeled groups: Overview (Home, Timeline, Ask), Workspace (Work, Documents,
-  Meetings), and Manage (Connections, Team). Collapsed rails retain the same
+  Meetings), and Manage (Connections, Usage, Team). Collapsed rails retain the same
   order and expose every destination through its icon label and tooltip.
 - Expanded sidebar: 240px. Collapsed rail: 56px. The product mark uses the
   same 12px inset as primary destinations and links to Home (`/app`). Fold and
@@ -968,13 +968,13 @@ measure instead of being squeezed by a proportional sidebar.
 Every public shell uses the landing masthead as one full-width chrome component,
 with the same warm public palette, wordmark position, active state, GitHub and
 theme controls, and lime account CTA. Signed-in visitors see `Dashboard`;
-signed-out visitors see `Sign in` and `Try one project`. The shared public canvas
+signed-out visitors see `Sign in` and `Start free` (free / no-card). The shared public canvas
 inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
-The masthead exposes the same four primary destinations in the same order:
-Product (`/`), Integrations (`/integrations`), How it works (`/how-it-works`), and
+The masthead exposes the same five primary destinations in the same order:
+Product (`/`), Integrations (`/integrations`), Pricing (`/pricing`), How it works (`/how-it-works`), and
 Help (`/help`). Desktop headers show them directly, compact widths use a native
 menu disclosure, and footers repeat them for recovery at the end of a page. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and
@@ -1210,4 +1210,9 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-21 | Evidence-flow acquisition story | Reframes Timeline as AI team memory, introduces the reusable evidence-to-workspace-to-assistant explainer, and adds three substantive outcome-led solution pages. |
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
+| 2026-08-21 | Usage nav and billing nudges | Adds Manage → Usage, keeps Enterprise off the public plan grid as a gray contact nudge, and surfaces quiet spend-cap / Free-allowance nudges on Home, Usage, and Billing. |
+| 2026-08-21 | Sidebar plan usage meter | Puts plan name, usage progress, and overage under Help in the app sidebar (and mobile nav), linking to Billing or Usage. |
+| 2026-08-21 | Free CTA honesty | Header CTA is `Start free`; landing and sign-up say free / no card; upgrade nudges link to `/pricing`. |
+| 2026-08-22 | Usage plan limits | Usage and Billing show live used/limit for Ask turns, concurrent meeting notetakers, custom MCP servers, documents, storage, indexed chunks, and member seats — not Polar meters. |
+| 2026-08-24 | Folded infrastructure limits | Usage, Billing, and `/pricing` keep billed meters in the default view. Plan capacity ceilings sit in a closed **Infrastructure limits** disclosure. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |

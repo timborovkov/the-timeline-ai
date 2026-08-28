@@ -30,6 +30,7 @@ import {
   reconciliationEvidence,
   reconciliationOutputs,
   reconciliationRuns,
+  teamBillingAccounts,
   teamDigestDestinations,
   teamMembers,
   teamProviderResourceShares,
@@ -392,6 +393,26 @@ async function main(): Promise<void> {
         .onConflictDoUpdate({
           target: [teamMembers.teamId, teamMembers.userId],
           set: { role: sql`excluded.role`, removedAt: null, removedByUserId: null },
+        });
+
+      await tx
+        .insert(teamBillingAccounts)
+        .values({
+          teamId: IDS.team,
+          planId: 'payg',
+          billingState: 'payg_active',
+          shadowBilling: true,
+          spendCapCents: 2_500,
+        })
+        .onConflictDoUpdate({
+          target: teamBillingAccounts.teamId,
+          set: {
+            planId: sql`excluded.plan_id`,
+            billingState: sql`excluded.billing_state`,
+            shadowBilling: sql`excluded.shadow_billing`,
+            spendCapCents: sql`excluded.spend_cap_cents`,
+            updatedAt: now,
+          },
         });
 
       await tx

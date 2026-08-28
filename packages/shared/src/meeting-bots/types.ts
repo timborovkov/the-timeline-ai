@@ -19,6 +19,8 @@ export interface JoinMeetingInput {
   /** Transcript webhook the provider should call. Required because Recall
    *  configures it per-bot, not per-account. */
   transcriptWebhookUrl: string;
+  /** Recording duration ceiling in seconds (plan reserve / remaining Free minutes). */
+  maxRecordingDurationSeconds?: number;
 }
 
 export interface JoinMeetingResult {

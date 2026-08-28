@@ -23,6 +23,7 @@ export const messageIntent = pgEnum('message_intent', [
   'email_verification',
   'daily_digest',
   'connection_attention',
+  'billing_usage_alert',
 ]);
 
 export const messageChannel = pgEnum('message_channel', [

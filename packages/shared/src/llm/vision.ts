@@ -1,6 +1,8 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
 
+import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
+import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -152,36 +154,46 @@ export async function extractTextFromMedia(
     { operation: 'llm.extractTextFromMedia', model: modelId },
     async () => {
       const model = deps.model ?? buildDefaultModel(modelId);
-      return generateText({
-        model,
-        system: SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              ...mediaParts,
-              {
-                type: 'text',
-                text: 'Extract readable text, suggest a concise title, and write a neutral visual description. Follow the section format in the system prompt.',
-              },
-            ],
-          },
-        ],
-        maxOutputTokens: input.maxOutputTokens ?? 8000,
-        providerOptions: withLangSmithProviderOptions(undefined, {
-          name: 'llm.extractTextFromMedia',
-          model: modelId,
-          processInputs: sanitizeAiSdkInputs,
-          processChildLLMRunInputs: sanitizeAiSdkInputs,
-          metadata: {
-            operation: 'extract_text_from_media',
-            media_type: mediaType,
-            input_bytes: input.body.byteLength,
-            page_image_count: pageImages.length,
-            has_filename: Boolean(input.filename),
-            max_output_tokens: input.maxOutputTokens ?? 8000,
-          },
-        }),
+      return withAiMetering({ operationClass: 'vision', model: modelId }, async () => {
+        const generated = await generateText({
+          model,
+          system: SYSTEM_PROMPT,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                ...mediaParts,
+                {
+                  type: 'text',
+                  text: 'Extract readable text, suggest a concise title, and write a neutral visual description. Follow the section format in the system prompt.',
+                },
+              ],
+            },
+          ],
+          maxOutputTokens: input.maxOutputTokens ?? 8000,
+          providerOptions: withLangSmithProviderOptions(undefined, {
+            name: 'llm.extractTextFromMedia',
+            model: modelId,
+            processInputs: sanitizeAiSdkInputs,
+            processChildLLMRunInputs: sanitizeAiSdkInputs,
+            metadata: {
+              operation: 'extract_text_from_media',
+              media_type: mediaType,
+              input_bytes: input.body.byteLength,
+              page_image_count: pageImages.length,
+              has_filename: Boolean(input.filename),
+              max_output_tokens: input.maxOutputTokens ?? 8000,
+            },
+          }),
+        });
+        return {
+          value: generated,
+          finish: openRouterFinishFromAiResult({
+            usage: generated.usage,
+            providerMetadata: generated.providerMetadata,
+            totalUsage: generated.totalUsage,
+          }),
+        };
       });
     },
   );

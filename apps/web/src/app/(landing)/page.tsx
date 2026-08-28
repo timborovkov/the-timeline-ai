@@ -14,10 +14,7 @@ import { HomeMotion } from '@/components/marketing/home/home-motion';
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { findConnectorByName } from '@/components/marketing/integrations/connector-content';
-import {
-  PUBLIC_DEMO_DISCLOSURE,
-  PUBLIC_DEMO_STORY,
-} from '@/components/marketing/public-demo-story';
+import { PUBLIC_DEMO_STORY } from '@/components/marketing/public-demo-story';
 import { SOLUTION_ROUTES } from '@/components/marketing/solutions/content';
 import { PublicHeader } from '@/components/public-header';
 import { PublicNavigationItems } from '@/components/public-navigation';
@@ -243,12 +240,20 @@ function ClaimScene({ isSignedIn }: { isSignedIn: boolean }) {
             See how Timeline works
           </Link>
         </div>
+        {isSignedIn ? null : (
+          <p className={styles.ctaFinePrint}>
+            Free to start · no card required ·{' '}
+            <Link href="/pricing" className={styles.textLink}>
+              See pricing
+            </Link>
+          </p>
+        )}
         <div className={styles.heroSourceLink}>
           <GitHubSourceLink />
         </div>
       </div>
 
-      <TimelineFlowDiagram variant="hero" disclosure={PUBLIC_DEMO_DISCLOSURE} />
+      <TimelineFlowDiagram variant="hero" />
     </section>
   );
 }
@@ -582,9 +587,17 @@ function CtaScene({ isSignedIn }: { isSignedIn: boolean }) {
           {isSignedIn ? 'Open your Timeline' : 'Try one real project'} <span aria-hidden>→</span>
         </Link>
         {isSignedIn ? null : (
-          <span className={styles.ctaSignIn}>
-            Already have a Timeline? <Link href="/sign-in">Sign in</Link>
-          </span>
+          <>
+            <p className={styles.ctaFinePrint}>
+              Free to start · no card required ·{' '}
+              <Link href="/pricing" className={styles.textLink}>
+                See pricing
+              </Link>
+            </p>
+            <span className={styles.ctaSignIn}>
+              Already have a Timeline? <Link href="/sign-in">Sign in</Link>
+            </span>
+          </>
         )}
         <div className={styles.ctaProof} aria-label="Timeline trust defaults">
           <span>Captured</span>

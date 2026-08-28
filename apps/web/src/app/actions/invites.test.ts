@@ -48,6 +48,10 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/active-team', () => ({ ACTIVE_TEAM_COOKIE: 'timeline_active_team' }));
 vi.mock('@/lib/default-team', () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }));
 vi.mock('@/lib/pending-invite', () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }));
+vi.mock('@timeline/shared/billing', () => ({
+  assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+  isBillingAdmissionError: () => false,
+}));
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: fakes.fakeLoggerError }),
 }));
@@ -176,6 +180,34 @@ describe('acceptInviteAction', () => {
       'timeline_active_team',
       TEAM_ID,
       expect.objectContaining({ httpOnly: true, path: '/' }),
+    );
+  });
+
+  it('appends prior membership intervals when a removed member is re-accepted', async () => {
+    const started = new Date('2026-01-01T00:00:00.000Z');
+    const ended = new Date('2026-01-15T00:00:00.000Z');
+    const membership = {
+      role: 'member' as const,
+      removedAt: ended,
+      createdAt: started,
+      priorIntervals: [],
+    };
+    const { tx, inserts, updates } = makeTx([[invite()], [membership], [membership]]);
+    fakes.fakeTransaction.mockImplementation((fn: (arg: unknown) => unknown) =>
+      Promise.resolve(fn(tx)),
+    );
+
+    await expect(acceptInviteAction(form({ token: TOKEN }))).rejects.toThrow(
+      'NEXT_REDIRECT:/app/timeline',
+    );
+
+    expect(inserts).toEqual([]);
+    expect(updates[0]).toEqual(
+      expect.objectContaining({
+        role: 'member',
+        removedAt: null,
+        priorIntervals: [{ startedAt: started.toISOString(), endedAt: ended.toISOString() }],
+      }),
     );
   });
 

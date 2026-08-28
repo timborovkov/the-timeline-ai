@@ -49,8 +49,12 @@ export function PublicHeader({
         ) : null}
         <ThemeToggle className={styles.themeToggle} />
         {showAccountActions ? (
-          <Link href={isSignedIn ? '/app' : '/sign-up'} className={styles.navCta}>
-            {isSignedIn ? 'Dashboard' : 'Try one project'}
+          <Link
+            href={isSignedIn ? '/app' : '/sign-up'}
+            className={styles.navCta}
+            title={isSignedIn ? undefined : 'Free to start — no card required'}
+          >
+            {isSignedIn ? 'Dashboard' : 'Start free'}
           </Link>
         ) : null}
       </div>

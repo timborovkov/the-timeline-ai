@@ -51,6 +51,7 @@ describe('compressMessagesForContext', () => {
     });
 
     expect(result.compressed).toBe(false);
+    expect(result.openRouterUsd).toBe(0);
     expect(result.messages).toBe(messages);
     expect(built).toBe(false);
   });

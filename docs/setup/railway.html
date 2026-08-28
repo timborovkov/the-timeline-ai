@@ -109,7 +109,10 @@
         Extract startup enforces a raw-env allowlist. Standard Railway Railpack / MISE runtime keys
         are supported, but a copied app secret or unknown service variable intentionally stops the
         process. Remove the extra variable instead of sharing the web/worker variable group with
-        <code>document-extract-orchestrator</code>.
+        <code>document-extract-orchestrator</code>. Copy the non-secret
+        <code>BILLING_CHARGES_ENABLED</code> toggle onto the orchestrator when live charging is on
+        so extract AI metering matches web/worker; do not copy Auth, Telegram, Slack, or other
+        integration secrets.
       </p>
 
       <h2 id="shared-variables">5. Shared variables</h2>

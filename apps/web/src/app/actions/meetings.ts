@@ -1,4 +1,12 @@
 'use server';
+import {
+  abortRecallJoinAfterProviderAccept,
+  claimMeetingJoinUnderRecallCap,
+  isBillingAdmissionError,
+  recallBillingUserMessage,
+  reserveRecallMeetingMinutes,
+  settleElapsedRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
 import { detectMeetingPlatform } from '@timeline/shared/meetings';
@@ -112,7 +120,23 @@ async function startMeetingBot(input: {
   platform: 'meet' | 'teams' | 'zoom';
   provider?: string;
 }): Promise<Result> {
-  const claimed = await input.scope.meetings.claimMeetingForJoin(input.meetingId);
+  const live = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
+  if (live && (live.status === 'joining' || live.status === 'active')) {
+    return { ok: true, meetingId: live.id };
+  }
+  let claimed;
+  try {
+    claimed = await claimMeetingJoinUnderRecallCap({
+      db,
+      teamId: input.teamId,
+      meetingId: input.meetingId,
+    });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      return { ok: false, meetingId: input.meetingId, error: err.message };
+    }
+    throw err;
+  }
   if (!claimed) {
     const active = await input.scope.meetings.findActiveMeetingForUrl(input.meetingUrl);
     if (active && (active.status === 'joining' || active.status === 'active')) {
@@ -120,13 +144,32 @@ async function startMeetingBot(input: {
     }
     return { ok: false, meetingId: input.meetingId, error: 'Meeting is no longer joinable.' };
   }
+  const admission = await reserveRecallMeetingMinutes(input.scope.billing, {
+    meetingId: claimed.id,
+  });
+  if (!admission.ok) {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
+      metadata: {
+        join_failed_at: new Date().toISOString(),
+        join_error: admission.code,
+      },
+    });
+    return {
+      ok: false,
+      meetingId: claimed.id,
+      error: recallBillingUserMessage(admission.code),
+    };
+  }
   const transcriptWebhookUrl = meetingBots.resolveTranscriptWebhookUrl();
+  let joinedBotId: string | undefined;
+  let leaveMeeting: ((botId: string) => Promise<void>) | undefined;
   try {
     // react-doctor-disable-next-line react-doctor/async-parallel -- Provider lookup and team load already run together; the later status update depends on the join result.
     const [provider, team] = await Promise.all([
       Promise.resolve(meetingBots.getMeetingBotProvider(claimed.provider)),
       input.scope.timeline.team(),
     ]);
+    leaveMeeting = (botId) => provider.leaveMeeting(botId);
     const join = await provider.joinMeeting({
       meetingId: claimed.id,
       teamId: input.teamId,
@@ -134,14 +177,27 @@ async function startMeetingBot(input: {
       platform: claimed.platform,
       botName: meetingBots.meetingBotDisplayName(team?.name),
       transcriptWebhookUrl,
+      maxRecordingDurationSeconds: admission.reservedMinutes * 60,
     });
+    joinedBotId = join.botId;
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
-      metadata: { provider_join_result: join.raw ?? {} },
+      metadata: {
+        provider_join_result: join.raw ?? {},
+        billing_operation_id: admission.operationId,
+        reserved_recall_minutes: admission.reservedMinutes,
+        reserved_recall_started_at: new Date().toISOString(),
+      },
     });
     return { ok: true, meetingId: claimed.id };
   } catch (err) {
     log.error({ err, meetingId: claimed.id }, 'recall_join_failed');
+    await abortRecallJoinAfterProviderAccept({
+      billing: input.scope.billing,
+      operationId: admission.operationId,
+      ...(leaveMeeting ? { leaveMeeting } : {}),
+      ...(joinedBotId ? { botId: joinedBotId } : {}),
+    });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
@@ -489,6 +545,13 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
       await scope.meetings.updateMeetingStatus(meetingId, 'cancelled', {
         metadata: { cancelled_at: new Date().toISOString(), capture_status: 'cancelled' },
       });
+      await settleElapsedRecallMeetingMinutes(scope.billing, {
+        meetingId,
+        startedAt: meeting.startedAt,
+        endedAt: new Date(),
+        metadata: meeting.metadata,
+        source: 'meeting_cancel',
+      }).catch(() => undefined);
     }
     revalidatePath('/app/meetings');
     revalidatePath(`/app/meetings/${meetingId}`);

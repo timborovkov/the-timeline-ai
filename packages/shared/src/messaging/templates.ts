@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type {
+  BillingUsageAlertMessageInput,
   ConnectionAttentionMessageInput,
   DailyDigestMessageInput,
   EmailVerificationMessageInput,
@@ -32,6 +33,7 @@ import {
 
 type TemplateName =
   | 'base'
+  | 'billing-usage-alert'
   | 'daily-digest'
   | 'email-verification'
   | 'support-request'
@@ -488,6 +490,121 @@ function renderConnectionAttention(input: ConnectionAttentionMessageInput): Rend
   };
 }
 
+function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
+  subject: string;
+  title: string;
+  intro: string;
+  ctaLabel: string;
+  ctaHref: string;
+} {
+  switch (input.kind) {
+    case 'spend_cap_50':
+      return {
+        subject: `${input.teamName}: halfway through this month’s spend cap`,
+        title: 'Halfway through the spend cap',
+        intro: 'Your workspace has used about half of its monthly spend cap.',
+        ctaLabel: 'View usage',
+        ctaHref: input.usageUrl,
+      };
+    case 'spend_cap_75':
+      return {
+        subject: `${input.teamName}: 75% of spend cap used`,
+        title: 'Spend cap at 75%',
+        intro: 'Your workspace has used about three quarters of its monthly spend cap.',
+        ctaLabel: 'View usage',
+        ctaHref: input.usageUrl,
+      };
+    case 'spend_cap_90':
+      return {
+        subject: `${input.teamName}: 90% of spend cap used`,
+        title: 'Spend cap nearly reached',
+        intro:
+          'Your workspace is close to its monthly spend cap. New cost-bearing work will pause at 100%.',
+        ctaLabel: 'Manage billing',
+        ctaHref: input.billingUrl,
+      };
+    case 'spend_cap_100':
+      return {
+        subject: `${input.teamName}: monthly spend cap reached`,
+        title: 'Spend cap reached',
+        intro:
+          'New cost-bearing work is paused until you raise the spend cap or the period resets.',
+        ctaLabel: 'Manage billing',
+        ctaHref: input.billingUrl,
+      };
+    case 'free_near_limit':
+      return {
+        subject: `${input.teamName}: approaching Free allowance`,
+        title: 'Approaching Free allowance',
+        intro:
+          'Your Free workspace is near one or more monthly allowances. Pay as you go keeps the Free floor and only charges measured overage under a spend cap.',
+        ctaLabel: 'Review billing',
+        ctaHref: input.billingUrl,
+      };
+    case 'free_exhausted':
+      return {
+        subject: `${input.teamName}: Free allowance used up`,
+        title: 'Free allowance used up',
+        intro:
+          'A Free monthly allowance is used up. Reading, export, and billing stay available. Add a payment method to continue metered work under a spend cap.',
+        ctaLabel: 'Add payment method',
+        ctaHref: input.billingUrl,
+      };
+    case 'wallet_auto_reload':
+      return {
+        subject: `${input.teamName}: wallet auto-reload ready`,
+        title: 'Wallet auto-reload',
+        intro:
+          'Your prepaid wallet is at or below the auto-reload threshold. Complete this Polar top-up to credit the wallet; Timeline cannot charge Polar without a checkout.',
+        ctaLabel: 'Complete Polar top-up',
+        ctaHref: input.billingUrl,
+      };
+  }
+}
+
+function renderBillingUsageAlert(input: BillingUsageAlertMessageInput): RenderedMessage {
+  const copy = billingUsageAlertCopy(input);
+  const ownerName = input.ownerName?.trim() ?? 'there';
+  const preview = copy.intro;
+  const textBody = [
+    `Hi ${ownerName},`,
+    '',
+    copy.intro,
+    '',
+    `Workspace: ${input.teamName} · Plan: ${input.planName} · Period: ${input.periodYm}`,
+    input.detailLine,
+    '',
+    `${copy.ctaLabel}: ${copy.ctaHref}`,
+    `Usage: ${input.usageUrl}`,
+  ].join('\n');
+  const htmlBody = htmlLayout({
+    preview,
+    title: copy.title,
+    body: renderBody('billing-usage-alert', {
+      ownerName,
+      intro: copy.intro,
+      teamName: input.teamName,
+      planName: input.planName,
+      periodYm: input.periodYm,
+      detailLine: input.detailLine,
+    }),
+    cta: { href: copy.ctaHref, label: copy.ctaLabel },
+  });
+  return {
+    intent: 'billing_usage_alert',
+    to: input.to,
+    subject: copy.subject,
+    textBody,
+    htmlBody,
+    previewText: preview,
+    metadata: {
+      message_intent: 'billing_usage_alert',
+      billing_alert_kind: input.kind,
+      period_ym: input.periodYm,
+    },
+  };
+}
+
 export function renderMessage<TIntent extends MessageIntent>(
   intent: TIntent,
   input: MessageInput<TIntent>,
@@ -505,6 +622,8 @@ export function renderMessage<TIntent extends MessageIntent>(
       return renderDailyDigest(input as DailyDigestMessageInput);
     case 'connection_attention':
       return renderConnectionAttention(input as ConnectionAttentionMessageInput);
+    case 'billing_usage_alert':
+      return renderBillingUsageAlert(input as BillingUsageAlertMessageInput);
     default:
       intent satisfies never;
       throw new Error(`Unsupported message intent: ${String(intent)}`);

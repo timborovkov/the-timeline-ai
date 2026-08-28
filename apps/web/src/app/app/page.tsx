@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { CaptureForm } from '@/components/capture-form';
 import { CaptureDialog } from '@/components/home/capture-dialog';
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
@@ -89,6 +90,7 @@ export default async function HomeDashboardPage() {
     connectionAttention,
     initialChecklist,
     recoverableJobs,
+    billingDashboard,
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
@@ -107,6 +109,10 @@ export default async function HomeDashboardPage() {
       return null;
     }),
     isAdmin ? scope.jobRecovery.listRecoverableJobs() : Promise.resolve([]),
+    scope.billing.getDashboard({ canManageBilling: isAdmin }).catch((err: unknown) => {
+      reportCaughtError(err, { surface: 'render', operation: 'billing_dashboard' });
+      return null;
+    }),
   ]);
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
@@ -170,6 +176,8 @@ export default async function HomeDashboardPage() {
       />
 
       <OnboardingChecklist initialData={initialChecklist} />
+
+      {billingDashboard?.nudge ? <BillingUpgradeNudge nudge={billingDashboard.nudge} /> : null}
 
       <HomeAttention
         groups={[

@@ -1,5 +1,9 @@
 import { type LanguageModel, type ModelMessage } from 'ai';
 
+import {
+  openRouterFinishFromAiResult,
+  openRouterUsdCostFromFinishEvent,
+} from '#src/billing/openrouter-usage.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import {
   DEFAULT_CHAT_MEMORY,
@@ -25,6 +29,7 @@ export interface CompressMessagesResult {
   triggerTokens: number;
   keptMessages: number;
   summarizedMessages: number;
+  openRouterUsd: number;
 }
 
 const SUMMARY_SYSTEM_PROMPT =
@@ -152,6 +157,7 @@ export async function compressMessagesForContext(
       triggerTokens,
       keptMessages: input.messages.length,
       summarizedMessages: 0,
+      openRouterUsd: 0,
     };
   }
 
@@ -167,6 +173,7 @@ export async function compressMessagesForContext(
       triggerTokens,
       keptMessages: input.messages.length,
       summarizedMessages: 0,
+      openRouterUsd: 0,
     };
   }
 
@@ -206,5 +213,12 @@ export async function compressMessagesForContext(
     triggerTokens,
     keptMessages: kept.length,
     summarizedMessages: summarized.length,
+    openRouterUsd: openRouterUsdCostFromFinishEvent(
+      openRouterFinishFromAiResult({
+        usage: result.usage,
+        providerMetadata: result.providerMetadata,
+        totalUsage: result.totalUsage,
+      }),
+    ),
   };
 }

@@ -1,5 +1,12 @@
 import type { Db } from '@timeline/db';
 
+import {
+  abortRecallJoinAfterProviderAccept,
+  recallBillingUserMessage,
+  reserveRecallMeetingMinutes,
+} from '#src/billing/admission.js';
+import { claimMeetingJoinUnderRecallCap } from '#src/billing/capacity.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import * as meetingBots from '#src/meeting-bots/index.js';
 import { detectMeetingPlatform, type MeetingRow } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
@@ -37,11 +44,33 @@ async function ensureCapacity(scope: ReturnType<typeof withTeam>): Promise<strin
 }
 
 async function startBot(input: {
+  db: Db;
   scope: ReturnType<typeof withTeam>;
   teamId: string;
   meeting: MeetingRow;
 }): Promise<QuickJoinResult> {
-  const claimed = await input.scope.meetings.claimMeetingForJoin(input.meeting.id);
+  const live = await input.scope.meetings.findActiveMeetingForUrl(input.meeting.meetingUrl);
+  if (live && (live.status === 'joining' || live.status === 'active')) {
+    const team = await input.scope.timeline.team();
+    return {
+      ok: true,
+      meetingId: live.id,
+      botName: meetingBots.meetingBotDisplayName(team?.name),
+    };
+  }
+  let claimed;
+  try {
+    claimed = await claimMeetingJoinUnderRecallCap({
+      db: input.db,
+      teamId: input.teamId,
+      meetingId: input.meeting.id,
+    });
+  } catch (err) {
+    if (isBillingAdmissionError(err)) {
+      return { ok: false, meetingId: input.meeting.id, error: err.message };
+    }
+    throw err;
+  }
   if (!claimed) {
     const active = await input.scope.meetings.findActiveMeetingForUrl(input.meeting.meetingUrl);
     if (active && (active.status === 'joining' || active.status === 'active')) {
@@ -54,9 +83,27 @@ async function startBot(input: {
     }
     return { ok: false, meetingId: input.meeting.id, error: 'Meeting is no longer joinable.' };
   }
+  const admission = await reserveRecallMeetingMinutes(input.scope.billing, {
+    meetingId: claimed.id,
+  });
+  if (!admission.ok) {
+    await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
+      metadata: {
+        join_failed_at: new Date().toISOString(),
+        join_error: admission.code,
+        source: 'quick_join',
+      },
+    });
+    return {
+      ok: false,
+      meetingId: claimed.id,
+      error: recallBillingUserMessage(admission.code),
+    };
+  }
   const team = await input.scope.timeline.team();
   const botName = meetingBots.meetingBotDisplayName(team?.name);
   const provider = meetingBots.getMeetingBotProvider(claimed.provider);
+  let joinedBotId: string | undefined;
   try {
     const join = await provider.joinMeeting({
       meetingId: claimed.id,
@@ -65,13 +112,27 @@ async function startBot(input: {
       platform: claimed.platform,
       botName,
       transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
+      maxRecordingDurationSeconds: admission.reservedMinutes * 60,
     });
+    joinedBotId = join.botId;
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'joining', {
       providerBotId: join.botId,
-      metadata: { provider_join_result: join.raw ?? {}, source: 'quick_join' },
+      metadata: {
+        provider_join_result: join.raw ?? {},
+        source: 'quick_join',
+        billing_operation_id: admission.operationId,
+        reserved_recall_minutes: admission.reservedMinutes,
+        reserved_recall_started_at: new Date().toISOString(),
+      },
     });
     return { ok: true, meetingId: claimed.id, botName };
   } catch (err) {
+    await abortRecallJoinAfterProviderAccept({
+      billing: input.scope.billing,
+      operationId: admission.operationId,
+      leaveMeeting: (botId) => provider.leaveMeeting(botId),
+      ...(joinedBotId ? { botId: joinedBotId } : {}),
+    });
     await input.scope.meetings.updateMeetingStatus(claimed.id, 'failed', {
       metadata: {
         join_failed_at: new Date().toISOString(),
@@ -132,7 +193,7 @@ export async function joinSavedMeetingByCommand(input: {
         saved_meeting_id: resolved.savedMeeting.id,
       },
     }));
-  return startBot({ scope, teamId: input.teamId, meeting });
+  return startBot({ db: input.db, scope, teamId: input.teamId, meeting });
 }
 
 export async function createRawUrlQuickJoinConfirmation(input: {
@@ -223,6 +284,6 @@ export async function confirmRawUrlQuickJoin(input: {
       },
     }));
   await scope.meetings.markMeetingCaptureConfirmation(confirmation.id, 'confirmed', meeting.id);
-  const joined = await startBot({ scope, teamId: input.teamId, meeting });
+  const joined = await startBot({ db: input.db, scope, teamId: input.teamId, meeting });
   return joined;
 }

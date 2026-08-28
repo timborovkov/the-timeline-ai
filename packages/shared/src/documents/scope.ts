@@ -11,6 +11,9 @@ import {
 } from '@timeline/db';
 import { type SQL, and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 
+import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
+import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildDocumentObjectKey } from '#src/documents/object-key.js';
@@ -25,6 +28,8 @@ import {
   sourcePayloadRefFromMetadata,
 } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
+import { getDocumentsBucket, getS3Client } from '#src/s3/client.js';
+import { deleteObject } from '#src/s3/objects.js';
 import { rawEventVisibleToUser, validateVisibilityUserIds } from '#src/visibility.js';
 
 // drizzle's transaction callback gives a PgTransaction that has the same
@@ -812,6 +817,20 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
     return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
+  async function withSearchEmbeddingBilling<T>(fn: () => Promise<T>): Promise<T> {
+    if (getBillingContext()) return fn();
+    return runWithBillingContext(
+      {
+        db,
+        teamId,
+        userId,
+        operationClass: 'embedding',
+        source: 'search',
+      },
+      fn,
+    );
+  }
+
   async function searchDocumentChunksPage(
     input: SearchDocumentChunksInput,
   ): Promise<DocumentChunkSearchPage> {
@@ -826,7 +845,7 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     const limit = input.limit ?? 12;
     const offset = input.offset ?? 0;
-    const { vector } = await embedFn({ text: input.query });
+    const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
     const searchOpts: SearchOpts = {
       limit: offset + limit + 1,
       sourceKind: 'doc_chunk',
@@ -1215,6 +1234,12 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
         visibilityUserIds: input.visibilityUserIds ?? null,
       });
       return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
+        await assertTeamWriteCapacity({
+          db: tx as unknown as Db,
+          teamId,
+          additionalDocuments: 1,
+        });
         const docRows = await tx
           .insert(documents)
           .values({
@@ -1466,88 +1491,120 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       action: 'upload' | 'new_version';
     }> {
       await ensureMember();
-      return db.transaction(async (tx) => {
-        const vrows = await tx
-          .select()
-          .from(documentVersions)
-          .where(and(eq(documentVersions.id, input.versionId), eq(documentVersions.teamId, teamId)))
-          .limit(1);
-        const version = vrows[0] as DocumentVersionRow | undefined;
-        if (!version) throw new Error('Document version not found');
+      const peekedRows = await db
+        .select()
+        .from(documentVersions)
+        .where(and(eq(documentVersions.id, input.versionId), eq(documentVersions.teamId, teamId)))
+        .limit(1);
+      const peeked = peekedRows[0] as DocumentVersionRow | undefined;
+      if (!peeked) throw new Error('Document version not found');
+      try {
+        return await db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
+          const vrows = await tx
+            .select()
+            .from(documentVersions)
+            .where(
+              and(eq(documentVersions.id, input.versionId), eq(documentVersions.teamId, teamId)),
+            )
+            .limit(1);
+          const version = vrows[0] as DocumentVersionRow | undefined;
+          if (!version) throw new Error('Document version not found');
+          if (!version.sourceEventId) {
+            await assertTeamWriteCapacity({
+              db: tx as unknown as Db,
+              teamId,
+              additionalBytes: input.byteSize,
+            });
+          }
 
-        const drows = await tx
-          .select()
-          .from(documents)
-          .where(
-            and(
-              eq(documents.id, version.documentId),
-              eq(documents.teamId, teamId),
-              isNull(documents.deletedAt),
-            ),
-          )
-          .limit(1);
-        const document = drows[0] as DocumentRow | undefined;
-        if (!document) throw new Error('Document not found for version');
+          const drows = await tx
+            .select()
+            .from(documents)
+            .where(
+              and(
+                eq(documents.id, version.documentId),
+                eq(documents.teamId, teamId),
+                isNull(documents.deletedAt),
+              ),
+            )
+            .limit(1);
+          const document = drows[0] as DocumentRow | undefined;
+          if (!document) throw new Error('Document not found for version');
 
-        // Idempotent finalize: if this version already has a source_event_id,
-        // the upload was already finalised. Return the existing state rather
-        // than writing a second "Uploaded foo" raw_events row. Guards
-        // against UI double-clicks, retried server actions, and Next.js's
-        // automatic action replay after a transient error.
-        if (version.sourceEventId) {
+          // Idempotent finalize: if this version already has a source_event_id,
+          // the upload was already finalised. Return the existing state rather
+          // than writing a second "Uploaded foo" raw_events row. Guards
+          // against UI double-clicks, retried server actions, and Next.js's
+          // automatic action replay after a transient error.
+          if (version.sourceEventId) {
+            const action: 'upload' | 'new_version' =
+              version.version === 1 ? 'upload' : 'new_version';
+            return { document, version, eventId: version.sourceEventId, action };
+          }
+
           const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
-          return { document, version, eventId: version.sourceEventId, action };
-        }
+          const summary =
+            action === 'upload'
+              ? `Uploaded ${document.name}`
+              : `Uploaded new version (v${String(version.version)}) of ${document.name}`;
 
-        const action: 'upload' | 'new_version' = version.version === 1 ? 'upload' : 'new_version';
-        const summary =
-          action === 'upload'
-            ? `Uploaded ${document.name}`
-            : `Uploaded new version (v${String(version.version)}) of ${document.name}`;
-
-        const eventId = await writeDocumentEvent(tx, {
-          action,
-          summary,
-          documentId: document.id,
-          documentVersionId: version.id,
-          folderId: document.folderId,
-          visibility: document.visibility,
-          visibilityUserIds: document.visibilityUserIds,
-          sourceMetadata: documentUploadSourceMetadata({
+          const eventId = await writeDocumentEvent(tx, {
             action,
-            document,
-            version,
-            byteSize: input.byteSize,
-            contentType: input.contentType,
-            checksumSha256: input.checksumSha256,
-            sourceMetadata: input.sourceMetadata,
-          }),
+            summary,
+            documentId: document.id,
+            documentVersionId: version.id,
+            folderId: document.folderId,
+            visibility: document.visibility,
+            visibilityUserIds: document.visibilityUserIds,
+            sourceMetadata: documentUploadSourceMetadata({
+              action,
+              document,
+              version,
+              byteSize: input.byteSize,
+              contentType: input.contentType,
+              checksumSha256: input.checksumSha256,
+              sourceMetadata: input.sourceMetadata,
+            }),
+          });
+
+          const vUpdated = await tx
+            .update(documentVersions)
+            .set({
+              byteSize: input.byteSize,
+              contentType: input.contentType,
+              checksumSha256: input.checksumSha256 ?? null,
+              sourceEventId: eventId,
+              processingStatus: 'pending',
+            })
+            .where(eq(documentVersions.id, version.id))
+            .returning();
+          const updatedVersion = vUpdated[0] as DocumentVersionRow | undefined;
+          if (!updatedVersion) throw new Error('Failed to finalize version');
+
+          const dUpdated = await tx
+            .update(documents)
+            .set({ currentVersionId: version.id, updatedAt: new Date(), fileKind: 'document' })
+            .where(and(eq(documents.id, document.id), isNull(documents.deletedAt)))
+            .returning();
+          const updatedDocument = dUpdated[0] as DocumentRow | undefined;
+          if (!updatedDocument) throw new Error('Failed to update document');
+
+          return { document: updatedDocument, version: updatedVersion, eventId, action };
         });
-
-        const vUpdated = await tx
-          .update(documentVersions)
-          .set({
-            byteSize: input.byteSize,
-            contentType: input.contentType,
-            checksumSha256: input.checksumSha256 ?? null,
-            sourceEventId: eventId,
-            processingStatus: 'pending',
-          })
-          .where(eq(documentVersions.id, version.id))
-          .returning();
-        const updatedVersion = vUpdated[0] as DocumentVersionRow | undefined;
-        if (!updatedVersion) throw new Error('Failed to finalize version');
-
-        const dUpdated = await tx
-          .update(documents)
-          .set({ currentVersionId: version.id, updatedAt: new Date(), fileKind: 'document' })
-          .where(and(eq(documents.id, document.id), isNull(documents.deletedAt)))
-          .returning();
-        const updatedDocument = dUpdated[0] as DocumentRow | undefined;
-        if (!updatedDocument) throw new Error('Failed to update document');
-
-        return { document: updatedDocument, version: updatedVersion, eventId, action };
-      });
+      } catch (err) {
+        if (isBillingAdmissionError(err) && peeked.objectKey) {
+          try {
+            await deleteObject(getS3Client(), getDocumentsBucket(), peeked.objectKey);
+          } catch (deleteErr) {
+            log.warn(
+              { err: deleteErr, objectKey: peeked.objectKey },
+              'failed to delete rejected upload',
+            );
+          }
+        }
+        throw err;
+      }
     },
 
     async renameDocument(args: { id: string; name: string }): Promise<DocumentRow> {
@@ -1624,18 +1681,44 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
 
     async restoreDocument(id: string): Promise<void> {
       await ensureMember();
-      const existing = await db
-        .select()
-        .from(documents)
-        .where(and(eq(documents.id, id), eq(documents.teamId, teamId)))
-        .limit(1);
-      const document = existing[0] as DocumentRow | undefined;
-      if (!document) throw new Error('Document not found');
       await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 1))`);
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${teamId}, 2))`);
+        const existing = await tx
+          .select()
+          .from(documents)
+          .where(and(eq(documents.id, id), eq(documents.teamId, teamId)))
+          .limit(1);
+        const document = existing[0] as DocumentRow | undefined;
+        if (!document) throw new Error('Document not found');
+        if (!document.deletedAt) return;
+        const [bytesRow] = await tx
+          .select({
+            bytes: sql<string | number>`COALESCE(SUM(${documentVersions.byteSize})::bigint, 0)`,
+          })
+          .from(documentVersions)
+          .where(eq(documentVersions.documentId, document.id));
+        const [chunkRow] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(documentChunks)
+          .where(eq(documentChunks.documentId, document.id));
+        await assertTeamWriteCapacity({
+          db: tx as unknown as Db,
+          teamId,
+          additionalDocuments: 1,
+          additionalBytes: Number(bytesRow?.bytes ?? 0),
+          additionalChunks: chunkRow?.n ?? 0,
+        });
         await tx
           .update(documents)
           .set({ deletedAt: null, updatedAt: new Date() })
-          .where(and(eq(documents.id, id), eq(documents.teamId, teamId)));
+          .where(
+            and(
+              eq(documents.id, id),
+              eq(documents.teamId, teamId),
+              sql`${documents.deletedAt} IS NOT NULL`,
+            ),
+          );
         await writeDocumentEvent(tx, {
           action: 'restore',
           summary: `Restored ${document.name}`,

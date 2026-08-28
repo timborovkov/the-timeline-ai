@@ -257,6 +257,30 @@
       "import": "./dist/meetings/index.js",
       "default": "./dist/meetings/index.js"
     },
+    "./billing": {
+      "types": "./src/billing/index.ts",
+      "development": "./src/billing/index.ts",
+      "import": "./dist/billing/index.js",
+      "default": "./dist/billing/index.js"
+    },
+    "./billing/catalog": {
+      "types": "./src/billing/catalog.ts",
+      "development": "./src/billing/catalog.ts",
+      "import": "./dist/billing/catalog.js",
+      "default": "./dist/billing/catalog.js"
+    },
+    "./billing/status": {
+      "types": "./src/billing/status.ts",
+      "development": "./src/billing/status.ts",
+      "import": "./dist/billing/status.js",
+      "default": "./dist/billing/status.js"
+    },
+    "./billing/preview": {
+      "types": "./src/billing/preview.ts",
+      "development": "./src/billing/preview.ts",
+      "import": "./dist/billing/preview.js",
+      "default": "./dist/billing/preview.js"
+    },
     "./objects": {
       "types": "./src/objects/index.ts",
       "development": "./src/objects/index.ts",

@@ -1,14 +1,34 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db, reconciliationEvidence, reconciliationEvidenceAnchors } from '@timeline/db';
+import {
+  type Db,
+  documentVersions,
+  reconciliationEvidence,
+  reconciliationEvidenceAnchors,
+} from '@timeline/db';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
+import { BillingAdmissionError } from '#src/billing/errors.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
+
+const s3Fakes = vi.hoisted(() => ({
+  deleteObject: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('#src/s3/objects.js', () => ({
+  deleteObject: async (...args: unknown[]) => {
+    await s3Fakes.deleteObject(...args);
+  },
+}));
+vi.mock('#src/s3/client.js', () => ({
+  getS3Client: () => ({}),
+  getDocumentsBucket: () => 'timeline-documents',
+}));
 
 /**
  * Real-DB integration tests for the Phase 9 document scope. Uses pglite
@@ -55,6 +75,7 @@ let pg: PGlite;
 let db: AnyDb;
 
 beforeEach(async () => {
+  s3Fakes.deleteObject.mockClear();
   pg = new PGlite();
   await applyDbMigrations(pg);
   await seedTeamAndMembers(pg);
@@ -718,6 +739,10 @@ describe('document scope — visibility filter', () => {
   });
 
   it('listDocumentsWithProvenancePage can target one document outside the first page', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, spend_cap_cents, shadow_billing)
+      VALUES ('${TEAM_ID}', 'payg', 'payg_active', 2500, true);
+    `);
     const A = withTeam(db, TEAM_ID, USER_A).documents;
     const target = await A.createDocument({
       name: 'older-target.pdf',
@@ -749,6 +774,89 @@ describe('document scope — visibility filter', () => {
     });
     expect(targeted.items).toHaveLength(1);
     expect(targeted.items[0]?.id).toBe(target.document.id);
+  });
+
+  it('refuses a 101st document on the Free plan', async () => {
+    await pg.exec(`
+      INSERT INTO documents (team_id, name)
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 100) AS g;
+    `);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    await expect(
+      scope.createDocument({
+        name: 'one-too-many.pdf',
+        folderId: null,
+        filename: 'one-too-many.pdf',
+        contentType: 'application/pdf',
+      }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+  });
+
+  it('serializes document capacity so a concurrent 101st create cannot both succeed', async () => {
+    await pg.exec(`
+      INSERT INTO documents (team_id, name)
+      SELECT '${TEAM_ID}', 'cap-' || g FROM generate_series(1, 99) AS g;
+    `);
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const results = await Promise.allSettled([
+      scope.createDocument({
+        name: 'hundred.pdf',
+        folderId: null,
+        filename: 'hundred.pdf',
+        contentType: 'application/pdf',
+      }),
+      scope.createDocument({
+        name: 'hundred-one.pdf',
+        folderId: null,
+        filename: 'hundred-one.pdf',
+        contentType: 'application/pdf',
+      }),
+    ]);
+    const succeeded = results.filter((row) => row.status === 'fulfilled');
+    const failed = results.filter((row) => row.status === 'rejected');
+    expect(succeeded).toHaveLength(1);
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.status === 'rejected' ? failed[0].reason : undefined).toBeInstanceOf(
+      BillingAdmissionError,
+    );
+  });
+
+  it('does not stamp byte_size when storage-cap finalization rejects an upload', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const original = await scope.createDocument({
+      name: 'full.bin',
+      folderId: null,
+      filename: 'full.bin',
+      contentType: 'application/octet-stream',
+    });
+    await scope.finalizeDocumentVersion({
+      versionId: original.version.id,
+      byteSize: 1024 ** 3,
+      contentType: 'application/octet-stream',
+    });
+    const extra = await scope.createDocument({
+      name: 'extra.bin',
+      folderId: null,
+      filename: 'extra.bin',
+      contentType: 'application/octet-stream',
+    });
+    await expect(
+      scope.finalizeDocumentVersion({
+        versionId: extra.version.id,
+        byteSize: 1,
+        contentType: 'application/octet-stream',
+      }),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+    const [version] = await db
+      .select()
+      .from(documentVersions)
+      .where(eq(documentVersions.id, extra.version.id));
+    expect(version?.byteSize).toBeNull();
+    expect(s3Fakes.deleteObject).toHaveBeenCalledWith(
+      expect.anything(),
+      'timeline-documents',
+      extra.version.objectKey,
+    );
   });
 
   it('specific_users visibility honors the visibility_user_ids array', async () => {
@@ -860,6 +968,75 @@ describe('document scope — soft delete + audit trail', () => {
     await scope.restoreDocument(created.document.id);
     const remaining = await scope.listDocuments({ folderId: null });
     expect(remaining.map((d) => d.id)).toContain(created.document.id);
+  });
+
+  it('refuses restore when the restored bytes would exceed Free storage', async () => {
+    const gib = 1024 ** 3;
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const original = await scope.createDocument({
+      name: 'full.bin',
+      folderId: null,
+      filename: 'full.bin',
+      contentType: 'application/octet-stream',
+    });
+    await scope.finalizeDocumentVersion({
+      versionId: original.version.id,
+      byteSize: gib,
+      contentType: 'application/octet-stream',
+    });
+    await scope.softDeleteDocument(original.document.id);
+    const replacement = await scope.createDocument({
+      name: 'new.bin',
+      folderId: null,
+      filename: 'new.bin',
+      contentType: 'application/octet-stream',
+    });
+    await scope.finalizeDocumentVersion({
+      versionId: replacement.version.id,
+      byteSize: 1,
+      contentType: 'application/octet-stream',
+    });
+    await expect(scope.restoreDocument(original.document.id)).rejects.toBeInstanceOf(
+      BillingAdmissionError,
+    );
+    const remaining = await scope.listDocuments({ folderId: null });
+    expect(remaining.map((d) => d.id)).toContain(replacement.document.id);
+    expect(remaining.map((d) => d.id)).not.toContain(original.document.id);
+  });
+
+  it('refuses restore when restored chunks would exceed Free indexed-chunk capacity', async () => {
+    const scope = withTeam(db, TEAM_ID, USER_A).documents;
+    const live = await scope.createDocument({
+      name: 'live.txt',
+      folderId: null,
+      filename: 'live.txt',
+      contentType: 'text/plain',
+    });
+    const deleted = await scope.createDocument({
+      name: 'gone.txt',
+      folderId: null,
+      filename: 'gone.txt',
+      contentType: 'text/plain',
+    });
+    await pg.exec(`
+      INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+      SELECT '${TEAM_ID}', '${live.document.id}', '${live.version.id}', g, 'source_text', 'chunk', 1
+      FROM generate_series(1, 2000) AS g;
+      INSERT INTO document_chunks (team_id, document_id, document_version_id, chunk_index, representation_kind, text, token_count)
+      VALUES (
+        '${TEAM_ID}',
+        '${deleted.document.id}',
+        '${deleted.version.id}',
+        0,
+        'source_text',
+        'gone chunk',
+        1
+      );
+    `);
+    await scope.softDeleteDocument(deleted.document.id);
+    await expect(scope.restoreDocument(deleted.document.id)).rejects.toBeInstanceOf(
+      BillingAdmissionError,
+    );
   });
 
   it('soft-deleted folders are NOT reachable via getFolder (bugbot #3298903330)', async () => {

@@ -17,6 +17,8 @@ describe('solution page template', () => {
     expect(html).toContain('application/ld+json');
     expect(html).toContain('aria-label="Breadcrumb"');
     expect(html).toContain(`href="${solution.cta.href}"`);
+    expect(html).toContain('href="/pricing"');
+    expect(html).toContain('Free to start · no card required');
     expect(html).toContain('motion-safe:group-hover:translate-x-1');
 
     for (const relatedRoute of solution.relatedRoutes) {

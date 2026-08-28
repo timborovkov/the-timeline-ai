@@ -21,6 +21,16 @@ import {
   type AgentToolMode,
   type AgentToolErrorReporter,
 } from '#src/agent/tools.js';
+import {
+  askOperationId,
+  mapAskBillingError,
+  releaseBillingReservation,
+  reserveAskAi,
+  settleAskAiFromOpenRouterUsd,
+  type AskBillingError,
+} from '#src/billing/admission.js';
+import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS } from '#src/billing/catalog.js';
+import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
 import { getEnv } from '#src/env.js';
 import {
   DEFAULT_AGENT_MAX_STEPS,
@@ -74,7 +84,10 @@ export type AskAgentResult =
       requestedModelId?: string;
       responseModelId?: string;
     }
-  | { ok: false; error: 'unconfigured' | 'not_a_member' | 'no_team' | 'failed' };
+  | {
+      ok: false;
+      error: 'unconfigured' | 'not_a_member' | 'no_team' | 'failed' | AskBillingError;
+    };
 
 export interface AskAgentDeps extends ChatDeps {
   onToolError?: AgentToolErrorReporter | undefined;
@@ -384,6 +397,52 @@ export async function askAgent(
     { role: 'user', content: input.question },
   ];
   const draftModelAttribution: Partial<StreamChatModelAttribution> = {};
+  const billingOperationId = askOperationId(input.deliverySurface);
+  const reserved = await reserveAskAi(scope.billing, {
+    operationId: billingOperationId,
+    deliverySurface: input.deliverySurface,
+  });
+  if (!reserved.ok) {
+    return { ok: false, error: mapAskBillingError(reserved.code) };
+  }
+
+  let openRouterUsd = 0;
+  let billingFinalized = false;
+  const settleBilling = async (model?: string, opts?: { conservative?: boolean }) => {
+    if (billingFinalized) return;
+    billingFinalized = true;
+    try {
+      await settleAskAiFromOpenRouterUsd(scope.billing, {
+        operationId: billingOperationId,
+        openRouterUsd,
+        deliverySurface: input.deliverySurface,
+        ...(model ? { model } : {}),
+        ...(opts?.conservative
+          ? { minCustomerChargeCents: ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS }
+          : {}),
+      });
+    } catch (err) {
+      const safeError = deps.sanitizeError?.(err) ?? err;
+      log.warn(
+        { err: safeError, teamId: input.teamId, billingOperationId },
+        'ask billing settle failed',
+      );
+      // Keep the reservation so a later settle of the same operation id can
+      // charge completed OpenRouter work. Releasing here restores wallet
+      // headroom while the provider call stays unpaid.
+    }
+  };
+  const releaseBilling = async () => {
+    if (billingFinalized) return;
+    billingFinalized = true;
+    await releaseBillingReservation(scope.billing, billingOperationId).catch((err: unknown) => {
+      const safeError = deps.sanitizeError?.(err) ?? err;
+      log.warn(
+        { err: safeError, teamId: input.teamId, billingOperationId },
+        'ask billing release failed',
+      );
+    });
+  };
 
   try {
     const result = streamChat(
@@ -395,6 +454,7 @@ export async function askAgent(
         ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
         onFinish: (event) => {
           Object.assign(draftModelAttribution, streamChatModelAttribution(event));
+          openRouterUsd += openRouterUsdCostFromFinishEvent(event);
         },
       },
       deps,
@@ -402,6 +462,7 @@ export async function askAgent(
     // Direct-chat providers consume the final text after all tool rounds.
     const draft = (await result.text).trim();
     if (draft.length === 0) {
+      await releaseBilling();
       return { ok: false, error: 'failed' };
     }
     let text = draft;
@@ -425,6 +486,7 @@ export async function askAgent(
             ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
             onFinish: (event) => {
               Object.assign(presentationModelAttribution, streamChatModelAttribution(event));
+              openRouterUsd += openRouterUsdCostFromFinishEvent(event);
             },
           },
           deps,
@@ -464,12 +526,15 @@ export async function askAgent(
     deps.onTurnObservability?.(observability);
     const trimmed = text.trim();
     if (trimmed.length === 0) {
+      await releaseBilling();
       return { ok: false, error: 'failed' };
     }
     presented ??= formatAgentAnswerForPresentation(trimmed, presentation);
     if (presented.text.length === 0) {
+      await releaseBilling();
       return { ok: false, error: 'failed' };
     }
+    await settleBilling(modelAttribution.responseModelId ?? modelAttribution.requestedModelId);
     log.info(
       {
         promptVersion: AGENT_PROMPT_VERSION,
@@ -485,6 +550,7 @@ export async function askAgent(
         totalToolResultCount: observability.totalResultCount,
         topArtifactRefs: observability.topArtifactRefs,
         warningCodes: observability.warningCodes,
+        openRouterUsd,
       },
       'ask completion',
     );
@@ -503,11 +569,23 @@ export async function askAgent(
       ...attribution,
     };
   } catch (err) {
+    const aborted = isAskAbortError(err);
+    if (aborted || openRouterUsd > 0) {
+      await settleBilling(undefined, { conservative: aborted });
+    } else {
+      await releaseBilling();
+    }
     const safeError = deps.sanitizeError?.(err) ?? err;
     log.error({ err: safeError, teamId: input.teamId }, 'askAgent failed');
     deps.onAgentError?.(safeError);
     return { ok: false, error: 'failed' };
   }
+}
+
+function isAskAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const row = error as { name?: unknown; causeName?: unknown };
+  return row.name === 'AbortError' || row.causeName === 'AbortError';
 }
 
 function shouldIncludeMcpTools(question: string): boolean {

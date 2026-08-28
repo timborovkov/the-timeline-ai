@@ -1,4 +1,8 @@
 import { teamMembers, teams } from '@timeline/db';
+import {
+  applyOwnedTeamFreeGrant,
+  insertRestrictedFreeBillingAccount,
+} from '@timeline/shared/billing';
 import { insertDefaultDigestDestination } from '@timeline/shared/messaging';
 import { buildInboundEmail, randomSlugSuffix, slugify } from '@timeline/shared/slug';
 import { and, eq, isNull } from 'drizzle-orm';
@@ -31,15 +35,19 @@ export async function ensureSoloTeam(
   const label = hint.name ?? hint.email?.split('@')[0] ?? 'team';
   const slug = `${slugify(`${label}-team`) || 'team'}-${randomSlugSuffix()}`;
   const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
-  return db.transaction(async (tx) => {
+  const teamId = await db.transaction(async (tx) => {
     const inserted = await tx
       .insert(teams)
       .values({ name: `${label}'s Team`, slug, inboundEmail })
       .returning({ id: teams.id });
-    const teamId = inserted[0]?.id;
-    if (!teamId) throw new Error('Failed to create default team');
-    await tx.insert(teamMembers).values({ teamId, userId, role: 'owner' });
-    await insertDefaultDigestDestination(tx, teamId);
-    return teamId;
+    const id = inserted[0]?.id;
+    if (!id) throw new Error('Failed to create default team');
+    // react-doctor-disable-next-line react-doctor/async-parallel -- Restricted billing insert must precede the Free grant on this transaction client.
+    await tx.insert(teamMembers).values({ teamId: id, userId, role: 'owner' });
+    await insertDefaultDigestDestination(tx, id);
+    await insertRestrictedFreeBillingAccount({ db: tx, teamId: id });
+    await applyOwnedTeamFreeGrant({ db: tx, teamId: id, userId });
+    return id;
   });
+  return teamId;
 }
