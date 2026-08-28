@@ -1804,7 +1804,7 @@ function ConnectedTaskList({
         items={tasks}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(task) => task.id}
-        renderItem={(task) => (
+        Item={({ item: task }) => (
           <div className="grid gap-0.5">
             <a href={`/app/objects/${task.id}`} className={DETAIL_LINK_CLASS}>
               {displayText(displayObjectTitle(task))}
@@ -1833,7 +1833,7 @@ function ConnectedCalendarList({
         items={events}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(event) => event.id}
-        renderItem={(event) => (
+        Item={({ item: event }) => (
           <div className="grid gap-0.5">
             <Link
               href={`/app/calendar?event=${encodeURIComponent(event.id)}&date=${event.startAt.toISOString().slice(0, 10)}&view=day`}
@@ -1874,7 +1874,7 @@ function ConnectedObjectList({
         items={objects}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(object) => object.id}
-        renderItem={(object) => {
+        Item={({ item: object }) => {
           const relationship = relationshipByOtherId.get(object.id);
           const linked = relationship !== undefined;
           return (
@@ -1924,7 +1924,7 @@ function ConnectedBoardList({ boards }: { boards: ObjectDetail['connectedWork'][
         items={boards}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(board) => board.itemId}
-        renderItem={(board) => (
+        Item={({ item: board }) => (
           <div className="grid gap-0.5">
             <a
               href={`/app/boards/${board.boardId}?item=${board.itemId}`}
@@ -1966,7 +1966,7 @@ function ConnectedApprovalList({
         items={approvals}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(approval) => approval.itemId}
-        renderItem={(approval) => (
+        Item={({ item: approval }) => (
           <div className="grid gap-0.5">
             <Link href="/app/approvals" className={DETAIL_LINK_CLASS}>
               {displayText(approval.title)}
@@ -1994,7 +1994,7 @@ function ConnectedDocumentList({
         items={documents}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(document) => document.id}
-        renderItem={(document) => (
+        Item={({ item: document }) => (
           <div className="grid gap-0.5">
             <a
               href={`/app/documents/${document.id}`}
@@ -2023,7 +2023,7 @@ function ConnectedLinkList({ links }: { links: ObjectDetail['connectedWork']['li
         items={links}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(link) => link.id}
-        renderItem={(link) => (
+        Item={({ item: link }) => (
           <div className="grid gap-0.5">
             {link.canonicalUrl ? (
               <a
@@ -2061,7 +2061,7 @@ function ConnectedCapturedFileList({
         items={files}
         previewCount={CONNECTED_PREVIEW_COUNT}
         getKey={(file) => file.id}
-        renderItem={(file) => (
+        Item={({ item: file }) => (
           <div className="grid gap-0.5">
             <Link href="/app/documents/captured" className={DETAIL_LINK_CLASS}>
               {displayText(truncateFilenameMiddle(file.name))}
