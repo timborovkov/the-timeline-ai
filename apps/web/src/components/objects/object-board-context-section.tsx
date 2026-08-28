@@ -10,12 +10,15 @@ import type * as objects from '@timeline/shared/objects/types';
 
 import { structureContactFromBoardNotesAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';
+import {
+  ObjectRailSection,
+  RAIL_QUIET_ACTION,
+} from '@/components/objects/object-rail-chrome';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 
-// Simple client-safe contact detection (email or phone patterns)
 function textHasContacts(text: string | null | undefined): boolean {
   if (!text) return false;
   return (
@@ -42,33 +45,42 @@ export function ObjectBoardContextSection({
   const canStructureContacts = objectSupportsIdentityFacets(objectType);
 
   return (
-    <section aria-label="Board context" className="flex flex-col">
-      <h2 className="px-1.5 text-xs font-normal text-fg-dim">Board context</h2>
-      <ul className="mt-0.5 space-y-2 px-1.5">
+    <ObjectRailSection label="Board context" aria-label="Board context">
+      <ul className="flex flex-col gap-2 px-2">
         {rows.map((row) => {
           const responsible = members.find((member) => member.id === row.responsibleUserId)?.label;
           const canStructure =
             canStructureContacts && row.notes ? textHasContacts(row.notes) : false;
+          const meta = [
+            row.laneName ? displayText(row.laneName) : null,
+            responsible ? displayText(responsible) : null,
+          ].filter(Boolean);
           return (
             <li key={row.itemId} className="grid gap-0.5">
               <Link
                 href={`/app/boards/${row.boardId}?item=${row.itemId}`}
-                className="text-sm font-normal leading-5 text-fg hover:underline"
+                className="truncate text-sm font-normal leading-5 text-fg hover:underline"
               >
                 {displayText(row.boardName)}
               </Link>
-              <div className="flex flex-wrap items-center gap-1.5 text-xs font-normal text-fg-dim">
-                {row.laneName ? <span>{displayText(row.laneName)}</span> : null}
-                {responsible ? <span>· {displayText(responsible)}</span> : null}
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs font-normal leading-4 text-fg-dim">
+                {meta.map((part, index) => (
+                  <span key={`${row.itemId}-meta-${index}`} className="truncate">
+                    {index > 0 ? <span aria-hidden="true">· </span> : null}
+                    {part}
+                  </span>
+                ))}
                 <DueDateDisplay value={row.dueAt} variant="compact" />
               </div>
               {row.nextStep ? (
-                <p className="text-sm font-normal leading-5 text-fg-muted">
+                <p className="truncate text-xs font-normal leading-4 text-fg-muted" title={row.nextStep}>
                   {displayText(row.nextStep)}
                 </p>
               ) : null}
               {row.notes ? (
-                <p className="text-sm font-normal leading-5 text-fg">{displayText(row.notes)}</p>
+                <p className="truncate text-xs font-normal leading-4 text-fg-dim" title={row.notes}>
+                  {displayText(row.notes)}
+                </p>
               ) : null}
               {canStructure ? (
                 <button
@@ -90,7 +102,7 @@ export function ObjectBoardContextSection({
                       if (!result.error) router.refresh();
                     });
                   }}
-                  className="justify-self-start text-xs font-normal text-fg-muted hover:text-fg hover:underline disabled:opacity-50"
+                  className={`${RAIL_QUIET_ACTION} px-0`}
                 >
                   Structure contact info
                 </button>
@@ -99,6 +111,6 @@ export function ObjectBoardContextSection({
           );
         })}
       </ul>
-    </section>
+    </ObjectRailSection>
   );
 }

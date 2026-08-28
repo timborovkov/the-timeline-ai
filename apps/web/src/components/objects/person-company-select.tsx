@@ -41,7 +41,7 @@ export function PersonCompanySelect({
         disabled={disabled || pending}
         className={
           quiet
-            ? 'h-8 border-0 bg-transparent px-1.5 text-xs text-fg-muted hover:bg-surface-2 hover:text-fg'
+            ? 'h-8 min-w-0 flex-1 justify-start border-0 bg-transparent px-0 text-sm font-normal text-fg hover:bg-transparent hover:text-fg'
             : undefined
         }
         onValueChange={(nextCompany) => {

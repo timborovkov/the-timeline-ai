@@ -8,20 +8,20 @@ import {
 } from '@timeline/shared/objects/metadata-schemas';
 import { Plus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { useId, useState, useTransition } from 'react';
 
 import type * as objects from '@timeline/shared/objects/types';
 
 import { updateObjectMetadataAction } from '@/app/actions/objects';
+import {
+  ObjectRailRow,
+  ObjectRailSection,
+  RAIL_FIELD_VALUE,
+  RAIL_GHOST_ICON_BUTTON,
+  RAIL_QUIET_ACTION,
+  RAIL_UNDERLINE_CONTROL,
+} from '@/components/objects/object-rail-chrome';
 import { notifyAction } from '@/lib/notify';
-import { cn } from '@/lib/utils';
-
-const SECTION_LABEL = 'px-1.5 text-xs font-normal text-fg-dim';
-const FIELD_LABEL = 'w-24 shrink-0 truncate text-xs font-normal text-fg-dim';
-const FIELD_VALUE =
-  'min-w-0 flex-1 bg-transparent text-sm font-normal leading-5 text-fg outline-none placeholder:text-fg-dim focus-visible:ring-2 focus-visible:ring-signal/50';
-const QUIET_ACTION =
-  'inline-flex min-h-8 items-center gap-1.5 px-1.5 text-xs font-normal text-fg-muted transition-colors hover:text-fg disabled:opacity-50';
 
 function metadataFieldLabel(key: string): string {
   return humanizeMetadataKey(key);
@@ -43,6 +43,7 @@ export function ObjectMetadataFields({
   disabled?: boolean;
 }) {
   const router = useRouter();
+  const formId = useId();
   const [pending, startTransition] = useTransition();
   const [adding, setAdding] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -115,96 +116,106 @@ export function ObjectMetadataFields({
   }
 
   return (
-    <section aria-label="Metadata" className="flex flex-col">
-      <h2 className={SECTION_LABEL}>Details</h2>
-      <div className="mt-0.5 flex flex-col">
-        {typedKeys.map((key) => {
-          const raw = metadataValue(detail.metadata, key);
-          return (
-            <RailTextField
-              key={`${key}:${raw}`}
-              label={metadataFieldLabel(key)}
-              initialValue={raw}
-              displayValue={raw ? displayMetadataValue(raw) : ''}
-              disabled={busy}
-              onSave={(value) => {
-                saveField(key, value);
-              }}
-            />
-          );
-        })}
-        {customEntries.map((entry) => (
+    <ObjectRailSection label="Details" aria-label="Metadata">
+      {typedKeys.map((key) => {
+        const raw = metadataValue(detail.metadata, key);
+        return (
           <RailTextField
-            key={`${entry.key}:${entry.value}`}
-            label={metadataFieldLabel(entry.key)}
-            initialValue={entry.value}
-            displayValue={displayMetadataValue(entry.value)}
+            key={`${key}:${raw}`}
+            label={metadataFieldLabel(key)}
+            initialValue={raw}
+            displayValue={raw ? displayMetadataValue(raw) : ''}
             disabled={busy}
             onSave={(value) => {
-              saveField(entry.key, value);
-            }}
-            onRemove={() => {
-              removeCustomField(entry.key);
+              saveField(key, value);
             }}
           />
-        ))}
-        {adding ? (
-          <div className="grid gap-1.5 px-1.5 py-1.5">
-            <input
-              value={newLabel}
-              onChange={(event) => {
-                setNewLabel(event.target.value);
-              }}
-              placeholder="Field name"
-              aria-label="New field name"
-              className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
-            />
-            <input
-              value={newValue}
-              onChange={(event) => {
-                setNewValue(event.target.value);
-              }}
-              placeholder="Value"
-              aria-label="New field value"
-              className="h-8 rounded-sm border border-border bg-bg px-2 text-sm"
-            />
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                disabled={busy || !slugifyMetadataLabel(newLabel) || !newValue.trim()}
-                onClick={addCustomField}
-                className="text-xs font-normal text-fg-muted hover:text-fg disabled:opacity-50"
-              >
-                Save
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAdding(false);
-                  setNewLabel('');
-                  setNewValue('');
-                }}
-                className="text-xs font-normal text-fg-muted hover:text-fg"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setAdding(true);
+        );
+      })}
+      {customEntries.map((entry) => (
+        <RailTextField
+          key={`${entry.key}:${entry.value}`}
+          label={metadataFieldLabel(entry.key)}
+          initialValue={entry.value}
+          displayValue={displayMetadataValue(entry.value)}
+          disabled={busy}
+          onSave={(value) => {
+            saveField(entry.key, value);
+          }}
+          onRemove={() => {
+            removeCustomField(entry.key);
+          }}
+        />
+      ))}
+      {adding ? (
+        <div className="grid gap-2 px-2 py-1">
+          <input
+            id={`${formId}-label`}
+            value={newLabel}
+            onChange={(event) => {
+              setNewLabel(event.target.value);
             }}
-            className={QUIET_ACTION}
-          >
-            <Plus aria-hidden="true" className="size-3.5" />
-            Add field
-          </button>
-        )}
-      </div>
-    </section>
+            placeholder="Field name"
+            aria-label="New field name"
+            className={RAIL_UNDERLINE_CONTROL}
+          />
+          <input
+            id={`${formId}-value`}
+            value={newValue}
+            onChange={(event) => {
+              setNewValue(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addCustomField();
+              }
+              if (event.key === 'Escape') {
+                setAdding(false);
+                setNewLabel('');
+                setNewValue('');
+              }
+            }}
+            placeholder="Value"
+            aria-label="New field value"
+            className={RAIL_UNDERLINE_CONTROL}
+          />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={busy || !slugifyMetadataLabel(newLabel) || !newValue.trim()}
+              onClick={addCustomField}
+              className="text-xs font-normal text-fg-muted hover:text-fg disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(false);
+                setNewLabel('');
+                setNewValue('');
+              }}
+              className="text-xs font-normal text-fg-muted hover:text-fg"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            setAdding(true);
+          }}
+          className={RAIL_QUIET_ACTION}
+        >
+          <Plus aria-hidden="true" className="size-3.5" />
+          Add field
+        </button>
+      )}
+    </ObjectRailSection>
   );
 }
 
@@ -223,16 +234,31 @@ function RailTextField({
   onSave: (value: string) => void;
   onRemove?: () => void;
 }) {
+  const inputId = useId();
   const [draft, setDraft] = useState(displayValue || initialValue);
   const [focused, setFocused] = useState(false);
   const shown = focused ? draft : displayValue || draft;
 
   return (
-    <div className="group flex min-h-8 items-center gap-2 px-1.5">
-      <span className={FIELD_LABEL} title={label}>
-        {label}
-      </span>
+    <ObjectRailRow
+      label={label}
+      htmlFor={inputId}
+      action={
+        onRemove ? (
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onRemove}
+            aria-label={`Remove ${label}`}
+            className={RAIL_GHOST_ICON_BUTTON}
+          >
+            <X aria-hidden="true" className="size-3.5" />
+          </button>
+        ) : null
+      }
+    >
       <input
+        id={inputId}
         aria-label={label}
         value={shown}
         disabled={disabled}
@@ -251,24 +277,9 @@ function RailTextField({
           onSave(next);
         }}
         placeholder={`No ${label.toLowerCase()}`}
-        className={FIELD_VALUE}
+        className={RAIL_FIELD_VALUE}
       />
-      {onRemove ? (
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onRemove}
-          aria-label={`Remove ${label}`}
-          className={cn(
-            'grid size-7 shrink-0 place-items-center rounded-sm text-fg-muted transition-colors',
-            'opacity-0 focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100',
-            'hover:bg-danger/10 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50 disabled:opacity-50',
-          )}
-        >
-          <X aria-hidden="true" className="size-3.5" />
-        </button>
-      ) : null}
-    </div>
+    </ObjectRailRow>
   );
 }
 
