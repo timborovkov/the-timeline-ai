@@ -4,10 +4,7 @@ import { CopyableTextField } from '@/components/copyable-text-field';
 
 export function HomeTeamEmail({ inboundEmail }: { inboundEmail: string | null }) {
   return (
-    <section
-      aria-label="Team email"
-      className="space-y-3 border-y border-border py-4 sm:px-1"
-    >
+    <section aria-label="Team email" className="space-y-3 border-y border-border py-4 sm:px-1">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p className="text-sm font-medium text-fg">Team email</p>
         <Link
