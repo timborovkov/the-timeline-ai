@@ -21,6 +21,7 @@ import { auth, signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
 import { clientIpFromHeaders } from '@/lib/request-ip';
@@ -54,6 +55,12 @@ export interface EmailVerificationState {
 
 export async function signUpAction(_prev: SignUpState, formData: FormData): Promise<SignUpState> {
   return runSentryServerAction('sign_up', async () => {
+    if (!isLegalPublicationReady()) {
+      return {
+        error:
+          'Account creation is temporarily unavailable while our legal publication review is completed.',
+      };
+    }
     const h = await headers();
     const clientIp = clientIpFromHeaders(h);
     const submittedTermsVersion = formData.get('termsVersion');

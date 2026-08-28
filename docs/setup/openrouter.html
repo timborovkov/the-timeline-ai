@@ -74,12 +74,19 @@ OPENROUTER_GUARDRAIL_ID=&lt;official guardrail id&gt;
 OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
 </code></pre>
       <p>
+        This official-origin, official-guardrail, and generated-attestation contract applies to
+        <code>TIMELINE_DEPLOYMENT_MODE=hosted</code>. An explicitly self-managed production operator
+        may use its own OpenRouter-compatible endpoint without these hosted attestation variables,
+        but owns the endpoint, privacy controls, retention, evidence, and user notice and must not
+        reuse Timeline-hosted provider assurances.
+      </p>
+      <p>
         After the separate provider-side check, generate the non-secret token with
         <code>pnpm openrouter:attestation -- --env-file=/absolute/path/to/operator.env</code>. The
         file needs only <code>OPENROUTER_API_KEY</code> and <code>OPENROUTER_GUARDRAIL_ID</code> and
         should remain outside the repository. The command prints only the
-        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION=...</code> assignment, never the key. Production
-        validation fails closed when the token does not match the current policy version,
+        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION=...</code> assignment, never the key. Hosted
+        production validation fails closed when the token does not match the current policy version,
         model-catalog digest, inference-key fingerprint, and guardrail id. The token detects local
         drift; it does not prove the provider-side assignment or settings, which still require the
         management-key deployment check and dated evidence. ZDR-required requests send

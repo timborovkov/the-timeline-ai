@@ -80,9 +80,10 @@ describe('getEnv', () => {
     expect(env.OPENROUTER_GUARDRAIL_ID).toBeUndefined();
     expect(env.OPENROUTER_PRIVACY_POLICY_ATTESTATION).toBeUndefined();
     expect(env.TIMELINE_DEPLOYMENT_MODE).toBe('hosted');
+    expect(env.LEGAL_PUBLICATION_READY).toBe(false);
   });
 
-  it('requires a guardrail id and generated model/privacy attestation in production', () => {
+  it('requires a guardrail id and generated model/privacy attestation in hosted production', () => {
     setBaseEnv({
       NODE_ENV: 'production',
       OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
@@ -136,7 +137,7 @@ describe('getEnv', () => {
     expect(() => getEnv()).toThrow(/must be regenerated/u);
   });
 
-  it('allows only the official OpenRouter API boundary in production', () => {
+  it('allows only the official OpenRouter API boundary in hosted production', () => {
     setBaseEnv({
       NODE_ENV: 'production',
       OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
@@ -154,6 +155,22 @@ describe('getEnv', () => {
       OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1/',
     });
     expect(getEnv().OPENROUTER_BASE_URL).toBe('https://openrouter.ai/api/v1/');
+  });
+
+  it('permits an operator-owned OpenRouter-compatible boundary in self-managed production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: undefined,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: undefined,
+      OPENROUTER_BASE_URL: 'https://operator-inference.example.test/v1',
+    });
+
+    expect(getEnv()).toMatchObject({
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      OPENROUTER_BASE_URL: 'https://operator-inference.example.test/v1',
+    });
   });
 
   it('ignores legacy model env vars because model config is code-owned', () => {
@@ -619,6 +636,7 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
       true,
     );
     expect(isAllowedDocumentExtractProcessEnvKey('TIMELINE_DEPLOYMENT_MODE')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('LEGAL_PUBLICATION_READY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_VERSION')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_BUILT_AT')).toBe(true);

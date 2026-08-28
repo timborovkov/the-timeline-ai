@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Session } from 'next-auth';
 
@@ -7,6 +7,10 @@ import { authorizeProductRequest, hasCurrentLegalSession } from '@/lib/auth.conf
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function request(path: string, activeTeamCookie?: string): NextRequest {
   return new NextRequest(`https://timeline.test${path}`, {
@@ -35,6 +39,18 @@ describe('hasCurrentLegalSession', () => {
 });
 
 describe('authorizeProductRequest', () => {
+  it('does not enforce an unpublished legal version in production', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');
+
+    expect(
+      authorizeProductRequest({ auth: session(false), request: request('/app/timeline') }),
+    ).toBe(true);
+    expect(
+      authorizeProductRequest({ auth: session(false), request: request('/api/timeline') }),
+    ).toBe(true);
+  });
+
   it('keeps the existing sign-in gate for unauthenticated app requests', () => {
     const result = authorizeProductRequest({
       auth: null,
@@ -102,7 +118,7 @@ describe('authorizeProductRequest', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'legal_acceptance_required',
       message: 'Accept the current Terms of Use and acknowledge the Privacy Policy.',
-      acceptanceUrl: '/legal/accept?returnTo=%2Fapi%2Fdocuments%2Fsearch%3Fq%3Droadmap',
+      acceptanceUrl: '/legal/accept?returnTo=%2Fapp',
     });
   });
 

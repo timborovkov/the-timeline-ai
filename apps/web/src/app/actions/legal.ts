@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { auth, updateSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -30,6 +31,12 @@ export async function acceptLegalAction(
   formData: FormData,
 ): Promise<AcceptLegalState> {
   return runSentryServerAction('accept_legal', async () => {
+    if (!isLegalPublicationReady()) {
+      return {
+        error:
+          'Legal acceptance is unavailable while our contracting-entity publication review is completed.',
+      };
+    }
     const session = await auth();
     if (!session?.user) redirect('/sign-in?callbackUrl=/legal/accept');
 

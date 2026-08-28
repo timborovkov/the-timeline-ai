@@ -282,8 +282,12 @@ caching may also be compatible with a provider's ZDR definition. Timeline stores
 the source records and generated results needed to provide the product.
 
 A model identifier is not a privacy control because OpenRouter can change or
-add endpoints. Before changing a model, fallback, privacy class, API surface,
-provider key, or guardrail, the change owner must:
+add endpoints. The following OpenRouter guardrail, official-origin, and local
+attestation requirements apply to Timeline-hosted production. A separately
+operated self-managed deployment owns and documents its provider/proxy policy
+and must not reuse Timeline-hosted provider assurances. Before changing a
+hosted model, fallback, privacy class, API surface, provider key, or guardrail,
+the change owner must:
 
 1. confirm the live endpoint appears in OpenRouter's ZDR registry and does not
    permit training;
@@ -515,7 +519,7 @@ sentence.
 | Provider | Purpose and data | Current control/evidence state |
 | --- | --- | --- |
 | Railway | Hosting, networking, service volumes, PostgreSQL/Redis templates, logs and backups | Topology documented; real regions, backup/restore, DPA and account controls are **Gap** |
-| OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | Role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, and a key/guardrail/catalog/policy-bound production attestation are **Enforced in code**; provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
+| OpenRouter and selected endpoint | AI prompts/inputs, retrieved evidence, outputs, embeddings, media for inference | In hosted production, role-based privacy classification, per-request no-collection/ZDR for required roles, cache disablement, the official API origin, and a key/guardrail/catalog/policy-bound attestation are **Enforced in code**. A self-managed operator owns an alternate compatible endpoint and its controls and cannot reuse hosted assurances. Provider-side assignment/settings still require management-key deployment evidence, and the disclosed voice-transcription retention exception, contract, multilingual evaluation, and live evidence remain **Gap** |
 | Recall.ai | Meeting attendance, media processing, transcript generation, diagnostics | Hosted production requests one-hour media retention, allows only documented HTTPS regional API hosts, pins transcripts to the application callback, closes local transcript acceptance atomically, and reports cancellation success only after provider confirmation; failed confirmations are retried. An explicit `self-managed` mode owns alternate endpoints and retention. Deployed request/account evidence, region, DPA, and deletion-failure handling are **Gap** |
 | Daytona | Ephemeral complex-document extraction and observability | Credential-thin sandbox controls are **Enforced**; region and sensitive-data contract coverage are **Gap** |
 | Postmark | Transactional/support email and inbound email payloads | Required when configured; retention, tracking, DPA and support access are **Gap** |
@@ -786,7 +790,7 @@ item requires dated evidence stored in the internal control file.
 | G-17 | **OPEN** | **TBD: security program** | Define security roadmap, asset/vendor/access reviews, vulnerability scanning, restore/deletion exercises, and evidence archive | SOC 2 / ISO readiness |
 | G-18 | **OPEN** | **TBD: web/privacy** | Self-host Fontshare/jsDelivr assets or add them to the public-site provider inventory | Provider-free/minimal-third-party docs claim |
 | G-19 | **OPEN** | **TBD: legal + platform** | Archive an immutable rendered copy or content digest for each Terms/Privacy version and bind that evidence to acceptance events | Exact-text clickwrap evidence beyond version, timestamp, IP, user agent and Git history |
-| G-20 | **OPEN / blocker** | **TBD: founder + accounting/counsel** | Resolve the missing annual reports and published deletion notice shown on the [official Nyxone OÜ registry card](https://ariregister.rik.ee/eng/company/16172329/Nyxone-O%C3%9C), then retain current official status evidence | Stable contracting/controller identity and publication readiness |
+| G-20 | **OPEN / blocker; runtime publication interlock enforced** | **TBD: founder + accounting/counsel** | Resolve the missing annual reports and published deletion notice shown on the [official Nyxone OÜ registry card](https://ariregister.rik.ee/eng/company/16172329/Nyxone-O%C3%9C), then retain current official status evidence. Production defaults `LEGAL_PUBLICATION_READY=false`, which withholds the binding Terms, legal gate/acceptance writes, and first-time credential/GitHub signup while preserving existing sign-in. Set it to `true` only after retaining that dated evidence; the flag is an operator attestation, not evidence itself. | Stable contracting/controller identity and publication readiness |
 
 ## 18. Change and review process
 

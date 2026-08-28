@@ -12,6 +12,7 @@ import { acceptLegalAction } from '@/app/actions/legal';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   headers: vi.fn(),
+  isLegalPublicationReady: vi.fn(),
   legalAcceptanceRequestMetadata: vi.fn(),
   recordCurrentLegalAcceptance: vi.fn(),
   updateSession: vi.fn(),
@@ -33,6 +34,9 @@ vi.mock('@/lib/legal', () => ({
   legalAcceptanceRequestMetadata: fakes.legalAcceptanceRequestMetadata,
   recordCurrentLegalAcceptance: fakes.recordCurrentLegalAcceptance,
 }));
+vi.mock('@/lib/legal-publication', () => ({
+  isLegalPublicationReady: fakes.isLegalPublicationReady,
+}));
 vi.mock('next/headers', () => ({ headers: fakes.headers }));
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
 
@@ -49,6 +53,7 @@ function form(values: Record<string, string> = {}): FormData {
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+  fakes.isLegalPublicationReady.mockReturnValue(true);
   fakes.headers.mockResolvedValue(new Headers());
   fakes.legalAcceptanceRequestMetadata.mockReturnValue({
     ipAddress: '203.0.113.10',
@@ -60,6 +65,18 @@ beforeEach(() => {
 });
 
 describe('acceptLegalAction', () => {
+  it('does not record acceptance while legal publication is blocked', async () => {
+    fakes.isLegalPublicationReady.mockReturnValue(false);
+
+    await expect(acceptLegalAction({}, form({ accepted: 'on' }))).resolves.toEqual({
+      error:
+        'Legal acceptance is unavailable while our contracting-entity publication review is completed.',
+    });
+    expect(fakes.auth).not.toHaveBeenCalled();
+    expect(fakes.transaction).not.toHaveBeenCalled();
+    expect(fakes.recordCurrentLegalAcceptance).not.toHaveBeenCalled();
+  });
+
   it('rejects a stale rendered document version without writing evidence', async () => {
     await expect(
       acceptLegalAction({}, form({ accepted: 'on', privacyVersion: 'older-privacy' })),

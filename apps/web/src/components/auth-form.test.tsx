@@ -36,6 +36,13 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('auth forms', () => {
+  it('withholds account creation while legal publication is blocked', () => {
+    render(<SignUpForm requiresTurnstile={false} legalPublicationReady={false} />);
+
+    expect(screen.getByRole('status').textContent).toContain('not accepting new accounts');
+    expect(screen.queryByRole('button', { name: 'Create account' })).toBeNull();
+  });
+
   it('keeps labels and submit controls available for sign-in', () => {
     render(<SignInForm />);
 

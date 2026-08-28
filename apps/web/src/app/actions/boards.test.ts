@@ -75,9 +75,13 @@ beforeEach(() => {
   fakes.fakeBoards.renameBoard.mockResolvedValue(true);
   fakes.fakeBoards.updateBoardSettings.mockResolvedValue(true);
   fakes.fakeBoards.updateBoardItem.mockResolvedValue({
-    id: ITEM_ID,
-    boardId: BOARD_ID,
-    entityId: ENTITY_ID,
+    changed: true,
+    changedFields: ['priority'],
+    item: {
+      id: ITEM_ID,
+      boardId: BOARD_ID,
+      entityId: ENTITY_ID,
+    },
   });
   fakes.fakeBoards.removeBoardItem.mockResolvedValue({
     id: ITEM_ID,
@@ -283,6 +287,27 @@ describe('updateBoardItemAction', () => {
       { kind: 'user', userId: USER_ID },
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/work');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'board_action_completed',
+      { action: 'item_update' },
+    );
+  });
+
+  it('does not count or revalidate a board patch that made no durable change', async () => {
+    fakes.fakeBoards.updateBoardItem.mockResolvedValueOnce({
+      changed: false,
+      changedFields: [],
+      item: { id: ITEM_ID, boardId: BOARD_ID, entityId: ENTITY_ID },
+    });
+
+    await expect(updateBoardItemAction({ id: ITEM_ID, priority: 2 })).resolves.toEqual({
+      ok: true,
+      id: ITEM_ID,
+    });
+
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
 

@@ -19,6 +19,7 @@ const fakes = vi.hoisted(() => ({
   dbTransaction: vi.fn(),
   hashPassword: vi.fn(),
   headers: vi.fn(),
+  isLegalPublicationReady: vi.fn(),
   insertDefaultDigestDestination: vi.fn(),
   legalAcceptanceRequestMetadata: vi.fn(),
   recordCurrentLegalAcceptance: vi.fn(),
@@ -72,6 +73,9 @@ vi.mock('@/lib/email-verification', () => ({
 vi.mock('@/lib/legal', () => ({
   legalAcceptanceRequestMetadata: fakes.legalAcceptanceRequestMetadata,
   recordCurrentLegalAcceptance: fakes.recordCurrentLegalAcceptance,
+}));
+vi.mock('@/lib/legal-publication', () => ({
+  isLegalPublicationReady: fakes.isLegalPublicationReady,
 }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 vi.mock('@/lib/site-url', () => ({ getSiteUrl: () => 'https://timeline.test' }));
@@ -139,6 +143,7 @@ beforeEach(() => {
     ipAddress: '203.0.113.10',
     userAgent: 'Signup browser',
   });
+  fakes.isLegalPublicationReady.mockReturnValue(true);
   fakes.checkRateLimit.mockResolvedValue({ ok: true });
   fakes.verifyTurnstileToken.mockResolvedValue(true);
   fakes.hashPassword.mockResolvedValue('password-hash');
@@ -155,6 +160,18 @@ beforeEach(() => {
 });
 
 describe('signUpAction legal acceptance', () => {
+  it('does not provision an account while legal publication is blocked', async () => {
+    fakes.isLegalPublicationReady.mockReturnValue(false);
+
+    await expect(signUpAction({}, form())).resolves.toEqual({
+      error:
+        'Account creation is temporarily unavailable while our legal publication review is completed.',
+    });
+    expect(fakes.headers).not.toHaveBeenCalled();
+    expect(fakes.dbTransaction).not.toHaveBeenCalled();
+    expect(fakes.recordCurrentLegalAcceptance).not.toHaveBeenCalled();
+  });
+
   it('rejects a form rendered for older legal documents before provisioning', async () => {
     const staleForm = form();
     staleForm.set('termsVersion', 'older-terms');

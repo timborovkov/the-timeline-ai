@@ -256,7 +256,7 @@ export async function updateBoardItemAction(input: unknown): Promise<ActionState
     if (!r.ok) return { error: r.error };
     const { id, dueAt, ...rest } = parsed.data;
     try {
-      const item = await r.scope.boards.updateBoardItem(
+      const result = await r.scope.boards.updateBoardItem(
         id,
         {
           ...rest,
@@ -264,13 +264,15 @@ export async function updateBoardItemAction(input: unknown): Promise<ActionState
         },
         { kind: 'user', userId: r.userId },
       );
-      if (!item) return { error: 'Board item not found' };
-      trackProductEventBestEffort(
-        { kind: 'user', userId: r.userId, teamId: r.teamId },
-        'board_action_completed',
-        { action: 'item_update' },
-      );
-      revalidateBoardSurfaces(item.boardId, item.entityId);
+      if (!result) return { error: 'Board item not found' };
+      if (result.changed) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'board_action_completed',
+          { action: 'item_update' },
+        );
+        revalidateBoardSurfaces(result.item.boardId, result.item.entityId);
+      }
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'update_board_item') };

@@ -11,7 +11,7 @@ import {
 import { childLogger } from '@timeline/shared/logger';
 import { sendMessage } from '@timeline/shared/messaging';
 import { verifyPassword } from '@timeline/shared/passwords';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 import NextAuth, { CredentialsSignin, type NextAuthConfig } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
@@ -22,6 +22,7 @@ import { trackProductEventBestEffort } from '@/lib/analytics';
 import { authConfig } from '@/lib/auth.config';
 import { ensureSoloTeam } from '@/lib/default-team';
 import { sendEmailVerification } from '@/lib/email-verification';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { checkCredentialsSignInRateLimit } from '@/lib/sign-in-rate-limit';
@@ -89,6 +90,26 @@ const nextAuth = NextAuth({
   providers,
   callbacks: {
     ...authConfig.callbacks,
+    async signIn({ account }) {
+      if (account?.provider !== 'github' || isLegalPublicationReady()) return true;
+
+      // Auth.js invokes signIn before handleLoginOrRegister creates a new OAuth
+      // user. While publication is blocked, permit an existing GitHub account
+      // to sign in but reject the first-time adapter write. Match the provider
+      // account rather than profile email because an existing GitHub user may
+      // keep their email private.
+      const existing = await db
+        .select({ userId: accounts.userId })
+        .from(accounts)
+        .where(
+          and(
+            eq(accounts.provider, account.provider),
+            eq(accounts.providerAccountId, account.providerAccountId),
+          ),
+        )
+        .limit(1);
+      return existing.length > 0;
+    },
     async jwt({ token, user, trigger }) {
       // Auth.js' callback union types make `user` look required here, but the
       // runtime only supplies it during sign-in/sign-up, not normal refreshes.

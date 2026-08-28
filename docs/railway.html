@@ -338,7 +338,7 @@ LOG_LEVEL=info
         can include private prompt and output content. Use LangSmith only in controlled development
         or evaluation environments with synthetic or explicitly approved data. The hosted production
         OpenRouter key must be restricted to the code-owned model catalog with applicable ZDR
-        guardrails for every <code>zdr_required</code> role. Production also requires
+        guardrails for every <code>zdr_required</code> role. Hosted production also requires
         <code>OPENROUTER_GUARDRAIL_ID</code> and the generated
         <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION</code>. The token invalidates on inference-key,
         guardrail, catalog, or policy drift; it does not create or prove the provider settings.
@@ -586,13 +586,18 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
         </li>
         <li>
           <strong>Legal-version release warning.</strong> Changing the current Terms or Privacy
-          version intentionally makes every existing human session stale. Signed-in app and invite
-          routes redirect to <code>/legal/accept</code>; human product APIs return a no-store
-          <code>428 legal_acceptance_required</code> response until the person accepts. Before a
-          version bump, publish and review both documents, notify support and API consumers, and
-          confirm the immutable acceptance-history migration is deployed. Service webhooks, cron
-          jobs, health checks, inbound email, calendar feeds, and bearer-authenticated outbound MCP
-          remain exempt because they cannot complete human clickwrap.
+          version intentionally makes every existing human session stale, but production first
+          defaults <code>LEGAL_PUBLICATION_READY=false</code>. Keep it false until G-20 in the
+          security/privacy/trust register is resolved and dated official registry evidence is
+          retained; that default withholds binding Terms, legal acceptance, and first-time account
+          signup. Set it to true only as an operator attestation after the evidence exists. Then
+          signed-in app and invite routes redirect to <code>/legal/accept</code>; human product APIs
+          return a no-store <code>428 legal_acceptance_required</code> response until the person
+          accepts. Before a version bump, publish and review both documents, notify support and API
+          consumers, and confirm the immutable acceptance-history migration is deployed. Service
+          webhooks, cron jobs, health checks, inbound email, calendar feeds, and
+          bearer-authenticated outbound MCP remain exempt because they cannot complete human
+          clickwrap.
         </li>
         <li>
           Services restart with new image. Healthcheck on

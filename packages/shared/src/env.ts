@@ -92,6 +92,7 @@ function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'NODE_ENV',
   'TIMELINE_DEPLOYMENT_MODE',
+  'LEGAL_PUBLICATION_READY',
   'LOG_LEVEL',
   'WORKER_MODE',
   'DOCUMENT_EXTRACT_ENABLED',
@@ -208,6 +209,12 @@ const baseSchema = z.object({
    * fail closed unless a self-managed operator opts into its own boundary.
    */
   TIMELINE_DEPLOYMENT_MODE: z.enum(['hosted', 'self-managed']).default('hosted'),
+  /**
+   * Operator attestation that the contracting/controller identity publication
+   * blocker in docs/security-privacy-trust.md (G-20) is resolved and evidenced.
+   * The web app otherwise withholds binding terms and legal acceptance.
+   */
+  LEGAL_PUBLICATION_READY: z.preprocess(booleanString, z.boolean().default(false)),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 
   /**
@@ -512,7 +519,11 @@ const schema = baseSchema
           'LANGSMITH_TRACING must be false in production because traces may contain customer content',
       });
     }
-    if (env.NODE_ENV === 'production' && env.OPENROUTER_API_KEY) {
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.OPENROUTER_API_KEY
+    ) {
       if (!env.OPENROUTER_GUARDRAIL_ID) {
         ctx.addIssue({
           code: 'custom',
@@ -545,13 +556,14 @@ const schema = baseSchema
     }
     if (
       env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
       env.OPENROUTER_API_KEY &&
       !isOfficialOpenRouterBaseUrl(env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL)
     ) {
       ctx.addIssue({
         code: 'custom',
         path: ['OPENROUTER_BASE_URL'],
-        message: `OPENROUTER_BASE_URL must use ${OPENROUTER_OFFICIAL_BASE_URL} in production`,
+        message: `OPENROUTER_BASE_URL must use ${OPENROUTER_OFFICIAL_BASE_URL} in hosted production`,
       });
     }
     if (

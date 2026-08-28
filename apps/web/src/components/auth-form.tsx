@@ -51,14 +51,24 @@ export function SignInForm({ callbackUrl }: { callbackUrl?: string }) {
 
 export function SignUpForm({
   inviteToken,
+  legalPublicationReady = true,
   requiresTurnstile,
   turnstileSiteKey,
 }: {
   inviteToken?: string;
+  legalPublicationReady?: boolean;
   requiresTurnstile: boolean;
   turnstileSiteKey?: string;
 }) {
   const [state, action] = useActionState<SignUpState, FormData>(signUpAction, {});
+  if (!legalPublicationReady) {
+    return (
+      <p role="status" className="text-sm leading-6 text-muted-foreground">
+        We are not accepting new accounts until the contracting-entity review is resolved and the
+        Terms are ready for publication. Existing users can still sign in.
+      </p>
+    );
+  }
   return (
     <form action={action} className="space-y-4">
       {inviteToken ? <input type="hidden" name="inviteToken" value={inviteToken} /> : null}

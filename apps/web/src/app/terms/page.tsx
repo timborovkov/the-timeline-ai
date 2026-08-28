@@ -3,6 +3,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import {
   LEGAL_ADDRESS,
   LEGAL_EFFECTIVE_DATE,
@@ -17,7 +18,7 @@ import { PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS } from '@/lib/trust-claims';
 
 export const metadata: Metadata = publicMetadata({
   title: 'Terms of Use',
-  description: 'The agreement governing access to and use of The Timeline.',
+  description: 'Terms information for access to and use of The Timeline.',
   path: '/terms',
 });
 
@@ -386,6 +387,27 @@ function TermsClosingSections({ legalContactEmail }: { legalContactEmail: LegalC
 
 export default function TermsPage() {
   const legalContactEmail = getLegalContactEmail();
+
+  if (!isLegalPublicationReady()) {
+    return (
+      <LegalPage
+        eyebrow="Publication pending"
+        title="Terms of Use"
+        description="Binding Terms are not currently being published or presented for acceptance."
+      >
+        <p>
+          The Timeline is completing a contracting-entity publication-readiness review. Until that
+          review is resolved and evidenced, this page does not form an agreement, no new Terms
+          version is in force through this page, and the product will not ask users to accept it.
+        </p>
+        <p>
+          Existing users may continue under any previously applicable agreement. New account
+          creation is paused. For questions, email{' '}
+          <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>.
+        </p>
+      </LegalPage>
+    );
+  }
 
   return (
     <LegalPage

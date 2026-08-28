@@ -7,6 +7,7 @@ import {
   expireActiveTeamCookie,
   shouldExpireUnverifiedActiveTeamCookie,
 } from '@/lib/active-team-cookie';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { nonEmptyEnv } from '@/lib/safe-redirect';
 
@@ -65,6 +66,10 @@ function legalGatePath(request: NextRequest): string {
   return `${LEGAL_GATE_PATH}?returnTo=${encodeURIComponent(legalReturnTo(request))}`;
 }
 
+function apiLegalGatePath(): string {
+  return `${LEGAL_GATE_PATH}?returnTo=${encodeURIComponent('/app')}`;
+}
+
 function unauthenticatedAppRedirect(request: NextRequest): NextResponse {
   const signInUrl = new URL('/sign-in', request.nextUrl.origin);
   signInUrl.searchParams.set('callbackUrl', request.nextUrl.href);
@@ -90,7 +95,7 @@ export function authorizeProductRequest({
   const isInviteRoute = isRouteWithin(path, '/accept-invite');
 
   if (isAppRoute && !isAuthed) return unauthenticatedAppRedirect(request);
-  if (!isAuthed || hasCurrentLegalSession(auth?.user)) return true;
+  if (!isAuthed || !isLegalPublicationReady() || hasCurrentLegalSession(auth?.user)) return true;
 
   if (isAppRoute || isInviteRoute) {
     return Response.redirect(new URL(legalGatePath(request), request.nextUrl));
@@ -101,7 +106,7 @@ export function authorizeProductRequest({
       {
         error: 'legal_acceptance_required',
         message: 'Accept the current Terms of Use and acknowledge the Privacy Policy.',
-        acceptanceUrl: legalGatePath(request),
+        acceptanceUrl: apiLegalGatePath(),
       },
       { status: 428, headers: { 'Cache-Control': 'no-store' } },
     );

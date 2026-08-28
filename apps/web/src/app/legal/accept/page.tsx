@@ -7,6 +7,7 @@ import { LegalAcceptanceForm } from '@/components/legal-acceptance-form';
 import { auth } from '@/lib/auth';
 import { hasCurrentLegalSession } from '@/lib/auth.config';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 
 export const metadata: Metadata = {
@@ -31,6 +32,7 @@ export default async function LegalAcceptPage({ searchParams }: Props) {
   const safeReturnTo = safeSameOriginPath(returnTo, '/app', {
     blockedPaths: ['/legal/accept', '/sign-in', '/sign-up'],
   });
+  if (!isLegalPublicationReady()) redirect(safeReturnTo);
   // The DB snapshot can be current while the signed JWT is still stale (for
   // example after a post-commit session refresh failure). Render the
   // idempotent form in that state so submitting it can refresh the JWT instead
