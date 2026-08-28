@@ -10,10 +10,15 @@ import type * as objects from '@timeline/shared/objects/types';
 
 import { structureContactFromBoardNotesAction } from '@/app/actions/objects';
 import { DueDateDisplay } from '@/components/due-date-display';
+import {
+  OBJECT_ROW_META_CLASS,
+  OBJECT_ROW_TITLE_CLASS,
+} from '@/components/objects/object-detail-type';
 import { ObjectRailSection } from '@/components/objects/object-rail-chrome';
 import { RAIL_QUIET_ACTION } from '@/components/objects/object-rail-tokens';
 import { displayText } from '@/lib/display-dates';
 import { notifyAction } from '@/lib/notify';
+import { cn } from '@/lib/utils';
 
 const EMPTY_MEMBERS: { id: string; label: string }[] = [];
 
@@ -57,24 +62,29 @@ export function ObjectBoardContextSection({
             <li key={row.itemId} className="grid gap-0.5">
               <Link
                 href={`/app/boards/${row.boardId}?item=${row.itemId}`}
-                className="truncate text-sm font-normal leading-5 text-fg hover:underline"
+                className={cn(OBJECT_ROW_TITLE_CLASS, 'truncate hover:underline')}
               >
                 {displayText(row.boardName)}
               </Link>
-              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs font-normal leading-4 text-fg-dim">
+              <div
+                className={cn(
+                  'flex min-w-0 flex-wrap items-center gap-x-1.5',
+                  OBJECT_ROW_META_CLASS,
+                )}
+              >
                 {meta.length > 0 ? <span className="truncate">{meta.join(' · ')}</span> : null}
                 <DueDateDisplay value={row.dueAt} variant="compact" />
               </div>
               {row.nextStep ? (
                 <p
-                  className="truncate text-xs font-normal leading-4 text-fg-muted"
+                  className={cn(OBJECT_ROW_META_CLASS, 'truncate text-fg-muted')}
                   title={row.nextStep}
                 >
                   {displayText(row.nextStep)}
                 </p>
               ) : null}
               {row.notes ? (
-                <p className="truncate text-xs font-normal leading-4 text-fg-dim" title={row.notes}>
+                <p className={cn(OBJECT_ROW_META_CLASS, 'truncate')} title={row.notes}>
                   {displayText(row.notes)}
                 </p>
               ) : null}

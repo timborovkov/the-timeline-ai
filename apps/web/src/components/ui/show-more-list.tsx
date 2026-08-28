@@ -4,6 +4,8 @@ import type { ComponentType, ReactNode } from 'react';
 
 import { cn } from '@/lib/utils';
 
+const FOLD_CONTROL_CLASS = 'text-xs font-medium text-fg-muted transition-colors hover:text-fg';
+
 export function ShowMoreList<T>({
   items,
   previewCount = 3,
@@ -53,7 +55,12 @@ export function ShowMoreList<T>({
       ) : null}
       {showFold ? (
         <details className={preview.length > 0 ? 'mt-1' : undefined}>
-          <summary className="cursor-pointer list-none py-1 text-xs font-normal text-fg-muted hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50">
+          <summary
+            className={cn(
+              FOLD_CONTROL_CLASS,
+              'cursor-pointer list-none py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+            )}
+          >
             {label}
           </summary>
           <div className="mt-1">

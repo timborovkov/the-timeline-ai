@@ -5,12 +5,22 @@ import { ExternalLink } from 'lucide-react';
 
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
 import { EvidenceLink } from '@/components/evidence-link';
+import {
+  OBJECT_BODY_CLASS,
+  OBJECT_CONTROL_CLASS,
+  OBJECT_MONO_META_CLASS,
+  OBJECT_QUIET_CLASS,
+  OBJECT_ROW_META_CLASS,
+  OBJECT_ROW_TITLE_CLASS,
+  OBJECT_SECTION_CLASS,
+} from '@/components/objects/object-detail-type';
 import { ShowMoreList } from '@/components/ui/show-more-list';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { displayText, formatDisplayDateTime } from '@/lib/display-dates';
 import { formatTaskCategoryChangeValue } from '@/lib/object-change-format';
 import { statusLabel } from '@/lib/status-labels';
 import { useObjectSectionQuery } from '@/lib/use-paginated-queries';
+import { cn } from '@/lib/utils';
 
 const SECTION_PREVIEW_COUNT = 3;
 
@@ -33,13 +43,13 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
   return (
     <section>
       {showTitle ? (
-        <h2 className="mb-1.5 text-xs font-medium text-fg-dim">
+        <h2 className={cn(OBJECT_SECTION_CLASS, 'mb-1.5')}>
           {title}
-          {countLabel ? <span className="font-normal text-fg-muted"> · {countLabel}</span> : null}
+          {countLabel ? <span className={OBJECT_MONO_META_CLASS}> · {countLabel}</span> : null}
         </h2>
       ) : null}
       {items.length === 0 && query.isPending ? (
-        <p className="text-sm font-normal leading-5 text-fg-dim">Loading…</p>
+        <p className={cn(OBJECT_QUIET_CLASS, 'leading-5')}>Loading…</p>
       ) : (
         <ShowMoreList
           items={items}
@@ -50,7 +60,7 @@ export function ObjectSectionFeed({ objectId, section, title, showTitle = true }
             hidden > 0 ? `Show ${hidden}${hasMore ? '+' : ''} more` : 'Show more'
           }
           Item={({ item }) => (
-            <div className="text-sm font-normal leading-5 text-fg">
+            <div className={OBJECT_BODY_CLASS}>
               <ObjectSectionItem section={section} item={item} />
             </div>
           )}
@@ -82,11 +92,11 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
       <div className="flex items-center justify-between gap-3">
         <a
           href={`/app/objects/${String(row.id)}`}
-          className="min-w-0 truncate text-fg hover:underline"
+          className={cn(OBJECT_ROW_TITLE_CLASS, 'min-w-0 truncate hover:underline')}
         >
           {text(row.canonicalName, 'Task')}
         </a>
-        <span className="shrink-0 text-xs font-normal text-fg-dim">
+        <span className={cn(OBJECT_MONO_META_CLASS, 'shrink-0')}>
           {statusLabel(text(row.status))}
         </span>
       </div>
@@ -97,11 +107,11 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
       <div className="flex items-center justify-between gap-3">
         <a
           href={`/app/objects/${String(row.otherId)}`}
-          className="min-w-0 truncate text-fg hover:underline"
+          className={cn(OBJECT_ROW_TITLE_CLASS, 'min-w-0 truncate hover:underline')}
         >
           {text(row.otherName, 'Object')}
         </a>
-        <span className="shrink-0 text-xs font-normal text-fg-dim">
+        <span className={cn(OBJECT_ROW_META_CLASS, 'shrink-0')}>
           {statusLabel(text(row.direction))} · {statusLabel(text(row.kind))}
         </span>
       </div>
@@ -118,11 +128,13 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     return (
       <div className="space-y-1">
         <div className="flex flex-wrap items-start gap-2">
-          <p className="line-clamp-3 min-w-0 flex-1 leading-5 text-fg">{text(row.statement)}</p>
+          <p className={cn(OBJECT_BODY_CLASS, 'line-clamp-3 min-w-0 flex-1 leading-[1.35]')}>
+            {text(row.statement)}
+          </p>
           {sharedObjects.length > 0 ? <SharedFactObjects objects={sharedObjects} /> : null}
         </div>
-        <p className="text-xs text-fg-dim">
-          Observed {observedAt}
+        <p className={OBJECT_ROW_META_CLASS}>
+          Observed <span className={OBJECT_MONO_META_CLASS}>{observedAt}</span>
           {sourceLabel} · confidence {text(row.confidence)}
         </p>
       </div>
@@ -137,7 +149,12 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
     return (
       <div className="grid gap-1">
         <div className="flex min-w-0 items-start gap-3">
-          <p className="line-clamp-2 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-5 text-fg">
+          <p
+            className={cn(
+              OBJECT_BODY_CLASS,
+              'line-clamp-2 min-w-0 flex-1 whitespace-pre-wrap text-pretty leading-[1.35]',
+            )}
+          >
             {contentText}
           </p>
           {eventId ? (
@@ -146,15 +163,21 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
               previewText={previewText}
               source={source}
               occurredAt={occurredAt}
-              className="inline-flex shrink-0 items-center gap-1 border-0 bg-transparent px-0 py-0 font-sans text-xs font-normal text-fg-muted no-underline hover:bg-transparent hover:text-fg hover:underline"
+              className={cn(
+                OBJECT_CONTROL_CLASS,
+                'inline-flex shrink-0 items-center gap-1 border-0 bg-transparent px-0 py-0 font-sans no-underline hover:bg-transparent hover:underline',
+              )}
             >
               <ExternalLink className="size-3" />
               View
             </EvidenceLink>
           ) : null}
         </div>
-        <p className="text-xs font-normal text-fg-dim">
-          {formatDisplayDateTime(occurredAt, { timezone })} · {statusLabel(source || 'unknown')}
+        <p className={OBJECT_ROW_META_CLASS}>
+          <span className={OBJECT_MONO_META_CLASS}>
+            {formatDisplayDateTime(occurredAt, { timezone })}
+          </span>{' '}
+          · {statusLabel(source || 'unknown')}
         </p>
       </div>
     );
@@ -162,12 +185,14 @@ function ObjectSectionItem({ section, item }: { section: Props['section']; item:
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0 break-words text-fg">{changeFieldLabel(text(row.field))}</span>
-        <span className="shrink-0 text-xs font-normal text-fg-dim">
+        <span className={cn(OBJECT_ROW_TITLE_CLASS, 'min-w-0 break-words')}>
+          {changeFieldLabel(text(row.field))}
+        </span>
+        <span className={cn(OBJECT_ROW_META_CLASS, 'shrink-0')}>
           {statusLabel(text(row.actorKind))} · {statusLabel(text(row.status))}
         </span>
       </div>
-      <p className="mt-1 line-clamp-2 break-words text-xs text-fg-dim">
+      <p className={cn(OBJECT_ROW_META_CLASS, 'mt-1 line-clamp-2 break-words')}>
         {formatChangeValue(text(row.field), row.previousValue, timezone)} →{' '}
         {formatChangeValue(text(row.field), row.newValue, timezone)}
       </p>
@@ -280,7 +305,12 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
   const objectNoun = `object${objects.length === 1 ? '' : 's'}`;
   return (
     <details className="group relative inline-flex shrink-0">
-      <summary className="cursor-pointer list-none text-xs font-normal text-fg-muted marker:hidden hover:text-fg hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50">
+      <summary
+        className={cn(
+          OBJECT_CONTROL_CLASS,
+          'cursor-pointer list-none marker:hidden hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal/50',
+        )}
+      >
         {label}
         <span className="sr-only">
           Show {objects.length} other {objectNoun} sharing this fact
@@ -288,7 +318,7 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
       </summary>
       <div className="absolute right-0 top-full z-20 hidden w-64 pt-2 group-open:block">
         <div className="rounded-sm border border-border bg-bg p-2 shadow-lg">
-          <p className="px-2 pb-1 text-xs text-fg-dim">Objects sharing this fact</p>
+          <p className={cn(OBJECT_ROW_META_CLASS, 'px-2 pb-1')}>Objects sharing this fact</p>
           <ul className="max-h-56 overflow-y-auto">
             {objects.map((object) => (
               <li key={`${object.id}:${object.role}`}>
@@ -296,10 +326,10 @@ function SharedFactObjects({ objects }: { objects: SharedFactObject[] }) {
                   href={`/app/objects/${object.id}`}
                   className="block rounded-sm px-2 py-1.5 hover:bg-surface focus-visible:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-inset"
                 >
-                  <span className="block truncate text-sm text-fg">
+                  <span className={cn(OBJECT_ROW_TITLE_CLASS, 'block truncate')}>
                     {displayText(object.canonicalName)}
                   </span>
-                  <span className="block text-xs text-fg-dim">
+                  <span className={cn(OBJECT_ROW_META_CLASS, 'block')}>
                     {displayText(object.type)} · {displayText(object.role)}
                   </span>
                 </a>
