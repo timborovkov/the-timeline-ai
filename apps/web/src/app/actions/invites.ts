@@ -48,11 +48,13 @@ async function acceptTeamMembership(
     throw new Error('already-member');
   }
   if (membership) {
+    const endedAt = membership.removedAt;
+    if (!endedAt) throw new Error('already-member');
     const priorIntervals: TeamMemberPriorInterval[] = [
       ...membership.priorIntervals,
       {
         startedAt: membership.createdAt.toISOString(),
-        endedAt: membership.removedAt.toISOString(),
+        endedAt: endedAt.toISOString(),
       },
     ];
     await tx
