@@ -22,6 +22,14 @@ import {
 
 import type { ObjectDetail } from '@timeline/shared/objects/types';
 
+import {
+  OBJECT_BODY_CLASS,
+  OBJECT_CONTROL_CLASS,
+  OBJECT_MONO_META_CLASS,
+  OBJECT_ROW_META_CLASS,
+  OBJECT_ROW_TITLE_CLASS,
+  OBJECT_SECTION_CLASS,
+} from '@/components/objects/object-detail-type';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useWorkspaceTimezone } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
@@ -245,12 +253,12 @@ export function ObjectDiscussionPanel({
 
   return (
     <section>
-      <h2 className="mb-1.5 text-xs font-medium text-fg-dim">Discussion</h2>
+      <h2 className={cn(OBJECT_SECTION_CLASS, 'mb-1.5')}>Discussion</h2>
       <ol className="space-y-2">
         {feed.map((item) => {
           if (item.kind === 'activity') {
             return (
-              <li key={item.id} className="text-xs font-normal text-fg-dim">
+              <li key={item.id} className={OBJECT_ROW_META_CLASS}>
                 <RelativeTime at={new Date(item.at)} timezone={timezone} />
                 <span className="ml-1.5">{activitySummary(item.change)}</span>
               </li>
@@ -266,12 +274,12 @@ export function ObjectDiscussionPanel({
               key={note.id}
               id={`comment-${note.id}`}
               className={cn(
-                'rounded-sm px-1 py-1 text-sm',
+                'rounded-sm px-1 py-1',
                 highlightCommentId === note.id && 'bg-signal/10',
               )}
             >
-              <div className="flex items-baseline justify-between gap-2 text-xs font-normal text-fg-dim">
-                <span className="text-sm font-normal text-fg">{author}</span>
+              <div className={cn('flex items-baseline justify-between gap-2', OBJECT_ROW_META_CLASS)}>
+                <span className={OBJECT_ROW_TITLE_CLASS}>{author}</span>
                 <RelativeTime at={new Date(note.createdAt)} timezone={timezone} />
               </div>
               {isEditing ? (
@@ -282,7 +290,10 @@ export function ObjectDiscussionPanel({
                     onChange={(event) => {
                       dispatchObjectUi({ editingBody: event.target.value });
                     }}
-                    className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm font-normal text-fg outline-none focus-visible:border-signal"
+                    className={cn(
+                      OBJECT_BODY_CLASS,
+                      'w-full border-0 border-b border-border bg-transparent px-0 py-1.5 outline-none focus-visible:border-signal',
+                    )}
                     rows={3}
                   />
                   <div className="flex gap-2">
@@ -292,7 +303,7 @@ export function ObjectDiscussionPanel({
                       onClick={() => {
                         onSaveNote(note.id, editingBody);
                       }}
-                      className="text-xs font-normal text-fg-dim hover:underline"
+                      className={cn(OBJECT_CONTROL_CLASS, 'hover:underline')}
                     >
                       Save
                     </button>
@@ -301,19 +312,19 @@ export function ObjectDiscussionPanel({
                       onClick={() => {
                         dispatchObjectUi({ editingNoteId: null });
                       }}
-                      className="text-xs font-normal text-fg-dim hover:underline"
+                      className={cn(OBJECT_CONTROL_CLASS, 'hover:underline')}
                     >
                       Cancel
                     </button>
                   </div>
                 </div>
               ) : (
-                <p className="mt-0.5 whitespace-pre-wrap text-sm font-normal text-fg">
+                <p className={cn(OBJECT_BODY_CLASS, 'mt-0.5 whitespace-pre-wrap')}>
                   <RichCommentBody body={note.body} members={members} />
                 </p>
               )}
               {isOwner && !isEditing ? (
-                <div className="mt-0.5 flex gap-2 text-xs font-normal text-fg-dim">
+                <div className={cn('mt-0.5 flex gap-2', OBJECT_CONTROL_CLASS)}>
                   <button
                     type="button"
                     disabled={pending}
@@ -392,7 +403,10 @@ function DiscussionComposer({
         }}
         onKeyDown={onKeyDown}
         placeholder={`Comment, @mention people or @${AGENT_DISPLAY_NAME}`}
-        className="w-full border-0 border-b border-border bg-transparent px-0 py-1.5 text-sm font-normal text-fg outline-none focus-visible:border-signal"
+        className={cn(
+          OBJECT_BODY_CLASS,
+          'w-full border-0 border-b border-border bg-transparent px-0 py-1.5 outline-none focus-visible:border-signal',
+        )}
         rows={2}
       />
       {suggestOpen && suggestions.length > 0 ? (
@@ -402,7 +416,8 @@ function DiscussionComposer({
               <button
                 type="button"
                 className={cn(
-                  'flex w-full px-2 py-1 text-left text-sm font-normal text-fg hover:bg-surface-2',
+                  OBJECT_BODY_CLASS,
+                  'flex w-full px-2 py-1 text-left hover:bg-surface-2',
                   index === highlight && 'bg-surface-2',
                 )}
                 onMouseDown={(event) => {
@@ -420,7 +435,7 @@ function DiscussionComposer({
         type="button"
         onClick={onAddNote}
         disabled={pending || !noteBody.trim()}
-        className="mt-1.5 text-xs font-normal text-fg-dim hover:underline disabled:text-fg-dim/70"
+        className={cn(OBJECT_CONTROL_CLASS, 'mt-1.5 hover:underline disabled:text-fg-dim/70')}
       >
         Comment
       </button>
@@ -484,7 +499,7 @@ function RelativeTime({ at, timezone }: { at: Date; timezone: string }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <time dateTime={at.toISOString()} className="tabular-nums font-normal text-fg-dim">
+          <time dateTime={at.toISOString()} className={OBJECT_MONO_META_CLASS}>
             {formatRelativeAge(at)}
           </time>
         </TooltipTrigger>
