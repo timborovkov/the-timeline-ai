@@ -7622,6 +7622,52 @@ export async function removeRelationship(
   await scope.requireMembership();
   if (!UUID_RE.test(relationshipId)) return false;
 
+  // Person↔company employment is exclusive. Clearing the primary Company edge
+  // must go through setPersonCompany(null); surgical deletes are only for
+  // legacy secondary employment links that bypassed the Company field.
+  const preview = await db
+    .select({
+      id: entityRelationships.id,
+      kind: entityRelationships.kind,
+      fromEntityId: entityRelationships.fromEntityId,
+      toEntityId: entityRelationships.toEntityId,
+      fromType: entities.type,
+    })
+    .from(entityRelationships)
+    .innerJoin(
+      entities,
+      and(
+        eq(entities.teamId, entityRelationships.teamId),
+        eq(entities.id, entityRelationships.fromEntityId),
+      ),
+    )
+    .where(
+      and(eq(entityRelationships.id, relationshipId), eq(entityRelationships.teamId, scope.teamId)),
+    )
+    .limit(1);
+  const previewRel = preview[0];
+  if (previewRel?.kind === 'related') {
+    const [toRow] = await db
+      .select({ type: entities.type })
+      .from(entities)
+      .where(and(eq(entities.teamId, scope.teamId), eq(entities.id, previewRel.toEntityId)))
+      .limit(1);
+    const fromType = previewRel.fromType;
+    const toType = toRow?.type ?? null;
+    const isPersonCompany =
+      (fromType === 'person' && toType === 'company') ||
+      (fromType === 'company' && toType === 'person');
+    if (isPersonCompany) {
+      const personId = fromType === 'person' ? previewRel.fromEntityId : previewRel.toEntityId;
+      const companyId = fromType === 'company' ? previewRel.fromEntityId : previewRel.toEntityId;
+      const [primary] = await listPrimaryCompaniesForPeople(db, scope, [personId]);
+      if (primary?.companyId === companyId) {
+        await setPersonCompany(db, scope, personId, null, actor);
+        return true;
+      }
+    }
+  }
+
   const result = await db.transaction(async (tx) => {
     // Capture endpoints + kind before delete so the audit row has full
     // context. SELECT FOR UPDATE pins the row against a concurrent delete

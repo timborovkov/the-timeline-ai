@@ -34,7 +34,7 @@ import {
   reconciliationRuns,
   userPins,
 } from '@timeline/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -1984,6 +1984,80 @@ describe('object scope — notes and suggestions', () => {
       userId: USER_OWNER,
     });
     expect(unchanged.changed).toBe(false);
+  });
+
+  it('removeRelationship clears primary company via Company field and keeps secondary surgical', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, firstCompany, secondCompany] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Unlink Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Primary Unlink Co',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Secondary Unlink Co',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    const [fromEntityId, toEntityId] = [person.id, secondCompany.id].sort();
+    if (!fromEntityId || !toEntityId) throw new Error('expected relationship endpoints');
+    const [secondary] = await db
+      .insert(entityRelationships)
+      .values({
+        teamId: TEAM_A,
+        fromEntityId,
+        toEntityId,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      })
+      .returning({ id: entityRelationships.id });
+
+    await expect(
+      scope.removeRelationship(secondary?.id ?? '', { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: firstCompany.id,
+        companyName: 'Primary Unlink Co',
+      }),
+    ]);
+
+    const [primaryEdge] = await db
+      .select({ id: entityRelationships.id })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, TEAM_A),
+          eq(entityRelationships.kind, 'related'),
+          or(
+            and(
+              eq(entityRelationships.fromEntityId, person.id),
+              eq(entityRelationships.toEntityId, firstCompany.id),
+            ),
+            and(
+              eq(entityRelationships.fromEntityId, firstCompany.id),
+              eq(entityRelationships.toEntityId, person.id),
+            ),
+          ),
+        ),
+      )
+      .limit(1);
+    await expect(
+      scope.removeRelationship(primaryEdge?.id ?? '', { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([]);
   });
 
   it('merges metadata patches instead of replacing the whole object metadata blob', async () => {

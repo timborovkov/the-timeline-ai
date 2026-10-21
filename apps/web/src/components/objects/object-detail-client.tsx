@@ -344,7 +344,7 @@ export function ObjectDetailClient(props: Props) {
   return <ObjectDetailView key={props.detail.id} {...props} />;
 }
 
-function useObjectDetailController({ detail, userId, suggestions }: Props) {
+function useObjectDetailController({ detail, userId, suggestions, primaryCompany }: Props) {
   const router = useRouter();
   const timezone = useWorkspaceTimezone();
   const [pending, startTransition] = useTransition();
@@ -846,37 +846,45 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
         (detail.type === 'company' && removed.otherType === 'person'));
     const personId = detail.type === 'person' ? detail.id : otherEntityId;
     const companyId = detail.type === 'company' ? detail.id : otherEntityId;
+    // Person page: clear known primary employment via the exclusive Company
+    // setter. Company page and legacy secondary links use removeRelationship,
+    // which routes primary clears through setPersonCompany server-side.
+    const clearsPrimaryCompany =
+      isPersonCompanyEmployment &&
+      detail.type === 'person' &&
+      primaryCompany?.companyId === companyId;
     startTransition(async () => {
       const result = await notifyAction({
         id: `object:${detail.id}:relationship`,
-        loading: isPersonCompanyEmployment ? 'Clearing company…' : 'Removing relationship…',
-        success: isPersonCompanyEmployment ? 'Company cleared' : 'Relationship removed',
-        error: isPersonCompanyEmployment
-          ? 'Couldn’t clear company'
-          : 'Couldn’t remove relationship',
+        loading: clearsPrimaryCompany ? 'Clearing company…' : 'Removing relationship…',
+        success: clearsPrimaryCompany ? 'Company cleared' : 'Relationship removed',
+        error: clearsPrimaryCompany ? 'Couldn’t clear company' : 'Couldn’t remove relationship',
         run: () =>
-          isPersonCompanyEmployment
+          clearsPrimaryCompany
             ? setPersonCompanyAction({ id: personId, companyId: null })
             : removeRelationshipAction({ id, entityId: detail.id, otherEntityId }),
-        undo: removed
-          ? {
-              run: async () => {
-                dispatchLocalDetail({
-                  deletedRelationshipIds: previousDeletedRelationshipIds,
-                  pendingRelationships: previousPendingRelationships,
-                });
-                const undoResult = isPersonCompanyEmployment
-                  ? await setPersonCompanyAction({ id: personId, companyId })
-                  : await addRelationshipAction({
-                      fromEntityId: detail.id,
-                      toEntityId: otherEntityId,
-                      kind: removed.kind,
-                    });
-                if (!undoResult.error) router.refresh();
-                return undoResult;
-              },
-            }
-          : undefined,
+        // Employment restore is only safe for the exclusive primary clear path.
+        // Legacy secondary / company-page unlinks skip undo (addRelationship is gated).
+        undo:
+          removed && (!isPersonCompanyEmployment || clearsPrimaryCompany)
+            ? {
+                run: async () => {
+                  dispatchLocalDetail({
+                    deletedRelationshipIds: previousDeletedRelationshipIds,
+                    pendingRelationships: previousPendingRelationships,
+                  });
+                  const undoResult = clearsPrimaryCompany
+                    ? await setPersonCompanyAction({ id: personId, companyId })
+                    : await addRelationshipAction({
+                        fromEntityId: detail.id,
+                        toEntityId: otherEntityId,
+                        kind: removed.kind,
+                      });
+                  if (!undoResult.error) router.refresh();
+                  return undoResult;
+                },
+              }
+            : undefined,
       });
       if (result.error) {
         dispatchLocalDetail({
