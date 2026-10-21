@@ -9844,45 +9844,51 @@ describe('suggestion scope', () => {
   });
 
   it('accepts recurring calendar create suggestions and materializes occurrences', async () => {
-    const scope = withTeam(db as never, TEAM_ID, USER_ID);
-    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
-      source: 'background',
-      title: 'Create recurring daily call',
-      dedupeKey: 'calendar-recurring-create',
-      items: [
-        {
-          operation: 'create',
-          targetKind: 'calendar_event',
-          title: 'Daily call',
-          dedupeKey: 'calendar-recurring-create:item',
-          proposedPayload: {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'));
+    try {
+      const scope = withTeam(db as never, TEAM_ID, USER_ID);
+      const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+        source: 'background',
+        title: 'Create recurring daily call',
+        dedupeKey: 'calendar-recurring-create',
+        items: [
+          {
+            operation: 'create',
+            targetKind: 'calendar_event',
             title: 'Daily call',
-            startAt: '2026-07-01T16:00:00.000Z',
-            endAt: '2026-07-01T16:30:00.000Z',
-            timezone: 'UTC',
-            visibility: 'team',
-            rrule: 'FREQ=DAILY;COUNT=3',
+            dedupeKey: 'calendar-recurring-create:item',
+            proposedPayload: {
+              title: 'Daily call',
+              startAt: '2026-07-01T16:00:00.000Z',
+              endAt: '2026-07-01T16:30:00.000Z',
+              timezone: 'UTC',
+              visibility: 'team',
+              rrule: 'FREQ=DAILY;COUNT=3',
+            },
           },
-        },
-      ],
-    });
+        ],
+      });
 
-    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
-      true,
-    );
+      await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+        true,
+      );
 
-    const result = await pg.query<{ start_at: Date; rrule: string | null }>(
-      `SELECT start_at, rrule
-       FROM calendar_events
-       WHERE team_id = '${TEAM_ID}' AND title = 'Daily call' AND deleted_at IS NULL
-       ORDER BY start_at`,
-    );
-    expect(result.rows.map((row) => new Date(row.start_at).toISOString())).toEqual([
-      '2026-07-01T16:00:00.000Z',
-      '2026-07-02T16:00:00.000Z',
-      '2026-07-03T16:00:00.000Z',
-    ]);
-    expect(result.rows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=3');
+      const result = await pg.query<{ start_at: Date; rrule: string | null }>(
+        `SELECT start_at, rrule
+         FROM calendar_events
+         WHERE team_id = '${TEAM_ID}' AND title = 'Daily call' AND deleted_at IS NULL
+         ORDER BY start_at`,
+      );
+      expect(result.rows.map((row) => new Date(row.start_at).toISOString())).toEqual([
+        '2026-07-01T16:00:00.000Z',
+        '2026-07-02T16:00:00.000Z',
+        '2026-07-03T16:00:00.000Z',
+      ]);
+      expect(result.rows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=3');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('confirms one tentative proposal slot and cancels sibling slots', async () => {

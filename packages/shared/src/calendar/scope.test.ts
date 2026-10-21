@@ -61,6 +61,10 @@ describe('calendar scope', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    // Keep May/July 2026 fixtures inside the default 3-month recurrence window
+    // even when the suite runs after those dates (lookback uses Date.now()).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'));
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seed(pg);
@@ -75,6 +79,7 @@ describe('calendar scope', () => {
 
   afterEach(async () => {
     await pg.close();
+    vi.useRealTimers();
   });
 
   it('defaults missing team calendar settings to Helsinki workspace time', async () => {
