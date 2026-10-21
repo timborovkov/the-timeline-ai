@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # Use corepack instead of `pnpm/action-setup`. The latter's codeload
       # archives have been intermittently 404ing from GitHub-hosted runners
