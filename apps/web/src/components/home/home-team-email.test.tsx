@@ -21,7 +21,8 @@ describe('HomeTeamEmail', () => {
   it('shows a copyable team email and a link to email settings', () => {
     render(<HomeTeamEmail inboundEmail="acme@inbound.timeline.dev" />);
 
-    expect(screen.getByRole('region', { name: 'Team email' })).toBeTruthy();
+    const section = screen.getByRole('region', { name: 'Team email' });
+    expect(section.getAttribute('id')).toBe('team-email');
     expect(screen.getByLabelText<HTMLInputElement>('Team email address').value).toBe(
       'acme@inbound.timeline.dev',
     );

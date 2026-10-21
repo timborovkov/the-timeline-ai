@@ -39,6 +39,11 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
   resolveVisibilityDefault: vi.fn(),
   role: 'member',
+  teamRow: { slug: 'acme', inboundEmail: 'acme@inbound.timeline.dev' } as {
+    slug: string;
+    inboundEmail: string | null;
+  } | null,
+  homeTeamEmail: null as string | null,
   timelineFeedProps: null as {
     compact?: boolean;
     live?: boolean;
@@ -47,7 +52,10 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/db', () => ({ users: {} }));
+vi.mock('@timeline/db', () => ({
+  users: {},
+  teams: { id: 'id', slug: 'slug', inboundEmail: 'inboundEmail' },
+}));
 vi.mock('@timeline/shared/messaging', () => ({ latestDailyDigest: fakes.latestDailyDigest }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
@@ -55,6 +63,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
     calendar: { getCalendarSettings: fakes.getCalendarSettings },
     integrations: { listConnectionAttention: fakes.listConnectionAttention },
     jobRecovery: { listRecoverableJobs: fakes.listRecoverableJobs },
+    onboarding: { getChecklistState: vi.fn() },
     pins: { isPinnedMany: fakes.isPinnedMany, list: fakes.listPins },
     timeline: {
       listArtifactClusters: fakes.listArtifactClusters,
@@ -84,8 +93,14 @@ vi.mock('@/components/onboarding-checklist', () => ({
     return <div data-testid="home-onboarding">Team setup checklist</div>;
   },
 }));
+vi.mock('@/components/home/home-team-email', () => ({
+  HomeTeamEmail: ({ inboundEmail }: { inboundEmail: string | null }) => {
+    fakes.homeTeamEmail = inboundEmail;
+    return <div data-testid="home-team-email">Team email</div>;
+  },
+}));
 vi.mock('@/components/pins/pinned-workspace-preview', () => ({
-  PinnedWorkspacePreview: () => null,
+  PinnedWorkspacePreview: () => <div data-testid="home-pins">Pinned work</div>,
 }));
 vi.mock('@/components/timeline-feed', () => ({
   TimelineFeed: (props: { compact?: boolean; live?: boolean; maxMoments?: number }) => {
@@ -95,8 +110,25 @@ vi.mock('@/components/timeline-feed', () => ({
 }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+vi.mock('@/lib/db', () => ({
+  db: {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve(fakes.teamRow ? [fakes.teamRow] : []),
+        }),
+      }),
+    }),
+  },
+}));
 vi.mock('@/lib/hub-status', () => ({
+  displayInboundEmail: (
+    team: { slug: string; inboundEmail: string | null } | null,
+    _postmarkInboundAddress: string | undefined,
+  ) =>
+    team?.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
+      ? team.inboundEmail
+      : null,
   getWorkAttentionSummary: fakes.getWorkAttentionSummary,
   getHomeOpenObjectCounts: fakes.getHomeOpenObjectCounts,
   homeOpenObjectTotal: (counts: Record<string, number>) =>
@@ -148,6 +180,8 @@ beforeEach(() => {
   fakes.buildTimelineMoments.mockReturnValue([]);
   fakes.isPinnedMany.mockResolvedValue({});
   fakes.onboardingInitialData = null;
+  fakes.homeTeamEmail = null;
+  fakes.teamRow = { slug: 'acme', inboundEmail: 'acme@inbound.timeline.dev' };
   fakes.loadOnboardingChecklistView.mockResolvedValue({
     dismissed: true,
     items: [{ key: 'first_note', label: 'Capture one timeline event', completed: true }],
@@ -233,6 +267,28 @@ describe('HomeDashboardPage', () => {
     expect(html).toContain('aria-label="Recent moments"');
     expect(html).toContain('href="/app/timeline"');
     expect(html).toContain('Go to the full timeline');
+  });
+
+  it('shows the copyable team email below pinned work', async () => {
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(fakes.homeTeamEmail).toBe('acme@inbound.timeline.dev');
+    expect(html).toContain('data-testid="home-team-email"');
+    expect(html.indexOf('data-testid="home-pins"')).toBeLessThan(
+      html.indexOf('data-testid="home-team-email"'),
+    );
+    expect(html.indexOf('data-testid="home-team-email"')).toBeLessThan(
+      html.indexOf('aria-label="Recent moments"'),
+    );
+  });
+
+  it('still renders Home when the inbound address is not configured', async () => {
+    fakes.teamRow = { slug: 'acme', inboundEmail: 'acme@inbound.invalid' };
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('data-testid="home-team-email"');
+    expect(fakes.homeTeamEmail).toBeNull();
   });
 
   it('passes the server checklist snapshot into the Home setup panel', async () => {

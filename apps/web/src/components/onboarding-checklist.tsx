@@ -382,9 +382,10 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'email_forwarding':
       return {
-        href: '/app',
-        cta: 'Copy team email',
-        description: 'Forward an email into the archive from the address on Home.',
+        href: '/app#team-email',
+        cta: 'View team email',
+        description:
+          'Open the copyable team address on Home, then forward a message into the archive.',
       };
     case 'first_document':
       return {
