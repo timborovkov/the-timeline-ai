@@ -116,7 +116,7 @@ export function ObjectContactFields({
               <a
                 href={href}
                 title={facet.value}
-                className={cn(RAIL_FIELD_VALUE, 'hover:underline')}
+                className={cn(RAIL_FIELD_VALUE, 'truncate hover:underline')}
               >
                 {facet.value}
               </a>

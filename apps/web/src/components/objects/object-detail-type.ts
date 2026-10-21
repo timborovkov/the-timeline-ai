@@ -27,7 +27,7 @@ export const OBJECT_MONO_META_CLASS =
   'font-mono text-[11px] font-normal tabular-nums tracking-tight text-fg-dim';
 
 /** Quiet empty / add prompts. */
-export const OBJECT_QUIET_CLASS = 'text-xs font-normal text-fg-faint';
+export const OBJECT_QUIET_CLASS = 'text-xs font-normal text-fg-dim';
 
 /** Fold / secondary text controls ("Show 5 more", "View", "Edit"). */
 export const OBJECT_CONTROL_CLASS =

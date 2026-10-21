@@ -683,6 +683,8 @@ describe('ObjectDetailClient', () => {
     expect(html).toContain('ada@example.com');
     expect(html).toContain('href="mailto:ada@example.com"');
     expect(html).toContain('href="tel:+12133734253"');
+    expect(html).toMatch(/href="mailto:ada@example.com"[^>]*class="[^"]*\btruncate\b/);
+    expect(html).toMatch(/href="tel:\+12133734253"[^>]*class="[^"]*\btruncate\b/);
 
     const companyHtml = renderObjectDetail({
       detail: {

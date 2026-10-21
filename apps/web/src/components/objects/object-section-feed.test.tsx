@@ -199,6 +199,8 @@ describe('ObjectSectionFeed', () => {
     );
 
     expect(html).toContain('Atlas rollout depends on Northwind approval.');
+    expect(html).toContain('text-[13px] font-semibold');
+    expect(html).toContain('text-sm font-medium leading-[1.35]');
     expect(html).toContain('Observed ');
     expect(html).toContain(
       new Date('2026-06-14T12:45:00.000Z').toLocaleString(undefined, {
@@ -208,7 +210,8 @@ describe('ObjectSectionFeed', () => {
       }),
     );
     expect(html).toContain(' · telegram · confidence 0.91');
-    expect(html).toContain('font-mono');
+    expect(html).toContain('font-mono text-[11px]');
+    expect(html).not.toContain('text-fg-faint');
     expect(html).toContain('Fact (2)');
     expect(html).toContain('Objects sharing this fact');
     expect(html).toContain('/app/objects/object-2');
