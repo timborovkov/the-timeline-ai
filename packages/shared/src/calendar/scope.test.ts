@@ -71,9 +71,14 @@ describe('calendar scope', () => {
     fakes.deletePoints.mockResolvedValue(undefined);
     fakes.deletePointsForSource.mockReset();
     fakes.deletePointsForSource.mockResolvedValue(undefined);
+    vi.useFakeTimers({
+      now: new Date('2026-07-15T12:00:00.000Z'),
+      toFake: ['Date'],
+    }); // Keep July 2026 series inside the 3-month materialization window.
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await pg.close();
   });
 
