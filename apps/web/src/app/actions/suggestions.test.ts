@@ -228,7 +228,12 @@ describe('suggestion item actions', () => {
 
   it('returns a retryable message when a proposal keeps changing during revision', async () => {
     fakes.fakeSuggestions.reviseSuggestionItem.mockRejectedValue(
-      new Error('Proposal changed repeatedly while it was being revised. Try again.'),
+      Object.assign(
+        new Error('Proposal changed repeatedly while it was being revised. Try again.'),
+        {
+          code: 'TIMELINE_PROPOSAL_REVISION_CONFLICT',
+        },
+      ),
     );
 
     await expect(

@@ -138,7 +138,7 @@ export async function reviseSuggestionItemAction(input: unknown): Promise<Action
           operation: 'revise_suggestion_item',
           fallback: 'Failed to update proposal.',
           expected: {
-            'Proposal changed repeatedly while it was being revised. Try again.': {
+            TIMELINE_PROPOSAL_REVISION_CONFLICT: {
               message: 'Proposal changed while it was being revised. Try again.',
             },
           },

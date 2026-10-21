@@ -140,6 +140,9 @@ type DbOrTx = Db | DbTx;
 type ProjectionOutputTerminalStatus = 'applied' | 'rejected' | 'superseded' | 'failed';
 
 const EXPECTED_SUGGESTION_APPLY_FAILURE_CODE = 'TIMELINE_EXPECTED_SUGGESTION_APPLY_FAILURE';
+const PROPOSAL_REVISION_CONFLICT_CODE = 'TIMELINE_PROPOSAL_REVISION_CONFLICT';
+const PROPOSAL_REVISION_CONFLICT_MESSAGE =
+  'Proposal changed repeatedly while it was being revised. Try again.';
 const ENTITY_CANONICAL_NAME_UNIQUE_CONSTRAINT = 'entities_team_type_canonical_name_unq';
 const RECONCILIATION_APPROVAL_PROJECTION_VERSION = 'approval-projection-2026-06';
 const RECONCILIATION_APPROVAL_POLICY_VERSION = 'timeline-owned-approval-2026-06';
@@ -227,6 +230,15 @@ class ExpectedSuggestionApplyFailure extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = 'ExpectedSuggestionApplyFailure';
+  }
+}
+
+class ProposalRevisionConflictError extends Error {
+  readonly code = PROPOSAL_REVISION_CONFLICT_CODE;
+
+  constructor() {
+    super(PROPOSAL_REVISION_CONFLICT_MESSAGE);
+    this.name = 'ProposalRevisionConflictError';
   }
 }
 
@@ -1139,9 +1151,6 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
     ? (value as Record<string, unknown>)
     : {};
 }
-
-const PROPOSAL_REVISION_CONFLICT_MESSAGE =
-  'Proposal changed repeatedly while it was being revised. Try again.';
 
 type ProposalRevisionSnapshot = Pick<
   typeof agentSuggestionItems.$inferSelect,
@@ -7856,6 +7865,7 @@ ${JSON.stringify(evidence)}`,
             .innerJoin(agentSuggestions, eq(agentSuggestions.id, agentSuggestionItems.suggestionId))
             .where(
               and(
+                eq(agentSuggestionItems.teamId, teamId),
                 eq(agentSuggestionItems.id, input.itemId),
                 inArray(agentSuggestionItems.status, ['pending', 'failed']),
                 isNull(agentSuggestionItems.resolvedAt),
@@ -7903,6 +7913,7 @@ ${JSON.stringify(evidence)}`,
             })
             .where(
               and(
+                eq(agentSuggestionItems.teamId, teamId),
                 eq(agentSuggestionItems.id, input.itemId),
                 inArray(agentSuggestionItems.status, ['pending', 'failed']),
                 isNull(agentSuggestionItems.resolvedAt),
@@ -7927,7 +7938,7 @@ ${JSON.stringify(evidence)}`,
         if (applied.kind === 'applied') return applied.updated;
         if (applied.kind === 'missing') return null;
       }
-      throw new Error(PROPOSAL_REVISION_CONFLICT_MESSAGE);
+      throw new ProposalRevisionConflictError();
     },
 
     async reviseTaskSuggestionItem(input: {

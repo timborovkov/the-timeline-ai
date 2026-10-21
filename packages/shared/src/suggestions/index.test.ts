@@ -6600,6 +6600,111 @@ describe('suggestion scope', () => {
     expect(chatStructured).toHaveBeenCalledTimes(1);
   });
 
+  it('returns null when the proposal is accepted while it is being rewritten', async () => {
+    let itemId = '';
+    const chatStructured = vi.fn(async () => {
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          status: 'accepted',
+          resolvedAt: new Date('2026-08-28T14:07:00.000Z'),
+          updatedAt: new Date('2026-08-28T14:07:00.000Z'),
+        })
+        .where(eq(agentSuggestionItems.id, itemId));
+      return {
+        object: {
+          title: 'Call Tecci',
+          description: 'Corrected the company name.',
+          proposedPayload: { canonicalName: 'Call Tecci' },
+          explanation: 'Corrected Tec to Tecci.',
+        },
+        model: 'test-accepted-during-proposal-revision',
+      };
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Tec',
+      dedupeKey: 'accepted-during-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Tec',
+          dedupeKey: 'accepted-during-reviewer-revision:item',
+          proposedPayload: { canonicalName: 'Call Tec' },
+        },
+      ],
+    });
+    itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: "It's Tecci, not Tec",
+      }),
+    ).resolves.toBeNull();
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up when the proposal payload changes during every rewrite', async () => {
+    let itemId = '';
+    const chatStructured = vi.fn(async () => {
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          proposedPayload: {
+            canonicalName: 'Call Tec',
+            taskCategory: chatStructured.mock.calls.length === 1 ? 'sales' : 'ops',
+            taskCategoryMode: 'manual',
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(agentSuggestionItems.id, itemId));
+      return {
+        object: {
+          title: 'Call Tecci',
+          description: 'Corrected the company name.',
+          proposedPayload: { canonicalName: 'Call Tecci' },
+          explanation: 'Corrected Tec to Tecci.',
+        },
+        model: 'test-exhausted-proposal-revision',
+      };
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Tec',
+      dedupeKey: 'exhausted-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Tec',
+          dedupeKey: 'exhausted-reviewer-revision:item',
+          proposedPayload: { canonicalName: 'Call Tec' },
+        },
+      ],
+    });
+    itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: "It's Tecci, not Tec",
+      }),
+    ).rejects.toMatchObject({
+      name: 'ProposalRevisionConflictError',
+      code: 'TIMELINE_PROPOSAL_REVISION_CONFLICT',
+      message: 'Proposal changed repeatedly while it was being revised. Try again.',
+    });
+    expect(chatStructured).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves concurrent category and project revisions to the same task proposal', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
@@ -9960,6 +10065,10 @@ describe('suggestion scope', () => {
 
   it('accepts recurring calendar create suggestions and materializes occurrences', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const startAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    startAt.setUTCHours(16, 0, 0, 0);
+    const endAt = new Date(startAt.getTime() + 30 * 60 * 1000);
+    const dayMs = 24 * 60 * 60 * 1000;
     const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
       source: 'background',
       title: 'Create recurring daily call',
@@ -9972,8 +10081,8 @@ describe('suggestion scope', () => {
           dedupeKey: 'calendar-recurring-create:item',
           proposedPayload: {
             title: 'Daily call',
-            startAt: '2026-07-01T16:00:00.000Z',
-            endAt: '2026-07-01T16:30:00.000Z',
+            startAt: startAt.toISOString(),
+            endAt: endAt.toISOString(),
             timezone: 'UTC',
             visibility: 'team',
             rrule: 'FREQ=DAILY;COUNT=3',
@@ -9993,9 +10102,9 @@ describe('suggestion scope', () => {
        ORDER BY start_at`,
     );
     expect(result.rows.map((row) => new Date(row.start_at).toISOString())).toEqual([
-      '2026-07-01T16:00:00.000Z',
-      '2026-07-02T16:00:00.000Z',
-      '2026-07-03T16:00:00.000Z',
+      startAt.toISOString(),
+      new Date(startAt.getTime() + dayMs).toISOString(),
+      new Date(startAt.getTime() + 2 * dayMs).toISOString(),
     ]);
     expect(result.rows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=3');
   });
