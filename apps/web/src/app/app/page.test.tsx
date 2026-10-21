@@ -39,10 +39,7 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
   resolveVisibilityDefault: vi.fn(),
   role: 'member',
-  teamRow: { slug: 'acme', inboundEmail: 'acme@inbound.timeline.dev' } as {
-    slug: string;
-    inboundEmail: string | null;
-  } | null,
+  teamRow: null as { slug: string; inboundEmail: string | null } | null,
   homeTeamEmail: null as string | null,
   timelineFeedProps: null as {
     compact?: boolean;
