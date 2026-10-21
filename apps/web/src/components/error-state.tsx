@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react';
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { reportCaughtError } from '@/lib/sentry-report';
+import { isStaleServerActionError, reloadForStaleServerAction } from '@/lib/stale-server-action';
 
 interface Props {
   title?: string;
@@ -22,15 +23,21 @@ export function ErrorState({
 }: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
 
+  const staleServerAction = Boolean(error && isStaleServerActionError(error));
+
   useEffect(() => {
-    if (!error) return;
+    if (!error || staleServerAction) return;
     reportCaughtError(error, {
       surface: 'render',
       operation: title,
       tags: { digest: error.digest },
     });
     titleRef.current?.focus();
-  }, [error, title]);
+  }, [error, staleServerAction, title]);
+
+  const resolvedDescription = staleServerAction
+    ? 'Timeline was updated while this tab was open. Reload to pick up the latest app version, then try again.'
+    : description;
 
   return (
     <div
@@ -47,7 +54,7 @@ export function ErrorState({
         <h2 ref={titleRef} tabIndex={-1} className="text-base font-medium text-fg">
           {title}
         </h2>
-        <p className="text-sm text-fg-muted">{description}</p>
+        <p className="text-sm text-fg-muted">{resolvedDescription}</p>
         {error?.digest ? (
           <TechnicalDetails
             className="mt-3 text-left"
@@ -55,18 +62,22 @@ export function ErrorState({
           />
         ) : null}
       </div>
-      {reset ? (
+      {reset || staleServerAction ? (
         <Button
           type="button"
           variant="outline"
           size="sm"
           onClick={() => {
-            reset();
+            if (staleServerAction) {
+              reloadForStaleServerAction();
+              return;
+            }
+            reset?.();
           }}
           className="gap-2"
         >
           <RotateCw className="size-3.5" />
-          Try again
+          {staleServerAction ? 'Reload' : 'Try again'}
         </Button>
       ) : null}
     </div>

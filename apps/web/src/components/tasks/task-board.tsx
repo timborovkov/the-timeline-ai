@@ -77,6 +77,7 @@ import { kanbanCollisionDetection } from '@/lib/kanban-collision';
 import { notifyAction, notifyError } from '@/lib/notify';
 import { objectDetailHref } from '@/lib/object-links';
 import { displayObjectTitle } from '@/lib/object-title';
+import { recoverFromStaleServerAction } from '@/lib/stale-server-action';
 import { statusLabel } from '@/lib/status-labels';
 import { taskDisplayStatus } from '@/lib/task-statuses';
 import { cn } from '@/lib/utils';
@@ -896,6 +897,9 @@ function useTaskBoardController({
           nextCursor: page.nextCursor,
           filterKey,
         });
+      } catch (error) {
+        if (recoverFromStaleServerAction(error)) return;
+        notifyError('tasks:load-more', 'Couldn’t load older tasks');
       } finally {
         loadMoreLockRef.current = false;
       }
