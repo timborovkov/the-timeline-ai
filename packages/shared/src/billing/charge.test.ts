@@ -137,6 +137,7 @@ describe('shouldIngestPolarMeteredUsage', () => {
         polarUnits: 10,
         walletCents: 30,
         discountCents: 0,
+        enterpriseContract: true,
       }),
     ).toBe(false);
     expect(
@@ -148,8 +149,39 @@ describe('shouldIngestPolarMeteredUsage', () => {
         polarUnits: 80,
         walletCents: 0,
         discountCents: 80,
+        enterpriseContract: true,
       }),
     ).toBe(false);
+  });
+
+  it('skips Polar ingest for wallet-backed plans even when the local charge rounds to zero', () => {
+    expect(
+      shouldIngestPolarMeteredUsage({
+        eventName: 'timeline_email_units',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        billable: true,
+        polarUnits: 1,
+        walletCents: 0,
+        discountCents: 0,
+        enterpriseContract: false,
+      }),
+    ).toBe(false);
+  });
+
+  it('ingests Polar meters for Enterprise when Polar is the sole collector', () => {
+    expect(
+      shouldIngestPolarMeteredUsage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_enterprise',
+        shadowBilling: false,
+        billable: true,
+        polarUnits: 80,
+        walletCents: 0,
+        discountCents: 0,
+        enterpriseContract: true,
+      }),
+    ).toBe(true);
   });
 });
 

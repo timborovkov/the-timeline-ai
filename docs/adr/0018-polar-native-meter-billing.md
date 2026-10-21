@@ -53,8 +53,9 @@ credit hides margin and confuses prospects.
    `accepted_sources` meter. Extra owned workspaces do not mint a second Free
    grant (`billing_free_grants` + `restricted` state).
 7. Prepaid PAYG collection is a €10 Polar top-up (`POLAR_PRODUCT_ID_TOPUP`)
-   credited to `walletBalanceCents` on wallet-backed plans (PAYG/Team/Business/
-   Enterprise). Free workspaces hard-stop on native allowances and cannot buy
+   credited to `walletBalanceCents` on wallet-backed plans (PAYG/Team/Business).
+   Enterprise invoices Polar meters without a prepaid wallet. Free workspaces
+   hard-stop on native allowances and cannot buy
    unusable top-ups. Owners can enable auto-reload: when the wallet is at/below
    the threshold **and** remaining spend-cap headroom covers the full €10 Polar
    product, Timeline opens a Polar top-up checkout and emails owners the URL.
@@ -79,7 +80,8 @@ credit hides margin and confuses prospects.
    renewal window, not by snapping to UTC calendar months. Paid-plan changes
    PATCH the existing Polar subscription (or open the customer portal) instead
    of creating a second checkout. Prepaid wallet and included-discount collection
-   is local; Polar meters are not ingested for those already-collected units.
+   is local, including sub-cent rounds; Polar meters are ingested only for
+   Enterprise, where Polar is the sole collector.
    Live charging follows `BILLING_CHARGES_ENABLED` in both directions: `true`
    charges immediately even when a row still snapshots `shadowBilling = true`;
    `false` is a kill switch that shadows every reservation and settlement.

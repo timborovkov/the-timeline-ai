@@ -562,7 +562,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       usage (informational, never auto-switch), Team/Business included-discount
       period reset (webhook + janitor advancing the stored Polar window; not
       every Polar retry). Paid-plan changes update the existing Polar subscription.
-      Prepaid wallet/included-discount collection is not ingested to Polar meters.
+      Prepaid wallet/included-discount collection is not ingested to Polar meters,
+      including sub-cent rounds; only Enterprise usage is ingested. Polar webhooks
+      do not overwrite Enterprise contracts or credit top-ups onto Free/Enterprise wallets.
       Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
       Stale Polar activations are ignored against `polar_event_modified_at`; canceled paid
       plans become restricted unless the team holds the Free grant. Polar refunds serialize remaining

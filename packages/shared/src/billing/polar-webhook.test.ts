@@ -22,6 +22,21 @@ const PRODUCTS = {
   topup: 'prod_topup',
 };
 
+async function enablePrepaidWallet(): Promise<void> {
+  const billing = createBillingScope({
+    db,
+    teamId: TEAM_ID,
+    userId: USER_ID,
+    ensureMember: () => Promise.resolve('owner'),
+  });
+  await billing.getAccount();
+  await pg.exec(`
+    UPDATE team_billing_accounts
+    SET plan_id = 'payg', billing_state = 'payg_active'
+    WHERE team_id = '${TEAM_ID}';
+  `);
+}
+
 let pg: PGlite;
 let db: Db;
 
@@ -439,6 +454,7 @@ describe('handlePolarWebhookEvent', () => {
   });
 
   it('reverses a prepaid top-up when Polar refunds the order', async () => {
+    await enablePrepaidWallet();
     await handlePolarWebhookEvent({
       db,
       chargesEnabled: true,
@@ -494,6 +510,7 @@ describe('handlePolarWebhookEvent', () => {
   });
 
   it('does not double-debit concurrent refund.created and order.refunded', async () => {
+    await enablePrepaidWallet();
     await handlePolarWebhookEvent({
       db,
       chargesEnabled: true,
@@ -550,6 +567,7 @@ describe('handlePolarWebhookEvent', () => {
   });
 
   it('applies an out-of-order top-up refund when the paid event arrives later', async () => {
+    await enablePrepaidWallet();
     await handlePolarWebhookEvent({
       db,
       chargesEnabled: true,
@@ -580,6 +598,91 @@ describe('handlePolarWebhookEvent', () => {
         type: 'order.paid',
         data: {
           id: 'ord_late',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+  });
+
+  it('does not overwrite an Enterprise contract with a self-serve Polar subscription', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active',
+          polar_customer_id = 'cus_enterprise'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_payg',
+          status: 'active',
+          product_id: 'prod_payg',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const after = await billing.getAccount();
+    expect(after.planId).toBe('enterprise');
+    expect(after.billingState).toBe('enterprise_active');
+    expect(after.polarSubscriptionId).toBeNull();
+  });
+
+  it('does not credit a prepaid top-up onto Enterprise or Free wallets', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_enterprise',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'restricted'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_free',
           product_id: 'prod_topup',
           amount: 1000,
           customer: { id: 'cus_1', external_id: TEAM_ID },

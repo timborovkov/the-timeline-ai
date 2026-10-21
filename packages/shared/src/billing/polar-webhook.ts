@@ -206,6 +206,12 @@ async function upsertPaidSubscription(input: {
 }): Promise<void> {
   await input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
+    if (
+      existing &&
+      (existing.planId === 'enterprise' || existing.billingState === 'enterprise_active')
+    ) {
+      return;
+    }
     const polarSubscriptionId = input.data?.id ?? null;
     const period = polarSubscriptionPeriod(input.data);
     if (

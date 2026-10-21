@@ -954,6 +954,42 @@ describe('billing scope', () => {
     expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
   });
 
+  it('does not ingest Polar meters for live-charging Team sub-cent email settles', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, wallet_balance_cents = 5000,
+          polar_customer_id = 'cus_team'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    for (let i = 0; i < 4; i += 1) {
+      const settled = await scope.settle({
+        operationId: `op-email-polar-${String(i)}`,
+        meterId: 'email_units',
+        nativeUnits: 1,
+        customerChargeCents: 0,
+      });
+      expect(settled.ok).toBe(true);
+      if (!settled.duplicate) {
+        expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+      }
+    }
+    expect(provider.events).toHaveLength(0);
+    const dash = await scope.getDashboard();
+    expect(dash.meters.email_units?.nativeUnits).toBe(4);
+    expect(dash.meters.email_units?.customerChargeCents).toBe(1);
+  });
+
   it('accumulates sub-cent email charges from locked counters', async () => {
     const scope = createBillingScope({
       db,

@@ -178,9 +178,9 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Prepaid wallet and included discount already collect locally. Polar meters
- * invoice the same native units, so ingest only when Polar would be the sole
- * collector (no wallet or included-discount debit).
+ * Prepaid wallet and included discount already collect locally, including
+ * sub-cent rounds that settle at €0. Polar meters invoice the same native
+ * units, so ingest only when Polar is the sole collector (Enterprise).
  */
 export function shouldIngestPolarMeteredUsage(input: {
   eventName: string | null | undefined;
@@ -190,10 +190,12 @@ export function shouldIngestPolarMeteredUsage(input: {
   polarUnits: number;
   walletCents: number;
   discountCents: number;
+  enterpriseContract: boolean;
 }): boolean {
   if (!input.eventName || !input.polarCustomerId) return false;
   if (input.shadowBilling || !input.billable) return false;
   if (input.polarUnits <= 0) return false;
+  if (!input.enterpriseContract) return false;
   if (input.walletCents > 0 || input.discountCents > 0) return false;
   return true;
 }

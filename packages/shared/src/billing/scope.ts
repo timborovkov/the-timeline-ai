@@ -887,6 +887,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           // or included discount. Passing those splits would skip ingest.
           walletCents: enterpriseContract ? 0 : walletCents,
           discountCents: enterpriseContract ? 0 : discountCents,
+          enterpriseContract,
         });
         const polarIngestMetadata = shouldIngestPolar
           ? {
@@ -1209,6 +1210,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
       }
       await ensureAccount();
       return db.transaction(async (tx) => {
+        const [account] = await tx
+          .select()
+          .from(teamBillingAccounts)
+          .where(eq(teamBillingAccounts.teamId, teamId))
+          .limit(1)
+          .for('update');
+        if (!account) throw new Error('Missing billing account');
+        if (!planUsesPrepaidWallet(account.planId)) {
+          return { ok: true as const, duplicate: false as const };
+        }
         const [ledgerRow] = await tx
           .insert(billingUsageLedger)
           .values({
@@ -1228,13 +1239,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .onConflictDoNothing()
           .returning();
         if (!ledgerRow) return { ok: true as const, duplicate: true as const };
-        const [account] = await tx
-          .select()
-          .from(teamBillingAccounts)
-          .where(eq(teamBillingAccounts.teamId, teamId))
-          .limit(1)
-          .for('update');
-        if (!account) throw new Error('Missing billing account');
         const shortfallRows = await tx
           .select({
             id: billingUsageLedger.id,
