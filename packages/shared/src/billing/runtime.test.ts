@@ -212,6 +212,18 @@ describe('billing runtime', () => {
   });
 
   it('credits a Polar top-up once per order id', async () => {
+    const billingSetup = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billingSetup.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
     const first = await creditWalletFromPolarOrder({
       db,
       teamId: TEAM_ID,
