@@ -7793,7 +7793,7 @@ describe('suggestion scope', () => {
         value: '@mikaelrintala',
         actor: { kind: 'agent', userId: null },
       }),
-    ).rejects.toThrow(/another person/);
+    ).rejects.toThrow(/another object/);
 
     const result = await pg.query<{ entity_id: string }>(
       `SELECT entity_id

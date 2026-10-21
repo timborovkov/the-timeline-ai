@@ -15,10 +15,10 @@ export function createObjectDiscussionDeliveryAdapter(input: {
   return {
     acknowledgeAgentRequest: () => Promise.resolve(),
     acknowledgeCapture: () => Promise.resolve(),
-    startProgress: async () => {
-      await input.postComment('_Looking that up…_');
-      return () => undefined;
-    },
+    // Discussion comments are durable. Do not post a progress note — the
+    // runtime and worker both call startProgress, and there is no safe way
+    // to delete an ephemeral note from this adapter.
+    startProgress: () => Promise.resolve(() => undefined),
     deliverAnswer: (text) => input.postComment(text),
     deliverFailure: (text) => input.postComment(text),
   };

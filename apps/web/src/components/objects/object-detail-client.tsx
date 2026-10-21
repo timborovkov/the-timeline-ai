@@ -854,11 +854,20 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
                   deletedRelationshipIds: previousDeletedRelationshipIds,
                   pendingRelationships: previousPendingRelationships,
                 });
-                const undoResult = await addRelationshipAction({
-                  fromEntityId: detail.id,
-                  toEntityId: otherEntityId,
-                  kind: removed.kind,
-                });
+                const isPersonCompanyEmployment =
+                  removed.kind === 'related' &&
+                  ((detail.type === 'person' && removed.otherType === 'company') ||
+                    (detail.type === 'company' && removed.otherType === 'person'));
+                const undoResult = isPersonCompanyEmployment
+                  ? await setPersonCompanyAction({
+                      id: detail.type === 'person' ? detail.id : otherEntityId,
+                      companyId: detail.type === 'company' ? detail.id : otherEntityId,
+                    })
+                  : await addRelationshipAction({
+                      fromEntityId: detail.id,
+                      toEntityId: otherEntityId,
+                      kind: removed.kind,
+                    });
                 if (!undoResult.error) router.refresh();
                 return undoResult;
               },

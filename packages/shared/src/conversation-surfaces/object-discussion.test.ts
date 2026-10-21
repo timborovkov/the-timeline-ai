@@ -13,7 +13,7 @@ describe('object discussion delivery', () => {
     expect(parseObjectDiscussionKey('telegram:dm:1')).toBeNull();
   });
 
-  it('posts progress, answers, and failures as comments', async () => {
+  it('posts answers and failures as comments without durable progress notes', async () => {
     const postComment = vi.fn().mockResolvedValue(undefined);
     const adapter = createObjectDiscussionDeliveryAdapter({ postComment });
     await adapter.acknowledgeAgentRequest();
@@ -22,11 +22,10 @@ describe('object discussion delivery', () => {
     stop();
     await adapter.deliverAnswer('Here is the status.');
     await adapter.deliverFailure('I hit an error before I could answer. Please try again.');
-    expect(postComment).toHaveBeenCalledTimes(3);
-    expect(postComment).toHaveBeenNthCalledWith(1, '_Looking that up…_');
-    expect(postComment).toHaveBeenNthCalledWith(2, 'Here is the status.');
+    expect(postComment).toHaveBeenCalledTimes(2);
+    expect(postComment).toHaveBeenNthCalledWith(1, 'Here is the status.');
     expect(postComment).toHaveBeenNthCalledWith(
-      3,
+      2,
       'I hit an error before I could answer. Please try again.',
     );
   });

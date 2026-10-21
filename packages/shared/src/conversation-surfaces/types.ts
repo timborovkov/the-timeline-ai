@@ -41,6 +41,10 @@ export function conversationTimeoutMs(surface: ConversationSurface): number {
   return DIRECT_CONVERSATION_TIMEOUT_MS;
 }
 
-export const CONVERSATION_AGENT_TIMEOUT_MESSAGE = `I couldn’t finish that within ${String(
-  DIRECT_CONVERSATION_TIMEOUT_MS / 1_000,
-)} seconds. Please try again, or start a new conversation.`;
+export function conversationTimeoutMessage(surface: ConversationSurface): string {
+  return `I couldn’t finish that within ${String(
+    conversationTimeoutMs(surface) / 1_000,
+  )} seconds. Please try again, or start a new conversation.`;
+}
+
+export const CONVERSATION_AGENT_TIMEOUT_MESSAGE = conversationTimeoutMessage('telegram');

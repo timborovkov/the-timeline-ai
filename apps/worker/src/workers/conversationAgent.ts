@@ -328,7 +328,7 @@ export async function processConversationAgentJob(
         {
           status: 'timed_out',
           errorCode: 'agent_timeout',
-          answerText: conversationSurfaces.CONVERSATION_AGENT_TIMEOUT_MESSAGE,
+          answerText: conversationSurfaces.conversationTimeoutMessage(turn.surface),
         },
         () => {
           responseCached = true;
