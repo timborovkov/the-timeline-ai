@@ -5546,12 +5546,47 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
     if (item.targetKind === 'object_relationship') {
       if (item.operation !== 'create') throw new Error('Object relationships only support create');
       const parsed = await resolveRelationshipPayload(item, payload);
+      const endpoints = await db
+        .select({ id: entities.id, type: entities.type })
+        .from(entities)
+        .where(
+          and(
+            eq(entities.teamId, teamId),
+            inArray(entities.id, [parsed.fromEntityId, parsed.toEntityId]),
+            isNull(entities.mergedIntoId),
+            isNull(entities.archivedAt),
+          ),
+        );
+      const fromType = endpoints.find((row) => row.id === parsed.fromEntityId)?.type ?? null;
+      const toType = endpoints.find((row) => row.id === parsed.toEntityId)?.type ?? null;
+      const actor = { kind: 'agent' as const, userId: null };
+      // Person↔company employment and task↔project ownership have exclusive setters;
+      // route approvals through those so agent proposals don't hit the generic guard.
+      if (
+        parsed.kind === 'related' &&
+        ((fromType === 'person' && toType === 'company') ||
+          (fromType === 'company' && toType === 'person'))
+      ) {
+        const personId = fromType === 'person' ? parsed.fromEntityId : parsed.toEntityId;
+        const companyId = fromType === 'company' ? parsed.fromEntityId : parsed.toEntityId;
+        const result = await objects.setPersonCompany(personId, companyId, actor);
+        return result.company ? personId : null;
+      }
+      const isTaskProjectHierarchy =
+        (parsed.kind === 'child' && fromType === 'task' && toType === 'project') ||
+        (parsed.kind === 'parent' && fromType === 'project' && toType === 'task');
+      if (isTaskProjectHierarchy) {
+        const taskId = fromType === 'task' ? parsed.fromEntityId : parsed.toEntityId;
+        const projectId = fromType === 'project' ? parsed.fromEntityId : parsed.toEntityId;
+        const result = await objects.setTaskProject(taskId, projectId, actor);
+        return result.project ? taskId : null;
+      }
       const created = await objects.addRelationship({
         fromEntityId: parsed.fromEntityId,
         toEntityId: parsed.toEntityId,
         kind: parsed.kind,
         actorUserId: null,
-        actor: { kind: 'agent', userId: null },
+        actor,
         metadata: { agent_suggestion_item_id: item.id },
       });
       return created?.id ?? null;

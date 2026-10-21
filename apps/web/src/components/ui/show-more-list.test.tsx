@@ -2,7 +2,6 @@
 
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -13,18 +12,13 @@ afterEach(() => {
 });
 
 function Row({ item }: { item: string; index: number }) {
-  return createElement('span', null, item);
+  return <span>{item}</span>;
 }
 
 describe('ShowMoreList', () => {
   it('renders every item when the list fits the preview', () => {
     const html = renderToStaticMarkup(
-      createElement(ShowMoreList, {
-        items: ['a', 'b'],
-        previewCount: 3,
-        getKey: (item: string) => item,
-        Item: Row,
-      }),
+      <ShowMoreList items={['a', 'b']} previewCount={3} getKey={(item) => item} Item={Row} />,
     );
 
     expect(html).toContain('>a<');
@@ -36,12 +30,12 @@ describe('ShowMoreList', () => {
   it('folds overflow behind a Show N more disclosure', async () => {
     const user = userEvent.setup();
     const { container } = render(
-      createElement(ShowMoreList, {
-        items: ['one', 'two', 'three', 'four', 'five'],
-        previewCount: 3,
-        getKey: (item: string) => item,
-        Item: Row,
-      }),
+      <ShowMoreList
+        items={['one', 'two', 'three', 'four', 'five']}
+        previewCount={3}
+        getKey={(item) => item}
+        Item={Row}
+      />,
     );
 
     expect(screen.getByText('one')).toBeTruthy();
@@ -59,15 +53,16 @@ describe('ShowMoreList', () => {
 
   it('keeps a fold control when hasMore is true even if preview fits', () => {
     const html = renderToStaticMarkup(
-      createElement(ShowMoreList, {
-        items: ['a', 'b', 'c'],
-        previewCount: 3,
-        hasMore: true,
-        getKey: (item: string) => item,
-        Item: Row,
-        moreLabel: (hidden: number, { hasMore }: { hasMore: boolean }) =>
-          hidden > 0 ? `Show ${hidden}${hasMore ? '+' : ''} more` : 'Show more',
-      }),
+      <ShowMoreList
+        items={['a', 'b', 'c']}
+        previewCount={3}
+        hasMore
+        getKey={(item) => item}
+        Item={Row}
+        moreLabel={(hidden, { hasMore }) =>
+          hidden > 0 ? `Show ${hidden}${hasMore ? '+' : ''} more` : 'Show more'
+        }
+      />,
     );
 
     expect(html).toContain('Show more');
