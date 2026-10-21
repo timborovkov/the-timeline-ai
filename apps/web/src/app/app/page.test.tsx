@@ -9,6 +9,7 @@ const fakes = vi.hoisted(() => ({
   buildTimelineMoments: vi.fn(),
   captureVisibility: null as 'private' | 'team' | null,
   getCalendarSettings: vi.fn(),
+  getDashboard: vi.fn(),
   getWorkAttentionSummary: vi.fn(),
   getHomeOpenObjectCounts: vi.fn(),
   isPinnedMany: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('@timeline/shared/messaging', () => ({ latestDailyDigest: fakes.latestDa
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
     requireMembership: vi.fn().mockImplementation(() => Promise.resolve(fakes.role)),
+    billing: { getDashboard: fakes.getDashboard },
     calendar: { getCalendarSettings: fakes.getCalendarSettings },
     integrations: { listConnectionAttention: fakes.listConnectionAttention },
     jobRecovery: { listRecoverableJobs: fakes.listRecoverableJobs },
@@ -122,6 +124,7 @@ beforeEach(() => {
   fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Ada', email: 'ada@example.com' } });
   fakes.resolveActiveTeam.mockResolvedValue({ active: { teamId: 'team-1' } });
   fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: 'UTC' });
+  fakes.getDashboard.mockResolvedValue({ nudge: null });
   fakes.getWorkAttentionSummary.mockResolvedValue({
     attention: 0,
     overdueTasks: 0,
@@ -262,6 +265,38 @@ describe('HomeDashboardPage', () => {
     expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
       surface: 'render',
       operation: 'onboarding_checklist',
+    });
+  });
+
+  it('shows a billing upgrade nudge when the dashboard returns one', async () => {
+    fakes.getDashboard.mockResolvedValue({
+      nudge: {
+        kind: 'free_near_limit',
+        title: 'You are close to the Free allowance',
+        body: 'Add a payment method before the next Ask.',
+        href: '/app/team?section=billing',
+        ctaLabel: 'Review billing',
+      },
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('data-billing-nudge="free_near_limit"');
+    expect(html).toContain('You are close to the Free allowance');
+    expect(html).toContain('href="/app/team?section=billing"');
+    expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: false });
+  });
+
+  it('still renders Home when the billing dashboard fails to load', async () => {
+    fakes.getDashboard.mockRejectedValue(new Error('billing unavailable'));
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).toContain('<h1 class="sr-only">Home</h1>');
+    expect(html).not.toContain('data-billing-nudge');
+    expect(fakes.reportCaughtError).toHaveBeenCalledWith(expect.any(Error), {
+      surface: 'render',
+      operation: 'billing_dashboard',
     });
   });
 });
