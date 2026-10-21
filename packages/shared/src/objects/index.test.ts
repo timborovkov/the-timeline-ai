@@ -3432,14 +3432,15 @@ describe('object scope — archive visibility', () => {
 describe('object scope — relationships', () => {
   it('stores related relationships in canonical endpoint order, dedupes reverse inserts, and emits direct-write outputs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    // Use non-employment types: person↔company related is owned by setPersonCompany.
     const first = await scope.createObject({
-      type: 'person',
-      canonicalName: 'John Doe',
+      type: 'project',
+      canonicalName: 'Atlas rollout',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     const second = await scope.createObject({
-      type: 'company',
-      canonicalName: 'Acme Corporation',
+      type: 'deal',
+      canonicalName: 'Acme renewal',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     const [expectedFrom, expectedTo] = [first.id, second.id].sort();
@@ -3607,20 +3608,21 @@ describe('object scope — relationships', () => {
       canonicalName: 'ACME Ltd',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    const person = await scope.createObject({
-      type: 'person',
-      canonicalName: 'John Doe',
+    // Project (not person): person↔company related edges are exclusive via setPersonCompany.
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Atlas rollout',
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
     await scope.addRelationship({
       fromEntityId: survivor.id,
-      toEntityId: person.id,
+      toEntityId: project.id,
       kind: 'related',
       actorUserId: USER_OWNER,
     });
     await scope.addRelationship({
-      fromEntityId: person.id,
+      fromEntityId: project.id,
       toEntityId: duplicate.id,
       kind: 'related',
       actorUserId: USER_OWNER,
@@ -3632,7 +3634,7 @@ describe('object scope — relationships', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    const [expectedFrom, expectedTo] = [survivor.id, person.id].sort();
+    const [expectedFrom, expectedTo] = [survivor.id, project.id].sort();
     const relationships = await db
       .select()
       .from(entityRelationships)
