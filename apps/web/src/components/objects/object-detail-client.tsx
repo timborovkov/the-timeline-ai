@@ -840,13 +840,24 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
       ),
     }));
     const removed = viewDetail.relationships.find((relationship) => relationship.id === id);
+    const isPersonCompanyEmployment =
+      removed?.kind === 'related' &&
+      ((detail.type === 'person' && removed.otherType === 'company') ||
+        (detail.type === 'company' && removed.otherType === 'person'));
+    const personId = detail.type === 'person' ? detail.id : otherEntityId;
+    const companyId = detail.type === 'company' ? detail.id : otherEntityId;
     startTransition(async () => {
       const result = await notifyAction({
         id: `object:${detail.id}:relationship`,
-        loading: 'Removing relationship…',
-        success: 'Relationship removed',
-        error: 'Couldn’t remove relationship',
-        run: () => removeRelationshipAction({ id, entityId: detail.id, otherEntityId }),
+        loading: isPersonCompanyEmployment ? 'Clearing company…' : 'Removing relationship…',
+        success: isPersonCompanyEmployment ? 'Company cleared' : 'Relationship removed',
+        error: isPersonCompanyEmployment
+          ? 'Couldn’t clear company'
+          : 'Couldn’t remove relationship',
+        run: () =>
+          isPersonCompanyEmployment
+            ? setPersonCompanyAction({ id: personId, companyId: null })
+            : removeRelationshipAction({ id, entityId: detail.id, otherEntityId }),
         undo: removed
           ? {
               run: async () => {
@@ -854,15 +865,8 @@ function useObjectDetailController({ detail, userId, suggestions }: Props) {
                   deletedRelationshipIds: previousDeletedRelationshipIds,
                   pendingRelationships: previousPendingRelationships,
                 });
-                const isPersonCompanyEmployment =
-                  removed.kind === 'related' &&
-                  ((detail.type === 'person' && removed.otherType === 'company') ||
-                    (detail.type === 'company' && removed.otherType === 'person'));
                 const undoResult = isPersonCompanyEmployment
-                  ? await setPersonCompanyAction({
-                      id: detail.type === 'person' ? detail.id : otherEntityId,
-                      companyId: detail.type === 'company' ? detail.id : otherEntityId,
-                    })
+                  ? await setPersonCompanyAction({ id: personId, companyId })
                   : await addRelationshipAction({
                       fromEntityId: detail.id,
                       toEntityId: otherEntityId,
