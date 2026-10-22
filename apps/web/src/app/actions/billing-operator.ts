@@ -1,5 +1,7 @@
 'use server';
 
+import { createPolarBillingProvider } from '@timeline/shared/billing';
+import { parseEuroAmountToCents } from '@timeline/shared/billing/catalog';
 import { isBillingPlanId, parseOperatorExpiry } from '@timeline/shared/billing/operator';
 import {
   assignCompedPlan,
@@ -35,21 +37,19 @@ function teamIdFrom(formData: FormData): string {
 function eurosToCents(raw: FormDataEntryValue | null, label: string): number {
   const value = formString(raw);
   if (!value) throw new BillingOperatorError(`${label} is required.`);
-  const euros = Number(value);
-  if (!Number.isFinite(euros) || euros < 0) {
-    throw new BillingOperatorError(`${label} must be a non-negative euro amount.`);
-  }
-  return Math.round(euros * 100);
+  return optionalEurosToCents(value) ?? 0;
 }
 
 function optionalEurosToCents(raw: FormDataEntryValue | null): number | undefined {
   const value = formString(raw);
   if (!value) return undefined;
-  const euros = Number(value);
-  if (!Number.isFinite(euros) || euros < 0) {
-    throw new BillingOperatorError('Prices must be non-negative euro amounts.');
+  try {
+    return parseEuroAmountToCents(value);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Prices must be non-negative euro amounts.';
+    throw new BillingOperatorError(message);
   }
-  return Math.round(euros * 100);
 }
 
 function optionalInt(raw: FormDataEntryValue | null): number | undefined {
@@ -96,6 +96,7 @@ export async function assignCompedPlanAction(formData: FormData): Promise<void> 
     back(teamId, 'Choose a plan.');
   }
   await run(teamId, async () => {
+    const provider = createPolarBillingProvider();
     await assignCompedPlan({
       db,
       actor: await actor(),
@@ -104,6 +105,12 @@ export async function assignCompedPlanAction(formData: FormData): Promise<void> 
       spendCapCents: eurosToCents(formData.get('spendCapEuros'), 'Spend cap'),
       reason: formString(formData.get('reason')),
       expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
+      ...(provider
+        ? {
+            cancelPolarSubscription: (subscriptionId: string) =>
+              provider.revokeSubscription(subscriptionId),
+          }
+        : {}),
     });
   });
 }

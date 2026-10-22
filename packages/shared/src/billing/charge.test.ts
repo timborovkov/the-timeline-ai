@@ -140,6 +140,12 @@ describe('shouldIngestPolarMeteredUsage', () => {
       }),
     ).toBe(true);
     expect(polarInvoiceNativeUnits({ polarUnits: 10, chargeCents: 100, invoiceCents: 40 })).toBe(4);
+    expect(polarInvoiceNativeUnits({ polarUnits: 10, chargeCents: 30, invoiceCents: 10 })).toBe(
+      3.333333,
+    );
+    expect(
+      polarInvoiceNativeUnits({ polarUnits: 10, chargeCents: 30, invoiceCents: 10 }),
+    ).toBeLessThanOrEqual(10 / 3);
   });
 
   it('skips ingest when included discount covers the charge or the round is sub-cent', () => {

@@ -14,6 +14,7 @@ import {
   emailChargeCents,
   emailRecipientCount,
   formatEuroFromCents,
+  parseEuroAmountToCents,
   polarEventNameForMeter,
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
@@ -27,6 +28,18 @@ import {
   verifyPolarWebhookSignature,
 } from '#src/billing/polar.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
+
+describe('euro amount parsing', () => {
+  it('parses cents from the decimal string and rejects extra precision', () => {
+    expect(parseEuroAmountToCents('19.99')).toBe(1999);
+    expect(parseEuroAmountToCents('0.10')).toBe(10);
+    expect(parseEuroAmountToCents('10')).toBe(1000);
+    expect(parseEuroAmountToCents(' 8.07 ')).toBe(807);
+    expect(() => parseEuroAmountToCents('1.005')).toThrow(/two decimal places/);
+    expect(() => parseEuroAmountToCents('-1')).toThrow(/non-negative/);
+    expect(() => parseEuroAmountToCents('1e2')).toThrow(/non-negative/);
+  });
+});
 
 describe('billing catalog', () => {
   it('exposes the v1 commercial journey in public order', () => {
@@ -233,6 +246,15 @@ describe('polar webhook signature', () => {
         headers: { ...request.headers, 'webhook-signature': 'v1,AAAA' },
       }),
     ).toBe(false);
+  });
+
+  it('rejects missing webhook signature headers', () => {
+    const now = new Date('2026-08-26T17:00:00.000Z');
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const request = signedRequest(timestamp);
+    expect(verifyPolarWebhookSignature({ ...request, now, headers: {} })).toBe(false);
+    const { 'webhook-id': _webhookId, ...withoutId } = request.headers;
+    expect(verifyPolarWebhookSignature({ ...request, now, headers: withoutId })).toBe(false);
   });
 
   it('rejects stale or far-future webhook timestamps', () => {

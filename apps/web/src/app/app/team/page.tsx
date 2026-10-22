@@ -323,6 +323,7 @@ export default async function TeamSettingsPage({
               nudge={billingDashboard.nudge}
               costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
+              hasPolarSubscription={Boolean(billingDashboard.account.polarSubscriptionId)}
               canManage={isAdmin}
               planPreview={billingDashboard.planPreview}
               activeMemberCount={billingDashboard.activeMemberCount}

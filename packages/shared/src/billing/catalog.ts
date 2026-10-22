@@ -248,6 +248,21 @@ export function formatEuroFromCents(cents: number): string {
   }).format(euros);
 }
 
+const EURO_AMOUNT_RE = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/u;
+
+/**
+ * Parse a non-negative euro amount into integer cents.
+ * Rejects extra decimal places and binary-float inputs such as 1.005.
+ */
+export function parseEuroAmountToCents(raw: string): number {
+  const value = raw.trim();
+  if (!EURO_AMOUNT_RE.test(value)) {
+    throw new Error('Enter a non-negative euro amount with at most two decimal places.');
+  }
+  const [whole, frac = ''] = value.split('.');
+  return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+}
+
 /**
  * Convert OpenRouter `usage.cost` (USD, already includes the OpenRouter fee)
  * into Timeline customer AI charge euro cents: FX then ×4. Do not apply an

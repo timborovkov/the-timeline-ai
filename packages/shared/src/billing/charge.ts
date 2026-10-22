@@ -185,14 +185,28 @@ export function isUniqueViolation(err: unknown): boolean {
  * Native units Polar should invoice. Included-discount coverage is omitted so
  * the monthly invoice matches the customer-payable remainder.
  */
+/** Six decimal places. Flooring keeps float noise from invoicing above the payable ratio. */
+const POLAR_INVOICE_UNIT_MICROS = 1_000_000;
+
 export function polarInvoiceNativeUnits(input: {
   polarUnits: number;
   chargeCents: number;
   invoiceCents: number;
 }): number {
   if (input.polarUnits <= 0 || input.invoiceCents <= 0) return 0;
+  if (
+    !Number.isFinite(input.polarUnits) ||
+    !Number.isFinite(input.chargeCents) ||
+    !Number.isFinite(input.invoiceCents)
+  ) {
+    return 0;
+  }
   if (input.chargeCents <= 0 || input.invoiceCents >= input.chargeCents) return input.polarUnits;
-  return (input.polarUnits * input.invoiceCents) / input.chargeCents;
+  const micros = Math.floor(
+    (input.polarUnits * POLAR_INVOICE_UNIT_MICROS * input.invoiceCents) / input.chargeCents,
+  );
+  if (!Number.isFinite(micros) || micros <= 0) return 0;
+  return micros / POLAR_INVOICE_UNIT_MICROS;
 }
 
 /**

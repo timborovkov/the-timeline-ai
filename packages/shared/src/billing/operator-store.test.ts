@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BillingOperatorError,
   assignCompedPlan,
+  setOperatorSpendCap,
+  setTeamPolarDiscount,
   setTeamPriceOverride,
 } from '#src/billing/operator-store.js';
 import { resetEnvForTests } from '#src/env.js';
@@ -102,5 +104,146 @@ describe('billing operator store', () => {
     expect(price?.after).toMatchObject({
       priceOverride: { meteredDiscountPercent: 25, includedActiveMembers: 10 },
     });
+  });
+
+  it('rejects an actor email that does not match the user row', async () => {
+    await expect(
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'other@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 2_500,
+        reason: 'spoofed session',
+        expiresAt: null,
+      }),
+    ).rejects.toThrow(/identity/i);
+  });
+
+  it('refuses a comp that would leave a live Polar subscription in place', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, polar_subscription_id, spend_cap_cents, shadow_billing)
+      VALUES ('${TEAM_ID}', 'team', 'team_active', 'sub_live', 10000, false);
+    `);
+    await expect(
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 2_500,
+        reason: 'internal comp',
+        expiresAt: null,
+      }),
+    ).rejects.toThrow(/Configure Polar/);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.arrangement).toBe('standard');
+    expect(account?.polarSubscriptionId).toBe('sub_live');
+  });
+
+  it('revokes an existing Polar subscription after the comp is saved', async () => {
+    const revoked: string[] = [];
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, polar_subscription_id, spend_cap_cents, shadow_billing)
+      VALUES ('${TEAM_ID}', 'team', 'team_active', 'sub_live', 10000, false);
+    `);
+    await assignCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'team',
+      spendCapCents: 2_500,
+      reason: 'internal comp',
+      expiresAt: null,
+      cancelPolarSubscription: (subscriptionId) => {
+        revoked.push(subscriptionId);
+        return Promise.resolve();
+      },
+    });
+    expect(revoked).toEqual(['sub_live']);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.arrangement).toBe('comped');
+    expect(account?.polarSubscriptionId).toBeNull();
+  });
+
+  it('keeps the comp when Polar revoke fails so a retry can stop the fee', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, polar_subscription_id, spend_cap_cents, shadow_billing)
+      VALUES ('${TEAM_ID}', 'payg', 'payg_active', 'sub_stuck', 2500, false);
+    `);
+    await expect(
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 2_500,
+        reason: 'internal comp',
+        expiresAt: null,
+        cancelPolarSubscription: () =>
+          Promise.reject(new Error('Polar subscription revoke failed: 500')),
+      }),
+    ).rejects.toThrow(/could not be revoked/);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.arrangement).toBe('comped');
+    expect(account?.polarSubscriptionId).toBe('sub_stuck');
+  });
+
+  it('restores a spend-cap freeze and leaves past_due paused', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, spend_cap_cents, shadow_billing)
+      VALUES ('${TEAM_ID}', 'team', 'read_only', 0, false);
+    `);
+    await setOperatorSpendCap({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      spendCapCents: 2_500,
+    });
+    const [restored] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(restored?.billingState).toBe('team_active');
+    expect(restored?.spendCapCents).toBe(2_500);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'past_due'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await setOperatorSpendCap({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      spendCapCents: 8_000,
+    });
+    const [stillDue] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(stillDue?.billingState).toBe('past_due');
+    expect(stillDue?.spendCapCents).toBe(8_000);
+  });
+
+  it('rejects a Polar discount id with unexpected characters', async () => {
+    await expect(
+      setTeamPolarDiscount({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        polarDiscountId: 'disc id',
+        expiresAt: null,
+      }),
+    ).rejects.toThrow(/discount id/);
   });
 });

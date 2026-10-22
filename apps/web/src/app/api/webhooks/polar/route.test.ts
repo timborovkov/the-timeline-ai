@@ -74,6 +74,18 @@ describe('POST /api/webhooks/polar', () => {
     );
   });
 
+  it('rejects invalid JSON after a valid signature', async () => {
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: '{',
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
+  });
+
   it('rejects an oversized body before signature verify or parse', async () => {
     const { POST } = await import('./route');
     const res = await POST(

@@ -235,6 +235,25 @@ describe('handlePolarWebhookEvent', () => {
     expect(notices.rows.map((row) => row.subject)).toEqual([
       'Polar Hook: subscription payment failed',
     ]);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_due',
+          status: 'past_due',
+          product_id: 'prod_team',
+          modified_at: '2099-01-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const retried = await pg.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM message_deliveries WHERE metadata->>'billing_alert_kind' = 'subscription_past_due'`,
+    );
+    expect(Number(retried.rows[0]?.n)).toBe(1);
     await pg.exec(`
       UPDATE team_billing_accounts
       SET included_discount_remaining_cents = 12

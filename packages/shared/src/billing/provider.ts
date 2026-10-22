@@ -35,6 +35,8 @@ export interface BillingProvider {
     returnUrl: string;
   }): Promise<{ url: string }>;
   updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
+  /** Cancel immediately so a comp stops the platform fee. 404 and already-canceled are success. */
+  revokeSubscription(subscriptionId: string): Promise<void>;
   ingestUsage(event: PolarUsageEvent): Promise<void>;
 }
 
@@ -43,14 +45,17 @@ export function createFakeBillingProvider(): BillingProvider & {
   events: PolarUsageEvent[];
   customers: Map<string, { id: string; email: string }>;
   subscriptionUpdates: UpdateSubscriptionInput[];
+  revokedSubscriptionIds: string[];
 } {
   const events: PolarUsageEvent[] = [];
   const customers = new Map<string, { id: string; email: string }>();
   const subscriptionUpdates: UpdateSubscriptionInput[] = [];
+  const revokedSubscriptionIds: string[] = [];
   return {
     events,
     customers,
     subscriptionUpdates,
+    revokedSubscriptionIds,
     ensureCustomer(input) {
       const existing = customers.get(input.externalId);
       if (existing) return Promise.resolve(existing);
@@ -72,6 +77,10 @@ export function createFakeBillingProvider(): BillingProvider & {
     updateSubscription(input) {
       subscriptionUpdates.push(input);
       return Promise.resolve({ ok: true });
+    },
+    revokeSubscription(subscriptionId) {
+      revokedSubscriptionIds.push(subscriptionId);
+      return Promise.resolve();
     },
     ingestUsage(event) {
       events.push(event);

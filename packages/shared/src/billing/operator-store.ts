@@ -1,5 +1,5 @@
 import { billingOperatorAudit, teamBillingAccounts, teams, users, type Db } from '@timeline/db';
-import { desc, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 
 import {
   BILLING_ENTITLEMENTS_VERSION,
@@ -44,6 +44,16 @@ async function requirePlatformAdmin(db: Db, actor: BillingOperatorActor): Promis
   if (!isPlatformAdminEmail(email, getEnv().PLATFORM_ADMIN_EMAILS)) {
     throw new BillingOperatorError('Only platform admins can change billing overrides.');
   }
+}
+
+function billingStateAfterOperatorCapRaise(
+  planId: BillingPlanId,
+  billingState: string,
+  spendCapCents: number,
+): string | null {
+  if (spendCapCents <= 0) return null;
+  if (billingState !== 'read_only' && billingState !== 'balance_exhausted') return null;
+  return billingStateForComp(planId);
 }
 
 async function lockAccount(tx: Db, teamId: string) {
@@ -107,6 +117,8 @@ export async function assignCompedPlan(input: {
   reason: string;
   expiresAt: Date | null;
   now?: Date;
+  /** Revoke the current Polar subscription after the comp is committed. */
+  cancelPolarSubscription?: (subscriptionId: string) => Promise<void>;
 }): Promise<void> {
   const reason = input.reason.trim();
   if (reason.length < 3) throw new BillingOperatorError('A comp reason is required.');
@@ -115,10 +127,15 @@ export async function assignCompedPlan(input: {
   }
   const now = input.now ?? new Date();
   assertFutureExpiry(input.expiresAt, now);
-  await input.db.transaction(async (tx) => {
+  const polarSubscriptionId = await input.db.transaction(async (tx) => {
     const db = tx as unknown as Db;
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
+    if (existing.polarSubscriptionId && !input.cancelPolarSubscription) {
+      throw new BillingOperatorError(
+        'This workspace has a Polar subscription. Configure Polar before assigning a comp so the subscription fee can be revoked.',
+      );
+    }
     const before = billingOperatorSnapshot(existing);
     const billingState = billingStateForComp(input.entitlementsPlanId);
     const [updated] = await db
@@ -143,7 +160,26 @@ export async function assignCompedPlan(input: {
       before,
       after: billingOperatorSnapshot(updated),
     });
+    return existing.polarSubscriptionId;
   });
+  if (!polarSubscriptionId || !input.cancelPolarSubscription) return;
+  try {
+    await input.cancelPolarSubscription(polarSubscriptionId);
+  } catch (error) {
+    if (error instanceof BillingOperatorError) throw error;
+    throw new BillingOperatorError(
+      'The comp is saved and new Polar usage will not be ingested, but the existing Polar subscription could not be revoked. Retry the comp to stop the subscription fee.',
+    );
+  }
+  await input.db
+    .update(teamBillingAccounts)
+    .set({ polarSubscriptionId: null, polarProductId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(teamBillingAccounts.teamId, input.teamId),
+        eq(teamBillingAccounts.polarSubscriptionId, polarSubscriptionId),
+      ),
+    );
 }
 
 export async function clearCompedPlan(input: {
@@ -264,7 +300,9 @@ export async function setTeamPolarDiscount(input: {
   now?: Date;
 }): Promise<void> {
   const polarDiscountId = input.polarDiscountId.trim();
-  if (!polarDiscountId) throw new BillingOperatorError('Polar discount id is required.');
+  if (!/^[A-Za-z0-9_-]{1,128}$/u.test(polarDiscountId)) {
+    throw new BillingOperatorError('Polar discount id must be letters, numbers, _ or -.');
+  }
   const now = input.now ?? new Date();
   assertFutureExpiry(input.expiresAt, now);
   await input.db.transaction(async (tx) => {
@@ -342,9 +380,18 @@ export async function setOperatorSpendCap(input: {
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
     const before = billingOperatorSnapshot(existing);
+    const restoredState = billingStateAfterOperatorCapRaise(
+      existing.planId,
+      existing.billingState,
+      input.spendCapCents,
+    );
     const [updated] = await db
       .update(teamBillingAccounts)
-      .set({ spendCapCents: input.spendCapCents, updatedAt: now })
+      .set({
+        spendCapCents: input.spendCapCents,
+        ...(restoredState ? { billingState: restoredState as typeof existing.billingState } : {}),
+        updatedAt: now,
+      })
       .where(eq(teamBillingAccounts.teamId, input.teamId))
       .returning();
     if (!updated) throw new BillingOperatorError('Failed to update the spend cap.');

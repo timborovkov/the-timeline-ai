@@ -100,6 +100,18 @@ export function createPolarBillingProvider(options?: {
       return { url };
     },
 
+    async revokeSubscription(subscriptionId: string) {
+      const res = await polarFetch(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok || res.status === 404) return;
+      if (res.status === 403) {
+        const body = await res.text();
+        if (body.includes('AlreadyCanceled')) return;
+      }
+      throw new Error(`Polar subscription revoke failed: ${res.status}`);
+    },
+
     async updateSubscription(input: UpdateSubscriptionInput) {
       const updated = await polarFetch(`/subscriptions/${input.subscriptionId}`, {
         method: 'PATCH',

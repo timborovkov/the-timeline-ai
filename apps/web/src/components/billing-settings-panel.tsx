@@ -1,6 +1,10 @@
 'use client';
 
-import { formatEuroFromCents, type BillingPlanId } from '@timeline/shared/billing/catalog';
+import {
+  formatEuroFromCents,
+  parseEuroAmountToCents,
+  type BillingPlanId,
+} from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
@@ -40,6 +44,8 @@ export interface BillingSettingsPanelProps {
   nudge: BillingNudge | null;
   costBearingPaused: boolean;
   polarConfigured: boolean;
+  /** False when this plan has no Polar subscription yet, so checkout can save a card. */
+  hasPolarSubscription: boolean;
   canManage: boolean;
   planPreview: CheapestPlanPreview;
   activeMemberCount: number;
@@ -85,6 +91,7 @@ function BillingPlanSection(props: {
   billingState: string;
   shadowBilling: boolean;
   polarConfigured: boolean;
+  hasPolarSubscription: boolean;
   canManage: boolean;
   pending: boolean;
   comp: BillingSettingsPanelProps['comp'];
@@ -138,37 +145,34 @@ function BillingPlanSection(props: {
       ) : null}
       {props.canManage && !props.comp && props.planId !== 'enterprise' ? (
         <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={props.pending || !props.polarConfigured || props.planId === 'payg'}
-            onClick={() => {
-              props.onCheckout('payg');
-            }}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Pay as you go
-          </button>
-          <button
-            type="button"
-            disabled={props.pending || !props.polarConfigured || props.planId === 'team'}
-            onClick={() => {
-              props.onCheckout('team');
-            }}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Team · €49/mo
-          </button>
-          <button
-            type="button"
-            disabled={props.pending || !props.polarConfigured || props.planId === 'business'}
-            onClick={() => {
-              props.onCheckout('business');
-            }}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Business · €199/mo
-          </button>
+          {(
+            [
+              ['payg', 'Pay as you go'],
+              ['team', 'Team · €49/mo'],
+              ['business', 'Business · €199/mo'],
+            ] as const
+          ).map(([plan, label]) => (
+            <button
+              key={plan}
+              type="button"
+              disabled={
+                props.pending ||
+                !props.polarConfigured ||
+                (props.planId === plan && props.hasPolarSubscription)
+              }
+              onClick={() => {
+                props.onCheckout(plan);
+              }}
+              className={PLAN_BUTTON_CLASS}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+      ) : props.canManage && props.comp ? (
+        <p className="mt-3 text-sm text-fg-muted">
+          Polar checkout is turned off while this workspace is comped.
+        </p>
       ) : props.canManage ? (
         <p className="mt-3 text-sm text-fg-muted">
           Enterprise plan changes go through support or the Polar customer portal, not self-serve
@@ -320,13 +324,17 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
 
   function saveSpendCap() {
     updateForm(clearNotices());
-    const euros = Number(spendCapEuros);
-    if (!Number.isFinite(euros) || euros < 0) {
-      updateForm({ error: 'Enter a non-negative spend cap in euros.' });
+    let spendCapCents: number;
+    try {
+      spendCapCents = parseEuroAmountToCents(spendCapEuros);
+    } catch (error) {
+      updateForm({
+        error: error instanceof Error ? error.message : 'Enter a non-negative spend cap in euros.',
+      });
       return;
     }
     startTransition(async () => {
-      const result = await updateBillingSpendCap({ spendCapCents: Math.round(euros * 100) });
+      const result = await updateBillingSpendCap({ spendCapCents });
       if (!result.ok) {
         updateForm({ error: result.error });
         return;
@@ -360,6 +368,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         billingState={props.billingState}
         shadowBilling={props.shadowBilling}
         polarConfigured={props.polarConfigured}
+        hasPolarSubscription={props.hasPolarSubscription}
         canManage={props.canManage}
         pending={pending}
         comp={props.comp}

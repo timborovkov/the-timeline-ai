@@ -563,9 +563,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       costly work and emails owners. No prepaid wallet, top-up, or auto-reload.
       Cheapest-plan preview from gross native
       usage (informational, never auto-switch; hidden unless another plan saves at
-      least €5 and 10% of the current projected bill), platform-admin comped plans and
+      least €5 and 10% of the current projected bill), platform-admin comped plans
+      (assigning a comp revokes the current Polar subscription, and is refused when Polar is not configured) and
       per-team price overrides (<code>PLATFORM_ADMIN_EMAILS</code>, audited, spend cap still
-      applies), <code>pnpm billing:polar-setup</code> archives a sandbox Timeline Top-up
+      applies; raising a positive cap clears a spend-cap freeze and leaves
+      <code>past_due</code> paused), <code>pnpm billing:polar-setup</code> archives a sandbox Timeline Top-up
       product and ensures the Timeline webhook, Team/Business included-discount
       period reset (webhook + janitor advancing the stored Polar window; not
       every Polar retry). Paid-plan changes update the existing Polar subscription.

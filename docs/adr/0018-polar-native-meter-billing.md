@@ -61,7 +61,9 @@ credit hides margin and confuses prospects.
    not create one. The spend cap is the risk control: €0 or metered spend at
    the cap is a hard stop, with owner alerts at 50/75/90/100%. Free workspaces
    hard-stop on native allowances. Comps skip Polar checkout and meter ingest;
-   metering and the spend cap still apply. `past_due` and `payment_retry`
+   assigning a comp revokes the current Polar subscription, and the comp is
+   refused when that subscription exists and Polar is not configured. Metering and the
+   spend cap still apply. `past_due` and `payment_retry`
    pause new cost-bearing work. Entering `past_due` emails owners once per UTC
    month. A later active subscription webhook clears that pause. Polar
    subscription webhooks apply
@@ -85,7 +87,8 @@ credit hides margin and confuses prospects.
    PATCH the existing Polar subscription (or open the customer portal) instead
    of creating a second checkout. Included-discount cents stay local. Polar
    ingest sends the customer-payable remainder, scaling native units by
-   invoice cents / charge cents. Sub-cent rounds (invoice cents of 0) are not
+   invoice cents / charge cents and flooring to six decimal places. Sub-cent
+   rounds (invoice cents of 0) are not
    ingested. PAYG, Team, Business, and Enterprise ingest when a Polar customer
    exists and charges are live. Comps do not. `member_days` stay on the local
    spend cap and are not a Polar meter.

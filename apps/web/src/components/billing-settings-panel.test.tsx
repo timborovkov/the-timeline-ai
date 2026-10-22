@@ -74,6 +74,7 @@ function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
       nudge={null}
       costBearingPaused={false}
       polarConfigured
+      hasPolarSubscription={false}
       canManage
       planPreview={planPreview}
       activeMemberCount={1}
@@ -96,6 +97,39 @@ describe('BillingSettingsPanel collection copy', () => {
     expect(html).not.toContain('Top up');
     expect(html).not.toContain('Auto-reload');
     expect(html).not.toContain('Wallet');
+  });
+
+  it('keeps checkout available for the current plan until a Polar subscription exists', () => {
+    function planButton(html: string, label: string): string {
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+      const match = new RegExp(`<button[^>]*>${escaped}</button>`, 'u').exec(html);
+      return match?.[0] ?? '';
+    }
+    const open = panel({ planId: 'payg', planName: 'Pay as you go', hasPolarSubscription: false });
+    expect(planButton(open, 'Pay as you go')).not.toContain('disabled=""');
+    const subscribed = panel({
+      planId: 'payg',
+      planName: 'Pay as you go',
+      hasPolarSubscription: true,
+    });
+    expect(planButton(subscribed, 'Pay as you go')).toContain('disabled=""');
+    expect(planButton(subscribed, 'Team · €49/mo')).not.toContain('disabled=""');
+  });
+
+  it('turns checkout off on a comp without the enterprise message', () => {
+    const html = panel({
+      planId: 'team',
+      planName: 'Team',
+      comp: {
+        planName: 'Team',
+        expired: false,
+        reason: 'internal',
+        expiresOn: null,
+      },
+    });
+    expect(html).toContain('Polar checkout is turned off while this workspace is comped');
+    expect(html).not.toContain('Enterprise plan changes');
+    expect(html).not.toContain('Assign comp');
   });
 
   it('shows the past_due pause and a payment-method update', () => {

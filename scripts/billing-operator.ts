@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 import { closeDb, getDb } from '@timeline/db';
+import { createPolarBillingProvider } from '@timeline/shared/billing';
+import { parseEuroAmountToCents } from '@timeline/shared/billing/catalog';
 import { isBillingPlanId, parseOperatorExpiry } from '@timeline/shared/billing/operator';
 import {
   assignCompedPlan,
@@ -44,19 +46,23 @@ function required(name: string): string {
 }
 
 function eurosToCents(name: string): number {
-  const euros = Number(required(name));
-  if (!Number.isFinite(euros) || euros < 0)
-    throw new Error(`--${name} must be a non-negative amount`);
-  return Math.round(euros * 100);
+  try {
+    return parseEuroAmountToCents(required(name));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `--${name} is invalid`;
+    throw new Error(message);
+  }
 }
 
 function optionalEuros(name: string): number | undefined {
   const raw = argValue(name);
   if (!raw) return undefined;
-  const euros = Number(raw);
-  if (!Number.isFinite(euros) || euros < 0)
-    throw new Error(`--${name} must be a non-negative amount`);
-  return Math.round(euros * 100);
+  try {
+    return parseEuroAmountToCents(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : `--${name} is invalid`;
+    throw new Error(message);
+  }
 }
 
 function optionalInt(name: string): number | undefined {
@@ -78,6 +84,7 @@ async function main(): Promise<void> {
     const plan = required('plan');
     if (!isBillingPlanId(plan))
       throw new Error('--plan must be free, payg, team, business, or enterprise');
+    const provider = createPolarBillingProvider();
     await assignCompedPlan({
       db,
       actor,
@@ -86,6 +93,12 @@ async function main(): Promise<void> {
       spendCapCents: eurosToCents('spend-cap-euros'),
       reason: required('reason'),
       expiresAt: parseOperatorExpiry(argValue('expires')),
+      ...(provider
+        ? {
+            cancelPolarSubscription: (subscriptionId: string) =>
+              provider.revokeSubscription(subscriptionId),
+          }
+        : {}),
     });
   } else if (command === 'clear-comp') {
     await clearCompedPlan({ db, actor, teamId });
