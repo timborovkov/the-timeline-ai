@@ -111,10 +111,7 @@ export const RESTRICTED_SENTRY_DATA_COLLECTION = {
     response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
   },
   httpBodies: [] as (
-    | 'incomingRequest'
-    | 'outgoingRequest'
-    | 'incomingResponse'
-    | 'outgoingResponse'
+    'incomingRequest' | 'outgoingRequest' | 'incomingResponse' | 'outgoingResponse'
   )[],
   urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
   genAI: { inputs: false, outputs: false },
