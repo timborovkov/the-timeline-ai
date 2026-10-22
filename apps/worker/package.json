@@ -41,7 +41,7 @@
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.203.0",
-    "@sentry/node": "^10.59.0",
+    "@sentry/node": "^10.76.2",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
     "bullmq": "5.79.0",
