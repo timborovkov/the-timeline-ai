@@ -323,7 +323,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
     maxOutputTokens,
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
-    experimental_repairText: repairKnownStructuredOutput(schema),
+    repairText: repairKnownStructuredOutput(schema),
     providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
       name: 'llm.chatStructured',
       model: modelId,
