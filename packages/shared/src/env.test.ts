@@ -95,6 +95,20 @@ describe('getEnv', () => {
     expect(getEnv().RECALL_TRANSCRIPT_WEBHOOK_URL).toBeUndefined();
   });
 
+  it('treats blank integration OAuth credentials from .env.example as unset', () => {
+    setBaseEnv({
+      GITHUB_APP_ID: '',
+      GITHUB_APP_CLIENT_ID: '',
+      SLACK_CLIENT_ID: '',
+      MONDAY_CLIENT_ID: '',
+    });
+
+    expect(getEnv().GITHUB_APP_ID).toBeUndefined();
+    expect(getEnv().GITHUB_APP_CLIENT_ID).toBeUndefined();
+    expect(getEnv().SLACK_CLIENT_ID).toBeUndefined();
+    expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
+  });
+
   it('keeps the legacy invite sender env var available for transactional email fallback', () => {
     setBaseEnv({
       INVITE_EMAIL_FROM: 'Timeline <invites@example.test>',

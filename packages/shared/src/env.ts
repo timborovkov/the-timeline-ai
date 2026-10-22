@@ -300,9 +300,9 @@ const baseSchema = z.object({
   TURNSTILE_SECRET_KEY: z.string().optional(),
 
   // Slack first-party conversational capture.
-  SLACK_CLIENT_ID: z.string().optional(),
-  SLACK_CLIENT_SECRET: z.string().optional(),
-  SLACK_SIGNING_SECRET: z.string().optional(),
+  SLACK_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SLACK_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SLACK_SIGNING_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
 
   /**
    * Shared secret for protected cron / admin endpoints (e.g. job reconciler).
@@ -371,27 +371,29 @@ const baseSchema = z.object({
   // Per-team integrations. The catalog hides any native provider whose
   // OAuth credentials aren't set; provider-specific webhook secrets only
   // apply to providers that expose inbound webhooks.
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  LINEAR_CLIENT_ID: z.string().optional(),
-  LINEAR_CLIENT_SECRET: z.string().optional(),
-  LINEAR_WEBHOOK_SECRET: z.string().optional(),
-  GITHUB_APP_CLIENT_ID: z.string().optional(),
-  GITHUB_APP_CLIENT_SECRET: z.string().optional(),
-  GITHUB_APP_ID: z.string().optional(),
-  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
-  GITHUB_WEBHOOK_SECRET: z.string().optional(),
-  MONDAY_CLIENT_ID: z.string().optional(),
-  MONDAY_CLIENT_SECRET: z.string().optional(),
-  MONDAY_WEBHOOK_SECRET: z.string().optional(),
-  SENTRY_INTEGRATION_CLIENT_ID: z.string().optional(),
-  SENTRY_INTEGRATION_CLIENT_SECRET: z.string().optional(),
+  // Blank values from `.env.example` must stay unset so providerBudgetAppKey
+  // (and catalog visibility) fall back to the provider name defaults.
+  GOOGLE_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GOOGLE_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_PRIVATE_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SENTRY_INTEGRATION_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SENTRY_INTEGRATION_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   // HMAC secret for Google Drive push-channel tokens. The Drive watch
   // registration sets channel_token = HMAC-SHA256(secret, integration.id)
   // so the /api/webhooks/google-drive handler can verify the inbound
   // x-goog-channel-token. Without it, anyone who guesses or leaks an
   // integration UUID can trigger sync jobs for that team.
-  GOOGLE_DRIVE_WEBHOOK_SECRET: z.string().optional(),
+  GOOGLE_DRIVE_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
 });
 
 const schema = baseSchema
