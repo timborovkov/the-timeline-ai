@@ -179,7 +179,8 @@ BILLING_CHARGES_ENABLED=false
           wallet-backed plans, auto-reload Polar checkout email (Polar checkout is marked created
           before owner mail; delivery failure retries the same URL the same UTC day without a second
           checkout; skipped unless remaining spend-cap headroom covers the full €10 product,
-          including a €0 spend cap), cheapest-plan preview, spend cap. Selecting another paid plan
+          including a €0 spend cap), cheapest-plan preview only when another self-serve plan saves
+          at least €5 and 10% of the current projected bill, spend cap. Selecting another paid plan
           updates the existing Polar subscription (or the customer portal) instead of opening a
           second checkout, including when the workspace is past due, in payment retry, or read-only.
           Enterprise workspaces do not show PAYG/Team/Business checkout buttons. Submitted Polar

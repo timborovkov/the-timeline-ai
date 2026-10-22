@@ -419,13 +419,11 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         onCheckout={runCheckout}
       />
 
-      <SettingsSection title="Cheapest plan this period">
-        <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />
-        <p className="mt-3 text-sm text-fg-muted">
-          Preview uses {props.activeMemberCount} active members and metered usage so far this
-          period. Extra members are €2 per member-month on paid self-serve plans.
-        </p>
-      </SettingsSection>
+      <BillingPlanPreview
+        preview={props.planPreview}
+        currentPlanId={props.planId}
+        activeMemberCount={props.activeMemberCount}
+      />
 
       <BillingWalletSection
         walletPlan={walletPlan}

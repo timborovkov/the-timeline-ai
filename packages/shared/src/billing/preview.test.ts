@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { listChargeCentsForMeter } from '#src/billing/charge.js';
-import { cheapestPlanPreview } from '#src/billing/preview.js';
+import {
+  cheapestPlanPreview,
+  shouldShowPlanRecommendation,
+  type CheapestPlanPreview,
+  type SelfServePaidPlanId,
+} from '#src/billing/preview.js';
 import { freeAllowanceFloorCents } from '#src/billing/status.js';
 
 describe('cheapestPlanPreview', () => {
@@ -67,5 +72,69 @@ describe('cheapestPlanPreview', () => {
     expect(preview.bills.payg.extraMemberCents).toBe(listChargeCentsForMeter('member_days', 5));
     expect(preview.bills.payg.extraMemberCents).not.toBe(1_000);
     expect(preview.bills.team.extraMemberCents).toBe(0);
+  });
+});
+
+function recommendation(input: {
+  recommended: SelfServePaidPlanId;
+  payg: number;
+  team: number;
+  business: number;
+}): CheapestPlanPreview {
+  const bill = (planId: SelfServePaidPlanId, totalCents: number) => ({
+    planId,
+    platformFeeCents: 0,
+    extraMemberCents: 0,
+    meteredAfterDiscountCents: totalCents,
+    totalCents,
+  });
+  return {
+    recommended: input.recommended,
+    bills: {
+      payg: bill('payg', input.payg),
+      team: bill('team', input.team),
+      business: bill('business', input.business),
+    },
+  };
+}
+
+describe('shouldShowPlanRecommendation', () => {
+  it('hides the preview when the current plan is already the cheapest', () => {
+    const preview = recommendation({
+      recommended: 'payg',
+      payg: 4_000,
+      team: 4_900,
+      business: 19_900,
+    });
+    expect(shouldShowPlanRecommendation(preview, 'payg')).toBe(false);
+  });
+
+  it('hides a tiny saving below €5 or below 10% of the current bill', () => {
+    const underFiveEuros = recommendation({
+      recommended: 'team',
+      payg: 2_000,
+      team: 1_600,
+      business: 19_900,
+    });
+    expect(shouldShowPlanRecommendation(underFiveEuros, 'payg')).toBe(false);
+
+    const underTenPercent = recommendation({
+      recommended: 'team',
+      payg: 20_000,
+      team: 19_000,
+      business: 19_900,
+    });
+    expect(shouldShowPlanRecommendation(underTenPercent, 'payg')).toBe(false);
+  });
+
+  it('shows a recommendation that saves at least €5 and 10%', () => {
+    const preview = recommendation({
+      recommended: 'team',
+      payg: 10_000,
+      team: 8_000,
+      business: 19_900,
+    });
+    expect(shouldShowPlanRecommendation(preview, 'payg')).toBe(true);
+    expect(shouldShowPlanRecommendation(preview, 'free')).toBe(false);
   });
 });

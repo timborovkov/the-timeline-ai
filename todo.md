@@ -559,7 +559,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [x] Prepaid €10 top-up checkout on wallet-backed plans, auto-reload Polar checkout
       email when the wallet is at/below the threshold and remaining spend-cap
       headroom covers the full €10 product, cheapest-plan preview from gross native
-      usage (informational, never auto-switch), Team/Business included-discount
+      usage (informational, never auto-switch; hidden unless another plan saves at
+      least €5 and 10% of the current projected bill), Team/Business included-discount
       period reset (webhook + janitor advancing the stored Polar window; not
       every Polar retry). Paid-plan changes update the existing Polar subscription.
       Prepaid wallet/included-discount collection is not ingested to Polar meters,
