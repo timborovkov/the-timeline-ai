@@ -55,11 +55,11 @@ const openRouterRequestSchema = z.object({
 function makeMockModel(text: string): LanguageModel {
   // The MockLanguageModelV3 constructor accepts any partial of the
   // LanguageModelV3 interface; `as never` shape-shifts past the strict
-  // literal-union typing the SDK enforces on `finishReason` etc.
+  // `{ unified, raw }` finishReason typing the SDK now enforces.
   return new MockLanguageModelV3({
     doGenerate: (() =>
       Promise.resolve({
-        finishReason: 'stop',
+        finishReason: { unified: 'stop', raw: undefined },
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
         content: [{ type: 'text', text }],
         warnings: [],
@@ -198,7 +198,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: The AuditAI team has a meeting scheduled for Monday.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       {
         model: makeMockModel(
@@ -233,7 +233,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for Otto.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       {
         model: makeMockModel(
@@ -377,7 +377,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for AuditAI.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -459,7 +459,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -549,7 +549,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -588,7 +588,7 @@ describe('chatStructured', () => {
         {
           schema: extractionResultSchema,
           prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
-          system: EXTRACTION_SYSTEM_PROMPT,
+          instructions: EXTRACTION_SYSTEM_PROMPT,
         },
         { fetch: fetchStub },
       ),
@@ -650,7 +650,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -706,7 +706,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -774,7 +774,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -864,7 +864,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -958,7 +958,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -1052,7 +1052,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -1110,7 +1110,7 @@ describe('chatStructured', () => {
         {
           schema: extractionResultSchema,
           prompt: 'Extract facts from: Heading out for lunch.',
-          system: EXTRACTION_SYSTEM_PROMPT,
+          instructions: EXTRACTION_SYSTEM_PROMPT,
         },
         { fetch: fetchStub },
       ),
@@ -1148,7 +1148,7 @@ describe('chatStructured', () => {
 
       const result = await chatStructured({
         schema: extractionResultSchema,
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
         prompt:
           'Current event: Tim met Apple about SaaS licensing. Return one explicit fact with mentions.',
       });
@@ -1197,7 +1197,7 @@ describe('streamChat', () => {
             start(controller) {
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'stop',
+                finishReason: { unified: 'stop', raw: undefined },
                 usage: { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
               });
               controller.close();
@@ -1209,7 +1209,7 @@ describe('streamChat', () => {
 
     const result = streamChat(
       {
-        system: 'sys',
+        instructions: 'sys',
         messages: [{ role: 'user', content: 'hi' }],
         tools: {},
         maxOutputTokens: 900,
@@ -1231,7 +1231,7 @@ describe('streamChat', () => {
             start(controller) {
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'stop',
+                finishReason: { unified: 'stop', raw: undefined },
                 usage: { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
               });
               controller.close();
@@ -1242,7 +1242,7 @@ describe('streamChat', () => {
     });
 
     const result = streamChat(
-      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
+      { instructions: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
       { model },
     );
     await result.consumeStream();
@@ -1268,7 +1268,7 @@ describe('streamChat', () => {
               controller.enqueue({ type: 'text-end', id: '1' });
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'stop',
+                finishReason: { unified: 'stop', raw: undefined },
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               });
               controller.close();
@@ -1277,7 +1277,7 @@ describe('streamChat', () => {
         })) as never,
     });
     const result = streamChat(
-      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
+      { instructions: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
       { model },
     );
     const text = await result.text;
@@ -1294,7 +1294,7 @@ describe('streamChat', () => {
     });
 
     const result = streamChat(
-      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {}, onError },
+      { instructions: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {}, onError },
       { model },
     );
 

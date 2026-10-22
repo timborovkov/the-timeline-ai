@@ -9,7 +9,7 @@ export const MCP_AGENT_MAX_CHARACTERS = 8192;
 const EXTERNAL_CHAT_LINE_BOUNDARY_WINDOW = 256;
 
 export interface AgentPresentationInstructions {
-  system: string;
+  instructions: string;
   maxOutputTokens?: number;
 }
 
@@ -61,12 +61,12 @@ export function resolveAgentPresentation(deliverySurface: string): AgentPresenta
 export function presentationInstructions(
   presentation: AgentPresentationProfile,
 ): AgentPresentationInstructions {
-  if (presentation === 'web_rich') return { system: WEB_RICH_INSTRUCTIONS };
+  if (presentation === 'web_rich') return { instructions: WEB_RICH_INSTRUCTIONS };
   if (presentation === 'mcp_agent') {
-    return { system: MCP_AGENT_INSTRUCTIONS, maxOutputTokens: MCP_AGENT_MAX_OUTPUT_TOKENS };
+    return { instructions: MCP_AGENT_INSTRUCTIONS, maxOutputTokens: MCP_AGENT_MAX_OUTPUT_TOKENS };
   }
   return {
-    system: EXTERNAL_CHAT_INSTRUCTIONS,
+    instructions: EXTERNAL_CHAT_INSTRUCTIONS,
     maxOutputTokens: EXTERNAL_CHAT_MAX_OUTPUT_TOKENS,
   };
 }

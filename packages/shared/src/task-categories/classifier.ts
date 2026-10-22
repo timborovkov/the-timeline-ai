@@ -200,7 +200,7 @@ export async function classifyTaskCategory(
   const modelId = deps.modelId ?? TIMELINE_MODELS.taskCategorization.id;
   const result = await call({
     schema: taskCategoryClassificationSchema,
-    system: TASK_CATEGORY_SYSTEM_PROMPT,
+    instructions: TASK_CATEGORY_SYSTEM_PROMPT,
     prompt: buildTaskCategoryPrompt(packet),
     model: modelId,
     ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
@@ -229,7 +229,7 @@ export async function classifyTaskCategories(
   const modelId = deps.modelId ?? TIMELINE_MODELS.taskCategorization.id;
   const result = await call({
     schema: taskCategoryBatchClassificationSchema,
-    system: TASK_CATEGORY_SYSTEM_PROMPT,
+    instructions: TASK_CATEGORY_SYSTEM_PROMPT,
     prompt: buildTaskCategoryBatchPrompt(items),
     model: modelId,
     ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),

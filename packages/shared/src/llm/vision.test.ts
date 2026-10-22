@@ -40,7 +40,7 @@ function makeCapturingModel(responseText: string): {
           : { maxOutputTokens: options.maxOutputTokens }),
       });
       return Promise.resolve({
-        finishReason: 'stop',
+        finishReason: { unified: 'stop', raw: undefined },
         usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
         content: [{ type: 'text', text: responseText }],
         warnings: [],
