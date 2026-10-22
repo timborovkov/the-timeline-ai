@@ -184,7 +184,7 @@ async function insertPeople(tx: SeedTx, passwordHash: string): Promise<void> {
         emailVerified: NOW,
         passwordHash,
         legalTermsVersion: '2026-06-02',
-        legalPrivacyVersion: '2026-06-02',
+        legalPrivacyVersion: '2026-08-26',
         legalAcceptedAt: NOW,
       })),
     )

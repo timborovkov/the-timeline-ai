@@ -25,6 +25,7 @@ import SupportError from '@/app/help/support/error';
 import SupportLoading from '@/app/help/support/loading';
 import { HelpShell } from '@/components/help/help-shell';
 import {
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
   TIMELINE_SKILL_INSTALL_PROMPT,
 } from '@/lib/agent-install-content';
@@ -257,9 +258,14 @@ describe('Help route states', () => {
       screen.getByRole('heading', { level: 2, name: 'Access, without surprises' }),
     ).toBeTruthy();
     expect(screen.getByRole('heading', { level: 3, name: 'Timeline' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Codex' })).toBeTruthy();
+    expect(screen.getByRole('heading', { level: 3, name: 'Claude Code' })).toBeTruthy();
     expect(screen.getByText('timeline')).toBeTruthy();
+    expect(
+      screen.getByText(/workspace evidence visible to you as the authorizing member/i),
+    ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Copy install prompt' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Codex install prompt' }));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith(TIMELINE_PLUGIN_INSTALL_PROMPT);
     });
@@ -268,19 +274,29 @@ describe('Help route states', () => {
     );
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('codex plugin add timeline@timeline');
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
-      'Check only whether TIMELINE_MCP_KEY is present',
+      'The bundled MCP connection uses Timeline OAuth',
     );
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
-      'do not print, echo, log, or inspect its value',
+      'sign in to Timeline, choose the team to share',
     );
-    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('Never ask me to paste the key into chat');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('The default scope is read');
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain(
-      'A new task alone cannot import an environment variable',
+      'Never request agent:ask unless I explicitly ask',
     );
-    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('relaunch codex from that same terminal');
-    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('~/.codex/.env');
+    expect(TIMELINE_PLUGIN_INSTALL_PROMPT).not.toContain('TIMELINE_MCP_KEY');
     expect(TIMELINE_PLUGIN_INSTALL_PROMPT).toContain('the timeline skill is installed');
-    expect(screen.getByText('Relaunch, then start a task')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy Claude Code install commands' }));
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND);
+    });
+    expect(TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND).toContain(
+      'claude plugin marketplace add timborovkov/the-timeline-ai',
+    );
+    expect(TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND).toContain(
+      'claude plugin install timeline@timeline',
+    );
+    expect(screen.getByText('Start a Timeline-backed task')).toBeTruthy();
     expect(screen.getByText(/third-party tools may have external side effects/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy skill prompt' }));
@@ -295,12 +311,21 @@ describe('Help route states', () => {
       'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills/timeline',
     );
 
-    const installLink = screen.getByRole('link', { name: 'Read the source guide' });
-    expect(installLink.getAttribute('href')).toBe(
-      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
+    const codexInstallLink = screen.getByRole('link', { name: 'Read the Codex install guide' });
+    expect(codexInstallLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
     );
-    expect(installLink.getAttribute('target')).toBe('_blank');
-    expect(installLink.getAttribute('rel')).toBe('noreferrer');
+    expect(codexInstallLink.getAttribute('target')).toBe('_blank');
+    expect(codexInstallLink.getAttribute('rel')).toBe('noreferrer');
+
+    const claudeInstallLink = screen.getByRole('link', {
+      name: 'Read the Claude Code install guide',
+    });
+    expect(claudeInstallLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code',
+    );
+    expect(claudeInstallLink.getAttribute('target')).toBe('_blank');
+    expect(claudeInstallLink.getAttribute('rel')).toBe('noreferrer');
     expect(screen.getByRole('link', { name: 'Sign in to open' })).toBeTruthy();
   });
 

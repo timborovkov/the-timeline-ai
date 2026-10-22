@@ -129,7 +129,7 @@ Treat this file as an operating contract for agents, not a loose README.
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.boards`, `scope.pins`, `scope.suggestions`, `scope.calendar`,
-  `scope.integrations`, `scope.mcp`, `scope.onboarding`, `scope.jobRecovery`,
+  `scope.integrations`, `scope.mcp`, `scope.mcpOAuth`, `scope.onboarding`, `scope.jobRecovery`,
   `scope.reconciliation`, `scope.audit`, `scope.conversations`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
   `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
@@ -237,19 +237,32 @@ Treat this file as an operating contract for agents, not a loose README.
   and tool-call budgets remain unchanged.
   Outbound `timeline.ask_agent` uses the separate compact `mcp_agent` profile,
   which preserves inline Timeline citations and returns parsed artifact refs.
-- **Outbound MCP bearer keys see only `team`-visibility events.** The
-  `/api/mcp/server` handler uses `withTeam(db, teamId, ZERO_UUID,
+- **Outbound MCP auth preserves its actor boundary.** Static `tla_`
+  bearer keys use `withTeam(db, teamId, ZERO_UUID,
   { skipMembershipCheck: true })`. The zero-UUID can't match
   `authorUserId` (private) or `visibilityUserIds` (specific_users), so
-  those events stay invisible. Do not loosen this — bearer keys
-  represent a team, not a user.
-- **Synthetic team agents are proposal-only.** Agent-enabled outbound MCP keys
-  and unlinked trusted Telegram groups/Slack channels may read team-visible
+  those events stay invisible; static keys represent a team, not a user.
+  OAuth grants instead resolve the consenting member and use normal membership
+  checks, so they may read private or specifically shared data that member can
+  access in the selected team. Only an owner/admin may grant OAuth `agent:ask`,
+  and token resolution invalidates that scope after demotion. Never collapse
+  these principals or role rules.
+- **Outbound MCP OAuth has one pre-principal seam.**
+  [`oauth-pre-principal.ts`](packages/shared/src/mcp-server/oauth-pre-principal.ts)
+  alone owns the global public-client registry, opaque authorization-code/access-token/
+  refresh-token/static-key hash lookup needed to discover a principal, and RFC 7009
+  token-possession revocation. Once a lookup yields `teamId` and `userId`, consent,
+  grant authorization, exchange/refresh mutations, token use, signed-in listing, and
+  signed-in revocation go through `withTeam(...).mcpOAuth`. Keep workspace data outside
+  the pre-principal seam.
+- **Synthetic team agents are proposal-only.** Agent-enabled outbound MCP
+  credentials and unlinked trusted Telegram groups/Slack channels may read team-visible
   data, call team-shared custom MCP tools, and create new team-visible
   proposals. They may not revise proposals, use personal pins, invoke
   approval-required `execute_*` tools, or mutate canonical Timeline state.
-  Enabled third-party tools may still cause external side effects. Existing MCP
-  keys remain read-only unless an admin explicitly grants `agent:ask`.
+  Enabled third-party tools may still cause external side effects. Existing static MCP
+  keys remain read-only unless an admin explicitly grants `agent:ask`; OAuth grants require a
+  current owner/admin for that scope.
 - **No SSRF from user-supplied or discovered URLs.** `validateMcpUrl`
   in [`packages/shared/src/mcp/auth.ts`](packages/shared/src/mcp/auth.ts)
   rejects loopback, RFC1918, RFC 3927 link-local (169.254/16 — cloud
@@ -296,7 +309,10 @@ packages/
             for proposal citations and Agent Ask retrieval),
             mcp module (Phase 11 — JSON-RPC client, OAuth client + state JWT, SSRF guard,
             team+user-overlay scope), mcp-server module (Phase 11 outbound —
-            JSON-RPC handler, bearer-key mint/verify for /api/mcp/server),
+            official MCP SDK v2 Streamable HTTP server,
+            pre-principal auth discovery, team-scoped OAuth consent/token grants,
+            and bearer-key mint/verify
+            for /api/mcp/server),
             calendar module (Phase 11 — event scope, raw-event audit rows,
             entity links, settings, team calendar subscriptions, and calendar
             embedding enqueue/delete),
@@ -313,8 +329,11 @@ packages/
             bindings, capture)
 .agents/
   plugins/  Codex marketplace catalog for repository plugins
+.claude-plugin/
+  marketplace.json  Claude Code repository marketplace catalog
 plugins/
-  timeline/ Codex plugin manifest, hosted MCP connection, and general cited-workspace skill
+  timeline/ Codex + Claude Code plugin manifests, hosted MCP connection,
+            and general cited-workspace skill
 docs/
   setup/    External service walkthroughs (Telegram, OpenRouter, Postmark,
             Slack, Recall.ai meeting bots, Sentry, Railway, local dev,

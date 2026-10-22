@@ -13,6 +13,19 @@ const nextConfig: NextConfig = {
     root: workspaceRoot,
   },
   transpilePackages: ['@timeline/shared', '@timeline/db'],
+  headers() {
+    return Promise.resolve([
+      {
+        source: '/oauth/authorize',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store' },
+          { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+          { key: 'Referrer-Policy', value: 'no-referrer' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+        ],
+      },
+    ]);
+  },
   // `postgres` is a CJS module with native pg-wire code paths that webpack
   // sometimes mangles when bundling for the server runtime. Keep both this
   // and drizzle-orm as real node_modules in the standalone output. Runtime

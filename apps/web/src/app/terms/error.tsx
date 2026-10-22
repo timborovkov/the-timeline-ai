@@ -1,7 +1,7 @@
 'use client';
 
 import { LegalRouteError } from '@/components/legal-route-state';
-import { LEGAL_EFFECTIVE_DATE, TERMS_VERSION } from '@/lib/legal-versions';
+import { TERMS_EFFECTIVE_DATE, TERMS_VERSION } from '@/lib/legal-versions';
 
 export default function TermsError({
   error,
@@ -12,7 +12,7 @@ export default function TermsError({
 }) {
   return (
     <LegalRouteError
-      eyebrow={`Version ${TERMS_VERSION} · Effective ${LEGAL_EFFECTIVE_DATE}`}
+      eyebrow={`Version ${TERMS_VERSION} · Effective ${TERMS_EFFECTIVE_DATE}`}
       title="Terms of Use"
       description="These terms govern access to The Timeline, a team memory product operated by Nyxone OÜ."
       error={error}

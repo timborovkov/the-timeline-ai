@@ -1,14 +1,31 @@
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestions, mcpOutboundKeys, rawEvents } from '@timeline/db';
+import {
+  agentSuggestions,
+  mcpOutboundKeys,
+  mcpOutboundOAuthClients,
+  mcpOutboundOAuthGrants,
+  mcpOutboundOAuthTokens,
+  rawEvents,
+  teamMembers,
+} from '@timeline/db';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { McpAuthPrincipal } from '#src/mcp-server/oauth.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
 import { EXTERNAL_AGENT_TURN_TIMEOUT_MS } from '#src/agent/timeout.js';
 import { buildAgentTools } from '#src/agent/tools.js';
-import { handleMcpRequest } from '#src/mcp-server/handler.js';
+import {
+  buildTimelineMcpAuthInfo,
+  createTimelineMcpHttpHandler,
+  handleMcpRequest as handleTimelineMcpRequest,
+  isValidatedCurrentTimelineAgentCall,
+  validateTimelineMcpRequestHeaders,
+} from '#src/mcp-server/handler.js';
 import { hashKey } from '#src/mcp-server/keys.js';
+import { hashSecret } from '#src/mcp-server/oauth-core.js';
 import { TASK_CATEGORIES } from '#src/task-categories/types.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -26,6 +43,7 @@ vi.mock('#src/qdrant/client.js', () => ({
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const MCP_RESOURCE = 'https://timeline.test/api/mcp/server';
 const TOKEN = 'tla_test_outbound_mcp_key_for_handler_tests';
 const AGENT_TOKEN = 'tla_test_agent_enabled_key_for_handler_tests';
 const WORKFLOW_EVENT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
@@ -39,8 +57,27 @@ const GITHUB_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
 const SENTRY_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
 const STALE_MONDAY_SEARCH_EVENT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3';
 
+function handleMcpRequest(
+  context: Omit<Parameters<typeof handleTimelineMcpRequest>[0], 'expectedResource'>,
+  rawRequest: Parameters<typeof handleTimelineMcpRequest>[1],
+  deps: Parameters<typeof handleTimelineMcpRequest>[2] = {},
+) {
+  return handleTimelineMcpRequest({ ...context, expectedResource: MCP_RESOURCE }, rawRequest, deps);
+}
+
 interface ToolDescriptor {
   name: string;
+  title?: string;
+  outputSchema?: Record<string, unknown>;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
+  securitySchemes?: { type: string; scopes: string[] }[];
+  _meta?: Record<string, unknown>;
   inputSchema: {
     properties?: {
       source?: {
@@ -52,6 +89,15 @@ interface ToolDescriptor {
           enum?: string[];
           items?: { enum?: string[] };
         }[];
+        anyOf?: {
+          enum?: string[];
+          items?: { enum?: string[] };
+        }[];
+      };
+      question?: {
+        type?: string;
+        minLength?: number;
+        maxLength?: number;
       };
     };
   };
@@ -59,6 +105,67 @@ interface ToolDescriptor {
 
 interface ToolsListResult {
   tools: ToolDescriptor[];
+}
+
+function principal(
+  authType: McpAuthPrincipal['authType'],
+  scopes: string[] = ['read'],
+): McpAuthPrincipal {
+  return {
+    authType,
+    teamId: TEAM_ID,
+    userId: authType === 'oauth' ? USER_ID : '00000000-0000-0000-0000-000000000000',
+    keyId: authType === 'oauth' ? 'oauth-test-token' : 'static-test-key',
+    clientId: authType === 'oauth' ? 'oauth-test-client' : 'static-test-client',
+    scopes,
+    ...(authType === 'oauth' ? { expiresAt: Math.floor(Date.now() / 1_000) + 3_600 } : {}),
+  };
+}
+
+async function invokeHttp(
+  db: ReturnType<typeof drizzle>,
+  authPrincipal: McpAuthPrincipal,
+  rawRequest: unknown,
+  deps: NonNullable<Parameters<typeof createTimelineMcpHttpHandler>[0]['deps']> = {},
+): Promise<{ response: Response; payload: Record<string, unknown> | null }> {
+  const handler = createTimelineMcpHttpHandler({
+    db: db as never,
+    ...(Object.keys(deps).length > 0 ? { deps } : {}),
+  });
+  try {
+    const response = await handler.fetch(
+      new Request('https://timeline.test/api/mcp/server', {
+        method: 'POST',
+        headers: {
+          accept: 'application/json, text/event-stream',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(rawRequest),
+      }),
+      {
+        authInfo: buildTimelineMcpAuthInfo({
+          token: 'test-token',
+          principal: authPrincipal,
+          resourceUrl: 'https://timeline.test/api/mcp/server',
+        }),
+      },
+    );
+    const body = await response.text();
+    const data = response.headers.get('content-type')?.includes('text/event-stream')
+      ? body
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .at(-1)
+          ?.slice(5)
+          .trim()
+      : body;
+    return {
+      response,
+      payload: data ? (JSON.parse(data) as Record<string, unknown>) : null,
+    };
+  } finally {
+    await handler.close();
+  }
 }
 
 function toolsListResult(response: Awaited<ReturnType<typeof handleMcpRequest>>): ToolsListResult {
@@ -210,7 +317,7 @@ describe('handleMcpRequest', () => {
     await pg.close();
   });
 
-  it('allows initialize without bearer auth', async () => {
+  it('negotiates initialization through the SDK compatibility adapter', async () => {
     const response = await handleMcpRequest(
       { db: db as never, bearer: null },
       { jsonrpc: '2.0', id: 1, method: 'initialize' },
@@ -221,7 +328,8 @@ describe('handleMcpRequest', () => {
       id: 1,
       result: {
         capabilities: { tools: {}, resources: {}, prompts: {} },
-        serverInfo: { name: 'the-timeline' },
+        protocolVersion: '2025-06-18',
+        serverInfo: { name: 'the-timeline', version: '0.2.0' },
       },
     });
   });
@@ -537,6 +645,288 @@ describe('handleMcpRequest', () => {
     });
   });
 
+  it('negotiates initialize and returns 202 for notifications over Streamable HTTP', async () => {
+    const initialized = await invokeHttp(db, principal('oauth'), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-11-25',
+        capabilities: {},
+        clientInfo: { name: 'timeline-test-client', version: '1.0.0' },
+      },
+    });
+    expect(initialized.response.status).toBe(200);
+    expect(initialized.payload).toMatchObject({
+      result: {
+        protocolVersion: '2025-11-25',
+        serverInfo: { name: 'the-timeline', version: '0.2.0' },
+      },
+    });
+
+    const notification = await invokeHttp(db, principal('oauth'), {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized',
+    });
+    expect(notification.response.status).toBe(202);
+    expect(notification.payload).toBeNull();
+  });
+
+  it('serves the current 2026 per-request discovery wire through the SDK handler', async () => {
+    const handler = createTimelineMcpHttpHandler({ db: db as never });
+    const authInfo = buildTimelineMcpAuthInfo({
+      token: 'test-token',
+      principal: principal('oauth'),
+      resourceUrl: 'https://timeline.test/api/mcp/server',
+    });
+    try {
+      const response = await handler.fetch(
+        new Request('https://timeline.test/api/mcp/server', {
+          method: 'POST',
+          headers: {
+            accept: 'application/json, text/event-stream',
+            'content-type': 'application/json',
+            'mcp-method': 'server/discover',
+            'mcp-protocol-version': '2026-07-28',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 2,
+            method: 'server/discover',
+            params: {
+              _meta: {
+                'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+                'io.modelcontextprotocol/clientCapabilities': {},
+              },
+            },
+          }),
+        }),
+        { authInfo },
+      );
+
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      expect(payload).toMatchObject({
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          resultType: 'complete',
+        },
+      });
+      const result = (payload as { result: { supportedVersions: unknown } }).result;
+      expect(result.supportedVersions).toContain('2026-07-28');
+    } finally {
+      await handler.close();
+    }
+  });
+
+  it('recognizes only a header/body-consistent current ask_agent call for HTTP step-up', async () => {
+    const body = {
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: {
+        name: 'timeline.ask_agent',
+        arguments: { question: 'What changed?' },
+        _meta: {
+          'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+          'io.modelcontextprotocol/clientCapabilities': {},
+        },
+      },
+    };
+    const currentRequest = (name: string, requestBody: unknown = body) =>
+      new Request(MCP_RESOURCE, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'mcp-method': 'tools/call',
+          'mcp-name': name,
+          'mcp-protocol-version': '2026-07-28',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+    await expect(
+      isValidatedCurrentTimelineAgentCall(currentRequest('timeline.ask_agent')),
+    ).resolves.toBe(true);
+    await expect(
+      isValidatedCurrentTimelineAgentCall(
+        currentRequest(`=?base64?${Buffer.from('timeline.ask_agent').toString('base64')}?=`),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      isValidatedCurrentTimelineAgentCall(
+        currentRequest('timeline.ask_agent', {
+          ...body,
+          params: { ...body.params, name: 'timeline.list_events' },
+        }),
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      isValidatedCurrentTimelineAgentCall(
+        currentRequest('timeline.ask_agent', {
+          ...body,
+          params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+        }),
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it('rejects unsupported media, Accept, and protocol-version requests', async () => {
+    const handler = createTimelineMcpHttpHandler({ db: db as never });
+    const authInfo = buildTimelineMcpAuthInfo({
+      token: 'test-token',
+      principal: principal('oauth'),
+      resourceUrl: 'https://timeline.test/api/mcp/server',
+    });
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    try {
+      const media = await handler.fetch(
+        new Request('https://timeline.test/api/mcp/server', {
+          method: 'POST',
+          headers: { accept: 'application/json, text/event-stream', 'content-type': 'text/plain' },
+          body,
+        }),
+        { authInfo },
+      );
+      expect(media.status).toBe(415);
+
+      const accept = await handler.fetch(
+        new Request('https://timeline.test/api/mcp/server', {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body,
+        }),
+        { authInfo },
+      );
+      expect(accept.status).toBe(406);
+
+      const protocol = await handler.fetch(
+        new Request('https://timeline.test/api/mcp/server', {
+          method: 'POST',
+          headers: {
+            accept: 'application/json, text/event-stream',
+            'content-type': 'application/json',
+            'mcp-protocol-version': '1900-01-01',
+          },
+          body,
+        }),
+        { authInfo },
+      );
+      expect(protocol.status).toBe(400);
+    } finally {
+      await handler.close();
+    }
+  });
+
+  it('answers authenticated GET and DELETE with stateless 405 responses', async () => {
+    const handler = createTimelineMcpHttpHandler({ db: db as never });
+    const authInfo = buildTimelineMcpAuthInfo({
+      token: 'test-token',
+      principal: principal('oauth'),
+      resourceUrl: 'https://timeline.test/api/mcp/server',
+    });
+    try {
+      for (const method of ['GET', 'DELETE']) {
+        const response = await handler.fetch(
+          new Request('https://timeline.test/api/mcp/server', {
+            method,
+            headers: { accept: 'application/json, text/event-stream' },
+          }),
+          { authInfo },
+        );
+        expect(response.status).toBe(405);
+        expect(response.headers.get('allow')).toContain('POST');
+      }
+    } finally {
+      await handler.close();
+    }
+  });
+
+  it('validates Host and browser Origin before MCP dispatch', () => {
+    const allowed = { allowedHosts: ['timeline.test'], allowedOrigins: ['claude.ai'] };
+    expect(
+      validateTimelineMcpRequestHeaders(
+        new Request('https://timeline.test/api/mcp/server', {
+          headers: { host: 'timeline.test:443', origin: 'https://claude.ai' },
+        }),
+        allowed,
+      ),
+    ).toBeUndefined();
+    expect(
+      validateTimelineMcpRequestHeaders(
+        new Request('https://timeline.test/api/mcp/server', {
+          headers: { host: 'attacker.test', origin: 'https://claude.ai' },
+        }),
+        allowed,
+      )?.status,
+    ).toBe(403);
+    expect(
+      validateTimelineMcpRequestHeaders(
+        new Request('https://timeline.test/api/mcp/server', {
+          headers: { host: 'timeline.test', origin: 'https://attacker.test' },
+        }),
+        allowed,
+      )?.status,
+    ).toBe(403);
+  });
+
+  it('returns an OAuth consent challenge when ask_agent needs agent:ask', async () => {
+    const response = await invokeHttp(db, principal('oauth'), {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+    });
+    const result = (response.payload?.result ?? {}) as {
+      isError?: boolean;
+      _meta?: { 'mcp/www_authenticate'?: string[] };
+      structuredContent?: Record<string, unknown>;
+    };
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: { ok: false, error: 'forbidden' },
+    });
+    expect(result._meta?.['mcp/www_authenticate']?.[0]).toContain('error="insufficient_scope"');
+    expect(result._meta?.['mcp/www_authenticate']?.[0]).toContain('scope="read agent:ask"');
+    expect(result._meta?.['mcp/www_authenticate']?.[0]).toContain(
+      'resource_metadata="https://timeline.test/.well-known/oauth-protected-resource/api/mcp/server"',
+    );
+  });
+
+  it('keeps OAuth user visibility distinct from static team-key visibility', async () => {
+    const privateEventId = '99999999-9999-4999-8999-999999999991';
+    await db.insert(rawEvents).values({
+      id: privateEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: 'Private user evidence',
+      occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+      visibility: 'private',
+      sourceMetadata: {},
+    });
+    const request = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'timeline.get_event', arguments: { id: privateEventId } },
+    };
+    const staticResult = await invokeHttp(db, principal('api_key'), request);
+    const oauthResult = await invokeHttp(db, principal('oauth'), request);
+    expect(staticResult.payload).toMatchObject({
+      result: { structuredContent: { found: false } },
+    });
+    expect(oauthResult.payload).toMatchObject({
+      result: {
+        structuredContent: {
+          found: true,
+          event: { id: privateEventId },
+        },
+      },
+    });
+  });
+
   it('resolves a valid bearer and lists tools with current event sources', async () => {
     const response = await handleMcpRequest(
       { db: db as never, bearer: TOKEN },
@@ -544,15 +934,48 @@ describe('handleMcpRequest', () => {
     );
 
     const tools = toolsListResult(response).tools;
-    expect(tools.find((tool) => tool.name === 'timeline.ask_agent')).toBeUndefined();
+    const askAgent = tools.find((tool) => tool.name === 'timeline.ask_agent');
+    expect(askAgent).toMatchObject({
+      title: 'Ask Timeline Agent',
+      annotations: {
+        title: 'Ask Timeline Agent',
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+      securitySchemes: [{ type: 'oauth2', scopes: ['read', 'agent:ask'] }],
+      _meta: {
+        securitySchemes: [{ type: 'oauth2', scopes: ['read', 'agent:ask'] }],
+      },
+    });
+    expect(askAgent?.outputSchema).toMatchObject({ type: 'object' });
+    expect(askAgent?.inputSchema.properties?.question).toMatchObject({
+      type: 'string',
+      minLength: 1,
+      maxLength: 8_000,
+    });
     const listEvents = tools.find((tool) => tool.name === 'timeline.list_events');
-    expect(listEvents).toBeDefined();
+    expect(listEvents).toMatchObject({
+      title: 'List Timeline Events',
+      annotations: {
+        title: 'List Timeline Events',
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      securitySchemes: [{ type: 'oauth2', scopes: ['read'] }],
+      _meta: { securitySchemes: [{ type: 'oauth2', scopes: ['read'] }] },
+    });
+    expect(listEvents?.outputSchema).toMatchObject({ type: 'object' });
     expect(listEvents?.inputSchema.properties?.source?.enum).toEqual(
       expect.arrayContaining(['calendar', 'slack', 'ingest_webhook']),
     );
     const categories = [...TASK_CATEGORIES];
     const searchObjects = tools.find((tool) => tool.name === 'timeline.search_objects');
-    const searchCategorySchemas = searchObjects?.inputSchema.properties?.category?.oneOf ?? [];
+    const categorySchema = searchObjects?.inputSchema.properties?.category;
+    const searchCategorySchemas = categorySchema?.oneOf ?? categorySchema?.anyOf ?? [];
     expect(searchCategorySchemas[0]?.enum).toEqual(categories);
     expect(searchCategorySchemas[1]?.items?.enum).toEqual(categories);
     for (const toolName of ['timeline.list_objects', 'timeline.list_tasks']) {
@@ -584,7 +1007,7 @@ describe('handleMcpRequest', () => {
     );
   });
 
-  it('filters ask_agent from read-only keys and independently rejects direct calls', async () => {
+  it('exposes ask_agent for consent discovery and rejects a static read-only key', async () => {
     const response = await handleMcpRequest(
       { db: db as never, bearer: TOKEN },
       {
@@ -637,13 +1060,14 @@ describe('handleMcpRequest', () => {
         method: 'tools/call',
         params: { name: 'timeline.ask_agent', arguments: { question: '  What changed?  ' } },
       },
-      { askAgent: askAgent as never, checkRateLimit: checkRateLimit as never },
+      { askAgent: askAgent as never, checkRateLimit },
     );
 
     if (!response || !('result' in response)) throw new Error('expected tool result');
     const result = response.result as {
       content: { text: string }[];
       isError: boolean;
+      structuredContent: Record<string, unknown>;
     };
     expect(result).toMatchObject({ isError: false });
     const text = result.content[0]?.text;
@@ -654,6 +1078,7 @@ describe('handleMcpRequest', () => {
       proposal_ids: [proposalId],
       truncated: false,
     });
+    expect(result.structuredContent).toEqual(JSON.parse(text ?? '{}'));
     const [askInput, askDeps] = askAgent.mock.calls[0] as unknown as [
       Record<string, unknown> & {
         proposalOrigin: Record<string, unknown>;
@@ -677,6 +1102,159 @@ describe('handleMcpRequest', () => {
     expect(askDeps.abortSignal).toBeInstanceOf(AbortSignal);
     expect(checkRateLimit).toHaveBeenCalledWith(
       expect.objectContaining({ capacity: 10, refillPerSec: 10 / 60 }),
+    );
+  });
+
+  it('rechecks an OAuth grant after bearer resolution before ask_agent executes', async () => {
+    const grantId = '99999999-9999-4999-8999-999999999998';
+    const clientId = 'tlc_handler_oauth_client';
+    const accessToken = 'tlo_handler_oauth_access_token';
+    const membershipRows = await db
+      .select({ authorizationEpoch: teamMembers.authorizationEpoch })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, TEAM_ID), eq(teamMembers.userId, USER_ID)))
+      .limit(1);
+    const authorizationEpoch = membershipRows[0]?.authorizationEpoch;
+    if (!authorizationEpoch) throw new Error('expected seeded membership epoch');
+    await db.insert(mcpOutboundOAuthClients).values({
+      clientId,
+      clientName: 'Handler OAuth client',
+      redirectUris: ['https://client.example/callback'],
+      tokenEndpointAuthMethod: 'none',
+      grantTypes: ['authorization_code', 'refresh_token'],
+      responseTypes: ['code'],
+    });
+    await db.insert(mcpOutboundOAuthGrants).values({
+      id: grantId,
+      clientId,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      membershipAuthorizationEpoch: authorizationEpoch,
+      scopes: ['read', 'agent:ask'],
+      resource: MCP_RESOURCE,
+    });
+    await db.insert(mcpOutboundOAuthTokens).values({
+      grantId,
+      accessTokenHash: hashSecret(accessToken),
+      accessTokenPrefix: accessToken.slice(0, 12),
+      accessExpiresAt: new Date(Date.now() + 60 * 60 * 1_000),
+      refreshTokenHash: hashSecret('tlr_handler_oauth_refresh_token'),
+      refreshTokenPrefix: 'tlr_handler_',
+      refreshExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+    });
+    const askAgent = vi.fn();
+    const checkRateLimit = vi.fn(async () => {
+      await db
+        .update(teamMembers)
+        .set({ role: 'member' })
+        .where(and(eq(teamMembers.teamId, TEAM_ID), eq(teamMembers.userId, USER_ID)));
+      return { ok: true as const, remaining: 9, retryAfterMs: 0 };
+    });
+
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: accessToken },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+      },
+      { askAgent, checkRateLimit },
+    );
+
+    expect(response).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { ok: false, error: 'forbidden' },
+      },
+    });
+    expect(askAgent).not.toHaveBeenCalled();
+  });
+
+  it('rechecks a static key after rate limiting before ask_agent executes', async () => {
+    const askAgent = vi.fn();
+    const checkRateLimit = vi.fn(async () => {
+      await db
+        .update(mcpOutboundKeys)
+        .set({ revokedAt: new Date() })
+        .where(eq(mcpOutboundKeys.keyHash, hashKey(AGENT_TOKEN)));
+      return { ok: true as const, remaining: 9, retryAfterMs: 0 };
+    });
+
+    const response = await handleMcpRequest(
+      { db: db as never, bearer: AGENT_TOKEN },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+      },
+      { askAgent, checkRateLimit },
+    );
+
+    expect(response).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { ok: false, error: 'forbidden' },
+      },
+    });
+    expect(askAgent).not.toHaveBeenCalled();
+  });
+
+  it('keeps compatibility OAuth challenges bound to the expected resource', async () => {
+    const resource = 'https://timeline-alt.test/api/mcp/server';
+    const grantId = '99999999-9999-4999-8999-999999999997';
+    const clientId = 'tlc_handler_compat_resource_client';
+    const accessToken = 'tlo_handler_compat_resource_access';
+    const membershipRows = await db
+      .select({ authorizationEpoch: teamMembers.authorizationEpoch })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.teamId, TEAM_ID), eq(teamMembers.userId, USER_ID)))
+      .limit(1);
+    const authorizationEpoch = membershipRows[0]?.authorizationEpoch;
+    if (!authorizationEpoch) throw new Error('expected seeded membership epoch');
+    await db.insert(mcpOutboundOAuthClients).values({
+      clientId,
+      clientName: 'Compatibility resource client',
+      redirectUris: ['https://client.example/callback'],
+      tokenEndpointAuthMethod: 'none',
+      grantTypes: ['authorization_code', 'refresh_token'],
+      responseTypes: ['code'],
+    });
+    await db.insert(mcpOutboundOAuthGrants).values({
+      id: grantId,
+      clientId,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      membershipAuthorizationEpoch: authorizationEpoch,
+      scopes: ['read'],
+      resource,
+    });
+    await db.insert(mcpOutboundOAuthTokens).values({
+      grantId,
+      accessTokenHash: hashSecret(accessToken),
+      accessTokenPrefix: accessToken.slice(0, 12),
+      accessExpiresAt: new Date(Date.now() + 60 * 60 * 1_000),
+      refreshTokenHash: hashSecret('tlr_handler_compat_resource_refresh'),
+      refreshTokenPrefix: 'tlr_handler_',
+      refreshExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+    });
+
+    const response = await handleTimelineMcpRequest(
+      { db: db as never, bearer: accessToken, expectedResource: resource },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: { name: 'timeline.ask_agent', arguments: { question: 'What changed?' } },
+      },
+    );
+    const challenge = (
+      response?.result as { _meta?: { 'mcp/www_authenticate'?: string[] } } | undefined
+    )?._meta?.['mcp/www_authenticate']?.[0];
+
+    expect(challenge).toContain(
+      'resource_metadata="https://timeline-alt.test/.well-known/oauth-protected-resource/api/mcp/server"',
     );
   });
 
@@ -717,7 +1295,7 @@ describe('handleMcpRequest', () => {
     });
   });
 
-  it('advertises ask_agent only to agent-enabled keys', async () => {
+  it('advertises ask_agent with its required OAuth scopes to agent-enabled keys', async () => {
     const response = await handleMcpRequest(
       { db: db as never, bearer: AGENT_TOKEN },
       { jsonrpc: '2.0', id: 1, method: 'tools/list' },
@@ -727,6 +1305,7 @@ describe('handleMcpRequest', () => {
       (tool) => tool.name === 'timeline.ask_agent',
     );
     expect(askTool?.inputSchema.properties).toHaveProperty('question');
+    expect(askTool?.securitySchemes).toEqual([{ type: 'oauth2', scopes: ['read', 'agent:ask'] }]);
   });
 
   it('returns stable delegation, throttling, availability, and validation failures', async () => {
@@ -744,7 +1323,13 @@ describe('handleMcpRequest', () => {
       const response = await handleMcpRequest(context, raw, deps);
       if (!response || !('result' in response)) throw new Error('expected tool result');
       const result = response.result as { content: { text: string }[]; isError: boolean };
-      const parsed = JSON.parse(result.content[0]?.text ?? '{}') as unknown;
+      const text = result.content[0]?.text ?? '{}';
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text) as unknown;
+      } catch {
+        return { message: text, isError: result.isError };
+      }
       if (!parsed || typeof parsed !== 'object') throw new Error('expected object tool output');
       return { ...parsed, isError: result.isError };
     };
@@ -781,16 +1366,18 @@ describe('handleMcpRequest', () => {
         },
       ),
     ).resolves.toMatchObject({ error: 'failed', isError: true });
-    await expect(
-      output(
-        { db: db as never, bearer: AGENT_TOKEN },
-        {},
-        {
-          ...request,
-          params: { name: 'timeline.ask_agent', arguments: { question: '   ' } },
-        },
-      ),
-    ).resolves.toMatchObject({ error: 'failed', message: 'invalid_question', isError: true });
+    const askAgent = vi.fn();
+    const invalidQuestion = await output(
+      { db: db as never, bearer: AGENT_TOKEN },
+      { askAgent },
+      {
+        ...request,
+        params: { name: 'timeline.ask_agent', arguments: { question: '   ' } },
+      },
+    );
+    expect(invalidQuestion).toMatchObject({ isError: true });
+    expect(invalidQuestion.message).toEqual(expect.stringContaining('Input validation error'));
+    expect(askAgent).not.toHaveBeenCalled();
   });
 
   it('cancels agent turns at the 180-second deadline', async () => {

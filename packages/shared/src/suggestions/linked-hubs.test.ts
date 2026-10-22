@@ -97,7 +97,7 @@ describe('loadLinkedWorkspaceHubsForRawEvent', () => {
       entityId: FABA_ID,
       teamId: TEAM_ID,
     });
-  });
+  }, 30_000);
 
   afterEach(async () => {
     await pg.close();

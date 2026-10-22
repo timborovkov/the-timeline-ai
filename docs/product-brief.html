@@ -11,7 +11,7 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-08-21</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-08-26</span>
       </div>
       <p class="tldr">
         AI team memory that preserves deliberately routed work and selected provider records as
@@ -314,13 +314,19 @@
           proposal-only team identity: it can read team-visible data, call team-shared custom MCP
           tools whose third-party actions may have external side effects, and propose work for human
           review. External agents can invoke the same identity through an explicitly agent-enabled
-          MCP key; those calls preserve citations, share the 180-second deadline, and return
-          structured artifact and proposal references. Codex users can install the repository's
+          MCP key or the owner/admin-only <code>agent:ask</code> OAuth scope; those calls preserve
+          citations, share the 180-second deadline, and return structured artifact and proposal
+          references. OAuth-connected read tools act as the consenting member in the selected team,
+          while static keys remain team-visible only. Codex and Claude Code users can install the
+          repository's
           <a href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills"
             >Timeline plugin and skill</a
           >
           to add the hosted MCP connection and one general cited-workspace workflow that adapts to
-          search, status updates, incident analysis, and other Timeline questions.
+          search, status updates, incident analysis, and other Timeline questions. OpenAI's
+          universal Plugins Directory requires a separate <strong>With MCP</strong> submission that
+          combines the production remote connection and skill; Anthropic publication is also a
+          separate provider-reviewed release state.
         </li>
       </ul>
 

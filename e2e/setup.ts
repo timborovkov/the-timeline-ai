@@ -14,7 +14,7 @@ import {
 } from './test-data.js';
 
 const TERMS_VERSION = '2026-06-02';
-const PRIVACY_VERSION = '2026-06-02';
+const PRIVACY_VERSION = '2026-08-26';
 
 export async function setupE2eData(): Promise<void> {
   const passwordHash = await hashPassword(E2E_PASSWORD);

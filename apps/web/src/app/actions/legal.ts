@@ -13,7 +13,7 @@ import { runSentryServerAction } from '@/lib/sentry-action';
 
 const acceptLegalSchema = z.object({
   accepted: z.literal('on'),
-  returnTo: z.string().max(2048).optional(),
+  returnTo: z.string().max(16_384).optional(),
 });
 
 export interface AcceptLegalState {

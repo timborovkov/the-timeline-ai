@@ -1,11 +1,13 @@
+import Link from 'next/link';
+
 import type { Metadata } from 'next';
 
 import { LegalPage } from '@/components/legal-page';
 import {
   LEGAL_ADDRESS,
-  LEGAL_EFFECTIVE_DATE,
   LEGAL_PROVIDER,
   LEGAL_SERVICE_URL,
+  TERMS_EFFECTIVE_DATE,
   TERMS_VERSION,
   getLegalContactEmail,
 } from '@/lib/legal-versions';
@@ -24,7 +26,7 @@ export default function TermsPage() {
 
   return (
     <LegalPage
-      eyebrow={`Version ${TERMS_VERSION} · Effective ${LEGAL_EFFECTIVE_DATE}`}
+      eyebrow={`Version ${TERMS_VERSION} · Effective ${TERMS_EFFECTIVE_DATE}`}
       title="Terms of Use"
       description="These terms govern access to The Timeline, a team memory product operated by Nyxone OÜ."
     >
@@ -138,7 +140,7 @@ export default function TermsPage() {
         {legalContactEmail ? (
           <a href={`mailto:${legalContactEmail}`}>{legalContactEmail}</a>
         ) : (
-          'support email not configured'
+          <Link href="/help/support">The Timeline support</Link>
         )}
         . Provider: {LEGAL_PROVIDER}, {LEGAL_ADDRESS}.
       </p>

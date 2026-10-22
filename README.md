@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://thetimeline.cc">Website</a> ·
   <a href="https://thetimeline.cc/help">Help</a> ·
-  <a href="./plugins/timeline/skills/README.md">Agent skill</a> ·
+  <a href="./plugins/timeline/skills/README.md">Agent plugins</a> ·
   <a href="https://github.com/timborovkov/the-timeline-ai">GitHub</a> ·
   <a href="./docs/setup/local.html">Local setup</a> ·
   <a href="./docs/index.html">Developer docs</a>
@@ -32,13 +32,23 @@ durable workspace change.
 - Produces cited answers, status updates, daily digests, and handoff briefs.
 - Turns durable facts and decisions into approval-backed workspace changes.
 - Connects GitHub, Linear, Google Drive, Monday.com, Slack, Sentry, and custom MCP servers.
-- Lets external agents call a team-scoped Timeline agent through opt-in MCP keys; that actor can
-  call enabled team-shared tools, whose third-party actions may have external side effects, and
-  create proposals for human review but cannot approve or apply them.
+- Lets external agents connect over Streamable HTTP with member-authorized OAuth or static
+  team-scoped MCP keys. The optional `agent:ask` scope can call enabled team-shared tools, whose
+  third-party actions may have external side effects, and create proposals for human review but
+  cannot approve or apply them. OAuth `agent:ask` consent is restricted to current team owners and
+  admins.
 - Enforces team isolation and per-event visibility at the data layer.
 
 The project is under active development. The full local stack works today, but
 APIs and migrations may change before a stable release.
+
+The repository includes directly installable Codex and Claude Code plugin packaging
+plus the OAuth-capable MCP implementation. OpenAI's universal Plugins Directory
+requires a separate **With MCP** submission containing the production MCP connection
+and Timeline skill. Anthropic publication is separate too. Treat deployment,
+submission, review, approval, and publication as independently verified release states.
+The field-by-field listing copy, reviewer cases, provider checklists, and evidence
+ledger live in [docs/marketplace-submissions.md](docs/marketplace-submissions.md).
 
 ## Quick start
 
@@ -134,7 +144,8 @@ The Timeline is a pnpm/Turborepo monorepo:
 | `packages/db` | Drizzle schema, migrations, and database exports |
 | `packages/shared` | Team-scoped data access, inference, storage, integrations, and domain modules |
 | `.agents/plugins` | Codex marketplace catalog for repository plugins |
-| `plugins/timeline` | Codex plugin, hosted MCP connection, and general cited-workspace skill |
+| `.claude-plugin` | Claude Code repository marketplace catalog |
+| `plugins/timeline` | Codex and Claude Code plugin manifests, hosted MCP connection, and general cited-workspace skill |
 | `docs` | Product, architecture, setup, and deployment documentation |
 
 The core services are Postgres, Redis, Qdrant, and S3-compatible object storage.
@@ -166,7 +177,7 @@ agent behavior, or reconciliation have additional gates documented in
 - [Operating memory engine](./docs/relational-memory.md)
 - [Local development](./docs/setup/local.html)
 - [Integrations and custom MCP servers](./docs/setup/integrations.html)
-- [Codex plugin and agent skill](./plugins/timeline/skills/README.md)
+- [Codex and Claude Code plugins and agent skill](./plugins/timeline/skills/README.md)
 - [Railway deployment](./docs/railway.html)
 - [Architecture decisions](./docs/adr/)
 - [Public document registry](./docs/public-site-registry.md)

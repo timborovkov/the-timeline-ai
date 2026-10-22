@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Native integrations &amp; custom MCPs</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-20</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-26</span></div>
       <p class="tldr">
         Connect native GitHub, Linear, Google Drive, Monday.com, Slack, and Sentry as personal
         provider accounts from <code>/app/me/connections</code>, share the sources a team may use,
@@ -564,52 +564,94 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
 
       <h2 id="timeline-as-mcp">Timeline as an MCP server (outbound)</h2>
       <p>
-        Expose this Timeline as an MCP server so external agents (Claude Desktop, Cursor, web-based
-        agents, etc.) can query team-level workspace context: events, entities, objects, tasks,
-        boards, calendar, documents, and connected integration activity. Admins can open the
-        <strong>Connections</strong> sidebar item (<code>/app/sources</code>) and use
-        <em>Manage Timeline MCP endpoint</em>, or go directly to <code>/app/team/mcp-share</code>:
+        Expose Timeline as a remote MCP server so external agents can query events, entities,
+        objects, tasks, boards, calendar, documents, and connected integration activity. The
+        endpoint is <code>&lt;your Timeline origin&gt;/api/mcp/server</code>. In this repository,
+        bundled Codex and Claude Code connections declare only this URL, so OAuth discovery and
+        member consent are the default path after the corresponding server release is deployed;
+        static bearer keys remain available for manual and developer clients.
       </p>
+
+      <h3 id="timeline-mcp-oauth">OAuth discovery and consent</h3>
       <ol>
         <li>
-          Open <strong>Connections</strong> (<code>/app/sources</code>), choose
-          <em>Manage Timeline MCP endpoint</em>, and copy the MCP endpoint URL shown there.
+          Add the bundled plugin or configure the remote Streamable HTTP URL in an OAuth-capable MCP
+          client. Do not add a static Authorization header to a bundled marketplace manifest.
         </li>
         <li>
-          Click <em>New key</em>, give it a label (e.g. "Claude Desktop — personal mac"), and choose
-          whether to enable <em>Allow Timeline agent</em>. This option is off by default. Enabling
-          it permits paid model turns, enabled team-shared custom MCP tools, and team-visible
-          proposal creation. Those third-party tools may have external side effects. Copy the
-          one-time plaintext.
+          An unauthenticated call receives HTTP <code>401</code> with a
+          <code>WWW-Authenticate</code> challenge pointing to the RFC 9728 protected-resource
+          metadata. The authorization server publishes RFC 8414 metadata from the same origin.
         </li>
         <li>
-          In the consuming agent, add an MCP server with:
-          <ul>
-            <li>URL: <code>&lt;your Timeline origin&gt;/api/mcp/server</code></li>
-            <li>Header: <code>Authorization: Bearer tla_...</code></li>
-          </ul>
+          Sign in to Timeline, choose one team, and review the exact scopes. <code>read</code> is
+          the default and is available to any active member. It acts as that member, so private and
+          specifically shared data the member can access may be returned. <code>agent:ask</code> is
+          optional, requires <code>read</code>, and can be granted only by a current owner or admin;
+          demotion invalidates that elevated scope.
+        </li>
+        <li>
+          Revoke an approved AI app from <strong>Provider accounts</strong>
+          (<code>/app/me/connections</code>). Token revocation and team membership removal take
+          effect at authorization resolution rather than waiting for a plugin reinstall.
         </li>
       </ol>
       <p>
-        Use Streamable HTTP / remote URL client settings, not legacy SSE. Timeline currently
-        advertises MCP protocol <code>2024-11-05</code> during <code>initialize</code> and exposes a
-        single HTTP JSON-RPC endpoint at <code>/api/mcp/server</code>. Methods:
-        <code>initialize</code>, <code>tools/list</code>, <code>tools/call</code>,
-        <code>resources/list</code>, <code>resources/read</code>, <code>prompts/list</code>,
-        <code>prompts/get</code>. Tools exposed:
+        Timeline is a public-client OAuth authorization server: authorization code and refresh-token
+        grants use PKCE S256, exact redirect matching, the MCP <code>resource</code> parameter, and
+        authorization-response issuer binding. MCP's current Client ID Metadata Document (CIMD)
+        model is preferred. Constrained Dynamic Client Registration remains available for compatible
+        legacy clients; it accepts public clients only and issues no client secret. Discovered CIMD
+        URLs pass the same HTTPS and SSRF guard as other user-supplied MCP URLs. Reauthorization
+        after revocation, a scope or resource change, or a membership-authorization change replaces
+        the prior token family; issuing a new consent code also invalidates any older unredeemed
+        code for that app, member, and team.
       </p>
       <p>
-        Codex users can install the hosted MCP connection together with the cited Timeline workflows
-        from the <a href="https://thetimeline.cc/help/agents">copy-ready agent install guide</a>.
-        The underlying files and self-hosted route are documented in the
+        OAuth authorization-code digests expire after ten minutes. Access- and refresh-token digests
+        are retained until their refresh-token expiry, up to 30 days from issue, so replay attempts
+        remain detectable. Revoked grant records become eligible for deletion after 31 days and only
+        after their code and token rows are gone. The hourly maintenance worker removes eligible
+        rows on its next successful sweep.
+      </p>
+
+      <h3 id="timeline-mcp-transport">Transport and tool metadata</h3>
+      <p>
+        Use Streamable HTTP, not legacy SSE. The repository implementation uses the official MCP SDK
+        v2 server transport and negotiates the current <code>2026-07-28</code> revision plus
+        supported 2025 revisions. It routes <code>POST</code>, <code>GET</code>, and
+        <code>DELETE</code> through one stateless endpoint; protocol work uses <code>POST</code>,
+        notifications return <code>202</code>, and session-only <code>GET</code>/<code>DELETE</code>
+        requests receive the SDK's <code>405</code> response because Timeline does not retain MCP
+        sessions. Tool discovery includes titles, behavior annotations, input and output schemas,
+        and tool calls return matching structured content. Resources and prompts use the same SDK
+        transport.
+      </p>
+
+      <h3 id="timeline-agent-plugins">Codex and Claude Code packages</h3>
+      <p>
+        Codex and Claude Code users can install the hosted MCP connection together with the cited
+        Timeline workflow from the
+        <a href="https://thetimeline.cc/help/agents">copy-ready agent install guide</a>. The
+        repository package, host-specific install commands, standalone skill, and self-hosted route
+        are documented in the
         <a
-          href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin"
+          href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills"
           target="_blank"
           rel="noopener noreferrer"
           >Timeline plugin and agent skill guide</a
         >.
       </p>
-      <p>For a direct MCP-only connection, use an environment-backed bearer token:</p>
+
+      <h3 id="timeline-mcp-static-key">Static key setup</h3>
+      <p>
+        Use this path only for a client that needs an explicit header or for controlled developer
+        testing. An admin opens <strong>Connections</strong> (<code>/app/sources</code>), chooses
+        <em>Manage Timeline MCP endpoint</em>, creates a key, and copies the one-time plaintext. The
+        optional <em>Allow Timeline agent</em> key setting adds <code>agent:ask</code> and is off by
+        default.
+      </p>
+      <p>For Codex CLI, keep the key in an environment variable:</p>
       <pre><code>printf 'Timeline MCP key: '
 IFS= read -r -s TIMELINE_MCP_KEY
 printf '\n'
@@ -640,21 +682,142 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         configuration, keep it out of repositories and shared folders, and follow that client's
         credential-storage guidance.
       </p>
+      <h3 id="timeline-marketplace-release">Marketplace release status</h3>
       <p>
-        ChatGPT can create apps from remote MCP servers in Developer mode:
-        <strong>Settings → Apps &amp; Connectors → Advanced settings → Developer mode</strong>, then
-        create an app/connector and use the copied MCP endpoint URL as the connector URL. OpenAI's
-        ChatGPT app flow currently documents OAuth, no-auth, and mixed auth for created apps;
-        Timeline's outbound endpoint currently uses static bearer keys, so a first-class ChatGPT
-        connector needs an OAuth-backed auth path or bridge before it is a one-click setup.
+        The repository now contains directly installable Codex and Claude Code packaging plus an
+        OAuth-capable remote MCP implementation. OpenAI uses one universal Plugins Directory across
+        ChatGPT and Codex. Timeline's OpenAI draft must use <strong>With MCP</strong> and contain
+        both the production remote MCP connection and the Timeline skill. Repository packaging is
+        not evidence that this revision is deployed, submitted, reviewed, approved, or publicly
+        listed by either provider.
       </p>
+      <p>
+        Use the repository's
+        <a
+          href="https://github.com/timborovkov/the-timeline-ai/blob/main/docs/marketplace-submissions.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          >marketplace submission runbook and evidence ledger</a
+        >
+        for the ready-to-paste listing copy, reviewer cases, local package-install tests, and the
+        provider-specific submission record.
+      </p>
+      <p>
+        Before testing a hosted release, apply
+        <code>packages/db/drizzle/0073_mcp_oauth_server.sql</code> through the normal migrator and
+        deploy the matching web revision. Railway's existing pre-deploy migrator does this
+        automatically and blocks the release on migration failure; self-hosted operators must run
+        <code>pnpm db:migrate</code> before starting the updated web service. Do not advertise OAuth
+        availability while the hosted MCP route and OAuth tables are on different revisions.
+      </p>
+      <p>
+        Production smoke tests must cover the unauthenticated <code>401</code> challenge, both
+        well-known metadata documents, browser consent for a real member and team, a read-tool call,
+        the <code>agent:ask</code> scope-upgrade path, token refresh, user revocation, and immediate
+        rejection after team removal. Test the canonical HTTPS origin from each intended host; a
+        local plugin validation does not exercise the deployed OAuth or MCP server.
+      </p>
+      <p>
+        Test the remote server in ChatGPT Developer Mode under
+        <strong>Settings → Apps → Advanced Settings</strong>. A workspace owner can instead create
+        the development connection under <strong>Workspace settings → Apps → Create</strong>. Add
+        the canonical MCP endpoint and complete the normal OAuth consent flow. This is a development
+        test, not a Plugins Directory submission or approval.
+      </p>
+
+      <p><strong>OpenAI provider-review checklist</strong></p>
+      <ol>
+        <li>
+          Confirm the submitting account has Apps Management write access and a verified individual
+          or business identity that matches the public Timeline operator, support contact, Privacy
+          Policy, and Terms of Service.
+        </li>
+        <li>
+          Create one <strong>With MCP</strong> draft. Attach the production remote MCP connection
+          and the reviewed Timeline skill to that same draft; do not submit either repository
+          manifest as though it were the directory artifact.
+        </li>
+        <li>
+          Complete the listing copy, icon and screenshots, categories, starter prompts, country
+          availability, release notes, support URL, Privacy Policy URL, and Terms URL. Recheck every
+          public link without a signed-in session.
+        </li>
+        <li>
+          Supply a standard production reviewer account with representative sample data and no MFA,
+          email challenge, invitation dependency, or privileged internal role. Transfer the
+          credentials only through the portal's protected reviewer field.
+        </li>
+        <li>
+          Submit at least five positive and three negative test cases with the expected result
+          shape. Re-run them against the production MCP origin, including OAuth consent, scope
+          denial, revocation, membership removal, and each submitted tool annotation.
+        </li>
+        <li>
+          If the portal requests domain verification, set its exact plain-text token as
+          <code>OPENAI_APPS_CHALLENGE_TOKEN</code> on the web service and verify
+          <code>/.well-known/openai-apps-challenge</code>. Remove the variable when the portal no
+          longer requires it.
+        </li>
+      </ol>
+      <p>
+        <strong>Optional ChatGPT Enterprise verified-domain gate:</strong> base Timeline OAuth can
+        ship without this compatibility feature. Claim Enterprise domain restriction support only
+        after Timeline also publishes OIDC discovery, accepts <code>openid email</code>, exposes a
+        UserInfo response with <code>email</code> and <code>email_verified</code>, and passes a real
+        workspace-domain restriction test. Until then, leave that compatibility claim out of the
+        submission.
+      </p>
+
+      <p>
+        <strong>Anthropic provider-review checklist:</strong> first validate the direct repository
+        install in Claude Code. For public discovery, submit the plugin through
+        <a href="https://claude.ai/settings/plugins/submit">Anthropic's plugin submission form</a>;
+        treat any Claude.ai Connectors Directory submission as a separate release. Provide a public
+        Privacy Policy, verified support contact, setup and troubleshooting documentation, a
+        standard reviewer account with sample data, and at least three working examples. Re-test
+        OAuth, Streamable HTTP, and tool annotations from Claude before submission. Neither an
+        OpenAI approval nor the repository manifest completes Anthropic review.
+      </p>
+
+      <p><strong>Legal, retention, and support release gate</strong></p>
       <ul>
         <li>
-          <code>timeline.ask_agent({ question })</code> — available only to keys with
-          <code>agent:ask</code>. Runs a stateless, team-level Timeline agent over team-visible data
-          and team-shared custom MCP tools. The structured result contains the concise cited answer,
-          parsed artifact references, proposal IDs, and a truncation flag. The caller carries any
-          prior context into its next question.
+          The legal owner must approve the current Privacy Policy and Terms for the exact production
+          behavior: OAuth acts as the consenting member and may return private or specifically
+          shared evidence that member can access; static keys represent the team and expose only
+          team-visible evidence.
+        </li>
+        <li>
+          Document provider-side copies, chat history, and retention in the submission and support
+          material. Timeline revocation stops future API access; it cannot delete data an external
+          host already copied into its own conversation or retention systems.
+        </li>
+        <li>
+          Confirm the public support and security-reporting channels are staffed and tested. Record
+          an owner for provider review messages, credential rotation, privacy requests, incidents,
+          and listing updates before submission.
+        </li>
+      </ul>
+      <p>
+        Mark a provider available only after the exact production revision is deployed, its smoke
+        tests pass, the provider submission is accepted, and the listing is visibly published in the
+        intended directory. Keep deployment, submission, approval, and publication as separate
+        release states.
+      </p>
+
+      <p>The MCP tools exposed are:</p>
+      <ul>
+        <li>
+          <code>timeline.ask_agent({ question })</code> — listed for every principal with
+          <code>read</code> so an OAuth client can discover the optional consent upgrade, but
+          invocable only with <code>read agent:ask</code>. A current-protocol OAuth caller receives
+          HTTP <code>403</code> with an <code>insufficient_scope</code>
+          <code>WWW-Authenticate</code> challenge; supported 2025 clients receive the equivalent
+          in-band <code>mcp/www_authenticate</code> compatibility metadata. A read-only static key
+          receives a stable forbidden result. An authorized call runs a stateless, team-level
+          Timeline agent over team-visible data and team-shared custom MCP tools. The structured
+          result contains the concise cited answer, parsed artifact references, proposal IDs, and a
+          truncation flag. The caller carries any prior context into its next question.
         </li>
         <li>
           <code>timeline.retrieve_workspace_context</code> — broad read-only retrieval across
@@ -700,29 +863,33 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         </li>
       </ul>
       <p>
-        <strong>Isolation:</strong> bearer keys are team-scoped, not per-user. The handler runs all
-        queries with a pseudo-zero-UUID actor so events with <code>visibility=private</code> or
-        <code>specific_users</code> stay invisible to outbound clients — only
-        <code>visibility=team</code> events flow out. Keys are stored as SHA-256 hashes (plaintext
-        shown once at creation). Search and moment tools fence raw snippets as external content;
-        direct event tools and the recent-events resource also fence raw content, and
+        <strong>Isolation:</strong> OAuth and static-key principals are deliberately different.
+        OAuth resolves the consenting user's current membership and normal visibility in the chosen
+        team. Static <code>tla_</code> keys are team-scoped: the handler uses a pseudo-zero-UUID
+        actor, so <code>visibility=private</code> and <code>specific_users</code> events stay hidden
+        and only <code>visibility=team</code> flows out. Static keys and OAuth access/refresh tokens
+        are stored as SHA-256 hashes; plaintext credentials are returned only to their intended
+        client. Search and moment tools fence raw snippets as external content; direct event tools
+        and the recent-events resource also fence raw content, and
         <code>timeline.get_event</code> serializes and fences source metadata. Stable ids, sources,
-        and timestamps remain structured. Revoke from the same page; revocation is immediate.
+        and timestamps remain structured.
       </p>
       <p>
-        Existing keys and newly created default keys have only <code>read</code>; they neither list
-        nor invoke <code>timeline.ask_agent</code>. Agent-enabled keys carry <code>read</code> plus
-        <code>agent:ask</code>. Their synthetic actor can create task, object-memory, object-change,
-        calendar-create, and calendar-update/cancellation proposals, but cannot revise proposals,
-        use personal pins, call approval-required mutation tools, or change canonical Timeline
-        state. Enabled team-shared custom MCP tools can still cause external side effects. Every
-        proposal still requires a teammate to accept it. Direct Timeline-agent delegation is bounded
-        to one nested call, each turn has a 180-second deadline, and agent calls are limited to 10
-        per minute per key in addition to the endpoint IP limit.
+        Default OAuth grants and static keys have only <code>read</code>. They can discover
+        <code>timeline.ask_agent</code>, but they cannot execute it. An owner/admin-authorized OAuth
+        grant or agent-enabled key carries <code>read</code> plus <code>agent:ask</code>. The
+        delegated synthetic actor can create task, object-memory, object-change, calendar-create,
+        and calendar-update/cancellation proposals, but cannot revise proposals, use personal pins,
+        call approval-required mutation tools, or change canonical Timeline state. Enabled
+        team-shared custom MCP tools can still cause external side effects. Every proposal still
+        requires a teammate to accept it. Direct Timeline-agent delegation is bounded to one nested
+        call, each turn has a 180-second deadline, and agent calls are limited to 10 per minute per
+        credential in addition to the endpoint IP limit.
       </p>
       <p>
-        Wildcard CORS is set so browser-based agents work; Authorization-header auth means cookies
-        cannot authenticate the cross-origin call. When proxy IP headers are available, requests are
+        Host and Origin validation allows the canonical Timeline origin plus the supported ChatGPT
+        and Claude browser origins; development also permits loopback hosts. Cookies do not
+        authenticate the cross-origin MCP call. When proxy IP headers are available, requests are
         rate-limited per IP at 600/min.
       </p>
 

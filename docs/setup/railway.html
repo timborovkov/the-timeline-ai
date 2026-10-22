@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Railway deployment setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-06-03</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-26</span></div>
       <p class="tldr">
         Project + environment provisioning for staging and production. For the full service
         architecture see <a href="../railway.html">docs/railway.html</a>.
@@ -148,6 +148,28 @@
         <code>https://thetimeline.cc</code>. The web proxy redirects alternate hosts, including
         <code>www</code> and Railway's default <code>*.up.railway.app</code> host, back to this
         origin before Auth.js runs.
+      </p>
+      <p>
+        Production security and rate-limit buckets trust only <code>X-Real-IP</code>. Keep Railway's
+        public proxy as the only web ingress and verify that it overwrites or removes any
+        caller-supplied <code>X-Real-IP</code> before forwarding the request. Never expose the web
+        service through a path that preserves a client-provided value. If the trusted header is
+        missing or invalid, production requests deliberately share the <code>unknown</code> bucket
+        instead of trusting spoofable forwarding headers.
+      </p>
+      <p>
+        A self-hosted production deployment has the same contract: place a trusted reverse proxy in
+        front of the web service, strip incoming <code>X-Real-IP</code>, and set a validated client
+        address yourself. <code>CF-Connecting-IP</code> and <code>X-Forwarded-For</code> are
+        accepted only during local development and are not production fallbacks.
+      </p>
+      <p>
+        Add <code>OPENAI_APPS_CHALLENGE_TOKEN</code> to the web service only when OpenAI's
+        app-submission portal supplies a domain-verification token. Preserve the exact plain-text
+        value: the web route returns it verbatim at <code>/.well-known/openai-apps-challenge</code>.
+        This variable is optional, is not an OAuth credential, and is not needed by the worker or
+        document extractor. Leave it unset outside the portal verification flow, or remove it once
+        the portal no longer requires it.
       </p>
       <p>
         For production abuse controls, also set <code>TURNSTILE_SITE_KEY</code>,

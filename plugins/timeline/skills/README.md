@@ -1,8 +1,12 @@
 # Timeline agent skill
 
-The `timeline` skill teaches agents how to use Timeline's team-visible MCP tools as cited workspace memory. Installing the plugin is the easiest route because it adds the skill and hosted MCP connection together.
+The `timeline` skill teaches agents how to use Timeline's MCP tools as cited workspace memory. Installing the plugin is the easiest route because it adds the skill and hosted MCP connection together.
 
-## Install the plugin
+The bundled Codex and Claude Code connections use Timeline's OAuth flow. On first connection, a compatible host opens Timeline in the browser: sign in, choose the team to share, review the requested scopes, and approve or deny access. The default `read` scope follows that member's visibility in the selected team, including private and specifically shared items the member can access. The optional `agent:ask` scope enables paid, proposal-only Timeline agent turns and is never implied by `read`; only a current team owner or admin can grant it, and demotion invalidates it.
+
+> Release status: these OAuth instructions describe this repository version. The hosted URL will not provide this flow until migration `0073_mcp_oauth_server.sql` and the matching web release are deployed. Repository packaging is not a public marketplace listing.
+
+## Install in Codex
 
 1. Add this repository as a sparse marketplace and install the plugin:
 
@@ -14,27 +18,21 @@ The `timeline` skill teaches agents how to use Timeline's team-visible MCP tools
    codex plugin add timeline@timeline
    ```
 
-2. As a Timeline team admin, open [Manage Timeline MCP endpoint](https://thetimeline.cc/app/team/mcp-share), create a key, and copy the one-time plaintext. If you are not an admin, ask one to create the key for you.
-3. For Codex CLI, read that key silently into the terminal you will use to launch Codex, so its plaintext does not enter shell history:
+2. Fully exit the current Codex process, relaunch Codex, and start a new task so the installed skill and MCP connection are loaded.
+3. When Codex starts the connection, complete Timeline's browser-based sign-in and consent flow. No Timeline bearer key belongs in the plugin manifest.
 
-   ```bash
-   printf 'Timeline MCP key: '
-   IFS= read -r -s TIMELINE_MCP_KEY
-   printf '\n'
-   export TIMELINE_MCP_KEY
-   ```
+## Install in Claude Code
 
-4. Fully exit the current Codex process, relaunch `codex` from that same terminal, and start a new task so the installed skills, MCP tools, and key are loaded. A new task cannot import an environment variable added after the Codex process started.
+Add the repository marketplace and install the same plugin:
 
-For the Codex app or IDE extension, which may not inherit shell variables, add the key to Codex's user-level environment file outside any repository:
-
-```dotenv
-TIMELINE_MCP_KEY=<one-time plaintext key>
+```bash
+claude plugin marketplace add timborovkov/the-timeline-ai
+claude plugin install timeline@timeline
 ```
 
-Save that line in `~/.codex/.env`, restrict the file to your user account (for example, `chmod 600 ~/.codex/.env` on macOS or Linux), fully restart the app or extension, and then start a new task. See [OpenAI's Codex environment guidance](https://learn.chatgpt.com/docs/amazon-bedrock#desktop-app-and-ide-extension) for the current client-specific flow.
+Restart Claude Code after installation, start a new conversation, and complete Timeline's browser-based sign-in and consent flow when prompted. The repository contains Claude-specific marketplace and plugin manifests; this direct repository install does not mean the plugin has been reviewed or published in Anthropic's public marketplace.
 
-The plugin points to `https://thetimeline.cc/api/mcp/server`. Keep its key in an environment variable; do not paste it into agent chats, repository files, or shell command arguments. Some other MCP clients require an Authorization header in local JSON. Treat that file as a secret, keep it out of repositories and shared folders, and follow the client's secure credential-storage guidance.
+OpenAI uses one universal Plugins Directory across ChatGPT and Codex. Timeline must be submitted there as a **With MCP** draft containing the production remote MCP connection and this same skill bundle; installing either repository manifest does not create or approve that listing. Anthropic's public Claude plugin marketplace and Claude.ai's separate Connectors Directory likewise have submission and review steps beyond this directly installable Claude Code repository marketplace.
 
 ## Install the standalone skill
 
@@ -49,7 +47,17 @@ Then start a new task. If the skill still does not appear, restart Codex and sta
 
 ## Connect Timeline MCP
 
-For hosted Timeline, the plugin configures this automatically. To connect MCP without the plugin:
+For hosted Timeline, either plugin configures the remote URL automatically. A compatible OAuth-capable client can also connect directly without a plugin:
+
+```bash
+codex mcp add timeline --url "https://thetimeline.cc/api/mcp/server"
+```
+
+Use Streamable HTTP, not legacy SSE. The endpoint returns a standards-compatible `401` discovery challenge, then exposes OAuth protected-resource and authorization-server metadata. Authorization uses PKCE S256 and explicit user/team consent. Revoke an approved AI app later from **Provider accounts** in Timeline.
+
+### Static key setup for manual clients
+
+Static keys remain available for clients that need an explicit Authorization header or for controlled developer testing. As a Timeline team admin, open [Manage Timeline MCP endpoint](https://thetimeline.cc/app/team/mcp-share), create a key, and copy its one-time plaintext. Read it silently into the terminal that will launch the client:
 
 ```bash
 printf 'Timeline MCP key: '
@@ -64,7 +72,9 @@ codex
 
 Run this in the terminal you will use for Codex. The final command launches Codex with the key available; start a new task there.
 
-Use Streamable HTTP, not legacy SSE. A default key exposes only team-visible retrieval. Private and specific-user events remain unavailable. The optional **Allow Timeline agent** scope enables paid, stateless agent turns that may call enabled team-shared custom MCP tools and create proposals for human review; it does not grant direct canonical writes. Third-party MCP tools may have their own external side effects.
+A default key exposes only team-visible retrieval. Private and specific-user events remain unavailable because the key represents the team, not a member. The optional **Allow Timeline agent** key setting adds `agent:ask`; it enables paid, stateless agent turns that may call enabled team-shared custom MCP tools and create proposals for human review, but it does not grant direct canonical writes. Third-party MCP tools may have their own external side effects.
+
+Keep the key in an environment variable; do not paste it into agent chats, repository files, or shell command arguments. Some clients require the header in local JSON. Treat that file as a secret, keep it out of repositories and shared folders, and follow the client's secure credential-storage guidance.
 
 ## Self-hosted Timeline
 
@@ -76,11 +86,18 @@ https://<your-timeline-origin>/api/mcp/server
 
 ## Update
 
-Refresh the marketplace, reinstall the plugin, and then start a new task. Restart Codex if the refreshed plugin still does not appear:
+For Codex, refresh the marketplace, reinstall the plugin, and then start a new task:
 
 ```bash
 codex plugin marketplace upgrade timeline
 codex plugin add timeline@timeline
+```
+
+For Claude Code, update the repository marketplace and installed plugin, then restart:
+
+```bash
+claude plugin marketplace update timeline
+claude plugin update timeline@timeline
 ```
 
 ## Included skill

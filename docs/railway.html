@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-07-18</span>
+        <span class="kind">Operations</span><span>Last updated 2026-08-26</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -283,6 +283,28 @@ LOG_LEVEL=info
         <code>AUTH_URL</code> is also the canonical public origin. Requests that arrive through
         <code>www.thetimeline.cc</code> or the default <code>*.up.railway.app</code> host are
         redirected to this origin before Auth.js runs.
+      </p>
+      <p>
+        The production web app trusts only <code>X-Real-IP</code> for security and rate-limit
+        buckets. Railway's public proxy must be the only ingress and must overwrite or remove any
+        caller-supplied <code>X-Real-IP</code>. Do not expose an alternate path that forwards a
+        client-provided value unchanged. When the trusted header is missing or invalid, requests
+        deliberately share the <code>unknown</code> bucket instead of falling back to spoofable
+        forwarding headers.
+      </p>
+      <p>
+        Self-hosted production must enforce the same boundary at a trusted reverse proxy: strip the
+        incoming <code>X-Real-IP</code>, validate the remote client address, and set the header
+        before forwarding to Timeline. <code>CF-Connecting-IP</code> and
+        <code>X-Forwarded-For</code> are development-only fallbacks.
+      </p>
+      <p>
+        <code>OPENAI_APPS_CHALLENGE_TOKEN</code> is optional and belongs on the web service only.
+        Set it to the exact plain-text token supplied by OpenAI's app-submission portal when domain
+        verification is requested; it is returned verbatim from
+        <code>/.well-known/openai-apps-challenge</code>. It is not an OAuth credential and is not
+        required for normal MCP operation. Leave it unset outside that portal flow, or remove it
+        after verification when the portal no longer requires it.
       </p>
       <p>
         Railway uses the checked-in Railpack manifests for web and worker deploys. The Dockerfiles

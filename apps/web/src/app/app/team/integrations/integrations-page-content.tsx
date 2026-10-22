@@ -396,9 +396,8 @@ function McpEndpointSection() {
     <section className="space-y-3 border-t border-border pt-4 first:border-t-0 first:pt-0">
       <h3 className="text-sm font-medium text-fg">Expose Timeline as an MCP server</h3>
       <p className="max-w-2xl text-sm text-fg-muted">
-        Let external agents read this team&apos;s timeline events through a bearer-keyed MCP
-        endpoint. This is outbound access: external tools reading from Timeline, not Timeline
-        reading from them.
+        Let external agents read Timeline through member-approved OAuth or a manual team key. This
+        is outbound access: external tools reading from Timeline, not Timeline reading from them.
       </p>
       <div className="flex flex-wrap gap-2">
         <Button asChild variant="outline" size="sm">
@@ -409,7 +408,7 @@ function McpEndpointSection() {
         </Button>
         <Button asChild variant="ghost" size="sm">
           <a
-            href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin"
+            href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex"
             target="_blank"
             rel="noreferrer"
           >

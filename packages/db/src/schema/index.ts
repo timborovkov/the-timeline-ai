@@ -25,6 +25,7 @@ export * from '#src/schema/meetings.js';
 export * from '#src/schema/integrations.js';
 export * from '#src/schema/mcp.js';
 export * from '#src/schema/mcp-outbound.js';
+export * from '#src/schema/mcp-oauth-server.js';
 export * from '#src/schema/ingest-webhooks.js';
 export * from '#src/schema/calendar-events.js';
 export * from '#src/schema/calendar-subscriptions.js';
