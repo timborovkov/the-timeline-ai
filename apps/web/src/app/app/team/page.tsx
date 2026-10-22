@@ -13,7 +13,6 @@ import {
   isPlatformAdminEmail,
   getTeamCapacityUsage,
   isPolarBillingConfigured,
-  isPolarTopUpConfigured,
   PLAN_CATALOG,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
@@ -312,8 +311,6 @@ export default async function TeamSettingsPage({
               billingState={billingDashboard.account.billingState}
               shadowBilling={billingDashboard.account.shadowBilling}
               spendCapCents={billingDashboard.account.spendCapCents}
-              walletBalanceCents={billingDashboard.account.walletBalanceCents}
-              reservedBalanceCents={billingDashboard.account.reservedBalanceCents}
               includedDiscountRemainingCents={
                 billingDashboard.account.includedDiscountRemainingCents
               }
@@ -326,11 +323,7 @@ export default async function TeamSettingsPage({
               nudge={billingDashboard.nudge}
               costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
-              polarTopUpConfigured={isPolarTopUpConfigured()}
               canManage={isAdmin}
-              autoReloadEnabled={billingDashboard.account.autoReloadEnabled}
-              autoReloadThresholdCents={billingDashboard.account.autoReloadThresholdCents}
-              autoReloadAmountCents={billingDashboard.account.autoReloadAmountCents}
               planPreview={billingDashboard.planPreview}
               activeMemberCount={billingDashboard.activeMemberCount}
               comp={comp}

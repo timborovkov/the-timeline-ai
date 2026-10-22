@@ -12,7 +12,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runWithBillingContext } from '#src/billing/context.js';
 import {
   accrueTeamMemberDays,
-  creditWalletFromPolarOrder,
   meterAcceptedSources,
   meterEmailUnits,
   resetIncludedDiscountIfPeriodElapsed,
@@ -211,43 +210,6 @@ describe('billing runtime', () => {
     expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
   });
 
-  it('credits a Polar top-up once per order id', async () => {
-    const billingSetup = billingScopeMod.createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    await billingSetup.getAccount();
-    await pg.exec(`
-      UPDATE team_billing_accounts
-      SET plan_id = 'payg', billing_state = 'payg_active'
-      WHERE team_id = '${TEAM_ID}';
-    `);
-    const first = await creditWalletFromPolarOrder({
-      db,
-      teamId: TEAM_ID,
-      orderId: 'ord_1',
-      cents: 1000,
-    });
-    expect(first.duplicate).toBe(false);
-    const second = await creditWalletFromPolarOrder({
-      db,
-      teamId: TEAM_ID,
-      orderId: 'ord_1',
-      cents: 1000,
-    });
-    expect(second.duplicate).toBe(true);
-    const billing = billingScopeMod.createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    const dash = await billing.getDashboard();
-    expect(dash.account.walletBalanceCents).toBe(1000);
-  });
-
   it('accrues extra member-days on paid plans and resets included discount', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
@@ -318,7 +280,7 @@ describe('billing runtime', () => {
     expect(third.chargeCents).toBe(0);
   });
 
-  it('persists extra member-day charges when wallet admission is denied', async () => {
+  it('persists extra member-day charges when the spend cap is already exhausted', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -331,7 +293,7 @@ describe('billing runtime', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 0,
-          spend_cap_cents = 2500, shadow_billing = false
+          spend_cap_cents = 0, shadow_billing = false
       WHERE team_id = '${TEAM_ID}';
       INSERT INTO users (id, email) VALUES
         ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),

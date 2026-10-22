@@ -201,14 +201,6 @@ export function polarProductIdForPlan(plan: 'payg' | 'team' | 'business'): strin
   }
 }
 
-export function polarTopUpProductId(): string | undefined {
-  return getEnv().POLAR_PRODUCT_ID_TOPUP;
-}
-
-export function isPolarTopUpConfigured(): boolean {
-  return Boolean(getEnv().POLAR_ACCESS_TOKEN && polarTopUpProductId());
-}
-
 const POLAR_PLAN_CHANGE_CANCELED_STATES = new Set(['canceled', 'deletion_scheduled']);
 
 /** Paid workspaces already have a Polar subscription; do not open a second one. */

@@ -17,7 +17,7 @@ import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
 /**
- * Commercial plan + payment lifecycle (Polar subscriptions / prepaid wallet).
+ * Commercial plan + payment lifecycle (Polar subscriptions, invoiced in arrears).
  * Independent from `team_security_state` — a paid balance never clears a
  * security suspension.
  */
@@ -93,7 +93,11 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   polarProductId: text('polar_product_id'),
   /** Hard monthly overage spend ceiling in euro cents (customer-controlled). */
   spendCapCents: integer('spend_cap_cents').notNull().default(0),
-  /** Prepaid wallet balance in euro cents. */
+  /**
+   * Retired prepaid-wallet columns. New reservations do not debit or credit
+   * them. A historical `wallet_lock_cents` stamp can still unwind
+   * `reserved_balance_cents` on settle, release, or expiry.
+   */
   walletBalanceCents: integer('wallet_balance_cents').notNull().default(0),
   reservedBalanceCents: integer('reserved_balance_cents').notNull().default(0),
   autoReloadEnabled: boolean('auto_reload_enabled').notNull().default(false),

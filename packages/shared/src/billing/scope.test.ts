@@ -181,7 +181,7 @@ describe('billing scope', () => {
     expect(released.missing).toBe(false);
   });
 
-  it('stores auto-reload settings and returns a plan preview', async () => {
+  it('returns a plan preview for the current paid plan', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -195,19 +195,12 @@ describe('billing scope', () => {
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active'
       WHERE team_id = '${TEAM_ID}';
     `);
-    const row = await scope.setAutoReload({
-      enabled: true,
-      thresholdCents: 500,
-      amountCents: 1_000,
-    });
-    expect(row.autoReloadEnabled).toBe(true);
-    expect(row.autoReloadAmountCents).toBe(1_000);
     const dash = await scope.getDashboard();
     expect(dash.planPreview.recommended).toBe('payg');
     expect(dash.activeMemberCount).toBe(1);
   });
 
-  it('locks only the wallet remainder after included discount and settles that split', async () => {
+  it('applies included discount first and leaves the Polar invoice for the remainder', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -220,7 +213,7 @@ describe('billing scope', () => {
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
           included_discount_remaining_cents = 50, wallet_balance_cents = 1000,
-          spend_cap_cents = 10000
+          spend_cap_cents = 10000, polar_customer_id = 'cus_team'
       WHERE team_id = '${TEAM_ID}';
     `);
     const reserved = await scope.reserve({
@@ -230,7 +223,7 @@ describe('billing scope', () => {
       reservedChargeCents: 80,
     });
     expect(reserved.ok).toBe(true);
-    expect((await scope.getAccount()).reservedBalanceCents).toBe(30);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
 
     const settled = await scope.settle({
       operationId: 'op-discount',
@@ -239,13 +232,22 @@ describe('billing scope', () => {
       customerChargeCents: 80,
     });
     expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({
+        discount_cents: 50,
+        invoice_cents: 30,
+        polar_ingest_units: 30,
+        polar_ingest_charge_cents: 30,
+        polar_ingest_status: 'pending',
+      });
+    }
     const after = await scope.getAccount();
     expect(after.reservedBalanceCents).toBe(0);
-    expect(after.walletBalanceCents).toBe(970);
+    expect(after.walletBalanceCents).toBe(1000);
     expect(after.includedDiscountRemainingCents).toBe(0);
   });
 
-  it('freezes the workspace when settlement wallet charge exceeds the reserved wallet', async () => {
+  it('records invoice cents without freezing when the wallet balance is below the charge', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -280,23 +282,17 @@ describe('billing scope', () => {
     if (!settled.duplicate) {
       expect(settled.ledger.customerChargeCents).toBe(200);
       expect(settled.ledger.metadata).toMatchObject({
-        wallet_cents: 200,
-        wallet_shortfall_cents: 120,
+        invoice_cents: 200,
+        polar_ingest_status: 'not_required',
       });
     }
     const after = await scope.getAccount();
-    expect(after.walletBalanceCents).toBe(0);
-    expect(after.billingState).toBe('read_only');
-    expect(after.spendCapCents).toBe(0);
-
-    await scope.creditWallet({ operationId: 'topup-unfreeze', cents: 1_000, source: 'test' });
-    const restored = await scope.getAccount();
-    expect(restored.walletBalanceCents).toBe(880);
-    expect(restored.billingState).toBe('team_active');
-    expect(restored.spendCapCents).toBe(10_000);
+    expect(after.walletBalanceCents).toBe(80);
+    expect(after.billingState).toBe('team_active');
+    expect(after.spendCapCents).toBe(10_000);
   });
 
-  it('keeps a frozen paid account frozen until the top-up covers the shortfall', async () => {
+  it('does not freeze a paid plan when the wallet is empty and the spend cap still has room', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -326,10 +322,9 @@ describe('billing scope', () => {
       customerChargeCents: 200,
     });
     expect(settled.ok).toBe(true);
-    await scope.creditWallet({ operationId: 'topup-partial', cents: 50, source: 'test' });
-    const stillFrozen = await scope.getAccount();
-    expect(stillFrozen.walletBalanceCents).toBe(0);
-    expect(stillFrozen.billingState).toBe('read_only');
+    const after = await scope.getAccount();
+    expect(after.walletBalanceCents).toBe(80);
+    expect(after.billingState).toBe('team_active');
   });
 
   it('restores a frozen paid account when the spend cap is raised', async () => {
@@ -352,7 +347,7 @@ describe('billing scope', () => {
     expect(row.spendCapCents).toBe(2_500);
   });
 
-  it('keeps a shortfall-frozen account paused when the spend cap is raised', async () => {
+  it('restores a read-only paid account when the spend cap is raised even if an old shortfall row remains', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -380,7 +375,7 @@ describe('billing scope', () => {
       metadata: { cents: 1000, wallet_shortfall_cents: 400 },
     });
     const row = await scope.setSpendCap(10_000);
-    expect(row.billingState).toBe('read_only');
+    expect(row.billingState).toBe('team_active');
     expect(row.spendCapCents).toBe(10_000);
   });
 
@@ -413,44 +408,12 @@ describe('billing scope', () => {
       .where(eq(billingUsageReservations.operationId, 'op-free-live'));
     expect(row?.metadata).toMatchObject({
       billable_charge_cents: 0,
-      wallet_reserved_cents: 0,
+      invoice_reserved_cents: 0,
       wallet_lock_cents: 0,
     });
   });
 
-  it('persists wallet_shortfall_cents on a refund reversal before freezing', async () => {
-    const scope = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    await scope.getAccount();
-    enableLiveCharging();
-    await pg.exec(`
-      UPDATE team_billing_accounts
-      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
-          wallet_balance_cents = 200
-      WHERE team_id = '${TEAM_ID}';
-    `);
-    const result = await scope.debitWallet({
-      operationId: 'polar_refund:order-1',
-      cents: 1_000,
-      freezeOnShortfall: true,
-    });
-    expect(result.duplicate).toBe(false);
-    if (!result.duplicate) expect(result.shortfallCents).toBe(800);
-    const [row] = await db
-      .select()
-      .from(billingUsageLedger)
-      .where(eq(billingUsageLedger.operationId, 'polar_refund:order-1'));
-    expect(row?.metadata).toMatchObject({ cents: 1_000, wallet_shortfall_cents: 800 });
-    const after = await scope.getAccount();
-    expect(after.walletBalanceCents).toBe(0);
-    expect(after.billingState).toBe('read_only');
-  });
-
-  it('does not lock PAYG wallet for usage still inside the Free floor', async () => {
+  it('does not invoice PAYG usage still inside the Free floor', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -630,10 +593,11 @@ describe('billing scope', () => {
     expect(settled.ok).toBe(true);
     const account = await scope.getAccount();
     expect(account.includedDiscountRemainingCents).toBe(6000);
-    expect(account.walletBalanceCents).toBeLessThan(5000);
+    expect(account.walletBalanceCents).toBe(5000);
+    expect(account.billingState).toBe('team_active');
   });
 
-  it('releases wallet locks from reservation provenance after the shadow flag flips', async () => {
+  it('unwinds a historical wallet lock and does not lock new reservations', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -656,7 +620,15 @@ describe('billing scope', () => {
       reservedChargeCents: 80,
     });
     expect(reserved.ok).toBe(true);
-    expect((await scope.getAccount()).reservedBalanceCents).toBe(80);
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET reserved_balance_cents = 80
+      WHERE team_id = '${TEAM_ID}';
+      UPDATE billing_usage_reservations
+      SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"wallet_lock_cents":80}'::jsonb
+      WHERE team_id = '${TEAM_ID}' AND operation_id = 'op-lock-live';
+    `);
     delete process.env.BILLING_CHARGES_ENABLED;
     resetEnvForTests();
     await scope.release('op-lock-live');
@@ -789,7 +761,7 @@ describe('billing scope', () => {
     if (retry.ok) expect(retry.alreadySettled).toBe(true);
   });
 
-  it('reserves included discount only once across overlapping Team reservations', async () => {
+  it('reserves included discount once and invoices the next overlapping Team charge', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -812,17 +784,31 @@ describe('billing scope', () => {
       reservedChargeCents: 1,
     });
     expect(first.ok).toBe(true);
+    if (first.ok) {
+      expect(first.reservation.metadata).toMatchObject({
+        discount_reserved_cents: 1,
+        invoice_reserved_cents: 0,
+        wallet_lock_cents: 0,
+      });
+    }
     const second = await scope.reserve({
       operationId: 'op-disc-b',
       meterId: 'ai',
       reservedNativeUnits: 1,
       reservedChargeCents: 1,
     });
-    expect(second.ok).toBe(false);
-    if (!second.ok) expect(second.code).toBe('usage_limit_reached');
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.reservation.metadata).toMatchObject({
+        discount_reserved_cents: 0,
+        invoice_reserved_cents: 1,
+        wallet_lock_cents: 0,
+      });
+    }
+    expect((await scope.getAccount()).reservedBalanceCents).toBe(0);
   });
 
-  it('does not Polar-ingest usage already collected from the prepaid wallet', async () => {
+  it('ingests PAYG overage above the Free floor onto the Polar invoice', async () => {
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({
       db,
@@ -839,13 +825,21 @@ describe('billing scope', () => {
           polar_customer_id = 'cus_test', wallet_balance_cents = 5000
       WHERE team_id = '${TEAM_ID}';
     `);
-    await scope.settle({
+    const settled = await scope.settle({
       operationId: 'op-polar-1',
       meterId: 'recall_minutes',
       nativeUnits: 70,
       customerChargeCents: 210,
     });
-    expect(provider.events).toHaveLength(0);
+    expect(settled.ok).toBe(true);
+    expect(provider.events).toEqual([
+      expect.objectContaining({
+        name: 'timeline_recall_minutes',
+        units: 10,
+        externalCustomerId: TEAM_ID,
+        id: `timeline:${TEAM_ID}:op-polar-1`,
+      }),
+    ]);
     const retry = await scope.settle({
       operationId: 'op-polar-1',
       meterId: 'recall_minutes',
@@ -853,7 +847,7 @@ describe('billing scope', () => {
       customerChargeCents: 210,
     });
     expect(retry.duplicate).toBe(true);
-    expect(provider.events).toHaveLength(0);
+    expect(provider.events).toHaveLength(1);
   });
 
   it('claims Polar outbox rows so concurrent ingest sends one event', async () => {
@@ -954,7 +948,7 @@ describe('billing scope', () => {
     expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
   });
 
-  it('does not ingest Polar meters for live-charging Team sub-cent email settles', async () => {
+  it('ingests the cumulative Team email cent and skips the sub-cent settles', async () => {
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({
       db,
@@ -981,10 +975,18 @@ describe('billing scope', () => {
       });
       expect(settled.ok).toBe(true);
       if (!settled.duplicate) {
-        expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+        expect(settled.ledger.metadata).toMatchObject({
+          polar_ingest_status: i === 1 ? 'pending' : 'not_required',
+        });
       }
     }
-    expect(provider.events).toHaveLength(0);
+    expect(provider.events).toEqual([
+      expect.objectContaining({
+        name: 'timeline_email_units',
+        units: 1,
+        externalCustomerId: TEAM_ID,
+      }),
+    ]);
     const dash = await scope.getDashboard();
     expect(dash.meters.email_units?.nativeUnits).toBe(4);
     expect(dash.meters.email_units?.customerChargeCents).toBe(1);
@@ -1058,7 +1060,8 @@ describe('billing scope', () => {
       await pg.exec(`
         UPDATE team_billing_accounts
         SET shadow_billing = true, plan_id = 'team', billing_state = 'team_active',
-            wallet_balance_cents = 0, included_discount_remaining_cents = 0
+            wallet_balance_cents = 0, included_discount_remaining_cents = 0,
+            spend_cap_cents = 0
         WHERE team_id = '${TEAM_ID}';
       `);
       const dash = await scope.getDashboard();
@@ -1070,7 +1073,7 @@ describe('billing scope', () => {
         reservedChargeCents: 80,
       });
       expect(reserved.ok).toBe(false);
-      if (!reserved.ok) expect(reserved.code).toBe('usage_limit_reached');
+      if (!reserved.ok) expect(reserved.code).toBe('spend_cap_reached');
     } finally {
       if (previous === undefined) delete process.env.BILLING_CHARGES_ENABLED;
       else process.env.BILLING_CHARGES_ENABLED = previous;

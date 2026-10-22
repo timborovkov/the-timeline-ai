@@ -288,9 +288,6 @@ export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 250;
 /** Worst-case reservation for background LLM (extract, embed, digest, vision). */
 export const BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
 
-/** First PAYG prepaid top-up (strategy §3). */
-export const PREPAID_TOPUP_CENTS = 1_000;
-
 /** Reservation TTL for Ask turns (covers long tool loops + presentation pass). */
 export const ASK_AI_RESERVATION_TTL_MS = 30 * 60_000;
 
@@ -316,11 +313,6 @@ export function acceptedSourcesChargeCents(items: number): number {
   return Math.round((items * OVERAGE_RATES.acceptedSourcesCentsPerThousand) / 1000);
 }
 
-/** Wallet-backed plans can spend prepaid top-ups; Free hard-stops on native floors. */
-export function planUsesPrepaidWallet(planId: string): boolean {
-  return planId === 'payg' || planId === 'team' || planId === 'business';
-}
-
 export function polarEventNameForMeter(meter: BillingMeterId): string | null {
   switch (meter) {
     case 'ai':
@@ -334,8 +326,7 @@ export function polarEventNameForMeter(meter: BillingMeterId): string | null {
     case 'accepted_sources':
       return 'timeline_accepted_sources';
     case 'member_days':
-      // Extra seats settle through the prepaid wallet ledger. Not a Polar meter
-      // and not a Polar invoice line — Polar has no native seat meter in v1.
+      // Extra seats count on the local spend cap. Not a Polar meter in v1.
       return null;
   }
 }

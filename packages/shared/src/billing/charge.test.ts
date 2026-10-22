@@ -5,6 +5,7 @@ import {
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
+  polarInvoiceNativeUnits,
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
@@ -18,26 +19,26 @@ import {
 } from '#src/billing/status.js';
 
 describe('billing charge split', () => {
-  it('covers Team/Business included discount before the wallet', () => {
+  it('covers Team/Business included discount before the Polar invoice', () => {
     expect(splitDiscountAndWallet({ chargeCents: 80, includedDiscountRemainingCents: 60 })).toEqual(
-      { discountCents: 60, walletCents: 20 },
+      { discountCents: 60, invoiceCents: 20 },
     );
     expect(splitDiscountAndWallet({ chargeCents: 40, includedDiscountRemainingCents: 60 })).toEqual(
-      { discountCents: 40, walletCents: 0 },
+      { discountCents: 40, invoiceCents: 0 },
     );
   });
 
-  it('keeps extra member-days on the wallet instead of the included-usage discount', () => {
+  it('keeps extra member-days on the spend cap instead of the included-usage discount', () => {
     expect(
       splitDiscountAndWallet({
         chargeCents: 80,
         includedDiscountRemainingCents: 60,
         meterId: 'member_days',
       }),
-    ).toEqual({ discountCents: 0, walletCents: 80 });
+    ).toEqual({ discountCents: 0, invoiceCents: 80 });
   });
 
-  it('keeps the PAYG Free floor off the wallet', () => {
+  it('keeps the PAYG Free floor off the Polar invoice', () => {
     expect(
       paygOverageCustomerChargeCents({
         planId: 'payg',
@@ -127,7 +128,7 @@ describe('memberDaysChargeCents', () => {
 });
 
 describe('shouldIngestPolarMeteredUsage', () => {
-  it('skips Polar ingest when the prepaid wallet or included discount collected', () => {
+  it('ingests the customer-payable remainder for subscription plans', () => {
     expect(
       shouldIngestPolarMeteredUsage({
         eventName: 'timeline_recall_minutes',
@@ -135,11 +136,13 @@ describe('shouldIngestPolarMeteredUsage', () => {
         shadowBilling: false,
         billable: true,
         polarUnits: 10,
-        walletCents: 30,
-        discountCents: 0,
-        enterpriseContract: true,
+        invoiceCents: 30,
       }),
-    ).toBe(false);
+    ).toBe(true);
+    expect(polarInvoiceNativeUnits({ polarUnits: 10, chargeCents: 100, invoiceCents: 40 })).toBe(4);
+  });
+
+  it('skips ingest when included discount covers the charge or the round is sub-cent', () => {
     expect(
       shouldIngestPolarMeteredUsage({
         eventName: 'timeline_ai_eur_cents',
@@ -147,41 +150,19 @@ describe('shouldIngestPolarMeteredUsage', () => {
         shadowBilling: false,
         billable: true,
         polarUnits: 80,
-        walletCents: 0,
-        discountCents: 80,
-        enterpriseContract: true,
+        invoiceCents: 0,
       }),
     ).toBe(false);
-  });
-
-  it('skips Polar ingest for wallet-backed plans even when the local charge rounds to zero', () => {
     expect(
       shouldIngestPolarMeteredUsage({
         eventName: 'timeline_email_units',
         polarCustomerId: 'cus_1',
-        shadowBilling: false,
+        shadowBilling: true,
         billable: true,
         polarUnits: 1,
-        walletCents: 0,
-        discountCents: 0,
-        enterpriseContract: false,
+        invoiceCents: 1,
       }),
     ).toBe(false);
-  });
-
-  it('ingests Polar meters for Enterprise when Polar is the sole collector', () => {
-    expect(
-      shouldIngestPolarMeteredUsage({
-        eventName: 'timeline_ai_eur_cents',
-        polarCustomerId: 'cus_enterprise',
-        shadowBilling: false,
-        billable: true,
-        polarUnits: 80,
-        walletCents: 0,
-        discountCents: 0,
-        enterpriseContract: true,
-      }),
-    ).toBe(true);
   });
 });
 
@@ -261,16 +242,13 @@ describe('costBearingPausedFromAccount', () => {
         shadowBilling: true,
         spendCapCents: 0,
         meteredSpendCents: 50,
-        walletBalanceCents: 0,
-        reservedBalanceCents: 0,
-        includedDiscountRemainingCents: 0,
         freeRemaining: { ...freeRemaining, acceptedSources: 0 },
       }),
     ).toBe(false);
     expect(allFreeAllowancesExhausted({ ...freeRemaining, acceptedSources: 0 })).toBe(false);
   });
 
-  it('pauses PAYG only when wallet, discount, and Free floor are gone', () => {
+  it('does not pause PAYG while the Free floor or spend cap remains', () => {
     expect(
       costBearingPausedFromAccount({
         planId: 'payg',
@@ -278,12 +256,36 @@ describe('costBearingPausedFromAccount', () => {
         shadowBilling: false,
         spendCapCents: 2500,
         meteredSpendCents: 10,
-        walletBalanceCents: 0,
-        reservedBalanceCents: 0,
-        includedDiscountRemainingCents: 0,
         freeRemaining,
       }),
     ).toBe(false);
+    const exhausted = {
+      aiChargeCents: 0,
+      recallMinutes: 0,
+      emailUnits: 0,
+      storageGb: 0,
+      acceptedSources: 0,
+    };
+    expect(
+      costBearingPausedFromAccount({
+        planId: 'payg',
+        billingState: 'payg_active',
+        shadowBilling: false,
+        spendCapCents: 2500,
+        meteredSpendCents: 10,
+        freeRemaining: exhausted,
+      }),
+    ).toBe(false);
+    expect(
+      costBearingPausedFromAccount({
+        planId: 'payg',
+        billingState: 'past_due',
+        shadowBilling: false,
+        spendCapCents: 2500,
+        meteredSpendCents: 10,
+        freeRemaining: exhausted,
+      }),
+    ).toBe(true);
   });
 
   it('treats a paid spend cap of 0 as a hard stop', () => {
@@ -294,9 +296,6 @@ describe('costBearingPausedFromAccount', () => {
         shadowBilling: false,
         spendCapCents: 0,
         meteredSpendCents: 0,
-        walletBalanceCents: 5_000,
-        reservedBalanceCents: 0,
-        includedDiscountRemainingCents: 6_000,
         freeRemaining,
       }),
     ).toBe(true);

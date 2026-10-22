@@ -281,6 +281,12 @@
       "import": "./dist/billing/preview.js",
       "default": "./dist/billing/preview.js"
     },
+    "./billing/polar-setup": {
+      "types": "./src/billing/polar-setup.ts",
+      "development": "./src/billing/polar-setup.ts",
+      "import": "./dist/billing/polar-setup.js",
+      "default": "./dist/billing/polar-setup.js"
+    },
     "./billing/operator": {
       "types": "./src/billing/operator.ts",
       "development": "./src/billing/operator.ts",

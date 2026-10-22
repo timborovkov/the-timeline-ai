@@ -1,8 +1,9 @@
 import { billingFreeGrants, teamBillingAccounts, type Db } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import { PLAN_CATALOG, PREPAID_TOPUP_CENTS, type BillingPlanId } from '#src/billing/catalog.js';
-import { creditWalletFromPolarOrder, debitWalletFromPolarRefund } from '#src/billing/runtime.js';
+import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
+import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import { childLogger } from '#src/logger.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business';
 
@@ -35,8 +36,9 @@ export interface PolarWebhookProductIds {
   payg?: string;
   team?: string;
   business?: string;
-  topup?: string;
 }
+
+const log = childLogger('billing:polar-webhook');
 
 type TeamBillingState = (typeof teamBillingAccounts.$inferSelect)['billingState'];
 
@@ -203,8 +205,8 @@ async function upsertPaidSubscription(input: {
   billingState: TeamBillingState;
   data: PolarWebhookPayload['data'];
   chargesEnabled: boolean;
-}): Promise<void> {
-  await input.db.transaction(async (tx) => {
+}): Promise<{ applied: boolean }> {
+  return input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
     if (
       existing &&
@@ -212,7 +214,7 @@ async function upsertPaidSubscription(input: {
         existing.planId === 'enterprise' ||
         existing.billingState === 'enterprise_active')
     ) {
-      return;
+      return { applied: false };
     }
     const polarSubscriptionId = input.data?.id ?? null;
     const period = polarSubscriptionPeriod(input.data);
@@ -224,7 +226,7 @@ async function upsertPaidSubscription(input: {
         incomingModifiedAt: polarEventModifiedAt(input.data),
       })
     ) {
-      return;
+      return { applied: false };
     }
     const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const resetDiscount = shouldResetIncludedDiscount({
@@ -276,6 +278,7 @@ async function upsertPaidSubscription(input: {
           updatedAt: now,
         },
       });
+    return { applied: true };
   });
 }
 
@@ -357,7 +360,7 @@ export async function handlePolarWebhookEvent(input: {
           incomingModifiedAt: polarEventModifiedAt(data),
         });
       } else if (billingState !== 'ignore') {
-        await upsertPaidSubscription({
+        const result = await upsertPaidSubscription({
           db: input.db,
           teamId,
           plan,
@@ -365,51 +368,18 @@ export async function handlePolarWebhookEvent(input: {
           data,
           chargesEnabled: input.chargesEnabled,
         });
+        if (result.applied && billingState === 'past_due') {
+          try {
+            await notifySubscriptionPastDue({
+              db: input.db,
+              teamId,
+              planId: plan,
+            });
+          } catch (err) {
+            log.warn({ err, teamId }, 'past_due billing alert failed');
+          }
+        }
       }
-    }
-  }
-
-  if (type === 'order.paid') {
-    const topupProductId = input.products.topup;
-    if (data && topupProductId && data.product_id === topupProductId) {
-      const cents =
-        typeof data.amount === 'number' && data.amount > 0 ? data.amount : PREPAID_TOPUP_CENTS;
-      const orderId = data.id ?? `anon:${teamId}:${String(cents)}`;
-      await creditWalletFromPolarOrder({
-        db: input.db,
-        teamId,
-        orderId,
-        cents,
-      });
-    }
-  }
-
-  if (type === 'order.refunded' || type === 'refund.created' || type === 'refund.updated') {
-    const refundStatus = (data?.status ?? 'succeeded').trim().toLowerCase();
-    if (type !== 'order.refunded' && refundStatus && refundStatus !== 'succeeded') {
-      return { ok: true, ignored: 'refund_not_succeeded' };
-    }
-    const topupProductId = input.products.topup;
-    const isTopupProduct = Boolean(topupProductId && data?.product_id === topupProductId);
-    const orderId =
-      type === 'order.refunded' ? (data?.id ?? null) : (data?.order_id ?? data?.orderId ?? null);
-    const refundId = type === 'order.refunded' ? null : (data?.id ?? null);
-    const cents =
-      typeof data?.amount === 'number' && data.amount > 0
-        ? data.amount
-        : typeof data?.refunded_amount === 'number' && data.refunded_amount > 0
-          ? data.refunded_amount
-          : typeof data?.refundedAmount === 'number' && data.refundedAmount > 0
-            ? data.refundedAmount
-            : 0;
-    if (orderId && (isTopupProduct || type !== 'order.refunded' || cents > 0)) {
-      await debitWalletFromPolarRefund({
-        db: input.db,
-        teamId,
-        orderId,
-        refundKey: refundId ?? `order:${orderId}`,
-        cents,
-      });
     }
   }
 

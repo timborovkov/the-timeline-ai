@@ -13,7 +13,7 @@ export type MeterTotals = Partial<
 >;
 
 /**
- * PAYG keeps the Free native floor; only overage is wallet/Polar-billable.
+ * PAYG keeps the Free native floor; only overage is Polar-billable.
  * Free hard-stops separately. Team/Business use included invoice discount.
  */
 export function paygOverageNativeUnits(input: {
@@ -84,18 +84,22 @@ export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: nu
   }
 }
 
-/** Discount covers first; wallet funds the remainder. Extra member-days are wallet-only. */
+/**
+ * Included invoice discount covers first. Polar invoices the remainder on the
+ * card. Extra member-days are not a Polar meter; they still count on the local
+ * spend cap.
+ */
 export function splitDiscountAndWallet(input: {
   chargeCents: number;
   includedDiscountRemainingCents: number;
   meterId?: BillingMeterId;
-}): { discountCents: number; walletCents: number } {
+}): { discountCents: number; invoiceCents: number } {
   const chargeCents = Math.max(0, input.chargeCents);
   if (input.meterId === 'member_days') {
-    return { discountCents: 0, walletCents: chargeCents };
+    return { discountCents: 0, invoiceCents: chargeCents };
   }
   const discountCents = Math.min(Math.max(0, input.includedDiscountRemainingCents), chargeCents);
-  return { discountCents, walletCents: chargeCents - discountCents };
+  return { discountCents, invoiceCents: chargeCents - discountCents };
 }
 
 /**
@@ -178,9 +182,23 @@ export function isUniqueViolation(err: unknown): boolean {
 }
 
 /**
- * Prepaid wallet and included discount already collect locally, including
- * sub-cent rounds that settle at €0. Polar meters invoice the same native
- * units, so ingest only when Polar is the sole collector (Enterprise).
+ * Native units Polar should invoice. Included-discount coverage is omitted so
+ * the monthly invoice matches the customer-payable remainder.
+ */
+export function polarInvoiceNativeUnits(input: {
+  polarUnits: number;
+  chargeCents: number;
+  invoiceCents: number;
+}): number {
+  if (input.polarUnits <= 0 || input.invoiceCents <= 0) return 0;
+  if (input.chargeCents <= 0 || input.invoiceCents >= input.chargeCents) return input.polarUnits;
+  return (input.polarUnits * input.invoiceCents) / input.chargeCents;
+}
+
+/**
+ * PAYG, Team, Business, and Enterprise invoice metered usage on Polar.
+ * Included discount and sub-cent rounds (invoice cents of 0) stay local.
+ * Shadow billing and comps do not ingest.
  */
 export function shouldIngestPolarMeteredUsage(input: {
   eventName: string | null | undefined;
@@ -188,15 +206,11 @@ export function shouldIngestPolarMeteredUsage(input: {
   shadowBilling: boolean;
   billable: boolean;
   polarUnits: number;
-  walletCents: number;
-  discountCents: number;
-  enterpriseContract: boolean;
+  invoiceCents: number;
 }): boolean {
   if (!input.eventName || !input.polarCustomerId) return false;
   if (input.shadowBilling || !input.billable) return false;
-  if (input.polarUnits <= 0) return false;
-  if (!input.enterpriseContract) return false;
-  if (input.walletCents > 0 || input.discountCents > 0) return false;
+  if (input.polarUnits <= 0 || input.invoiceCents <= 0) return false;
   return true;
 }
 

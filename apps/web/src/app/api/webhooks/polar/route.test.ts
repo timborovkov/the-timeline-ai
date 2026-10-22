@@ -11,7 +11,6 @@ vi.mock('@timeline/shared/env', () => ({
     POLAR_PRODUCT_ID_PAYG: 'prod_payg',
     POLAR_PRODUCT_ID_TEAM: 'prod_team',
     POLAR_PRODUCT_ID_BUSINESS: 'prod_business',
-    POLAR_PRODUCT_ID_TOPUP: 'prod_topup',
     BILLING_CHARGES_ENABLED: false,
   }),
 }));
@@ -70,7 +69,6 @@ describe('POST /api/webhooks/polar', () => {
           payg: 'prod_payg',
           team: 'prod_team',
           business: 'prod_business',
-          topup: 'prod_topup',
         },
       }),
     );

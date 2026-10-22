@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  formatEuroFromCents,
-  PREPAID_TOPUP_CENTS,
-  planUsesPrepaidWallet,
-  type BillingPlanId,
-} from '@timeline/shared/billing/catalog';
+import { formatEuroFromCents, type BillingPlanId } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
@@ -20,8 +15,7 @@ import type {
 
 import {
   startBillingCheckout,
-  startWalletTopUp,
-  updateBillingAutoReload,
+  startBillingPortal,
   updateBillingSpendCap,
 } from '@/app/actions/billing';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
@@ -36,8 +30,6 @@ export interface BillingSettingsPanelProps {
   billingState: string;
   shadowBilling: boolean;
   spendCapCents: number;
-  walletBalanceCents: number;
-  reservedBalanceCents: number;
   includedDiscountRemainingCents: number;
   meteredSpendCents: number;
   periodYm: string;
@@ -48,11 +40,7 @@ export interface BillingSettingsPanelProps {
   nudge: BillingNudge | null;
   costBearingPaused: boolean;
   polarConfigured: boolean;
-  polarTopUpConfigured: boolean;
   canManage: boolean;
-  autoReloadEnabled: boolean;
-  autoReloadThresholdCents: number | null;
-  autoReloadAmountCents: number | null;
   planPreview: CheapestPlanPreview;
   activeMemberCount: number;
   comp: {
@@ -67,16 +55,12 @@ export interface BillingSettingsPanelProps {
 
 interface BillingFormState {
   spendCapDraft: string | null;
-  autoReloadEnabledDraft: boolean | null;
-  autoReloadThresholdDraft: string | null;
   error: string | null;
   message: string | null;
 }
 
 const INITIAL_BILLING_FORM: BillingFormState = {
   spendCapDraft: null,
-  autoReloadEnabledDraft: null,
-  autoReloadThresholdDraft: null,
   error: null,
   message: null,
 };
@@ -146,6 +130,12 @@ function BillingPlanSection(props: {
           </Link>
         </p>
       ) : null}
+      {props.billingState === 'past_due' || props.billingState === 'payment_retry' ? (
+        <p className="mt-4 rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg">
+          Payment failed. New cost-bearing work is paused until the card on file succeeds. Reading
+          and export stay available.
+        </p>
+      ) : null}
       {props.canManage && !props.comp && props.planId !== 'enterprise' ? (
         <div className="mt-4 flex flex-wrap gap-2">
           <button
@@ -193,8 +183,10 @@ function BillingPlanSection(props: {
         </p>
       ) : (
         <p className="mt-3 text-sm text-fg-muted">
-          Switching paid plans updates your existing Polar subscription. New checkouts are only used
-          when this workspace does not already have one.
+          Pay as you go is a €0 Polar subscription. Checkout saves the card. Usage above the Free
+          floor is ingested as Polar events and invoiced monthly. Team and Business use the same
+          subscription, with their platform fee and included usage discount. Switching plans updates
+          the existing subscription, including when the workspace is past due.
         </p>
       )}
       <p className="mt-3 text-sm text-fg-muted">
@@ -208,45 +200,36 @@ function BillingPlanSection(props: {
   );
 }
 
-function BillingWalletSection(props: {
-  walletPlan: boolean;
-  available: number;
-  reservedBalanceCents: number;
+function BillingSpendSection(props: {
   includedDiscountRemainingCents: number;
   canManage: boolean;
   pending: boolean;
   comped: boolean;
-  polarTopUpConfigured: boolean;
+  polarConfigured: boolean;
+  paymentFailed: boolean;
   spendCapEuros: string;
-  autoReloadEnabled: boolean;
-  autoReloadThresholdEuros: string;
   onSpendCapDraft: (value: string) => void;
   onSaveSpendCap: () => void;
-  onBuyTopUp: () => void;
-  onAutoReloadEnabledDraft: (enabled: boolean) => void;
-  onAutoReloadThresholdDraft: (value: string) => void;
-  onSaveAutoReload: () => void;
+  onOpenPortal: () => void;
 }) {
   return (
-    <SettingsSection title="Wallet and spend cap">
-      <dl className="grid gap-3 text-sm sm:grid-cols-3">
+    <SettingsSection title="Spend cap">
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
         <div>
-          <dt className="text-fg-muted">Wallet</dt>
-          <dd className="mt-1 font-mono text-fg">{formatEuroFromCents(props.available)}</dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Reserved</dt>
-          <dd className="mt-1 font-mono text-fg">
-            {formatEuroFromCents(props.reservedBalanceCents)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Included discount left</dt>
+          <dt className="text-fg-muted">Included usage discount left</dt>
           <dd className="mt-1 font-mono text-fg">
             {formatEuroFromCents(props.includedDiscountRemainingCents)}
           </dd>
         </div>
+        <div>
+          <dt className="text-fg-muted">Collection</dt>
+          <dd className="mt-1 text-fg">Monthly Polar invoice on the card on file</dd>
+        </div>
       </dl>
+      <p className="mt-3 text-sm text-fg-muted">
+        A €0 spend cap is a hard stop. Metered usage at the cap pauses new cost-bearing work and
+        emails owners. Polar still invoices the usage already recorded.
+      </p>
       {props.canManage ? (
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <label className="block text-sm">
@@ -277,68 +260,24 @@ function BillingWalletSection(props: {
               Save cap
             </button>
           )}
-          {props.walletPlan && !props.comped ? (
+          {props.paymentFailed && props.polarConfigured && !props.comped ? (
             <button
               type="button"
-              disabled={props.pending || !props.polarTopUpConfigured}
-              onClick={props.onBuyTopUp}
-              className={PLAN_BUTTON_CLASS}
+              disabled={props.pending}
+              onClick={props.onOpenPortal}
+              className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
             >
-              Add €10
+              Update payment method
             </button>
           ) : null}
-        </div>
-      ) : null}
-      {props.canManage && props.walletPlan && !props.comped ? (
-        <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-2 text-sm text-fg">
-            <input
-              type="checkbox"
-              checked={props.autoReloadEnabled}
-              onChange={(event) => {
-                props.onAutoReloadEnabledDraft(event.target.checked);
-              }}
-              className="size-4 rounded-sm border-border"
-            />
-            Auto-reload {formatEuroFromCents(PREPAID_TOPUP_CENTS)} when the wallet is low
-          </label>
-          {props.autoReloadEnabled ? (
-            <>
-              <p className="text-sm text-fg-muted">
-                Timeline emails owners a Polar €10 checkout when available wallet is at or below
-                this threshold, and only if remaining spend-cap headroom covers the full €10
-                product. The wallet credits after Polar <code>order.paid</code>, same as Add €10.
-              </p>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Reload when wallet falls below (EUR)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={props.autoReloadThresholdEuros}
-                  onChange={(event) => {
-                    props.onAutoReloadThresholdDraft(event.target.value);
-                  }}
-                  className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
-                />
-              </label>
-            </>
-          ) : null}
-          <button
-            type="button"
-            disabled={props.pending}
-            onClick={props.onSaveAutoReload}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Save auto-reload
-          </button>
         </div>
       ) : null}
       <p className="mt-3 text-sm text-fg-muted">
         At 50 / 75 / 90% we show in-app warnings on Home, Usage, and Billing, and email workspace
         owners once per threshold each billing period. At 100% new cost-bearing work pauses until
-        you raise the cap or the period resets (owners get a final notice). Free workspaces also
-        email owners when an allowance is near or used up.{' '}
+        you raise the cap or the period resets (owners get a final notice). A failed subscription
+        payment pauses costly work and emails owners. Free workspaces also email owners when an
+        allowance is near or used up.{' '}
         <Link href="/pricing" className="underline-offset-4 hover:underline">
           See pricing
         </Link>
@@ -352,18 +291,25 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   const [pending, startTransition] = useTransition();
   const [form, updateForm] = useReducer(billingFormReducer, INITIAL_BILLING_FORM);
   const spendCapEuros = form.spendCapDraft ?? String(props.spendCapCents / 100);
-  const autoReloadEnabled = form.autoReloadEnabledDraft ?? props.autoReloadEnabled;
-  const autoReloadThresholdEuros =
-    form.autoReloadThresholdDraft ?? String((props.autoReloadThresholdCents ?? 500) / 100);
   const { error, message } = form;
-
-  const available = Math.max(0, props.walletBalanceCents - props.reservedBalanceCents);
-  const walletPlan = planUsesPrepaidWallet(props.planId);
+  const paymentFailed = props.billingState === 'past_due' || props.billingState === 'payment_retry';
 
   function runCheckout(plan: 'payg' | 'team' | 'business') {
     updateForm(clearNotices());
     startTransition(async () => {
       const result = await startBillingCheckout({ plan });
+      if (!result.ok) {
+        updateForm({ error: result.error });
+        return;
+      }
+      window.location.href = result.url;
+    });
+  }
+
+  function openPortal() {
+    updateForm(clearNotices());
+    startTransition(async () => {
+      const result = await startBillingPortal();
       if (!result.ok) {
         updateForm({ error: result.error });
         return;
@@ -386,44 +332,6 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         return;
       }
       updateForm({ message: 'Spend cap updated.', spendCapDraft: null });
-      router.refresh();
-    });
-  }
-
-  function buyTopUp() {
-    updateForm(clearNotices());
-    startTransition(async () => {
-      const result = await startWalletTopUp();
-      if (!result.ok) {
-        updateForm({ error: result.error });
-        return;
-      }
-      window.location.href = result.url;
-    });
-  }
-
-  function saveAutoReload() {
-    updateForm(clearNotices());
-    const thresholdEuros = Number(autoReloadThresholdEuros);
-    if (autoReloadEnabled && (!Number.isFinite(thresholdEuros) || thresholdEuros < 0)) {
-      updateForm({ error: 'Enter a non-negative auto-reload threshold in euros.' });
-      return;
-    }
-    startTransition(async () => {
-      const result = await updateBillingAutoReload({
-        enabled: autoReloadEnabled,
-        thresholdCents: Math.round(thresholdEuros * 100),
-        amountCents: PREPAID_TOPUP_CENTS,
-      });
-      if (!result.ok) {
-        updateForm({ error: result.error });
-        return;
-      }
-      updateForm({
-        message: 'Auto-reload updated.',
-        autoReloadEnabledDraft: null,
-        autoReloadThresholdDraft: null,
-      });
       router.refresh();
     });
   }
@@ -466,30 +374,19 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         activeMemberCount={props.activeMemberCount}
       />
 
-      <BillingWalletSection
-        walletPlan={walletPlan}
-        available={available}
-        reservedBalanceCents={props.reservedBalanceCents}
+      <BillingSpendSection
         includedDiscountRemainingCents={props.includedDiscountRemainingCents}
         canManage={props.canManage}
         pending={pending}
         comped={props.comp !== null}
-        polarTopUpConfigured={props.polarTopUpConfigured}
+        polarConfigured={props.polarConfigured}
+        paymentFailed={paymentFailed}
         spendCapEuros={spendCapEuros}
-        autoReloadEnabled={autoReloadEnabled}
-        autoReloadThresholdEuros={autoReloadThresholdEuros}
         onSpendCapDraft={(value) => {
           updateForm({ spendCapDraft: value });
         }}
         onSaveSpendCap={saveSpendCap}
-        onBuyTopUp={buyTopUp}
-        onAutoReloadEnabledDraft={(enabled) => {
-          updateForm({ autoReloadEnabledDraft: enabled });
-        }}
-        onAutoReloadThresholdDraft={(value) => {
-          updateForm({ autoReloadThresholdDraft: value });
-        }}
-        onSaveAutoReload={saveAutoReload}
+        onOpenPortal={openPortal}
       />
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}

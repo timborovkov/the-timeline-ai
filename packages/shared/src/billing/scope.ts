@@ -8,13 +8,12 @@ import {
   teamBillingAccounts,
   teamMembers,
 } from '@timeline/db';
-import { and, asc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
 import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
 
 import { notifyBillingUsageAlerts } from '#src/billing/alerts.js';
-import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
 import {
   BILLING_ENTITLEMENTS_VERSION,
   type BillingMeterId,
@@ -22,8 +21,6 @@ import {
   CAPACITY_BY_PLAN,
   FREE_ALLOWANCES,
   PLAN_CATALOG,
-  PREPAID_TOPUP_CENTS,
-  planUsesPrepaidWallet,
   polarEventNameForMeter,
 } from '#src/billing/catalog.js';
 import {
@@ -33,6 +30,7 @@ import {
   paygOverageNativeUnits,
   pendingBillableChargeCents,
   pendingDiscountReservedCents,
+  polarInvoiceNativeUnits,
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
@@ -58,7 +56,6 @@ import {
   freeAllowanceConsumedForMeter,
   freeAllowanceRemaining,
   restoredPaidBillingStateAfterWalletOrCapRecovery,
-  restoredSpendCapCentsAfterShortfallUnfreeze,
   spendCapUtilization,
 } from '#src/billing/status.js';
 import { childLogger } from '#src/logger.js';
@@ -124,30 +121,6 @@ function reservationWorkerSource(
   if (!metadata) return null;
   const source = metadata.source;
   return typeof source === 'string' && source.length > 0 ? source : null;
-}
-
-function outstandingWalletShortfallCents(metadata: Record<string, unknown>): number {
-  const shortfall = metadata.wallet_shortfall_cents;
-  const collected = metadata.wallet_shortfall_collected_cents;
-  const owed = typeof shortfall === 'number' && Number.isFinite(shortfall) ? shortfall : 0;
-  const paid = typeof collected === 'number' && Number.isFinite(collected) ? collected : 0;
-  return Math.max(0, Math.trunc(owed) - Math.trunc(paid));
-}
-
-async function teamOutstandingWalletShortfallCents(
-  dbOrTx: { select: Db['select'] },
-  teamId: string,
-): Promise<number> {
-  const rows = await dbOrTx
-    .select({ metadata: billingUsageLedger.metadata })
-    .from(billingUsageLedger)
-    .where(
-      and(
-        eq(billingUsageLedger.teamId, teamId),
-        inArray(billingUsageLedger.kind, ['settlement', 'reversal']),
-      ),
-    );
-  return rows.reduce((sum, row) => sum + outstandingWalletShortfallCents(row.metadata), 0);
 }
 
 const POLAR_INGEST_CLAIM_STALE_MS = 15 * 60 * 1000;
@@ -367,10 +340,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
         meteredSpendCents,
         activeMemberCount,
         planPreview,
-        availableWalletCents: Math.max(
-          0,
-          account.walletBalanceCents - account.reservedBalanceCents,
-        ),
         /** True when live charges would block the next costly action. */
         costBearingPaused: compSuppressesPolarCharges(account)
           ? compCostBearingPaused({
@@ -387,9 +356,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
               shadowBilling,
               spendCapCents: account.spendCapCents,
               meteredSpendCents,
-              walletBalanceCents: account.walletBalanceCents,
-              reservedBalanceCents: account.reservedBalanceCents,
-              includedDiscountRemainingCents: account.includedDiscountRemainingCents,
               freeRemaining,
             }),
       };
@@ -412,9 +378,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
         if (compSuppressesPolarCharges(account)) {
           throw new Error('Spend cap on a comped workspace is set by Timeline operators.');
         }
-        const remainingShortfall = await teamOutstandingWalletShortfallCents(tx, teamId);
         const restoredState =
-          spendCapCents > 0 && remainingShortfall === 0
+          spendCapCents > 0
             ? restoredPaidBillingStateAfterWalletOrCapRecovery({
                 planId: account.planId,
                 billingState: account.billingState,
@@ -661,38 +626,27 @@ export function createBillingScope(deps: BillingScopeDeps) {
         );
         const inFreeNativeAllowance =
           entitlementsPlanId === 'free' && locked.billingState !== 'enterprise_active';
-        const walletBillableChargeCents = inFreeNativeAllowance ? 0 : billableChargeCents;
-        const { walletCents, discountCents } = splitDiscountAndWallet({
-          chargeCents: walletBillableChargeCents,
+        const invoiceBillableChargeCents = inFreeNativeAllowance ? 0 : billableChargeCents;
+        const { invoiceCents, discountCents } = splitDiscountAndWallet({
+          chargeCents: invoiceBillableChargeCents,
           includedDiscountRemainingCents: remainingDiscount,
           meterId: input.meterId,
         });
-        const blockingWallet =
-          !comped &&
-          !accountUsesShadowBilling(locked) &&
-          locked.billingState !== 'enterprise_active' &&
-          walletBillableChargeCents > 0;
-        const walletLockCents = blockingWallet && walletCents > 0 ? walletCents : 0;
+        const walletLockCents = 0;
         const reservationMetadata = {
           ...(input.metadata ?? {}),
           list_charge_cents: input.reservedChargeCents,
-          billable_charge_cents: walletBillableChargeCents,
+          billable_charge_cents: invoiceBillableChargeCents,
           discount_reserved_cents: discountCents,
-          wallet_reserved_cents: walletCents,
+          invoice_reserved_cents: invoiceCents,
           wallet_lock_cents: walletLockCents,
         };
 
-        if (blockingWallet) {
-          const available = locked.walletBalanceCents - locked.reservedBalanceCents;
-          if (walletCents > available) {
-            return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
-          }
-        }
         const enforceSpendCap =
           !accountUsesShadowBilling(locked) &&
           locked.billingState !== 'enterprise_active' &&
           (comped || entitlementsPlanId !== 'free') &&
-          walletBillableChargeCents > 0;
+          invoiceBillableChargeCents > 0;
         if (enforceSpendCap) {
           const pendingBillable = pending.reduce(
             (sum, row) => sum + pendingBillableChargeCents(row.metadata, row.reservedChargeCents),
@@ -714,7 +668,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             operationId: input.operationId,
             meterId: input.meterId,
             reservedNativeUnits: String(input.reservedNativeUnits),
-            reservedChargeCents: walletCents,
+            reservedChargeCents: invoiceCents,
             expiresAt,
             metadata: reservationMetadata,
           })
@@ -774,7 +728,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .set({
             meterId: input.meterId,
             reservedNativeUnits: String(input.reservedNativeUnits),
-            reservedChargeCents: walletCents,
+            reservedChargeCents: invoiceCents,
             state: 'reserved',
             expiresAt,
             metadata: reservationMetadata,
@@ -925,7 +879,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         );
         const polarUnits = segmentCharges.reduce((sum, row) => sum + row.polarUnits, 0);
         const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
-        const { discountCents, walletCents } = splitDiscountAndWallet({
+        const { discountCents, invoiceCents } = splitDiscountAndWallet({
           chargeCents: actualChargeCents,
           includedDiscountRemainingCents: account.includedDiscountRemainingCents,
           meterId: input.meterId,
@@ -934,35 +888,34 @@ export function createBillingScope(deps: BillingScopeDeps) {
           !comped &&
           (account.planId === 'enterprise' || account.billingState === 'enterprise_active');
         const eventName = polarEventNameForMeter(input.meterId);
-        const shouldIngestPolar = shouldIngestPolarMeteredUsage({
-          eventName,
-          polarCustomerId: account.polarCustomerId,
-          shadowBilling: accountUsesShadowBilling(account),
-          billable: input.billable !== false,
+        const unitsToInvoice = polarInvoiceNativeUnits({
           polarUnits,
-          // Enterprise is invoiced on Polar, not collected from prepaid wallet
-          // or included discount. Passing those splits would skip ingest.
-          walletCents: enterpriseContract ? 0 : walletCents,
-          discountCents: enterpriseContract ? 0 : discountCents,
-          enterpriseContract,
+          chargeCents: actualChargeCents,
+          invoiceCents,
         });
+        const shouldIngestPolar =
+          !comped &&
+          shouldIngestPolarMeteredUsage({
+            eventName,
+            polarCustomerId: account.polarCustomerId,
+            shadowBilling: accountUsesShadowBilling(account),
+            billable: input.billable !== false,
+            polarUnits: unitsToInvoice,
+            invoiceCents,
+          });
         const polarIngestMetadata = shouldIngestPolar
           ? {
               polar_ingest_status: 'pending',
               polar_ingest_name: eventName,
-              polar_ingest_units: polarUnits,
+              polar_ingest_units: unitsToInvoice,
               polar_ingest_customer_id: teamId,
               polar_ingest_operation_id: input.operationId,
-              polar_ingest_charge_cents: actualChargeCents,
+              polar_ingest_charge_cents: invoiceCents,
             }
           : { polar_ingest_status: 'not_required' };
 
         const applyCharges = !accountUsesShadowBilling(account);
-        const collectFromCustomer = applyCharges && !enterpriseContract && !comped;
-        const walletShortfallCents =
-          collectFromCustomer && walletCents > account.walletBalanceCents
-            ? walletCents - account.walletBalanceCents
-            : 0;
+        const collectDiscount = applyCharges && !enterpriseContract && !comped && discountCents > 0;
         const periodSpendCents = countersBefore.reduce(
           (sum, row) => sum + row.customerChargeCents,
           0,
@@ -972,7 +925,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           !enterpriseContract &&
           (comped || entitlementsPlanId !== 'free') &&
           periodSpendCents + actualChargeCents > account.spendCapCents;
-        const freezeAccount = walletShortfallCents > 0 || spendCapExceeded;
+        const freezeAccount = spendCapExceeded;
 
         const [ledgerRow] = await tx
           .insert(billingUsageLedger)
@@ -997,8 +950,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               ...(input.metadata ?? {}),
               list_charge_cents: listChargeCents,
               discount_cents: discountCents,
-              wallet_cents: walletCents,
-              ...(walletShortfallCents > 0 ? { wallet_shortfall_cents: walletShortfallCents } : {}),
+              invoice_cents: invoiceCents,
               ...(segmentCharges.length > 1
                 ? {
                     period_segments: segmentCharges.map((row) => ({
@@ -1073,11 +1025,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             );
         }
 
-        if (
-          walletLockCents > 0 ||
-          (collectFromCustomer && (walletCents > 0 || discountCents > 0)) ||
-          freezeAccount
-        ) {
+        if (walletLockCents > 0 || collectDiscount || freezeAccount) {
           await tx
             .update(teamBillingAccounts)
             .set({
@@ -1086,9 +1034,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
                     reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
                   }
                 : {}),
-              ...(collectFromCustomer && (walletCents > 0 || discountCents > 0)
+              ...(collectDiscount
                 ? {
-                    walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${walletCents})`,
                     includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
                   }
                 : {}),
@@ -1155,34 +1102,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
         });
       } catch (err) {
         log.warn({ err, teamId }, 'billing usage alert notification failed');
-      }
-
-      try {
-        const [after] = await db
-          .select()
-          .from(teamBillingAccounts)
-          .where(eq(teamBillingAccounts.teamId, teamId))
-          .limit(1);
-        if (after) {
-          const countersNow = await db
-            .select()
-            .from(billingUsageCounters)
-            .where(
-              and(
-                eq(billingUsageCounters.teamId, teamId),
-                eq(billingUsageCounters.periodYm, periodYm()),
-              ),
-            );
-          await maybeTriggerWalletAutoReload({
-            db,
-            teamId,
-            account: after,
-            meteredSpendCents: countersNow.reduce((sum, row) => sum + row.customerChargeCents, 0),
-            ...(provider ? { provider } : {}),
-          });
-        }
-      } catch (err) {
-        log.warn({ err, teamId }, 'wallet auto-reload trigger failed');
       }
 
       return { ok: true as const, duplicate: false as const, ledger: settled.ledger };
@@ -1259,208 +1178,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
             eq(billingUsageReservations.state, 'reserved'),
           ),
         );
-    },
-
-    async creditWallet(input: { operationId: string; cents: number; source?: string }) {
-      await ensureMember('admin');
-      if (!Number.isInteger(input.cents) || input.cents <= 0) {
-        throw new Error('top-up amount must be a positive integer (euro cents)');
-      }
-      await ensureAccount();
-      return db.transaction(async (tx) => {
-        const [account] = await tx
-          .select()
-          .from(teamBillingAccounts)
-          .where(eq(teamBillingAccounts.teamId, teamId))
-          .limit(1)
-          .for('update');
-        if (!account) throw new Error('Missing billing account');
-        if (!planUsesPrepaidWallet(account.planId)) {
-          return { ok: true as const, duplicate: false as const };
-        }
-        const [ledgerRow] = await tx
-          .insert(billingUsageLedger)
-          .values({
-            teamId,
-            operationId: input.operationId,
-            kind: 'top_up',
-            meterId: 'ai',
-            nativeUnits: '0',
-            customerChargeCents: 0,
-            billable: false,
-            nonBillableReason: 'wallet_top_up',
-            operationClass: 'wallet_top_up',
-            source: input.source ?? 'polar',
-            actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
-            metadata: { cents: input.cents },
-          })
-          .onConflictDoNothing()
-          .returning();
-        if (!ledgerRow) return { ok: true as const, duplicate: true as const };
-        const shortfallRows = await tx
-          .select({
-            id: billingUsageLedger.id,
-            metadata: billingUsageLedger.metadata,
-          })
-          .from(billingUsageLedger)
-          .where(
-            and(
-              eq(billingUsageLedger.teamId, teamId),
-              inArray(billingUsageLedger.kind, ['settlement', 'reversal']),
-            ),
-          )
-          .orderBy(asc(billingUsageLedger.createdAt));
-        let remainingCollection = input.cents;
-        let collectedCents = 0;
-        for (const row of shortfallRows) {
-          const outstanding = outstandingWalletShortfallCents(row.metadata);
-          if (outstanding <= 0 || remainingCollection <= 0) continue;
-          const take = Math.min(outstanding, remainingCollection);
-          remainingCollection -= take;
-          collectedCents += take;
-          const already =
-            typeof row.metadata.wallet_shortfall_collected_cents === 'number'
-              ? row.metadata.wallet_shortfall_collected_cents
-              : 0;
-          const patch = JSON.stringify({
-            wallet_shortfall_collected_cents: already + take,
-          });
-          await tx
-            .update(billingUsageLedger)
-            .set({
-              metadata: sql`COALESCE(${billingUsageLedger.metadata}, '{}'::jsonb) || ${patch}::jsonb`,
-            })
-            .where(eq(billingUsageLedger.id, row.id));
-        }
-        const creditCents = input.cents - collectedCents;
-        const remainingDebt =
-          shortfallRows.reduce(
-            (sum, row) => sum + outstandingWalletShortfallCents(row.metadata),
-            0,
-          ) - collectedCents;
-        const restoredState =
-          remainingDebt <= 0
-            ? restoredPaidBillingStateAfterWalletOrCapRecovery({
-                planId: account.planId,
-                billingState: account.billingState,
-              })
-            : null;
-        const restoredCap = restoredState
-          ? restoredSpendCapCentsAfterShortfallUnfreeze({
-              planId: account.planId,
-              spendCapCents: account.spendCapCents,
-            })
-          : null;
-        if (collectedCents > 0) {
-          const topUpPatch = JSON.stringify({
-            cents: input.cents,
-            shortfall_collected_cents: collectedCents,
-          });
-          await tx
-            .update(billingUsageLedger)
-            .set({
-              metadata: sql`COALESCE(${billingUsageLedger.metadata}, '{}'::jsonb) || ${topUpPatch}::jsonb`,
-            })
-            .where(eq(billingUsageLedger.id, ledgerRow.id));
-        }
-        await tx
-          .update(teamBillingAccounts)
-          .set({
-            walletBalanceCents: sql`${teamBillingAccounts.walletBalanceCents} + ${creditCents}`,
-            billingState: restoredState ?? account.billingState,
-            ...(restoredCap !== null ? { spendCapCents: restoredCap } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(teamBillingAccounts.teamId, teamId));
-        return { ok: true as const, duplicate: false as const };
-      });
-    },
-
-    async debitWallet(input: {
-      operationId: string;
-      cents: number;
-      source?: string;
-      freezeOnShortfall?: boolean;
-      metadata?: Record<string, unknown>;
-    }) {
-      await ensureMember('admin');
-      if (!Number.isInteger(input.cents) || input.cents <= 0) {
-        throw new Error('refund amount must be a positive integer (euro cents)');
-      }
-      await ensureAccount();
-      return db.transaction(async (tx) => {
-        const [ledgerRow] = await tx
-          .insert(billingUsageLedger)
-          .values({
-            teamId,
-            operationId: input.operationId,
-            kind: 'reversal',
-            meterId: 'ai',
-            nativeUnits: '0',
-            customerChargeCents: 0,
-            billable: false,
-            nonBillableReason: 'wallet_refund',
-            operationClass: 'wallet_refund',
-            source: input.source ?? 'polar',
-            actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
-            metadata: { cents: input.cents, ...(input.metadata ?? {}) },
-          })
-          .onConflictDoNothing()
-          .returning();
-        if (!ledgerRow) return { ok: true as const, duplicate: true as const, shortfallCents: 0 };
-        const [account] = await tx
-          .select()
-          .from(teamBillingAccounts)
-          .where(eq(teamBillingAccounts.teamId, teamId))
-          .limit(1)
-          .for('update');
-        if (!account) throw new Error('Missing billing account');
-        const debit = Math.min(account.walletBalanceCents, input.cents);
-        const shortfallCents = Math.max(0, input.cents - debit);
-        const freeze = Boolean(input.freezeOnShortfall) && shortfallCents > 0;
-        if (shortfallCents > 0) {
-          const shortfallPatch = JSON.stringify({ wallet_shortfall_cents: shortfallCents });
-          await tx
-            .update(billingUsageLedger)
-            .set({
-              metadata: sql`COALESCE(${billingUsageLedger.metadata}, '{}'::jsonb) || ${shortfallPatch}::jsonb`,
-            })
-            .where(eq(billingUsageLedger.id, ledgerRow.id));
-        }
-        await tx
-          .update(teamBillingAccounts)
-          .set({
-            walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${debit})`,
-            ...(freeze ? { billingState: 'read_only' as const, spendCapCents: 0 } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(teamBillingAccounts.teamId, teamId));
-        return { ok: true as const, duplicate: false as const, shortfallCents };
-      });
-    },
-
-    async setAutoReload(input: {
-      enabled: boolean;
-      thresholdCents?: number | null;
-      amountCents?: number | null;
-    }) {
-      await ensureMember('admin');
-      const account = await ensureAccount();
-      if (input.enabled && !planUsesPrepaidWallet(account.planId)) {
-        throw new Error('Auto-reload is available on paid plans that spend the prepaid wallet.');
-      }
-      const [row] = await db
-        .update(teamBillingAccounts)
-        .set({
-          autoReloadEnabled: input.enabled,
-          autoReloadThresholdCents: input.enabled ? (input.thresholdCents ?? 500) : null,
-          autoReloadAmountCents: input.enabled ? (input.amountCents ?? PREPAID_TOPUP_CENTS) : null,
-          updatedAt: new Date(),
-        })
-        .where(eq(teamBillingAccounts.teamId, teamId))
-        .returning();
-      if (!row) throw new Error('Failed to update auto-reload');
-      return row;
     },
   };
 }

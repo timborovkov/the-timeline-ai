@@ -302,23 +302,23 @@ describe('messaging templates', () => {
     expect(message.metadata).toMatchObject({ billing_alert_kind: 'free_exhausted' });
   });
 
-  it('renders wallet auto-reload Polar checkout copy', () => {
+  it('renders a past-due payment notice for owners', () => {
     const message = renderMessage('billing_usage_alert', {
       to: 'owner@example.test',
       ownerName: 'Alex',
       teamName: 'Acme',
-      kind: 'wallet_auto_reload',
+      kind: 'subscription_past_due',
       periodYm: '2026-08',
-      planName: 'payg',
-      detailLine: 'Wallet available €4 is at or below €5.',
+      planName: 'Pay as you go',
+      detailLine: 'The subscription payment failed.',
       usageUrl: 'https://timeline.test/app/usage',
-      billingUrl: 'https://sandbox.polar.sh/checkout/fake',
+      billingUrl: 'https://timeline.test/app/team?section=billing',
     });
 
-    expect(message.subject).toBe('Acme: wallet auto-reload ready');
+    expect(message.subject).toBe('Acme: subscription payment failed');
     expect(message.textBody).toContain(
-      'Complete Polar top-up: https://sandbox.polar.sh/checkout/fake',
+      'Update payment method: https://timeline.test/app/team?section=billing',
     );
-    expect(message.metadata).toMatchObject({ billing_alert_kind: 'wallet_auto_reload' });
+    expect(message.metadata).toMatchObject({ billing_alert_kind: 'subscription_past_due' });
   });
 });

@@ -15,11 +15,9 @@ import {
   emailRecipientCount,
   formatEuroFromCents,
   polarEventNameForMeter,
-  planUsesPrepaidWallet,
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   MEETING_MAX_DURATION_MINUTES_BY_PLAN,
-  PREPAID_TOPUP_CENTS,
   recallChargeCents,
   storageChargeCents,
 } from '#src/billing/catalog.js';
@@ -46,18 +44,12 @@ describe('billing catalog', () => {
     expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
-    expect(planUsesPrepaidWallet('payg')).toBe(true);
-    expect(planUsesPrepaidWallet('team')).toBe(true);
-    expect(planUsesPrepaidWallet('business')).toBe(true);
-    expect(planUsesPrepaidWallet('enterprise')).toBe(false);
-    expect(planUsesPrepaidWallet('free')).toBe(false);
   });
 
   it('prices native meters from the rate card', () => {
     expect(recallChargeCents(10)).toBe(30);
     expect(emailChargeCents(1_000)).toBe(250);
     expect(emailRecipientCount('a@x.test, b@y.test')).toBe(2);
-    expect(PREPAID_TOPUP_CENTS).toBe(1_000);
     expect(BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
     expect(storageChargeCents(2)).toBe(50);
     expect(acceptedSourcesChargeCents(2_000)).toBe(100);
