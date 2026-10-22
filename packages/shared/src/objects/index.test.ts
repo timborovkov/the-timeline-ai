@@ -34,7 +34,7 @@ import {
   reconciliationRuns,
   userPins,
 } from '@timeline/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -1833,6 +1833,262 @@ describe('object scope — notes and suggestions', () => {
     ]);
   });
 
+  it('archives identity facets and hides them from object detail', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Contact Archive',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const facet = await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'archive@example.com',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(
+      scope.archiveIdentityFacet(facet.id, { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
+    await expect(scope.listIdentityFacets(person.id)).resolves.toEqual([]);
+    await expect(scope.getObject(person.id)).resolves.toMatchObject({
+      identityFacets: [],
+    });
+  });
+
+  it('creates identity facets for companies', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Facet Company',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const facet = await scope.createIdentityFacet({
+      entityId: company.id,
+      kind: 'phone',
+      value: '+1 415 555 0100',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(scope.getObject(company.id)).resolves.toMatchObject({
+      identityFacets: [
+        expect.objectContaining({
+          id: facet.id,
+          kind: 'phone',
+          normalizedValue: '+14155550100',
+        }),
+      ],
+    });
+  });
+
+  it('sets a single primary company for a person', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, company] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Primary Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Primary Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    const result = await scope.setPersonCompany(person.id, company.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(result.changed).toBe(true);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: company.id,
+        companyName: 'Primary Company',
+      }),
+    ]);
+  });
+
+  it('rejects generic related links for person↔company employment', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, company] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Guarded Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Guarded Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await expect(
+      scope.addRelationship({
+        fromEntityId: person.id,
+        toEntityId: company.id,
+        kind: 'related',
+        actorUserId: USER_OWNER,
+      }),
+    ).rejects.toThrow(/Company field/i);
+  });
+
+  it('keeps the oldest related company as primary when legacy multi-links exist', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, firstCompany, secondCompany] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Multi Company Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'First Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Second Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    // Simulate a legacy second related edge that bypassed the Company-field guard.
+    const [fromEntityId, toEntityId] = [person.id, secondCompany.id].sort();
+    if (!fromEntityId || !toEntityId) throw new Error('expected relationship endpoints');
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_A,
+      fromEntityId,
+      toEntityId,
+      kind: 'related',
+      createdBy: USER_OWNER,
+    });
+
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: firstCompany.id,
+        companyName: 'First Company',
+      }),
+    ]);
+
+    const unchanged = await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(unchanged.changed).toBe(false);
+  });
+
+  it('removeRelationship clears primary company via Company field and keeps secondary surgical', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, firstCompany, secondCompany] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Unlink Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Primary Unlink Co',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Secondary Unlink Co',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    const [fromEntityId, toEntityId] = [person.id, secondCompany.id].sort();
+    if (!fromEntityId || !toEntityId) throw new Error('expected relationship endpoints');
+    const [secondary] = await db
+      .insert(entityRelationships)
+      .values({
+        teamId: TEAM_A,
+        fromEntityId,
+        toEntityId,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      })
+      .returning({ id: entityRelationships.id });
+
+    const secondaryRemoval = await scope.removeRelationship(secondary?.id ?? '', {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(secondaryRemoval.removed).toBe(true);
+    expect(secondaryRemoval.touchedIds).toContain(person.id);
+    expect(secondaryRemoval.touchedIds).toContain(secondCompany.id);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: firstCompany.id,
+        companyName: 'Primary Unlink Co',
+      }),
+    ]);
+
+    const [primaryEdge] = await db
+      .select({ id: entityRelationships.id })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, TEAM_A),
+          eq(entityRelationships.kind, 'related'),
+          or(
+            and(
+              eq(entityRelationships.fromEntityId, person.id),
+              eq(entityRelationships.toEntityId, firstCompany.id),
+            ),
+            and(
+              eq(entityRelationships.fromEntityId, firstCompany.id),
+              eq(entityRelationships.toEntityId, person.id),
+            ),
+          ),
+        ),
+      )
+      .limit(1);
+    const primaryRemoval = await scope.removeRelationship(primaryEdge?.id ?? '', {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(primaryRemoval.removed).toBe(true);
+    expect(primaryRemoval.touchedIds).toContain(person.id);
+    expect(primaryRemoval.touchedIds).toContain(firstCompany.id);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([]);
+  });
+
+  it('merges metadata patches instead of replacing the whole object metadata blob', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Metadata Merge Co',
+      metadata: { domain: 'old.example', relationship: 'partner' },
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.updateObject(
+      company.id,
+      { metadata: { domain: 'new.example' } },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    await expect(scope.getObject(company.id)).resolves.toMatchObject({
+      metadata: {
+        domain: 'new.example',
+        relationship: 'partner',
+      },
+    });
+  });
+
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
     const object = await scope.createObject({
@@ -3257,14 +3513,15 @@ describe('object scope — archive visibility', () => {
 describe('object scope — relationships', () => {
   it('stores related relationships in canonical endpoint order, dedupes reverse inserts, and emits direct-write outputs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    // Use non-employment types: person↔company related is owned by setPersonCompany.
     const first = await scope.createObject({
-      type: 'person',
-      canonicalName: 'John Doe',
+      type: 'project',
+      canonicalName: 'Atlas rollout',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     const second = await scope.createObject({
-      type: 'company',
-      canonicalName: 'Acme Corporation',
+      type: 'deal',
+      canonicalName: 'Acme renewal',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     const [expectedFrom, expectedTo] = [first.id, second.id].sort();
@@ -3349,9 +3606,12 @@ describe('object scope — relationships', () => {
       target_field: '__relationship_create__',
     });
 
-    await expect(
-      scope.removeRelationship(relationshipId, { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toBe(true);
+    const removedRelationship = await scope.removeRelationship(relationshipId, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(removedRelationship.removed).toBe(true);
+    expect(removedRelationship.touchedIds.length).toBeGreaterThan(0);
     const relationshipChangeRows = await db
       .select()
       .from(objectChanges)
@@ -3430,20 +3690,21 @@ describe('object scope — relationships', () => {
       canonicalName: 'ACME Ltd',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    const person = await scope.createObject({
-      type: 'person',
-      canonicalName: 'John Doe',
+    // Project (not person): person↔company related edges are exclusive via setPersonCompany.
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Atlas rollout',
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
     await scope.addRelationship({
       fromEntityId: survivor.id,
-      toEntityId: person.id,
+      toEntityId: project.id,
       kind: 'related',
       actorUserId: USER_OWNER,
     });
     await scope.addRelationship({
-      fromEntityId: person.id,
+      fromEntityId: project.id,
       toEntityId: duplicate.id,
       kind: 'related',
       actorUserId: USER_OWNER,
@@ -3455,7 +3716,7 @@ describe('object scope — relationships', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    const [expectedFrom, expectedTo] = [survivor.id, person.id].sort();
+    const [expectedFrom, expectedTo] = [survivor.id, project.id].sort();
     const relationships = await db
       .select()
       .from(entityRelationships)

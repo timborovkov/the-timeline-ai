@@ -81,6 +81,7 @@ export interface CorpusObject {
   dueAt?: string | null;
   taskCategory?: string | null;
   metadata?: Record<string, unknown>;
+  identityFacets?: Array<{ kind: 'email' | 'phone'; value: string }>;
 }
 
 export interface CorpusDocument {
@@ -987,7 +988,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Northstar'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { domain: 'northstar.example', relationship: 'design_partner' },
+    metadata: { domain: 'northstar.example', relationship: 'Design partner' },
   },
   {
     n: 2,
@@ -996,7 +997,8 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Elena'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { email: 'elena.park@northstar.example', role: 'Customer lead' },
+    metadata: { role: 'Customer lead' },
+    identityFacets: [{ kind: 'email', value: 'elena.park@northstar.example' }],
   },
   {
     n: 3,
@@ -1005,7 +1007,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Northwind'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { domain: 'northwind.example', relationship: 'investor' },
+    metadata: { domain: 'northwind.example', relationship: 'Investor' },
   },
   {
     n: 4,
@@ -1014,7 +1016,8 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     aliases: ['Priya'],
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { email: 'priya.shah@northwind.example', role: 'Partner' },
+    metadata: { role: 'Partner' },
+    identityFacets: [{ kind: 'email', value: 'priya.shah@northwind.example' }],
   },
   {
     n: 5,
@@ -1022,7 +1025,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Linden Ventures',
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { domain: 'linden.example', relationship: 'investor' },
+    metadata: { domain: 'linden.example', relationship: 'Investor' },
   },
   {
     n: 6,
@@ -1030,7 +1033,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Harbor Peak',
     status: 'active',
     ownerUserId: CORPUS_PERSON.avery.id,
-    metadata: { domain: 'harborpeak.example', relationship: 'investor' },
+    metadata: { domain: 'harborpeak.example', relationship: 'Investor' },
   },
   {
     n: 7,
@@ -1110,7 +1113,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     status: 'lost',
     stage: 'lost',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { lost_reason: 'Requested on-prem' },
+    metadata: { lostReason: 'Requested on-prem' },
   },
   {
     n: 16,
@@ -1167,7 +1170,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     type: 'hiring_loop',
     canonicalName: 'Product designer',
     status: 'interviewing',
-    stage: 'final_round',
+    stage: 'Final round',
     ownerUserId: CORPUS_PERSON.quinn.id,
     assigneeUserId: CORPUS_PERSON.sam.id,
   },
@@ -1288,7 +1291,8 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Dana Cole',
     status: 'active',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { email: 'dana.cole@brightline.example', role: 'Buyer' },
+    metadata: { role: 'Buyer' },
+    identityFacets: [{ kind: 'email', value: 'dana.cole@brightline.example' }],
   },
   {
     n: 36,
@@ -1381,7 +1385,7 @@ const OBJECT_DEFS: Array<Omit<CorpusObject, 'id'> & { n: number }> = [
     canonicalName: 'Kite Logistics account',
     status: 'archived',
     ownerUserId: CORPUS_PERSON.casey.id,
-    metadata: { domain: 'kite.example', reason: 'on_prem' },
+    metadata: { domain: 'kite.example', note: 'Lost — requested on-prem' },
   },
   {
     n: 47,

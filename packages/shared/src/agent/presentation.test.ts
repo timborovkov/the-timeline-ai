@@ -16,6 +16,7 @@ describe('agent presentation policy', () => {
     expect(resolveAgentPresentation('telegram')).toBe('external_chat');
     expect(resolveAgentPresentation('slack')).toBe('external_chat');
     expect(resolveAgentPresentation('mcp')).toBe('mcp_agent');
+    expect(resolveAgentPresentation('object_discussion')).toBe('web_rich');
     expect(resolveAgentPresentation('future-provider')).toBe('external_chat');
   });
 

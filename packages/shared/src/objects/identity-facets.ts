@@ -6,6 +6,12 @@ export type ActorKind = 'user' | 'agent' | 'system';
 export type IdentityFacetKind =
   'email' | 'phone' | 'telegram' | 'slack' | 'github' | 'timeline_user' | 'other';
 
+const IDENTITY_FACET_OBJECT_TYPES = new Set(['person', 'company']);
+
+export function objectSupportsIdentityFacets(type: string): boolean {
+  return IDENTITY_FACET_OBJECT_TYPES.has(type);
+}
+
 export interface IdentityFacetInput {
   entityId: string;
   kind: IdentityFacetKind;
