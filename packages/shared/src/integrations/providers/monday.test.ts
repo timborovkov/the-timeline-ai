@@ -1766,8 +1766,7 @@ describe('mondayProvider', () => {
       ],
     });
     const columns = event?.objectMap?.metadata?.monday_columns as
-      | Record<string, unknown>[]
-      | undefined;
+      Record<string, unknown>[] | undefined;
     expect(columns?.find((column) => column.id === 'owner')).toMatchObject({
       assignees: [
         { id: 'person-1', kind: 'person', name: null },
@@ -3113,8 +3112,7 @@ describe('mondayProvider', () => {
     expect(harvested.body.toString('utf8')).toContain('# Launch notes');
     expect(harvested.body.toString('utf8')).toContain('Launch moved to Friday.');
     const savedCursor = ctx.saveCursor.mock.calls[0]?.[1] as
-      | { doc_since?: string; doc_last_polled_at?: unknown }
-      | undefined;
+      { doc_since?: string; doc_last_polled_at?: unknown } | undefined;
     expect(ctx.saveCursor).toHaveBeenCalledWith('monday.doc:doc-1', savedCursor);
     expect(savedCursor).toMatchObject({ doc_since: '2026-06-20T14:00:00.000Z' });
     expect(typeof savedCursor?.doc_last_polled_at).toBe('string');

@@ -1228,8 +1228,7 @@ export interface TaskCategoryProjectFanoutJobData {
 }
 
 export type TaskCategoryJobData =
-  | TaskCategoryClassificationJobData
-  | TaskCategoryProjectFanoutJobData;
+  TaskCategoryClassificationJobData | TaskCategoryProjectFanoutJobData;
 
 let _taskCategoryQueue: TimelineQueue<TaskCategoryJobData> | undefined;
 

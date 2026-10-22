@@ -130,9 +130,8 @@ export async function POST(req: Request): Promise<Response> {
       codeChallenge,
       ...(parsed.data.scopes ? { scopes: parsed.data.scopes } : {}),
     });
-    // clientSecret is intentionally not in the response (still encrypted in DB
-    // for the callback to use).
-    void clientSecret;
+    // clientSecret is intentionally not in the JSON body; it stays encrypted
+    // in DB for the callback to use.
     return NextResponse.json({ url: authorizeUrl });
   } catch (err) {
     log.warn({ err, mcpServerId: parsed.data.mcpServerId }, 'mcp oauth start failed');

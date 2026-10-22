@@ -74,13 +74,7 @@ export interface DocumentScopeDeps {
 }
 
 export type DocumentAction =
-  | 'upload'
-  | 'new_version'
-  | 'rename'
-  | 'move'
-  | 'delete'
-  | 'restore'
-  | 'visibility_change';
+  'upload' | 'new_version' | 'rename' | 'move' | 'delete' | 'restore' | 'visibility_change';
 
 export interface FolderRow {
   id: string;

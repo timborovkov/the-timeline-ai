@@ -477,8 +477,7 @@ describe('board scope', () => {
 
     const updateSourceRef = (
       updateOutput?.sourceRefs as
-        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
-        | null
+        { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[] | null
     )?.[0];
     expect(updateSourceRef?.rawEventId).toEqual(expect.any(String));
     expect(updateSourceRef?.evidenceId).toBeUndefined();
@@ -1250,8 +1249,7 @@ describe('board scope', () => {
     });
     const removeSourceRef = (
       removeOutput?.sourceRefs as
-        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
-        | null
+        { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[] | null
     )?.[0];
     expect(removeSourceRef?.rawEventId).toEqual(expect.any(String));
     expect(removeSourceRef?.evidenceId).toBeUndefined();

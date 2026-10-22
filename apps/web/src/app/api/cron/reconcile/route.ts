@@ -58,4 +58,6 @@ export async function POST(req: Request): Promise<Response> {
 
 // Allow GET too for convenience with simple cron HTTP services that don't
 // support POST bodies. Same auth, same behavior.
-export const GET = POST;
+export async function GET(req: Request): Promise<Response> {
+  return POST(req);
+}

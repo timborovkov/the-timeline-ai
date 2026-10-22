@@ -112,8 +112,6 @@ export function slackChannelConversationKey(args: {
 }
 
 function conversationCondition(identity: ConversationIdentity) {
-  const [, teamId] = identity.key.split(':');
-  void teamId;
   if (identity.source === 'telegram') {
     const chatId = identity.key.split(':').at(-1);
     return and(
