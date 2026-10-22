@@ -1076,7 +1076,7 @@ describe('queue wrappers', () => {
     });
   });
 
-  it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
+  it('registers job schedulers with stable ids and closes singleton queues', async () => {
     const queues = await importQueues();
 
     await queues.scheduleOverdueScan();
@@ -1085,27 +1085,26 @@ describe('queue wrappers', () => {
     await queues.scheduleMcpHealthPing();
     await queues.scheduleDailyDigest();
 
-    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
-      name: 'scan',
-      opts: { repeat: { pattern: '0 * * * *' }, jobId: 'overdue-scan-hourly' },
+    expect(fakes.queues[0]?.schedulerCalls[0]).toMatchObject({
+      id: 'overdue-scan-hourly',
+      repeatOpts: { pattern: '0 * * * *' },
+      template: { name: 'scan', data: {} },
     });
-    expect(fakes.queues[1]?.addCalls[0]).toMatchObject({
-      name: 'materialize',
-      opts: { repeat: { pattern: '0 * * * *' }, jobId: 'calendar-recurrence-hourly' },
+    expect(fakes.queues[1]?.schedulerCalls[0]).toMatchObject({
+      id: 'calendar-recurrence-hourly',
+      repeatOpts: { pattern: '0 * * * *' },
+      template: { name: 'materialize', data: {} },
     });
-    expect(fakes.queues[2]?.addCalls[0]).toMatchObject({
-      name: 'sweep',
-      opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'janitor-tick' },
+    expect(fakes.queues[2]?.schedulerCalls[0]).toMatchObject({
+      id: 'janitor-tick',
+      repeatOpts: { pattern: '*/5 * * * *' },
+      template: { name: 'sweep', data: {} },
     });
-    expect(fakes.queues[3]?.addCalls[0]).toMatchObject({
-      name: 'mcp-health-tick',
-      opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'mcp-health-tick-5min' },
+    expect(fakes.queues[3]?.schedulerCalls[0]).toMatchObject({
+      id: 'mcp-health-tick-5min',
+      repeatOpts: { pattern: '*/5 * * * *' },
+      template: { name: 'mcp-health-tick', data: {} },
     });
-    expect(fakes.queues[4]?.removeRepeatable).toHaveBeenCalledWith(
-      'tick',
-      { pattern: '0 12 * * *' },
-      'daily-digest-1200-utc',
-    );
     expect(fakes.queues[4]?.schedulerCalls[0]).toMatchObject({
       id: 'daily-digest-1200-utc',
       repeatOpts: { pattern: '0 12 * * *' },
