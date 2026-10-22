@@ -98,9 +98,10 @@ function redactSensitivePath(pathname: string): string {
 }
 
 /**
- * Sentry 10.x replacement for `sendDefaultPii: false`. Explicit categories
- * keep the previous restrictive default once `sendDefaultPii` is removed in
- * SDK v11.
+ * Sentry 11 replacement for `sendDefaultPii: false`. v11 collects more by
+ * default, so every init must set these categories explicitly. Transaction
+ * `profilesSampleRate` was removed in v11; session profiling would need
+ * `@sentry/profiling-node` / browser profiling integrations and is left off.
  */
 export const RESTRICTED_SENTRY_DATA_COLLECTION = {
   userInfo: false,
@@ -110,8 +111,15 @@ export const RESTRICTED_SENTRY_DATA_COLLECTION = {
     response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
   },
   httpBodies: [] as (
-    'incomingRequest' | 'outgoingRequest' | 'incomingResponse' | 'outgoingResponse'
+    | 'incomingRequest'
+    | 'outgoingRequest'
+    | 'incomingResponse'
+    | 'outgoingResponse'
   )[],
-  queryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+  urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
   genAI: { inputs: false, outputs: false },
+  databaseQueryData: false,
+  graphQL: { document: false, variables: false },
+  queues: false,
+  stackFrameVariables: false,
 };
