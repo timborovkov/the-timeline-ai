@@ -184,8 +184,7 @@ describe('/api/integrations/manage/[id]/selections', () => {
     expect(response.status).toBe(200);
     expect(fakes.recordConnectionAttention).toHaveBeenCalledTimes(1);
     const attentionInput = fakes.recordConnectionAttention.mock.calls[0]?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(attentionInput).toMatchObject({
       providerConnectionId: null,
       integrationId: INTEGRATION_ID,

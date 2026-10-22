@@ -111,8 +111,7 @@ describe('notifyAction', () => {
     await pending;
 
     const successOptions = toast.success.mock.calls[0]?.[1] as
-      | { id?: string; duration?: number; action?: { onClick?: () => void } }
-      | undefined;
+      { id?: string; duration?: number; action?: { onClick?: () => void } } | undefined;
     expect(successOptions).toMatchObject({
       id: 'object:1',
       duration: 2_000,

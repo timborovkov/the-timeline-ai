@@ -31,12 +31,7 @@ import {
 } from '#src/messaging/digest-format.js';
 
 type TemplateName =
-  | 'base'
-  | 'daily-digest'
-  | 'email-verification'
-  | 'support-request'
-  | 'team-invite'
-  | 'welcome';
+  'base' | 'daily-digest' | 'email-verification' | 'support-request' | 'team-invite' | 'welcome';
 
 const templateDir = join(dirname(fileURLToPath(import.meta.url)), 'email-templates');
 const templateCache = new Map<TemplateName, string>();

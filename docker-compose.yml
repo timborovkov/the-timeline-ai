@@ -45,7 +45,7 @@ services:
   # ---- Qdrant (vector DB) ----
   # REST on 6333, gRPC on 6334. Use 6333 from app code via the JS client.
   qdrant:
-    image: qdrant/qdrant:v1.12.4
+    image: qdrant/qdrant:v1.19.2
     restart: unless-stopped
     ports:
       - '6333:6333'

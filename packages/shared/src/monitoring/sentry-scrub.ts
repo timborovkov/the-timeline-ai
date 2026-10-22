@@ -96,3 +96,22 @@ function redactSensitivePath(pathname: string): string {
     })
     .join('/');
 }
+
+/**
+ * Sentry 10.x replacement for `sendDefaultPii: false`. Explicit categories
+ * keep the previous restrictive default once `sendDefaultPii` is removed in
+ * SDK v11.
+ */
+export const RESTRICTED_SENTRY_DATA_COLLECTION = {
+  userInfo: false,
+  cookies: false,
+  httpHeaders: {
+    request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+    response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+  },
+  httpBodies: [] as (
+    'incomingRequest' | 'outgoingRequest' | 'incomingResponse' | 'outgoingResponse'
+  )[],
+  queryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+  genAI: { inputs: false, outputs: false },
+};
