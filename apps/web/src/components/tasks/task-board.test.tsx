@@ -1131,8 +1131,7 @@ describe('TaskBoard', () => {
   it('ignores an older page that resolves after server filters change', async () => {
     const user = userEvent.setup();
     let resolvePage:
-      | ((page: { rows: objects.ObjectRow[]; nextCursor: string | null }) => void)
-      | undefined;
+      ((page: { rows: objects.ObjectRow[]; nextCursor: string | null }) => void) | undefined;
     fakes.loadTaskRowsAction.mockReturnValue(
       new Promise((resolve) => {
         resolvePage = resolve;

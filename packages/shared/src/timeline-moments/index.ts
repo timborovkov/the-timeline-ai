@@ -115,13 +115,7 @@ export interface TimelineArtifactCluster {
 export type TimelineEvent = TimelineMomentEvent;
 
 export type ImpactKind =
-  | 'task'
-  | 'board'
-  | 'object'
-  | 'calendar'
-  | 'document'
-  | 'decision'
-  | 'approval';
+  'task' | 'board' | 'object' | 'calendar' | 'document' | 'decision' | 'approval';
 
 export type TimelineMomentKind =
   | 'conversation'

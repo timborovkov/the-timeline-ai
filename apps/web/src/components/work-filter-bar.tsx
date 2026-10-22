@@ -36,9 +36,7 @@ interface Props {
 }
 
 type DateRangeToggle =
-  | { state: 'auto' }
-  | { state: 'open' }
-  | { state: 'closed'; filterKey: string };
+  { state: 'auto' } | { state: 'open' } | { state: 'closed'; filterKey: string };
 
 const EMPTY_PARAMS: Record<string, string> = {};
 const EMPTY_MEMBERS: MemberFilterOption[] = [];

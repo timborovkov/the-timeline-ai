@@ -70,11 +70,7 @@ export type IntegrationCategory =
 export type IntegrationKind = 'native' | 'mcp';
 
 export type IntegrationStatus =
-  | 'native_available'
-  | 'native_unconfigured'
-  | 'mcp_available'
-  | 'mcp_local'
-  | 'coming_soon';
+  'native_available' | 'native_unconfigured' | 'mcp_available' | 'mcp_local' | 'coming_soon';
 
 export type IntegrationIngestStatus = 'implemented' | 'coming_soon';
 
@@ -522,9 +518,7 @@ function resolveStatus(seed: CatalogSeed): IntegrationStatus {
 
 export function listCatalog(): CatalogEntry[] {
   return CATALOG_SEEDS.map((seed) => {
-    const { envCheck, staticStatus, ...rest } = seed;
-    void envCheck;
-    void staticStatus;
+    const { envCheck: _envCheck, staticStatus: _staticStatus, ...rest } = seed;
     return { ...rest, status: resolveStatus(seed) };
   });
 }

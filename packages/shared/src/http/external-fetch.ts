@@ -51,7 +51,7 @@ function allowPrivateNetwork(options: ExternalFetchOptions): boolean {
 }
 
 async function defaultLookup(hostname: string): Promise<ResolvedAddress[]> {
-  const rows = await dnsLookup(hostname, { all: true, verbatim: true });
+  const rows = await dnsLookup(hostname, { all: true, order: 'verbatim' });
   return rows.flatMap((row) =>
     row.family === 4 || row.family === 6 ? [{ address: row.address, family: row.family }] : [],
   );
