@@ -233,7 +233,7 @@ export async function aiDuplicateClusters(input: {
       const result = await chatStructured({
         schema: aiDuplicateGroupSchema,
         model: llm.TIMELINE_MODELS.summarization.id,
-        system:
+        instructions:
           'You identify duplicate calendar events. Group events only when they refer to the same real-world meeting. Titles, times, dates, duration, timezone, and all-day state may differ because calendars can import, translate, normalize, or reschedule the same meeting differently. Use titles, descriptions, locations, meeting links, attendee/client names, language translations, agenda wording, and time proximity as evidence. Do not group different meetings just because they overlap or mention the same company/person. If uncertain, omit the group. Return JSON only.',
         prompt: JSON.stringify({
           events: batch.map(formatEventForAi),

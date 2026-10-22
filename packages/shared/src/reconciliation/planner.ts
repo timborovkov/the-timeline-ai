@@ -83,7 +83,7 @@ export async function planReconciliation(
   const result = await chatStructured({
     schema: reconciliationPlannerResultSchema,
     model: input.model ?? TIMELINE_MODELS.summarization.id,
-    system:
+    instructions:
       'You are evaluating a workspace reconciliation planner. Return concise JSON only. Do not invent unsupported facts.',
     prompt: buildReconciliationPlannerPrompt(input),
     ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
