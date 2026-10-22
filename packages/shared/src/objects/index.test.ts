@@ -2023,12 +2023,13 @@ describe('object scope — notes and suggestions', () => {
       })
       .returning({ id: entityRelationships.id });
 
-    await expect(
-      scope.removeRelationship(secondary?.id ?? '', { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toEqual({
-      removed: true,
-      touchedIds: expect.arrayContaining([person.id, secondCompany.id]),
+    const secondaryRemoval = await scope.removeRelationship(secondary?.id ?? '', {
+      kind: 'user',
+      userId: USER_OWNER,
     });
+    expect(secondaryRemoval.removed).toBe(true);
+    expect(secondaryRemoval.touchedIds).toContain(person.id);
+    expect(secondaryRemoval.touchedIds).toContain(secondCompany.id);
     await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
       expect.objectContaining({
         personId: person.id,
@@ -2057,12 +2058,13 @@ describe('object scope — notes and suggestions', () => {
         ),
       )
       .limit(1);
-    await expect(
-      scope.removeRelationship(primaryEdge?.id ?? '', { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toEqual({
-      removed: true,
-      touchedIds: expect.arrayContaining([person.id, firstCompany.id]),
+    const primaryRemoval = await scope.removeRelationship(primaryEdge?.id ?? '', {
+      kind: 'user',
+      userId: USER_OWNER,
     });
+    expect(primaryRemoval.removed).toBe(true);
+    expect(primaryRemoval.touchedIds).toContain(person.id);
+    expect(primaryRemoval.touchedIds).toContain(firstCompany.id);
     await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([]);
   });
 
@@ -3606,9 +3608,12 @@ describe('object scope — relationships', () => {
       target_field: '__relationship_create__',
     });
 
-    await expect(
-      scope.removeRelationship(relationshipId, { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toEqual({ removed: true, touchedIds: expect.any(Array) });
+    const removedRelationship = await scope.removeRelationship(relationshipId, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(removedRelationship.removed).toBe(true);
+    expect(removedRelationship.touchedIds.length).toBeGreaterThan(0);
     const relationshipChangeRows = await db
       .select()
       .from(objectChanges)
