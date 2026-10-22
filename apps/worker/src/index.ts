@@ -85,8 +85,8 @@ async function main(): Promise<void> {
   const timelineMomentPresentationWorker = startTimelineMomentPresentationWorker({ db });
   const dailyDigestWorker = startDailyDigestWorker({ db });
   const reconciliationWorker = startReconciliationWorker({ db });
-  // Register the hourly repeatables. BullMQ keys by jobId so a
-  // duplicate call on the next deploy is a no-op.
+  // Register cron job schedulers. BullMQ keys by scheduler id so a
+  // duplicate call on the next deploy upserts the same definition.
   await queue.scheduleOverdueScan();
   await queue.scheduleCalendarRecurrenceMaterialization();
   await queue.scheduleJanitorSweep();

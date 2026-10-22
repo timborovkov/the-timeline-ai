@@ -5,9 +5,6 @@ import { defaultDigestWindow } from '#src/messaging/digest.js';
 import { getRedisConnection } from '#src/queue/connection.js';
 
 type TimelineQueue<TData> = Queue<TData, unknown, string, TData, unknown, string>;
-interface LegacyRepeatableQueue {
-  removeRepeatable(name: string, repeatOpts: { pattern: string }, jobId?: string): Promise<boolean>;
-}
 
 export const QUEUE_NAMES = {
   transcribe: 'transcribe',
@@ -16,7 +13,7 @@ export const QUEUE_NAMES = {
   extract: 'extract',
   embed: 'embed',
   // Phase 8: hourly scan of overdue tasks + follow_ups. Produced by the
-  // worker process itself (BullMQ repeatable on startup); consumed by
+  // worker process itself (BullMQ job scheduler on startup); consumed by
   // startOverdueWorker.
   overdueScan: 'overdue-scan',
   // Phase 11 calendar recurrence materializer. Keeps a rolling window of
@@ -36,7 +33,7 @@ export const QUEUE_NAMES = {
   // Hourly janitor: re-enqueues async-pipeline rows stuck in intermediate
   // states (the enqueue-after-commit pattern in the upload action isn't
   // atomic — if Redis hiccups after the DB write, the job is lost). Mirrors
-  // overdueScan: BullMQ repeatable, singleton consumer.
+  // overdueScan: BullMQ job scheduler, singleton consumer.
   janitor: 'janitor',
   // Phase 11: third-party integration backfill + incremental sync. The
   // worker walks the connected provider's API (Drive changes, Linear
@@ -88,6 +85,15 @@ function createTimelineQueue<TData>(
     connection: getRedisConnection(),
     defaultJobOptions,
   });
+}
+
+async function upsertCronScheduler<TData>(
+  queue: TimelineQueue<TData>,
+  schedulerId: string,
+  pattern: string,
+  job: { name: string; data: TData },
+): Promise<void> {
+  await queue.upsertJobScheduler(schedulerId, { pattern }, job);
 }
 
 async function closeQueue<TData>(
@@ -332,14 +338,10 @@ export async function removeSuggestionJob(
 }
 
 export async function scheduleObjectCleanupSuggestions(): Promise<void> {
-  await getSuggestionQueue().add(
-    'object-cleanup-daily',
-    { scope: 'object_cleanup', teamId: '__all__', triggeredBy: 'daily' },
-    {
-      repeat: { pattern: '0 3 * * *' },
-      jobId: 'object-cleanup-daily',
-    },
-  );
+  await upsertCronScheduler(getSuggestionQueue(), 'object-cleanup-daily', '0 3 * * *', {
+    name: 'object-cleanup-daily',
+    data: { scope: 'object_cleanup', teamId: '__all__', triggeredBy: 'daily' },
+  });
 }
 
 export async function closeSuggestionQueue(): Promise<void> {
@@ -567,21 +569,17 @@ export function getOverdueScanQueue(): TimelineQueue<OverdueScanJobData> {
 }
 
 /**
- * Register the hourly repeatable. Safe to call on every worker boot — BullMQ
- * keys repeatables by `jobId`, so duplicate calls are no-ops.
+ * Register the hourly scheduler. Safe to call on every worker boot — BullMQ
+ * keys job schedulers by id, so duplicate calls upsert the same definition.
  */
 export async function scheduleOverdueScan(): Promise<void> {
-  await getOverdueScanQueue().add(
-    'scan',
-    {},
-    {
-      // Every hour on the hour. The dedup index on notifications keys by
-      // (team, user, entity, kind, date) so repeated runs within the same
-      // calendar day are no-ops.
-      repeat: { pattern: '0 * * * *' },
-      jobId: 'overdue-scan-hourly',
-    },
-  );
+  // Every hour on the hour. The dedup index on notifications keys by
+  // (team, user, entity, kind, date) so repeated runs within the same
+  // calendar day are no-ops.
+  await upsertCronScheduler(getOverdueScanQueue(), 'overdue-scan-hourly', '0 * * * *', {
+    name: 'scan',
+    data: {},
+  });
 }
 
 export async function closeOverdueScanQueue(): Promise<void> {
@@ -611,12 +609,13 @@ export function getCalendarRecurrenceQueue(): TimelineQueue<CalendarRecurrenceJo
 }
 
 export async function scheduleCalendarRecurrenceMaterialization(): Promise<void> {
-  await getCalendarRecurrenceQueue().add(
-    'materialize',
-    {},
+  await upsertCronScheduler(
+    getCalendarRecurrenceQueue(),
+    'calendar-recurrence-hourly',
+    '0 * * * *',
     {
-      repeat: { pattern: '0 * * * *' },
-      jobId: 'calendar-recurrence-hourly',
+      name: 'materialize',
+      data: {},
     },
   );
 }
@@ -716,12 +715,13 @@ export function getMeetingSchedulerQueue(): TimelineQueue<MeetingSchedulerJobDat
 }
 
 export async function scheduleMeetingSchedulerTick(): Promise<void> {
-  await getMeetingSchedulerQueue().add(
-    'meeting-scheduler-tick',
-    {},
+  await upsertCronScheduler(
+    getMeetingSchedulerQueue(),
+    'meeting-scheduler-tick-2min',
+    '*/2 * * * *',
     {
-      repeat: { pattern: '*/2 * * * *' },
-      jobId: 'meeting-scheduler-tick-2min',
+      name: 'meeting-scheduler-tick',
+      data: {},
     },
   );
 }
@@ -760,23 +760,19 @@ export function getJanitorQueue(): TimelineQueue<JanitorJobData> {
 }
 
 /**
- * Register the hourly janitor repeatable. Safe to call on every worker
- * boot — BullMQ keys repeatables by `jobId`, so duplicate calls are no-ops.
+ * Register the janitor scheduler. Safe to call on every worker boot — BullMQ
+ * keys job schedulers by id, so duplicate calls upsert the same definition.
  */
 export async function scheduleJanitorSweep(): Promise<void> {
-  await getJanitorQueue().add(
-    'sweep',
-    {},
-    {
-      // Every 5 minutes. Each tick is two indexed SELECTs on small result
-      // sets; cost is negligible. 5min cadence gives ~7.5min recovery for
-      // a stuck `pending` row (5min threshold + up to 5min for next tick),
-      // which beats the 30-60min you'd get from an hourly sweep without
-      // adding noticeable DB load.
-      repeat: { pattern: '*/5 * * * *' },
-      jobId: 'janitor-tick',
-    },
-  );
+  // Every 5 minutes. Each tick is two indexed SELECTs on small result
+  // sets; cost is negligible. 5min cadence gives ~7.5min recovery for
+  // a stuck `pending` row (5min threshold + up to 5min for next tick),
+  // which beats the 30-60min you'd get from an hourly sweep without
+  // adding noticeable DB load.
+  await upsertCronScheduler(getJanitorQueue(), 'janitor-tick', '*/5 * * * *', {
+    name: 'sweep',
+    data: {},
+  });
 }
 
 export async function closeJanitorQueue(): Promise<void> {
@@ -946,12 +942,13 @@ export async function enqueueIntegrationSyncJob(
  * provider policies and budgets before fanning out due reconciliation work.
  */
 export async function scheduleIntegrationIncrementalSync(): Promise<void> {
-  await getIntegrationSyncQueue().add(
-    'integration-tick',
-    { kind: 'incremental', integrationId: '__tick__', teamId: '__tick__' },
+  await upsertCronScheduler(
+    getIntegrationSyncQueue(),
+    'integration-sync-tick-5min',
+    '*/5 * * * *',
     {
-      repeat: { pattern: '*/5 * * * *' },
-      jobId: 'integration-sync-tick-5min',
+      name: 'integration-tick',
+      data: { kind: 'incremental', integrationId: '__tick__', teamId: '__tick__' },
     },
   );
 }
@@ -984,14 +981,10 @@ export function getMcpHealthQueue(): TimelineQueue<McpHealthJobData> {
 }
 
 export async function scheduleMcpHealthPing(): Promise<void> {
-  await getMcpHealthQueue().add(
-    'mcp-health-tick',
-    {},
-    {
-      repeat: { pattern: '*/5 * * * *' },
-      jobId: 'mcp-health-tick-5min',
-    },
-  );
+  await upsertCronScheduler(getMcpHealthQueue(), 'mcp-health-tick-5min', '*/5 * * * *', {
+    name: 'mcp-health-tick',
+    data: {},
+  });
 }
 
 export async function closeMcpHealthQueue(): Promise<void> {
@@ -1061,19 +1054,10 @@ export function getDailyDigestQueue(): TimelineQueue<DailyDigestJobData> {
 }
 
 export async function scheduleDailyDigest(): Promise<void> {
-  const queue = getDailyDigestQueue();
-  // BullMQ v5 keeps legacy repeatables separate from Job Schedulers. The legacy
-  // cleanup API is deprecated for new code, but it is still the migration path.
-  await (queue as LegacyRepeatableQueue).removeRepeatable(
-    'tick',
-    { pattern: '0 12 * * *' },
-    'daily-digest-1200-utc',
-  );
-  await queue.upsertJobScheduler(
-    'daily-digest-1200-utc',
-    { pattern: '0 12 * * *' },
-    { name: 'tick', data: { kind: 'tick', reason: 'scheduled' } },
-  );
+  await upsertCronScheduler(getDailyDigestQueue(), 'daily-digest-1200-utc', '0 12 * * *', {
+    name: 'tick',
+    data: { kind: 'tick', reason: 'scheduled' },
+  });
   await enqueueDailyDigestCatchupJob();
 }
 
