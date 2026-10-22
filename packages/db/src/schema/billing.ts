@@ -109,9 +109,40 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
    */
   polarEventModifiedAt: timestamp('polar_event_modified_at', { withTimezone: true }),
   shadowBilling: boolean('shadow_billing').notNull().default(true),
+  /** `standard` bills through Polar. `comped` is an operator grant: no Polar charges. */
+  arrangement: text('arrangement').$type<'standard' | 'comped'>().notNull().default('standard'),
+  compReason: text('comp_reason'),
+  compExpiresAt: timestamp('comp_expires_at', { withTimezone: true }),
+  priceOverride: jsonb('price_override').$type<{
+    platformFeeCents?: number;
+    includedActiveMembers?: number;
+    additionalMemberCents?: number;
+    meteredDiscountPercent?: number;
+  } | null>(),
+  priceOverrideExpiresAt: timestamp('price_override_expires_at', { withTimezone: true }),
+  polarDiscountId: text('polar_discount_id'),
+  polarDiscountExpiresAt: timestamp('polar_discount_expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/** Append-only platform-operator history for comp and price overrides. */
+export const billingOperatorAudit = pgTable(
+  'billing_operator_audit',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    actorEmail: text('actor_email').notNull(),
+    action: text('action').notNull(),
+    before: jsonb('before').$type<Record<string, unknown>>().notNull(),
+    after: jsonb('after').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('billing_operator_audit_team_created_idx').on(table.teamId, table.createdAt)],
+);
 
 /**
  * One Free commercial grant per verified person. Extra workspaces do not mint

@@ -1,4 +1,8 @@
-import { getTeamCapacityUsage, PLAN_CATALOG } from '@timeline/shared/billing';
+import {
+  effectiveBillingPlanId,
+  getTeamCapacityUsage,
+  PLAN_CATALOG,
+} from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -27,11 +31,12 @@ export default async function UsagePage() {
   const role = await scope.requireMembership();
   const canManage = role === 'owner' || role === 'admin';
   const dashboard = await scope.billing.getDashboard({ canManageBilling: canManage });
-  const planName = PLAN_CATALOG[dashboard.account.planId].name;
+  const entitlementsPlanId = effectiveBillingPlanId(dashboard.account);
+  const planName = PLAN_CATALOG[entitlementsPlanId].name;
   const capacityUsage = await getTeamCapacityUsage({
     db,
     teamId: active.teamId,
-    planId: dashboard.account.planId,
+    planId: entitlementsPlanId,
   });
 
   return (

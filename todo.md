@@ -560,7 +560,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       email when the wallet is at/below the threshold and remaining spend-cap
       headroom covers the full €10 product, cheapest-plan preview from gross native
       usage (informational, never auto-switch; hidden unless another plan saves at
-      least €5 and 10% of the current projected bill), Team/Business included-discount
+      least €5 and 10% of the current projected bill), platform-admin comped plans and
+      per-team price overrides (<code>PLATFORM_ADMIN_EMAILS</code>, audited, spend cap still
+      applies), Team/Business included-discount
       period reset (webhook + janitor advancing the stored Polar window; not
       every Polar retry). Paid-plan changes update the existing Polar subscription.
       Prepaid wallet/included-discount collection is not ingested to Polar meters,

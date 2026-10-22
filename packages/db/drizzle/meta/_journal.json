@@ -547,6 +547,13 @@
       "when": 1795654980000,
       "tag": "0077_billing_member_day_plan_and_membership_intervals",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795655040000,
+      "tag": "0078_billing_operator_controls",
+      "breakpoints": true
     }
   ]
 }

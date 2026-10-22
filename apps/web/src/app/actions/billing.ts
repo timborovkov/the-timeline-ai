@@ -1,6 +1,8 @@
 'use server';
 
 import {
+  checkoutDiscountId,
+  compSuppressesPolarCharges,
   createPlanChangeSession,
   createPolarBillingProvider,
   isPolarBillingConfigured,
@@ -50,18 +52,13 @@ export async function startBillingCheckout(input: {
   if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
 
   const env = getEnv();
-  const submittedCode = input.discountCode?.trim();
-  if (submittedCode) {
-    const expected = env.POLAR_DISCOUNT_CODE?.trim();
-    if (
-      !expected ||
-      !env.POLAR_DISCOUNT_ID ||
-      submittedCode.toLowerCase() !== expected.toLowerCase()
-    ) {
-      return { ok: false, error: 'That discount code is not valid.' };
-    }
-  }
   const account = await gate.scope.billing.getAccount();
+  if (compSuppressesPolarCharges(account)) {
+    return {
+      ok: false,
+      error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
+    };
+  }
   if (account.planId === 'enterprise') {
     return {
       ok: false,
@@ -69,6 +66,13 @@ export async function startBillingCheckout(input: {
         'Enterprise plan changes go through support or the Polar customer portal, not self-serve checkout.',
     };
   }
+  const discount = checkoutDiscountId({
+    account,
+    submittedCode: input.discountCode,
+    envDiscountId: env.POLAR_DISCOUNT_ID,
+    envDiscountCode: env.POLAR_DISCOUNT_CODE,
+  });
+  if (discount.error) return { ok: false, error: discount.error };
   await provider.ensureCustomer({
     externalId: gate.active.teamId,
     email: gate.email,
@@ -82,7 +86,7 @@ export async function startBillingCheckout(input: {
     customerEmail: gate.email,
     successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
     portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-    ...(submittedCode && env.POLAR_DISCOUNT_ID ? { discountId: env.POLAR_DISCOUNT_ID } : {}),
+    ...(discount.discountId ? { discountId: discount.discountId } : {}),
   });
   return { ok: true, url: checkout.url };
 }
@@ -115,6 +119,12 @@ export async function startWalletTopUp(): Promise<
   if (!productId) return { ok: false, error: 'Missing Polar top-up product id.' };
 
   const account = await gate.scope.billing.getAccount();
+  if (compSuppressesPolarCharges(account)) {
+    return {
+      ok: false,
+      error: 'This workspace is on a comped internal plan. Polar top-up is turned off.',
+    };
+  }
   if (!planUsesPrepaidWallet(account.planId)) {
     return {
       ok: false,
@@ -154,6 +164,9 @@ export async function updateBillingAutoReload(input: {
       return { ok: false, error: 'Auto-reload amount must be a positive euro amount.' };
     }
     const account = await gate.scope.billing.getAccount();
+    if (input.enabled && compSuppressesPolarCharges(account)) {
+      return { ok: false, error: 'Auto-reload stays off on a comped internal plan.' };
+    }
     if (input.enabled && !planUsesPrepaidWallet(account.planId)) {
       return {
         ok: false,

@@ -375,6 +375,11 @@ const baseSchema = z.object({
   POLAR_DISCOUNT_CODE: z.preprocess(emptyStringAsUnset, z.string().optional()),
   /** When true, wallet/spend-cap gates block costly work. Default shadow = record only. */
   BILLING_CHARGES_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  /**
+   * Comma-separated emails allowed to assign comped plans and per-team price
+   * overrides. Team owner/admin is not enough. Empty denies everyone.
+   */
+  PLATFORM_ADMIN_EMAILS: z.preprocess(emptyStringAsUnset, z.string().optional()),
 
   // Phase 11 — Third-party integrations + custom MCPs.
   //

@@ -8,6 +8,7 @@ import {
   formatEuroFromCents,
   planUsesPrepaidWallet,
 } from '#src/billing/catalog.js';
+import { compSuppressesPolarCharges } from '#src/billing/operator.js';
 import { createPolarBillingProvider, polarTopUpProductId } from '#src/billing/polar.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
@@ -145,11 +146,13 @@ export async function maybeTriggerWalletAutoReload(input: {
     shadowBilling: boolean;
     polarCustomerId: string | null;
     planId: string;
+    arrangement?: 'standard' | 'comped' | null;
   };
   meteredSpendCents: number;
   provider?: BillingProvider | null;
 }): Promise<{ triggered: boolean; reason?: string }> {
   const account = input.account;
+  if (compSuppressesPolarCharges(account)) return { triggered: false, reason: 'comped' };
   if (!account.autoReloadEnabled) return { triggered: false, reason: 'disabled' };
   if (account.shadowBilling) return { triggered: false, reason: 'shadow' };
   if (!planUsesPrepaidWallet(account.planId)) return { triggered: false, reason: 'plan' };

@@ -29,7 +29,9 @@
       <p>
         Sandbox accounts, tokens, products, and meters are fully isolated from production. Create a
         Timeline-specific access token; do not reuse Vernix / Irmin product or webhook IDs even when
-        they share a Polar organization.
+        they share a Polar organization. There is no script that creates the sandbox products or
+        meters. Create them in the sandbox dashboard, then paste the ids below. Point the webhook at
+        a reachable <code>POST /api/webhooks/polar</code> before exercising checkout.
       </p>
 
       <h2>Environment variables</h2>
@@ -45,7 +47,17 @@ POLAR_PRODUCT_ID_TOPUP=
 POLAR_DISCOUNT_ID=
 POLAR_DISCOUNT_CODE=
 BILLING_CHARGES_ENABLED=false
+PLATFORM_ADMIN_EMAILS=
 </code></pre>
+      <p>
+        <code>PLATFORM_ADMIN_EMAILS</code> is a comma-separated allowlist for
+        <code>/app/admin/billing</code> and <code>pnpm billing:operator</code>. It is not a team
+        role. Comped workspaces keep metering and the spend cap, skip Polar checkout, top-up,
+        auto-reload, and meter ingest, and show the comp on the team billing page. Price overrides
+        (platform fee, included members, per-member price, metered discount percent) and a per-team
+        Polar discount id are optional and can expire. Every change is appended to
+        <code>billing_operator_audit</code>.
+      </p>
 
       <h2>Products and meters (v1)</h2>
       <ul>

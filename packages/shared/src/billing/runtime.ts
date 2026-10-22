@@ -41,6 +41,7 @@ import {
   openRouterUsdCostFromFinishEvent,
   type OpenRouterFinishEvent,
 } from '#src/billing/openrouter-usage.js';
+import { effectiveBillingPlanId, resolveTeamCommercialTerms } from '#src/billing/operator.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
@@ -699,6 +700,7 @@ async function accrueTeamMemberDaysForDay(input: {
   day: string;
   planId: BillingPlanId;
   included: number;
+  additionalMemberCents: number | null;
   members: { userId: string; role: string }[];
 }): Promise<{ extraMembers: number; chargeCents: number }> {
   const { day, planId, included } = input;
@@ -717,8 +719,8 @@ async function accrueTeamMemberDaysForDay(input: {
       .onConflictDoNothing();
   }
 
-  const additionalMemberCents = PLAN_CATALOG[planId].additionalMemberCents;
-  if (planId === 'free' || additionalMemberCents === null) {
+  const additionalMemberCents = input.additionalMemberCents;
+  if (planId === 'free' || additionalMemberCents === null || additionalMemberCents <= 0) {
     return { extraMembers: 0, chargeCents: 0 };
   }
   const billableRows = await input.db
@@ -777,11 +779,17 @@ export async function accrueTeamMemberDays(input: {
   day?: string;
 }): Promise<{ extraMembers: number; chargeCents: number }> {
   const [account] = await input.db
-    .select({ planId: teamBillingAccounts.planId })
+    .select()
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
-  const planId: BillingPlanId = account?.planId ?? 'free';
+  const commercial = account
+    ? resolveTeamCommercialTerms(account)
+    : resolveTeamCommercialTerms({
+        planId: 'free',
+        billingState: 'free',
+        spendCapCents: 0,
+      });
   const days = input.day ? [input.day] : memberDayBackfillRange();
   if (days.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
@@ -808,14 +816,24 @@ export async function accrueTeamMemberDays(input: {
       db: input.db,
       teamId: input.teamId,
       day,
-      currentPlanId: planId,
+      currentPlanId: effectiveBillingPlanId(
+        account ?? { planId: 'free', billingState: 'free', spendCapCents: 0 },
+      ),
     });
+    const samePlan = entitlement.planId === commercial.planId;
     const result = await accrueTeamMemberDaysForDay({
       db: input.db,
       teamId: input.teamId,
       day,
       planId: entitlement.planId,
-      included: entitlement.included,
+      included:
+        samePlan && commercial.includedActiveMembers !== null
+          ? commercial.includedActiveMembers
+          : entitlement.included,
+      additionalMemberCents:
+        samePlan && commercial.additionalMemberCents !== null
+          ? commercial.additionalMemberCents
+          : (PLAN_CATALOG[entitlement.planId].additionalMemberCents ?? null),
       members,
     });
     extraMembers = result.extraMembers;

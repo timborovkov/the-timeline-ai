@@ -208,7 +208,9 @@ async function upsertPaidSubscription(input: {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
     if (
       existing &&
-      (existing.planId === 'enterprise' || existing.billingState === 'enterprise_active')
+      (existing.arrangement === 'comped' ||
+        existing.planId === 'enterprise' ||
+        existing.billingState === 'enterprise_active')
     ) {
       return;
     }
@@ -286,7 +288,8 @@ async function cancelMatchingSubscription(input: {
   if (!input.subscriptionId) return;
   await input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
-    if (!existing || existing.polarSubscriptionId !== input.subscriptionId) return;
+    if (!existing || existing.arrangement === 'comped') return;
+    if (existing.polarSubscriptionId !== input.subscriptionId) return;
     if (
       !shouldApplyPaidSubscriptionUpdate({
         existing,

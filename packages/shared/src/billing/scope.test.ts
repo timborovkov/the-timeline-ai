@@ -1169,6 +1169,79 @@ describe('billing scope', () => {
     }
   });
 
+  it('meters a comped team without Polar or wallet charges and still enforces the spend cap', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 500, spend_cap_cents = 100,
+          polar_customer_id = 'cus_comp', comp_reason = 'internal'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const first = await scope.settle({
+      operationId: 'op-comp-1',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.duplicate) {
+      expect(first.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+      expect(first.ledger.customerChargeCents).toBeGreaterThan(0);
+    }
+    const afterFirst = await scope.getAccount();
+    expect(afterFirst.walletBalanceCents).toBe(500);
+    expect(afterFirst.billingState).toBe('team_active');
+    expect(provider.events).toHaveLength(0);
+
+    const second = await scope.settle({
+      operationId: 'op-comp-2',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(second.ok).toBe(true);
+    const afterSecond = await scope.getAccount();
+    expect(afterSecond.billingState).toBe('read_only');
+    expect(afterSecond.walletBalanceCents).toBe(500);
+    await expect(scope.setSpendCap(50_000)).rejects.toThrow(/operators/i);
+  });
+
+  it('applies a per-team metered discount before the spend cap', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 5000, spend_cap_cents = 10000,
+          price_override = '{"meteredDiscountPercent":50}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-discounted',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) expect(settled.ledger.customerChargeCents).toBe(40);
+  });
+
   it('forces shadow mode when BILLING_CHARGES_ENABLED is off even if the row is live', async () => {
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({

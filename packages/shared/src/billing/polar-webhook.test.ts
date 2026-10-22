@@ -188,6 +188,41 @@ describe('handlePolarWebhookEvent', () => {
     expect(retry.includedDiscountRemainingCents).toBe(12);
   });
 
+  it('does not let a Polar subscription overwrite a comped plan', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          spend_cap_cents = 2500, comp_reason = 'internal'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_comp',
+          status: 'active',
+          product_id: 'prod_business',
+          customer: { id: 'cus_comp', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.arrangement).toBe('comped');
+    expect(account.planId).toBe('team');
+    expect(account.spendCapCents).toBe(2500);
+    expect(account.polarSubscriptionId).toBeNull();
+  });
+
   it('does not activate past_due subscriptions and ignores order.paid plan products', async () => {
     await handlePolarWebhookEvent({
       db,

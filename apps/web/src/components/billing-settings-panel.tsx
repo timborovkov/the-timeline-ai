@@ -24,6 +24,7 @@ import {
   updateBillingAutoReload,
   updateBillingSpendCap,
 } from '@/app/actions/billing';
+import { BillingCompNotice } from '@/components/billing-comp-notice';
 import { BillingPlanPreview } from '@/components/billing-plan-preview';
 import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
@@ -54,6 +55,14 @@ export interface BillingSettingsPanelProps {
   autoReloadAmountCents: number | null;
   planPreview: CheapestPlanPreview;
   activeMemberCount: number;
+  comp: {
+    planName: string;
+    expired: boolean;
+    reason: string | null;
+    expiresOn: string | null;
+  } | null;
+  priceNotice: string | null;
+  showOperatorLink: boolean;
 }
 
 interface BillingFormState {
@@ -94,6 +103,9 @@ function BillingPlanSection(props: {
   polarConfigured: boolean;
   canManage: boolean;
   pending: boolean;
+  comp: BillingSettingsPanelProps['comp'];
+  priceNotice: string | null;
+  showOperatorLink: boolean;
   onCheckout: (plan: 'payg' | 'team' | 'business') => void;
 }) {
   return (
@@ -116,7 +128,25 @@ function BillingPlanSection(props: {
           </dd>
         </div>
       </dl>
-      {props.canManage && props.planId !== 'enterprise' ? (
+      {props.comp ? (
+        <div className="mt-4">
+          <BillingCompNotice
+            planName={props.comp.planName}
+            expired={props.comp.expired}
+            reason={props.comp.reason}
+            expiresOn={props.comp.expiresOn}
+          />
+        </div>
+      ) : null}
+      {props.priceNotice ? <p className="mt-3 text-sm text-fg">{props.priceNotice}</p> : null}
+      {props.showOperatorLink ? (
+        <p className="mt-3 text-sm">
+          <Link href="/app/admin/billing" className="underline-offset-4 hover:underline">
+            Operator billing controls
+          </Link>
+        </p>
+      ) : null}
+      {props.canManage && !props.comp && props.planId !== 'enterprise' ? (
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
@@ -185,6 +215,7 @@ function BillingWalletSection(props: {
   includedDiscountRemainingCents: number;
   canManage: boolean;
   pending: boolean;
+  comped: boolean;
   polarTopUpConfigured: boolean;
   spendCapEuros: string;
   autoReloadEnabled: boolean;
@@ -225,21 +256,28 @@ function BillingWalletSection(props: {
               min={0}
               step={1}
               value={props.spendCapEuros}
+              disabled={props.comped}
               onChange={(event) => {
                 props.onSpendCapDraft(event.target.value);
               }}
-              className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
+              className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg disabled:opacity-60"
             />
           </label>
-          <button
-            type="button"
-            disabled={props.pending}
-            onClick={props.onSaveSpendCap}
-            className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg disabled:opacity-50"
-          >
-            Save cap
-          </button>
-          {props.walletPlan ? (
+          {props.comped ? (
+            <p className="text-sm text-fg-muted">
+              Timeline operators set the spend cap on a comped workspace.
+            </p>
+          ) : (
+            <button
+              type="button"
+              disabled={props.pending}
+              onClick={props.onSaveSpendCap}
+              className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg disabled:opacity-50"
+            >
+              Save cap
+            </button>
+          )}
+          {props.walletPlan && !props.comped ? (
             <button
               type="button"
               disabled={props.pending || !props.polarTopUpConfigured}
@@ -251,7 +289,7 @@ function BillingWalletSection(props: {
           ) : null}
         </div>
       ) : null}
-      {props.canManage && props.walletPlan ? (
+      {props.canManage && props.walletPlan && !props.comped ? (
         <div className="mt-4 space-y-3">
           <label className="flex items-center gap-2 text-sm text-fg">
             <input
@@ -416,6 +454,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         polarConfigured={props.polarConfigured}
         canManage={props.canManage}
         pending={pending}
+        comp={props.comp}
+        priceNotice={props.priceNotice}
+        showOperatorLink={props.showOperatorLink}
         onCheckout={runCheckout}
       />
 
@@ -432,6 +473,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         includedDiscountRemainingCents={props.includedDiscountRemainingCents}
         canManage={props.canManage}
         pending={pending}
+        comped={props.comp !== null}
         polarTopUpConfigured={props.polarTopUpConfigured}
         spendCapEuros={spendCapEuros}
         autoReloadEnabled={autoReloadEnabled}

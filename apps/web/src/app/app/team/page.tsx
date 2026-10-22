@@ -7,6 +7,10 @@ import {
   users,
 } from '@timeline/db';
 import {
+  describePriceOverride,
+  describeTeamComp,
+  effectiveBillingPlanId,
+  isPlatformAdminEmail,
   getTeamCapacityUsage,
   isPolarBillingConfigured,
   isPolarTopUpConfigured,
@@ -203,11 +207,16 @@ export default async function TeamSettingsPage({
   const billingDashboard = isAdmin
     ? await scope.billing.getDashboard({ canManageBilling: true })
     : null;
+  const entitlementsPlanId = billingDashboard
+    ? effectiveBillingPlanId(billingDashboard.account)
+    : 'free';
+  const comp = billingDashboard ? describeTeamComp(billingDashboard.account) : null;
+  const priceNotice = billingDashboard ? describePriceOverride(billingDashboard.account) : null;
   const capacityUsage = billingDashboard
     ? await getTeamCapacityUsage({
         db,
         teamId: active.teamId,
-        planId: billingDashboard.account.planId,
+        planId: entitlementsPlanId,
       })
     : [];
 
@@ -298,8 +307,8 @@ export default async function TeamSettingsPage({
           ) : null}
           {section === 'billing' && isAdmin && billingDashboard ? (
             <BillingSettingsPanel
-              planId={billingDashboard.account.planId}
-              planName={PLAN_CATALOG[billingDashboard.account.planId].name}
+              planId={entitlementsPlanId}
+              planName={PLAN_CATALOG[entitlementsPlanId].name}
               billingState={billingDashboard.account.billingState}
               shadowBilling={billingDashboard.account.shadowBilling}
               spendCapCents={billingDashboard.account.spendCapCents}
@@ -324,6 +333,12 @@ export default async function TeamSettingsPage({
               autoReloadAmountCents={billingDashboard.account.autoReloadAmountCents}
               planPreview={billingDashboard.planPreview}
               activeMemberCount={billingDashboard.activeMemberCount}
+              comp={comp}
+              priceNotice={priceNotice}
+              showOperatorLink={isPlatformAdminEmail(
+                session.user.email ?? '',
+                getEnv().PLATFORM_ADMIN_EMAILS,
+              )}
             />
           ) : null}
           {section === 'exports' ? (
