@@ -452,8 +452,7 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeStreamChat).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ instructions?: string }]
-      | undefined;
+      [{ instructions?: string }] | undefined;
     expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
     expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('/app/objects/'));
     expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('object_id'));
@@ -494,8 +493,7 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeMergeChatSessionContextTrail).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ instructions?: string }]
-      | undefined;
+      [{ instructions?: string }] | undefined;
     expect(streamCall?.[0].instructions).toEqual(
       expect.stringContaining('CURRENT VIEW (priority)'),
     );
@@ -741,8 +739,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ instructions?: string; tools?: Record<string, unknown> }]
-      | undefined;
+      [{ instructions?: string; tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
     expect(streamCall?.[0].tools).toMatchObject({
       get_object: { type: 'native' },
