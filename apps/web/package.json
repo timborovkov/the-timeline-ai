@@ -24,7 +24,7 @@
     "@tanstack/react-virtual": "^3.14.21",
     "@timeline/db": "workspace:*",
     "@timeline/shared": "workspace:*",
-    "ai": "^6.0.208",
+    "ai": "^7.0.143",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",

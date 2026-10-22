@@ -470,7 +470,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@js-temporal/polyfill": "^0.5.1",
     "@timeline/db": "workspace:*",
-    "ai": "^6.0.208",
+    "ai": "^7.0.143",
     "bcryptjs": "^3.0.3",
     "bullmq": "6.3.17",
     "drizzle-orm": "^0.45.4",
