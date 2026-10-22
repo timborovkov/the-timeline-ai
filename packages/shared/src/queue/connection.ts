@@ -18,6 +18,10 @@ export function getRedisConnection(): Redis {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true,
+    // ioredis 6 defaults to RESP3. Keep legacy reply shapes so BullMQ 5 and
+    // string get/set/Lua callers stay on the v5 mapping.
+    protocol: 3,
+    replyMapping: 'legacy',
   });
   return _conn;
 }

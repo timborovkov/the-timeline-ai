@@ -161,10 +161,8 @@ describe('InspectorPane', () => {
           onchange: null,
           addEventListener: vi.fn(),
           removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
           dispatchEvent: vi.fn(),
-        }) as MediaQueryList,
+        }) as unknown as MediaQueryList,
     );
     const user = userEvent.setup();
     fakes.inspector.open = true;
@@ -201,10 +199,8 @@ describe('InspectorPane', () => {
           onchange: null,
           addEventListener: vi.fn(),
           removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
           dispatchEvent: vi.fn(),
-        }) as MediaQueryList,
+        }) as unknown as MediaQueryList,
     );
     fakes.inspector.open = true;
     fakes.inspector.content = {
@@ -241,10 +237,8 @@ describe('InspectorPane', () => {
           onchange: null,
           addEventListener: vi.fn(),
           removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
           dispatchEvent: vi.fn(),
-        }) as MediaQueryList,
+        }) as unknown as MediaQueryList,
     );
     fakes.inspector.open = true;
     fakes.inspector.content = {

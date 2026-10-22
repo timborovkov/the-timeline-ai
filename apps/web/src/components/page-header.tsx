@@ -28,7 +28,7 @@ interface PageHeaderMetadataBase {
   mono?: boolean;
 }
 
-export type PageHeaderMetadata = PageHeaderMetadataBase &
+type PageHeaderMetadata = PageHeaderMetadataBase &
   (
     | {
         /** Destination that makes the whole metadata segment actionable. */

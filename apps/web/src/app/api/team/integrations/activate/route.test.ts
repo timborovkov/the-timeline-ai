@@ -182,8 +182,7 @@ describe('POST /api/team/integrations/activate', () => {
     );
     expect(fakes.recordConnectionAttention).toHaveBeenCalledTimes(1);
     const attentionInput = fakes.recordConnectionAttention.mock.calls[0]?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(attentionInput).toMatchObject({
       providerConnectionId: CONNECTION_ID,
       integrationId: INTEGRATION_ID,

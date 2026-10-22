@@ -48,13 +48,13 @@
     "studio": "NODE_OPTIONS=--conditions=development drizzle-kit studio"
   },
   "dependencies": {
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.4",
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.3",
-    "@types/node": "^26.0.0",
-    "drizzle-kit": "^0.31.10",
+    "@electric-sql/pglite": "^0.5.10",
+    "@types/node": "^26.6.5",
+    "drizzle-kit": "^0.31.11",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }

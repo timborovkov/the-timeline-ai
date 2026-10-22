@@ -1421,12 +1421,10 @@ function teamVisibleRawEventCondition(teamId: string) {
 }
 
 function shortCompanyMatch(left: string, right: string, a: CleanupObjectRow, b: CleanupObjectRow) {
-  if (
-    !(
-      (a.type === 'company' || a.type === 'vendor') &&
-      (b.type === 'company' || b.type === 'vendor')
-    )
-  ) {
+  if (!(
+    (a.type === 'company' || a.type === 'vendor') &&
+    (b.type === 'company' || b.type === 'vendor')
+  )) {
     return false;
   }
   const leftIsShort = left.length <= right.length;
@@ -3622,7 +3620,7 @@ async function scheduleConversationReview(
         metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
         updatedAt: new Date(),
       },
-      where: sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
+      setWhere: sql`COALESCE(${conversationReviews.metadata} ->> 'review_outcome', '') <> 'superseded_by_thread_review'
         AND (
           COALESCE(
             (SELECT ${rawEvents.occurredAt} FROM ${rawEvents} WHERE ${rawEvents.id} = ${conversationReviews.lastRawEventId}),

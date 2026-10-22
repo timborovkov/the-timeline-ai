@@ -1783,8 +1783,7 @@ describe('buildAgentTools — team isolation', () => {
       }),
     );
     const lookupPlan = scope.timeline.listEventsForMomentLookup.mock.calls[0]?.[0] as
-      | { metadataPredicates?: { path: string[]; equals: string }[] }
-      | undefined;
+      { metadataPredicates?: { path: string[]; equals: string }[] } | undefined;
     expect(lookupPlan?.metadataPredicates).toEqual(
       expect.arrayContaining([
         { path: ['provider'], equals: 'github' },
@@ -2014,8 +2013,7 @@ describe('buildAgentTools — team isolation', () => {
     expect(
       (
         scope.timeline.listEventsForMomentLookup.mock.calls[0]?.[0] as
-          | { metadataPredicateGroups?: { path: string[]; equals: string }[][] }
-          | undefined
+          { metadataPredicateGroups?: { path: string[]; equals: string }[][] } | undefined
       )?.metadataPredicateGroups,
     ).toEqual([
       [

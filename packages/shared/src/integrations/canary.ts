@@ -150,16 +150,13 @@ const TRANSCRIPTION_SPEECH_CANARY_MP3_BASE64 = [
 ].join('');
 
 export type PostmarkInboundCaptureCanaryUrlValidation =
-  | { ok: true; url: URL }
-  | { ok: false; reason: string };
+  { ok: true; url: URL } | { ok: false; reason: string };
 
 export type SlackEventCaptureCanaryUrlValidation =
-  | { ok: true; url: URL }
-  | { ok: false; reason: string };
+  { ok: true; url: URL } | { ok: false; reason: string };
 
 export type TelegramCaptureCanaryUrlValidation =
-  | { ok: true; url: URL }
-  | { ok: false; reason: string };
+  { ok: true; url: URL } | { ok: false; reason: string };
 
 function statusLabel(status: LiveIntegrationCanaryStatus): string {
   return status.toUpperCase().padEnd(4);

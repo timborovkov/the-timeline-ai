@@ -24,8 +24,7 @@ export interface MondayHelperRepairFollowupState {
 }
 
 export type MondayHelperRepairFollowupStep =
-  | { status: 'ok' | 'already_complete' }
-  | { status: 'failed'; error: string };
+  { status: 'ok' | 'already_complete' } | { status: 'failed'; error: string };
 
 export interface MondayHelperRepairFollowupResult {
   integrationId: string;
