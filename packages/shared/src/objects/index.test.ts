@@ -552,8 +552,7 @@ describe('object scope — team ownership and audit behavior', () => {
       visibilityFloor: 'team',
     });
     const createSourceRefs = outputs[0]?.sourceRefs as
-      | { source?: string; rawEventId?: string; sourcePayloadRef?: string | null }[]
-      | undefined;
+      { source?: string; rawEventId?: string; sourcePayloadRef?: string | null }[] | undefined;
     const createSourceRef = createSourceRefs?.[0];
     expect(createSourceRef?.source).toBe('system');
     expect(typeof createSourceRef?.rawEventId).toBe('string');
@@ -3324,8 +3323,7 @@ describe('object scope — relationships', () => {
       }),
     ]);
     const linkSourceRefs = linkOutputs[0]?.sourceRefs as
-      | { sourcePayloadRef?: string | null }[]
-      | undefined;
+      { sourcePayloadRef?: string | null }[] | undefined;
     const linkSourceRef = linkSourceRefs?.[0];
     expect(linkSourceRef?.sourcePayloadRef).toMatch(
       /^inline:\/\/timeline\/system\/relationship_create\//,
@@ -3395,8 +3393,7 @@ describe('object scope — relationships', () => {
       }),
     ]);
     const unlinkSourceRefs = unlinkOutput?.sourceRefs as
-      | { sourcePayloadRef?: string | null }[]
-      | undefined;
+      { sourcePayloadRef?: string | null }[] | undefined;
     const unlinkSourceRef = unlinkSourceRefs?.[0];
     expect(unlinkSourceRef?.sourcePayloadRef).toMatch(
       /^inline:\/\/timeline\/system\/relationship_delete\//,
@@ -3959,8 +3956,7 @@ describe('object scope — merge cleanup', () => {
       }),
     ]);
     const mergeSourceRefs = mergeOutput?.sourceRefs as
-      | { sourcePayloadRef?: string | null }[]
-      | undefined;
+      { sourcePayloadRef?: string | null }[] | undefined;
     const mergeSourceRef = mergeSourceRefs?.[0];
     expect(mergeSourceRef?.sourcePayloadRef).toMatch(
       /^inline:\/\/timeline\/system\/object_merge\//,

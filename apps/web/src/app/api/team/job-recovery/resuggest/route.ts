@@ -116,7 +116,7 @@ async function recoverConversationReview(
         metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
         updatedAt: args.requestedAt,
       },
-      where: recoverableAnchorCondition(candidate),
+      setWhere: recoverableAnchorCondition(candidate),
     })
     .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
   return review ? { ...review, previousQuietUntil: existing?.quietUntil ?? null } : null;

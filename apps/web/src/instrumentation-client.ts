@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { RESTRICTED_SENTRY_DATA_COLLECTION } from '@timeline/shared/monitoring/sentry-scrub';
 
 import {
   parseSentrySampleRate,
@@ -17,7 +18,7 @@ if (dsn) {
     dsn,
     tracesSampleRate,
     profilesSampleRate,
-    sendDefaultPii: false,
+    dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend: scrubSentryEvent,
     beforeBreadcrumb: scrubSentryBreadcrumbEvent,
   });

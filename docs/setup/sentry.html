@@ -81,10 +81,13 @@ SENTRY_PROFILES_SAMPLE_RATE=0
         messages and sanitized retry metadata, not the provider's original exception chain.
       </p>
       <p>
-        Keep <code>sendDefaultPii</code> disabled. Do not attach cookies, auth headers, prompts,
-        transcripts, filenames, uploaded content, or raw document text to Sentry events. The
-        scrubber removes request cookies and auth headers before send, and redacts Telegram Bot API
-        tokens embedded in HTTP breadcrumb URLs (<code>api.telegram.org/bot&lt;token&gt;/…</code>
+        Keep Sentry <code>dataCollection</code> restricted (no user info, cookies, HTTP bodies, or
+        genAI payloads; deny lists for forwarding headers and query params). Do not attach cookies,
+        auth headers, prompts, transcripts, filenames, uploaded content, or raw document text to
+        Sentry events. The scrubber removes request cookies and auth headers before send, and
+        redacts Telegram Bot API tokens embedded in HTTP breadcrumb URLs (<code
+          >api.telegram.org/bot&lt;token&gt;/…</code
+        >
         and <code>api.telegram.org/file/bot&lt;token&gt;/…</code>). Browser-side filtering also
         drops known injected extension noise such as MetaMask in-page script connection errors, so
         third-party extension failures do not page as Timeline app failures. The web proxy rejects
