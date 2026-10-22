@@ -41,64 +41,62 @@ export const INTEGRATION_DIRECTORY_DOCUMENT = {
   },
 } satisfies PublicDocument;
 
-const connectorDocuments = CONNECTORS.map(
-  (connector, index): PublicDocument => ({
-    canonicalPath: `/integrations/${connector.slug}`,
-    kind: 'connector',
-    title: connector.seoTitle,
-    description: connector.seoDescription,
-    indexability: 'index',
-    dates: { modified: connector.lastReviewed, reviewed: connector.lastReviewed },
-    capability: { kind: 'native-ingestion', provider: connector.slug },
-    sitemap: { changeFrequency: 'monthly', priority: 0.8 },
-    structuredData: [
-      { type: 'web-page' },
-      {
-        type: 'breadcrumbs',
-        items: [
-          { name: 'Integrations', path: '/integrations' },
-          { name: connector.name, path: `/integrations/${connector.slug}` },
-        ],
-      },
-      { type: 'faq', entries: connector.faqs },
-      {
-        type: 'software-application',
-        name: 'The Timeline',
-        applicationCategory: 'BusinessApplication',
-        operatingSystem: 'Web',
-        features: connector.capturedRecords,
-      },
-    ],
-    llms: {
-      section: 'integrations',
-      order: (index + 1) * 10,
-      label: `${connector.name} integration`,
-      summary: connector.seoDescription,
-      fullSummary: connector.intro,
-      sections: [
-        {
-          title: 'Capability truth',
-          body: `${connector.captureStatement} ${connector.providerStatement}`,
-        },
-        {
-          title: 'Captured records',
-          body: `Timeline captures the following ${connector.name} evidence:`,
-          items: connector.capturedRecords,
-        },
-        {
-          title: 'Setup and permissions',
-          body: connector.setup.join(' '),
-          items: connector.permissions,
-        },
-        {
-          title: 'Limitations',
-          body: `Current ${connector.name} ingestion boundaries:`,
-          items: connector.limitations,
-        },
+const connectorDocuments = CONNECTORS.map((connector, index): PublicDocument => ({
+  canonicalPath: `/integrations/${connector.slug}`,
+  kind: 'connector',
+  title: connector.seoTitle,
+  description: connector.seoDescription,
+  indexability: 'index',
+  dates: { modified: connector.lastReviewed, reviewed: connector.lastReviewed },
+  capability: { kind: 'native-ingestion', provider: connector.slug },
+  sitemap: { changeFrequency: 'monthly', priority: 0.8 },
+  structuredData: [
+    { type: 'web-page' },
+    {
+      type: 'breadcrumbs',
+      items: [
+        { name: 'Integrations', path: '/integrations' },
+        { name: connector.name, path: `/integrations/${connector.slug}` },
       ],
     },
-  }),
-);
+    { type: 'faq', entries: connector.faqs },
+    {
+      type: 'software-application',
+      name: 'The Timeline',
+      applicationCategory: 'BusinessApplication',
+      operatingSystem: 'Web',
+      features: connector.capturedRecords,
+    },
+  ],
+  llms: {
+    section: 'integrations',
+    order: (index + 1) * 10,
+    label: `${connector.name} integration`,
+    summary: connector.seoDescription,
+    fullSummary: connector.intro,
+    sections: [
+      {
+        title: 'Capability truth',
+        body: `${connector.captureStatement} ${connector.providerStatement}`,
+      },
+      {
+        title: 'Captured records',
+        body: `Timeline captures the following ${connector.name} evidence:`,
+        items: connector.capturedRecords,
+      },
+      {
+        title: 'Setup and permissions',
+        body: connector.setup.join(' '),
+        items: connector.permissions,
+      },
+      {
+        title: 'Limitations',
+        body: `Current ${connector.name} ingestion boundaries:`,
+        items: connector.limitations,
+      },
+    ],
+  },
+}));
 
 export const CONNECTOR_PUBLIC_DOCUMENTS = definePublicDocuments('native-connectors', [
   INTEGRATION_DIRECTORY_DOCUMENT,

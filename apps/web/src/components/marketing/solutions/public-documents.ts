@@ -7,44 +7,42 @@ const SOLUTION_REVIEW_DATE = '2026-08-21' as const;
 
 export const SOLUTION_PUBLIC_DOCUMENTS = definePublicDocuments(
   'solutions',
-  SOLUTIONS.map(
-    (solution, index): PublicDocument => ({
-      canonicalPath: solution.route,
-      kind: 'solution',
-      title: solution.seoTitle,
-      description: solution.seoDescription,
-      indexability: 'index',
-      dates: { modified: SOLUTION_REVIEW_DATE, reviewed: SOLUTION_REVIEW_DATE },
-      capability: { kind: 'current-product' },
-      sitemap: { changeFrequency: 'monthly', priority: 0.8 },
-      structuredData: [
-        { type: 'web-page' },
-        {
-          type: 'breadcrumbs',
-          items: [
-            { name: 'The Timeline', path: '/' },
-            { name: solution.shortTitle, path: solution.route },
-          ],
-        },
-        { type: 'faq', entries: solution.faqs },
-        {
-          type: 'software-application',
-          name: 'The Timeline',
-          applicationCategory: 'BusinessApplication',
-          operatingSystem: 'Web',
-          features: solution.answer.checklist,
-        },
-      ],
-      llms: {
-        section: 'solutions',
-        order: (index + 1) * 10,
-        label: solution.shortTitle,
-        summary: solution.seoDescription,
-        fullSummary: solution.summary,
-        sections: solutionLlmsSections(solution),
+  SOLUTIONS.map((solution, index): PublicDocument => ({
+    canonicalPath: solution.route,
+    kind: 'solution',
+    title: solution.seoTitle,
+    description: solution.seoDescription,
+    indexability: 'index',
+    dates: { modified: SOLUTION_REVIEW_DATE, reviewed: SOLUTION_REVIEW_DATE },
+    capability: { kind: 'current-product' },
+    sitemap: { changeFrequency: 'monthly', priority: 0.8 },
+    structuredData: [
+      { type: 'web-page' },
+      {
+        type: 'breadcrumbs',
+        items: [
+          { name: 'The Timeline', path: '/' },
+          { name: solution.shortTitle, path: solution.route },
+        ],
       },
-    }),
-  ),
+      { type: 'faq', entries: solution.faqs },
+      {
+        type: 'software-application',
+        name: 'The Timeline',
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+        features: solution.answer.checklist,
+      },
+    ],
+    llms: {
+      section: 'solutions',
+      order: (index + 1) * 10,
+      label: solution.shortTitle,
+      summary: solution.seoDescription,
+      fullSummary: solution.summary,
+      sections: solutionLlmsSections(solution),
+    },
+  })),
 );
 
 function solutionLlmsSections(solution: SolutionContent): readonly PublicLlmsContentSection[] {

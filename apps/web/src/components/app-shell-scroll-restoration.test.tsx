@@ -130,12 +130,12 @@ describe('AppMainScrollRestoration', () => {
   it('waits briefly for hash targets that mount after navigation', () => {
     const frames = new Map<number, FrameRequestCallback>();
     let nextFrameId = 0;
-    vi.mocked(window.requestAnimationFrame).mockImplementation((callback) => {
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
       nextFrameId += 1;
       frames.set(nextFrameId, callback);
       return nextFrameId;
     });
-    vi.mocked(window.cancelAnimationFrame).mockImplementation((frameId) => {
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((frameId) => {
       frames.delete(frameId);
     });
 

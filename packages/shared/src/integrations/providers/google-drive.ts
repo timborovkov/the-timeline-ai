@@ -180,7 +180,7 @@ async function downloadFileBody(
  */
 async function fileInSelectedSubtree(
   tokens: DriveTokens,
-  fileId: string,
+  _fileId: string,
   parents: string[],
   selectedIds: Set<string>,
   cache: Map<string, boolean>,
@@ -222,7 +222,6 @@ async function fileInSelectedSubtree(
       cache.set(p, false);
     }
   }
-  void fileId;
   return false;
 }
 
@@ -277,7 +276,6 @@ function buildAuthorizeUrl(input: OAuthStartInput): string {
 }
 
 function changeToEvent(_integration: IntegrationRow, change: DriveChange): IntegrationEvent | null {
-  void _integration;
   if (!change.fileId) return null;
   if (change.removed) {
     return {
@@ -592,12 +590,10 @@ export const googleDriveProvider: IntegrationProvider = {
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async handleWebhook({ integration, payload }) {
+  async handleWebhook({ integration: _integration, payload: _payload }) {
     // Drive push notifications carry a resourceId in headers; we use the
     // payload only as a wake-up signal and rely on the incremental cursor
     // to fetch the actual changes.
-    void integration;
-    void payload;
     return [];
   },
 };

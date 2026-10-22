@@ -84,13 +84,7 @@ const RELATIONSHIP_KINDS = [
 type ObjectDetail = objects.ObjectDetail;
 type LocalSuggestion = ComponentProps<typeof ApprovalsClient>['suggestions'][number];
 type EditableField =
-  | 'canonicalName'
-  | 'aliases'
-  | 'status'
-  | 'stage'
-  | 'priority'
-  | 'dueAt'
-  | 'assigneeUserId';
+  'canonicalName' | 'aliases' | 'status' | 'stage' | 'priority' | 'dueAt' | 'assigneeUserId';
 type EditableValue = string | number | Date | readonly string[] | null;
 type DraftField = 'canonicalName' | 'aliases' | 'stage' | 'dueAt';
 
@@ -123,8 +117,7 @@ interface ObjectDetailUiState {
 }
 
 type ObjectDetailUiAction =
-  | Partial<ObjectDetailUiState>
-  | ((state: ObjectDetailUiState) => ObjectDetailUiState);
+  Partial<ObjectDetailUiState> | ((state: ObjectDetailUiState) => ObjectDetailUiState);
 
 interface ObjectDetailLocalState {
   linkQuery: string;
@@ -139,8 +132,7 @@ interface ObjectDetailLocalState {
 }
 
 type ObjectDetailLocalAction =
-  | Partial<ObjectDetailLocalState>
-  | ((state: ObjectDetailLocalState) => ObjectDetailLocalState);
+  Partial<ObjectDetailLocalState> | ((state: ObjectDetailLocalState) => ObjectDetailLocalState);
 
 // Per-type status vocabulary. Free-form text in the DB so callers can extend
 // without a migration; the dropdown lives in the UI.

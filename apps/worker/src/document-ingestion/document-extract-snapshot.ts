@@ -278,7 +278,7 @@ export async function pruneDocumentExtractSnapshots(options: {
   let pageNumber = 1;
   let totalPages: number;
   do {
-    const page = await daytona.snapshot.list(pageNumber, 100);
+    const page = await daytona.snapshot.list({ page: pageNumber, limit: 100 });
     snapshots.push(...page.items);
     totalPages = page.totalPages;
     pageNumber += 1;
