@@ -1115,19 +1115,19 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await r.scope.objects.removeRelationship(parsed.data.id, {
+      const removed = await r.scope.objects.removeRelationship(parsed.data.id, {
         kind: 'user',
         userId: r.userId,
       });
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_relationship');
-      // Revalidate the peer's detail page too — addRelationshipAction does
-      // the same, otherwise the other side keeps showing the now-deleted
-      // link until the user navigates away.
-      if (parsed.data.otherEntityId) {
-        bestEffortRevalidateObjectDetail(
-          parsed.data.otherEntityId,
-          'revalidate_object_relationship',
-        );
+      // Include every touched id (primary clear via setPersonCompany can wipe
+      // legacy secondary company pages that are not entityId/otherEntityId).
+      const revalidateIds = new Set(
+        [parsed.data.entityId, parsed.data.otherEntityId, ...removed.touchedIds].filter(
+          (id): id is string => Boolean(id),
+        ),
+      );
+      for (const objectId of revalidateIds) {
+        bestEffortRevalidateObjectDetail(objectId, 'revalidate_object_relationship');
       }
       return { ok: true };
     } catch (err) {

@@ -2025,7 +2025,10 @@ describe('object scope — notes and suggestions', () => {
 
     await expect(
       scope.removeRelationship(secondary?.id ?? '', { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({
+      removed: true,
+      touchedIds: expect.arrayContaining([person.id, secondCompany.id]),
+    });
     await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
       expect.objectContaining({
         personId: person.id,
@@ -2056,7 +2059,10 @@ describe('object scope — notes and suggestions', () => {
       .limit(1);
     await expect(
       scope.removeRelationship(primaryEdge?.id ?? '', { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({
+      removed: true,
+      touchedIds: expect.arrayContaining([person.id, firstCompany.id]),
+    });
     await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([]);
   });
 
@@ -3602,7 +3608,7 @@ describe('object scope — relationships', () => {
 
     await expect(
       scope.removeRelationship(relationshipId, { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ removed: true, touchedIds: expect.any(Array) });
     const relationshipChangeRows = await db
       .select()
       .from(objectChanges)

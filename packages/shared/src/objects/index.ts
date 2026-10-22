@@ -7618,9 +7618,9 @@ export async function removeRelationship(
   scope: TeamScopeCore,
   relationshipId: string,
   actor: UpdateActor = { kind: 'user', userId: null },
-): Promise<boolean> {
+): Promise<{ removed: boolean; touchedIds: string[] }> {
   await scope.requireMembership();
-  if (!UUID_RE.test(relationshipId)) return false;
+  if (!UUID_RE.test(relationshipId)) return { removed: false, touchedIds: [] };
 
   // Person↔company employment is exclusive. Clearing the primary Company edge
   // must go through setPersonCompany(null); surgical deletes are only for
@@ -7662,8 +7662,8 @@ export async function removeRelationship(
       const companyId = fromType === 'company' ? previewRel.fromEntityId : previewRel.toEntityId;
       const [primary] = await listPrimaryCompaniesForPeople(db, scope, [personId]);
       if (primary?.companyId === companyId) {
-        await setPersonCompany(db, scope, personId, null, actor);
-        return true;
+        const cleared = await setPersonCompany(db, scope, personId, null, actor);
+        return { removed: true, touchedIds: cleared.touchedIds };
       }
     }
   }
@@ -7790,8 +7790,9 @@ export async function removeRelationship(
     });
     return { fromEntityId: rel.fromEntityId, toEntityId: rel.toEntityId };
   });
-  if (!result) return false;
-  for (const objectId of [result.fromEntityId, result.toEntityId]) {
+  if (!result) return { removed: false, touchedIds: [] };
+  const touchedIds = [result.fromEntityId, result.toEntityId];
+  for (const objectId of touchedIds) {
     void fireAndForgetObjectSummaryRefresh(db, scope, objectId, {
       teamId: scope.teamId,
       objectId,
@@ -7799,7 +7800,7 @@ export async function removeRelationship(
       op: 'removeRelationship',
     });
   }
-  return true;
+  return { removed: true, touchedIds };
 }
 
 /** Notes are mutable; every CRUD writes raw_events + object_changes for audit. */
