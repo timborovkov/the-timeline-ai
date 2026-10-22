@@ -210,8 +210,7 @@ describe('ObjectDetailPage', () => {
     );
 
     const props = fakes.objectDetailClientProps.mock.calls.at(-1)?.[0] as
-      | { suggestions?: { items: { id: string }[] }[] }
-      | undefined;
+      { suggestions?: { items: { id: string }[] }[] } | undefined;
     expect(props?.suggestions?.[0]?.items.map((item) => item.id)).toEqual([
       'item-person',
       'item-relationship',
@@ -274,8 +273,7 @@ describe('ObjectDetailPage', () => {
     );
 
     const props = fakes.objectDetailClientProps.mock.calls.at(-1)?.[0] as
-      | { suggestions?: { items: { id: string }[] }[] }
-      | undefined;
+      { suggestions?: { items: { id: string }[] }[] } | undefined;
     expect(props?.suggestions?.[0]?.items.map((item) => item.id)).toEqual(['item-relationship']);
   });
 });

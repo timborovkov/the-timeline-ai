@@ -2297,8 +2297,7 @@ async function syncIssuesSurface(
 type GithubConversationSurface = 'issue_comments' | 'pr_review_comments';
 type GithubConversationCursorKey = 'issue_comments_since' | 'pr_review_comments_since';
 type GithubConversationContinuationKey =
-  | 'issue_comments_continuation'
-  | 'pr_review_comments_continuation';
+  'issue_comments_continuation' | 'pr_review_comments_continuation';
 
 function githubConversationSurface(
   value: string | undefined,

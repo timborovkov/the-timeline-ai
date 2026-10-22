@@ -1685,8 +1685,7 @@ describe('runOneIntegration attention classification', () => {
     await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
 
     const writeCall = fakes.writeIntegrationEvents.mock.calls[0] as
-      | [TestWriteIntegrationEventsInput]
-      | undefined;
+      [TestWriteIntegrationEventsInput] | undefined;
     const writeInput = writeCall?.[0];
     expect(writeInput?.db).toBeDefined();
     expect(writeInput?.integration).toMatchObject({

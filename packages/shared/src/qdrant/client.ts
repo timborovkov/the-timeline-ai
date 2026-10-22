@@ -119,11 +119,7 @@ export interface QdrantPayload {
   file_kind?: 'captured' | 'document' | null;
   /** document_chunks.representationKind. Set only for source_kind='doc_chunk'. */
   representation_kind?:
-    | 'source_text'
-    | 'transcript'
-    | 'visual_description'
-    | 'metadata_preview'
-    | null;
+    'source_text' | 'transcript' | 'visual_description' | 'metadata_preview' | null;
   /** documents.ownerUserId — surfaced for owner filters. */
   owner_user_id: string | null;
   /** document_versions.createdAt as ISO. Lets recency filters work on docs. */

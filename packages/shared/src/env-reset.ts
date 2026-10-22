@@ -66,7 +66,12 @@ export function versionedBuckets(env: ResetEnv): string[] {
 }
 
 export async function flushRedisAll(redisUrl: string): Promise<void> {
-  const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null, lazyConnect: true });
+  const redis = new IORedis(redisUrl, {
+    maxRetriesPerRequest: null,
+    lazyConnect: true,
+    protocol: 3,
+    replyMapping: 'legacy',
+  });
   try {
     await redis.flushall();
   } finally {

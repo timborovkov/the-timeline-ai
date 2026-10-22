@@ -11286,8 +11286,7 @@ describe('suggestion scope', () => {
       .from(reconciliationOutputs)
       .where(eq(reconciliationOutputs.id, outputId));
     const outputPayload = output?.payload as
-      | { proposed_payload?: Record<string, unknown> }
-      | undefined;
+      { proposed_payload?: Record<string, unknown> } | undefined;
     expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
@@ -11370,8 +11369,7 @@ describe('suggestion scope', () => {
       .from(reconciliationOutputs)
       .where(eq(reconciliationOutputs.id, outputId));
     const outputPayload = output?.payload as
-      | { proposed_payload?: Record<string, unknown> }
-      | undefined;
+      { proposed_payload?: Record<string, unknown> } | undefined;
     expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);

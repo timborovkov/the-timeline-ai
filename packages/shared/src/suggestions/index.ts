@@ -213,11 +213,7 @@ function reconciliationClusterIdsFromOutputRows(rows: { clusterId: string | null
 }
 
 type ProjectionOutboxAction =
-  | 'create_projection'
-  | 'mark_applied'
-  | 'mark_rejected'
-  | 'mark_failed'
-  | 'mark_superseded';
+  'create_projection' | 'mark_applied' | 'mark_rejected' | 'mark_failed' | 'mark_superseded';
 
 interface SourceRefValidationMetadata {
   ok: true;
@@ -7012,7 +7008,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 ...itemProjectionOutputEnvelope,
                 updatedAt: new Date(),
               },
-              where: sql`${reconciliationOutputs.status} NOT IN ('applied', 'rejected', 'superseded')`,
+              setWhere: sql`${reconciliationOutputs.status} NOT IN ('applied', 'rejected', 'superseded')`,
             })
             .returning({
               id: reconciliationOutputs.id,
@@ -7282,7 +7278,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
                 metadata: sql`${agentSuggestions.metadata} || ${JSON.stringify(suggestionValues.metadata)}::jsonb`,
                 updatedAt: new Date(),
               },
-              where: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected', 'superseded')`,
+              setWhere: sql`${agentSuggestions.status} NOT IN ('accepted', 'rejected', 'superseded')`,
             })
             .returning();
           return row;

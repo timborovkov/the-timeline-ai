@@ -1433,10 +1433,3 @@ describe('processDocumentExtractJob — fetchBlob failure', () => {
     expect(row.rows[0]?.processing_error).toContain('S3 timeout');
   });
 });
-
-// Keep the unused imports load-bearing so future tests can use the schema
-// objects directly. Without this, dead-import lint complains.
-void documentChunks;
-void documents;
-void documentVersions;
-void eq;
