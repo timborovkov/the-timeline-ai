@@ -301,7 +301,7 @@ const baseSchema = z.object({
   TURNSTILE_SECRET_KEY: z.string().optional(),
 
   // Slack first-party conversational capture.
-  SLACK_CLIENT_ID: z.string().optional(),
+  SLACK_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   SLACK_CLIENT_SECRET: z.string().optional(),
   SLACK_SIGNING_SECRET: z.string().optional(),
 
@@ -393,22 +393,23 @@ const baseSchema = z.object({
   SECRETS_ENCRYPTION_KEY: z.string().optional(),
 
   // Per-team integrations. The catalog hides any native provider whose
-  // OAuth credentials aren't set; provider-specific webhook secrets only
-  // apply to providers that expose inbound webhooks.
-  GOOGLE_CLIENT_ID: z.string().optional(),
+  // OAuth credentials aren't set. A blank value counts as unset so a sourced
+  // .env does not become a budget-owner key of "". Provider-specific webhook
+  // secrets only apply to providers that expose inbound webhooks.
+  GOOGLE_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
-  LINEAR_CLIENT_ID: z.string().optional(),
+  LINEAR_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   LINEAR_CLIENT_SECRET: z.string().optional(),
   LINEAR_WEBHOOK_SECRET: z.string().optional(),
-  GITHUB_APP_CLIENT_ID: z.string().optional(),
+  GITHUB_APP_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_CLIENT_SECRET: z.string().optional(),
-  GITHUB_APP_ID: z.string().optional(),
+  GITHUB_APP_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
-  MONDAY_CLIENT_ID: z.string().optional(),
+  MONDAY_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   MONDAY_CLIENT_SECRET: z.string().optional(),
   MONDAY_WEBHOOK_SECRET: z.string().optional(),
-  SENTRY_INTEGRATION_CLIENT_ID: z.string().optional(),
+  SENTRY_INTEGRATION_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   SENTRY_INTEGRATION_CLIENT_SECRET: z.string().optional(),
   // HMAC secret for Google Drive push-channel tokens. The Drive watch
   // registration sets channel_token = HMAC-SHA256(secret, integration.id)

@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { resetEnvForTests } from '#src/env.js';
 import {
   adminLoadProviderBudgetPause,
   adminRecordProviderBudgetPause,
@@ -95,6 +96,30 @@ describe('provider budget pauses', () => {
       'installation:789',
     ]);
     expect(new Set(keys.map((key) => key.scope))).toEqual(new Set(['primary']));
+  });
+
+  it('treats a blank GitHub app id as unset when naming the budget owner', () => {
+    const previousAppId = process.env.GITHUB_APP_ID;
+    const previousClientId = process.env.GITHUB_APP_CLIENT_ID;
+    process.env.GITHUB_APP_ID = '';
+    process.env.GITHUB_APP_CLIENT_ID = ' ';
+    resetEnvForTests();
+    try {
+      const keys = providerBudgetKeysForIntegration(
+        {
+          provider: 'github',
+          externalAccountId: 'installation:123',
+        } as never,
+        'primary',
+      );
+      expect(keys.map((key) => key.appKey)).toEqual(['github']);
+    } finally {
+      if (previousAppId === undefined) delete process.env.GITHUB_APP_ID;
+      else process.env.GITHUB_APP_ID = previousAppId;
+      if (previousClientId === undefined) delete process.env.GITHUB_APP_CLIENT_ID;
+      else process.env.GITHUB_APP_CLIENT_ID = previousClientId;
+      resetEnvForTests();
+    }
   });
 
   it('reports legacy Monday connections missing account and webhook scopes', () => {
