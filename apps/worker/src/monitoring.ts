@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/node';
 import {
+  RESTRICTED_SENTRY_DATA_COLLECTION,
   scrubSentryBreadcrumb,
   scrubSentryRequestEvent,
 } from '@timeline/shared/monitoring/sentry-scrub';
@@ -20,8 +21,7 @@ export function initWorkerSentry(): boolean {
     dsn: process.env.SENTRY_DSN,
     environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
     tracesSampleRate: sampleRate('SENTRY_TRACES_SAMPLE_RATE'),
-    profilesSampleRate: sampleRate('SENTRY_PROFILES_SAMPLE_RATE'),
-    sendDefaultPii: false,
+    dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend(event) {
       return scrubSentryRequestEvent(event);
     },

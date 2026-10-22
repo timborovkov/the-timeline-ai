@@ -317,6 +317,8 @@ const baseSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  // Sentry JS 11 removed transaction `profilesSampleRate`. These stay accepted
+  // so existing deploys keep validating; they currently have no SDK effect.
   NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
   SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
