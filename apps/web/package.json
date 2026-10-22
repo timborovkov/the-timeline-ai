@@ -52,7 +52,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "happy-dom": "^20.10.6",
     "postcss": "^8.5.31",
-    "react-doctor": "^0.5.8",
+    "react-doctor": "^0.9.18",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
