@@ -604,6 +604,24 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
   --measure --team=20000000-0000-4000-8000-000000000001 \
   --user=10000000-0000-4000-8000-000000000001
 </code></pre>
+          The probe persists those optimizer settings on both source and target collections. Before
+          resuming normal searches, restore <code>full_scan_threshold</code> on both to its previous
+          value (the Qdrant default is <code>10000</code> KB). The forced <code>10</code> KB
+          threshold can reduce recall for small filtered result sets, including the demo's fact
+          checks. Keep the chosen <code>indexing_threshold</code> if this small corpus should remain
+          indexed and quantized. Verify the target explicitly before the environment cutover in the
+          next step:
+          <pre><code>(
+  set -e
+  for collection in events events_ondisk; do
+    curl --fail --request PATCH "$QDRANT_URL/collections/$collection" \
+      --header "api-key: $QDRANT_API_KEY" \
+      --header "Content-Type: application/json" \
+      --data '{"hnsw_config":{"full_scan_threshold":10000}}'
+  done
+  QDRANT_COLLECTION=events_ondisk pnpm demo:verify
+)
+</code></pre>
         </li>
         <li>
           <strong>Cut over</strong> by setting <code>QDRANT_COLLECTION=events_ondisk</code> on web

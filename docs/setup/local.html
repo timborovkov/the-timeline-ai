@@ -38,6 +38,10 @@ ln -sf ../../.env apps/web/.env
       <ul>
         <li><code>AUTH_SECRET</code> — <code>openssl rand -base64 32</code></li>
         <li>
+          <code>OPENROUTER_API_KEY</code> — a funded development key for demo indexing, semantic
+          search, and AI features. Other third-party service keys can stay empty for the demo.
+        </li>
+        <li>
           <code>SECRETS_ENCRYPTION_KEY</code> — 32-byte base64 key required as soon as you connect
           any Phase 11 integration or custom MCP server. Generate with
           <code>openssl rand -base64 32</code>. See
@@ -56,6 +60,23 @@ ln -sf ../../.env apps/web/.env
         <code>SUPPORT_EMAIL</code> can stay empty locally. Empty Turnstile secrets fail open outside
         production so developers can create email/password accounts without a Cloudflare widget.
       </p>
+      <p>
+        For local document parsing without Daytona, set
+        <code>DOCUMENT_EXTRACT_ALLOW_INPROCESS=true</code>. This development-only option is rejected
+        in production; leave it false when using a Daytona extractor.
+      </p>
+
+      <p>
+        When upgrading an existing Qdrant container, check its running image with
+        <code>docker compose ps qdrant</code> before starting the updated Compose stack. Back up the
+        stopped container's <code>/qdrant/storage</code> directory and upgrade through the latest
+        patch of each intermediate minor version; a persisted 1.12 collection must not jump directly
+        to 1.19.2. See the
+        <a href="https://qdrant.tech/documentation/operations/upgrades/">Qdrant upgrade guide</a>.
+        Recreating the container keeps its data volume and existing collection layout. After the
+        server upgrade, use the collection-copy command below to adopt on-disk vectors without
+        re-embedding; keep the source collection until the copy and demo verification pass.
+      </p>
 
       <p>Start infra:</p>
       <pre><code>docker compose up -d
@@ -64,8 +85,10 @@ docker compose ps           # all services should be "healthy"
 
       <p>
         This brings up Postgres (5432), Redis (6379), Qdrant (6333/6334), RustFS (9000 S3 API, 9001
-        console). The <code>rustfs-init</code> container runs once to create the required buckets,
-        enable versioning, and allow direct browser document uploads from any local
+        console). RustFS uses <code>RUSTFS_ACCESS_KEY</code> and <code>RUSTFS_SECRET_KEY</code>,
+        matching the app's local S3 credentials. The <code>rustfs-init</code> container uses the
+        pinned <code>rustfs/rc:v0.1.36</code> client to create the required buckets, enable
+        versioning, and allow direct browser document uploads from any local
         <code>localhost</code> or <code>127.0.0.1</code> port, including isolated worktree and E2E
         servers. Compose keeps Qdrant snapshots on the data volume
         (<code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code>) so snapshot create

@@ -1,3 +1,5 @@
+-- Compare provider as text so a fresh install can apply 0046's enum addition
+-- and this constraint in the same pending-migrations transaction.
 CREATE TABLE "monday_conversation_tombstones" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "team_id" uuid NOT NULL,
@@ -10,7 +12,7 @@ CREATE TABLE "monday_conversation_tombstones" (
   "source_event_dedup_key" text NOT NULL,
   "deleted_at" timestamp with time zone NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "monday_conversation_tombstones_provider_chk" CHECK ("monday_conversation_tombstones"."provider" = 'monday')
+  CONSTRAINT "monday_conversation_tombstones_provider_chk" CHECK ("monday_conversation_tombstones"."provider"::text = 'monday')
 );
 --> statement-breakpoint
 ALTER TABLE "monday_conversation_tombstones"

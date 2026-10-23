@@ -119,9 +119,9 @@
         </li>
         <li>
           Add RustFS service: New Service → Docker Image → <code>rustfs/rustfs:latest</code>.
-          Persistent volume at <code>/data</code>. Set <code>RUSTFS_ROOT_USER</code> and
-          <code>RUSTFS_ROOT_PASSWORD</code>. Bucket creation: run <code>mc</code> commands once
-          after first deploy (below).
+          Persistent volume at <code>/data</code>. Set <code>RUSTFS_ACCESS_KEY</code> and
+          <code>RUSTFS_SECRET_KEY</code>. Bucket creation: run <code>rc</code> commands once after
+          first deploy (below).
         </li>
         <li>
           Add <code>web</code> service from this repo, pointing at
@@ -372,15 +372,15 @@ LOG_LEVEL=info
 
       <h2 id="rustfs-bucket-initialization">RustFS bucket initialization</h2>
       <p>After first RustFS deploy, create buckets. Run once per environment:</p>
-      <pre><code>mc alias set timeline-prod http://&lt;rustfs-host&gt;:9000 &lt;user&gt; &lt;password&gt;
-mc mb timeline-prod/timeline-audio
-mc mb timeline-prod/timeline-attachments
-mc mb timeline-prod/timeline-exports
-mc mb timeline-prod/timeline-documents
-mc version enable timeline-prod/timeline-audio
-mc version enable timeline-prod/timeline-attachments
-mc version enable timeline-prod/timeline-documents
-mc version enable timeline-prod/timeline-exports
+      <pre><code>rc alias set timeline-prod http://&lt;rustfs-host&gt;:9000 &lt;access-key&gt; &lt;secret-key&gt;
+rc bucket create --ignore-existing timeline-prod/timeline-audio
+rc bucket create --ignore-existing timeline-prod/timeline-attachments
+rc bucket create --ignore-existing timeline-prod/timeline-exports
+rc bucket create --ignore-existing timeline-prod/timeline-documents
+rc bucket version enable timeline-prod/timeline-audio
+rc bucket version enable timeline-prod/timeline-attachments
+rc bucket version enable timeline-prod/timeline-documents
+rc bucket version enable timeline-prod/timeline-exports
 </code></pre>
       <p>
         Versioning on audio, attachments, and documents is non-negotiable. Source-of-truth data;

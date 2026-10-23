@@ -73,12 +73,12 @@
         <li>
           <strong>rustfs</strong> — image <code>rustfs/rustfs:latest</code>, attach a persistent
           volume at <code>/data</code>. Set
-          <code>RUSTFS_ROOT_USER</code>/<code>RUSTFS_ROOT_PASSWORD</code>. Map env to
+          <code>RUSTFS_ACCESS_KEY</code>/<code>RUSTFS_SECRET_KEY</code>. Map env to
           <code>S3_ACCESS_KEY_ID</code>/<code>S3_SECRET_ACCESS_KEY</code> in shared variables.
         </li>
       </ul>
       <p>
-        Run a one-shot <code>minio/mc</code> job to create buckets (same commands as
+        Run a one-shot <code>rustfs/rc:v0.1.36</code> job to create buckets (same commands as
         <code>rustfs-init</code> in <code>docker-compose.yml</code>).
       </p>
 
