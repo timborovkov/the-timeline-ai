@@ -131,10 +131,7 @@ export function billingStateAllowsReservation(billingState: string): boolean {
 }
 
 export type PaidActiveBillingState =
-  | 'payg_active'
-  | 'team_active'
-  | 'business_active'
-  | 'enterprise_active';
+  'payg_active' | 'team_active' | 'business_active' | 'enterprise_active';
 
 /** Active commercial state for a paid plan. Free / unknown plans return null. */
 export function billingStateForPaidPlan(planId: BillingPlanId): PaidActiveBillingState | null {

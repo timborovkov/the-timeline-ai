@@ -15,8 +15,7 @@ interface DiscussionUiState {
 }
 
 type DiscussionUiAction =
-  | Partial<DiscussionUiState>
-  | ((state: DiscussionUiState) => DiscussionUiState);
+  Partial<DiscussionUiState> | ((state: DiscussionUiState) => DiscussionUiState);
 
 function discussionUiReducer(
   state: DiscussionUiState,
