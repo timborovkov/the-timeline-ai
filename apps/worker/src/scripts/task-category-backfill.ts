@@ -10,6 +10,9 @@ const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ESTIMATED_INPUT_TOKENS_PER_TASK = 220;
 const ESTIMATED_OUTPUT_TOKENS_PER_TASK = 20;
+// Peak weekday OpenRouter rates for TIMELINE_MODELS.taskCategorization
+// (deepseek/deepseek-v4.1-flash-1017: $0.30/M input, $1.20/M output) land
+// near $0.00009 per task. Keep ~2x retry/pricing headroom.
 const ESTIMATED_COST_USD_PER_TASK = 0.0002;
 
 type TaskCategoryBackfillFlags = Pick<

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-05</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-23</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -54,15 +54,16 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         key/base URL.
       </p>
       <p>
-        Structured extraction calls use DeepSeek V4 Flash 0731 as the primary route. If the provider
-        accepts the request but returns no schema-valid object, the wrapper retries the same model
-        in JSON object mode before falling back to the <code>structuredFallback</code> model
-        (DeepSeek V4 Pro). Retryable OpenRouter/provider failures such as 429s, 5xx responses, and
-        structured no-object outputs can use the fallback model. Structured calls default to
-        <code>maxOutputTokens=8000</code> so routine extraction and meeting-summary jobs keep
-        quality headroom without over-reserving OpenRouter credits against unused completion tokens.
-        Bulk callers may pass a higher per-call <code>maxOutputTokens</code> or batch their prompts.
-        Authentication and request-shape failures still fail fast so misconfiguration is not hidden.
+        Structured extraction calls use DeepSeek V4.1 Flash 1017 as the primary route. If the
+        provider accepts the request but returns no schema-valid object, the wrapper retries the
+        same model in JSON object mode before falling back to the
+        <code>structuredFallback</code> model (DeepSeek V4 Pro 0813). Retryable OpenRouter/provider
+        failures such as 429s, 5xx responses, and structured no-object outputs can use the fallback
+        model. Structured calls default to <code>maxOutputTokens=8000</code> so routine extraction
+        and meeting-summary jobs keep quality headroom without over-reserving OpenRouter credits
+        against unused completion tokens. Bulk callers may pass a higher per-call
+        <code>maxOutputTokens</code> or batch their prompts. Authentication and request-shape
+        failures still fail fast so misconfiguration is not hidden.
       </p>
       <p>
         Agent chat streams also include an OpenRouter <code>models</code> fallback list so transient
@@ -73,15 +74,66 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       </p>
       <p>
         The catalog should mirror OpenRouter's advertised capabilities, not just model family names.
-        The primary extraction, agent, summarization, and task-categorization routes use DeepSeek V4
-        Flash 0731 for long-context structured output, tools, and reasoning at a lower OpenRouter
-        unit cost than DeepSeek V4 Pro or the previous GLM 5.2 pin. DeepSeek V4 Pro remains the
-        structured fallback when the primary route fails. The vision/OCR route uses a model that
-        advertises image and file input because sparse PDF page images and image uploads are sent as
-        image or file parts; dense text PDFs and office files extract inside Daytona sandboxes
-        (anydoc) and do not call OpenRouter. Transcription uses a dedicated audio-to-transcription
-        model through OpenRouter's JSON audio endpoint.
+        The primary extraction, agent, summarization, and task-categorization routes use DeepSeek
+        V4.1 Flash 1017 for long-context structured output, tools, and reasoning at a lower
+        OpenRouter unit cost than DeepSeek V4 Pro 0813 or the previous Flash 0731 pin. DeepSeek V4
+        Pro 0813 remains the structured fallback when the primary route fails. The vision/OCR route
+        uses Gemini 3.8 Flash because it advertises image, file, audio, and video input; sparse PDF
+        page images and image uploads are sent as image or file parts, while dense text PDFs and
+        office files extract inside Daytona sandboxes (anydoc) and do not call OpenRouter.
+        Transcription uses a dedicated audio-to-transcription model through OpenRouter's JSON audio
+        endpoint. OpenRouter lists a cheaper <code>:batch</code> sibling for the unpinned V4.1 Flash
+        alias, not for the 1017 snapshot, so background re-extraction stays on the synchronous 1017
+        pin.
       </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>OpenRouter id</th>
+            <th>Context</th>
+            <th>Tools / structured outputs</th>
+            <th>OpenRouter unit cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>extraction, agent, summarization, taskCategorization</td>
+            <td><code>deepseek/deepseek-v4.1-flash-1017</code></td>
+            <td>1,048,576</td>
+            <td>yes / yes (taskCategorization does not send tools)</td>
+            <td>$0.15 / $0.60 per 1M (weekday peak $0.30 / $1.20)</td>
+          </tr>
+          <tr>
+            <td>structuredFallback</td>
+            <td><code>deepseek/deepseek-v4-pro-0813</code></td>
+            <td>1,048,576</td>
+            <td>yes / yes</td>
+            <td>$0.66 / $1.98 per 1M (weekday peak $1.32 / $3.96)</td>
+          </tr>
+          <tr>
+            <td>vision</td>
+            <td><code>google/gemini-3.8-flash</code></td>
+            <td>1,048,576</td>
+            <td>yes / yes</td>
+            <td>$0.825 / $4.125 per 1M; image and audio match prompt</td>
+          </tr>
+          <tr>
+            <td>embedding</td>
+            <td><code>openai/text-embedding-3-small</code></td>
+            <td>8,192</td>
+            <td>n/a</td>
+            <td>unchanged; switching invalidates the vector index</td>
+          </tr>
+          <tr>
+            <td>transcription</td>
+            <td><code>openai/gpt-4o-transcribe</code></td>
+            <td>n/a</td>
+            <td>n/a</td>
+            <td>unchanged dedicated audio endpoint</td>
+          </tr>
+        </tbody>
+      </table>
       <p>
         The embedding model remains special: changing it or its dimensions invalidates the current
         vector index. Embed jobs therefore do not model-fallback the way structured chat calls can;
@@ -105,7 +157,7 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"deepseek/deepseek-v4-flash-0731","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"deepseek/deepseek-v4.1-flash-1017","messages":[{"role":"user","content":"ping"}]}'
 </code></pre>
       <p>
         The normal test suite mocks OpenRouter. To run the optional live structured-extraction smoke
@@ -128,9 +180,10 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
           >TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill --
           --team-id=&lt;uuid&gt; --limit=500</code
         >. Enqueueing requires both <code>--enqueue</code> and a projected-cost guard such as
-        <code>--max-cost-usd=0.10</code>. The guard compares a fixed per-task estimate, not actual
-        provider spend; retries and provider pricing can differ. Each execution is bounded; rerun it
-        to resume. Already pending, manual, archived, and ready tasks are skipped.
+        <code>--max-cost-usd=0.10</code>. The guard compares a fixed $0.0002 per-task estimate
+        (about 2× weekday-peak Flash 1017 spend on a 220/20 token packet), not actual provider
+        spend; retries and provider pricing can differ. Each execution is bounded; rerun it to
+        resume. Already pending, manual, archived, and ready tasks are skipped.
       </p>
       <p>
         <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop.
