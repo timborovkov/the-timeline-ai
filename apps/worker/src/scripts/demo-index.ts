@@ -11,7 +11,7 @@ import {
   meetingTranscriptChunks,
   rawEvents,
 } from '@timeline/db';
-import { getEnv, qdrant } from '@timeline/shared';
+import { getEnv, qdrant, queue } from '@timeline/shared';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
 import {
@@ -153,6 +153,7 @@ async function main(): Promise<void> {
       `[demo:index] indexed and confirmed ${String(pointIds.length)} points with ${model}`,
     );
   } finally {
+    await queue.closeRedisConnection();
     await closeDb();
   }
 }
