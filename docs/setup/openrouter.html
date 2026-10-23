@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>OpenRouter setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-05</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-23</span></div>
       <blockquote>
         <p>Used from <strong>Phase 3</strong> (transcription) and onwards.</p>
       </blockquote>
@@ -31,6 +31,7 @@
           <li><a href="#phase-5">Phase 5 — embeddings + search</a></li>
           <li><a href="#phase-6">Phase 6 — agent chat</a></li>
           <li><a href="#reembed">Re-embed procedure</a></li>
+          <li><a href="#qdrant-storage">On-disk Qdrant collection copy</a></li>
         </ul>
       </nav>
 
@@ -54,15 +55,16 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         key/base URL.
       </p>
       <p>
-        Structured extraction calls use DeepSeek V4 Flash 0731 as the primary route. If the provider
-        accepts the request but returns no schema-valid object, the wrapper retries the same model
-        in JSON object mode before falling back to the <code>structuredFallback</code> model
-        (DeepSeek V4 Pro). Retryable OpenRouter/provider failures such as 429s, 5xx responses, and
-        structured no-object outputs can use the fallback model. Structured calls default to
-        <code>maxOutputTokens=8000</code> so routine extraction and meeting-summary jobs keep
-        quality headroom without over-reserving OpenRouter credits against unused completion tokens.
-        Bulk callers may pass a higher per-call <code>maxOutputTokens</code> or batch their prompts.
-        Authentication and request-shape failures still fail fast so misconfiguration is not hidden.
+        Structured extraction calls use DeepSeek V4.1 Flash 1017 as the primary route. If the
+        provider accepts the request but returns no schema-valid object, the wrapper retries the
+        same model in JSON object mode before falling back to the
+        <code>structuredFallback</code> model (DeepSeek V4 Pro 0813). Retryable OpenRouter/provider
+        failures such as 429s, 5xx responses, and structured no-object outputs can use the fallback
+        model. Structured calls default to <code>maxOutputTokens=8000</code> so routine extraction
+        and meeting-summary jobs keep quality headroom without over-reserving OpenRouter credits
+        against unused completion tokens. Bulk callers may pass a higher per-call
+        <code>maxOutputTokens</code> or batch their prompts. Authentication and request-shape
+        failures still fail fast so misconfiguration is not hidden.
       </p>
       <p>
         Agent chat streams also include an OpenRouter <code>models</code> fallback list so transient
@@ -73,15 +75,66 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       </p>
       <p>
         The catalog should mirror OpenRouter's advertised capabilities, not just model family names.
-        The primary extraction, agent, summarization, and task-categorization routes use DeepSeek V4
-        Flash 0731 for long-context structured output, tools, and reasoning at a lower OpenRouter
-        unit cost than DeepSeek V4 Pro or the previous GLM 5.2 pin. DeepSeek V4 Pro remains the
-        structured fallback when the primary route fails. The vision/OCR route uses a model that
-        advertises image and file input because sparse PDF page images and image uploads are sent as
-        image or file parts; dense text PDFs and office files extract inside Daytona sandboxes
-        (anydoc) and do not call OpenRouter. Transcription uses a dedicated audio-to-transcription
-        model through OpenRouter's JSON audio endpoint.
+        The primary extraction, agent, summarization, and task-categorization routes use DeepSeek
+        V4.1 Flash 1017 for long-context structured output, tools, and reasoning at a lower
+        OpenRouter unit cost than DeepSeek V4 Pro 0813 or the previous Flash 0731 pin. DeepSeek V4
+        Pro 0813 remains the structured fallback when the primary route fails. The vision/OCR route
+        uses Gemini 3.8 Flash because it advertises image, file, audio, and video input; sparse PDF
+        page images and image uploads are sent as image or file parts, while dense text PDFs and
+        office files extract inside Daytona sandboxes (anydoc) and do not call OpenRouter.
+        Transcription uses a dedicated audio-to-transcription model through OpenRouter's JSON audio
+        endpoint. OpenRouter lists a cheaper <code>:batch</code> sibling for the unpinned V4.1 Flash
+        alias, not for the 1017 snapshot, so background re-extraction stays on the synchronous 1017
+        pin.
       </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>OpenRouter id</th>
+            <th>Context</th>
+            <th>Tools / structured outputs</th>
+            <th>OpenRouter unit cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>extraction, agent, summarization, taskCategorization</td>
+            <td><code>deepseek/deepseek-v4.1-flash-1017</code></td>
+            <td>1,048,576</td>
+            <td>yes / yes (taskCategorization does not send tools)</td>
+            <td>$0.15 / $0.60 per 1M (weekday peak $0.30 / $1.20)</td>
+          </tr>
+          <tr>
+            <td>structuredFallback</td>
+            <td><code>deepseek/deepseek-v4-pro-0813</code></td>
+            <td>1,048,576</td>
+            <td>yes / yes</td>
+            <td>$0.66 / $1.98 per 1M (weekday peak $1.32 / $3.96)</td>
+          </tr>
+          <tr>
+            <td>vision</td>
+            <td><code>google/gemini-3.8-flash</code></td>
+            <td>1,048,576</td>
+            <td>yes / yes</td>
+            <td>$0.825 / $4.125 per 1M; image and audio match prompt</td>
+          </tr>
+          <tr>
+            <td>embedding</td>
+            <td><code>openai/text-embedding-3-small</code></td>
+            <td>8,192</td>
+            <td>n/a</td>
+            <td>unchanged; switching invalidates the vector index</td>
+          </tr>
+          <tr>
+            <td>transcription</td>
+            <td><code>openai/gpt-4o-transcribe</code></td>
+            <td>n/a</td>
+            <td>n/a</td>
+            <td>unchanged dedicated audio endpoint</td>
+          </tr>
+        </tbody>
+      </table>
       <p>
         The embedding model remains special: changing it or its dimensions invalidates the current
         vector index. Embed jobs therefore do not model-fallback the way structured chat calls can;
@@ -96,16 +149,19 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <p>
         The default Qdrant collection is <code>QDRANT_COLLECTION=events</code>. The app creates that
         collection on first embedding/search use with
-        <code>TIMELINE_MODELS.embedding.embeddingDimensions</code> and <code>distance=Cosine</code>.
-        If an existing collection has a different vector size, the worker fails loudly instead of
-        writing incompatible vectors; create a new collection and follow the re-embed procedure.
+        <code>TIMELINE_MODELS.embedding.embeddingDimensions</code>, <code>distance=Cosine</code>,
+        original vectors and payload on disk, and scalar int8 quantization kept in RAM. Search
+        rescores quantized hits against the original vectors. If an existing collection has a
+        different vector size, the worker fails loudly instead of writing incompatible vectors;
+        create a new collection and follow the re-embed procedure. Storage-layout changes (on-disk /
+        quantization) copy existing points without re-embedding.
       </p>
 
       <h2 id="smoke-test">3. Quick smoke test</h2>
       <pre><code>curl https://openrouter.ai/api/v1/chat/completions \
   -H "Authorization: Bearer $OPENROUTER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"deepseek/deepseek-v4-flash-0731","messages":[{"role":"user","content":"ping"}]}'
+  -d '{"model":"deepseek/deepseek-v4.1-flash-1017","messages":[{"role":"user","content":"ping"}]}'
 </code></pre>
       <p>
         The normal test suite mocks OpenRouter. To run the optional live structured-extraction smoke
@@ -128,13 +184,17 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
           >TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill --
           --team-id=&lt;uuid&gt; --limit=500</code
         >. Enqueueing requires both <code>--enqueue</code> and a projected-cost guard such as
-        <code>--max-cost-usd=0.10</code>. The guard compares a fixed per-task estimate, not actual
-        provider spend; retries and provider pricing can differ. Each execution is bounded; rerun it
-        to resume. Already pending, manual, archived, and ready tasks are skipped.
+        <code>--max-cost-usd=0.10</code>. The guard compares a fixed $0.0002 per-task estimate
+        (about 2× weekday-peak Flash 1017 spend on a 220/20 token packet), not actual provider
+        spend; retries and provider pricing can differ. Each execution is bounded; rerun it to
+        resume. Already pending, manual, archived, and ready tasks are skipped.
       </p>
       <p>
-        <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop.
-        Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
+        <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop. While
+        classification is enabled, suggestion and agent task proposals stamp
+        <code>task-categories-v1</code> before they are stored. A classifier response that omits a
+        proposal, or that cannot be normalized, fails that suggestion job instead of saving an
+        unstamped task. Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
         <code>TASK_CATEGORY_WORKER_ENABLED</code>, <code>TASK_CATEGORY_BACKFILL_ENABLED</code>, and
         <code>TASK_CATEGORY_UI_ENABLED</code>. Disabling any control preserves stored categories and
         manual history. A disabled classification or worker control does not register the BullMQ
@@ -276,7 +336,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
           Let the first embedding/search write create the default <code>events</code> collection, or
           create it explicitly with the current catalog dimensions if you prefer a manual setup
           check. Current default: <code>openai/text-embedding-3-small</code>,
-          <code>vectors.size=1536</code>, <code>distance=Cosine</code>.
+          <code>vectors.size=1536</code>, <code>distance=Cosine</code>, <code>on_disk=true</code>,
+          scalar int8 quantization.
           <pre><code>curl -s "$QDRANT_URL/collections/events" \
   -H "api-key: $QDRANT_API_KEY" | jq '.result.config.params.vectors.size'
 </code></pre>
@@ -302,15 +363,19 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
             <li><strong>Vector size</strong>: <code>1536</code>.</li>
             <li><strong>Distance</strong>: Cosine.</li>
             <li>
-              <strong>Quantization / on-disk vectors</strong>: leave disabled unless a later
-              performance pass intentionally changes the app defaults.
+              <strong>Quantization</strong>: Scalar, int8, quantile <code>0.99</code>, always in
+              RAM.
             </li>
+            <li>
+              <strong>On-disk vectors</strong>: enabled (original float32 vectors stay on disk).
+            </li>
+            <li><strong>On-disk payload</strong>: enabled.</li>
           </ul>
           The equivalent API shape is:
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events" \
   -H "content-type: application/json" \
   -H "api-key: $QDRANT_API_KEY" \
-  -d '{"vectors":{"size":1536,"distance":"Cosine"}}'
+  -d '{"vectors":{"size":1536,"distance":"Cosine","on_disk":true},"quantization_config":{"scalar":{"type":"int8","quantile":0.99,"always_ram":true}},"on_disk_payload":true}'
 
 curl -s -X PUT "$QDRANT_URL/collections/events/index" \
   -H "content-type: application/json" \
@@ -439,7 +504,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events_v2" \
   -H "content-type: application/json" \
   -H "api-key: $QDRANT_API_KEY" \
-  -d '{"vectors":{"size":1536,"distance":"Cosine"}}'
+  -d '{"vectors":{"size":1536,"distance":"Cosine","on_disk":true},"quantization_config":{"scalar":{"type":"int8","quantile":0.99,"always_ram":true}},"on_disk_payload":true}'
 </code></pre>
         </li>
         <li>
@@ -482,6 +547,92 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         This procedure is the <strong>only</strong> safe path. Never edit embeddings in place —
         embedding-model drift silently corrupts semantic search, and "looks ok in prod" is not a
         reliable signal until queries start ranking the wrong things.
+      </p>
+
+      <h2 id="qdrant-storage">On-disk collection copy (no re-embed)</h2>
+      <p>
+        Changing Qdrant storage layout — on-disk original vectors, scalar int8 quantization in RAM,
+        on-disk payload — does <strong>not</strong> change embedding dimensions. Do not re-embed.
+        Create a new collection, pause embed writers, copy every point with scroll + upsert (plus a
+        second resync pass), verify counts and point identity, then switch
+        <code>QDRANT_COLLECTION</code>. Existing collections are never patched in place. An existing
+        target must already have the on-disk + quantization layout; a leftover in-RAM collection
+        with the same name is rejected. The script refuses <code>NODE_ENV=production</code>, Railway
+        production, and any non-loopback <code>QDRANT_URL</code> unless
+        <code>ALLOW_QDRANT_MIGRATE_REMOTE=I_UNDERSTAND_THIS_TARGETS_AN_ISOLATED_QDRANT</code>.
+      </p>
+      <ol>
+        <li>
+          <strong>Create the target collection</strong> with the current app create body (same
+          <code>requireExisting</code> contract as re-embed). The migrate script can do this:
+          <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+  --source-collection=events \
+  --target-collection=events_ondisk \
+  --create-target --copy --verify --writers-paused --all-teams
+</code></pre>
+          Pause the embed worker (and any other Qdrant writers) first. Live
+          <code>--copy</code> requires <code>--writers-paused</code> and always runs a second resync
+          pass so inserts during the first scroll are not lost. Copy and verify always filter by
+          <code>team_id</code>. <code>--all-teams</code> copies tenants discovered on the source;
+          verify unions source and target tenants so leftover target-only points fail identity. Or
+          PUT the collection yourself, then run with
+          <code>--copy --verify --writers-paused --all-teams</code> only. The copy client uses
+          <code>requireExisting=true</code> on the target, so a missing collection fails loudly
+          instead of auto-creating at the wrong size.
+        </li>
+        <li>
+          <strong>Verify counts and identity</strong>. The command exits non-zero when source and
+          target point counts differ, or when ids / vector fingerprints / canonical full payloads
+          disagree (including <code>visibility_user_ids</code> and author/owner fields). Count
+          equality alone cannot catch an in-place vector overwrite. Re-running the copy is
+          idempotent — point ids are preserved.
+        </li>
+        <li>
+          Optional <strong>RAM / recall probe</strong> against the demo corpus (Acme Labs owner).
+          Live <code>--measure</code> waits until HNSW/quantization is indexed on both collections
+          (Qdrant 1.19.2: <code>indexing_threshold=1</code> KB, because <code>0</code> disables
+          indexing, and <code>full_scan_threshold=10</code>, the minimum Qdrant accepts),
+          <em>then</em> snapshots RAM from <code>GET /collections/{name}/memory</code>, then
+          compares recall. <code>--dry-run --measure</code> does not PATCH optimizer thresholds and
+          does not require the target to exist. Samples are filtered to the requested team, the
+          query point is excluded from both rankings, and the uncompressed baseline is exact search
+          with <code>quantization.ignore</code>. Zero comparable queries are reported as
+          <code>no_data</code> (exit 1), not 100% recall:
+          <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+  --source-collection=events \
+  --target-collection=events_ondisk \
+  --measure --team=20000000-0000-4000-8000-000000000001 \
+  --user=10000000-0000-4000-8000-000000000001
+</code></pre>
+          The probe persists those optimizer settings on both source and target collections. Before
+          resuming normal searches, restore <code>full_scan_threshold</code> on both to its previous
+          value (the Qdrant default is <code>10000</code> KB). The forced <code>10</code> KB
+          threshold can reduce recall for small filtered result sets, including the demo's fact
+          checks. Keep the chosen <code>indexing_threshold</code> if this small corpus should remain
+          indexed and quantized. Verify the target explicitly before the environment cutover in the
+          next step:
+          <pre><code>(
+  set -e
+  for collection in events events_ondisk; do
+    curl --fail --request PATCH "$QDRANT_URL/collections/$collection" \
+      --header "api-key: $QDRANT_API_KEY" \
+      --header "Content-Type: application/json" \
+      --data '{"hnsw_config":{"full_scan_threshold":10000}}'
+  done
+  QDRANT_COLLECTION=events_ondisk pnpm demo:verify
+)
+</code></pre>
+        </li>
+        <li>
+          <strong>Cut over</strong> by setting <code>QDRANT_COLLECTION=events_ondisk</code> on web
+          and workers, then restart. Rollback is flipping the name back. Drop the old collection
+          after a grace period, same as re-embed.
+        </li>
+      </ol>
+      <p>
+        Binary quantization is opt-in (<code>QDRANT_QUANTIZATION=binary</code>) and uses a higher
+        default search oversampling (4 vs 2). Keep scalar int8 unless you have measured recall on
+        your corpus. Do not run this against production.
       </p>
     </main>
   </body>

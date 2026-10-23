@@ -50,8 +50,12 @@ existing active project or a clearly named project-to-create before requesting
 the category preview. Background extraction classifies up to its maximum 25
 proposed tasks in one bounded structured LLM call rather than serializing one
 provider call per task. The batch must return one prediction per stable proposal
-key; missing or invalid predictions leave that proposal uncategorized so ordinary
-post-acceptance classification can recover safely.
+key. Wrapped JSON, category labels, and numeric-string confidence are normalized
+before stamping. While classification is enabled, a task proposal is not stored
+without its taxonomy stamp; a missing or invalid prediction fails that suggestion
+job so the retry stamps every task. The classification emergency stop still skips
+proposal stamps, and acceptance still falls back to asynchronous classification
+when a stored stamp's input hash no longer matches.
 
 Pending approvals created before the primary-project contract may contain a
 `parentObjectId` for a non-project object. Acceptance keeps those durable rows
