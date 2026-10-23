@@ -49,4 +49,42 @@ describe('BillingUsageSummary', () => {
     expect(html).toContain('Not included');
     expect(html).not.toContain('Plan limits');
   });
+
+  it('shows the extra-member line and keeps member-days out of the generic meter list', () => {
+    const html = renderToStaticMarkup(
+      <BillingUsageSummary
+        periodYm="2026-10"
+        planName="Team"
+        planId="team"
+        utilization={{
+          spendCapCents: 10_000,
+          meteredSpendCents: 19,
+          percent: 0,
+          warnLevel: null,
+        }}
+        freeRemaining={freeRemaining}
+        meteredSpendCents={19}
+        meters={{
+          ai: { nativeUnits: 12, customerChargeCents: 12 },
+          member_days: { nativeUnits: 3, customerChargeCents: 19 },
+        }}
+        capacityUsage={[]}
+        costBearingPaused={false}
+        includedActiveMembers={2}
+        additionalMemberCents={500}
+      />,
+    );
+    expect(html).toContain('data-billing-extra-members');
+    expect(html).toContain('Extra members');
+    expect(html).toContain('2 included');
+    expect(html).toContain('€5 per extra member-month');
+    expect(html).toContain('3 extra member-days');
+    expect(html).toContain('€0.19');
+    expect(html).toContain('When charges are live');
+    expect(html).toContain('€2 per member-month');
+    expect(html).toContain('Comped workspaces are not ingested');
+    expect(html).toContain('spend cap');
+    expect(html).toContain('AI');
+    expect(html).not.toContain('Member-days');
+  });
 });

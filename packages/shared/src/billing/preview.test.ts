@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { listChargeCentsForMeter } from '#src/billing/charge.js';
+import {
+  daysInPeriodYm,
+  listChargeCentsForMeter,
+  memberDaysChargeCents,
+  periodYmUtc,
+} from '#src/billing/charge.js';
 import {
   cheapestPlanPreview,
   shouldShowPlanRecommendation,
@@ -72,6 +77,31 @@ describe('cheapestPlanPreview', () => {
     expect(preview.bills.payg.extraMemberCents).toBe(listChargeCentsForMeter('member_days', 5));
     expect(preview.bills.payg.extraMemberCents).not.toBe(1_000);
     expect(preview.bills.team.extraMemberCents).toBe(0);
+  });
+
+  it('prices prorated extra members at the plan extra-member rate', () => {
+    const catalog = cheapestPlanPreview({
+      activeMembers: 5,
+      meters: {
+        member_days: { nativeUnits: 62, customerChargeCents: 400 },
+      },
+    });
+    const custom = cheapestPlanPreview({
+      activeMembers: 5,
+      meters: {
+        member_days: { nativeUnits: 62, customerChargeCents: 400 },
+      },
+      planTerms: { payg: { additionalMemberCents: 500 } },
+    });
+    expect(custom.bills.payg.extraMemberCents).toBe(
+      memberDaysChargeCents({
+        extraMemberDays: 62,
+        centsPerMemberMonth: 500,
+        daysInMonth: daysInPeriodYm(periodYmUtc()),
+      }),
+    );
+    expect(custom.bills.payg.extraMemberCents).toBeGreaterThan(catalog.bills.payg.extraMemberCents);
+    expect(custom.bills.team.extraMemberCents).toBe(0);
   });
 });
 

@@ -91,13 +91,25 @@ PLATFORM_ADMIN_EMAILS=
         <li><code>timeline_email_units</code></li>
         <li><code>timeline_storage_gb_month</code></li>
         <li><code>timeline_accepted_sources</code></li>
+        <li>
+          <code>timeline_extra_member_days</code> — extra active members, summed as fractions of a
+          member-month
+        </li>
       </ul>
       <p>
-        Extra active members accrue as <code>member_days</code> on the local spend cap (€2 per
-        member-month) and do not consume Team/Business included-usage discount. Daily janitor
-        charges settle each extra member once per day and use a cumulative monthly cent delta so
-        rounding still totals €2. That meter is not ingested to Polar and is not a Polar invoice
-        line.
+        Extra active members beyond the included count accrue as <code>member_days</code> on the
+        local spend cap and are ingested daily as <code>timeline_extra_member_days</code>. The
+        operation id is <code>member_days:&lt;team&gt;:&lt;day&gt;:&lt;user&gt;</code>, so a replay
+        does not double-charge. The Polar price on Pay as you go, Team, and Business is €2.00 per
+        member-month (<code>unit_amount</code> 200 cents). Payable cents are converted to
+        member-month units at that catalog price, so a custom extra-member price or metered-discount
+        percent changes the units rather than replacing the shared price. A Polar subscription
+        discount is not used for this, because it would also cut the platform fee and the other
+        meters. Included-usage discount is not spent on extra members. Seat quantity is not used:
+        Polar prorates a seat from the moment the quantity changes, which does not match a daily
+        census, a member who leaves, or a per-team price. <code>pnpm billing:polar-setup</code>
+        creates the meter and attaches the price without dropping the other product prices. Comps
+        and shadow billing still count the charge on the spend cap and do not ingest it.
       </p>
       <p>
         Agent turns, concurrent Recall bots, custom MCP servers, documents, storage, indexed chunks,

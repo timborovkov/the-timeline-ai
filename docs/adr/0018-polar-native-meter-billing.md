@@ -41,8 +41,9 @@ credit hides margin and confuses prospects.
    - `accepted_sources` — unique ingested source items (raw row is kept; AI
      enrichment pauses when the meter is exhausted).
    - `storage_gb_month` — daily GB-month snapshot from original document bytes.
-   - `member_days` — extra active-member proration on paid plans (local spend-cap
-     line, not a Polar meter or Polar invoice line).
+   - `member_days` — extra active-member proration on paid plans. Counted on the
+     local spend cap and ingested as `timeline_extra_member_days` (member-month
+     fractions against the €2 catalog price on PAYG, Team, and Business).
    Capacity limits (agent turns, concurrent Recall bots, custom MCP servers,
    documents/storage/chunks, active members) are enforced at product gates
    from `CAPACITY_BY_PLAN` / `PLAN_CATALOG.maxActiveMembers`. They are **not**
@@ -90,8 +91,11 @@ credit hides margin and confuses prospects.
    invoice cents / charge cents and flooring to six decimal places. Sub-cent
    rounds (invoice cents of 0) are not
    ingested. PAYG, Team, Business, and Enterprise ingest when a Polar customer
-   exists and charges are live. Comps do not. `member_days` stay on the local
-   spend cap and are not a Polar meter.
+   exists and charges are live. Comps do not. `member_days` ingest as
+   `timeline_extra_member_days` member-month fractions so a custom extra-member
+   price invoices through the shared €2 unit price. They still count on the
+   local spend cap and skip the included-usage discount. Seat-based prices are
+   not used.
    Live charging follows `BILLING_CHARGES_ENABLED` in both directions: `true`
    charges immediately even when a row still snapshots `shadowBilling = true`;
    `false` is a kill switch that shadows every reservation and settlement.

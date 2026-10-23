@@ -24,7 +24,8 @@ import {
 } from '#src/billing/catalog.js';
 import {
   cumulativeChargeDeltaCents,
-  memberDaysChargeCents,
+  daysInPeriodYm,
+  memberDayChargeDelta,
   nextIncludedDiscountPeriod,
 } from '#src/billing/charge.js';
 import {
@@ -570,20 +571,15 @@ async function accrueTeamMemberDaysForDay(input: {
     return { extraMembers: 0, chargeCents: 0 };
   }
   let previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days');
-  const daysInMonth = daysInUtcMonth();
+  const daysInMonth = daysInPeriodYm(periodYm());
   let chargeCents = 0;
   for (const extra of extraRows) {
-    const nextChargeCents =
-      memberDaysChargeCents({
-        extraMemberDays: previousNative + 1,
-        centsPerMemberMonth: additionalMemberCents,
-        daysInMonth,
-      }) -
-      memberDaysChargeCents({
-        extraMemberDays: previousNative,
-        centsPerMemberMonth: additionalMemberCents,
-        daysInMonth,
-      });
+    const nextChargeCents = memberDayChargeDelta({
+      previousNativeUnits: previousNative,
+      nextNativeUnits: previousNative + 1,
+      centsPerMemberMonth: additionalMemberCents,
+      daysInMonth,
+    });
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,

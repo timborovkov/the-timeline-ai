@@ -155,6 +155,85 @@ export function mergedWebhookEvents(
   return merged;
 }
 
+/** Polar event summed into extra-member invoice units. */
+export const TIMELINE_EXTRA_MEMBER_EVENT_NAME = 'timeline_extra_member_days';
+
+export const TIMELINE_EXTRA_MEMBER_METER_NAME = 'Timeline Extra members';
+
+/** Cents per 1.0 member-month. Matches OVERAGE_RATES.additionalMemberCentsPerMonth. */
+export const TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT = '200';
+
+export interface TimelineExtraMemberMeterBody {
+  name: string;
+  filter: {
+    conjunction: 'and';
+    clauses: [{ property: 'name'; operator: 'eq'; value: string }];
+  };
+  aggregation: { func: 'sum'; property: 'units' };
+  unit: 'custom' | 'scalar';
+  custom_label?: 'member-month';
+}
+
+/** Meter create body. Custom unit labels the invoice "member-month"; scalar is the fallback. */
+export function timelineExtraMemberMeterCreateBody(
+  unit: 'custom' | 'scalar' = 'custom',
+): TimelineExtraMemberMeterBody {
+  return {
+    name: TIMELINE_EXTRA_MEMBER_METER_NAME,
+    filter: {
+      conjunction: 'and',
+      clauses: [{ property: 'name', operator: 'eq', value: TIMELINE_EXTRA_MEMBER_EVENT_NAME }],
+    },
+    aggregation: { func: 'sum', property: 'units' },
+    unit,
+    ...(unit === 'custom' ? { custom_label: 'member-month' as const } : {}),
+  };
+}
+
+export function selectTimelineExtraMemberMeter<T extends { id: string; name: string }>(
+  meters: readonly T[],
+): T | undefined {
+  return meters.find((meter) => meter.name === TIMELINE_EXTRA_MEMBER_METER_NAME);
+}
+
+export interface PolarCatalogPrice {
+  id: string;
+  isArchived?: boolean;
+  meterId?: string | null;
+}
+
+export type PolarPriceWrite =
+  | { id: string }
+  | {
+      amount_type: 'metered_unit';
+      price_currency: 'eur';
+      meter_id: string;
+      unit_amount: string;
+    };
+
+/**
+ * Keep every current price id. Omitting one archives it on Polar.
+ * Add the extra-member metered price only when that meter is not already attached.
+ */
+export function productPricesWithExtraMemberMeter(input: {
+  prices: readonly PolarCatalogPrice[];
+  meterId: string;
+  unitAmount?: string;
+}): PolarPriceWrite[] {
+  const active = input.prices.filter((price) => price.id.length > 0 && price.isArchived !== true);
+  const kept: PolarPriceWrite[] = active.map((price) => ({ id: price.id }));
+  if (active.some((price) => price.meterId === input.meterId)) return kept;
+  return [
+    ...kept,
+    {
+      amount_type: 'metered_unit',
+      price_currency: 'eur',
+      meter_id: input.meterId,
+      unit_amount: input.unitAmount ?? TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
+    },
+  ];
+}
+
 /** Replace assignment lines. Append keys that are not already present. */
 export function upsertEnvAssignments(source: string, updates: Record<string, string>): string {
   const newline = source.includes('\r\n') ? '\r\n' : '\n';

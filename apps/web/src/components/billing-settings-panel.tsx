@@ -57,6 +57,8 @@ export interface BillingSettingsPanelProps {
   } | null;
   priceNotice: string | null;
   showOperatorLink: boolean;
+  includedActiveMembers?: number | null;
+  additionalMemberCents?: number | null;
 }
 
 interface BillingFormState {
@@ -359,6 +361,8 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           meters={props.meters}
           capacityUsage={props.capacityUsage}
           costBearingPaused={props.costBearingPaused}
+          includedActiveMembers={props.includedActiveMembers}
+          additionalMemberCents={props.additionalMemberCents}
         />
       </SettingsSection>
 

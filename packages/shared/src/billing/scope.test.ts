@@ -9,6 +9,13 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import {
+  daysInPeriodYm,
+  memberDayChargeDelta,
+  periodYmUtc,
+  polarMemberMonthUnits,
+} from '#src/billing/charge.js';
+import { applyMeteredDiscountCents } from '#src/billing/operator.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
@@ -595,6 +602,99 @@ describe('billing scope', () => {
     expect(account.includedDiscountRemainingCents).toBe(6000);
     expect(account.walletBalanceCents).toBe(5000);
     expect(account.billingState).toBe('team_active');
+  });
+
+  it('ingests extra member-days as member-month fractions at the commercial price', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 5000, included_discount_remaining_cents = 6000,
+          spend_cap_cents = 10000, polar_customer_id = 'cus_members',
+          price_override = '{"includedActiveMembers":1,"additionalMemberCents":400,"meteredDiscountPercent":50}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-extra-member',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 1,
+    });
+    expect(settled.ok).toBe(true);
+    const days = daysInPeriodYm(periodYmUtc());
+    const listCents = memberDayChargeDelta({
+      previousNativeUnits: 0,
+      nextNativeUnits: 1,
+      centsPerMemberMonth: 400,
+      daysInMonth: days,
+    });
+    const invoiceCents = applyMeteredDiscountCents(listCents, 50);
+    if (!settled.duplicate) {
+      expect(settled.ledger.customerChargeCents).toBe(invoiceCents);
+      expect(settled.ledger.metadata).toMatchObject({
+        discount_cents: 0,
+        invoice_cents: invoiceCents,
+        polar_ingest_name: 'timeline_extra_member_days',
+        polar_ingest_units: polarMemberMonthUnits(invoiceCents),
+        polar_ingest_charge_cents: invoiceCents,
+        polar_ingest_status: 'pending',
+      });
+    }
+    expect(provider.events).toEqual([
+      expect.objectContaining({
+        name: 'timeline_extra_member_days',
+        units: polarMemberMonthUnits(invoiceCents),
+        externalCustomerId: TEAM_ID,
+      }),
+    ]);
+    const account = await scope.getAccount();
+    expect(account.includedDiscountRemainingCents).toBe(6000);
+    expect(account.billingState).toBe('team_active');
+  });
+
+  it('keeps a comped extra member-day off Polar and still freezes at the spend cap', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', shadow_billing = false, plan_id = 'team',
+          billing_state = 'team_active', wallet_balance_cents = 5000,
+          included_discount_remaining_cents = 6000, spend_cap_cents = 0,
+          polar_customer_id = 'cus_comp_members', comp_reason = 'internal'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-comp-member',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 1,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.customerChargeCents).toBeGreaterThan(0);
+      expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+    }
+    expect(provider.events).toHaveLength(0);
+    const account = await scope.getAccount();
+    expect(account.billingState).toBe('read_only');
+    expect(account.includedDiscountRemainingCents).toBe(6000);
   });
 
   it('unwinds a historical wallet lock and does not lock new reservations', async () => {

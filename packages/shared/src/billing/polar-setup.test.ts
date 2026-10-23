@@ -1,14 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
+import { OVERAGE_RATES } from '#src/billing/catalog.js';
 import {
   DEFAULT_TIMELINE_POLAR_WEBHOOK_URL,
+  TIMELINE_EXTRA_MEMBER_EVENT_NAME,
+  TIMELINE_EXTRA_MEMBER_METER_NAME,
+  TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
   TIMELINE_POLAR_WEBHOOK_EVENTS,
   assertTimelineWebhookUrl,
   isDisabledExampleTimelineWebhook,
   isProtectedForeignWebhook,
   mergedWebhookEvents,
+  productPricesWithExtraMemberMeter,
   removeEnvAssignments,
+  selectTimelineExtraMemberMeter,
   selectTimelineWebhook,
+  timelineExtraMemberMeterCreateBody,
   timelineTopUpsToArchive,
   upsertEnvAssignments,
   webhookNeedsUpdate,
@@ -100,6 +107,49 @@ describe('timeline webhook selection', () => {
       'checkout.created',
       'order.paid',
     ]);
+  });
+});
+
+describe('extra member meter prices', () => {
+  const existing = ['fixed', 'ai', 'recall', 'email', 'storage', 'sources'].map((id) => ({ id }));
+
+  it('creates a member-month meter and keeps every current price id', () => {
+    expect(TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT).toBe(
+      String(OVERAGE_RATES.additionalMemberCentsPerMonth),
+    );
+    expect(timelineExtraMemberMeterCreateBody().filter.clauses[0].value).toBe(
+      TIMELINE_EXTRA_MEMBER_EVENT_NAME,
+    );
+    expect(timelineExtraMemberMeterCreateBody().unit).toBe('custom');
+    expect(timelineExtraMemberMeterCreateBody().custom_label).toBe('member-month');
+    expect(timelineExtraMemberMeterCreateBody('scalar').custom_label).toBeUndefined();
+    expect(
+      selectTimelineExtraMemberMeter([
+        { id: 'other', name: 'Seats' },
+        { id: 'extra', name: TIMELINE_EXTRA_MEMBER_METER_NAME },
+      ])?.id,
+    ).toBe('extra');
+
+    const prices = productPricesWithExtraMemberMeter({
+      prices: [...existing, { id: 'archived-price', isArchived: true }],
+      meterId: 'meter-extra',
+    });
+    expect(prices).toHaveLength(existing.length + 1);
+    expect(prices.slice(0, existing.length)).toEqual(existing.map((price) => ({ id: price.id })));
+    expect(prices.at(-1)).toEqual({
+      amount_type: 'metered_unit',
+      price_currency: 'eur',
+      meter_id: 'meter-extra',
+      unit_amount: TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
+    });
+  });
+
+  it('does not add a second extra-member price when the meter is already attached', () => {
+    const prices = productPricesWithExtraMemberMeter({
+      prices: [...existing, { id: 'extra-price', meterId: 'meter-extra' }],
+      meterId: 'meter-extra',
+    });
+    expect(prices).toEqual([...existing.map((price) => ({ id: price.id })), { id: 'extra-price' }]);
   });
 });
 

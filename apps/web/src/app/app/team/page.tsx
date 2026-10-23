@@ -10,6 +10,7 @@ import {
   describePriceOverride,
   describeTeamComp,
   effectiveBillingPlanId,
+  resolveTeamCommercialTerms,
   isPlatformAdminEmail,
   getTeamCapacityUsage,
   isPolarBillingConfigured,
@@ -211,6 +212,7 @@ export default async function TeamSettingsPage({
     : 'free';
   const comp = billingDashboard ? describeTeamComp(billingDashboard.account) : null;
   const priceNotice = billingDashboard ? describePriceOverride(billingDashboard.account) : null;
+  const commercial = billingDashboard ? resolveTeamCommercialTerms(billingDashboard.account) : null;
   const capacityUsage = billingDashboard
     ? await getTeamCapacityUsage({
         db,
@@ -333,6 +335,8 @@ export default async function TeamSettingsPage({
                 session.user.email ?? '',
                 getEnv().PLATFORM_ADMIN_EMAILS,
               )}
+              includedActiveMembers={commercial?.includedActiveMembers}
+              additionalMemberCents={commercial?.additionalMemberCents}
             />
           ) : null}
           {section === 'exports' ? (

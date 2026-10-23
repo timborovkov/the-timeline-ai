@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cumulativeChargeDeltaCents,
+  memberDayChargeDelta,
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
   polarInvoiceNativeUnits,
+  polarMemberMonthUnits,
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
@@ -104,6 +106,47 @@ describe('billing charge split', () => {
         nextNativeUnits: 10,
       }),
     ).toBe(1);
+  });
+});
+
+describe('polarMemberMonthUnits', () => {
+  it('scales payable cents onto the €2 catalog member-month price', () => {
+    expect(polarMemberMonthUnits(200)).toBe(1);
+    expect(polarMemberMonthUnits(6)).toBe(0.03);
+    expect(polarMemberMonthUnits(16)).toBe(0.08);
+    expect(polarMemberMonthUnits(0)).toBe(0);
+    expect(polarMemberMonthUnits(-4)).toBe(0);
+  });
+});
+
+describe('memberDayChargeDelta', () => {
+  it('uses the commercial member-month price for one extra day', () => {
+    expect(
+      memberDayChargeDelta({
+        previousNativeUnits: 0,
+        nextNativeUnits: 1,
+        centsPerMemberMonth: 400,
+        daysInMonth: 31,
+      }),
+    ).toBe(13);
+    expect(
+      memberDayChargeDelta({
+        previousNativeUnits: 30,
+        nextNativeUnits: 31,
+        centsPerMemberMonth: 400,
+        daysInMonth: 31,
+      }),
+    ).toBeGreaterThan(0);
+    let charged = 0;
+    for (let day = 1; day <= 31; day += 1) {
+      charged += memberDayChargeDelta({
+        previousNativeUnits: day - 1,
+        nextNativeUnits: day,
+        centsPerMemberMonth: 400,
+        daysInMonth: 31,
+      });
+    }
+    expect(charged).toBe(400);
   });
 });
 

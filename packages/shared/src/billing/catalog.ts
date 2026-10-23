@@ -341,7 +341,7 @@ export function polarEventNameForMeter(meter: BillingMeterId): string | null {
     case 'accepted_sources':
       return 'timeline_accepted_sources';
     case 'member_days':
-      // Extra seats count on the local spend cap. Not a Polar meter in v1.
-      return null;
+      // Ingested as member-month fractions against the €2 catalog price.
+      return 'timeline_extra_member_days';
   }
 }

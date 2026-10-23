@@ -9,6 +9,12 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  daysInPeriodYm,
+  memberDayChargeDelta,
+  periodYmUtc,
+  polarMemberMonthUnits,
+} from '#src/billing/charge.js';
 import { runWithBillingContext } from '#src/billing/context.js';
 import {
   accrueTeamMemberDays,
@@ -278,6 +284,58 @@ describe('billing runtime', () => {
     const third = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
     expect(third.extraMembers).toBe(2);
     expect(third.chargeCents).toBe(0);
+  });
+
+  it('charges members past a custom included count at the custom extra-member price', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const previousPolarToken = process.env.POLAR_ACCESS_TOKEN;
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    delete process.env.POLAR_ACCESS_TOKEN;
+    resetEnvForTests();
+    try {
+      await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          wallet_balance_cents = 5000, spend_cap_cents = 2500,
+          polar_customer_id = 'cus_custom_members',
+          price_override = '{"includedActiveMembers":1,"additionalMemberCents":400}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+      VALUES ('21111111-2222-4333-8444-555555555555', 'm2@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+      const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-02' });
+      const expected = memberDayChargeDelta({
+        previousNativeUnits: 0,
+        nextNativeUnits: 1,
+        centsPerMemberMonth: 400,
+        daysInMonth: daysInPeriodYm(periodYmUtc()),
+      });
+      expect(accrued.extraMembers).toBe(1);
+      expect(accrued.chargeCents).toBe(expected);
+      const ledger = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID));
+      const row = ledger.find((entry) => entry.operationId.includes('member_days:'));
+      expect(row?.customerChargeCents).toBe(expected);
+      expect(row?.metadata).toMatchObject({
+        polar_ingest_name: 'timeline_extra_member_days',
+        polar_ingest_units: polarMemberMonthUnits(expected),
+        polar_ingest_status: 'pending',
+      });
+    } finally {
+      if (previousPolarToken === undefined) delete process.env.POLAR_ACCESS_TOKEN;
+      else process.env.POLAR_ACCESS_TOKEN = previousPolarToken;
+      resetEnvForTests();
+    }
   });
 
   it('persists extra member-day charges when the spend cap is already exhausted', async () => {

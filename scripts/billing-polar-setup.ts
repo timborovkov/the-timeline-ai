@@ -12,9 +12,15 @@ import {
   polarApiBaseUrl,
   removeEnvAssignments,
   selectTimelineWebhook,
+  productPricesWithExtraMemberMeter,
+  selectTimelineExtraMemberMeter,
+  timelineExtraMemberMeterCreateBody,
   timelineTopUpsToArchive,
+  TIMELINE_EXTRA_MEMBER_METER_NAME,
+  TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
   upsertEnvAssignments,
   webhookNeedsUpdate,
+  type PolarCatalogPrice,
   type PolarSetupProduct,
   type PolarSetupWebhook,
 } from '@timeline/shared/billing/polar-setup';
@@ -49,11 +55,20 @@ function requiredEnv(name: string): string {
 }
 
 interface PolarPriceRow {
+  id?: string;
   amount_type?: string;
   price_amount?: number | null;
   price_currency?: string | null;
   minimum_amount?: number | null;
   preset_amount?: number | null;
+  meter_id?: string | null;
+  unit_amount?: string | number | null;
+  is_archived?: boolean;
+}
+
+interface PolarMeterRow {
+  id?: string;
+  name?: string;
 }
 
 interface PolarProductRow {
@@ -137,6 +152,19 @@ async function polarFetch(
   return { status: response.status, body };
 }
 
+function catalogPrices(rows: PolarPriceRow[] | undefined): PolarCatalogPrice[] {
+  return (rows ?? []).flatMap((price) => {
+    if (!price.id) return [];
+    return [
+      {
+        id: price.id,
+        ...(price.is_archived === true ? { isArchived: true } : {}),
+        ...(price.meter_id ? { meterId: price.meter_id } : {}),
+      },
+    ];
+  });
+}
+
 function assertSameOrganization(body: unknown, organizationId: string, label: string): void {
   if (!body || typeof body !== 'object' || !('organization_id' in body)) return;
   if (body.organization_id !== organizationId) {
@@ -198,6 +226,88 @@ async function main(): Promise<void> {
     token,
     `/products/?organization_id=${encodeURIComponent(organizationId)}&is_archived=false`,
   )) as PolarProductRow[];
+  const meterRows = (await listAll(
+    base,
+    token,
+    `/meters/?organization_id=${encodeURIComponent(organizationId)}`,
+  )) as PolarMeterRow[];
+  const namedMeters = (rows: PolarMeterRow[]) =>
+    rows.flatMap((row) => (row.id && row.name ? [{ id: row.id, name: row.name }] : []));
+  let extraMemberMeter = selectTimelineExtraMemberMeter(namedMeters(meterRows));
+  let extraMemberMeterAction = 'reused';
+  if (!extraMemberMeter) {
+    let created = await polarFetch(base, token, '/meters/', {
+      method: 'POST',
+      body: timelineExtraMemberMeterCreateBody('custom'),
+    });
+    if (created.status < 200 || created.status >= 300) {
+      const listed = (await listAll(
+        base,
+        token,
+        `/meters/?organization_id=${encodeURIComponent(organizationId)}`,
+      )) as PolarMeterRow[];
+      extraMemberMeter = selectTimelineExtraMemberMeter(namedMeters(listed));
+      if (!extraMemberMeter) {
+        created = await polarFetch(base, token, '/meters/', {
+          method: 'POST',
+          body: timelineExtraMemberMeterCreateBody('scalar'),
+        });
+      }
+    }
+    if (!extraMemberMeter) {
+      if (created.status < 200 || created.status >= 300) {
+        throw new Error(
+          `Polar create ${TIMELINE_EXTRA_MEMBER_METER_NAME} failed: ${created.status} ${redact(created.body)}`,
+        );
+      }
+      assertSameOrganization(created.body, organizationId, TIMELINE_EXTRA_MEMBER_METER_NAME);
+      const row = created.body as PolarMeterRow;
+      if (!row.id) {
+        throw new Error(`Polar create ${TIMELINE_EXTRA_MEMBER_METER_NAME} returned no id`);
+      }
+      extraMemberMeter = { id: row.id, name: row.name ?? TIMELINE_EXTRA_MEMBER_METER_NAME };
+      extraMemberMeterAction = 'created';
+    }
+  }
+
+  const subscriptionProducts = [
+    ['PAYG', process.env.POLAR_PRODUCT_ID_PAYG?.trim()],
+    ['Team', process.env.POLAR_PRODUCT_ID_TEAM?.trim()],
+    ['Business', process.env.POLAR_PRODUCT_ID_BUSINESS?.trim()],
+  ] as const;
+  const extraMemberPrices: string[] = [];
+  for (const [label, productId] of subscriptionProducts) {
+    if (!productId) throw new Error(`POLAR_PRODUCT_ID for ${label} is required`);
+    const current = await polarFetch(base, token, `/products/${productId}`);
+    if (current.status < 200 || current.status >= 300) {
+      throw new Error(
+        `Polar read ${label} product failed: ${current.status} ${redact(current.body)}`,
+      );
+    }
+    assertSameOrganization(current.body, organizationId, `${label} product`);
+    const product = current.body as PolarProductRow;
+    const prices = productPricesWithExtraMemberMeter({
+      prices: catalogPrices(product.prices),
+      meterId: extraMemberMeter.id,
+      unitAmount: TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
+    });
+    const alreadyAttached = prices.every((price) => 'id' in price);
+    if (!alreadyAttached) {
+      const updated = await polarFetch(base, token, `/products/${productId}`, {
+        method: 'PATCH',
+        body: { prices },
+      });
+      if (updated.status < 200 || updated.status >= 300) {
+        throw new Error(
+          `Polar attach extra-member price on ${label} failed: ${updated.status} ${redact(updated.body)}`,
+        );
+      }
+    }
+    extraMemberPrices.push(
+      `${label} ${alreadyAttached ? 'present' : 'attached'} ${TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT}`,
+    );
+  }
+
   const archived: string[] = [];
   for (const product of timelineTopUpsToArchive(productRows.map(toProduct))) {
     const updated = await polarFetch(base, token, `/products/${product.id}`, {
@@ -288,6 +398,10 @@ async function main(): Promise<void> {
     });
   }
 
+  console.log(
+    `Extra member meter: ${extraMemberMeterAction} ${extraMemberMeter.id} unit_amount ${TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT}`,
+  );
+  console.log(`Extra member prices: ${extraMemberPrices.join('; ')}`);
   if (archived.length > 0) {
     console.log(`Archived Timeline Top-up ${archived.join(', ')}`);
   } else {

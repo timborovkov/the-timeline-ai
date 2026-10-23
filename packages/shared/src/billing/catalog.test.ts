@@ -75,7 +75,7 @@ describe('billing catalog', () => {
     expect(providerCostCents).toBe(92);
     expect(customerChargeCents).toBe(368);
     expect(polarEventNameForMeter('ai')).toBe('timeline_ai_eur_cents');
-    expect(polarEventNameForMeter('member_days')).toBeNull();
+    expect(polarEventNameForMeter('member_days')).toBe('timeline_extra_member_days');
   });
 });
 

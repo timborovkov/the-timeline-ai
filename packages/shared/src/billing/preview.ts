@@ -1,7 +1,10 @@
 import { PLAN_CATALOG, type BillingMeterId, type BillingPlanId } from '#src/billing/catalog.js';
 import {
+  daysInPeriodYm,
   listChargeCentsForMeter,
+  memberDaysChargeCents,
   paygOverageCustomerChargeCents,
+  periodYmUtc,
   type MeterTotals,
 } from '#src/billing/charge.js';
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
@@ -65,6 +68,14 @@ function paygOverageFromMeters(meters: MeterTotals): number {
   return sum;
 }
 
+function memberDayPreviewChargeCents(extraMemberDays: number, centsPerMemberMonth: number): number {
+  return memberDaysChargeCents({
+    extraMemberDays,
+    centsPerMemberMonth,
+    daysInMonth: daysInPeriodYm(periodYmUtc()),
+  });
+}
+
 function extraMemberCentsForPreview(input: {
   extraMembers: number;
   additionalMemberCents: number;
@@ -77,12 +88,12 @@ function extraMemberCentsForPreview(input: {
   const nativeUnits = input.meters?.member_days?.nativeUnits;
   const currentExtra = extraMembers(input.activeMembers, input.includedActiveMembers);
   if (typeof nativeUnits === 'number' && currentExtra > 0) {
-    const currentCharge = listChargeCentsForMeter('member_days', nativeUnits);
-    return Math.round(currentCharge * (input.extraMembers / currentExtra));
+    const scaledDays = nativeUnits * (input.extraMembers / currentExtra);
+    return memberDayPreviewChargeCents(scaledDays, input.additionalMemberCents);
   }
   if (typeof input.billableMemberDays === 'number' && input.activeMembers > 0) {
     const extraDays = (input.billableMemberDays * input.extraMembers) / input.activeMembers;
-    return listChargeCentsForMeter('member_days', extraDays);
+    return memberDayPreviewChargeCents(extraDays, input.additionalMemberCents);
   }
   if (typeof nativeUnits === 'number') {
     return 0;

@@ -25,12 +25,15 @@ import {
 } from '#src/billing/catalog.js';
 import {
   cumulativeChargeDeltaCents,
+  daysInPeriodYm,
+  memberDayChargeDelta,
   metersPlusPendingReservations,
   paygOverageCustomerChargeCents,
   paygOverageNativeUnits,
   pendingBillableChargeCents,
   pendingDiscountReservedCents,
   polarInvoiceNativeUnits,
+  polarMemberMonthUnits,
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
@@ -849,11 +852,22 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const segmentCharges = segments.map((segment) => {
           const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
           const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
-          const listChargeCents = cumulativeChargeDeltaCents({
-            meterId: input.meterId,
-            previousNativeUnits: previousNative,
-            nextNativeUnits: previousNative + segment.nativeUnits,
-          });
+          // member_days ignore the caller's customerChargeCents and recompute from
+          // the commercial extra-member price so a custom rate cannot be bypassed.
+          const nextNative = previousNative + segment.nativeUnits;
+          const listChargeCents =
+            input.meterId === 'member_days'
+              ? memberDayChargeDelta({
+                  previousNativeUnits: previousNative,
+                  nextNativeUnits: nextNative,
+                  centsPerMemberMonth: commercial.additionalMemberCents ?? 0,
+                  daysInMonth: daysInPeriodYm(segment.periodYm),
+                })
+              : cumulativeChargeDeltaCents({
+                  meterId: input.meterId,
+                  previousNativeUnits: previousNative,
+                  nextNativeUnits: nextNative,
+                });
           const actualChargeCents = applyMeteredDiscountCents(
             paygOverageCustomerChargeCents({
               planId: entitlementsPlanId,
@@ -888,11 +902,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
           !comped &&
           (account.planId === 'enterprise' || account.billingState === 'enterprise_active');
         const eventName = polarEventNameForMeter(input.meterId);
-        const unitsToInvoice = polarInvoiceNativeUnits({
-          polarUnits,
-          chargeCents: actualChargeCents,
-          invoiceCents,
-        });
+        const unitsToInvoice =
+          input.meterId === 'member_days'
+            ? polarMemberMonthUnits(invoiceCents)
+            : polarInvoiceNativeUnits({
+                polarUnits,
+                chargeCents: actualChargeCents,
+                invoiceCents,
+              });
         const shouldIngestPolar =
           !comped &&
           shouldIngestPolarMeteredUsage({

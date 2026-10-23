@@ -580,7 +580,12 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       credit a local balance. Polar usage ingest retries from a claimed ledger outbox
       after local settlement. A paid spend cap of €0 is a hard stop and is preserved across Polar
       subscription updates. Extra member-days skip included
-      usage discount and accrue members added after the first daily tick.
+      usage discount, accrue members added after the first daily tick, and ingest
+      as <code>timeline_extra_member_days</code> member-month fractions at the €2
+      catalog price (custom extra-member price scales the units). Pay as you go,
+      Team, and Business carry that metered price.
+      <code>pnpm billing:polar-setup</code> creates the meter without dropping
+      other prices.
       Polar webhooks bound the request body before signature verify and lock the billing account
       before applying Polar `modified_at`. Settlement above the paid
       spend cap freezes the workspace. A positive spend-cap raise restores

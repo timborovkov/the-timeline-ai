@@ -40,9 +40,15 @@ describe.skipIf(!sandboxReady)('Polar sandbox subscription billing', () => {
     for (const [plan, id] of products) {
       const res = await polar(`/products/${id}`);
       expect(res.status, plan).toBe(200);
-      const body = (await res.json()) as { is_archived?: boolean; name?: string };
+      const body = (await res.json()) as {
+        is_archived?: boolean;
+        name?: string;
+        prices?: { unit_amount?: string | number | null }[];
+      };
       expect(body.is_archived, plan).not.toBe(true);
       expect(body.name ?? '').toMatch(/^Timeline /u);
+      const extraMember = (body.prices ?? []).find((price) => Number(price.unit_amount) === 200);
+      expect(extraMember, plan).toBeTruthy();
     }
 
     const archived = await polar(`/products/${ARCHIVED_TOPUP_PRODUCT_ID}`);

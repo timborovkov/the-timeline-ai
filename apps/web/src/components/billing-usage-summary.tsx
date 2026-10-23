@@ -1,5 +1,6 @@
 import {
   FREE_ALLOWANCES,
+  OVERAGE_RATES,
   formatEuroFromCents,
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
@@ -77,6 +78,8 @@ export function BillingUsageSummary({
   meters,
   capacityUsage,
   costBearingPaused,
+  includedActiveMembers,
+  additionalMemberCents,
   className,
 }: {
   periodYm: string;
@@ -88,10 +91,21 @@ export function BillingUsageSummary({
   meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number }>>;
   capacityUsage: PlanCapacityUsageRow[];
   costBearingPaused: boolean;
+  includedActiveMembers?: number | null;
+  additionalMemberCents?: number | null;
   className?: string;
 }) {
   const capPercent = utilization.percent ?? 0;
   const showCap = utilization.spendCapCents > 0;
+  const memberDays = meters.member_days;
+  const hasExtraMemberPrice = additionalMemberCents !== undefined && additionalMemberCents !== null;
+  const showExtraMembers = hasExtraMemberPrice || memberDays !== undefined;
+  const hasRecordedExtraMembers =
+    (memberDays?.nativeUnits ?? 0) > 0 || (memberDays?.customerChargeCents ?? 0) > 0;
+  const listedMeters = Object.entries(meters).filter(([meter, row]) => {
+    if (!row) return false;
+    return !(showExtraMembers && meter === 'member_days');
+  });
 
   return (
     <div className={cn('space-y-5', className)}>
@@ -248,18 +262,47 @@ export function BillingUsageSummary({
         </details>
       ) : null}
 
+      {showExtraMembers ? (
+        <section data-billing-extra-members className="border border-border bg-bg p-4">
+          <p className="text-sm font-medium text-fg">Extra members</p>
+          <p className="mt-1 text-sm text-fg-muted">
+            {includedActiveMembers === null || includedActiveMembers === undefined
+              ? 'Included members follow the plan.'
+              : `${includedActiveMembers.toLocaleString('en-IE')} included.`}
+            {additionalMemberCents === null || additionalMemberCents === undefined
+              ? ''
+              : ` ${formatEuroFromCents(additionalMemberCents)} per extra member-month.`}
+          </p>
+          <p className="mt-2 font-mono text-sm text-fg">
+            {(memberDays?.nativeUnits ?? 0).toLocaleString('en-IE')}{' '}
+            {(memberDays?.nativeUnits ?? 0) === 1 ? 'extra member-day' : 'extra member-days'} ·{' '}
+            {formatEuroFromCents(memberDays?.customerChargeCents ?? 0)}
+          </p>
+          <p className="mt-2 text-sm leading-6 text-fg-muted">
+            When charges are live, Polar invoices extra members at{' '}
+            {formatEuroFromCents(OVERAGE_RATES.additionalMemberCentsPerMonth)} per member-month. A
+            custom extra-member price is scaled into those units. Comped workspaces are not
+            ingested. This amount also counts toward the spend cap.
+          </p>
+        </section>
+      ) : null}
+
       <div>
         <p className="mb-2 text-sm font-medium text-fg">Meters this period</p>
-        {Object.keys(meters).length === 0 ? (
+        {listedMeters.length === 0 ? (
           <p className="text-sm text-fg-muted">
-            No metered usage recorded yet this month.{' '}
-            <Link href="/pricing" className="underline-offset-4 hover:underline">
-              See pricing
-            </Link>
+            {hasRecordedExtraMembers
+              ? 'No other metered usage recorded yet this month.'
+              : 'No metered usage recorded yet this month. '}
+            {hasRecordedExtraMembers ? null : (
+              <Link href="/pricing" className="underline-offset-4 hover:underline">
+                See pricing
+              </Link>
+            )}
           </p>
         ) : (
           <ul className="divide-y divide-border border border-border text-sm">
-            {Object.entries(meters).map(([meter, row]) => {
+            {listedMeters.map(([meter, row]) => {
               if (!row) return null;
               const label = meter in METER_LABELS ? METER_LABELS[meter as BillingMeterId] : meter;
               return (

@@ -1,4 +1,5 @@
 import {
+  OVERAGE_RATES,
   acceptedSourcesChargeCents,
   emailChargeCents,
   recallChargeCents,
@@ -49,7 +50,7 @@ export function paygOverageCustomerChargeCents(input: {
   return listChargeCentsForMeter(input.meterId, overageUnits);
 }
 
-/** Cumulative extra-member-day charge so daily rounding still totals €2/member-month. */
+/** Cumulative extra-member-day charge so daily rounding still totals the member-month price. */
 export function memberDaysChargeCents(input: {
   extraMemberDays: number;
   centsPerMemberMonth: number;
@@ -61,6 +62,39 @@ export function memberDaysChargeCents(input: {
   return Math.round((input.extraMemberDays * input.centsPerMemberMonth) / input.daysInMonth);
 }
 
+/** UTC days in `YYYY-MM`. Invalid periods use 31 so a bad key cannot divide by zero. */
+export function daysInPeriodYm(periodYm: string): number {
+  const match = /^(\d{4})-(\d{2})$/u.exec(periodYm);
+  if (!match) return 31;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return 31;
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/**
+ * One extra member-day's cent delta. The divisor is the counter's period, not
+ * the calendar day being backfilled, so a month of deltas still totals the price.
+ */
+export function memberDayChargeDelta(input: {
+  previousNativeUnits: number;
+  nextNativeUnits: number;
+  centsPerMemberMonth: number;
+  daysInMonth: number;
+}): number {
+  const previous = memberDaysChargeCents({
+    extraMemberDays: input.previousNativeUnits,
+    centsPerMemberMonth: input.centsPerMemberMonth,
+    daysInMonth: input.daysInMonth,
+  });
+  const next = memberDaysChargeCents({
+    extraMemberDays: input.nextNativeUnits,
+    centsPerMemberMonth: input.centsPerMemberMonth,
+    daysInMonth: input.daysInMonth,
+  });
+  return Math.max(0, next - previous);
+}
+
 export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: number): number {
   switch (meterId) {
     case 'ai':
@@ -68,10 +102,8 @@ export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: nu
     case 'member_days':
       return memberDaysChargeCents({
         extraMemberDays: nativeUnits,
-        centsPerMemberMonth: 200,
-        daysInMonth: new Date(
-          Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 0),
-        ).getUTCDate(),
+        centsPerMemberMonth: OVERAGE_RATES.additionalMemberCentsPerMonth,
+        daysInMonth: daysInPeriodYm(periodYmUtc()),
       });
     case 'recall_minutes':
       return recallChargeCents(nativeUnits);
@@ -85,9 +117,9 @@ export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: nu
 }
 
 /**
- * Included invoice discount covers first. Polar invoices the remainder on the
- * card. Extra member-days are not a Polar meter; they still count on the local
- * spend cap.
+ * Included invoice discount covers usage meters first. Polar invoices the
+ * remainder on the card. Extra member-days skip that discount: they are a
+ * separate Polar meter and still count on the local spend cap.
  */
 export function splitDiscountAndWallet(input: {
   chargeCents: number;
@@ -181,12 +213,22 @@ export function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
 }
 
-/**
- * Native units Polar should invoice. Included-discount coverage is omitted so
- * the monthly invoice matches the customer-payable remainder.
- */
 /** Six decimal places. Flooring keeps float noise from invoicing above the payable ratio. */
 const POLAR_INVOICE_UNIT_MICROS = 1_000_000;
+
+/**
+ * Member-month fractions for the catalog €2 Polar price.
+ * Custom extra-member prices and metered-discount percent change the payable
+ * cents, and therefore the units, so Polar's shared unit price still invoices
+ * the team amount.
+ */
+export function polarMemberMonthUnits(invoiceCents: number): number {
+  const centsPerMonth = OVERAGE_RATES.additionalMemberCentsPerMonth;
+  if (!Number.isFinite(invoiceCents) || invoiceCents <= 0) return 0;
+  const micros = Math.floor((invoiceCents * POLAR_INVOICE_UNIT_MICROS) / centsPerMonth);
+  if (!Number.isFinite(micros) || micros <= 0) return 0;
+  return micros / POLAR_INVOICE_UNIT_MICROS;
+}
 
 export function polarInvoiceNativeUnits(input: {
   polarUnits: number;
