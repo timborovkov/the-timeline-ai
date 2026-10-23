@@ -1,9 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 
 import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
+import { resetEnvForTests } from '#src/env.js';
 import { type TeamScope } from '#src/team-scope.js';
+
+const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
+  process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+
+beforeEach(() => {
+  delete process.env.TASK_CATEGORY_DISABLED;
+  process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+  resetEnvForTests();
+});
+
+afterEach(() => {
+  if (ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED === undefined) {
+    delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+  } else {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED =
+      ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED;
+  }
+  resetEnvForTests();
+});
 
 /**
  * Team-isolation tests for the agent tools. These verify by construction
