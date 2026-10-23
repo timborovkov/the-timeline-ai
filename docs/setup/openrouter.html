@@ -497,9 +497,13 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
       <p>
         Changing Qdrant storage layout — on-disk original vectors, scalar int8 quantization in RAM,
         on-disk payload — does <strong>not</strong> change embedding dimensions. Do not re-embed.
-        Create a new collection, copy every point with scroll + upsert, verify counts, then switch
-        <code>QDRANT_COLLECTION</code>. Existing collections are never patched in place. This script
-        refuses <code>NODE_ENV=production</code> and Railway production.
+        Create a new collection, pause embed writers, copy every point with scroll + upsert (plus a
+        second resync pass), verify counts and point identity, then switch
+        <code>QDRANT_COLLECTION</code>. Existing collections are never patched in place. An existing
+        target must already have the on-disk + quantization layout; a leftover in-RAM collection
+        with the same name is rejected. The script refuses <code>NODE_ENV=production</code>, Railway
+        production, and any non-loopback <code>QDRANT_URL</code> unless
+        <code>ALLOW_QDRANT_MIGRATE_REMOTE=I_UNDERSTAND_THIS_TARGETS_AN_ISOLATED_QDRANT</code>.
       </p>
       <ol>
         <li>
@@ -508,27 +512,33 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
           <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
   --source-collection=events \
   --target-collection=events_ondisk \
-  --create-target --copy --verify
+  --create-target --copy --verify --writers-paused
 </code></pre>
-          Or PUT the collection yourself, then run with <code>--copy --verify</code> only. The copy
-          client uses <code>requireExisting=true</code> on the target, so a missing collection fails
-          loudly instead of auto-creating at the wrong size.
+          Pause the embed worker (and any other Qdrant writers) first. Live
+          <code>--copy</code> requires <code>--writers-paused</code> and always runs a second resync
+          pass so inserts during the first scroll are not lost. Or PUT the collection yourself, then
+          run with <code>--copy --verify --writers-paused</code> only. The copy client uses
+          <code>requireExisting=true</code> on the target, so a missing collection fails loudly
+          instead of auto-creating at the wrong size.
         </li>
         <li>
-          <strong>Verify counts</strong>. The command exits non-zero when source and target point
-          counts differ. Re-running the copy is idempotent — point ids are preserved.
+          <strong>Verify counts and identity</strong>. The command exits non-zero when source and
+          target point counts differ, or when ids / vector fingerprints / payload identity tuples
+          disagree. Count equality alone cannot catch an in-place vector overwrite. Re-running the
+          copy is idempotent — point ids are preserved.
         </li>
         <li>
-          Optional <strong>RAM / recall probe</strong> against the demo corpus (Acme Labs owner):
+          Optional <strong>RAM / recall probe</strong> against the demo corpus (Acme Labs owner).
+          <code>--measure</code> always reports both source and target. RAM comes from
+          <code>GET /collections/{name}/memory</code>. Recall samples are filtered to the requested
+          team; the uncompressed baseline is exact search with <code>quantization.ignore</code>.
+          Zero comparable queries are reported as <code>no_data</code> (exit 1), not 100% recall:
           <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
   --source-collection=events \
   --target-collection=events_ondisk \
   --measure --team=20000000-0000-4000-8000-000000000001 \
   --user=10000000-0000-4000-8000-000000000001
 </code></pre>
-          After copy, the report includes source and target RAM snapshots plus quantized-vs-exact
-          recall@k. Search already sends quantization rescore; exact search is only the probe's
-          uncompressed baseline.
         </li>
         <li>
           <strong>Cut over</strong> by setting <code>QDRANT_COLLECTION=events_ondisk</code> on web

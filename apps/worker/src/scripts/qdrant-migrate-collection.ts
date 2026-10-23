@@ -5,18 +5,24 @@
  * `--create-target`), then points are scrolled from the source and upserted
  * into the named target. The live `QDRANT_COLLECTION` is never rewritten.
  *
+ * Pause embed workers (and any other Qdrant writers) before a live copy.
+ * Live `--copy` requires `--writers-paused`, runs a second resync pass, and
+ * `--verify` checks identity (ids + vector/payload fingerprints) in addition
+ * to counts.
+ *
  * Usage:
  *   pnpm --filter @timeline/worker qdrant-migrate-collection -- \
  *     --source-collection=events \
  *     --target-collection=events_ondisk \
- *     --create-target --copy --verify
+ *     --create-target --copy --verify --writers-paused
  *
  * Optional:
  *   --measure --team=<uuid> --user=<uuid> [--recall-sample=32] [--recall-k=10]
  *   --dry-run --page-size=64
  *
  * Then switch `QDRANT_COLLECTION=events_ondisk` and restart web + workers.
- * Refuses NODE_ENV=production and Railway production.
+ * Refuses NODE_ENV=production, Railway production, and non-loopback
+ * QDRANT_URL unless ALLOW_QDRANT_MIGRATE_REMOTE is set.
  */
 import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -27,6 +33,7 @@ import { TIMELINE_MODELS } from '@timeline/shared/llm';
 
 type QdrantClient = qdrant.QdrantClient;
 type QdrantClientOptions = qdrant.QdrantClientOptions;
+type RecallAtKResult = qdrant.RecallAtKResult;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -38,6 +45,7 @@ export interface QdrantMigrateArgs {
   verify: boolean;
   measure: boolean;
   dryRun: boolean;
+  writersPaused: boolean;
   pageSize: number;
   recallSample: number;
   recallK: number;
@@ -67,6 +75,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
   let verify = false;
   let measure = false;
   let dryRun = false;
+  let writersPaused = false;
   let pageSize = 64;
   let recallSample = 32;
   let recallK = 10;
@@ -84,6 +93,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
     else if (arg === '--verify') verify = true;
     else if (arg === '--measure') measure = true;
     else if (arg === '--dry-run') dryRun = true;
+    else if (arg === '--writers-paused') writersPaused = true;
     else if (arg.startsWith('--page-size=')) {
       pageSize = parsePositiveInt(arg.slice('--page-size='.length), '--page-size');
     } else if (arg.startsWith('--recall-sample=')) {
@@ -109,6 +119,11 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
       'Specify at least one of --create-target, --copy, --verify, --measure',
     );
   }
+  if (copy && !dryRun && !writersPaused) {
+    throw new QdrantMigrateUsageError(
+      'Live --copy requires --writers-paused after pausing embed workers so upserts during the copy are not lost',
+    );
+  }
   if (measure) {
     if (!teamId || !UUID_RE.test(teamId)) {
       throw new QdrantMigrateUsageError('--measure requires --team=<uuid>');
@@ -126,6 +141,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
     verify,
     measure,
     dryRun,
+    writersPaused,
     pageSize,
     recallSample,
     recallK,
@@ -146,9 +162,17 @@ function parsePositiveInt(raw: string, flag: string): number {
 export function usage(): string {
   return (
     'Usage: qdrant-migrate-collection --source-collection=<name> --target-collection=<name>\n' +
-    '       [--create-target] [--copy] [--verify] [--measure --team=<uuid> --user=<uuid>]\n' +
+    '       [--create-target] [--copy] [--verify] [--writers-paused]\n' +
+    '       [--measure --team=<uuid> --user=<uuid>]\n' +
     '       [--dry-run] [--page-size=64] [--recall-sample=32] [--recall-k=10]'
   );
+}
+
+function recallHasNoData(recall: Record<string, unknown>): boolean {
+  return Object.values(recall).some((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    return (entry as RecallAtKResult).status === 'no_data';
+  });
 }
 
 export async function runQdrantMigrateCollection(
@@ -157,19 +181,25 @@ export async function runQdrantMigrateCollection(
 ): Promise<void> {
   const env = deps.env ?? process.env;
   qdrant.assertQdrantMigrateAllowed(env);
+  if (args.copy && !args.dryRun && !args.writersPaused) {
+    throw new QdrantMigrateUsageError(
+      'Live --copy requires --writers-paused after pausing embed workers so upserts during the copy are not lost',
+    );
+  }
   const write = deps.write ?? console.log;
   const setExitCode = deps.setExitCode ?? ((code: number) => (process.exitCode = code));
   const createClient = deps.createClient ?? qdrant.createQdrantClient;
   const parsedEnv = getEnv();
   const quantization = qdrant.qdrantQuantizationFromEnv(parsedEnv);
   const vectorSize = TIMELINE_MODELS.embedding.embeddingDimensions;
+  const createBody = qdrant.qdrantCollectionCreateBody(vectorSize, quantization.kind);
 
   const report: Record<string, unknown> = {
     mode: 'qdrant_storage_layout_copy',
     dryRun: args.dryRun,
     sourceCollection: args.sourceCollection,
     targetCollection: args.targetCollection,
-    createBody: qdrant.qdrantCollectionCreateBody(vectorSize, quantization.kind),
+    createBody,
     searchQuantization: {
       rescore: quantization.rescore,
       oversampling: quantization.oversampling,
@@ -200,6 +230,12 @@ export async function runQdrantMigrateCollection(
     requireExisting: true,
   });
 
+  if (!args.dryRun) {
+    const info = await target.collectionInfo();
+    qdrant.assertCollectionMatchesCreateBody(info, createBody);
+    report.targetLayout = 'ok';
+  }
+
   if (args.copy) {
     report.copy = await qdrant.copyCollectionPoints({
       source,
@@ -214,8 +250,12 @@ export async function runQdrantMigrateCollection(
       report.verify = 'dry-run';
     } else {
       const counts = await qdrant.verifyCollectionCounts(source, target);
-      report.verify = counts;
-      if (!counts.matched) setExitCode(1);
+      const identity = await qdrant.verifyCollectionIdentity(source, target, {
+        pageSize: args.pageSize,
+      });
+      const matched = counts.matched && identity.matched;
+      report.verify = { ...counts, identity, matched };
+      if (!matched) setExitCode(1);
     }
   }
 
@@ -228,16 +268,15 @@ export async function runQdrantMigrateCollection(
     };
     const ram: Record<string, unknown> = {
       source: await qdrant.measureCollectionRam(source),
+      target: await qdrant.measureCollectionRam(target),
     };
     const recall: Record<string, unknown> = {
       source: await qdrant.measureQuantizedRecall(source, measureOpts),
+      target: await qdrant.measureQuantizedRecall(target, measureOpts),
     };
-    if (!args.dryRun && (args.copy || args.verify || args.createTarget)) {
-      ram.target = await qdrant.measureCollectionRam(target);
-      recall.target = await qdrant.measureQuantizedRecall(target, measureOpts);
-    }
     report.ram = ram;
     report.recall = recall;
+    if (recallHasNoData(recall)) setExitCode(1);
   }
 
   write(`${JSON.stringify(report, null, 2)}\n`);

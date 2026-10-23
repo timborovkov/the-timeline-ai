@@ -10,6 +10,7 @@ import {
   copyCollectionPoints,
   denseVectorFromUnknown,
   verifyCollectionCounts,
+  verifyCollectionIdentity,
 } from '#src/qdrant/copy-points.js';
 
 const ENV_BACKUP = { ...process.env };
@@ -176,7 +177,13 @@ describe('copyCollectionPoints', () => {
     });
 
     const copied = await copyCollectionPoints({ source, target, pageSize: 1 });
-    expect(copied).toMatchObject({ scanned: 2, upserted: 2, skipped: 0, dryRun: false });
+    expect(copied).toMatchObject({
+      scanned: 2,
+      upserted: 2,
+      skipped: 0,
+      dryRun: false,
+      resync: { scanned: 2, upserted: 2, skipped: 0 },
+    });
     expect(store.events_ondisk).toEqual(sourcePoints);
 
     const counts = await verifyCollectionCounts(source, target);
@@ -187,6 +194,85 @@ describe('copyCollectionPoints', () => {
       targetCount: 2,
       matched: true,
     });
+    const identity = await verifyCollectionIdentity(source, target, { pageSize: 1 });
+    expect(identity.matched).toBe(true);
+  });
+
+  it('second pass copies points written during the first pass', async () => {
+    const first: StoredPoint = { id: 'p1', vector: [0.1, 0.2, 0.3, 0.4], payload };
+    const late: StoredPoint = {
+      id: 'p-late',
+      vector: [0.9, 0.8, 0.7, 0.6],
+      payload: { ...payload, event_id: 'ev-late', source_id: 'ev-late' },
+    };
+    const { fetcher, store } = memoryQdrant({ events: [first], events_ondisk: [] });
+    let completedScrolls = 0;
+    const wrappingFetcher: typeof fetch = async (input, init) => {
+      const response = await fetcher(input, init);
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = init?.method ?? 'GET';
+      if (method === 'POST' && url.endsWith('/points/scroll')) {
+        const clone = response.clone();
+        const body = (await clone.json()) as { result?: { next_page_offset?: unknown } };
+        if (body.result?.next_page_offset === undefined || body.result.next_page_offset === null) {
+          completedScrolls += 1;
+          if (completedScrolls === 1) {
+            store.events = [...(store.events ?? []), late];
+          }
+        }
+      }
+      return response;
+    };
+    const source = createQdrantClient({
+      fetcher: wrappingFetcher,
+      collection: 'events',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    const target = createQdrantClient({
+      fetcher: wrappingFetcher,
+      collection: 'events_ondisk',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+
+    const copied = await copyCollectionPoints({ source, target, pageSize: 8 });
+    expect(copied).toMatchObject({
+      scanned: 1,
+      upserted: 1,
+      resync: { scanned: 2, upserted: 2 },
+    });
+    expect(store.events_ondisk?.map((point) => point.id)).toEqual(['p1', 'p-late']);
+    await expect(verifyCollectionIdentity(source, target)).resolves.toMatchObject({
+      matched: true,
+      sourceCount: 2,
+      targetCount: 2,
+    });
+  });
+
+  it('detects in-place vector updates that counts would miss', async () => {
+    const { fetcher, store } = memoryQdrant({
+      events: [{ id: 'p1', vector: [0.1, 0.2, 0.3, 0.4], payload }],
+      events_ondisk: [{ id: 'p1', vector: [0.9, 0.9, 0.9, 0.9], payload }],
+    });
+    const source = createQdrantClient({
+      fetcher,
+      collection: 'events',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    const target = createQdrantClient({
+      fetcher,
+      collection: 'events_ondisk',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    await expect(verifyCollectionCounts(source, target)).resolves.toMatchObject({ matched: true });
+    await expect(verifyCollectionIdentity(source, target)).resolves.toMatchObject({
+      matched: false,
+      vectorMismatches: ['p1'],
+    });
+    expect(store.events).toHaveLength(1);
   });
 
   it('dry-run scrolls without writing the target', async () => {

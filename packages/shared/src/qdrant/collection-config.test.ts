@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BINARY_OVERSAMPLING,
   DEFAULT_SCALAR_OVERSAMPLING,
+  QDRANT_EXACT_SEARCH_PARAMS,
   QDRANT_SCALAR_QUANTILE,
+  assertCollectionMatchesCreateBody,
   qdrantCollectionCreateBody,
   qdrantQuantizationFromEnv,
   qdrantSearchQuantizationParams,
@@ -58,5 +60,53 @@ describe('qdrant collection storage layout', () => {
     expect(qdrantSearchQuantizationParams({ rescore: true, oversampling: 2 })).toEqual({
       quantization: { rescore: true, oversampling: 2 },
     });
+  });
+
+  it('exact recall baseline ignores quantized distances', () => {
+    expect(QDRANT_EXACT_SEARCH_PARAMS).toEqual({
+      exact: true,
+      quantization: { ignore: true },
+    });
+  });
+
+  it('accepts an existing collection that already has the create-body layout', () => {
+    const expected = qdrantCollectionCreateBody(1536);
+    expect(() => {
+      assertCollectionMatchesCreateBody(
+        {
+          result: {
+            config: {
+              params: {
+                on_disk_payload: true,
+                vectors: { size: 1536, distance: 'Cosine', on_disk: true, extra: 'ok' },
+              },
+              quantization_config: {
+                scalar: { type: 'int8', quantile: 0.99, always_ram: true, extra: true },
+              },
+            },
+          },
+        },
+        expected,
+      );
+    }).not.toThrow();
+  });
+
+  it('rejects a leftover in-RAM collection as a migration target', () => {
+    const expected = qdrantCollectionCreateBody(1536);
+    expect(() => {
+      assertCollectionMatchesCreateBody(
+        {
+          result: {
+            config: {
+              params: {
+                on_disk_payload: false,
+                vectors: { size: 1536, distance: 'Cosine', on_disk: false },
+              },
+            },
+          },
+        },
+        expected,
+      );
+    }).toThrow(/on_disk/);
   });
 });

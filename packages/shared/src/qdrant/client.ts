@@ -269,7 +269,12 @@ export interface QdrantClient {
   upsertPoints(points: QdrantPointRecord[]): Promise<void>;
   /** Raw collection info (config, counts). Used by RAM/recall measurement. */
   collectionInfo(): Promise<unknown>;
-  /** Prometheus text from `/metrics`. Used by RAM measurement. */
+  /**
+   * Collection-scoped RAM/disk breakdown from
+   * `GET /collections/{name}/memory` (Qdrant 1.18+). Used by RAM measurement.
+   */
+  collectionMemory(): Promise<unknown>;
+  /** Prometheus text from `/metrics`. */
   metricsText(): Promise<string>;
   /** Test/admin-only: read the collection name this instance writes to. */
   collectionName(): string;
@@ -948,6 +953,17 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     return res.data;
   }
 
+  async function collectionMemory(): Promise<unknown> {
+    await ensureCollection();
+    const res = await request('GET', `/collections/${encodeURIComponent(collection)}/memory`);
+    if (res.status !== 200) {
+      throw new Error(
+        `Qdrant collection memory failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
+      );
+    }
+    return res.data;
+  }
+
   async function metricsText(): Promise<string> {
     const res = await fetcher(`${baseUrl}/metrics`, { headers });
     const text = await res.text();
@@ -1043,6 +1059,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     scrollPoints,
     upsertPoints,
     collectionInfo,
+    collectionMemory,
     metricsText,
     collectionName: () => collection,
   };

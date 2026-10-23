@@ -1,5 +1,6 @@
 import type { QdrantClient, SearchHit } from '#src/qdrant/client.js';
 
+import { QDRANT_EXACT_SEARCH_PARAMS } from '#src/qdrant/collection-config.js';
 import { denseVectorFromUnknown } from '#src/qdrant/copy-points.js';
 
 const DEFAULT_RECALL_SAMPLE = 32;
@@ -20,31 +21,9 @@ export interface RecallAtKResult {
   collection: string;
   sampleSize: number;
   k: number;
-  meanRecall: number;
+  meanRecall: number | null;
   queriesCompared: number;
-}
-
-export function parsePrometheusGauges(text: string, collection: string): Record<string, number> {
-  const gauges: Record<string, number> = {};
-  const collectionToken = `collection="${collection}"`;
-  for (const rawLine of text.split('\n')) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    if (!line.includes(collectionToken) && !/memory|ram|resident/i.test(line)) continue;
-    const match =
-      /^([a-zA-Z_:][a-zA-Z0-9_:]*)\{[^}]*\}\s+(\S+)/.exec(line) ??
-      /^([a-zA-Z_:][a-zA-Z0-9_:]*)\s+(\S+)/.exec(line);
-    if (!match) continue;
-    const name = match[1];
-    const value = Number(match[2]);
-    if (!name || !Number.isFinite(value)) continue;
-    const collectionSpecific = line.includes(collectionToken);
-    const memoryLike = /memory|ram|resident/i.test(name);
-    if (!collectionSpecific && !memoryLike) continue;
-    if (!name.endsWith('_bytes') && !memoryLike) continue;
-    gauges[name] = value;
-  }
-  return gauges;
+  status: 'ok' | 'no_data';
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -70,10 +49,64 @@ function quantizationLabel(config: unknown): string | null {
   return null;
 }
 
+const MEMORY_USAGE_KEYS = [
+  'ram_bytes',
+  'disk_bytes',
+  'cached_bytes',
+  'expected_cache_bytes',
+] as const;
+
+function metricUsage(component: unknown): Record<string, number> {
+  const record = asRecord(component);
+  if (!record) return {};
+  const usage: Record<string, number> = {};
+  for (const key of MEMORY_USAGE_KEYS) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) usage[key] = value;
+  }
+  return usage;
+}
+
+function addUsage(
+  target: Record<string, number>,
+  usage: Record<string, number>,
+  prefix: string,
+): void {
+  for (const [key, value] of Object.entries(usage)) {
+    const labeled = `${prefix}_${key}`;
+    target[labeled] = (target[labeled] ?? 0) + value;
+  }
+}
+
+/**
+ * Parse GET /collections/{name}/memory. Qdrant 1.18+ returns MetricUsage
+ * objects (`ram_bytes`, `disk_bytes`, `cached_bytes`, `expected_cache_bytes`).
+ * Vector breakdown is an array of `{ storage, index }` entries; a flat
+ * `{ ram_bytes }` object is still accepted for tests.
+ */
+export function collectionMemoryBytesFromResponse(memory: unknown): Record<string, number> {
+  const result = nested(memory, ['result']) ?? memory;
+  const record = asRecord(result);
+  const bytes: Record<string, number> = {};
+  if (!record) return bytes;
+  addUsage(bytes, metricUsage(record.total), 'total');
+  addUsage(bytes, metricUsage(record.payload), 'payload');
+  if (Array.isArray(record.vectors)) {
+    for (const entry of record.vectors) {
+      const item = asRecord(entry);
+      addUsage(bytes, metricUsage(item?.storage), 'vectors');
+      addUsage(bytes, metricUsage(item?.index), 'vectors_index');
+    }
+  } else {
+    addUsage(bytes, metricUsage(record.vectors), 'vectors');
+  }
+  return bytes;
+}
+
 export function collectionRamSnapshotFromInfo(
   collection: string,
   info: unknown,
-  metricsText: string,
+  memory: unknown,
 ): CollectionRamSnapshot {
   const result = nested(info, ['result']) ?? info;
   const params = nested(result, ['config', 'params']);
@@ -97,13 +130,13 @@ export function collectionRamSnapshotFromInfo(
     quantization: quantizationLabel(
       nested(result, ['config', 'quantization_config']) ?? nested(params, ['quantization_config']),
     ),
-    metricBytes: parsePrometheusGauges(metricsText, collection),
+    metricBytes: collectionMemoryBytesFromResponse(memory),
   };
 }
 
 export async function measureCollectionRam(client: QdrantClient): Promise<CollectionRamSnapshot> {
-  const [info, metrics] = await Promise.all([client.collectionInfo(), client.metricsText()]);
-  return collectionRamSnapshotFromInfo(client.collectionName(), info, metrics);
+  const [info, memory] = await Promise.all([client.collectionInfo(), client.collectionMemory()]);
+  return collectionRamSnapshotFromInfo(client.collectionName(), info, memory);
 }
 
 function hitIds(hits: SearchHit[], k: number): string[] {
@@ -121,11 +154,40 @@ export function recallAtK(baselineIds: string[], candidateIds: string[], k: numb
   return overlap / baseline.size;
 }
 
+export function teamScopedScrollFilter(teamId: string, userId: string): Record<string, unknown> {
+  if (!teamId) throw new Error('Qdrant recall sample requires teamId');
+  if (!userId) throw new Error('Qdrant recall sample requires userId');
+  return {
+    must: [{ key: 'team_id', match: { value: teamId } }],
+    should: [
+      { key: 'visibility', match: { value: 'team' } },
+      {
+        must: [
+          { key: 'visibility', match: { value: 'private' } },
+          { key: 'author_user_id', match: { value: userId } },
+        ],
+      },
+      {
+        must: [
+          { key: 'visibility', match: { value: 'private' } },
+          { key: 'visibility_owner_user_id', match: { value: userId } },
+        ],
+      },
+      {
+        must: [
+          { key: 'visibility', match: { value: 'specific_users' } },
+          { key: 'visibility_user_ids', match: { any: [userId] } },
+        ],
+      },
+    ],
+  };
+}
+
 /**
  * Compare quantized (or default) search against exact search on the same
- * collection. Exact search is the uncompressed ground truth; quantized
- * search with rescore is the production path after the storage-layout
- * migration.
+ * collection. Exact search with quantization.ignore is the uncompressed
+ * ground truth; quantized search with rescore is the production path after
+ * the storage-layout migration.
  */
 export async function measureQuantizedRecall(
   client: QdrantClient,
@@ -137,6 +199,7 @@ export async function measureQuantizedRecall(
     limit: sampleSize,
     withPayload: true,
     withVector: true,
+    filter: teamScopedScrollFilter(opts.teamId, opts.userId),
   });
   const queries = page.points
     .map((point) => denseVectorFromUnknown(point.vector))
@@ -149,7 +212,7 @@ export async function measureQuantizedRecall(
     const [exactHits, quantizedHits] = await Promise.all([
       client.search(opts.teamId, opts.userId, vector, {
         limit: k,
-        searchParams: { exact: true },
+        searchParams: { ...QDRANT_EXACT_SEARCH_PARAMS },
       }),
       client.search(opts.teamId, opts.userId, vector, { limit: k }),
     ]);
@@ -158,11 +221,23 @@ export async function measureQuantizedRecall(
     compared += 1;
   }
 
+  if (compared === 0) {
+    return {
+      collection: client.collectionName(),
+      sampleSize: queries.length,
+      k,
+      meanRecall: null,
+      queriesCompared: 0,
+      status: 'no_data',
+    };
+  }
+
   return {
     collection: client.collectionName(),
     sampleSize: queries.length,
     k,
-    meanRecall: compared === 0 ? 1 : total / compared,
+    meanRecall: total / compared,
     queriesCompared: compared,
+    status: 'ok',
   };
 }

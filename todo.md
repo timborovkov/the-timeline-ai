@@ -548,7 +548,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       plan a move to sharded or managed Qdrant before it becomes painful. New
       collections already store original vectors on disk; copy any older in-RAM
       collection with `pnpm --filter @timeline/worker qdrant-migrate-collection`
-      before lowering the Railway memory limit.
+      (`--writers-paused` after pausing embed writers) before lowering the
+      Railway memory limit.
 - [ ] Maintain an OpenRouter spend dashboard with per-feature cost tracking.
 - [ ] Rotate API keys quarterly.
 - [ ] Audit team isolation on every schema, integration, MCP, or data-access

@@ -46,6 +46,20 @@ function makeFetcher(
     const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
     calls.push({ url, method, body });
 
+    if (method === 'GET' && url.endsWith('/memory')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            result: {
+              total: { ram_bytes: 1000 },
+              vectors: { ram_bytes: 800 },
+              payload: { ram_bytes: 200 },
+            },
+          }),
+          { status: 200 },
+        ),
+      );
+    }
     // GET /collections/<name>
     if (method === 'GET' && url.includes('/collections/')) {
       if (collectionExists) {
@@ -363,6 +377,27 @@ describe('createQdrantClient', () => {
     expect(
       (search?.body as { params?: { quantization?: unknown } }).params?.quantization,
     ).toBeUndefined();
+  });
+
+  it('recall baseline searchParams set exact and quantization.ignore', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], {
+      searchParams: { exact: true, quantization: { ignore: true } },
+    });
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    expect(search?.body).toMatchObject({
+      params: { exact: true, quantization: { ignore: true } },
+    });
+  });
+
+  it('reads collection RAM from GET /collections/{name}/memory', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher, collection: 'events_test' });
+    await expect(client.collectionMemory()).resolves.toMatchObject({
+      result: { total: { ram_bytes: 1000 } },
+    });
+    expect(calls.some((call) => call.method === 'GET' && call.url.endsWith('/memory'))).toBe(true);
   });
 
   it('search sends quantization rescore params', async () => {

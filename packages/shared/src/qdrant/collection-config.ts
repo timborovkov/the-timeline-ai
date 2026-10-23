@@ -71,3 +71,110 @@ export function qdrantSearchQuantizationParams(
     },
   };
 }
+
+/** Uncompressed recall baseline: full scan with quantized distances disabled. */
+export const QDRANT_EXACT_SEARCH_PARAMS = {
+  exact: true,
+  quantization: { ignore: true },
+} as const;
+
+export interface CollectionStorageLayout {
+  vectorSize: number | null;
+  distance: string | null;
+  vectorsOnDisk: boolean | null;
+  onDiskPayload: boolean | null;
+  quantization: Record<string, unknown> | null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+}
+
+function nested(value: unknown, path: string[]): unknown {
+  let current: unknown = value;
+  for (const key of path) {
+    const record = asRecord(current);
+    if (!record) return undefined;
+    current = record[key];
+  }
+  return current;
+}
+
+export function collectionStorageLayoutFromInfo(info: unknown): CollectionStorageLayout {
+  const result = nested(info, ['result']) ?? info;
+  const params = nested(result, ['config', 'params']);
+  const vectors = asRecord(nested(params, ['vectors']));
+  const quantization = asRecord(
+    nested(result, ['config', 'quantization_config']) ?? nested(params, ['quantization_config']),
+  );
+  const size = vectors?.size;
+  const distance = vectors?.distance;
+  const onDisk = vectors?.on_disk;
+  const onDiskPayload = nested(params, ['on_disk_payload']);
+  return {
+    vectorSize: typeof size === 'number' ? size : null,
+    distance: typeof distance === 'string' ? distance : null,
+    vectorsOnDisk: typeof onDisk === 'boolean' ? onDisk : null,
+    onDiskPayload: typeof onDiskPayload === 'boolean' ? onDiskPayload : null,
+    quantization,
+  };
+}
+
+function requiredRecord(value: unknown, label: string): Record<string, unknown> {
+  const record = asRecord(value);
+  if (!record) throw new Error(`Qdrant target ${label} is missing`);
+  return record;
+}
+
+function assertSubset(
+  actual: Record<string, unknown>,
+  expected: Record<string, unknown>,
+  path: string,
+): void {
+  for (const [key, expectedValue] of Object.entries(expected)) {
+    const actualValue = actual[key];
+    const nextPath = `${path}.${key}`;
+    if (expectedValue && typeof expectedValue === 'object' && !Array.isArray(expectedValue)) {
+      assertSubset(
+        requiredRecord(actualValue, nextPath),
+        expectedValue as Record<string, unknown>,
+        nextPath,
+      );
+      continue;
+    }
+    if (actualValue !== expectedValue) {
+      throw new Error(
+        `Qdrant target ${nextPath} is ${JSON.stringify(actualValue)}, expected ${JSON.stringify(expectedValue)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Fail unless an existing collection already has the advertised on-disk +
+ * quantized layout. Used before copy/cutover so a leftover in-RAM collection
+ * cannot be treated as the migration target.
+ */
+export function assertCollectionMatchesCreateBody(
+  info: unknown,
+  expected: Record<string, unknown>,
+): void {
+  const layout = collectionStorageLayoutFromInfo(info);
+  const expectedVectors = requiredRecord(expected.vectors, 'vectors');
+  const actualVectors: Record<string, unknown> = {
+    size: layout.vectorSize,
+    distance: layout.distance,
+    on_disk: layout.vectorsOnDisk,
+  };
+  assertSubset(actualVectors, expectedVectors, 'vectors');
+  if (expected.on_disk_payload === true && layout.onDiskPayload !== true) {
+    throw new Error(
+      `Qdrant target on_disk_payload is ${JSON.stringify(layout.onDiskPayload)}, expected true`,
+    );
+  }
+  const expectedQuantization = requiredRecord(expected.quantization_config, 'quantization_config');
+  if (!layout.quantization) {
+    throw new Error('Qdrant target quantization_config is missing');
+  }
+  assertSubset(layout.quantization, expectedQuantization, 'quantization_config');
+}
