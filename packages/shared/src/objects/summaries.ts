@@ -1058,7 +1058,7 @@ export async function generateAndStoreObjectSummary(
     const result = await structured({
       schema: generatedObjectSummarySchema,
       model: TIMELINE_MODELS.summarization.id,
-      system:
+      instructions:
         'You generate concise, grounded object summaries for a team memory product. Return valid JSON only.',
       prompt: promptForPacket(packet),
     });

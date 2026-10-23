@@ -4,6 +4,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import type { ActorKind } from '#src/objects/identity-facets.js';
 
 import { actorDisplayName, parseMentions, type MentionMember } from '#src/objects/mentions.js';
+import { buildObjectDiscussionAgentContext } from '#src/objects/object-discussion-context.js';
 
 const MENTION_EXCERPT_LENGTH = 180;
 
@@ -130,6 +131,12 @@ export async function pingObjectDiscussionAgent(input: {
       });
     },
   });
+  const objectContext = await buildObjectDiscussionAgentContext({
+    db: input.db,
+    teamId: input.teamId,
+    userId: input.userId,
+    entityId: input.entityId,
+  });
   await acceptDirectAgentTurn(
     input.db,
     {
@@ -146,8 +153,12 @@ export async function pingObjectDiscussionAgent(input: {
         '',
         input.body,
         '',
+        objectContext,
+        '',
         'Reply in this object discussion. Your reply will be posted as a comment.',
-      ].join('\n'),
+      ]
+        .filter((part) => part.length > 0)
+        .join('\n'),
     },
     adapter,
     { providerAcknowledgement: 'background' },

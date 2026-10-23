@@ -17,8 +17,7 @@ export interface RateLimitInput {
 }
 
 export type RateLimitResult =
-  | { ok: true; remaining: number }
-  | { ok: false; retryAfterMs: number; remaining: number };
+  { ok: true; remaining: number } | { ok: false; retryAfterMs: number; remaining: number };
 
 /**
  * Atomic token-bucket check. The Lua script runs entirely server-side so two

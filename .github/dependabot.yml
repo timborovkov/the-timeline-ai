@@ -1,0 +1,71 @@
+# Weekly version updates for every package ecosystem in this repo.
+# Minor/patch updates are grouped so Dependabot does not open one PR per package.
+# Major updates stay ungrouped. The open-PR cap is per ecosystem.
+version: 2
+updates:
+  # pnpm workspace — root package.json + pnpm-lock.yaml cover apps/* and packages/*.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 8
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 8
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: pip
+    directory: /apps/worker/document-extract-sandbox
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 8
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+
+  # Portable app images live as docker/*.Dockerfile (not a root Dockerfile).
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 8
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 8
+    groups:
+      minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch

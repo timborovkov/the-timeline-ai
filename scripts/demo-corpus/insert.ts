@@ -34,6 +34,7 @@ import {
   messagePreferences,
   objectNotes,
   objectNoteMentions,
+  objectIdentityFacets,
   notifications,
   objectSummaries,
   providerConnections,
@@ -60,6 +61,7 @@ import {
 import { encryptJson } from '@timeline/shared/crypto';
 import { hashCredential } from '@timeline/shared/ingest-webhooks';
 import { hashKey } from '@timeline/shared/mcp-server';
+import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets';
 import { hashPassword } from '@timeline/shared/passwords';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
@@ -837,6 +839,45 @@ async function insertObjects(tx: SeedTx): Promise<void> {
         updatedAt: NOW,
       },
     });
+
+  const identityFacetRows = CORPUS_OBJECTS.flatMap((row) =>
+    (row.identityFacets ?? []).map((facet, facetIndex) => ({
+      row,
+      facet,
+      facetIndex,
+    })),
+  );
+  if (identityFacetRows.length > 0) {
+    await tx
+      .insert(objectIdentityFacets)
+      .values(
+        identityFacetRows.map(({ row, facet }, index) => ({
+          id: CORPUS_UUID.facet(index + 1),
+          teamId: TEAM_ID,
+          entityId: row.id,
+          kind: facet.kind,
+          value: facet.value,
+          normalizedValue: normalizeIdentityFacet(facet.kind, facet.value),
+          source: 'system' as const,
+          status: 'approved' as const,
+          metadata: { fixture_version: DEMO_FIXTURE_VERSION },
+          createdByUserId: row.ownerUserId ?? CORPUS_PERSON.avery.id,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: objectIdentityFacets.id,
+        set: {
+          entityId: sql`excluded.entity_id`,
+          kind: sql`excluded.kind`,
+          value: sql`excluded.value`,
+          normalizedValue: sql`excluded.normalized_value`,
+          status: sql`excluded.status`,
+          source: sql`excluded.source`,
+          updatedAt: NOW,
+          archivedAt: null,
+        },
+      });
+  }
 
   await tx
     .insert(artifactClusters)

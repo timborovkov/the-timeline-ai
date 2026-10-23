@@ -11,6 +11,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
+    setupFiles: ['src/test/happy-dom-react-form-actions.ts'],
     // The web suite includes several PGlite and browser-emulation tests. Capping workers keeps
     // those resource-heavy files from starving interaction tests and tripping false timeouts.
     maxWorkers: 4,

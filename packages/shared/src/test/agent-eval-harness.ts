@@ -5,6 +5,14 @@ import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 import type { LanguageModel } from 'ai';
 
+interface MockFinishReason {
+  unified: 'stop' | 'tool-calls';
+  raw: undefined;
+}
+
+const MOCK_STOP_FINISH: MockFinishReason = { unified: 'stop', raw: undefined };
+const MOCK_TOOL_CALLS_FINISH: MockFinishReason = { unified: 'tool-calls', raw: undefined };
+
 import {
   askAgent,
   type AskAgentDeps,
@@ -248,7 +256,7 @@ export function makeAskAgentTextModel(
             controller.enqueue({ type: 'text-end', id: '1' });
             controller.enqueue({
               type: 'finish',
-              finishReason: 'stop',
+              finishReason: MOCK_STOP_FINISH,
               usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
             });
             controller.close();
@@ -288,7 +296,7 @@ export function makeAskAgentToolRoundModel(input: {
               });
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'tool-calls',
+                finishReason: MOCK_TOOL_CALLS_FINISH,
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               });
             } else {
@@ -297,7 +305,7 @@ export function makeAskAgentToolRoundModel(input: {
               controller.enqueue({ type: 'text-end', id: 'answer-1' });
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'stop',
+                finishReason: MOCK_STOP_FINISH,
                 usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
               });
             }

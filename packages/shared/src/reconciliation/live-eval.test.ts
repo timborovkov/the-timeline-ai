@@ -288,7 +288,7 @@ async function liveEvalJudge(
   const judgeResult = await chatStructured({
     schema: liveReconciliationJudgeSchema,
     model: TIMELINE_MODELS.summarization.id,
-    system:
+    instructions:
       'You are a strict evaluator for a workspace reconciliation eval. Return only the allowed JSON shape. Use only category codes, never free-text rationale.',
     prompt: liveEvalJudgePrompt(testCase, result, deterministicFailures),
     abortSignal: liveEvalCallAbortSignal(),

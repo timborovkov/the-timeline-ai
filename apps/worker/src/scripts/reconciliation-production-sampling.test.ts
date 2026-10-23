@@ -239,8 +239,7 @@ describe('reconciliation production sampling script', () => {
     );
 
     const reportInput = writeReport.mock.calls[0]?.[0] as
-      | WriteProductionSamplingEvalReportInput
-      | undefined;
+      WriteProductionSamplingEvalReportInput | undefined;
     expect(reportInput).toMatchObject({
       inputPaths: ['/tmp/run'],
       outputPath: '/tmp/report.json',

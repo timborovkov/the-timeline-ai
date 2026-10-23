@@ -53,10 +53,9 @@ async function deprovisionWebhooksBestEffort(
 }
 
 export async function POST(
-  req: Request,
+  _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  void req;
   const session = await auth();
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { id } = await ctx.params;

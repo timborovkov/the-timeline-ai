@@ -5,7 +5,7 @@ import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { experimental_transcribe as tracedTranscribe } from '#src/llm/tracing.js';
+import { transcribe as tracedTranscribe } from '#src/llm/tracing.js';
 
 export interface TranscribeInput {
   /** Raw audio bytes. OpenRouter STT accepts JSON with base64 audio data and a format hint. */

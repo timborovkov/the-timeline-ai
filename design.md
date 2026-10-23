@@ -481,9 +481,11 @@ danger row into the work queue. Open tasks stay their own row into Tasks. Open
 objects is one generic count for people, companies, projects, deals, and
 follow-ups, linking to the Objects list rather than typed filters or dumping
 those records onto Home. “You’re caught up” replaces empty dashboard grids
-when every group is zero. Pinned work, digest, and a dense recent-moments scan
-follow as full-width sections without duplicating Timeline or Connections.
-These sections prefer horizontal rules and rows over bordered dashboard cards.
+when every group is zero. Pinned work, the team inbound email as one readonly
+copyable field (`#team-email`) with a quiet link to Team → Email settings,
+digest, and a dense recent-moments scan follow as full-width sections without
+duplicating Timeline or Connections. These sections prefer horizontal rules and
+rows over bordered dashboard cards.
 
 The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
@@ -795,24 +797,41 @@ The full object page is a Linear-style issue view, not a work-index. It has no
 editable title. Board placement is a muted header line, not a standalone
 section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
 shared floating binder. Repair memory and Add task live in the overflow
-menu. The main column uses an 8px section stack and 14px body at 1.35
+menu. The main column uses a dense section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
-evidence / facts groups that have items. Empty “Not enough object memory,” “No
-connected work,” and “Nothing here yet” cards are prohibited. Discussion keeps
-a borderless composer with @mentions. The right column is one Properties rail: a 6px-radius
-`--surface` panel with a hairline `--border`, not raw page canvas. Properties,
-Related, recent changes, and Archive share that one panel and divide with
-hairlines. Do not nest a card per field. The task peek uses the same rail so
-it lifts off the list in light and dark. An empty summary is a single
-Generate summary control, not a “ready to generate” block. Evidence uses a
-quiet text control, not a signal chip. Section labels, supporting copy, and
-timestamps use 12px `--fg-dim`. Body and links use 14px `--fg` at regular
-weight. Quiet actions use 12px `--fg-muted`. `--signal` is reserved for
+evidence / facts groups that have items. Top-level section titles use 13px
+semibold `--fg` (not dim) so Evidence / Connected work / Discussion read as
+structure; section counts and timestamps use Commit Mono 11px tabular
+`--fg-dim`. Nested Connected work groups use quieter 11px medium `--fg-muted`
+and hairline dividers so Open tasks / Documents / Evidence do not compete.
+Row titles are 14px medium `--fg`; body and prose stay 14px regular `--fg`;
+supporting meta is 12px `--fg-dim` and sentence case (`Create · Identity facet`,
+never raw `create · identity_facet`). Empty
+“Not enough object memory,” “No connected work,” and “Nothing here yet” cards
+are prohibited. Long Evidence, Facts, Documents, and other Connected work lists
+preview three rows, then fold the rest behind a quiet `Show N more` disclosure
+(with hairline row dividers and two-line evidence clamps) so the main column
+does not become a wall of text. Discussion keeps
+a borderless composer with @mentions. The right column is one Properties rail at
+`20rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
+`--border`, not raw page canvas. Board context, editable contact facets (people and
+companies), type-aware Details fields (same 32px property rows as Stage/Aliases:
+`6.75rem` medium `--fg-dim` labels, 14px `--fg` values, blur-to-save inputs, `No …` placeholders;
+arbitrary Add field with human labels stored as camelCase; hover-only ghost × to clear
+custom fields; `fixture_version` and other internal keys stay hidden), Properties,
+Company (person objects), Related, recent changes, and Archive share that one panel
+and divide with hairlines. Status and Priority keep a toned icon with quiet `--fg`
+value text so they match Stage/Aliases. Do not nest a card per
+field. The task peek and board card peek use the same rail pattern so they lift
+off the list in light and dark; both include Discussion below command fields and
+before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
+quiet text control, not a signal chip. Supporting copy stays 12px `--fg-dim`.
+Quiet fold/actions use 12px medium `--fg-muted`. `--signal` is reserved for
 alerts and Accept. Object ID lives in a compact 12px Technical details
 disclosure. Relationship and change metadata stay sentence case. Content is
-grouped by typography and spacing. Nested bordered boxes are not a layout
-system on these surfaces.
+grouped by typography and spacing (`object-detail-type.ts`). Nested bordered boxes
+are not a layout system on these surfaces.
 
 Approval rows use the same collection density as Tasks. One row per review
 item: selection checkbox, human title once, a short context line (`Create
@@ -1216,3 +1235,7 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-22 | Usage plan limits | Usage and Billing show live used/limit for Ask turns, concurrent meeting notetakers, custom MCP servers, documents, storage, indexed chunks, and member seats — not Polar meters. |
 | 2026-08-24 | Folded infrastructure limits | Usage, Billing, and `/pricing` keep billed meters in the default view. Plan capacity ceilings sit in a closed **Infrastructure limits** disclosure. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |
+| 2026-08-28 | Home team email field | Surfaces the inbound address on Home below pinned work as one readonly copyable field (`#team-email`), and keeps the same control on Team → Email for every member. |
+| 2026-08-28 | Object Properties rail polish | Widens the object rail to `20rem`, shares one labeled field chrome across Contact/Details/Properties, keeps status icons toned with quiet value text, and drops empty contact chrome plus boxed add forms. |
+| 2026-08-28 | Object detail list folds | Evidence, Facts, Documents, and other Connected work lists preview three rows then fold behind `Show N more`, with hairline dividers and tighter evidence clamps. |
+| 2026-08-28 | Object detail typography | Shares `object-detail-type` roles: 13px semibold section titles, medium 14px row titles, Commit Mono counts/timestamps, and medium rail labels. |

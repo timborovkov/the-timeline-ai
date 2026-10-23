@@ -1,8 +1,8 @@
-import { users } from '@timeline/db';
+import { teams, users } from '@timeline/db';
 import { latestDailyDigest, type DailyDigestPayload } from '@timeline/shared/messaging';
 import { getAudioBucket, getS3PresignClient, getSignedGetObjectUrl } from '@timeline/shared/s3';
 import { withTeam } from '@timeline/shared/team-scope';
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { Boxes, CircleAlert, CircleCheckBig, ListTodo, PlugZap, Wrench } from 'lucide-react';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -15,6 +15,7 @@ import { CaptureDialog } from '@/components/home/capture-dialog';
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
 import { HomeAskComposer } from '@/components/home/home-ask-composer';
 import { HomeAttention } from '@/components/home/home-attention';
+import { HomeTeamEmail } from '@/components/home/home-team-email';
 import { OnboardingChecklist } from '@/components/onboarding-checklist';
 import { PinnedWorkspacePreview } from '@/components/pins/pinned-workspace-preview';
 import { TimelineFeed } from '@/components/timeline-feed';
@@ -23,6 +24,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
 import {
+  displayInboundEmail,
   getHomeOpenObjectCounts,
   getWorkAttentionSummary,
   homeOpenObjectTotal,
@@ -91,6 +93,7 @@ export default async function HomeDashboardPage() {
     initialChecklist,
     recoverableJobs,
     billingDashboard,
+    teamRow,
   ] = await Promise.all([
     getWorkAttentionSummary(scope, now, calendarSettings.defaultTimezone),
     getHomeOpenObjectCounts(scope),
@@ -113,7 +116,14 @@ export default async function HomeDashboardPage() {
       reportCaughtError(err, { surface: 'render', operation: 'billing_dashboard' });
       return null;
     }),
+    db
+      .select({ slug: teams.slug, inboundEmail: teams.inboundEmail })
+      .from(teams)
+      .where(eq(teams.id, active.teamId))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
   ]);
+  const inboundEmail = displayInboundEmail(teamRow, process.env.POSTMARK_INBOUND_ADDRESS);
   const events = eventPage.items;
   const pendingApprovals = workAttention.pendingApprovals;
   const urgentWorkCount = homeWorkNeedingAttentionCount(workAttention);
@@ -234,6 +244,8 @@ export default async function HomeDashboardPage() {
       />
 
       <PinnedWorkspacePreview initialItems={pinnedPage.items} />
+
+      <HomeTeamEmail inboundEmail={inboundEmail} />
 
       <DailyDigestBlock digest={latestDigest?.payload as DailyDigestPayload | undefined} />
 

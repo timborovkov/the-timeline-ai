@@ -27,11 +27,7 @@ export interface UrlKeyAuth {
 }
 
 export type McpAuthConfig =
-  | BearerAuth
-  | HeaderAuth
-  | BasicAuth
-  | UrlKeyAuth
-  | Record<string, never>;
+  BearerAuth | HeaderAuth | BasicAuth | UrlKeyAuth | Record<string, never>;
 
 function decryptAuthConfig(server: McpServerRow): McpAuthConfig | null {
   if (!server.authConfigCiphertext || !server.authConfigIv || !server.authConfigTag) {

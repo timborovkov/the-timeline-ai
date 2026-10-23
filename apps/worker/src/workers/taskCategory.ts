@@ -47,9 +47,10 @@ export async function processTaskCategoryJobForTests(
   io: TaskCategoryWorkerIO = {},
 ) {
   const env = getEnv();
-  if (
-    !(io.enabled ?? (env.TASK_CATEGORY_CLASSIFICATION_ENABLED && env.TASK_CATEGORY_WORKER_ENABLED))
-  ) {
+  if (!(
+    io.enabled ??
+    (env.TASK_CATEGORY_CLASSIFICATION_ENABLED && env.TASK_CATEGORY_WORKER_ENABLED)
+  )) {
     return { status: 'skipped' as const, reason: 'disabled' as const };
   }
   if (data.kind === 'project_fanout') {

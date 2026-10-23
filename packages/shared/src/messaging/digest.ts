@@ -234,7 +234,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
 async function requestStructuredDigest(prompt: string, systemPrompt: string): Promise<DigestText> {
   const result = await chatStructured({
     schema: digestSummarySchema,
-    system: systemPrompt,
+    instructions: systemPrompt,
     prompt,
   });
   return {

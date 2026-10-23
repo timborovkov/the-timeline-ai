@@ -59,10 +59,7 @@ export interface ResolveEvidenceAssociationWrite {
 export interface ResolveEvidenceAssociationSkip {
   evidenceId: string;
   reason:
-    | 'missing_evidence'
-    | 'no_matchable_anchors'
-    | 'no_cluster_defaults'
-    | 'ambiguous_anchor_match';
+    'missing_evidence' | 'no_matchable_anchors' | 'no_cluster_defaults' | 'ambiguous_anchor_match';
   clusterIds?: string[];
   outputId?: string | null;
   outputRepaired?: boolean;
