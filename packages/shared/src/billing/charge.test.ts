@@ -7,7 +7,9 @@ import {
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
   polarInvoiceNativeUnits,
+  polarIngestDisposition,
   polarMemberMonthUnits,
+  polarSubscriptionCoversMeter,
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
@@ -212,6 +214,174 @@ describe('shouldIngestPolarMeteredUsage', () => {
         invoiceCents: 1,
       }),
     ).toBe(false);
+  });
+});
+
+describe('polar subscription price guard', () => {
+  const products = {
+    payg: 'prod_payg',
+    team: 'prod_team',
+    business: 'prod_business',
+    enterprise: 'prod_enterprise',
+  };
+
+  it('ingests only when the active subscription product prices the meter', () => {
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_ai_eur_cents',
+        products,
+      }),
+    ).toBe(true);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'past_due',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_extra_member_days',
+        products,
+      }),
+    ).toBe(true);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        polarSubscriptionId: 'sub_ent',
+        polarProductId: 'prod_enterprise',
+        eventName: 'timeline_recall_minutes',
+        products,
+      }),
+    ).toBe(true);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'enterprise',
+        billingState: 'read_only',
+        polarSubscriptionId: 'sub_ent',
+        polarProductId: 'prod_enterprise',
+        eventName: 'timeline_extra_member_days',
+        products,
+      }),
+    ).toBe(true);
+  });
+
+  it('holds a payable charge when the subscription price does not match', () => {
+    const uncovered = [
+      { planId: 'free', billingState: 'free', productId: null, subscriptionId: null },
+      {
+        planId: 'team',
+        billingState: 'team_active',
+        productId: 'prod_payg',
+        subscriptionId: 'sub',
+      },
+      { planId: 'team', billingState: 'canceled', productId: 'prod_team', subscriptionId: 'sub' },
+      {
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        productId: null,
+        subscriptionId: null,
+      },
+      {
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        productId: 'prod_enterprise',
+        subscriptionId: 'sub',
+        products: {
+          payg: 'prod_payg',
+          team: 'prod_team',
+          business: 'prod_business',
+        },
+      },
+    ] as const;
+    for (const row of uncovered) {
+      const covers = polarSubscriptionCoversMeter({
+        planId: row.planId,
+        billingState: row.billingState,
+        polarSubscriptionId: row.subscriptionId,
+        polarProductId: row.productId,
+        eventName: 'timeline_ai_eur_cents',
+        products: 'products' in row ? row.products : products,
+      });
+      expect(covers, row.planId).toBe(false);
+      expect(
+        polarIngestDisposition({
+          eventName: 'timeline_ai_eur_cents',
+          polarCustomerId: 'cus_1',
+          shadowBilling: false,
+          comped: false,
+          billable: true,
+          polarUnits: 10,
+          invoiceCents: 10,
+          subscriptionCoversMeter: covers,
+        }),
+      ).toBe('hold');
+    }
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: null,
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: true,
+      }),
+    ).toBe('hold');
+  });
+
+  it('does not alert shadow, comps, or sub-cent rounds', () => {
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: null,
+        shadowBilling: true,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: false,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: true,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: false,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 1,
+        invoiceCents: 0,
+        subscriptionCoversMeter: true,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: true,
+      }),
+    ).toBe('ingest');
   });
 });
 

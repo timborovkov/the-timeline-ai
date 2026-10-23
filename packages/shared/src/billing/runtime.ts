@@ -510,7 +510,7 @@ async function planEntitlementForMemberDay(input: {
   teamId: string;
   day: string;
   currentPlanId: BillingPlanId;
-}): Promise<{ planId: BillingPlanId; included: number }> {
+}): Promise<{ planId: BillingPlanId; included: number | null }> {
   const [existing] = await input.db
     .select({ planId: billingMemberDayLedger.planId })
     .from(billingMemberDayLedger)
@@ -523,7 +523,7 @@ async function planEntitlementForMemberDay(input: {
     .limit(1);
   const planId =
     existing?.planId && isBillingPlanId(existing.planId) ? existing.planId : input.currentPlanId;
-  return { planId, included: PLAN_CATALOG[planId].includedActiveMembers ?? 0 };
+  return { planId, included: PLAN_CATALOG[planId].includedActiveMembers };
 }
 
 async function accrueTeamMemberDaysForDay(input: {
@@ -531,7 +531,7 @@ async function accrueTeamMemberDaysForDay(input: {
   teamId: string;
   day: string;
   planId: BillingPlanId;
-  included: number;
+  included: number | null;
   additionalMemberCents: number | null;
   members: { userId: string; role: string }[];
 }): Promise<{ extraMembers: number; chargeCents: number }> {
@@ -552,7 +552,12 @@ async function accrueTeamMemberDaysForDay(input: {
   }
 
   const additionalMemberCents = input.additionalMemberCents;
-  if (planId === 'free' || additionalMemberCents === null || additionalMemberCents <= 0) {
+  if (
+    planId === 'free' ||
+    included === null ||
+    additionalMemberCents === null ||
+    additionalMemberCents <= 0
+  ) {
     return { extraMembers: 0, chargeCents: 0 };
   }
   const billableRows = await input.db

@@ -152,6 +152,32 @@ export const billingOperatorAudit = pgTable(
 );
 
 /**
+ * Payable usage that has no matching active Polar subscription price.
+ * One open row per team, meter, period, and reason. Resolved when a later
+ * ingest sends the meter.
+ */
+export const billingUnbilledAlerts = pgTable(
+  'billing_unbilled_alerts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    meterId: text('meter_id').notNull(),
+    periodYm: text('period_ym').notNull(),
+    reason: text('reason').notNull(),
+    detail: text('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('billing_unbilled_alerts_open_unq')
+      .on(table.teamId, table.meterId, table.periodYm, table.reason)
+      .where(sql`${table.resolvedAt} IS NULL`),
+  ],
+);
+
+/**
  * One Free commercial grant per verified person. Extra workspaces do not mint
  * another Free allowance (pricing strategy §6).
  */

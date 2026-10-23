@@ -11,7 +11,14 @@ import {
   isDisabledExampleTimelineWebhook,
   isProtectedForeignWebhook,
   mergedWebhookEvents,
+  enterpriseProductPriceWrites,
   productPricesWithExtraMemberMeter,
+  selectTimelineEnterpriseProduct,
+  TIMELINE_ENTERPRISE_PRODUCT_NAME,
+  TIMELINE_METERED_EVENT_NAMES,
+  TIMELINE_METERED_UNIT_AMOUNTS,
+  timelineEnterpriseProductCreateBody,
+  timelineMeterIdsByEvent,
   removeEnvAssignments,
   selectTimelineExtraMemberMeter,
   selectTimelineWebhook,
@@ -163,5 +170,93 @@ describe('env assignment updates', () => {
     expect(next).toContain('OTHER=keep');
     expect(next).toContain('POLAR_WEBHOOK_SECRET=whsec_test');
     expect(next.endsWith('\n')).toBe(true);
+  });
+});
+
+describe('Timeline Enterprise product', () => {
+  const meterIds = {
+    timeline_ai_eur_cents: 'm-ai',
+    timeline_recall_minutes: 'm-recall',
+    timeline_email_units: 'm-email',
+    timeline_storage_gb_month: 'm-storage',
+    timeline_accepted_sources: 'm-sources',
+    timeline_extra_member_days: 'm-members',
+  };
+
+  it('maps meters by event name and builds a custom fee plus six metered prices', () => {
+    expect(Number(TIMELINE_METERED_UNIT_AMOUNTS.timeline_email_units) * 1000).toBe(
+      OVERAGE_RATES.emailCentsPerThousandUnits,
+    );
+    expect(Number(TIMELINE_METERED_UNIT_AMOUNTS.timeline_accepted_sources) * 1000).toBe(
+      OVERAGE_RATES.acceptedSourcesCentsPerThousand,
+    );
+    expect(TIMELINE_METERED_UNIT_AMOUNTS.timeline_recall_minutes).toBe(
+      String(OVERAGE_RATES.recallCentsPerMinute),
+    );
+    expect(TIMELINE_METERED_UNIT_AMOUNTS.timeline_extra_member_days).toBe(
+      TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
+    );
+    const ids = timelineMeterIdsByEvent([
+      { id: 'foreign', filter: { clauses: [{ value: 'seats' }] } },
+      ...TIMELINE_METERED_EVENT_NAMES.map((eventName) => ({
+        id: meterIds[eventName],
+        filter: { clauses: [{ value: eventName }] },
+      })),
+    ]);
+    expect(ids).toEqual(meterIds);
+    const body = timelineEnterpriseProductCreateBody({ meterIdsByEvent: ids });
+    expect(body.name).toBe(TIMELINE_ENTERPRISE_PRODUCT_NAME);
+    expect(body.recurring_interval).toBe('month');
+    expect(body.prices[0]).toEqual({
+      amount_type: 'custom',
+      price_currency: 'eur',
+      minimum_amount: 0,
+    });
+    expect(body.prices).toHaveLength(7);
+    expect(body.prices.slice(1)).toEqual(
+      TIMELINE_METERED_EVENT_NAMES.map((eventName) => ({
+        amount_type: 'metered_unit',
+        price_currency: 'eur',
+        meter_id: meterIds[eventName],
+        unit_amount: TIMELINE_METERED_UNIT_AMOUNTS[eventName],
+      })),
+    );
+  });
+
+  it('keeps existing price ids and adds the custom fee and missing meters once', () => {
+    const first = enterpriseProductPriceWrites({
+      prices: [{ id: 'fixed', amountType: 'fixed' }],
+      meterIdsByEvent: meterIds,
+    });
+    expect(first[0]).toEqual({ id: 'fixed' });
+    expect(
+      first.filter((price) => 'amount_type' in price && price.amount_type === 'custom'),
+    ).toHaveLength(1);
+    expect(first).toHaveLength(8);
+    const second = enterpriseProductPriceWrites({
+      prices: first.flatMap((price, index) =>
+        'id' in price
+          ? [price]
+          : [
+              {
+                id: `price-${String(index)}`,
+                amountType: price.amount_type,
+                ...('meter_id' in price ? { meterId: price.meter_id } : {}),
+              },
+            ],
+      ),
+      meterIdsByEvent: meterIds,
+    });
+    expect(second.every((price) => 'id' in price)).toBe(true);
+    expect(
+      selectTimelineEnterpriseProduct([
+        {
+          name: TIMELINE_ENTERPRISE_PRODUCT_NAME,
+          isArchived: true,
+          id: 'old',
+        },
+        { name: TIMELINE_ENTERPRISE_PRODUCT_NAME, isArchived: false, id: 'live' },
+      ])?.id,
+    ).toBe('live');
   });
 });

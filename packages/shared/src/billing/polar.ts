@@ -74,6 +74,7 @@ export function createPolarBillingProvider(options?: {
           customer_email: input.customerEmail,
           customer_external_id: input.externalCustomerId,
           ...(input.discountId ? { discount_id: input.discountId } : {}),
+          ...(typeof input.amount === 'number' ? { amount: input.amount } : {}),
         }),
       });
       if (!created.ok) {
@@ -201,7 +202,9 @@ export function verifyPolarWebhookSignature(input: {
   });
 }
 
-export function polarProductIdForPlan(plan: 'payg' | 'team' | 'business'): string | undefined {
+export function polarProductIdForPlan(
+  plan: 'payg' | 'team' | 'business' | 'enterprise',
+): string | undefined {
   const env = getEnv();
   switch (plan) {
     case 'payg':
@@ -210,6 +213,8 @@ export function polarProductIdForPlan(plan: 'payg' | 'team' | 'business'): strin
       return env.POLAR_PRODUCT_ID_TEAM;
     case 'business':
       return env.POLAR_PRODUCT_ID_BUSINESS;
+    case 'enterprise':
+      return env.POLAR_PRODUCT_ID_ENTERPRISE;
   }
 }
 
@@ -234,7 +239,7 @@ export function polarSubscriptionIdForPlanChange(account: {
 /**
  * Free → paid uses Polar checkout. Paid → paid updates the existing
  * subscription (or the customer portal when Polar cannot PATCH in place).
- * Enterprise is contractual — never open a second self-serve checkout.
+ * Enterprise checkout is operator-only — never open a self-serve checkout.
  */
 export async function createPlanChangeSession(input: {
   provider: BillingProvider;
@@ -252,7 +257,7 @@ export async function createPlanChangeSession(input: {
 }): Promise<{ url: string }> {
   if (input.account.planId === 'enterprise') {
     throw new Error(
-      'Enterprise plan changes go through support or the Polar customer portal, not self-serve checkout.',
+      'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
     );
   }
   const subscriptionId = polarSubscriptionIdForPlanChange(input.account);

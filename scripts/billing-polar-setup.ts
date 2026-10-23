@@ -12,10 +12,17 @@ import {
   polarApiBaseUrl,
   removeEnvAssignments,
   selectTimelineWebhook,
+  enterpriseProductPriceWrites,
   productPricesWithExtraMemberMeter,
+  selectTimelineEnterpriseProduct,
   selectTimelineExtraMemberMeter,
+  timelineEnterpriseProductCreateBody,
   timelineExtraMemberMeterCreateBody,
+  timelineMeterIdsByEvent,
   timelineTopUpsToArchive,
+  TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
+  TIMELINE_ENTERPRISE_PRODUCT_NAME,
+  TIMELINE_EXTRA_MEMBER_EVENT_NAME,
   TIMELINE_EXTRA_MEMBER_METER_NAME,
   TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
   upsertEnvAssignments,
@@ -69,6 +76,7 @@ interface PolarPriceRow {
 interface PolarMeterRow {
   id?: string;
   name?: string;
+  filter?: { clauses?: { value?: string }[] };
 }
 
 interface PolarProductRow {
@@ -160,6 +168,10 @@ function catalogPrices(rows: PolarPriceRow[] | undefined): PolarCatalogPrice[] {
         id: price.id,
         ...(price.is_archived === true ? { isArchived: true } : {}),
         ...(price.meter_id ? { meterId: price.meter_id } : {}),
+        ...(price.amount_type ? { amountType: price.amount_type } : {}),
+        ...(typeof price.minimum_amount === 'number'
+          ? { minimumAmount: price.minimum_amount }
+          : {}),
       },
     ];
   });
@@ -308,6 +320,111 @@ async function main(): Promise<void> {
     );
   }
 
+  const meterRowsAfter = (await listAll(
+    base,
+    token,
+    `/meters/?organization_id=${encodeURIComponent(organizationId)}`,
+  )) as PolarMeterRow[];
+  const meterIdsByEvent = timelineMeterIdsByEvent(
+    meterRowsAfter.flatMap((row) => (row.id ? [{ id: row.id, filter: row.filter }] : [])),
+  );
+  if (!meterIdsByEvent[TIMELINE_EXTRA_MEMBER_EVENT_NAME]) {
+    meterIdsByEvent[TIMELINE_EXTRA_MEMBER_EVENT_NAME] = extraMemberMeter.id;
+  }
+
+  let enterpriseProduct = selectTimelineEnterpriseProduct(productRows.map(toProduct));
+  let enterpriseAction = 'reused';
+  if (!enterpriseProduct) {
+    let created = await polarFetch(base, token, '/products/', {
+      method: 'POST',
+      body: timelineEnterpriseProductCreateBody({ meterIdsByEvent }),
+    });
+    if (created.status < 200 || created.status >= 300) {
+      const listed = (await listAll(
+        base,
+        token,
+        `/products/?organization_id=${encodeURIComponent(organizationId)}&is_archived=false`,
+      )) as PolarProductRow[];
+      enterpriseProduct = selectTimelineEnterpriseProduct(listed.map(toProduct));
+      const failure = JSON.stringify(created.body);
+      if (
+        !enterpriseProduct &&
+        (failure.includes('maximum_amount') || failure.includes('maximum'))
+      ) {
+        created = await polarFetch(base, token, '/products/', {
+          method: 'POST',
+          body: timelineEnterpriseProductCreateBody({
+            meterIdsByEvent,
+            maximumAmount: TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
+          }),
+        });
+      }
+    }
+    if (!enterpriseProduct) {
+      if (created.status < 200 || created.status >= 300) {
+        throw new Error(
+          `Polar create ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${created.status} ${redact(created.body)}`,
+        );
+      }
+      assertSameOrganization(created.body, organizationId, TIMELINE_ENTERPRISE_PRODUCT_NAME);
+      const row = created.body as PolarProductRow;
+      if (!row.id)
+        throw new Error(`Polar create ${TIMELINE_ENTERPRISE_PRODUCT_NAME} returned no id`);
+      enterpriseProduct = toProduct(row);
+      enterpriseAction = 'created';
+    }
+  }
+  if (!enterpriseProduct) {
+    throw new Error(`${TIMELINE_ENTERPRISE_PRODUCT_NAME} was not created`);
+  }
+  if (enterpriseAction !== 'created') {
+    const current = await polarFetch(base, token, `/products/${enterpriseProduct.id}`);
+    if (current.status < 200 || current.status >= 300) {
+      throw new Error(
+        `Polar read ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${current.status} ${redact(current.body)}`,
+      );
+    }
+    assertSameOrganization(current.body, organizationId, TIMELINE_ENTERPRISE_PRODUCT_NAME);
+    const product = current.body as PolarProductRow;
+    const prices = enterpriseProductPriceWrites({
+      prices: catalogPrices(product.prices),
+      meterIdsByEvent,
+    });
+    const needsPatch = prices.some((price) => !('id' in price));
+    if (needsPatch) {
+      const updated = await polarFetch(base, token, `/products/${enterpriseProduct.id}`, {
+        method: 'PATCH',
+        body: { prices },
+      });
+      if (updated.status < 200 || updated.status >= 300) {
+        const failure = JSON.stringify(updated.body);
+        if (failure.includes('maximum_amount') || failure.includes('maximum')) {
+          const retried = await polarFetch(base, token, `/products/${enterpriseProduct.id}`, {
+            method: 'PATCH',
+            body: {
+              prices: enterpriseProductPriceWrites({
+                prices: catalogPrices(product.prices),
+                meterIdsByEvent,
+                maximumAmount: TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
+              }),
+            },
+          });
+          if (retried.status < 200 || retried.status >= 300) {
+            throw new Error(
+              `Polar update ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${retried.status} ${redact(retried.body)}`,
+            );
+          }
+        } else {
+          throw new Error(
+            `Polar update ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${updated.status} ${redact(updated.body)}`,
+          );
+        }
+      }
+      enterpriseAction = 'updated';
+    }
+  }
+  const enterpriseProductId = enterpriseProduct.id;
+
   const archived: string[] = [];
   for (const product of timelineTopUpsToArchive(productRows.map(toProduct))) {
     const updated = await polarFetch(base, token, `/products/${product.id}`, {
@@ -395,6 +512,7 @@ async function main(): Promise<void> {
     writeEnvFile(envFile, {
       POLAR_WEBHOOK_ID: webhookId,
       POLAR_WEBHOOK_SECRET: webhookSecret,
+      POLAR_PRODUCT_ID_ENTERPRISE: enterpriseProductId,
     });
   }
 
@@ -402,6 +520,9 @@ async function main(): Promise<void> {
     `Extra member meter: ${extraMemberMeterAction} ${extraMemberMeter.id} unit_amount ${TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT}`,
   );
   console.log(`Extra member prices: ${extraMemberPrices.join('; ')}`);
+  console.log(
+    `Timeline Enterprise: ${enterpriseAction} ${enterpriseProductId} custom platform fee plus six meters`,
+  );
   if (archived.length > 0) {
     console.log(`Archived Timeline Top-up ${archived.join(', ')}`);
   } else {
@@ -412,7 +533,7 @@ async function main(): Promise<void> {
     console.log(`Removed disabled example.com placeholder ${removed.join(', ')}`);
   console.log(
     existsSync(envFile)
-      ? `Updated ${envFile} keys: POLAR_WEBHOOK_ID, POLAR_WEBHOOK_SECRET`
+      ? `Updated ${envFile} keys: POLAR_WEBHOOK_ID, POLAR_WEBHOOK_SECRET, POLAR_PRODUCT_ID_ENTERPRISE`
       : 'No env file found; ids were printed and the webhook secret was not saved',
   );
 }

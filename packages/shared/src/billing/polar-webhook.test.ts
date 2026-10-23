@@ -19,6 +19,7 @@ const PRODUCTS = {
   payg: 'prod_payg',
   team: 'prod_team',
   business: 'prod_business',
+  enterprise: 'prod_enterprise',
 };
 
 let pg: PGlite;
@@ -44,6 +45,9 @@ afterEach(async () => {
 
 describe('Polar webhook helpers', () => {
   it('maps Polar subscription status instead of activating from product id', () => {
+    expect(billingStateFromPolarSubscriptionStatus('enterprise', 'active')).toBe(
+      'enterprise_active',
+    );
     expect(billingStateFromPolarSubscriptionStatus('team', 'active')).toBe('team_active');
     expect(billingStateFromPolarSubscriptionStatus('team', 'past_due')).toBe('past_due');
     expect(billingStateFromPolarSubscriptionStatus('payg', 'unpaid')).toBe('past_due');
@@ -205,6 +209,77 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.planId).toBe('team');
     expect(account.spendCapCents).toBe(2500);
     expect(account.polarSubscriptionId).toBeNull();
+  });
+
+  it('does not let a Team subscription downgrade an Enterprise contract', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          customer: { id: 'cus_team', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.billingState).toBe('enterprise_active');
+    expect(account.polarSubscriptionId).toBeNull();
+  });
+
+  it('attaches an Enterprise subscription onto an operator-prepared team', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', spend_cap_cents = 80000,
+          price_override = '{"platformFeeCents":250000}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_enterprise',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.billingState).toBe('enterprise_active');
+    expect(account.polarSubscriptionId).toBe('sub_enterprise');
+    expect(account.polarProductId).toBe('prod_enterprise');
+    expect(account.polarCustomerId).toBe('cus_enterprise');
+    expect(account.spendCapCents).toBe(80000);
+    expect(account.priceOverride).toMatchObject({ platformFeeCents: 250000 });
   });
 
   it('does not activate past_due subscriptions and ignores order.paid plan products', async () => {

@@ -1,5 +1,15 @@
-import { billingOperatorAudit, teamBillingAccounts, teams, users, type Db } from '@timeline/db';
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
+import {
+  billingOperatorAudit,
+  billingUnbilledAlerts,
+  teamBillingAccounts,
+  teamMembers,
+  teams,
+  users,
+  type Db,
+} from '@timeline/db';
+import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+
+import type { BillingProvider } from '#src/billing/provider.js';
 
 import {
   BILLING_ENTITLEMENTS_VERSION,
@@ -7,11 +17,13 @@ import {
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import {
+  activePolarDiscountId,
   assertFutureExpiry,
   assertPriceOverride,
   billingOperatorSnapshot,
   billingStateForComp,
   isPlatformAdminEmail,
+  polarCheckoutUrl,
   type BillingOperatorSnapshot,
   type TeamPriceOverride,
 } from '#src/billing/operator.js';
@@ -457,6 +469,184 @@ export async function listBillingOperatorAudit(input: {
     after: row.after as unknown as BillingOperatorSnapshot,
     createdAt: row.createdAt,
   }));
+}
+
+const ENTERPRISE_CHECKOUT_BLOCKED_STATES = new Set(['canceled', 'deletion_scheduled']);
+
+export async function startEnterpriseCheckout(input: {
+  db: Db;
+  actor: BillingOperatorActor;
+  teamId: string;
+  platformFeeCents: number;
+  includedActiveMembers?: number;
+  additionalMemberCents?: number;
+  meteredDiscountPercent?: number;
+  spendCapCents?: number;
+  productId: string;
+  successUrl: string;
+  provider: BillingProvider;
+  now?: Date;
+}): Promise<{ url: string }> {
+  if (!input.productId.trim()) {
+    throw new BillingOperatorError('POLAR_PRODUCT_ID_ENTERPRISE is not configured.');
+  }
+  if (input.spendCapCents !== undefined) {
+    if (!Number.isInteger(input.spendCapCents) || input.spendCapCents < 0) {
+      throw new BillingOperatorError('Spend cap must be a non-negative integer number of cents.');
+    }
+  }
+  let override: TeamPriceOverride;
+  try {
+    override = assertPriceOverride({
+      platformFeeCents: input.platformFeeCents,
+      ...(input.includedActiveMembers !== undefined
+        ? { includedActiveMembers: input.includedActiveMembers }
+        : {}),
+      ...(input.additionalMemberCents !== undefined
+        ? { additionalMemberCents: input.additionalMemberCents }
+        : {}),
+      ...(input.meteredDiscountPercent !== undefined
+        ? { meteredDiscountPercent: input.meteredDiscountPercent }
+        : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Invalid Enterprise price.';
+    throw new BillingOperatorError(message);
+  }
+  const now = input.now ?? new Date();
+  const prepared = await input.db.transaction(async (tx) => {
+    const db = tx as unknown as Db;
+    await requirePlatformAdmin(db, input.actor);
+    const existing = await lockAccount(db, input.teamId);
+    if (existing.arrangement === 'comped') {
+      throw new BillingOperatorError('Clear the comp before opening an Enterprise checkout.');
+    }
+    if (
+      existing.polarSubscriptionId &&
+      !ENTERPRISE_CHECKOUT_BLOCKED_STATES.has(existing.billingState)
+    ) {
+      throw new BillingOperatorError(
+        'Cancel the current Polar subscription before opening an Enterprise checkout so two subscriptions are not billed.',
+      );
+    }
+    const [owner] = await db
+      .select({ email: users.email })
+      .from(teamMembers)
+      .innerJoin(users, eq(users.id, teamMembers.userId))
+      .where(
+        and(
+          eq(teamMembers.teamId, input.teamId),
+          eq(teamMembers.role, 'owner'),
+          isNull(teamMembers.removedAt),
+        ),
+      )
+      .limit(1);
+    if (!owner?.email) {
+      throw new BillingOperatorError(
+        'The team needs an active owner email before Enterprise checkout.',
+      );
+    }
+    const merged = assertPriceOverride({
+      ...(existing.priceOverride ?? {}),
+      ...override,
+    });
+    const before = billingOperatorSnapshot(existing);
+    const [updated] = await db
+      .update(teamBillingAccounts)
+      .set({
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        priceOverride: merged,
+        priceOverrideExpiresAt: null,
+        // A canceled subscription id must not stay on the row. A late cancel
+        // webhook would match it and wipe Enterprise, and the new subscription
+        // webhook would look like a stale older subscription.
+        ...(existing.polarSubscriptionId
+          ? { polarSubscriptionId: null, polarProductId: null }
+          : {}),
+        ...(input.spendCapCents !== undefined ? { spendCapCents: input.spendCapCents } : {}),
+        updatedAt: now,
+      })
+      .where(eq(teamBillingAccounts.teamId, input.teamId))
+      .returning();
+    if (!updated) throw new BillingOperatorError('Failed to save the Enterprise terms.');
+    await writeAudit({
+      tx: db,
+      teamId: input.teamId,
+      actor: input.actor,
+      action: 'start_enterprise_checkout',
+      before,
+      after: billingOperatorSnapshot(updated),
+    });
+    return {
+      email: owner.email,
+      discountId: activePolarDiscountId(updated, now),
+    };
+  });
+
+  try {
+    await input.provider.ensureCustomer({
+      externalId: input.teamId,
+      email: prepared.email,
+    });
+    const checkout = await input.provider.createCheckoutSession({
+      externalCustomerId: input.teamId,
+      customerEmail: prepared.email,
+      productId: input.productId,
+      successUrl: input.successUrl,
+      amount: input.platformFeeCents,
+      ...(prepared.discountId ? { discountId: prepared.discountId } : {}),
+    });
+    const url = polarCheckoutUrl(checkout.url);
+    if (!url) {
+      throw new BillingOperatorError('Polar returned a checkout URL that is not on polar.sh.');
+    }
+    return { url };
+  } catch (error) {
+    if (error instanceof BillingOperatorError) throw error;
+    throw new BillingOperatorError(
+      'Enterprise terms are saved. Polar checkout could not be opened; retry to get a checkout link.',
+    );
+  }
+}
+
+export async function listOpenUnbilledAlerts(input: {
+  db: Db;
+  actor: BillingOperatorActor;
+  teamId?: string;
+  limit?: number;
+}): Promise<
+  {
+    id: string;
+    teamId: string;
+    meterId: string;
+    periodYm: string;
+    reason: string;
+    detail: string | null;
+    createdAt: Date;
+  }[]
+> {
+  await requirePlatformAdmin(input.db, input.actor);
+  const rows = await input.db
+    .select({
+      id: billingUnbilledAlerts.id,
+      teamId: billingUnbilledAlerts.teamId,
+      meterId: billingUnbilledAlerts.meterId,
+      periodYm: billingUnbilledAlerts.periodYm,
+      reason: billingUnbilledAlerts.reason,
+      detail: billingUnbilledAlerts.detail,
+      createdAt: billingUnbilledAlerts.createdAt,
+    })
+    .from(billingUnbilledAlerts)
+    .where(
+      and(
+        isNull(billingUnbilledAlerts.resolvedAt),
+        ...(input.teamId ? [eq(billingUnbilledAlerts.teamId, input.teamId)] : []),
+      ),
+    )
+    .orderBy(desc(billingUnbilledAlerts.createdAt))
+    .limit(input.limit ?? 50);
+  return rows;
 }
 
 export async function lookupOperatorActor(db: Db, email: string): Promise<BillingOperatorActor> {

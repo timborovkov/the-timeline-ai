@@ -369,6 +369,8 @@ const baseSchema = z.object({
   POLAR_PRODUCT_ID_PAYG: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_PRODUCT_ID_TEAM: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_PRODUCT_ID_BUSINESS: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /** Timeline Enterprise: custom platform fee plus the six metered prices. */
+  POLAR_PRODUCT_ID_ENTERPRISE: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_DISCOUNT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   POLAR_DISCOUNT_CODE: z.preprocess(emptyStringAsUnset, z.string().optional()),
   /** When true, spend-cap gates block costly work. Default shadow = record only. */

@@ -210,7 +210,9 @@ describe('paid plan change', () => {
         successUrl: 'https://timeline.test/success',
         portalReturnUrl: 'https://timeline.test/portal',
       }),
-    ).rejects.toThrow(/Enterprise plan changes/);
+    ).rejects.toThrow(
+      /Enterprise checkout is opened by a platform operator\. Plan changes are not self-serve\./,
+    );
     expect(provider.subscriptionUpdates).toHaveLength(0);
   });
 });

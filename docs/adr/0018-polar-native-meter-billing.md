@@ -90,8 +90,11 @@ credit hides margin and confuses prospects.
    ingest sends the customer-payable remainder, scaling native units by
    invoice cents / charge cents and flooring to six decimal places. Sub-cent
    rounds (invoice cents of 0) are not
-   ingested. PAYG, Team, Business, and Enterprise ingest when a Polar customer
-   exists and charges are live. Comps do not. `member_days` ingest as
+   ingested. PAYG, Team, Business, and Enterprise ingest only when charges are
+   live, the team is not comped, and the active subscription product matches the
+   plan and prices the meter. A payable charge with no matching price stays
+   pending on the local ledger and opens `billing_unbilled_alerts`. Shadow
+   billing and comps do not ingest and do not alert. `member_days` ingest as
    `timeline_extra_member_days` member-month fractions so a custom extra-member
    price invoices through the shared €2 unit price. They still count on the
    local spend cap and skip the included-usage discount. Seat-based prices are

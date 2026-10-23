@@ -14,6 +14,7 @@ import {
   setOperatorSpendCap,
   setTeamPolarDiscount,
   setTeamPriceOverride,
+  startEnterpriseCheckout,
 } from '@timeline/shared/billing/operator-store';
 
 const args = process.argv.slice(2);
@@ -138,12 +139,37 @@ async function main(): Promise<void> {
       teamId,
       spendCapCents: eurosToCents('spend-cap-euros'),
     });
+  } else if (command === 'start-enterprise') {
+    const provider = createPolarBillingProvider();
+    if (!provider) throw new Error('POLAR_ACCESS_TOKEN is required');
+    const productId = process.env.POLAR_PRODUCT_ID_ENTERPRISE?.trim();
+    if (!productId) throw new Error('POLAR_PRODUCT_ID_ENTERPRISE is required');
+    const authUrl = process.env.AUTH_URL?.trim() || 'http://localhost:3000';
+    const platformFeeCents = eurosToCents('platform-fee-euros');
+    const includedActiveMembers = optionalInt('included-members');
+    const additionalMemberCents = optionalEuros('member-euros');
+    const meteredDiscountPercent = optionalInt('metered-discount-percent');
+    const spendCapCents = optionalEuros('spend-cap-euros');
+    const result = await startEnterpriseCheckout({
+      db,
+      actor,
+      teamId,
+      platformFeeCents,
+      ...(includedActiveMembers !== undefined ? { includedActiveMembers } : {}),
+      ...(additionalMemberCents !== undefined ? { additionalMemberCents } : {}),
+      ...(meteredDiscountPercent !== undefined ? { meteredDiscountPercent } : {}),
+      ...(spendCapCents !== undefined ? { spendCapCents } : {}),
+      productId,
+      successUrl: `${authUrl}/app/team?section=billing&checkout=success`,
+      provider,
+    });
+    console.log(result.url);
   } else if (command === 'audit') {
     const rows = await listBillingOperatorAudit({ db, actor, teamId });
     console.log(JSON.stringify(rows, null, 2));
   } else {
     throw new Error(
-      'Command must be assign-comp, clear-comp, set-price, clear-price, set-discount, clear-discount, set-spend-cap, or audit.',
+      'Command must be assign-comp, clear-comp, set-price, clear-price, set-discount, clear-discount, set-spend-cap, start-enterprise, or audit.',
     );
   }
   if (command !== 'audit') console.log(`${command} saved for ${teamId}`);

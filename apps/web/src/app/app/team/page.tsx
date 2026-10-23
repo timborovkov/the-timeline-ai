@@ -337,6 +337,7 @@ export default async function TeamSettingsPage({
               )}
               includedActiveMembers={commercial?.includedActiveMembers}
               additionalMemberCents={commercial?.additionalMemberCents}
+              platformFeeCents={commercial?.platformFeeCents}
             />
           ) : null}
           {section === 'exports' ? (

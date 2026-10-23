@@ -2,6 +2,7 @@ import {
   type Db,
   billingFreeGrants,
   billingMemberDayLedger,
+  billingUnbilledAlerts,
   billingUsageCounters,
   billingUsageLedger,
   billingUsageReservations,
@@ -32,11 +33,16 @@ import {
   paygOverageNativeUnits,
   pendingBillableChargeCents,
   pendingDiscountReservedCents,
+  billingMeterIdForPolarEvent,
   polarInvoiceNativeUnits,
+  polarIngestDisposition,
   polarMemberMonthUnits,
+  polarSubscriptionCoversMeter,
+  POLAR_INGEST_BLOCK_MISSING_PRICE,
   settlementSegmentsForMeter,
-  shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
+  type PolarIngestDisposition,
+  type PolarPlanProductIds,
   walletLockCentsFromMetadata,
 } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
@@ -61,6 +67,7 @@ import {
   restoredPaidBillingStateAfterWalletOrCapRecovery,
   spendCapUtilization,
 } from '#src/billing/status.js';
+import { getEnv } from '#src/env.js';
 import { childLogger } from '#src/logger.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
@@ -71,6 +78,16 @@ export interface BillingScopeDeps {
   userId: string;
   ensureMember: EnsureMember;
   provider?: BillingProvider;
+}
+
+function polarPlanProductsFromEnv(): PolarPlanProductIds {
+  const env = getEnv();
+  return {
+    ...(env.POLAR_PRODUCT_ID_PAYG ? { payg: env.POLAR_PRODUCT_ID_PAYG } : {}),
+    ...(env.POLAR_PRODUCT_ID_TEAM ? { team: env.POLAR_PRODUCT_ID_TEAM } : {}),
+    ...(env.POLAR_PRODUCT_ID_BUSINESS ? { business: env.POLAR_PRODUCT_ID_BUSINESS } : {}),
+    ...(env.POLAR_PRODUCT_ID_ENTERPRISE ? { enterprise: env.POLAR_PRODUCT_ID_ENTERPRISE } : {}),
+  };
 }
 
 function periodYm(date = new Date()): string {
@@ -183,6 +200,72 @@ async function claimPolarIngestRow(input: {
   return row?.metadata ?? null;
 }
 
+function meterIdFromIngestMetadata(metadata: Record<string, unknown>, eventName: string): string {
+  const stored = metadata.polar_ingest_meter;
+  if (typeof stored === 'string' && stored.length > 0) return stored;
+  return billingMeterIdForPolarEvent(eventName) ?? eventName;
+}
+
+function periodYmFromIngestMetadata(metadata: Record<string, unknown>): string {
+  const stored = metadata.polar_ingest_period_ym;
+  if (typeof stored === 'string' && stored.length > 0) return stored;
+  return periodYm();
+}
+
+async function recordMissingSubscriptionPriceAlert(
+  db: Db,
+  input: { teamId: string; meterId: string; periodYm: string; detail: string },
+): Promise<void> {
+  await db
+    .insert(billingUnbilledAlerts)
+    .values({
+      teamId: input.teamId,
+      meterId: input.meterId,
+      periodYm: input.periodYm,
+      reason: POLAR_INGEST_BLOCK_MISSING_PRICE,
+      detail: input.detail,
+    })
+    .onConflictDoNothing();
+}
+
+async function resolveUnbilledAlerts(db: Db, teamId: string, meterId: string): Promise<void> {
+  await db
+    .update(billingUnbilledAlerts)
+    .set({ resolvedAt: new Date() })
+    .where(
+      and(
+        eq(billingUnbilledAlerts.teamId, teamId),
+        eq(billingUnbilledAlerts.meterId, meterId),
+        isNull(billingUnbilledAlerts.resolvedAt),
+      ),
+    );
+}
+
+function dispositionForLiveAccount(
+  account: typeof teamBillingAccounts.$inferSelect,
+  event: PolarUsageEvent,
+): PolarIngestDisposition {
+  const chargeCents = event.metadata?.charge_cents;
+  const invoiceCents = typeof chargeCents === 'number' ? chargeCents : 0;
+  return polarIngestDisposition({
+    eventName: event.name,
+    polarCustomerId: account.polarCustomerId,
+    shadowBilling: accountUsesShadowBilling(account),
+    comped: compSuppressesPolarCharges(account),
+    billable: true,
+    polarUnits: event.units,
+    invoiceCents,
+    subscriptionCoversMeter: polarSubscriptionCoversMeter({
+      planId: account.planId,
+      billingState: account.billingState,
+      polarSubscriptionId: account.polarSubscriptionId,
+      polarProductId: account.polarProductId,
+      eventName: event.name,
+      products: polarPlanProductsFromEnv(),
+    }),
+  });
+}
+
 async function ingestPolarUsageIfPending(input: {
   db: Db;
   teamId: string;
@@ -191,7 +274,26 @@ async function ingestPolarUsageIfPending(input: {
   provider?: BillingProvider;
 }): Promise<void> {
   const event = polarIngestEventFromMetadata(input.metadata);
-  if (!event || !input.provider) return;
+  if (!event) return;
+  const [account] = await input.db
+    .select()
+    .from(teamBillingAccounts)
+    .where(eq(teamBillingAccounts.teamId, input.teamId))
+    .limit(1);
+  const disposition = account ? dispositionForLiveAccount(account, event) : 'hold';
+  // Shadow and comps are not billed. Leave the row pending so a later live
+  // period can still invoice a charge that was payable when it was recorded.
+  if (disposition === 'not_required') return;
+  if (disposition === 'hold') {
+    await recordMissingSubscriptionPriceAlert(input.db, {
+      teamId: input.teamId,
+      meterId: meterIdFromIngestMetadata(input.metadata, event.name),
+      periodYm: periodYmFromIngestMetadata(input.metadata),
+      detail: `${event.name} has no matching active subscription price`,
+    });
+    return;
+  }
+  if (!input.provider) return;
   const claimed = await claimPolarIngestRow({
     db: input.db,
     teamId: input.teamId,
@@ -202,6 +304,11 @@ async function ingestPolarUsageIfPending(input: {
   try {
     await input.provider.ingestUsage(claimedEvent);
     await markPolarIngestStatus(input.db, input.teamId, input.operationId, 'completed');
+    await resolveUnbilledAlerts(
+      input.db,
+      input.teamId,
+      meterIdFromIngestMetadata(claimed, claimedEvent.name),
+    );
   } catch (err) {
     await markPolarIngestStatus(input.db, input.teamId, input.operationId, 'pending');
     throw err;
@@ -910,26 +1017,39 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 chargeCents: actualChargeCents,
                 invoiceCents,
               });
-        const shouldIngestPolar =
-          !comped &&
-          shouldIngestPolarMeteredUsage({
+        const disposition = polarIngestDisposition({
+          eventName,
+          polarCustomerId: account.polarCustomerId,
+          shadowBilling: accountUsesShadowBilling(account),
+          comped,
+          billable: input.billable !== false,
+          polarUnits: unitsToInvoice,
+          invoiceCents,
+          subscriptionCoversMeter: polarSubscriptionCoversMeter({
+            planId: account.planId,
+            billingState: account.billingState,
+            polarSubscriptionId: account.polarSubscriptionId,
+            polarProductId: account.polarProductId,
             eventName,
-            polarCustomerId: account.polarCustomerId,
-            shadowBilling: accountUsesShadowBilling(account),
-            billable: input.billable !== false,
-            polarUnits: unitsToInvoice,
-            invoiceCents,
-          });
-        const polarIngestMetadata = shouldIngestPolar
-          ? {
-              polar_ingest_status: 'pending',
-              polar_ingest_name: eventName,
-              polar_ingest_units: unitsToInvoice,
-              polar_ingest_customer_id: teamId,
-              polar_ingest_operation_id: input.operationId,
-              polar_ingest_charge_cents: invoiceCents,
-            }
-          : { polar_ingest_status: 'not_required' };
+            products: polarPlanProductsFromEnv(),
+          }),
+        });
+        const polarIngestMetadata =
+          disposition === 'not_required' || !eventName
+            ? { polar_ingest_status: 'not_required' as const }
+            : {
+                polar_ingest_status: 'pending' as const,
+                polar_ingest_name: eventName,
+                polar_ingest_units: unitsToInvoice,
+                polar_ingest_customer_id: teamId,
+                polar_ingest_operation_id: input.operationId,
+                polar_ingest_charge_cents: invoiceCents,
+                polar_ingest_meter: input.meterId,
+                polar_ingest_period_ym: primaryYm,
+                ...(disposition === 'hold'
+                  ? { polar_ingest_block: POLAR_INGEST_BLOCK_MISSING_PRICE }
+                  : {}),
+              };
 
         const applyCharges = !accountUsesShadowBilling(account);
         const collectDiscount = applyCharges && !enterpriseContract && !comped && discountCents > 0;
@@ -1060,6 +1180,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
               updatedAt: new Date(),
             })
             .where(eq(teamBillingAccounts.teamId, teamId));
+        }
+
+        if (disposition === 'hold' && eventName) {
+          await recordMissingSubscriptionPriceAlert(tx as unknown as Db, {
+            teamId,
+            meterId: input.meterId,
+            periodYm: primaryYm,
+            detail: `${eventName} has no matching active subscription price`,
+          });
         }
 
         return {

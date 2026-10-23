@@ -572,8 +572,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       period reset (webhook + janitor advancing the stored Polar window; not
       every Polar retry). Paid-plan changes update the existing Polar subscription.
       Included-discount collection is not ingested. Polar receives the payable
-      remainder for PAYG, Team, Business, and Enterprise. Sub-cent rounds stay
-      local. Polar webhooks do not overwrite Enterprise contracts or comped plans.
+      remainder for PAYG, Team, Business, and Enterprise only when the active
+      subscription product matches the plan. A payable charge with no matching
+      price stays local and opens an operator unbilled-usage alert. Sub-cent rounds stay
+      local. A Team webhook does not downgrade Enterprise. An Enterprise product
+      webhook attaches the subscription. Comped plans are not overwritten.
       Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
       Stale Polar activations are ignored against `polar_event_modified_at`; canceled paid
       plans become restricted unless the team holds the Free grant. `order.paid` does not
@@ -583,7 +586,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       usage discount, accrue members added after the first daily tick, and ingest
       as <code>timeline_extra_member_days</code> member-month fractions at the €2
       catalog price (custom extra-member price scales the units). Pay as you go,
-      Team, and Business carry that metered price.
+      Team, Business, and Enterprise carry that metered price. Enterprise is the
+      Timeline Enterprise Polar product: a per-team custom platform fee opened by
+      a platform operator, plus the six metered prices. Opening that checkout on a
+      canceled subscription clears the stored Polar subscription id so a late
+      cancel webhook cannot revert the team.
+      <code>POLAR_PRODUCT_ID_ENTERPRISE</code> is written by
+      <code>pnpm billing:polar-setup</code>. Null included members stay unlimited.
       <code>pnpm billing:polar-setup</code> creates the meter without dropping
       other prices.
       Polar webhooks bound the request body before signature verify and lock the billing account

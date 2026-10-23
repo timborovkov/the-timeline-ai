@@ -59,6 +59,7 @@ export interface BillingSettingsPanelProps {
   showOperatorLink: boolean;
   includedActiveMembers?: number | null;
   additionalMemberCents?: number | null;
+  platformFeeCents?: number | null;
 }
 
 interface BillingFormState {
@@ -99,6 +100,7 @@ function BillingPlanSection(props: {
   comp: BillingSettingsPanelProps['comp'];
   priceNotice: string | null;
   showOperatorLink: boolean;
+  platformFeeCents?: number | null;
   onCheckout: (plan: 'payg' | 'team' | 'business') => void;
 }) {
   return (
@@ -177,12 +179,25 @@ function BillingPlanSection(props: {
         </p>
       ) : props.canManage ? (
         <p className="mt-3 text-sm text-fg-muted">
-          Enterprise plan changes go through support or the Polar customer portal, not self-serve
-          checkout.
+          Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.
         </p>
       ) : (
         <p className="mt-3 text-sm text-fg-muted">Only owners and admins can change billing.</p>
       )}
+      {props.planId === 'enterprise' && !props.hasPolarSubscription ? (
+        <p className="mt-3 text-sm text-fg" data-enterprise-subscription="pending">
+          Usage is recorded locally and invoiced after an operator attaches an active Timeline
+          Enterprise subscription.
+        </p>
+      ) : null}
+      {props.planId === 'enterprise' &&
+      props.platformFeeCents !== null &&
+      props.platformFeeCents !== undefined ? (
+        <p className="mt-3 text-sm text-fg-muted" data-enterprise-platform-fee>
+          Negotiated platform fee {formatEuroFromCents(props.platformFeeCents)} per month, invoiced
+          on the Timeline Enterprise subscription.
+        </p>
+      ) : null}
       {props.planId === 'enterprise' ? null : !props.polarConfigured ? (
         <p className="mt-3 text-sm text-fg-muted">
           Polar checkout is not configured in this environment. Usage still records locally.
@@ -378,6 +393,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         comp={props.comp}
         priceNotice={props.priceNotice}
         showOperatorLink={props.showOperatorLink}
+        platformFeeCents={props.platformFeeCents}
         onCheckout={runCheckout}
       />
 

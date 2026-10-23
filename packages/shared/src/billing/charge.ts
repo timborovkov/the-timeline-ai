@@ -252,9 +252,10 @@ export function polarInvoiceNativeUnits(input: {
 }
 
 /**
- * PAYG, Team, Business, and Enterprise invoice metered usage on Polar.
- * Included discount and sub-cent rounds (invoice cents of 0) stay local.
- * Shadow billing and comps do not ingest.
+ * Customer-payable metered usage. Included discount and sub-cent rounds
+ * (invoice cents of 0) stay local. Shadow billing and comps are not payable.
+ * A payable charge still needs a matching subscription price before Polar
+ * ingest; see polarIngestDisposition.
  */
 export function shouldIngestPolarMeteredUsage(input: {
   eventName: string | null | undefined;
@@ -268,6 +269,101 @@ export function shouldIngestPolarMeteredUsage(input: {
   if (input.shadowBilling || !input.billable) return false;
   if (input.polarUnits <= 0 || input.invoiceCents <= 0) return false;
   return true;
+}
+
+export const POLAR_INGEST_BLOCK_MISSING_PRICE = 'missing_subscription_price';
+
+const POLAR_EVENT_TO_METER: Record<string, BillingMeterId> = {
+  timeline_ai_eur_cents: 'ai',
+  timeline_recall_minutes: 'recall_minutes',
+  timeline_email_units: 'email_units',
+  timeline_storage_gb_month: 'storage_gb_month',
+  timeline_accepted_sources: 'accepted_sources',
+  timeline_extra_member_days: 'member_days',
+};
+
+/** Billing states that still have a subscription price Polar can invoice. */
+const POLAR_SUBSCRIPTION_PRICE_STATES = new Set([
+  'payg_active',
+  'team_active',
+  'business_active',
+  'enterprise_active',
+  'past_due',
+  'payment_retry',
+  'read_only',
+]);
+
+export function billingMeterIdForPolarEvent(name: string): BillingMeterId | null {
+  return POLAR_EVENT_TO_METER[name] ?? null;
+}
+
+export interface PolarPlanProductIds {
+  payg?: string;
+  team?: string;
+  business?: string;
+  enterprise?: string;
+}
+
+function configuredPolarProductId(
+  planId: string,
+  products: PolarPlanProductIds,
+): string | undefined {
+  switch (planId) {
+    case 'payg':
+      return products.payg;
+    case 'team':
+      return products.team;
+    case 'business':
+      return products.business;
+    case 'enterprise':
+      return products.enterprise;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * True when this plan's configured Polar product is the subscription product
+ * and that product carries the metered price for the event. Free, canceled,
+ * and an unset product id do not cover the meter.
+ */
+export function polarSubscriptionCoversMeter(input: {
+  planId: string;
+  billingState: string;
+  polarSubscriptionId: string | null | undefined;
+  polarProductId: string | null | undefined;
+  eventName: string | null | undefined;
+  products: PolarPlanProductIds;
+}): boolean {
+  if (!input.polarSubscriptionId || !input.polarProductId || !input.eventName) return false;
+  if (!POLAR_SUBSCRIPTION_PRICE_STATES.has(input.billingState)) return false;
+  if (!billingMeterIdForPolarEvent(input.eventName)) return false;
+  const expected = configuredPolarProductId(input.planId, input.products);
+  if (!expected) return false;
+  return input.polarProductId === expected;
+}
+
+export type PolarIngestDisposition = 'ingest' | 'hold' | 'not_required';
+
+/**
+ * ingest: send the event. hold: keep the local ledger pending and alert an
+ * operator. not_required: shadow, comp, non-billable, or a sub-cent round.
+ * A missing customer is a hold, not a silent skip.
+ */
+export function polarIngestDisposition(input: {
+  eventName: string | null | undefined;
+  polarCustomerId: string | null | undefined;
+  shadowBilling: boolean;
+  comped: boolean;
+  billable: boolean;
+  polarUnits: number;
+  invoiceCents: number;
+  subscriptionCoversMeter: boolean;
+}): PolarIngestDisposition {
+  if (input.shadowBilling || input.comped || !input.billable) return 'not_required';
+  if (!input.eventName || input.polarUnits <= 0 || input.invoiceCents <= 0) return 'not_required';
+  if (!input.polarCustomerId || !input.subscriptionCoversMeter) return 'hold';
+  return 'ingest';
 }
 
 export function periodYmUtc(date = new Date()): string {

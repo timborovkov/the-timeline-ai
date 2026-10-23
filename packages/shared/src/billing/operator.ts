@@ -307,6 +307,20 @@ export function assertPriceOverride(override: TeamPriceOverride): TeamPriceOverr
   return next;
 }
 
+/** Checkout links the operator may open. Rejects anything that is not Polar. */
+export function polarCheckoutUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:') return null;
+  const host = parsed.hostname.toLowerCase();
+  if (host !== 'polar.sh' && !host.endsWith('.polar.sh')) return null;
+  return url;
+}
+
 export function isBillingPlanId(value: string): value is BillingPlanId {
   return value in PLAN_CATALOG;
 }

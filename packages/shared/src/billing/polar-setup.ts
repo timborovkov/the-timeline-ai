@@ -1,3 +1,5 @@
+import { OVERAGE_RATES } from '#src/billing/catalog.js';
+
 /** Retired prepaid product. Setup archives any active copy and does not create one. */
 export const TIMELINE_TOPUP_PRODUCT_NAME = 'Timeline Top-up';
 
@@ -200,6 +202,8 @@ export interface PolarCatalogPrice {
   id: string;
   isArchived?: boolean;
   meterId?: string | null;
+  amountType?: string;
+  minimumAmount?: number | null;
 }
 
 export type PolarPriceWrite =
@@ -209,6 +213,12 @@ export type PolarPriceWrite =
       price_currency: 'eur';
       meter_id: string;
       unit_amount: string;
+    }
+  | {
+      amount_type: 'custom';
+      price_currency: 'eur';
+      minimum_amount: number;
+      maximum_amount?: number;
     };
 
 /**
@@ -232,6 +242,142 @@ export function productPricesWithExtraMemberMeter(input: {
       unit_amount: input.unitAmount ?? TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
     },
   ];
+}
+
+export const TIMELINE_ENTERPRISE_PRODUCT_NAME = 'Timeline Enterprise';
+
+/** Shared metered prices. Unit amounts match the live Team product. */
+export const TIMELINE_METERED_EVENT_NAMES = [
+  'timeline_ai_eur_cents',
+  'timeline_recall_minutes',
+  'timeline_email_units',
+  'timeline_storage_gb_month',
+  'timeline_accepted_sources',
+  TIMELINE_EXTRA_MEMBER_EVENT_NAME,
+] as const;
+
+export type TimelineMeteredEventName = (typeof TIMELINE_METERED_EVENT_NAMES)[number];
+
+export const TIMELINE_METERED_UNIT_AMOUNTS: Record<TimelineMeteredEventName, string> = {
+  timeline_ai_eur_cents: '1',
+  timeline_recall_minutes: String(OVERAGE_RATES.recallCentsPerMinute),
+  timeline_email_units: '0.25',
+  timeline_storage_gb_month: String(OVERAGE_RATES.storageCentsPerGbMonth),
+  timeline_accepted_sources: '0.05',
+  timeline_extra_member_days: TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
+};
+
+/** High ceiling so a missing Polar maximum can be retried without a €0 lock. */
+export const TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS = 100_000_000;
+
+export interface TimelineMeterFilterSource {
+  id: string;
+  filter?: { clauses?: readonly { value?: string }[] };
+}
+
+/** Map Timeline event names to meter ids. The first match for each event wins. */
+export function timelineMeterIdsByEvent(
+  meters: readonly TimelineMeterFilterSource[],
+): Partial<Record<TimelineMeteredEventName, string>> {
+  const wanted = new Set<string>(TIMELINE_METERED_EVENT_NAMES);
+  const found: Partial<Record<TimelineMeteredEventName, string>> = {};
+  for (const meter of meters) {
+    const clauses = meter.filter?.clauses;
+    if (!clauses || clauses.length === 0) continue;
+    const first = clauses[0];
+    const value = first?.value;
+    if (!value || !wanted.has(value) || found[value as TimelineMeteredEventName]) continue;
+    found[value as TimelineMeteredEventName] = meter.id;
+  }
+  return found;
+}
+
+export function timelineEnterpriseProductCreateBody(input: {
+  meterIdsByEvent: Partial<Record<TimelineMeteredEventName, string>>;
+  maximumAmount?: number;
+}): {
+  name: string;
+  description: string;
+  recurring_interval: 'month';
+  prices: PolarPriceWrite[];
+} {
+  const missing = TIMELINE_METERED_EVENT_NAMES.filter(
+    (eventName) => !input.meterIdsByEvent[eventName],
+  );
+  if (missing.length > 0) {
+    throw new Error(`Timeline Enterprise is missing meters: ${missing.join(', ')}`);
+  }
+  const custom: PolarPriceWrite = {
+    amount_type: 'custom',
+    price_currency: 'eur',
+    minimum_amount: 0,
+    ...(input.maximumAmount !== undefined ? { maximum_amount: input.maximumAmount } : {}),
+  };
+  return {
+    name: TIMELINE_ENTERPRISE_PRODUCT_NAME,
+    description: 'Negotiated Timeline Enterprise platform fee plus metered usage.',
+    recurring_interval: 'month',
+    prices: [
+      custom,
+      ...TIMELINE_METERED_EVENT_NAMES.map((eventName) => ({
+        amount_type: 'metered_unit' as const,
+        price_currency: 'eur' as const,
+        meter_id: input.meterIdsByEvent[eventName] ?? '',
+        unit_amount: TIMELINE_METERED_UNIT_AMOUNTS[eventName],
+      })),
+    ],
+  };
+}
+
+/**
+ * Keep every current price id. Add the custom platform fee once, and add a
+ * metered price only for a Timeline meter that is not already attached.
+ * A wrong unit amount on an existing price is left alone.
+ */
+export function enterpriseProductPriceWrites(input: {
+  prices: readonly PolarCatalogPrice[];
+  meterIdsByEvent: Partial<Record<TimelineMeteredEventName, string>>;
+  maximumAmount?: number;
+}): PolarPriceWrite[] {
+  const active = input.prices.filter((price) => price.id.length > 0 && price.isArchived !== true);
+  const kept: PolarPriceWrite[] = active.map((price) => ({ id: price.id }));
+  const attached = new Set(active.flatMap((price) => (price.meterId ? [price.meterId] : [])));
+  const additions: PolarPriceWrite[] = [];
+  const hasCustom = active.some(
+    (price) =>
+      price.amountType === 'custom' ||
+      (typeof price.minimumAmount === 'number' &&
+        !price.meterId &&
+        price.amountType !== 'fixed' &&
+        price.amountType !== 'metered_unit'),
+  );
+  if (!hasCustom) {
+    additions.push({
+      amount_type: 'custom',
+      price_currency: 'eur',
+      minimum_amount: 0,
+      ...(input.maximumAmount !== undefined ? { maximum_amount: input.maximumAmount } : {}),
+    });
+  }
+  for (const eventName of TIMELINE_METERED_EVENT_NAMES) {
+    const meterId = input.meterIdsByEvent[eventName];
+    if (!meterId || attached.has(meterId)) continue;
+    additions.push({
+      amount_type: 'metered_unit',
+      price_currency: 'eur',
+      meter_id: meterId,
+      unit_amount: TIMELINE_METERED_UNIT_AMOUNTS[eventName],
+    });
+  }
+  return [...kept, ...additions];
+}
+
+export function selectTimelineEnterpriseProduct<T extends { name: string; isArchived: boolean }>(
+  products: readonly T[],
+): T | undefined {
+  return products.find(
+    (product) => product.name === TIMELINE_ENTERPRISE_PRODUCT_NAME && !product.isArchived,
+  );
 }
 
 /** Replace assignment lines. Append keys that are not already present. */

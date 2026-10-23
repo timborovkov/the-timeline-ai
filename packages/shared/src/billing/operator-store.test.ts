@@ -10,7 +10,9 @@ import {
   setOperatorSpendCap,
   setTeamPolarDiscount,
   setTeamPriceOverride,
+  startEnterpriseCheckout,
 } from '#src/billing/operator-store.js';
+import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -245,5 +247,139 @@ describe('billing operator store', () => {
         expiresAt: null,
       }),
     ).rejects.toThrow(/discount id/);
+  });
+
+  it('opens an Enterprise checkout at the negotiated fee and can be retried', async () => {
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
+    `);
+    const failing = createFakeBillingProvider();
+    failing.createCheckoutSession = () => Promise.reject(new Error('polar down'));
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 150_000,
+        includedActiveMembers: 40,
+        additionalMemberCents: 300,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing&checkout=success',
+        provider: failing,
+      }),
+    ).rejects.toThrow(/retry/i);
+    const [prepared] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(prepared?.planId).toBe('enterprise');
+    expect(prepared?.billingState).toBe('enterprise_active');
+    expect(prepared?.polarSubscriptionId).toBeNull();
+    expect(prepared?.priceOverrideExpiresAt).toBeNull();
+    expect(prepared?.priceOverride).toMatchObject({
+      platformFeeCents: 150_000,
+      includedActiveMembers: 40,
+      additionalMemberCents: 300,
+    });
+
+    const provider = createFakeBillingProvider();
+    const result = await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 150_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing&checkout=success',
+      provider,
+    });
+    expect(result.url).toContain('https://sandbox.polar.sh/');
+    expect(provider.checkouts).toEqual([
+      expect.objectContaining({
+        amount: 150_000,
+        productId: 'prod_enterprise',
+        externalCustomerId: TEAM_ID,
+        customerEmail: 'owner@example.test',
+      }),
+    ]);
+    expect(provider.customers.get(TEAM_ID)?.email).toBe('owner@example.test');
+  });
+
+  it('refuses Enterprise checkout for a comp or a live subscription', async () => {
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
+    `);
+    await assignCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'team',
+      spendCapCents: 2_500,
+      reason: 'internal',
+      expiresAt: null,
+    });
+    const provider = createFakeBillingProvider();
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 100,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider,
+      }),
+    ).rejects.toThrow(/comp/i);
+    expect(provider.checkouts).toHaveLength(0);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'standard', plan_id = 'team', billing_state = 'team_active',
+          polar_subscription_id = 'sub_live'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 100,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider,
+      }),
+    ).rejects.toThrow(/Cancel the current Polar subscription/);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.planId).toBe('team');
+    expect(account?.polarSubscriptionId).toBe('sub_live');
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'canceled', polar_subscription_id = 'sub_old',
+          polar_product_id = 'prod_team'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const opened = await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 100,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+    expect(opened.url).toContain('https://sandbox.polar.sh/');
+    const [replaced] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(replaced?.planId).toBe('enterprise');
+    expect(replaced?.billingState).toBe('enterprise_active');
+    expect(replaced?.polarSubscriptionId).toBeNull();
+    expect(replaced?.polarProductId).toBeNull();
   });
 });

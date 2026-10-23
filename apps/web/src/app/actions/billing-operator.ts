@@ -12,7 +12,9 @@ import {
   setOperatorSpendCap,
   setTeamPolarDiscount,
   setTeamPriceOverride,
+  startEnterpriseCheckout,
 } from '@timeline/shared/billing/operator-store';
+import { getEnv } from '@timeline/shared/env';
 import { redirect } from 'next/navigation';
 
 import { auth } from '@/lib/auth';
@@ -169,6 +171,53 @@ export async function clearPolarDiscountAction(formData: FormData): Promise<void
   await run(teamId, async () => {
     await clearTeamPolarDiscount({ db, actor: await actor(), teamId });
   });
+}
+
+async function prepareEnterpriseCheckout(teamId: string, formData: FormData): Promise<string> {
+  const env = getEnv();
+  const productId = env.POLAR_PRODUCT_ID_ENTERPRISE;
+  if (!productId) {
+    throw new BillingOperatorError('POLAR_PRODUCT_ID_ENTERPRISE is not configured.');
+  }
+  const provider = createPolarBillingProvider();
+  if (!provider) throw new BillingOperatorError('Polar billing is not configured.');
+  const includedActiveMembers = optionalInt(formData.get('includedMembers'));
+  const additionalMemberCents = optionalEurosToCents(formData.get('memberEuros'));
+  const meteredDiscountPercent = optionalInt(formData.get('meteredDiscountPercent'));
+  const spendCapRaw = formString(formData.get('spendCapEuros'));
+  const result = await startEnterpriseCheckout({
+    db,
+    actor: await actor(),
+    teamId,
+    platformFeeCents: eurosToCents(formData.get('platformFeeEuros'), 'Platform fee'),
+    ...(includedActiveMembers !== undefined ? { includedActiveMembers } : {}),
+    ...(additionalMemberCents !== undefined ? { additionalMemberCents } : {}),
+    ...(meteredDiscountPercent !== undefined ? { meteredDiscountPercent } : {}),
+    ...(spendCapRaw
+      ? { spendCapCents: eurosToCents(formData.get('spendCapEuros'), 'Spend cap') }
+      : {}),
+    productId,
+    successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
+    provider,
+  });
+  return result.url;
+}
+
+export async function startEnterpriseCheckoutAction(formData: FormData): Promise<void> {
+  const teamId = teamIdFrom(formData);
+  const checkoutUrl = await prepareEnterpriseCheckout(teamId, formData).catch(
+    (error: unknown): string => {
+      if (isNextRedirect(error)) throw error;
+      const message = error instanceof Error ? error.message : 'Operator change failed.';
+      back(teamId, message);
+    },
+  );
+  const params = new URLSearchParams({
+    team: teamId,
+    notice: 'saved',
+    checkout: checkoutUrl,
+  });
+  redirect(`/app/admin/billing?${params.toString()}`);
 }
 
 export async function setOperatorSpendCapAction(formData: FormData): Promise<void> {

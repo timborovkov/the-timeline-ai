@@ -132,6 +132,23 @@ describe('BillingSettingsPanel collection copy', () => {
     expect(html).not.toContain('Assign comp');
   });
 
+  it('shows the Enterprise subscription hold and the negotiated platform fee', () => {
+    const html = panel({
+      planId: 'enterprise',
+      planName: 'Enterprise',
+      billingState: 'enterprise_active',
+      hasPolarSubscription: false,
+      platformFeeCents: 250_000,
+      includedActiveMembers: 40,
+      additionalMemberCents: 500,
+    });
+    expect(html).toContain('data-enterprise-subscription="pending"');
+    expect(html).toContain('Usage is recorded locally and invoiced after an operator attaches');
+    expect(html).toContain('Negotiated platform fee');
+    expect(html).toContain('€2,500');
+    expect(html).not.toContain('>Pay as you go<');
+  });
+
   it('shows the past_due pause and a payment-method update', () => {
     const html = panel({
       planId: 'payg',

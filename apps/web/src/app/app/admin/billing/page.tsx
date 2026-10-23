@@ -1,22 +1,15 @@
 import { teamBillingAccounts } from '@timeline/db';
-import { isPlatformAdminEmail } from '@timeline/shared/billing/operator';
+import { isPlatformAdminEmail, polarCheckoutUrl } from '@timeline/shared/billing/operator';
 import {
   findOperatorTeams,
   listBillingOperatorAudit,
+  listOpenUnbilledAlerts,
 } from '@timeline/shared/billing/operator-store';
 import { getEnv } from '@timeline/shared/env';
 import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
-import {
-  assignCompedPlanAction,
-  clearCompedPlanAction,
-  clearPolarDiscountAction,
-  clearPriceOverrideAction,
-  setOperatorSpendCapAction,
-  setPolarDiscountAction,
-  setPriceOverrideAction,
-} from '@/app/actions/billing-operator';
+import { BillingOperatorTeamPanel } from '@/components/billing-operator-forms';
 import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
 import { auth } from '@/lib/auth';
@@ -28,7 +21,7 @@ const FIELD_CLASS =
 export default async function BillingOperatorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ team?: string; error?: string; notice?: string }>;
+  searchParams: Promise<{ team?: string; error?: string; notice?: string; checkout?: string }>;
 }) {
   const session = await auth();
   if (!session?.user.id || !session.user.email) redirect('/sign-in');
@@ -51,6 +44,12 @@ export default async function BillingOperatorPage({
       )[0] ?? null)
     : null;
   const audit = selected ? await listBillingOperatorAudit({ db, actor, teamId: selected.id }) : [];
+  const unbilled = await listOpenUnbilledAlerts({
+    db,
+    actor,
+    ...(selected ? { teamId: selected.id } : {}),
+  });
+  const checkoutHref = polarCheckoutUrl(query.checkout ?? '');
 
   return (
     <div className="space-y-5">
@@ -61,6 +60,34 @@ export default async function BillingOperatorPage({
       />
       {query.error ? <p className="text-sm text-danger">{query.error}</p> : null}
       {query.notice ? <p className="text-sm text-fg-muted">Saved.</p> : null}
+      {checkoutHref ? (
+        <p className="text-sm text-fg">
+          <a
+            href={checkoutHref}
+            data-enterprise-checkout
+            className="underline decoration-border underline-offset-4"
+          >
+            Open Enterprise checkout
+          </a>
+        </p>
+      ) : null}
+
+      <SettingsSection title="Unbilled usage">
+        {unbilled.length === 0 ? (
+          <p className="text-sm text-fg-muted">No open unbilled usage alerts.</p>
+        ) : (
+          <ul className="space-y-2 text-sm">
+            {unbilled.map((alert) => (
+              <li key={alert.id} data-unbilled-alert className="border border-border px-3 py-2">
+                <p className="font-medium text-fg">
+                  {alert.meterId} · {alert.periodYm} · {alert.reason}
+                </p>
+                {alert.detail ? <p className="text-fg-muted">{alert.detail}</p> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </SettingsSection>
 
       <SettingsSection title="Find a team">
         <form action="/app/admin/billing" className="flex flex-wrap items-end gap-3">
@@ -95,200 +122,7 @@ export default async function BillingOperatorPage({
       </SettingsSection>
 
       {selected && account ? (
-        <>
-          <SettingsSection title={`${selected.name} (${selected.slug})`}>
-            <p className="font-mono text-xs text-fg-muted">{selected.id}</p>
-            <p className="text-sm text-fg">
-              {account.arrangement === 'comped' ? 'Comped' : 'Standard'} · {account.planId} · cap €
-              {(account.spendCapCents / 100).toFixed(2)}
-            </p>
-          </SettingsSection>
-
-          <SettingsSection title="Comped plan">
-            <form action={assignCompedPlanAction} className="space-y-3">
-              <input type="hidden" name="teamId" value={selected.id} />
-              <label className="block text-sm">
-                <span className="text-fg-muted">Entitlements</span>
-                <select name="plan" defaultValue={account.planId} className={FIELD_CLASS}>
-                  <option value="free">Free</option>
-                  <option value="payg">Pay as you go</option>
-                  <option value="team">Team</option>
-                  <option value="business">Business</option>
-                  <option value="enterprise">Enterprise</option>
-                </select>
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Spend cap (EUR)</span>
-                <input
-                  name="spendCapEuros"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  defaultValue={(account.spendCapCents / 100).toFixed(2)}
-                  className={FIELD_CLASS}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Reason</span>
-                <input name="reason" required className={FIELD_CLASS} />
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Expires (optional, UTC date)</span>
-                <input name="expires" type="date" className={FIELD_CLASS} />
-              </label>
-              <button
-                type="submit"
-                className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg"
-              >
-                Assign comp
-              </button>
-            </form>
-            {account.arrangement === 'comped' ? (
-              <form action={clearCompedPlanAction}>
-                <input type="hidden" name="teamId" value={selected.id} />
-                <button
-                  type="submit"
-                  className="inline-flex min-h-11 items-center rounded-sm border border-border px-3 text-sm"
-                >
-                  Clear comp and return to Free
-                </button>
-              </form>
-            ) : null}
-          </SettingsSection>
-
-          <SettingsSection title="Custom price">
-            <form action={setPriceOverrideAction} className="space-y-3">
-              <input type="hidden" name="teamId" value={selected.id} />
-              <label className="block text-sm">
-                <span className="text-fg-muted">Platform fee (EUR, optional)</span>
-                <input
-                  name="platformFeeEuros"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className={FIELD_CLASS}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Included members (optional)</span>
-                <input
-                  name="includedMembers"
-                  type="number"
-                  min={0}
-                  step={1}
-                  className={FIELD_CLASS}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Extra member price (EUR / month, optional)</span>
-                <input
-                  name="memberEuros"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  className={FIELD_CLASS}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Metered discount % (optional)</span>
-                <input
-                  name="meteredDiscountPercent"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={1}
-                  className={FIELD_CLASS}
-                />
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Expires (optional, UTC date)</span>
-                <input name="expires" type="date" className={FIELD_CLASS} />
-              </label>
-              <button
-                type="submit"
-                className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg"
-              >
-                Save price override
-              </button>
-            </form>
-            <form action={clearPriceOverrideAction}>
-              <input type="hidden" name="teamId" value={selected.id} />
-              <button type="submit" className="text-sm underline-offset-4 hover:underline">
-                Clear price override
-              </button>
-            </form>
-          </SettingsSection>
-
-          <SettingsSection title="Polar discount">
-            <form action={setPolarDiscountAction} className="space-y-3">
-              <input type="hidden" name="teamId" value={selected.id} />
-              <label className="block text-sm">
-                <span className="text-fg-muted">Polar discount id</span>
-                <input name="polarDiscountId" className={FIELD_CLASS} />
-              </label>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Expires (optional, UTC date)</span>
-                <input name="expires" type="date" className={FIELD_CLASS} />
-              </label>
-              <button
-                type="submit"
-                className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg"
-              >
-                Attach discount to checkout
-              </button>
-            </form>
-            <form action={clearPolarDiscountAction}>
-              <input type="hidden" name="teamId" value={selected.id} />
-              <button type="submit" className="text-sm underline-offset-4 hover:underline">
-                Clear Polar discount
-              </button>
-            </form>
-            <form action={setOperatorSpendCapAction} className="flex flex-wrap items-end gap-3">
-              <input type="hidden" name="teamId" value={selected.id} />
-              <label className="block text-sm">
-                <span className="text-fg-muted">Operator spend cap (EUR)</span>
-                <input
-                  name="spendCapEuros"
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  defaultValue={(account.spendCapCents / 100).toFixed(2)}
-                  className={FIELD_CLASS}
-                />
-              </label>
-              <button
-                type="submit"
-                className="inline-flex min-h-11 items-center rounded-sm border border-border px-3 text-sm"
-              >
-                Update spend cap
-              </button>
-            </form>
-          </SettingsSection>
-
-          <SettingsSection title="Audit log">
-            {audit.length === 0 ? (
-              <p className="text-sm text-fg-muted">No operator changes yet.</p>
-            ) : (
-              <ul className="space-y-3 text-sm">
-                {audit.map((entry) => (
-                  <li key={entry.id} className="border border-border px-3 py-2">
-                    <p className="font-medium text-fg">
-                      {entry.action} · {entry.actorEmail}
-                    </p>
-                    <p className="font-mono text-xs text-fg-muted">
-                      {entry.createdAt.toISOString()}
-                    </p>
-                    <p className="mt-1 font-mono text-xs text-fg-muted">
-                      {entry.before.arrangement}/{entry.before.planId}/€
-                      {(entry.before.spendCapCents / 100).toFixed(2)} → {entry.after.arrangement}/
-                      {entry.after.planId}/€{(entry.after.spendCapCents / 100).toFixed(2)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </SettingsSection>
-        </>
+        <BillingOperatorTeamPanel team={selected} account={account} audit={audit} />
       ) : null}
     </div>
   );

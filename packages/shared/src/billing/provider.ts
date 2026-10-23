@@ -13,6 +13,8 @@ export interface CreateCheckoutInput {
   productId: string;
   successUrl: string;
   discountId?: string;
+  /** Custom-price amount in cents. Polar ignores this on a fixed price. */
+  amount?: number;
 }
 
 export interface UpdateSubscriptionInput {
@@ -46,16 +48,19 @@ export function createFakeBillingProvider(): BillingProvider & {
   customers: Map<string, { id: string; email: string }>;
   subscriptionUpdates: UpdateSubscriptionInput[];
   revokedSubscriptionIds: string[];
+  checkouts: CreateCheckoutInput[];
 } {
   const events: PolarUsageEvent[] = [];
   const customers = new Map<string, { id: string; email: string }>();
   const subscriptionUpdates: UpdateSubscriptionInput[] = [];
   const revokedSubscriptionIds: string[] = [];
+  const checkouts: CreateCheckoutInput[] = [];
   return {
     events,
     customers,
     subscriptionUpdates,
     revokedSubscriptionIds,
+    checkouts,
     ensureCustomer(input) {
       const existing = customers.get(input.externalId);
       if (existing) return Promise.resolve(existing);
@@ -64,9 +69,11 @@ export function createFakeBillingProvider(): BillingProvider & {
       return Promise.resolve(created);
     },
     createCheckoutSession(input) {
+      checkouts.push(input);
+      const amount = input.amount === undefined ? '' : `&amount=${String(input.amount)}`;
       return Promise.resolve({
         id: `chk_fake_${input.productId.slice(0, 8)}`,
-        url: `https://sandbox.polar.sh/checkout/fake?product=${input.productId}`,
+        url: `https://sandbox.polar.sh/checkout/fake?product=${input.productId}${amount}`,
       });
     },
     createCustomerPortalSession(input) {

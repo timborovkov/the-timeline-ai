@@ -44,13 +44,34 @@ beforeEach(async () => {
 
 afterEach(async () => {
   delete process.env.BILLING_CHARGES_ENABLED;
+  delete process.env.POLAR_PRODUCT_ID_PAYG;
+  delete process.env.POLAR_PRODUCT_ID_TEAM;
+  delete process.env.POLAR_PRODUCT_ID_BUSINESS;
+  delete process.env.POLAR_PRODUCT_ID_ENTERPRISE;
   resetEnvForTests();
   await pg.close();
 });
 
+const POLAR_PRODUCT_IDS = {
+  payg: 'prod_payg',
+  team: 'prod_team',
+  business: 'prod_business',
+  enterprise: 'prod_enterprise',
+} as const;
+
 function enableLiveCharging(): void {
   process.env.BILLING_CHARGES_ENABLED = 'true';
   resetEnvForTests();
+}
+
+function enableCoveredPolar(plan: keyof typeof POLAR_PRODUCT_IDS): string {
+  process.env.BILLING_CHARGES_ENABLED = 'true';
+  process.env.POLAR_PRODUCT_ID_PAYG = POLAR_PRODUCT_IDS.payg;
+  process.env.POLAR_PRODUCT_ID_TEAM = POLAR_PRODUCT_IDS.team;
+  process.env.POLAR_PRODUCT_ID_BUSINESS = POLAR_PRODUCT_IDS.business;
+  process.env.POLAR_PRODUCT_ID_ENTERPRISE = POLAR_PRODUCT_IDS.enterprise;
+  resetEnvForTests();
+  return POLAR_PRODUCT_IDS[plan];
 }
 
 describe('billing scope', () => {
@@ -215,12 +236,13 @@ describe('billing scope', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     await scope.getAccount();
-    enableLiveCharging();
+    enableCoveredPolar('team');
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
           included_discount_remaining_cents = 50, wallet_balance_cents = 1000,
-          spend_cap_cents = 10000, polar_customer_id = 'cus_team'
+          spend_cap_cents = 10000, polar_customer_id = 'cus_team',
+          polar_subscription_id = 'sub_team', polar_product_id = '${POLAR_PRODUCT_IDS.team}'
       WHERE team_id = '${TEAM_ID}';
     `);
     const reserved = await scope.reserve({
@@ -290,9 +312,15 @@ describe('billing scope', () => {
       expect(settled.ledger.customerChargeCents).toBe(200);
       expect(settled.ledger.metadata).toMatchObject({
         invoice_cents: 200,
-        polar_ingest_status: 'not_required',
+        polar_ingest_status: 'pending',
+        polar_ingest_block: 'missing_subscription_price',
       });
     }
+    const alerts = await pg.query<{ reason: string; meter_id: string }>(
+      `SELECT reason, meter_id FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(alerts.rows).toEqual([{ reason: 'missing_subscription_price', meter_id: 'ai' }]);
     const after = await scope.getAccount();
     expect(after.walletBalanceCents).toBe(80);
     expect(after.billingState).toBe('team_active');
@@ -614,12 +642,13 @@ describe('billing scope', () => {
       provider,
     });
     await scope.getAccount();
-    enableLiveCharging();
+    enableCoveredPolar('team');
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
           wallet_balance_cents = 5000, included_discount_remaining_cents = 6000,
           spend_cap_cents = 10000, polar_customer_id = 'cus_members',
+          polar_subscription_id = 'sub_team', polar_product_id = '${POLAR_PRODUCT_IDS.team}',
           price_override = '{"includedActiveMembers":1,"additionalMemberCents":400,"meteredDiscountPercent":50}'::jsonb
       WHERE team_id = '${TEAM_ID}';
     `);
@@ -918,11 +947,12 @@ describe('billing scope', () => {
       provider,
     });
     await scope.getAccount();
-    enableLiveCharging();
+    enableCoveredPolar('payg');
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
-          polar_customer_id = 'cus_test', wallet_balance_cents = 5000
+          polar_customer_id = 'cus_test', wallet_balance_cents = 5000,
+          polar_subscription_id = 'sub_payg', polar_product_id = '${POLAR_PRODUCT_IDS.payg}'
       WHERE team_id = '${TEAM_ID}';
     `);
     const settled = await scope.settle({
@@ -960,11 +990,12 @@ describe('billing scope', () => {
       provider,
     });
     await scope.getAccount();
-    enableLiveCharging();
+    enableCoveredPolar('payg');
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
-          polar_customer_id = 'cus_test', wallet_balance_cents = 5000
+          polar_customer_id = 'cus_test', wallet_balance_cents = 5000,
+          polar_subscription_id = 'sub_payg', polar_product_id = '${POLAR_PRODUCT_IDS.payg}'
       WHERE team_id = '${TEAM_ID}';
     `);
     await scope.settle({
@@ -1058,12 +1089,13 @@ describe('billing scope', () => {
       provider,
     });
     await scope.getAccount();
-    enableLiveCharging();
+    enableCoveredPolar('team');
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
           included_discount_remaining_cents = 0, wallet_balance_cents = 5000,
-          polar_customer_id = 'cus_team'
+          polar_customer_id = 'cus_team',
+          polar_subscription_id = 'sub_team', polar_product_id = '${POLAR_PRODUCT_IDS.team}'
       WHERE team_id = '${TEAM_ID}';
     `);
     for (let i = 0; i < 4; i += 1) {
@@ -1237,7 +1269,7 @@ describe('billing scope', () => {
     ]);
   });
 
-  it('does not freeze Enterprise settlement against a prepaid spend cap', async () => {
+  it('holds Enterprise usage that has no subscription price and does not freeze', async () => {
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({
       db,
@@ -1266,10 +1298,109 @@ describe('billing scope', () => {
     expect(after.billingState).toBe('enterprise_active');
     expect(after.spendCapCents).toBe(0);
     expect(after.walletBalanceCents).toBe(500);
-    expect(provider.events.length).toBeGreaterThan(0);
+    expect(provider.events).toHaveLength(0);
     if (!settled.duplicate) {
-      expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'pending' });
+      expect(settled.ledger.metadata).toMatchObject({
+        polar_ingest_status: 'pending',
+        polar_ingest_block: 'missing_subscription_price',
+      });
     }
+    const alerts = await pg.query<{ meter_id: string }>(
+      `SELECT meter_id FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(alerts.rows).toEqual([{ meter_id: 'ai' }]);
+  });
+
+  it('ingests Enterprise usage once the subscription product matches', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('enterprise');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active',
+          wallet_balance_cents = 500, spend_cap_cents = 0, included_discount_remaining_cents = 0,
+          polar_customer_id = 'cus_enterprise',
+          polar_subscription_id = 'sub_enterprise',
+          polar_product_id = '${POLAR_PRODUCT_IDS.enterprise}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-enterprise-covered',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    const after = await scope.getAccount();
+    expect(after.billingState).toBe('enterprise_active');
+    expect(after.spendCapCents).toBe(0);
+    expect(provider.events.length).toBeGreaterThan(0);
+    const open = await pg.query(
+      `SELECT id FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(open.rows).toHaveLength(0);
+  });
+
+  it('keeps a held charge pending while shadow billing is on, then ingests it', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 5000, spend_cap_cents = 10000,
+          polar_customer_id = 'cus_hold', included_discount_remaining_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-hold-then-cover',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+    });
+    expect(settled.ok).toBe(true);
+    expect(provider.events).toHaveLength(0);
+    delete process.env.BILLING_CHARGES_ENABLED;
+    resetEnvForTests();
+    await flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID });
+    expect(provider.events).toHaveLength(0);
+    const held = await pg.query<{ status: string }>(
+      `SELECT metadata->>'polar_ingest_status' AS status
+       FROM billing_usage_ledger
+       WHERE team_id = '${TEAM_ID}' AND operation_id = 'op-hold-then-cover'`,
+    );
+    expect(held.rows[0]?.status).toBe('pending');
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET polar_subscription_id = 'sub_team', polar_product_id = '${POLAR_PRODUCT_IDS.team}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID });
+    expect(provider.events).toEqual([
+      expect.objectContaining({ name: 'timeline_ai_eur_cents', externalCustomerId: TEAM_ID }),
+    ]);
+    const open = await pg.query(
+      `SELECT id FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(open.rows).toHaveLength(0);
   });
 
   it('meters a comped team without Polar or wallet charges and still enforces the spend cap', async () => {

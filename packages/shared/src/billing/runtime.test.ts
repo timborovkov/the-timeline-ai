@@ -338,6 +338,32 @@ describe('billing runtime', () => {
     }
   });
 
+  it('does not bill extra members when Enterprise included members are unlimited', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', shadow_billing = false,
+          spend_cap_cents = 0,
+          price_override = '{"additionalMemberCents":500}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+      VALUES ('21111111-2222-4333-8444-555555555555', 'm2@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-02' });
+    expect(accrued.extraMembers).toBe(0);
+    expect(accrued.chargeCents).toBe(0);
+  });
+
   it('persists extra member-day charges when the spend cap is already exhausted', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,

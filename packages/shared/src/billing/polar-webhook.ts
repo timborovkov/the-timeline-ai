@@ -5,7 +5,7 @@ import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { childLogger } from '#src/logger.js';
 
-export type PolarPaidPlanId = 'payg' | 'team' | 'business';
+export type PolarPaidPlanId = 'payg' | 'team' | 'business' | 'enterprise';
 
 export interface PolarWebhookPayload {
   type?: string;
@@ -36,6 +36,7 @@ export interface PolarWebhookProductIds {
   payg?: string;
   team?: string;
   business?: string;
+  enterprise?: string;
 }
 
 const log = childLogger('billing:polar-webhook');
@@ -50,6 +51,7 @@ export function planFromPolarProductId(
   if (products.payg && productId === products.payg) return 'payg';
   if (products.team && productId === products.team) return 'team';
   if (products.business && productId === products.business) return 'business';
+  if (products.enterprise && productId === products.enterprise) return 'enterprise';
   return null;
 }
 
@@ -95,6 +97,8 @@ export function billingStateForPolarPlan(plan: PolarPaidPlanId) {
       return 'team_active' as const;
     case 'business':
       return 'business_active' as const;
+    case 'enterprise':
+      return 'enterprise_active' as const;
   }
 }
 
@@ -208,14 +212,10 @@ async function upsertPaidSubscription(input: {
 }): Promise<{ applied: boolean }> {
   return input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
-    if (
-      existing &&
-      (existing.arrangement === 'comped' ||
-        existing.planId === 'enterprise' ||
-        existing.billingState === 'enterprise_active')
-    ) {
-      return { applied: false };
-    }
+    if (existing?.arrangement === 'comped') return { applied: false };
+    const existingEnterprise =
+      existing?.planId === 'enterprise' || existing?.billingState === 'enterprise_active';
+    if (existingEnterprise && input.plan !== 'enterprise') return { applied: false };
     const polarSubscriptionId = input.data?.id ?? null;
     const period = polarSubscriptionPeriod(input.data);
     if (

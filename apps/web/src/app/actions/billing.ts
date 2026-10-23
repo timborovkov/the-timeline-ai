@@ -59,7 +59,7 @@ export async function startBillingCheckout(input: {
     return {
       ok: false,
       error:
-        'Enterprise plan changes go through support or the Polar customer portal, not self-serve checkout.',
+        'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
     };
   }
   const discount = checkoutDiscountId({
