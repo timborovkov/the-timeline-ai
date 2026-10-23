@@ -7,10 +7,12 @@ import {
   type QdrantPayload,
 } from '#src/qdrant/client.js';
 import {
+  canonicalPayloadJson,
   copyCollectionPoints,
   denseVectorFromUnknown,
   listCollectionTeamIds,
   teamIdScrollFilter,
+  unionTeamIds,
   verifyCollectionCounts,
   verifyCollectionIdentity,
 } from '#src/qdrant/copy-points.js';
@@ -462,5 +464,82 @@ describe('copyCollectionPoints', () => {
     expect(teamIds).toEqual(['team-A', 'team-B']);
     await copyCollectionPoints({ source, target, teamIds, resync: false });
     expect(store.events_ondisk?.map((point) => point.id).sort()).toEqual(['p-a', 'p-b']);
+  });
+
+  it('unions team ids from source and target so leftover tenants are verified', async () => {
+    expect(unionTeamIds(['team-B', 'team-A'], ['team-A', 'team-C'])).toEqual([
+      'team-A',
+      'team-B',
+      'team-C',
+    ]);
+    const leftover: QdrantPayload = { ...payload, team_id: 'team-B', source_id: 'ev-b' };
+    const { fetcher } = memoryQdrant({
+      events: [{ id: 'p-a', vector: [0.1, 0.2, 0.3, 0.4], payload }],
+      events_ondisk: [
+        { id: 'p-a', vector: [0.1, 0.2, 0.3, 0.4], payload },
+        { id: 'p-b', vector: [0.5, 0.6, 0.7, 0.8], payload: leftover },
+      ],
+    });
+    const source = createQdrantClient({
+      fetcher,
+      collection: 'events',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    const target = createQdrantClient({
+      fetcher,
+      collection: 'events_ondisk',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    const sourceTeams = await listCollectionTeamIds(source);
+    expect(sourceTeams).toEqual(['team-A']);
+    await expect(
+      verifyCollectionIdentity(source, target, { teamIds: sourceTeams }),
+    ).resolves.toMatchObject({ matched: true });
+    const verifyTeams = unionTeamIds(sourceTeams, await listCollectionTeamIds(target));
+    expect(verifyTeams).toEqual(['team-A', 'team-B']);
+    await expect(
+      verifyCollectionIdentity(source, target, { teamIds: verifyTeams }),
+    ).resolves.toMatchObject({
+      matched: false,
+      extraInTarget: ['p-b'],
+    });
+  });
+
+  it('detects visibility and author payload drift that the old identity tuple missed', async () => {
+    expect(canonicalPayloadJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
+    const drifted: QdrantPayload = {
+      ...payload,
+      visibility: 'specific_users',
+      visibility_user_ids: ['user-2'],
+      author_user_id: 'user-2',
+      visibility_owner_user_id: 'user-2',
+    };
+    const { fetcher } = memoryQdrant({
+      events: [{ id: 'p1', vector: [0.1, 0.2, 0.3, 0.4], payload }],
+      events_ondisk: [{ id: 'p1', vector: [0.1, 0.2, 0.3, 0.4], payload: drifted }],
+    });
+    const source = createQdrantClient({
+      fetcher,
+      collection: 'events',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    const target = createQdrantClient({
+      fetcher,
+      collection: 'events_ondisk',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    await expect(verifyCollectionCounts(source, target, TEAM_IDS)).resolves.toMatchObject({
+      matched: true,
+    });
+    await expect(
+      verifyCollectionIdentity(source, target, { teamIds: TEAM_IDS }),
+    ).resolves.toMatchObject({
+      matched: false,
+      payloadMismatches: ['p1'],
+    });
   });
 });

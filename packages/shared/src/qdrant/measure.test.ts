@@ -282,6 +282,18 @@ describe('qdrant RAM and recall helpers', () => {
     expect(collectionInfo).toHaveBeenCalled();
   });
 
+  it('skips optimizer PATCH when prepareIndex is false', async () => {
+    const { client, patchOptimizers } = mockMeasureClient({});
+    await measureQuantizedRecall(client, {
+      teamId: TEAM,
+      userId: USER,
+      sampleSize: 1,
+      k: 2,
+      prepareIndex: false,
+    });
+    expect(patchOptimizers).not.toHaveBeenCalled();
+  });
+
   it('throws when indexing does not finish in time', async () => {
     const client = {
       patchOptimizers: vi.fn().mockResolvedValue(undefined),

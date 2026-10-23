@@ -93,6 +93,11 @@ export function requireTeamIds(teamIds: Iterable<string>): string[] {
   return unique;
 }
 
+/** Distinct team ids from one or more collections, sorted for stable reports. */
+export function unionTeamIds(...lists: Iterable<string>[]): string[] {
+  return normalizeTeamIds(lists.flatMap((list) => [...list])).sort();
+}
+
 export function teamIdScrollFilter(teamId: string): Record<string, unknown> {
   if (!teamId) throw new Error('Qdrant copy/verify requires teamId');
   return { must: [{ key: 'team_id', match: { value: teamId } }] };
@@ -117,16 +122,30 @@ function vectorFingerprint(vector: number[]): string {
   )}:${String(sum)}:${String(weighted)}:${String(sumSq)}`;
 }
 
+/**
+ * Canonical JSON for a stored Qdrant payload. Object keys are sorted;
+ * arrays keep order. Used by identity verify so visibility_user_ids,
+ * author_user_id, and every other payload field participate.
+ */
+export function canonicalPayloadJson(payload: unknown): string {
+  return canonicalJson(payload);
+}
+
+function canonicalJson(value: unknown): string {
+  if (value instanceof Date) return JSON.stringify(value.toISOString());
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(',')}}`;
+}
+
 function payloadFingerprint(payload: QdrantPayload | undefined): string {
   if (!payload) return '';
-  return [
-    payload.team_id,
-    payload.source_kind,
-    payload.source_id,
-    payload.event_id ?? '',
-    payload.occurred_at,
-    payload.visibility,
-  ].join('\0');
+  return canonicalPayloadJson(payload);
 }
 
 interface PointIdentity {
@@ -315,9 +334,10 @@ export async function verifyCollectionCounts(
 }
 
 /**
- * Compare source and target by point id, vector fingerprint, and a payload
- * identity tuple. Count equality alone cannot detect a lost update that
- * replaced a vector in place. Scrolls each requested team separately.
+ * Compare source and target by point id, vector fingerprint, and a
+ * canonical full-payload JSON. Count equality alone cannot detect a lost
+ * update that replaced a vector or visibility field in place. Scrolls each
+ * requested team separately.
  */
 export async function verifyCollectionIdentity(
   source: QdrantClient,

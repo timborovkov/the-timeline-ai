@@ -517,7 +517,8 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
           Pause the embed worker (and any other Qdrant writers) first. Live
           <code>--copy</code> requires <code>--writers-paused</code> and always runs a second resync
           pass so inserts during the first scroll are not lost. Copy and verify always filter by
-          <code>team_id</code>; <code>--all-teams</code> lists distinct tenants then loops them. Or
+          <code>team_id</code>. <code>--all-teams</code> copies tenants discovered on the source;
+          verify unions source and target tenants so leftover target-only points fail identity. Or
           PUT the collection yourself, then run with
           <code>--copy --verify --writers-paused --all-teams</code> only. The copy client uses
           <code>requireExisting=true</code> on the target, so a missing collection fails loudly
@@ -525,19 +526,21 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         </li>
         <li>
           <strong>Verify counts and identity</strong>. The command exits non-zero when source and
-          target point counts differ, or when ids / vector fingerprints / payload identity tuples
-          disagree. Count equality alone cannot catch an in-place vector overwrite. Re-running the
-          copy is idempotent — point ids are preserved.
+          target point counts differ, or when ids / vector fingerprints / canonical full payloads
+          disagree (including <code>visibility_user_ids</code> and author/owner fields). Count
+          equality alone cannot catch an in-place vector overwrite. Re-running the copy is
+          idempotent — point ids are preserved.
         </li>
         <li>
           Optional <strong>RAM / recall probe</strong> against the demo corpus (Acme Labs owner).
-          <code>--measure</code> always reports both source and target. RAM comes from
-          <code>GET /collections/{name}/memory</code>. Recall waits until HNSW/quantization is
-          indexed (Qdrant 1.19.2: <code>indexing_threshold=1</code> KB, because
-          <code>0</code> disables indexing, and <code>full_scan_threshold=10</code>, the minimum
-          Qdrant accepts), samples are filtered to the requested team, the query point is excluded
-          from both rankings, and the uncompressed baseline is exact search with
-          <code>quantization.ignore</code>. Zero comparable queries are reported as
+          Live <code>--measure</code> waits until HNSW/quantization is indexed on both collections
+          (Qdrant 1.19.2: <code>indexing_threshold=1</code> KB, because <code>0</code> disables
+          indexing, and <code>full_scan_threshold=10</code>, the minimum Qdrant accepts),
+          <em>then</em> snapshots RAM from <code>GET /collections/{name}/memory</code>, then
+          compares recall. <code>--dry-run --measure</code> does not PATCH optimizer thresholds and
+          does not require the target to exist. Samples are filtered to the requested team, the
+          query point is excluded from both rankings, and the uncompressed baseline is exact search
+          with <code>quantization.ignore</code>. Zero comparable queries are reported as
           <code>no_data</code> (exit 1), not 100% recall:
           <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
   --source-collection=events \

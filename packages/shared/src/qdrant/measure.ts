@@ -240,12 +240,19 @@ export async function measureQuantizedRecall(
     k?: number;
     teamId: string;
     userId: string;
+    /**
+     * When false, skip PATCH/wait. The migrate CLI prepares both collections
+     * first so RAM snapshots include HNSW/quantization.
+     */
+    prepareIndex?: boolean;
     wait?: Parameters<typeof waitForQuantizedIndex>[1];
   },
 ): Promise<RecallAtKResult> {
   const sampleSize = opts.sampleSize ?? DEFAULT_RECALL_SAMPLE;
   const k = opts.k ?? DEFAULT_RECALL_K;
-  await waitForQuantizedIndex(client, opts.wait);
+  if (opts.prepareIndex !== false) {
+    await waitForQuantizedIndex(client, opts.wait);
+  }
   const page = await client.scrollPoints({
     limit: sampleSize,
     withPayload: true,

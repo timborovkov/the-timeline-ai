@@ -54,7 +54,9 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-bac
 `qdrant-migrate-collection` copies an existing collection onto a new on-disk + quantized
 collection without re-embedding. Pause embed writers first; live `--copy` requires
 `--writers-paused`, re-syncs a second pass, and copies per `team_id` (`--all-teams` or `--team`).
-It refuses production, Railway production, and
+`--all-teams` verify unions source and target tenants; identity compares the canonical full
+payload. Live `--measure` indexes both collections before RAM snapshots; `--dry-run --measure`
+does not PATCH thresholds. It refuses production, Railway production, and
 non-loopback `QDRANT_URL` unless `ALLOW_QDRANT_MIGRATE_REMOTE` is set. After counts and point
 identity match, switch `QDRANT_COLLECTION` and restart web + workers. See
 [docs/setup/openrouter.html](../../docs/setup/openrouter.html#qdrant-storage).

@@ -250,26 +250,44 @@ export async function runQdrantMigrateCollection(
     report.targetLayout = 'ok';
   }
 
-  let teamIds = args.teamIds;
+  let copyTeamIds = args.teamIds;
+  let verifyTeamIds = args.teamIds;
   if (args.copy || args.verify) {
     if (args.allTeams) {
-      teamIds = await qdrant.listCollectionTeamIds(source, { pageSize: args.pageSize });
-      if (teamIds.length === 0) {
+      const sourceTeams = await qdrant.listCollectionTeamIds(source, { pageSize: args.pageSize });
+      if (args.copy && sourceTeams.length === 0) {
         throw new QdrantMigrateUsageError(
-          'Source collection has no team_id payload values to copy/verify',
+          'Source collection has no team_id payload values to copy',
         );
       }
+      copyTeamIds = sourceTeams;
+      if (args.verify && !args.dryRun) {
+        const targetTeams = await qdrant.listCollectionTeamIds(target, {
+          pageSize: args.pageSize,
+        });
+        verifyTeamIds = qdrant.unionTeamIds(sourceTeams, targetTeams);
+        if (verifyTeamIds.length === 0) {
+          throw new QdrantMigrateUsageError(
+            'No team_id payload values to verify in source or target',
+          );
+        }
+      } else {
+        verifyTeamIds = sourceTeams;
+      }
     } else {
-      teamIds = qdrant.requireTeamIds(args.teamIds);
+      copyTeamIds = qdrant.requireTeamIds(args.teamIds);
+      verifyTeamIds = copyTeamIds;
     }
-    report.teamIds = teamIds;
+    report.teamIds = args.verify ? verifyTeamIds : copyTeamIds;
+    if (args.copy) report.copyTeamIds = copyTeamIds;
+    if (args.verify) report.verifyTeamIds = verifyTeamIds;
   }
 
   if (args.copy) {
     report.copy = await qdrant.copyCollectionPoints({
       source,
       target,
-      teamIds,
+      teamIds: copyTeamIds,
       pageSize: args.pageSize,
       dryRun: args.dryRun,
     });
@@ -279,10 +297,10 @@ export async function runQdrantMigrateCollection(
     if (args.dryRun) {
       report.verify = 'dry-run';
     } else {
-      const counts = await qdrant.verifyCollectionCounts(source, target, teamIds);
+      const counts = await qdrant.verifyCollectionCounts(source, target, verifyTeamIds);
       const identity = await qdrant.verifyCollectionIdentity(source, target, {
         pageSize: args.pageSize,
-        teamIds,
+        teamIds: verifyTeamIds,
       });
       const matched = counts.matched && identity.matched;
       report.verify = { ...counts, identity, matched };
@@ -291,23 +309,33 @@ export async function runQdrantMigrateCollection(
   }
 
   if (args.measure && args.teamId && args.userId) {
-    const measureOpts = {
-      teamId: args.teamId,
-      userId: args.userId,
-      sampleSize: args.recallSample,
-      k: args.recallK,
-    };
-    const ram: Record<string, unknown> = {
-      source: await qdrant.measureCollectionRam(source),
-      target: await qdrant.measureCollectionRam(target),
-    };
-    const recall: Record<string, unknown> = {
-      source: await qdrant.measureQuantizedRecall(source, measureOpts),
-      target: await qdrant.measureQuantizedRecall(target, measureOpts),
-    };
-    report.ram = ram;
-    report.recall = recall;
-    if (recallHasNoData(recall)) setExitCode(1);
+    if (args.dryRun) {
+      // Dry-run must not PATCH optimizer/HNSW thresholds or require a target
+      // that --create-target has not actually created.
+      report.ram = 'dry-run';
+      report.recall = 'dry-run';
+    } else {
+      const measureOpts = {
+        teamId: args.teamId,
+        userId: args.userId,
+        sampleSize: args.recallSample,
+        k: args.recallK,
+        prepareIndex: false as const,
+      };
+      await qdrant.waitForQuantizedIndex(source);
+      await qdrant.waitForQuantizedIndex(target);
+      const ram: Record<string, unknown> = {
+        source: await qdrant.measureCollectionRam(source),
+        target: await qdrant.measureCollectionRam(target),
+      };
+      const recall: Record<string, unknown> = {
+        source: await qdrant.measureQuantizedRecall(source, measureOpts),
+        target: await qdrant.measureQuantizedRecall(target, measureOpts),
+      };
+      report.ram = ram;
+      report.recall = recall;
+      if (recallHasNoData(recall)) setExitCode(1);
+    }
   }
 
   write(`${JSON.stringify(report, null, 2)}\n`);

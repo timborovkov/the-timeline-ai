@@ -43,6 +43,8 @@ function fakeClient(
   upsertPoints: ReturnType<typeof vi.fn>;
   collectionInfo: ReturnType<typeof vi.fn>;
   collectionMemory: ReturnType<typeof vi.fn>;
+  patchOptimizers: ReturnType<typeof vi.fn>;
+  countPoints: ReturnType<typeof vi.fn>;
   search: ReturnType<typeof vi.fn>;
   scrollPoints: ReturnType<typeof vi.fn>;
 } {
@@ -116,6 +118,8 @@ function fakeClient(
     upsertPoints,
     collectionInfo,
     collectionMemory,
+    patchOptimizers,
+    countPoints,
     search,
     scrollPoints,
   };
@@ -261,6 +265,41 @@ describe('qdrant-migrate-collection CLI', () => {
     expect(output.copy).toMatchObject({ dryRun: true, upserted: 1, resync: null });
   });
 
+  it('dry-run --measure does not patch optimizers or require a created target', async () => {
+    const source = fakeClient('events', 1);
+    const target = fakeClient('events_ondisk', 0);
+    const write = vi.fn();
+
+    await runQdrantMigrateCollection(
+      migrateArgs({
+        createTarget: true,
+        measure: true,
+        dryRun: true,
+        teamId: TEAM,
+        userId: USER,
+      }),
+      {
+        env: LOCAL_ENV,
+        createClient: (opts) => (opts.collection === 'events' ? source.client : target.client),
+        write,
+      },
+    );
+
+    expect(source.patchOptimizers).not.toHaveBeenCalled();
+    expect(target.patchOptimizers).not.toHaveBeenCalled();
+    expect(target.ensureCollection).not.toHaveBeenCalled();
+    expect(target.collectionMemory).not.toHaveBeenCalled();
+    expect(source.search).not.toHaveBeenCalled();
+    const output = JSON.parse(write.mock.calls[0]?.[0] as string) as {
+      ram: string;
+      recall: string;
+      targetCreated: string;
+    };
+    expect(output.targetCreated).toBe('dry-run');
+    expect(output.ram).toBe('dry-run');
+    expect(output.recall).toBe('dry-run');
+  });
+
   it('rejects an existing in-RAM leftover as the migration target', async () => {
     const source = fakeClient('events', 1);
     const target = fakeClient('events_ondisk', 1, { layout: 'inram' });
@@ -304,6 +343,14 @@ describe('qdrant-migrate-collection CLI', () => {
       },
     );
 
+    expect(source.patchOptimizers).toHaveBeenCalled();
+    expect(target.patchOptimizers).toHaveBeenCalled();
+    expect(source.patchOptimizers.mock.invocationCallOrder[0]).toBeLessThan(
+      source.collectionMemory.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(target.patchOptimizers.mock.invocationCallOrder[0]).toBeLessThan(
+      target.collectionMemory.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(source.collectionInfo).toHaveBeenCalled();
     expect(target.collectionInfo).toHaveBeenCalled();
     expect(target.collectionMemory).toHaveBeenCalled();
@@ -360,6 +407,87 @@ describe('qdrant-migrate-collection CLI', () => {
       recall: { source: { status: string; meanRecall: number | null } };
     };
     expect(output.recall.source).toMatchObject({ status: 'no_data', meanRecall: null });
+    expect(setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  it('verifies the union of source and target teams on --all-teams', async () => {
+    const teamB = '20000000-0000-4000-8000-000000000002';
+    const source = fakeClient('events', 1);
+    const target = fakeClient('events_ondisk', 1);
+    source.scrollPoints.mockImplementation((input?: { unfiltered?: boolean }) => {
+      if (input?.unfiltered) {
+        return {
+          points: [{ id: 's1', payload: { team_id: TEAM } }],
+          nextOffset: null,
+        };
+      }
+      return {
+        points: [
+          {
+            id: 's1',
+            vector: [0.1, 0.2, 0.3, 0.4],
+            payload: {
+              team_id: TEAM,
+              visibility: 'team',
+              source_kind: 'raw_event',
+              source_id: 's1',
+            },
+          },
+        ],
+        nextOffset: null,
+      };
+    });
+    target.scrollPoints.mockImplementation((input?: { unfiltered?: boolean }) => {
+      if (input?.unfiltered) {
+        return {
+          points: [
+            { id: 's1', payload: { team_id: TEAM } },
+            { id: 't-extra', payload: { team_id: teamB } },
+          ],
+          nextOffset: null,
+        };
+      }
+      return {
+        points: [
+          {
+            id: 't-extra',
+            vector: [0.5, 0.6, 0.7, 0.8],
+            payload: {
+              team_id: teamB,
+              visibility: 'team',
+              source_kind: 'raw_event',
+              source_id: 't-extra',
+            },
+          },
+        ],
+        nextOffset: null,
+      };
+    });
+    const write = vi.fn();
+    const setExitCode = vi.fn();
+
+    await runQdrantMigrateCollection(migrateArgs({ verify: true, allTeams: true }), {
+      env: LOCAL_ENV,
+      createClient: (opts) => (opts.collection === 'events' ? source.client : target.client),
+      write,
+      setExitCode,
+    });
+
+    expect(source.scrollPoints).toHaveBeenCalledWith(
+      expect.objectContaining({ unfiltered: true, withPayload: ['team_id'] }),
+    );
+    expect(target.scrollPoints).toHaveBeenCalledWith(
+      expect.objectContaining({ unfiltered: true, withPayload: ['team_id'] }),
+    );
+    expect(source.countPoints).toHaveBeenCalledWith(TEAM);
+    expect(source.countPoints).toHaveBeenCalledWith(teamB);
+    expect(target.countPoints).toHaveBeenCalledWith(teamB);
+    const output = JSON.parse(write.mock.calls[0]?.[0] as string) as {
+      verifyTeamIds: string[];
+      verify: { matched: boolean; extraInTarget?: string[] };
+    };
+    expect(output.verifyTeamIds).toEqual([TEAM, teamB]);
+    expect(output.verify.matched).toBe(false);
     expect(setExitCode).toHaveBeenCalledWith(1);
   });
 
