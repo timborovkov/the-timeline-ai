@@ -382,14 +382,14 @@ describe('chatStructured', () => {
       { fetch: fetchStub },
     );
 
-    expect(result.model).toBe('deepseek/deepseek-v4-flash-0731');
+    expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
     expect(result.object.facts[0]).toMatchObject({
       statement: 'Mikael Rintala shared a Google Drive folder for AuditAI.',
       mentions: [{ name: 'Mikael Rintala', type: 'person', role: 'subject' }],
     });
     expect(requests).toHaveLength(1);
     const body = openRouterRequestSchema.parse(requests[0]);
-    expect(body.model).toBe('deepseek/deepseek-v4-flash-0731');
+    expect(body.model).toBe(TIMELINE_MODELS.extraction.id);
     expect(
       body.messages.some((message) => String(message.content).toLowerCase().includes('json')),
     ).toBe(true);
@@ -405,6 +405,55 @@ describe('chatStructured', () => {
     );
     expect(factSchema.properties).toHaveProperty('statement');
     expect(factSchema.properties).toHaveProperty('mentions');
+  });
+
+  it('normalizes wrapped task-category JSON before accepting the object', async () => {
+    const fetchStub: typeof fetch = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-task-category-repair',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.taskCategorization.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content:
+                    '```json\n{"reasoning":"customer work","result":{"predictions":[{"key":"0:0","category":"Customer Success","confidence":"0.91"}]}}\n```',
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    const result = await chatStructured(
+      {
+        schema: z.object({
+          predictions: z.array(
+            z.object({
+              key: z.string(),
+              category: z.literal('customer_success'),
+              confidence: z.number(),
+            }),
+          ),
+        }),
+        prompt: 'Classify the task.',
+        instructions: 'Return schema-valid JSON.',
+        model: TIMELINE_MODELS.taskCategorization.id,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.object).toEqual({
+      predictions: [{ key: '0:0', category: 'customer_success', confidence: 0.91 }],
+    });
   });
 
   it('falls back to json_object mode when OpenRouter rejects strict json_schema', async () => {
@@ -1153,7 +1202,7 @@ describe('chatStructured', () => {
           'Current event: Tim met Apple about SaaS licensing. Return one explicit fact with mentions.',
       });
 
-      expect(result.model).toBe('deepseek/deepseek-v4-flash-0731');
+      expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
       expect(result.object.facts.length).toBeGreaterThan(0);
       const fact = result.object.facts[0];
       expect(fact).toBeDefined();

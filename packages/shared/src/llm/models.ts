@@ -19,37 +19,37 @@ export interface TimelineModelConfig {
 
 export const TIMELINE_MODELS = {
   extraction: {
-    id: 'deepseek/deepseek-v4-flash-0731',
+    id: 'deepseek/deepseek-v4.1-flash-1017',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   structuredFallback: {
-    id: 'deepseek/deepseek-v4-pro',
+    id: 'deepseek/deepseek-v4-pro-0813',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   agent: {
-    id: 'deepseek/deepseek-v4-flash-0731',
+    id: 'deepseek/deepseek-v4.1-flash-1017',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   summarization: {
-    id: 'deepseek/deepseek-v4-flash-0731',
+    id: 'deepseek/deepseek-v4.1-flash-1017',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools'],
   },
   taskCategorization: {
-    id: 'deepseek/deepseek-v4-flash-0731',
+    id: 'deepseek/deepseek-v4.1-flash-1017',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured'],
   },
   vision: {
-    id: 'google/gemini-3.5-flash',
+    id: 'google/gemini-3.8-flash',
     provider: 'openrouter',
     contextWindowTokens: 1_048_576,
     capabilities: ['chat', 'structured', 'tools', 'vision', 'file', 'audio', 'video'],

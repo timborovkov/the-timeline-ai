@@ -9,7 +9,11 @@ import {
   type TaskCategoryBatchPrediction,
   type TaskCategoryPacket,
 } from '#src/task-categories/classifier.js';
-import { TASK_CATEGORY_TAXONOMY_VERSION, type TaskCategory } from '#src/task-categories/types.js';
+import {
+  TASK_CATEGORY_TAXONOMY_VERSION,
+  taskCategorySchema,
+  type TaskCategory,
+} from '#src/task-categories/types.js';
 
 export type TaskProposalClassifier = (
   packet: TaskCategoryPacket,
@@ -23,6 +27,33 @@ function recordFromUnknown(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function stampTaskProposal(
+  payload: Record<string, unknown>,
+  prediction: { category: string; confidence: number; model: string },
+  packet: TaskCategoryPacket,
+): Record<string, unknown> {
+  const category = taskCategorySchema.safeParse(prediction.category);
+  const model = prediction.model.trim();
+  if (
+    !category.success ||
+    !Number.isFinite(prediction.confidence) ||
+    prediction.confidence < 0 ||
+    prediction.confidence > 1 ||
+    !model
+  ) {
+    throw new Error('Task category classification returned an unusable prediction');
+  }
+  return {
+    ...payload,
+    taskCategory: category.data,
+    taskCategoryConfidence: prediction.confidence,
+    taskCategoryModel: model,
+    taskCategoryMode: 'automatic' as const,
+    taskCategoryInputHash: taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id),
+    taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
+  };
 }
 
 export async function enrichTaskProposalCategory(input: {
@@ -46,20 +77,8 @@ export async function enrichTaskProposalCategory(input: {
           ? payload.createProjectName
           : null,
   });
-  try {
-    const prediction = await (input.classify ?? classifyTaskCategory)(packet);
-    return {
-      ...payload,
-      taskCategory: prediction.category,
-      taskCategoryConfidence: prediction.confidence,
-      taskCategoryModel: prediction.model,
-      taskCategoryMode: 'automatic',
-      taskCategoryInputHash: taskCategoryInputHash(packet, TIMELINE_MODELS.taskCategorization.id),
-      taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
-    };
-  } catch {
-    return payload;
-  }
+  const prediction = await (input.classify ?? classifyTaskCategory)(packet);
+  return stampTaskProposal(payload, prediction, packet);
 }
 
 export async function enrichTaskProposalCategories(input: {
@@ -97,28 +116,21 @@ export async function enrichTaskProposalCategories(input: {
       }),
     };
   });
-  try {
-    const predictions = await (input.classify ?? classifyTaskCategories)(items);
-    const predictionByKey = new Map(predictions.map((prediction) => [prediction.key, prediction]));
-    for (const item of items) {
-      const prediction = predictionByKey.get(item.key);
-      const payload = payloads.get(item.key);
-      if (!prediction || !payload) continue;
-      payloads.set(item.key, {
-        ...payload,
-        taskCategory: prediction.category,
-        taskCategoryConfidence: prediction.confidence,
-        taskCategoryModel: prediction.model,
-        taskCategoryMode: 'automatic',
-        taskCategoryInputHash: taskCategoryInputHash(
-          item.packet,
-          TIMELINE_MODELS.taskCategorization.id,
-        ),
-        taskCategoryTaxonomyVersion: TASK_CATEGORY_TAXONOMY_VERSION,
-      });
+  const predictions = await (input.classify ?? classifyTaskCategories)(items);
+  const predictionByKey = new Map<string, (typeof predictions)[number]>();
+  for (const prediction of predictions) {
+    if (predictionByKey.has(prediction.key)) {
+      throw new Error('Task category classification returned a duplicate proposal key');
     }
-    return payloads;
-  } catch {
-    return payloads;
+    predictionByKey.set(prediction.key, prediction);
   }
+  for (const item of items) {
+    const prediction = predictionByKey.get(item.key);
+    const payload = payloads.get(item.key);
+    if (!prediction || !payload) {
+      throw new Error('Task category classification omitted a task proposal');
+    }
+    payloads.set(item.key, stampTaskProposal(payload, prediction, item.packet));
+  }
+  return payloads;
 }

@@ -204,6 +204,9 @@ function requireLiveEnv(): void {
 function liveEnv() {
   return {
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    // The master switch defaults off. This eval asserts every created task
+    // carries a task-categories-v1 stamp, so classification has to run.
+    TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
   } as never;
 }
 
