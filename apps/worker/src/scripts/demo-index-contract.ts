@@ -132,30 +132,26 @@ export function assertExpectedDemoVectorSources(rows: DemoVectorRows): void {
 
 export function buildDemoVectorJobs(teamId: string, rows: DemoVectorRows): queue.EmbedJobData[] {
   return [
-    ...rows.rawEvents.map(
-      ({ id }): queue.EmbedRawEventJobData => ({ scope: 'raw_event', rawEventId: id, teamId }),
-    ),
-    ...rows.facts.map(
-      ({ id, rawEventId }): queue.EmbedFactJobData => ({
-        scope: 'fact',
-        factId: id,
-        rawEventId,
-        teamId,
-      }),
-    ),
-    ...rows.documentChunks.map(
-      ({ id }): queue.EmbedDocChunkJobData => ({
-        scope: 'doc_chunk',
-        documentChunkId: id,
-        teamId,
-      }),
-    ),
-    ...rows.meetingChunks.map(
-      ({ id }): queue.EmbedMeetingChunkJobData => ({
-        scope: 'meeting_chunk',
-        meetingChunkId: id,
-        teamId,
-      }),
-    ),
+    ...rows.rawEvents.map(({ id }): queue.EmbedRawEventJobData => ({
+      scope: 'raw_event',
+      rawEventId: id,
+      teamId,
+    })),
+    ...rows.facts.map(({ id, rawEventId }): queue.EmbedFactJobData => ({
+      scope: 'fact',
+      factId: id,
+      rawEventId,
+      teamId,
+    })),
+    ...rows.documentChunks.map(({ id }): queue.EmbedDocChunkJobData => ({
+      scope: 'doc_chunk',
+      documentChunkId: id,
+      teamId,
+    })),
+    ...rows.meetingChunks.map(({ id }): queue.EmbedMeetingChunkJobData => ({
+      scope: 'meeting_chunk',
+      meetingChunkId: id,
+      teamId,
+    })),
   ];
 }

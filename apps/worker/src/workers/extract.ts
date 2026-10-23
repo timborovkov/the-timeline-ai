@@ -293,7 +293,7 @@ export async function processExtractJobForTests(
   const result = await (io.chatStructured ?? llm.chatStructured)({
     schema: extract.extractionResultSchema,
     prompt,
-    system: extract.EXTRACTION_SYSTEM_PROMPT,
+    instructions: extract.EXTRACTION_SYSTEM_PROMPT,
     model: modelId,
   });
   const resultModelVersion = makeExtractionModelVersion(result.model);

@@ -8,12 +8,7 @@ export const BILLING_ENTITLEMENTS_VERSION = 'v1' as const;
 export type BillingPlanId = 'free' | 'payg' | 'team' | 'business' | 'enterprise';
 
 export type BillingMeterId =
-  | 'ai'
-  | 'recall_minutes'
-  | 'email_units'
-  | 'storage_gb_month'
-  | 'accepted_sources'
-  | 'member_days';
+  'ai' | 'recall_minutes' | 'email_units' | 'storage_gb_month' | 'accepted_sources' | 'member_days';
 
 export interface PlanCommercial {
   id: BillingPlanId;

@@ -12,20 +12,10 @@ type WebhookDeliveryRow = typeof integrationWebhookDeliveries.$inferSelect;
 type WebhookDeliveryTargetRow = typeof integrationWebhookDeliveryTargets.$inferSelect;
 
 type WebhookDeliveryStatus =
-  | 'accepted'
-  | 'processing'
-  | 'processed'
-  | 'ignored'
-  | 'failed'
-  | 'dead_lettered';
+  'accepted' | 'processing' | 'processed' | 'ignored' | 'failed' | 'dead_lettered';
 
 type WebhookDeliveryTargetStatus =
-  | 'pending'
-  | 'processing'
-  | 'processed'
-  | 'ignored'
-  | 'failed'
-  | 'dead_lettered';
+  'pending' | 'processing' | 'processed' | 'ignored' | 'failed' | 'dead_lettered';
 
 export interface WebhookDeliveryTargetInput {
   teamId: string;

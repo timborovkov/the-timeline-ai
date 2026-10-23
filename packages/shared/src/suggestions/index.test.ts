@@ -6485,6 +6485,226 @@ describe('suggestion scope', () => {
     expect(chatStructured).toHaveBeenCalledTimes(2);
   });
 
+  it('applies reviewer feedback when only the proposal timestamp changed during the rewrite', async () => {
+    let itemId = '';
+    const chatStructured = vi.fn(async () => {
+      if (chatStructured.mock.calls.length === 1 && itemId) {
+        await db
+          .update(agentSuggestionItems)
+          .set({
+            updatedAt: new Date('2026-08-28T14:06:22.000Z'),
+            metadata: { reconciliation_run_id: 'run-during-revision' },
+          })
+          .where(eq(agentSuggestionItems.id, itemId));
+      }
+      return {
+        object: {
+          title: 'Assign Framer website edits to Otto',
+          description: 'Otto owns the Certor Framer work.',
+          proposedPayload: {
+            canonicalName: 'Learn to use Framer to edit Certor website',
+            assigneeUserId: REVIEWER_ID,
+          },
+          explanation: 'Assigned the task to Otto as requested.',
+        },
+        model: 'test-timestamp-only-proposal-revision',
+      };
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Framer website edits',
+      dedupeKey: 'timestamp-only-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Learn to use Framer to edit Certor website',
+          dedupeKey: 'timestamp-only-reviewer-revision:item',
+          proposedPayload: {
+            canonicalName: 'Learn to use Framer to edit Certor website',
+          },
+        },
+      ],
+    });
+    itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: 'Assign this to Otto',
+      }),
+    ).resolves.toMatchObject({
+      title: 'Assign Framer website edits to Otto',
+      proposedPayload: {
+        canonicalName: 'Learn to use Framer to edit Certor website',
+        assigneeUserId: REVIEWER_ID,
+      },
+    });
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+    const [item] = await db
+      .select({ metadata: agentSuggestionItems.metadata })
+      .from(agentSuggestionItems)
+      .where(eq(agentSuggestionItems.id, itemId));
+    const metadata = item?.metadata as Record<string, unknown>;
+    expect(metadata.reconciliation_run_id).toBe('run-during-revision');
+    expect(metadata.proposal_edited_by_user_id).toBe(USER_ID);
+  });
+
+  it('applies reviewer feedback when the stored updated_at has sub-millisecond precision', async () => {
+    const chatStructured = vi.fn(() =>
+      Promise.resolve({
+        object: {
+          title: 'Call Tecci',
+          description: 'Corrected the company name.',
+          proposedPayload: { canonicalName: 'Call Tecci' },
+          explanation: 'Corrected Tec to Tecci.',
+        },
+        model: 'test-microsecond-proposal-revision',
+      }),
+    );
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Tec',
+      dedupeKey: 'microsecond-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Tec',
+          dedupeKey: 'microsecond-reviewer-revision:item',
+          proposedPayload: { canonicalName: 'Call Tec' },
+        },
+      ],
+    });
+    const itemId = bundle.items[0]?.id ?? '';
+    await db
+      .update(agentSuggestionItems)
+      .set({ updatedAt: sql`TIMESTAMPTZ '2026-08-28 14:06:22.123456+00'` })
+      .where(eq(agentSuggestionItems.id, itemId));
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: "It's Tecci, not Tec",
+      }),
+    ).resolves.toMatchObject({
+      title: 'Call Tecci',
+      proposedPayload: { canonicalName: 'Call Tecci' },
+    });
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns null when the proposal is accepted while it is being rewritten', async () => {
+    let itemId = '';
+    const chatStructured = vi.fn(async () => {
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          status: 'accepted',
+          resolvedAt: new Date('2026-08-28T14:07:00.000Z'),
+          updatedAt: new Date('2026-08-28T14:07:00.000Z'),
+        })
+        .where(eq(agentSuggestionItems.id, itemId));
+      return {
+        object: {
+          title: 'Call Tecci',
+          description: 'Corrected the company name.',
+          proposedPayload: { canonicalName: 'Call Tecci' },
+          explanation: 'Corrected Tec to Tecci.',
+        },
+        model: 'test-accepted-during-proposal-revision',
+      };
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Tec',
+      dedupeKey: 'accepted-during-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Tec',
+          dedupeKey: 'accepted-during-reviewer-revision:item',
+          proposedPayload: { canonicalName: 'Call Tec' },
+        },
+      ],
+    });
+    itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: "It's Tecci, not Tec",
+      }),
+    ).resolves.toBeNull();
+    expect(chatStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives up when the proposal payload changes during every rewrite', async () => {
+    let itemId = '';
+    const chatStructured = vi.fn(async () => {
+      await db
+        .update(agentSuggestionItems)
+        .set({
+          proposedPayload: {
+            canonicalName: 'Call Tec',
+            taskCategory: chatStructured.mock.calls.length === 1 ? 'sales' : 'ops',
+            taskCategoryMode: 'manual',
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(agentSuggestionItems.id, itemId));
+      return {
+        object: {
+          title: 'Call Tecci',
+          description: 'Corrected the company name.',
+          proposedPayload: { canonicalName: 'Call Tecci' },
+          explanation: 'Corrected Tec to Tecci.',
+        },
+        model: 'test-exhausted-proposal-revision',
+      };
+    });
+    const scope = withTeam(db as never, TEAM_ID, USER_ID, {
+      chatStructured: chatStructured as never,
+    });
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Call Tec',
+      dedupeKey: 'exhausted-reviewer-revision',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'task',
+          title: 'Call Tec',
+          dedupeKey: 'exhausted-reviewer-revision:item',
+          proposedPayload: { canonicalName: 'Call Tec' },
+        },
+      ],
+    });
+    itemId = bundle.items[0]?.id ?? '';
+
+    await expect(
+      scope.suggestions.reviseSuggestionItem({
+        itemId,
+        feedback: "It's Tecci, not Tec",
+      }),
+    ).rejects.toMatchObject({
+      name: 'ProposalRevisionConflictError',
+      code: 'TIMELINE_PROPOSAL_REVISION_CONFLICT',
+      message: 'Proposal changed repeatedly while it was being revised. Try again.',
+    });
+    expect(chatStructured).toHaveBeenCalledTimes(2);
+  });
+
   it('preserves concurrent category and project revisions to the same task proposal', async () => {
     const ownerScope = withTeam(db as never, TEAM_ID, USER_ID);
     const reviewerScope = withTeam(db as never, TEAM_ID, REVIEWER_ID);
@@ -7573,7 +7793,7 @@ describe('suggestion scope', () => {
         value: '@mikaelrintala',
         actor: { kind: 'agent', userId: null },
       }),
-    ).rejects.toThrow(/another person/);
+    ).rejects.toThrow(/another object/);
 
     const result = await pg.query<{ entity_id: string }>(
       `SELECT entity_id
@@ -9844,51 +10064,49 @@ describe('suggestion scope', () => {
   });
 
   it('accepts recurring calendar create suggestions and materializes occurrences', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'));
-    try {
-      const scope = withTeam(db as never, TEAM_ID, USER_ID);
-      const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
-        source: 'background',
-        title: 'Create recurring daily call',
-        dedupeKey: 'calendar-recurring-create',
-        items: [
-          {
-            operation: 'create',
-            targetKind: 'calendar_event',
+    const scope = withTeam(db as never, TEAM_ID, USER_ID);
+    const startAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    startAt.setUTCHours(16, 0, 0, 0);
+    const endAt = new Date(startAt.getTime() + 30 * 60 * 1000);
+    const dayMs = 24 * 60 * 60 * 1000;
+    const bundle = await scope.suggestions.createOrMergeSuggestionBundle({
+      source: 'background',
+      title: 'Create recurring daily call',
+      dedupeKey: 'calendar-recurring-create',
+      items: [
+        {
+          operation: 'create',
+          targetKind: 'calendar_event',
+          title: 'Daily call',
+          dedupeKey: 'calendar-recurring-create:item',
+          proposedPayload: {
             title: 'Daily call',
-            dedupeKey: 'calendar-recurring-create:item',
-            proposedPayload: {
-              title: 'Daily call',
-              startAt: '2026-07-01T16:00:00.000Z',
-              endAt: '2026-07-01T16:30:00.000Z',
-              timezone: 'UTC',
-              visibility: 'team',
-              rrule: 'FREQ=DAILY;COUNT=3',
-            },
+            startAt: startAt.toISOString(),
+            endAt: endAt.toISOString(),
+            timezone: 'UTC',
+            visibility: 'team',
+            rrule: 'FREQ=DAILY;COUNT=3',
           },
-        ],
-      });
+        },
+      ],
+    });
 
-      await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
-        true,
-      );
+    await expect(scope.suggestions.acceptSuggestionItem(bundle.items[0]?.id ?? '')).resolves.toBe(
+      true,
+    );
 
-      const result = await pg.query<{ start_at: Date; rrule: string | null }>(
-        `SELECT start_at, rrule
-         FROM calendar_events
-         WHERE team_id = '${TEAM_ID}' AND title = 'Daily call' AND deleted_at IS NULL
-         ORDER BY start_at`,
-      );
-      expect(result.rows.map((row) => new Date(row.start_at).toISOString())).toEqual([
-        '2026-07-01T16:00:00.000Z',
-        '2026-07-02T16:00:00.000Z',
-        '2026-07-03T16:00:00.000Z',
-      ]);
-      expect(result.rows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=3');
-    } finally {
-      vi.useRealTimers();
-    }
+    const result = await pg.query<{ start_at: Date; rrule: string | null }>(
+      `SELECT start_at, rrule
+       FROM calendar_events
+       WHERE team_id = '${TEAM_ID}' AND title = 'Daily call' AND deleted_at IS NULL
+       ORDER BY start_at`,
+    );
+    expect(result.rows.map((row) => new Date(row.start_at).toISOString())).toEqual([
+      startAt.toISOString(),
+      new Date(startAt.getTime() + dayMs).toISOString(),
+      new Date(startAt.getTime() + 2 * dayMs).toISOString(),
+    ]);
+    expect(result.rows[0]?.rrule).toBe('RRULE:FREQ=DAILY;COUNT=3');
   });
 
   it('confirms one tentative proposal slot and cancels sibling slots', async () => {
@@ -11068,8 +11286,7 @@ describe('suggestion scope', () => {
       .from(reconciliationOutputs)
       .where(eq(reconciliationOutputs.id, outputId));
     const outputPayload = output?.payload as
-      | { proposed_payload?: Record<string, unknown> }
-      | undefined;
+      { proposed_payload?: Record<string, unknown> } | undefined;
     expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);
@@ -11152,8 +11369,7 @@ describe('suggestion scope', () => {
       .from(reconciliationOutputs)
       .where(eq(reconciliationOutputs.id, outputId));
     const outputPayload = output?.payload as
-      | { proposed_payload?: Record<string, unknown> }
-      | undefined;
+      { proposed_payload?: Record<string, unknown> } | undefined;
     expect(outputPayload?.proposed_payload).not.toHaveProperty('sourceEventId');
 
     await expect(scope.suggestions.acceptSuggestionItem(itemId ?? '')).resolves.toBe(true);

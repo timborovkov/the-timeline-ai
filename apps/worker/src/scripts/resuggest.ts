@@ -180,7 +180,7 @@ async function recoverConversationReview(
         metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
         updatedAt: args.requestedAt,
       },
-      where: recoverableAnchorCondition(candidate),
+      setWhere: recoverableAnchorCondition(candidate),
     })
     .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
   if (!review) return null;

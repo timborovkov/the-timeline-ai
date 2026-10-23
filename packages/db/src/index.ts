@@ -36,9 +36,7 @@ export function getDb(): Db {
 }
 
 export function resolveAppApplicationName():
-  | 'timeline-web'
-  | 'timeline-worker'
-  | 'timeline-script' {
+  'timeline-web' | 'timeline-worker' | 'timeline-script' {
   const service = process.env.RAILWAY_SERVICE_NAME?.toLowerCase();
   if (service?.includes('worker')) return 'timeline-worker';
   if (service?.includes('web')) return 'timeline-web';

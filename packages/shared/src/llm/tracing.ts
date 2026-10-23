@@ -22,7 +22,7 @@ type LangSmithConfig = Pick<
   | 'processChildLLMRunInputs'
   | 'processChildLLMRunOutputs'
 >;
-type TranscribeParams = Parameters<typeof ai.experimental_transcribe>[0];
+type TranscribeParams = Parameters<typeof ai.transcribe>[0];
 
 export interface LangSmithRunOptions {
   name: string;
@@ -39,7 +39,7 @@ const tracedAi = wrapAISDK(ai);
 
 export const generateText = tracedAi.generateText;
 // generateObject remains the repo's structured-output primitive until the
-// AI SDK v6 output replacement is stable enough for extraction.
+// AI SDK output replacement is stable enough for extraction.
 // eslint-disable-next-line @typescript-eslint/no-deprecated
 export const generateObject = tracedAi.generateObject;
 export const streamText = tracedAi.streamText;
@@ -142,9 +142,9 @@ function sanitizeContentPart(part: unknown): unknown {
   }
   if (record.type === 'image') {
     return {
-      type: 'image',
+      type: 'file',
       mediaType: record.mediaType,
-      image: summarizeBinary(record.image),
+      data: summarizeBinary(record.image),
     };
   }
   return part;
@@ -194,12 +194,12 @@ function sanitizeTranscribeOutputs(outputs: { text?: unknown }): Record<string, 
   return { text: outputs.text };
 }
 
-export async function experimental_transcribe(
-  params: Parameters<typeof ai.experimental_transcribe>[0],
+export async function transcribe(
+  params: Parameters<typeof ai.transcribe>[0],
   options: LangSmithRunOptions,
-): ReturnType<typeof ai.experimental_transcribe> {
+): ReturnType<typeof ai.transcribe> {
   const base = langSmithTraceableConfig(options);
-  const traced = traceable(ai.experimental_transcribe, {
+  const traced = traceable(ai.transcribe, {
     ...base,
     run_type: 'llm',
     processInputs: sanitizeTranscribeInputs,

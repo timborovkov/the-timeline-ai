@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
+import { type FilePart, type LanguageModel } from 'ai';
 
 import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
@@ -128,19 +128,18 @@ export async function extractTextFromMedia(
     );
   }
 
-  // ai-sdk discriminates image vs file content parts. Images go through
-  // the vision endpoint; PDFs are file attachments that vision-capable
-  // models (Claude 3.5+, GPT-4o, Gemini 1.5+) read natively. Sparse PDFs
-  // from Daytona pass rendered page PNGs as multiple image parts.
-  const mediaParts: (ImagePart | FilePart)[] =
+  // AI SDK 7 sends images as file parts with an image mediaType. PDFs stay
+  // file attachments that vision-capable models read natively. Sparse PDFs
+  // from Daytona pass rendered page PNGs as multiple image file parts.
+  const mediaParts: FilePart[] =
     pageImages.length > 0
       ? pageImages.map((image) => ({
-          type: 'image' as const,
-          image,
+          type: 'file' as const,
+          data: image,
           mediaType: 'image/png',
         }))
       : isImage
-        ? [{ type: 'image' as const, image: input.body, mediaType }]
+        ? [{ type: 'file' as const, data: input.body, mediaType }]
         : [
             {
               type: 'file' as const,
@@ -157,7 +156,7 @@ export async function extractTextFromMedia(
       return withAiMetering({ operationClass: 'vision', model: modelId }, async () => {
         const generated = await generateText({
           model,
-          system: SYSTEM_PROMPT,
+          instructions: SYSTEM_PROMPT,
           messages: [
             {
               role: 'user',
@@ -190,8 +189,8 @@ export async function extractTextFromMedia(
           value: generated,
           finish: openRouterFinishFromAiResult({
             usage: generated.usage,
-            providerMetadata: generated.providerMetadata,
-            totalUsage: generated.totalUsage,
+            providerMetadata: generated.finalStep.providerMetadata,
+            totalUsage: generated.usage,
           }),
         };
       });
