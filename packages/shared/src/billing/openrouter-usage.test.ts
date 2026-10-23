@@ -61,6 +61,14 @@ describe('openRouterUsdCostFromFinishEvent', () => {
     expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromCaughtError(err) ?? {})).toBe(0.04);
   });
 
+  it('prefers accumulated openRouterUsd over one nested attempt', () => {
+    const err = Object.assign(new AggregateError([new Error('fallback')], 'failed'), {
+      openRouterUsd: 0.05,
+      usage: { raw: { cost: 0.01 } },
+    });
+    expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromCaughtError(err) ?? {})).toBe(0.05);
+  });
+
   it('walks AggregateError causes for nested usage', () => {
     const inner = Object.assign(new Error('invalid JSON'), {
       usage: { raw: { cost: 0.01 } },

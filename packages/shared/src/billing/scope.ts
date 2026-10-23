@@ -902,6 +902,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
       source?: string;
       deliverySurface?: string;
       metadata?: Record<string, unknown>;
+      /** Price this settlement as the plan in force on a replayed day. */
+      pricingPlanId?: BillingPlanId;
+      /** Included-discount pool for that day. Skips the live balance when set. */
+      historicalIncludedDiscountCents?: number;
+      pricingPeriodYm?: string;
     }) {
       await ensureMember();
       await ensureAccount();
@@ -953,8 +958,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
           };
           metersByPeriod.set(row.periodYm, current);
         }
-        const entitlementsPlanId = effectiveBillingPlanId(account);
+        const livePlanId = effectiveBillingPlanId(account);
+        const entitlementsPlanId = input.pricingPlanId ?? livePlanId;
         const commercial = resolveTeamCommercialTerms(account);
+        const meteredDiscountPercent =
+          input.pricingPlanId && input.pricingPlanId !== livePlanId
+            ? 0
+            : commercial.meteredDiscountPercent;
         const comped = compSuppressesPolarCharges(account);
         const segmentCharges = segments.map((segment) => {
           const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
@@ -983,7 +993,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               listChargeCents,
               meters: metersBefore,
             }),
-            commercial.meteredDiscountPercent,
+            meteredDiscountPercent,
           );
           const polarUnits = paygOverageNativeUnits({
             planId: entitlementsPlanId,
@@ -1000,9 +1010,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
         );
         const polarUnits = segmentCharges.reduce((sum, row) => sum + row.polarUnits, 0);
         const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
+        const historicalDiscount = input.historicalIncludedDiscountCents;
         const { discountCents, invoiceCents } = splitDiscountAndWallet({
           chargeCents: actualChargeCents,
-          includedDiscountRemainingCents: account.includedDiscountRemainingCents,
+          includedDiscountRemainingCents:
+            historicalDiscount ?? account.includedDiscountRemainingCents,
           meterId: input.meterId,
         });
         const enterpriseContract =
@@ -1052,7 +1064,12 @@ export function createBillingScope(deps: BillingScopeDeps) {
               };
 
         const applyCharges = !accountUsesShadowBilling(account);
-        const collectDiscount = applyCharges && !enterpriseContract && !comped && discountCents > 0;
+        const collectDiscount =
+          historicalDiscount === undefined &&
+          applyCharges &&
+          !enterpriseContract &&
+          !comped &&
+          discountCents > 0;
         const periodSpendCents = countersBefore.reduce(
           (sum, row) => sum + row.customerChargeCents,
           0,
@@ -1085,6 +1102,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
             reservationId: reservation[0]?.id ?? null,
             metadata: {
               ...(input.metadata ?? {}),
+              ...(input.pricingPlanId ? { pricing_plan_id: input.pricingPlanId } : {}),
+              ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
               list_charge_cents: listChargeCents,
               discount_cents: discountCents,
               invoice_cents: invoiceCents,

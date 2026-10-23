@@ -16,6 +16,7 @@ export async function expireStaleBillingReservations(input: {
           eq(billingUsageReservations.state, 'reserved'),
           lt(billingUsageReservations.expiresAt, new Date()),
           sql`coalesce(${billingUsageReservations.metadata}->>'pending_recall_leave_bot_id', '') = ''`,
+          sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') <> 'true'`,
           ...(input.teamId ? [eq(billingUsageReservations.teamId, input.teamId)] : []),
         ),
       )

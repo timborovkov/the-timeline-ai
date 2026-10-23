@@ -2,6 +2,7 @@ import { PGlite } from '@electric-sql/pglite';
 import {
   type Db,
   documentVersions,
+  documents,
   reconciliationEvidence,
   reconciliationEvidenceAnchors,
 } from '@timeline/db';
@@ -968,6 +969,18 @@ describe('document scope — soft delete + audit trail', () => {
     await scope.restoreDocument(created.document.id);
     const remaining = await scope.listDocuments({ folderId: null });
     expect(remaining.map((d) => d.id)).toContain(created.document.id);
+    const [row] = await db.select().from(documents).where(eq(documents.id, created.document.id));
+    expect(row?.deletedAt).toBeNull();
+    const metadata: Record<string, unknown> =
+      row?.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+        ? (row.metadata as Record<string, unknown>)
+        : {};
+    const intervals = metadata.absence_intervals;
+    expect(Array.isArray(intervals)).toBe(true);
+    if (!Array.isArray(intervals)) return;
+    expect(intervals).toHaveLength(1);
+    const interval = intervals[0] as { startedAt?: string; endedAt?: string };
+    expect(Date.parse(interval.startedAt ?? '')).toBeLessThan(Date.parse(interval.endedAt ?? ''));
   });
 
   it('refuses restore when the restored bytes would exceed Free storage', async () => {

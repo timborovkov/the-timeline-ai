@@ -14,6 +14,8 @@ export interface TranscribeInput {
   /** ISO-639-1 language hint (e.g. 'fi', 'en', 'de'). Improves accuracy
    *  for non-English audio. Omit for auto-detection. */
   language?: string;
+  /** Stable billing id for this chunk. A retry of the same chunk reuses it. */
+  operationId?: string;
 }
 
 export interface TranscribeResult {
@@ -115,38 +117,47 @@ export async function transcribeAudio(
 ): Promise<TranscribeResult> {
   const modelId = resolveModelId();
   return wrapAiFailure({ operation: 'llm.transcribeAudio', model: modelId }, async () => {
-    return withAiMetering({ operationClass: 'transcription', model: modelId }, async () => {
-      if (!deps.model) {
-        return transcribeWithOpenRouterJson(input, {
-          modelId,
-          fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
-        });
-      }
-      const model = deps.model;
-      const result = await tracedTranscribe(
-        {
-          model,
-          audio: input.audio,
-          ...(input.language ? { providerOptions: { openai: { language: input.language } } } : {}),
-        },
-        {
-          name: 'llm.transcribeAudio',
-          model: modelId,
-          metadata: {
-            operation: 'transcribe_audio',
-            audio_bytes: input.audio.byteLength,
-            language_hint: Boolean(input.language),
+    return withAiMetering(
+      {
+        operationClass: 'transcription',
+        model: modelId,
+        ...(input.operationId ? { operationId: input.operationId } : {}),
+      },
+      async () => {
+        if (!deps.model) {
+          return transcribeWithOpenRouterJson(input, {
+            modelId,
+            fetch: deps.fetch ?? globalThis.fetch.bind(globalThis),
+          });
+        }
+        const model = deps.model;
+        const result = await tracedTranscribe(
+          {
+            model,
+            audio: input.audio,
+            ...(input.language
+              ? { providerOptions: { openai: { language: input.language } } }
+              : {}),
           },
-        },
-      );
-      return {
-        value: { text: result.text, model: modelId },
-        finish: openRouterFinishFromAiResult({
-          usage: undefined,
-          providerMetadata: result.providerMetadata,
-          totalUsage: undefined,
-        }),
-      };
-    });
+          {
+            name: 'llm.transcribeAudio',
+            model: modelId,
+            metadata: {
+              operation: 'transcribe_audio',
+              audio_bytes: input.audio.byteLength,
+              language_hint: Boolean(input.language),
+            },
+          },
+        );
+        return {
+          value: { text: result.text, model: modelId },
+          finish: openRouterFinishFromAiResult({
+            usage: undefined,
+            providerMetadata: result.providerMetadata,
+            totalUsage: undefined,
+          }),
+        };
+      },
+    );
   });
 }

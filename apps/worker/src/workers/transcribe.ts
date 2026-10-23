@@ -50,6 +50,7 @@ export interface TranscribeWorkerIO {
     audio: Buffer;
     format?: llm.AudioFormat;
     language?: string;
+    operationId?: string;
   }): Promise<{ text: string; model: string }>;
   splitAudio(input: { audioKey: string; audio: Buffer }): Promise<Buffer[]>;
   enqueueExtract(input: queue.ExtractJobData): Promise<void>;
@@ -93,6 +94,7 @@ export async function processTranscribeJobForTests(
   deps: TranscribeWorkerDeps,
   data: queue.TranscribeJobData,
   io: TranscribeWorkerIO = defaultIO(),
+  options?: { billingOperationId?: string },
 ): Promise<{ rawEventId: string; model?: string }> {
   const { rawEventId, audioKey } = data;
   const head = await io.headObject({ audioKey });
@@ -128,12 +130,15 @@ export async function processTranscribeJobForTests(
     typeof sourceMetadata.audio_note_text === 'string' ? sourceMetadata.audio_note_text.trim() : '';
   const languageHint = transcriptionLanguageHint(sourceMetadata);
   const transcriptions = [];
-  for (const audio of audioChunks) {
+  for (const [index, audio] of audioChunks.entries()) {
     transcriptions.push(
       await io.transcribeAudio({
         audio,
         ...(format ? { format } : {}),
         ...(languageHint ? { language: languageHint } : {}),
+        ...(options?.billingOperationId
+          ? { operationId: `${options.billingOperationId}:${index}` }
+          : {}),
       }),
     );
   }
@@ -428,7 +433,13 @@ export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.
         deps.db,
         job.data.teamId,
         'transcription',
-        () => processTranscribeJobForTests(deps, job.data),
+        () =>
+          processTranscribeJobForTests(
+            deps,
+            job.data,
+            defaultIO(),
+            job.id ? { billingOperationId: `transcription:${job.id}` } : {},
+          ),
         workerBillingJobOptions(job, token),
       ),
     {

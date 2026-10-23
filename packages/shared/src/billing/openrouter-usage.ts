@@ -68,6 +68,13 @@ export function openRouterFinishFromAiResult(result: {
 export function openRouterFinishFromCaughtError(err: unknown): OpenRouterFinishEvent | undefined {
   const row = asRecord(err);
   if (!row) return undefined;
+  if (
+    typeof row.openRouterUsd === 'number' &&
+    Number.isFinite(row.openRouterUsd) &&
+    row.openRouterUsd > 0
+  ) {
+    return openRouterFinishFromUsdCost(row.openRouterUsd);
+  }
   const usage = row.usage ?? row.totalUsage;
   const providerMetadata = row.providerMetadata ?? row.provider_metadata;
   const response = asRecord(row.response);

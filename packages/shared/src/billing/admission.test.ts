@@ -1,5 +1,6 @@
 import { PGlite } from '@electric-sql/pglite';
-import { type Db } from '@timeline/db';
+import { billingUsageReservations, type Db } from '@timeline/db';
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -97,6 +98,40 @@ describe('billing admission helpers', () => {
     const dash = await billing.getDashboard();
     expect(dash.meters.ai?.customerChargeCents).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
     expect(dash.meters.ai?.nativeUnits).toBe(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS);
+  });
+
+  it('records Ask usage on the reservation before settlement', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const operationId = askOperationId('web', 'settle-fail');
+    expect((await reserveAskAi(billing, { operationId, deliverySurface: 'web' })).ok).toBe(true);
+    await expect(
+      settleAskAiFromOpenRouterUsd(
+        {
+          ...billing,
+          settle: () => Promise.reject(new Error('ledger down')),
+        },
+        {
+          operationId,
+          openRouterUsd: 0.05,
+          deliverySurface: 'web',
+        },
+      ),
+    ).rejects.toThrow('ledger down');
+    const [row] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(row?.state).toBe('reserved');
+    expect(row?.metadata).toMatchObject({
+      pending_settlement: true,
+      pending_openrouter_usd: 0.05,
+      pending_delivery_surface: 'web',
+    });
   });
 
   it('caps Free Recall reservation to remaining minutes', () => {

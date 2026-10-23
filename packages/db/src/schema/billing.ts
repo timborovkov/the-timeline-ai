@@ -133,6 +133,23 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Plan effective-at history. Storage replay prices a missed day with the plan
+ * that was in force then, not the live plan.
+ */
+export const billingPlanHistory = pgTable(
+  'billing_plan_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    planId: billingPlanId('plan_id').notNull(),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('billing_plan_history_team_effective_idx').on(table.teamId, table.effectiveAt)],
+);
+
 /** Append-only platform-operator history for comp and price overrides. */
 export const billingOperatorAudit = pgTable(
   'billing_operator_audit',

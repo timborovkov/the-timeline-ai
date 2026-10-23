@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { childLogger } from '#src/logger.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business' | 'enterprise';
@@ -278,6 +279,7 @@ async function upsertPaidSubscription(input: {
           updatedAt: now,
         },
       });
+    await recordBillingPlan(tx as unknown as Db, input.teamId, input.plan, now);
     return { applied: true };
   });
 }
@@ -329,6 +331,7 @@ async function cancelMatchingSubscription(input: {
           eq(teamBillingAccounts.polarSubscriptionId, input.subscriptionId),
         ),
       );
+    await recordBillingPlan(tx as unknown as Db, input.teamId, 'free');
   });
 }
 

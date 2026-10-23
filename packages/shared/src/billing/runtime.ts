@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import {
   billingMemberDayLedger,
   billingUsageCounters,
+  billingUsageLedger,
+  billingUsageReservations,
   documentVersions,
   documents,
   teamBillingAccounts,
@@ -11,10 +13,12 @@ import {
   type Db,
   type TeamMemberPriorInterval,
 } from '@timeline/db';
-import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import type { BillingReserveFailureCode } from '#src/billing/admission.js';
-
+import {
+  settleAskAiFromOpenRouterUsd,
+  type BillingReserveFailureCode,
+} from '#src/billing/admission.js';
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
@@ -36,17 +40,24 @@ import {
 } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import {
+  openRouterFinishFromCaughtError,
   openRouterUsdCostFromFinishEvent,
   type OpenRouterFinishEvent,
 } from '#src/billing/openrouter-usage.js';
 import { effectiveBillingPlanId, resolveTeamCommercialTerms } from '#src/billing/operator.js';
+import {
+  includedDiscountRemainingForReplay,
+  planIdEffectiveOnDay,
+} from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
 import { shadowBillingFromChargesEnabled } from '#src/billing/shadow.js';
+import { childLogger } from '#src/logger.js';
 
 const GIB = 1024 ** 3;
+const log = childLogger('billing:runtime');
 
 export function periodYm(date = new Date()): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -126,6 +137,10 @@ export async function settleTeamMeter(input: {
   billable?: boolean;
   /** Extra member-days already happened; persist the charge even if reserve would deny. */
   persistWhenDenied?: boolean;
+  /** Price a replayed day on the plan in force then, not the live plan. */
+  pricingPlanId?: BillingPlanId;
+  historicalIncludedDiscountCents?: number;
+  pricingPeriodYm?: string;
 }): Promise<{ ok: true; duplicate: boolean } | { ok: false; code: BillingReserveFailureCode }> {
   const userId = input.userId ?? BILLING_SYSTEM_USER_ID;
   const billing = billingScope({ db: input.db, teamId: input.teamId, userId });
@@ -138,6 +153,11 @@ export async function settleTeamMeter(input: {
     ...(input.provider ? { provider: input.provider } : {}),
     ...(input.source ? { source: input.source } : {}),
     ...(input.billable !== undefined ? { billable: input.billable } : {}),
+    ...(input.pricingPlanId ? { pricingPlanId: input.pricingPlanId } : {}),
+    ...(input.historicalIncludedDiscountCents !== undefined
+      ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
+      : {}),
+    ...(input.pricingPeriodYm ? { pricingPeriodYm: input.pricingPeriodYm } : {}),
   };
   if (input.persistWhenDenied) {
     const account = await billing.getAccount();
@@ -316,6 +336,8 @@ export async function withAiMetering<T>(
     operationClass?: string;
     model?: string;
     reservedChargeCents?: number;
+    /** Stable id for this call. Overrides the job-wide context id. */
+    operationId?: string;
   },
   fn: () => Promise<{ value: T; finish?: OpenRouterFinishEvent }>,
 ): Promise<T> {
@@ -324,7 +346,8 @@ export async function withAiMetering<T>(
     return (await fn()).value;
   }
   const operationClass = input.operationClass ?? ctx.operationClass;
-  const operationId = ctx.operationId ?? `ai:${operationClass}:${randomUUID()}`;
+  const operationId =
+    input.operationId ?? ctx.operationId ?? `ai:${operationClass}:${randomUUID()}`;
   const reservedChargeCents =
     input.reservedChargeCents ?? BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS;
   const billing = billingScope(ctx);
@@ -344,11 +367,11 @@ export async function withAiMetering<T>(
     reserved.alreadySettled === true ||
     (reserved.reused && existingMeta.provider_completed === true);
 
-  const settleCached = async (usd: number) => {
+  const settleUsd = async (settleOperationId: string, usd: number, failedAttempt: boolean) => {
     const { providerCostCents, customerChargeExactCents } =
       customerAiChargeCentsFromOpenRouterUsd(usd);
     await billing.settle({
-      operationId,
+      operationId: settleOperationId,
       meterId: 'ai',
       nativeUnits: customerChargeExactCents,
       customerChargeCents: Math.round(customerChargeExactCents),
@@ -359,14 +382,17 @@ export async function withAiMetering<T>(
       ...(ctx.source ? { source: ctx.source } : {}),
       ...(ctx.deliverySurface ? { deliverySurface: ctx.deliverySurface } : {}),
       billable: ctx.billable !== false,
-      metadata: { openrouter_usd: usd },
+      metadata: {
+        openrouter_usd: usd,
+        ...(failedAttempt ? { failed_attempt_for: operationId } : {}),
+      },
     });
   };
 
   if (skipProvider) {
     if (!reserved.alreadySettled) {
       const usd = typeof existingMeta.openrouter_usd === 'number' ? existingMeta.openrouter_usd : 0;
-      await settleCached(usd);
+      await settleUsd(operationId, usd, false);
     }
     return existingMeta.provider_value as T;
   }
@@ -376,6 +402,12 @@ export async function withAiMetering<T>(
   try {
     ({ value, finish } = await fn());
   } catch (err) {
+    const failedFinish = openRouterFinishFromCaughtError(err);
+    const failedUsd = failedFinish ? openRouterUsdCostFromFinishEvent(failedFinish) : 0;
+    if (failedUsd > 0) {
+      const attemptId = await nextFailedAttemptOperationId(ctx.db, ctx.teamId, operationId);
+      await settleUsd(attemptId, failedUsd, true);
+    }
     await billing.release(operationId);
     throw err;
   }
@@ -389,8 +421,22 @@ export async function withAiMetering<T>(
   // Keep the reservation if settle fails after OpenRouter work succeeded.
   // Releasing here would let a worker retry mint a new `ai:` operation id
   // and pay the provider a second time while the first call stays uncharged.
-  await settleCached(usd);
+  await settleUsd(operationId, usd, false);
   return value;
+}
+
+async function nextFailedAttemptOperationId(
+  db: Db,
+  teamId: string,
+  operationId: string,
+): Promise<string> {
+  const rows = await db
+    .select({ operationId: billingUsageLedger.operationId })
+    .from(billingUsageLedger)
+    .where(eq(billingUsageLedger.teamId, teamId));
+  const prefix = `${operationId}:failed:`;
+  const count = rows.filter((row) => row.operationId.startsWith(prefix)).length;
+  return `${prefix}${count + 1}`;
 }
 
 export async function snapshotTeamStorageGbMonth(input: {
@@ -398,7 +444,20 @@ export async function snapshotTeamStorageGbMonth(input: {
   teamId: string;
   day?: string;
 }): Promise<{ gb: number; settled: boolean }> {
-  const days = input.day ? [input.day] : storageSnapshotBackfillRange();
+  const days = input.day
+    ? [input.day]
+    : await absentOperationDays(
+        input.db,
+        input.teamId,
+        storageSnapshotBackfillRange(),
+        (day) => `storage_gb:${input.teamId}:${day}`,
+      );
+  const [account] = await input.db
+    .select()
+    .from(teamBillingAccounts)
+    .where(eq(teamBillingAccounts.teamId, input.teamId))
+    .limit(1);
+  const livePlan = account ? effectiveBillingPlanId(account) : 'free';
   let lastGb = 0;
   let settled = false;
   for (const day of days) {
@@ -407,6 +466,26 @@ export async function snapshotTeamStorageGbMonth(input: {
     if (gb <= 0) continue;
     const gbMonthSlice = gb / daysInUtcMonth(new Date(`${day}T00:00:00.000Z`));
     const previous = await currentMeterNativeUnits(input.db, input.teamId, 'storage_gb_month');
+    const pricingPlanId = await planIdEffectiveOnDay({
+      db: input.db,
+      teamId: input.teamId,
+      day,
+      fallback: livePlan,
+    });
+    const replayPeriodYm = day.slice(0, 7);
+    const replay =
+      pricingPlanId === livePlan
+        ? undefined
+        : {
+            pricingPlanId,
+            historicalIncludedDiscountCents: await includedDiscountRemainingForReplay({
+              db: input.db,
+              teamId: input.teamId,
+              planId: pricingPlanId,
+              periodYm: replayPeriodYm,
+            }),
+            pricingPeriodYm: replayPeriodYm,
+          };
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
@@ -420,6 +499,7 @@ export async function snapshotTeamStorageGbMonth(input: {
       }),
       operationClass: 'storage_snapshot',
       source: 'janitor',
+      ...(replay ?? {}),
     });
     settled = result.ok || settled;
   }
@@ -441,17 +521,31 @@ async function storageGbOnUtcDay(db: Db, teamId: string, day: string): Promise<n
         sql`${documentVersions.byteSize} IS NOT NULL`,
         sql`${documentVersions.createdAt} <= ${endOfDay}`,
         or(isNull(documents.deletedAt), sql`${documents.deletedAt} >= ${startOfDay}`),
+        sql`NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(
+            CASE
+              WHEN jsonb_typeof(${documents.metadata} -> 'absence_intervals') = 'array'
+              THEN ${documents.metadata} -> 'absence_intervals'
+              ELSE '[]'::jsonb
+            END
+          ) AS absence(interval)
+          WHERE (absence.interval ->> 'startedAt')::timestamptz < ${startOfDay}
+            AND (absence.interval ->> 'endedAt')::timestamptz >= ${endOfDay}
+        )`,
       ),
     );
   return (row?.bytes ?? 0) / GIB;
 }
 
-function storageSnapshotBackfillRange(): string[] {
+/** Days in the trailing 31-day window, including the previous calendar month. */
+function lookbackDays(): string[] {
   const today = utcDay();
-  const lookback = addUtcDays(today, -31);
-  const periodStart = `${today.slice(0, 7)}-01`;
-  const start = periodStart > lookback ? periodStart : lookback;
-  return utcDaysInclusive(start, today);
+  return utcDaysInclusive(addUtcDays(today, -31), today);
+}
+
+function storageSnapshotBackfillRange(): string[] {
+  return lookbackDays();
 }
 
 function addUtcDays(day: string, days: number): string {
@@ -472,11 +566,25 @@ function utcDaysInclusive(from: string, to: string): string[] {
 }
 
 function memberDayBackfillRange(): string[] {
-  const today = utcDay();
-  const lookback = addUtcDays(today, -31);
-  const periodStart = `${today.slice(0, 7)}-01`;
-  const start = periodStart > lookback ? periodStart : lookback;
-  return utcDaysInclusive(start, today);
+  return lookbackDays();
+}
+
+async function absentOperationDays(
+  db: Db,
+  teamId: string,
+  days: string[],
+  operationIdForDay: (day: string) => string,
+): Promise<string[]> {
+  if (days.length === 0) return [];
+  const ids = days.map(operationIdForDay);
+  const rows = await db
+    .select({ operationId: billingUsageLedger.operationId })
+    .from(billingUsageLedger)
+    .where(
+      and(eq(billingUsageLedger.teamId, teamId), inArray(billingUsageLedger.operationId, ids)),
+    );
+  const present = new Set(rows.map((row) => row.operationId));
+  return days.filter((day) => !present.has(operationIdForDay(day)));
 }
 
 function intervalOverlapsUtcDay(startedAt: Date, endedAt: Date | null, day: string): boolean {
@@ -674,8 +782,68 @@ export async function accrueTeamMemberDays(input: {
   return { extraMembers, chargeCents };
 }
 
+/**
+ * Finish Ask settlements that recorded provider usage and then failed to
+ * write the ledger. One row's failure does not stop the rest of the tick.
+ */
+export async function settlePendingBillingReservations(db: Db): Promise<number> {
+  const rows = await db
+    .select()
+    .from(billingUsageReservations)
+    .where(
+      and(
+        eq(billingUsageReservations.state, 'reserved'),
+        sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') = 'true'`,
+      ),
+    );
+  let settled = 0;
+  for (const row of rows) {
+    const metadata = reservationMetadataRecord(row.metadata);
+    const openRouterUsd = metadataNumber(metadata, 'pending_openrouter_usd') ?? 0;
+    const deliverySurface =
+      typeof metadata.pending_delivery_surface === 'string'
+        ? metadata.pending_delivery_surface
+        : 'ask';
+    const model = typeof metadata.pending_model === 'string' ? metadata.pending_model : undefined;
+    const minCustomerChargeCents = metadataNumber(metadata, 'pending_min_customer_charge_cents');
+    try {
+      const billing = createBillingScope({
+        db,
+        teamId: row.teamId,
+        userId: BILLING_SYSTEM_USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await settleAskAiFromOpenRouterUsd(billing, {
+        operationId: row.operationId,
+        openRouterUsd,
+        deliverySurface,
+        ...(model ? { model } : {}),
+        ...(minCustomerChargeCents !== undefined ? { minCustomerChargeCents } : {}),
+      });
+      settled += 1;
+    } catch (err) {
+      log.warn(
+        { err, teamId: row.teamId, operationId: row.operationId },
+        'pending billing settlement failed',
+      );
+    }
+  }
+  return settled;
+}
+
+function metadataNumber(metadata: Record<string, unknown>, key: string): number | undefined {
+  const value = metadata[key];
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
 export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number }> {
   await leaveOverdueRecallBots(db);
+  await settlePendingBillingReservations(db);
   await expireStaleBillingReservations({ db });
   await reconcileShadowBillingFromChargesEnabled(db);
   const polarProvider = createPolarBillingProvider();

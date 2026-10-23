@@ -614,9 +614,12 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       document create serializes the Free count under lock key 1. Failed structured-output
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
       split across those periods. Background AI metering keeps the reservation if settle fails
-      after the provider call and reuses the BullMQ job id; Ask and web chat keep the reservation
-      the same way. Enterprise settlement does not freeze on the spend cap. Member-day janitor ticks
-      retry unsettled facts across the current period / 31-day window after billing recovery.
+      after a successful provider call and reuses the BullMQ job id. A thrown call that already
+      reported usage settles that attempt, then releases. Transcription chunks use distinct
+      operation ids. Ask and web chat save the completed cost before settle and the janitor retries
+      a failed settlement. Storage replay uses the plan effective that day and skips closed document
+      absence intervals. Enterprise settlement does not freeze on the spend cap. Member-day janitor ticks
+      retry unsettled facts across the full 31-day lookback, including the previous calendar month.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.
       Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep
       the leftover team unrestricted. Re-accepting a removed member stamps a new `createdAt`.
