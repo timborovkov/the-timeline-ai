@@ -2,6 +2,7 @@ import { billingFreeGrants, teamBillingAccounts, type Db } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { PLAN_CATALOG, PREPAID_TOPUP_CENTS, type BillingPlanId } from '#src/billing/catalog.js';
+import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { creditWalletFromPolarOrder, debitWalletFromPolarRefund } from '#src/billing/runtime.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business';
@@ -274,6 +275,7 @@ async function upsertPaidSubscription(input: {
           updatedAt: now,
         },
       });
+    await recordBillingPlan(tx as unknown as Db, input.teamId, input.plan, now);
   });
 }
 
@@ -323,6 +325,7 @@ async function cancelMatchingSubscription(input: {
           eq(teamBillingAccounts.polarSubscriptionId, input.subscriptionId),
         ),
       );
+    await recordBillingPlan(tx as unknown as Db, input.teamId, 'free');
   });
 }
 

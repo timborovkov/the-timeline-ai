@@ -100,17 +100,15 @@ credit hides margin and confuses prospects.
    zeroed a positive catalog cap, that catalog default). Extra member-days persist
    the denied charge and freeze instead of skipping the extra seat. Janitor
    member-day ticks retry unsettled `member_days:<team>:<day>:<user>` facts across
-   the current period / 31-day window after billing recovery instead of advancing
-   past denied days. Terminal Recall
+   the full 31-day lookback, including the previous calendar month, after billing
+   recovery instead of advancing past denied days. Terminal Recall
    no-shows settle elapsed waiting-room minutes; retry no-shows still release so
    the same meeting can reserve again. Cancelling a joining/active meeting with no
    transcript chunks settles elapsed waiting-room minutes instead of releasing them.
    An active bot `failed`/`fatal` path settles elapsed minutes the same way.
    Settlement errors on those terminal paths propagate so Recall webhooks can 503
    and retry; aborting a join after Recall accepted keeps the reservation when
-   leave fails so the janitor can retry leave. Slack/Telegram/MCP Ask and web chat keep the reservation when settlement fails
-   after OpenRouter work. Worker AI metering reuses the BullMQ job id as the
-   durable operation id. Web chat also settles known compression cost when the
+   leave fails so the janitor can retry leave. Slack/Telegram/MCP Ask and web chat record the completed OpenRouter cost on the reservation before settle and keep that reservation when settlement fails, so the janitor can retry it. A provider call that throws after OpenRouter reported usage settles that cost under `<operation>:failed:<n>` and then releases the work reservation. Worker AI metering reuses the BullMQ job id as the durable operation id, and each transcription chunk appends its index. Web chat also settles known compression cost when the
    answer stream fails. Seat claims are blocked while billing is paused.
    Enterprise settlement skips prepaid wallet/spend-cap freezes and does not debit
    a prepaid wallet so Polar meters can ingest. Enterprise is not a prepaid-wallet
@@ -175,8 +173,11 @@ credit hides margin and confuses prospects.
    so a later retry is attributed to the new attempt. Worker AI reservations
    (`metadata.source=worker`) count against `costlyWorkerConcurrency`; a busy
    workspace delays the BullMQ job instead of failing it. Janitor storage
-   snapshots backfill missed days in the current period / 31-day window using
-   historical document bytes. Paid-plan changes reuse the Polar subscription id in `past_due`,
+   snapshots backfill missed days across the full 31-day lookback, including the
+   previous calendar month, from absent storage operation ids. Each day is priced
+   on the plan effective that day, and that plan's included discount and prepaid
+   wallet are not taken from the live balances. Closed document absence intervals
+   are excluded. Paid-plan changes reuse the Polar subscription id in `past_due`,
    `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
    preview prorates extra members from `member_days` rather than a full month.
    Auto-reload marks Polar checkout created before owner email and retries

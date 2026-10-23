@@ -788,6 +788,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
       source?: string;
       deliverySurface?: string;
       metadata?: Record<string, unknown>;
+      /** Price this settlement as the plan in force on a replayed day. */
+      pricingPlanId?: BillingPlanId;
+      /** Included-discount pool for that day. Skips the live wallet and discount when set. */
+      historicalIncludedDiscountCents?: number;
+      pricingPeriodYm?: string;
     }) {
       await ensureMember();
       await ensureAccount();
@@ -847,15 +852,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
             previousNativeUnits: previousNative,
             nextNativeUnits: previousNative + segment.nativeUnits,
           });
+          const entitlementsPlanId = input.pricingPlanId ?? account.planId;
           const actualChargeCents = paygOverageCustomerChargeCents({
-            planId: account.planId,
+            planId: entitlementsPlanId,
             meterId: input.meterId,
             nativeUnits: segment.nativeUnits,
             listChargeCents,
             meters: metersBefore,
           });
           const polarUnits = paygOverageNativeUnits({
-            planId: account.planId,
+            planId: entitlementsPlanId,
             meterId: input.meterId,
             nativeUnits: segment.nativeUnits,
             meters: metersBefore,
@@ -869,9 +875,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
         );
         const polarUnits = segmentCharges.reduce((sum, row) => sum + row.polarUnits, 0);
         const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
+        const historicalDiscount = input.historicalIncludedDiscountCents;
         const { discountCents, walletCents } = splitDiscountAndWallet({
           chargeCents: actualChargeCents,
-          includedDiscountRemainingCents: account.includedDiscountRemainingCents,
+          includedDiscountRemainingCents:
+            historicalDiscount ?? account.includedDiscountRemainingCents,
           meterId: input.meterId,
         });
         const enterpriseContract =
@@ -937,6 +945,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
             reservationId: reservation[0]?.id ?? null,
             metadata: {
               ...(input.metadata ?? {}),
+              ...(input.pricingPlanId ? { pricing_plan_id: input.pricingPlanId } : {}),
+              ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
               list_charge_cents: listChargeCents,
               discount_cents: discountCents,
               wallet_cents: walletCents,
@@ -1028,7 +1038,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
                     reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
                   }
                 : {}),
-              ...(applyCharges && !enterpriseContract && (walletCents > 0 || discountCents > 0)
+              ...(historicalDiscount === undefined &&
+              applyCharges &&
+              !enterpriseContract &&
+              (walletCents > 0 || discountCents > 0)
                 ? {
                     walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${walletCents})`,
                     includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,

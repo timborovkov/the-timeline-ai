@@ -539,6 +539,18 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
       : {};
   }
 
+  function absenceIntervals(value: unknown): { startedAt: string; endedAt: string }[] {
+    if (!Array.isArray(value)) return [];
+    const intervals: { startedAt: string; endedAt: string }[] = [];
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object') continue;
+      const row = entry as Record<string, unknown>;
+      if (typeof row.startedAt !== 'string' || typeof row.endedAt !== 'string') continue;
+      intervals.push({ startedAt: row.startedAt, endedAt: row.endedAt });
+    }
+    return intervals;
+  }
+
   function normalizeDocumentRow(row: typeof documents.$inferSelect): DocumentRow {
     return { ...row, metadata: metadataRecord(row.metadata) };
   }
@@ -1709,9 +1721,25 @@ export function createDocumentScope(deps: DocumentScopeDeps) {
           additionalBytes: Number(bytesRow?.bytes ?? 0),
           additionalChunks: chunkRow?.n ?? 0,
         });
+        const restoredAt = new Date();
+        const metadata = metadataRecord(document.metadata);
+        const existingIntervals = absenceIntervals(metadata.absence_intervals);
         await tx
           .update(documents)
-          .set({ deletedAt: null, updatedAt: new Date() })
+          .set({
+            deletedAt: null,
+            updatedAt: restoredAt,
+            metadata: {
+              ...metadata,
+              absence_intervals: [
+                ...existingIntervals,
+                {
+                  startedAt: document.deletedAt.toISOString(),
+                  endedAt: restoredAt.toISOString(),
+                },
+              ],
+            },
+          })
           .where(
             and(
               eq(documents.id, id),

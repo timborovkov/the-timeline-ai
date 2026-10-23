@@ -436,6 +436,12 @@ export async function chatStructured<TSchema extends z.ZodType>(
       };
       const finishEvent = () =>
         accumulatedUsd > 0 ? openRouterFinishFromUsdCost(accumulatedUsd) : undefined;
+      const fail = (err: unknown): never => {
+        if (accumulatedUsd > 0 && err && typeof err === 'object') {
+          Object.assign(err, { openRouterUsd: accumulatedUsd });
+        }
+        throw err;
+      };
       const runModel = async (candidateModelId: string): Promise<ChatStructuredResult<TSchema>> => {
         const model = deps.model ?? buildOpenRouterLanguageModel(candidateModelId, deps);
         try {
@@ -460,7 +466,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           return { object, model: candidateModelId };
         } catch (err) {
           captureFinish(openRouterFinishFromCaughtError(err));
-          if (deps.model || !shouldFallbackToJsonObject(err)) throw err;
+          if (deps.model || !shouldFallbackToJsonObject(err)) return fail(err);
           const fallbackModel = buildOpenRouterLanguageModel(candidateModelId, deps, {
             supportsStructuredOutputs: false,
           });
@@ -474,9 +480,11 @@ export async function chatStructured<TSchema extends z.ZodType>(
             ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
           }).catch((fallbackErr: unknown) => {
             captureFinish(openRouterFinishFromCaughtError(fallbackErr));
-            throw new AggregateError(
-              [err, fallbackErr],
-              'llm.chatStructured failed with json_schema and json_object response formats',
+            return fail(
+              new AggregateError(
+                [err, fallbackErr],
+                'llm.chatStructured failed with json_schema and json_object response formats',
+              ),
             );
           });
           captureFinish(
@@ -498,7 +506,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
       } catch (err) {
         const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
         if (deps.model || fallbackModelId === modelId || !shouldFallbackToAlternateModel(err)) {
-          throw err;
+          return fail(err);
         }
         try {
           const value = await runModel(fallbackModelId);
@@ -506,9 +514,11 @@ export async function chatStructured<TSchema extends z.ZodType>(
           const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
           return finish ? { value: titled, finish } : { value: titled };
         } catch (fallbackErr: unknown) {
-          throw new AggregateError(
-            [err, fallbackErr],
-            'llm.chatStructured failed with primary and fallback structured models',
+          return fail(
+            new AggregateError(
+              [err, fallbackErr],
+              'llm.chatStructured failed with primary and fallback structured models',
+            ),
           );
         }
       }

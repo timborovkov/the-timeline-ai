@@ -137,6 +137,20 @@ export const billingFreeGrants = pgTable(
   ],
 );
 
+/** Plan in force over time, so replayed days keep the terms of that day. */
+export const billingPlanHistory = pgTable(
+  'billing_plan_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    planId: billingPlanId('plan_id').notNull(),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('billing_plan_history_team_effective_idx').on(table.teamId, table.effectiveAt)],
+);
+
 /** Append-only, idempotent usage settlement. */
 export const billingUsageLedger = pgTable(
   'billing_usage_ledger',

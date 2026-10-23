@@ -137,6 +137,17 @@ export async function settleAskAiFromOpenRouterUsd(
     Math.max(0, input.openRouterUsd),
   );
   const nativeUnits = Math.max(customerChargeExactCents, input.minCustomerChargeCents ?? 0);
+  // Persist the completed provider cost before settle. A failed settle leaves
+  // the reservation reserved so maintenance can retry without a new model call.
+  await billing.patchReservationMetadata(input.operationId, {
+    pending_settlement: true,
+    pending_openrouter_usd: input.openRouterUsd,
+    pending_delivery_surface: input.deliverySurface,
+    ...(input.model ? { pending_model: input.model } : {}),
+    ...(input.minCustomerChargeCents !== undefined
+      ? { pending_min_customer_charge_cents: input.minCustomerChargeCents }
+      : {}),
+  });
   await billing.settle({
     operationId: input.operationId,
     meterId: 'ai',
