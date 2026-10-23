@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-07-18</span>
+        <span class="kind">Operations</span><span>Last updated 2026-10-23</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -113,8 +113,9 @@
         <li>Add Redis plugin. Connection string injected as <code>REDIS_URL</code>.</li>
         <li>
           Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.19.2</code>.
-          Persistent volume at <code>/qdrant/storage</code>. Set
-          <code>QDRANT__SERVICE__API_KEY</code> to a strong random value.
+          Persistent volume at <code>/qdrant/storage</code>. Set the service memory limit to 1 GB
+          (see cost considerations). Set <code>QDRANT__SERVICE__API_KEY</code> to a strong random
+          value.
         </li>
         <li>
           Add RustFS service: New Service → Docker Image → <code>rustfs/rustfs:latest</code>.
@@ -550,7 +551,12 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li><code>worker</code> service: small instance, most cost is during processing bursts</li>
         <li>Postgres: small instance + storage</li>
         <li>Redis: tiny</li>
-        <li>Qdrant: moderate RAM (vectors live in memory)</li>
+        <li>
+          Qdrant: 1 GB RAM is the recommended Railway limit after on-disk vectors + scalar int8
+          quantization (original embeddings stay on the volume). 512 MB is enough for a demo-sized
+          corpus; keep 2 GB until an older in-RAM collection has been copied. Staging/prototypes can
+          use Qdrant Cloud's free 1 GB / 4 GB disk cluster instead of a Railway Qdrant service.
+        </li>
         <li>RustFS: minimal compute, most cost is volume size</li>
       </ul>
       <p>

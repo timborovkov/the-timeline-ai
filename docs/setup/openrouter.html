@@ -31,6 +31,7 @@
           <li><a href="#phase-5">Phase 5 — embeddings + search</a></li>
           <li><a href="#phase-6">Phase 6 — agent chat</a></li>
           <li><a href="#reembed">Re-embed procedure</a></li>
+          <li><a href="#qdrant-storage">On-disk Qdrant collection copy</a></li>
         </ul>
       </nav>
 
@@ -148,9 +149,12 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
       <p>
         The default Qdrant collection is <code>QDRANT_COLLECTION=events</code>. The app creates that
         collection on first embedding/search use with
-        <code>TIMELINE_MODELS.embedding.embeddingDimensions</code> and <code>distance=Cosine</code>.
-        If an existing collection has a different vector size, the worker fails loudly instead of
-        writing incompatible vectors; create a new collection and follow the re-embed procedure.
+        <code>TIMELINE_MODELS.embedding.embeddingDimensions</code>, <code>distance=Cosine</code>,
+        original vectors and payload on disk, and scalar int8 quantization kept in RAM. Search
+        rescores quantized hits against the original vectors. If an existing collection has a
+        different vector size, the worker fails loudly instead of writing incompatible vectors;
+        create a new collection and follow the re-embed procedure. Storage-layout changes (on-disk /
+        quantization) copy existing points without re-embedding.
       </p>
 
       <h2 id="smoke-test">3. Quick smoke test</h2>
@@ -332,7 +336,8 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
           Let the first embedding/search write create the default <code>events</code> collection, or
           create it explicitly with the current catalog dimensions if you prefer a manual setup
           check. Current default: <code>openai/text-embedding-3-small</code>,
-          <code>vectors.size=1536</code>, <code>distance=Cosine</code>.
+          <code>vectors.size=1536</code>, <code>distance=Cosine</code>, <code>on_disk=true</code>,
+          scalar int8 quantization.
           <pre><code>curl -s "$QDRANT_URL/collections/events" \
   -H "api-key: $QDRANT_API_KEY" | jq '.result.config.params.vectors.size'
 </code></pre>
@@ -358,15 +363,19 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
             <li><strong>Vector size</strong>: <code>1536</code>.</li>
             <li><strong>Distance</strong>: Cosine.</li>
             <li>
-              <strong>Quantization / on-disk vectors</strong>: leave disabled unless a later
-              performance pass intentionally changes the app defaults.
+              <strong>Quantization</strong>: Scalar, int8, quantile <code>0.99</code>, always in
+              RAM.
             </li>
+            <li>
+              <strong>On-disk vectors</strong>: enabled (original float32 vectors stay on disk).
+            </li>
+            <li><strong>On-disk payload</strong>: enabled.</li>
           </ul>
           The equivalent API shape is:
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events" \
   -H "content-type: application/json" \
   -H "api-key: $QDRANT_API_KEY" \
-  -d '{"vectors":{"size":1536,"distance":"Cosine"}}'
+  -d '{"vectors":{"size":1536,"distance":"Cosine","on_disk":true},"quantization_config":{"scalar":{"type":"int8","quantile":0.99,"always_ram":true}},"on_disk_payload":true}'
 
 curl -s -X PUT "$QDRANT_URL/collections/events/index" \
   -H "content-type: application/json" \
@@ -495,7 +504,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
           <pre><code>curl -s -X PUT "$QDRANT_URL/collections/events_v2" \
   -H "content-type: application/json" \
   -H "api-key: $QDRANT_API_KEY" \
-  -d '{"vectors":{"size":1536,"distance":"Cosine"}}'
+  -d '{"vectors":{"size":1536,"distance":"Cosine","on_disk":true},"quantization_config":{"scalar":{"type":"int8","quantile":0.99,"always_ram":true}},"on_disk_payload":true}'
 </code></pre>
         </li>
         <li>
@@ -538,6 +547,74 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         This procedure is the <strong>only</strong> safe path. Never edit embeddings in place —
         embedding-model drift silently corrupts semantic search, and "looks ok in prod" is not a
         reliable signal until queries start ranking the wrong things.
+      </p>
+
+      <h2 id="qdrant-storage">On-disk collection copy (no re-embed)</h2>
+      <p>
+        Changing Qdrant storage layout — on-disk original vectors, scalar int8 quantization in RAM,
+        on-disk payload — does <strong>not</strong> change embedding dimensions. Do not re-embed.
+        Create a new collection, pause embed writers, copy every point with scroll + upsert (plus a
+        second resync pass), verify counts and point identity, then switch
+        <code>QDRANT_COLLECTION</code>. Existing collections are never patched in place. An existing
+        target must already have the on-disk + quantization layout; a leftover in-RAM collection
+        with the same name is rejected. The script refuses <code>NODE_ENV=production</code>, Railway
+        production, and any non-loopback <code>QDRANT_URL</code> unless
+        <code>ALLOW_QDRANT_MIGRATE_REMOTE=I_UNDERSTAND_THIS_TARGETS_AN_ISOLATED_QDRANT</code>.
+      </p>
+      <ol>
+        <li>
+          <strong>Create the target collection</strong> with the current app create body (same
+          <code>requireExisting</code> contract as re-embed). The migrate script can do this:
+          <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+  --source-collection=events \
+  --target-collection=events_ondisk \
+  --create-target --copy --verify --writers-paused --all-teams
+</code></pre>
+          Pause the embed worker (and any other Qdrant writers) first. Live
+          <code>--copy</code> requires <code>--writers-paused</code> and always runs a second resync
+          pass so inserts during the first scroll are not lost. Copy and verify always filter by
+          <code>team_id</code>. <code>--all-teams</code> copies tenants discovered on the source;
+          verify unions source and target tenants so leftover target-only points fail identity. Or
+          PUT the collection yourself, then run with
+          <code>--copy --verify --writers-paused --all-teams</code> only. The copy client uses
+          <code>requireExisting=true</code> on the target, so a missing collection fails loudly
+          instead of auto-creating at the wrong size.
+        </li>
+        <li>
+          <strong>Verify counts and identity</strong>. The command exits non-zero when source and
+          target point counts differ, or when ids / vector fingerprints / canonical full payloads
+          disagree (including <code>visibility_user_ids</code> and author/owner fields). Count
+          equality alone cannot catch an in-place vector overwrite. Re-running the copy is
+          idempotent — point ids are preserved.
+        </li>
+        <li>
+          Optional <strong>RAM / recall probe</strong> against the demo corpus (Acme Labs owner).
+          Live <code>--measure</code> waits until HNSW/quantization is indexed on both collections
+          (Qdrant 1.19.2: <code>indexing_threshold=1</code> KB, because <code>0</code> disables
+          indexing, and <code>full_scan_threshold=10</code>, the minimum Qdrant accepts),
+          <em>then</em> snapshots RAM from <code>GET /collections/{name}/memory</code>, then
+          compares recall. <code>--dry-run --measure</code> does not PATCH optimizer thresholds and
+          does not require the target to exist. Samples are filtered to the requested team, the
+          query point is excluded from both rankings, and the uncompressed baseline is exact search
+          with <code>quantization.ignore</code>. Zero comparable queries are reported as
+          <code>no_data</code> (exit 1), not 100% recall:
+          <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+  --source-collection=events \
+  --target-collection=events_ondisk \
+  --measure --team=20000000-0000-4000-8000-000000000001 \
+  --user=10000000-0000-4000-8000-000000000001
+</code></pre>
+        </li>
+        <li>
+          <strong>Cut over</strong> by setting <code>QDRANT_COLLECTION=events_ondisk</code> on web
+          and workers, then restart. Rollback is flipping the name back. Drop the old collection
+          after a grace period, same as re-embed.
+        </li>
+      </ol>
+      <p>
+        Binary quantization is opt-in (<code>QDRANT_QUANTIZATION=binary</code>) and uses a higher
+        default search oversampling (4 vs 2). Keep scalar int8 unless you have measured recall on
+        your corpus. Do not run this against production.
       </p>
     </main>
   </body>

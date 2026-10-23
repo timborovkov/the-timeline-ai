@@ -18,7 +18,9 @@ beforeEach(() => {
     ...ENV_BACKUP,
     AUTH_SECRET: 'a'.repeat(32),
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
+    NODE_ENV: 'test',
   };
+  delete process.env.LANGSMITH_PROJECT;
   resetEnvForTests();
 });
 
