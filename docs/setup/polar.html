@@ -66,12 +66,14 @@ PLATFORM_ADMIN_EMAILS=
         <code>PLATFORM_ADMIN_EMAILS</code> is a comma-separated allowlist for
         <code>/app/admin/billing</code> and <code>pnpm billing:operator</code>. It is not a team
         role. Comped workspaces keep metering and the spend cap, skip Polar checkout and meter
-        ingest, and show the comp on the team billing page. Assigning a comp revokes the team's
-        current Polar subscription immediately so the platform fee stops. If that subscription
-        exists and Polar is not configured, the comp is refused and nothing is saved. Price
-        overrides (platform fee, included members, per-member price, metered discount percent) and a
-        per-team Polar discount id are optional and can expire. Every change is appended to
-        <code>billing_operator_audit</code>.
+        ingest, and show a one-line comp banner on the team billing page. Customer billing shows the
+        plan, this month's spend against the cap, and the next invoice; usage is a meter table.
+        Pricing detail lives on <code>/pricing</code>. Members only see a cap or allowance notice.
+        Assigning a comp revokes the team's current Polar subscription immediately so the platform
+        fee stops. If that subscription exists and Polar is not configured, the comp is refused and
+        nothing is saved. Price overrides (platform fee, included members, per-member price, metered
+        discount percent) and a per-team Polar discount id are optional and can expire. Every change
+        is appended to <code>billing_operator_audit</code>.
       </p>
 
       <h2>Products and meters (v1)</h2>
@@ -133,13 +135,13 @@ PLATFORM_ADMIN_EMAILS=
       <p>
         Agent turns, concurrent Recall bots, custom MCP servers, documents, storage, indexed chunks,
         and active-member ceilings are plan capacity enforced in product code. Do not add Polar
-        meters for them. <code>/app/usage</code>, Billing settings, and <code>/pricing</code> keep
-        those ceilings in a closed Infrastructure limits disclosure rather than the default billed
-        view. Webhook and search bursts stay on Redis token buckets; unique ingest volume is
-        <code>accepted_sources</code>. A person may claim one Free grant after email verification;
-        failed claims retry on the next signed-in load. Extra owned workspaces are restricted until
-        a payment method is added. Unverified owners are not granted Free by the backfill migration.
-        Removed owner memberships cannot claim or steal that person-level grant.
+        meters for them. <code>/app/usage</code> and <code>/pricing</code> keep those ceilings in a
+        closed Infrastructure limits disclosure rather than the default billed view. Team Billing
+        does not repeat them. Webhook and search bursts stay on Redis token buckets; unique ingest
+        volume is <code>accepted_sources</code>. A person may claim one Free grant after email
+        verification; failed claims retry on the next signed-in load. Extra owned workspaces are
+        restricted until a payment method is added. Unverified owners are not granted Free by the
+        backfill migration. Removed owner memberships cannot claim or steal that person-level grant.
       </p>
       <p>
         Background workers attach a billing context so OpenRouter wrappers settle the

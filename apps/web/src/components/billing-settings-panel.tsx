@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  FREE_ALLOWANCES,
+  PLAN_CATALOG,
   formatEuroFromCents,
   parseEuroAmountToCents,
   type BillingPlanId,
@@ -10,12 +12,7 @@ import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
 
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
-import type {
-  BillingNudge,
-  FreeAllowanceRemaining,
-  PlanCapacityUsageRow,
-  SpendCapUtilization,
-} from '@timeline/shared/billing/status';
+import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
 
 import {
   startBillingCheckout,
@@ -23,42 +20,36 @@ import {
   updateBillingSpendCap,
 } from '@/app/actions/billing';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
+import { customerBillingState } from '@/components/billing-customer-state';
 import { BillingPlanPreview } from '@/components/billing-plan-preview';
-import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
-import { BillingUsageSummary } from '@/components/billing-usage-summary';
-import { SettingsSection } from '@/components/section-heading';
+import { BillingStateBanner } from '@/components/billing-state-banner';
+
+const PRIMARY_CLASS =
+  'inline-flex min-h-11 cursor-pointer list-none items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg [&::-webkit-details-marker]:hidden';
+const PLAN_BUTTON_CLASS =
+  'inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50';
 
 export interface BillingSettingsPanelProps {
   planId: BillingPlanId;
   planName: string;
   billingState: string;
-  shadowBilling: boolean;
   spendCapCents: number;
-  includedDiscountRemainingCents: number;
   meteredSpendCents: number;
-  periodYm: string;
-  meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number }>>;
-  capacityUsage: PlanCapacityUsageRow[];
   utilization: SpendCapUtilization;
   freeRemaining: FreeAllowanceRemaining;
-  nudge: BillingNudge | null;
   costBearingPaused: boolean;
   polarConfigured: boolean;
   /** False when this plan has no Polar subscription yet, so checkout can save a card. */
   hasPolarSubscription: boolean;
   canManage: boolean;
   planPreview: CheapestPlanPreview;
-  activeMemberCount: number;
   comp: {
     planName: string;
     expired: boolean;
     reason: string | null;
     expiresOn: string | null;
   } | null;
-  priceNotice: string | null;
   showOperatorLink: boolean;
-  includedActiveMembers?: number | null;
-  additionalMemberCents?: number | null;
   platformFeeCents?: number | null;
 }
 
@@ -74,9 +65,6 @@ const INITIAL_BILLING_FORM: BillingFormState = {
   message: null,
 };
 
-const PLAN_BUTTON_CLASS =
-  'inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50';
-
 function billingFormReducer(
   state: BillingFormState,
   patch: Partial<BillingFormState>,
@@ -84,226 +72,78 @@ function billingFormReducer(
   return { ...state, ...patch };
 }
 
-function clearNotices(): Partial<BillingFormState> {
-  return { error: null, message: null };
+function planPriceLabel(planId: BillingPlanId, platformFeeCents?: number | null): string {
+  if (planId === 'enterprise' && (platformFeeCents === null || platformFeeCents === undefined)) {
+    return 'Custom';
+  }
+  const cents = platformFeeCents ?? PLAN_CATALOG[planId].platformFeeCents ?? 0;
+  return `${formatEuroFromCents(cents)} / month`;
 }
 
-function BillingPlanSection(props: {
-  planId: BillingPlanId;
-  planName: string;
-  billingState: string;
-  shadowBilling: boolean;
-  polarConfigured: boolean;
-  hasPolarSubscription: boolean;
-  canManage: boolean;
-  pending: boolean;
-  comp: BillingSettingsPanelProps['comp'];
-  priceNotice: string | null;
-  showOperatorLink: boolean;
-  platformFeeCents?: number | null;
-  onCheckout: (plan: 'payg' | 'team' | 'business') => void;
-}) {
+function nextInvoiceCents(props: BillingSettingsPanelProps): number {
+  if (props.planId === 'free') return 0;
+  if (props.planId === 'payg' || props.planId === 'team' || props.planId === 'business') {
+    return props.planPreview.bills[props.planId].totalCents;
+  }
+  return (props.platformFeeCents ?? 0) + props.meteredSpendCents;
+}
+
+function freeAllowancePercent(remaining: FreeAllowanceRemaining): number {
+  const fractions = [
+    1 - remaining.aiChargeCents / FREE_ALLOWANCES.aiChargeCents,
+    1 - remaining.recallMinutes / FREE_ALLOWANCES.recallMinutes,
+    1 - remaining.emailUnits / FREE_ALLOWANCES.emailUnits,
+    1 - remaining.storageGb / FREE_ALLOWANCES.storageGb,
+    1 - remaining.acceptedSources / FREE_ALLOWANCES.acceptedSources,
+  ];
+  return Math.min(100, Math.max(0, Math.round(Math.max(0, ...fractions) * 100)));
+}
+
+function SpendBar({ percent, danger }: { percent: number; danger: boolean }) {
+  const width = Math.max(0, Math.min(100, percent));
   return (
-    <SettingsSection title="Plan">
-      <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-fg-muted">Current plan</dt>
-          <dd className="mt-1 font-medium text-fg">{props.planName}</dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Billing state</dt>
-          <dd className="mt-1 font-mono text-fg">{props.billingState}</dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Mode</dt>
-          <dd className="mt-1 text-fg">
-            {props.shadowBilling
-              ? 'Shadow billing (usage recorded; Free hard stops still apply)'
-              : 'Live charges enabled'}
-          </dd>
-        </div>
-      </dl>
-      {props.comp ? (
-        <div className="mt-4">
-          <BillingCompNotice
-            planName={props.comp.planName}
-            expired={props.comp.expired}
-            reason={props.comp.reason}
-            expiresOn={props.comp.expiresOn}
-          />
-        </div>
-      ) : null}
-      {props.priceNotice ? <p className="mt-3 text-sm text-fg">{props.priceNotice}</p> : null}
-      {props.showOperatorLink ? (
-        <p className="mt-3 text-sm">
-          <Link href="/app/admin/billing" className="underline-offset-4 hover:underline">
-            Operator billing controls
-          </Link>
-        </p>
-      ) : null}
-      {props.billingState === 'past_due' || props.billingState === 'payment_retry' ? (
-        <p className="mt-4 rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg">
-          Payment failed. New cost-bearing work is paused until the card on file succeeds. Reading
-          and export stay available.
-        </p>
-      ) : null}
-      {props.canManage && !props.comp && props.planId !== 'enterprise' ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          {(
-            [
-              ['payg', 'Pay as you go'],
-              ['team', 'Team · €49/mo'],
-              ['business', 'Business · €199/mo'],
-            ] as const
-          ).map(([plan, label]) => (
-            <button
-              key={plan}
-              type="button"
-              disabled={
-                props.pending ||
-                !props.polarConfigured ||
-                (props.planId === plan && props.hasPolarSubscription)
-              }
-              onClick={() => {
-                props.onCheckout(plan);
-              }}
-              className={PLAN_BUTTON_CLASS}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      ) : props.canManage && props.comp ? (
-        <p className="mt-3 text-sm text-fg-muted">
-          Polar checkout is turned off while this workspace is comped.
-        </p>
-      ) : props.canManage ? (
-        <p className="mt-3 text-sm text-fg-muted">
-          Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.
-        </p>
-      ) : (
-        <p className="mt-3 text-sm text-fg-muted">Only owners and admins can change billing.</p>
-      )}
-      {props.planId === 'enterprise' && !props.hasPolarSubscription ? (
-        <p className="mt-3 text-sm text-fg" data-enterprise-subscription="pending">
-          Usage is recorded locally and invoiced after an operator attaches an active Timeline
-          Enterprise subscription.
-        </p>
-      ) : null}
-      {props.planId === 'enterprise' &&
-      props.platformFeeCents !== null &&
-      props.platformFeeCents !== undefined ? (
-        <p className="mt-3 text-sm text-fg-muted" data-enterprise-platform-fee>
-          Negotiated platform fee {formatEuroFromCents(props.platformFeeCents)} per month, invoiced
-          on the Timeline Enterprise subscription.
-        </p>
-      ) : null}
-      {props.planId === 'enterprise' ? null : !props.polarConfigured ? (
-        <p className="mt-3 text-sm text-fg-muted">
-          Polar checkout is not configured in this environment. Usage still records locally.
-        </p>
-      ) : (
-        <p className="mt-3 text-sm text-fg-muted">
-          Pay as you go is a €0 Polar subscription. Checkout saves the card. Usage above the Free
-          floor is ingested as Polar events and invoiced monthly. Team and Business use the same
-          subscription, with their platform fee and included usage discount. Switching plans updates
-          the existing subscription, including when the workspace is past due.
-        </p>
-      )}
-      <p className="mt-3 text-sm text-fg-muted">
-        Need procurement or an SLA?{' '}
-        <Link href="/help/support" className="underline decoration-border underline-offset-4">
-          Contact us for Enterprise
-        </Link>
-        .
-      </p>
-    </SettingsSection>
+    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-sm bg-border" aria-hidden="true">
+      <div
+        className={danger ? 'h-full rounded-sm bg-danger' : 'h-full rounded-sm bg-fg-muted'}
+        style={{ width: `${width}%` }}
+      />
+    </div>
   );
 }
 
-function BillingSpendSection(props: {
-  includedDiscountRemainingCents: number;
-  canManage: boolean;
-  pending: boolean;
-  comped: boolean;
-  polarConfigured: boolean;
-  paymentFailed: boolean;
-  spendCapEuros: string;
-  onSpendCapDraft: (value: string) => void;
-  onSaveSpendCap: () => void;
-  onOpenPortal: () => void;
-}) {
+function ThisMonth(props: BillingSettingsPanelProps) {
+  if (props.planId === 'free') {
+    const percent = freeAllowancePercent(props.freeRemaining);
+    return (
+      <div data-billing-spend>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="text-fg-muted">Allowance</span>
+          <span className="font-mono text-fg">{percent}%</span>
+        </div>
+        <SpendBar percent={percent} danger={percent >= 100} />
+      </div>
+    );
+  }
+  if (props.spendCapCents <= 0) {
+    return (
+      <div className="flex items-baseline justify-between gap-3 text-sm" data-billing-spend>
+        <span className="text-fg-muted">This month</span>
+        <span className="font-mono text-fg">{formatEuroFromCents(props.meteredSpendCents)}</span>
+      </div>
+    );
+  }
+  const percent = props.utilization.percent ?? 0;
   return (
-    <SettingsSection title="Spend cap">
-      <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-fg-muted">Included usage discount left</dt>
-          <dd className="mt-1 font-mono text-fg">
-            {formatEuroFromCents(props.includedDiscountRemainingCents)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Collection</dt>
-          <dd className="mt-1 text-fg">Monthly Polar invoice on the card on file</dd>
-        </div>
-      </dl>
-      <p className="mt-3 text-sm text-fg-muted">
-        A €0 spend cap is a hard stop. Metered usage at the cap pauses new cost-bearing work and
-        emails owners. Polar still invoices the usage already recorded.
-      </p>
-      {props.canManage ? (
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <label className="block text-sm">
-            <span className="text-fg-muted">Monthly spend cap (EUR)</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={props.spendCapEuros}
-              disabled={props.comped}
-              onChange={(event) => {
-                props.onSpendCapDraft(event.target.value);
-              }}
-              className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg disabled:opacity-60"
-            />
-          </label>
-          {props.comped ? (
-            <p className="text-sm text-fg-muted">
-              Timeline operators set the spend cap on a comped workspace.
-            </p>
-          ) : (
-            <button
-              type="button"
-              disabled={props.pending}
-              onClick={props.onSaveSpendCap}
-              className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg disabled:opacity-50"
-            >
-              Save cap
-            </button>
-          )}
-          {props.paymentFailed && props.polarConfigured && !props.comped ? (
-            <button
-              type="button"
-              disabled={props.pending}
-              onClick={props.onOpenPortal}
-              className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
-            >
-              Update payment method
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      <p className="mt-3 text-sm text-fg-muted">
-        At 50 / 75 / 90% we show in-app warnings on Home, Usage, and Billing, and email workspace
-        owners once per threshold each billing period. At 100% new cost-bearing work pauses until
-        you raise the cap or the period resets (owners get a final notice). A failed subscription
-        payment pauses costly work and emails owners. Free workspaces also email owners when an
-        allowance is near or used up.{' '}
-        <Link href="/pricing" className="underline-offset-4 hover:underline">
-          See pricing
-        </Link>
-      </p>
-    </SettingsSection>
+    <div data-billing-spend>
+      <div className="flex items-baseline justify-between gap-3 text-sm">
+        <span className="text-fg-muted">This month</span>
+        <span className="font-mono text-fg">
+          {formatEuroFromCents(props.meteredSpendCents)} of{' '}
+          {formatEuroFromCents(props.spendCapCents)}
+        </span>
+      </div>
+      <SpendBar percent={percent} danger={percent >= 90} />
+    </div>
   );
 }
 
@@ -312,11 +152,25 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   const [pending, startTransition] = useTransition();
   const [form, updateForm] = useReducer(billingFormReducer, INITIAL_BILLING_FORM);
   const spendCapEuros = form.spendCapDraft ?? String(props.spendCapCents / 100);
-  const { error, message } = form;
   const paymentFailed = props.billingState === 'past_due' || props.billingState === 'payment_retry';
+  const state = customerBillingState({
+    planId: props.planId,
+    billingState: props.billingState,
+    costBearingPaused: props.costBearingPaused,
+    spendCapCents: props.spendCapCents,
+    meteredSpendCents: props.meteredSpendCents,
+    warnPercent: props.utilization.percent,
+  });
+  const selfServe = props.canManage && props.comp === null && props.planId !== 'enterprise';
+  const showPortal =
+    props.canManage &&
+    props.comp === null &&
+    props.polarConfigured &&
+    props.hasPolarSubscription &&
+    !paymentFailed;
 
   function runCheckout(plan: 'payg' | 'team' | 'business') {
-    updateForm(clearNotices());
+    updateForm({ error: null, message: null });
     startTransition(async () => {
       const result = await startBillingCheckout({ plan });
       if (!result.ok) {
@@ -328,7 +182,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   }
 
   function openPortal() {
-    updateForm(clearNotices());
+    updateForm({ error: null, message: null });
     startTransition(async () => {
       const result = await startBillingPortal();
       if (!result.ok) {
@@ -340,7 +194,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   }
 
   function saveSpendCap() {
-    updateForm(clearNotices());
+    updateForm({ error: null, message: null });
     let spendCapCents: number;
     try {
       spendCapCents = parseEuroAmountToCents(spendCapEuros);
@@ -362,64 +216,167 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   }
 
   return (
-    <div className="space-y-5">
-      {props.nudge ? <BillingUpgradeNudge nudge={props.nudge} /> : null}
-
-      <SettingsSection title="Usage overview">
-        <BillingUsageSummary
-          periodYm={props.periodYm}
-          planName={props.planName}
-          planId={props.planId}
-          utilization={props.utilization}
-          freeRemaining={props.freeRemaining}
-          meteredSpendCents={props.meteredSpendCents}
-          meters={props.meters}
-          capacityUsage={props.capacityUsage}
-          costBearingPaused={props.costBearingPaused}
-          includedActiveMembers={props.includedActiveMembers}
-          additionalMemberCents={props.additionalMemberCents}
+    <div className="space-y-6">
+      {props.comp ? (
+        <BillingCompNotice
+          planName={props.comp.planName}
+          expired={props.comp.expired}
+          reason={props.comp.reason}
+          expiresOn={props.comp.expiresOn}
         />
-      </SettingsSection>
+      ) : null}
+      {state === 'payment_failed' ? (
+        <BillingStateBanner title="Payment failed.">
+          {props.canManage && props.polarConfigured && props.comp === null ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={openPortal}
+              className="text-sm font-medium text-fg underline-offset-4 hover:underline disabled:opacity-50"
+            >
+              Update payment method
+            </button>
+          ) : null}
+        </BillingStateBanner>
+      ) : null}
+      {state === 'spend_cap' ? (
+        <BillingStateBanner title="Spend cap reached.">
+          {props.canManage && props.comp === null ? (
+            <a
+              href="#billing-spend-cap"
+              className="text-sm font-medium text-fg underline-offset-4 hover:underline"
+            >
+              Raise cap
+            </a>
+          ) : null}
+        </BillingStateBanner>
+      ) : null}
+      {state === 'allowance' ? <BillingStateBanner title="Free allowance used up." /> : null}
 
-      <BillingPlanSection
-        planId={props.planId}
-        planName={props.planName}
-        billingState={props.billingState}
-        shadowBilling={props.shadowBilling}
-        polarConfigured={props.polarConfigured}
-        hasPolarSubscription={props.hasPolarSubscription}
-        canManage={props.canManage}
-        pending={pending}
-        comp={props.comp}
-        priceNotice={props.priceNotice}
-        showOperatorLink={props.showOperatorLink}
-        platformFeeCents={props.platformFeeCents}
-        onCheckout={runCheckout}
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-fg-muted">Current plan</p>
+          <p className="mt-1 text-lg font-medium text-fg">{props.planName}</p>
+          <p className="mt-1 font-mono text-sm text-fg" data-billing-price>
+            {planPriceLabel(props.planId, props.platformFeeCents)}
+          </p>
+          {props.planId === 'enterprise' && !props.hasPolarSubscription ? (
+            <p className="mt-2 text-sm text-fg-muted" data-enterprise-subscription="pending">
+              Subscription pending
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          {showPortal ? (
+            <button type="button" disabled={pending} onClick={openPortal} className={PRIMARY_CLASS}>
+              Manage payment
+            </button>
+          ) : null}
+          {selfServe ? (
+            <details id="change-plan">
+              <summary
+                className={
+                  showPortal || paymentFailed
+                    ? 'cursor-pointer text-sm text-fg-muted'
+                    : PRIMARY_CLASS
+                }
+              >
+                Change plan
+              </summary>
+              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                {(
+                  [
+                    ['payg', 'Pay as you go'],
+                    ['team', 'Team · €49/mo'],
+                    ['business', 'Business · €199/mo'],
+                  ] as const
+                ).map(([plan, label]) => (
+                  <button
+                    key={plan}
+                    type="button"
+                    disabled={
+                      pending ||
+                      !props.polarConfigured ||
+                      (props.planId === plan && props.hasPolarSubscription)
+                    }
+                    onClick={() => {
+                      runCheckout(plan);
+                    }}
+                    className={PLAN_BUTTON_CLASS}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      </div>
 
-      <BillingPlanPreview
-        preview={props.planPreview}
-        currentPlanId={props.planId}
-        activeMemberCount={props.activeMemberCount}
-      />
+      <ThisMonth {...props} />
 
-      <BillingSpendSection
-        includedDiscountRemainingCents={props.includedDiscountRemainingCents}
-        canManage={props.canManage}
-        pending={pending}
-        comped={props.comp !== null}
-        polarConfigured={props.polarConfigured}
-        paymentFailed={paymentFailed}
-        spendCapEuros={spendCapEuros}
-        onSpendCapDraft={(value) => {
-          updateForm({ spendCapDraft: value });
-        }}
-        onSaveSpendCap={saveSpendCap}
-        onOpenPortal={openPortal}
-      />
+      <div data-billing-invoice>
+        <p className="text-sm text-fg-muted">Next invoice</p>
+        <p className="mt-1 font-mono text-sm text-fg">
+          {formatEuroFromCents(nextInvoiceCents(props))}
+        </p>
+      </div>
 
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {message ? <p className="text-sm text-fg-muted">{message}</p> : null}
+      {props.comp ? null : (
+        <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />
+      )}
+
+      {props.canManage && props.planId !== 'free' ? (
+        <details id="billing-spend-cap">
+          <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
+            Spend cap
+          </summary>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="block text-sm">
+              <span className="text-fg-muted">EUR</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={spendCapEuros}
+                disabled={props.comp !== null}
+                onChange={(event) => {
+                  updateForm({ spendCapDraft: event.target.value });
+                }}
+                className="mt-1 block w-32 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg disabled:opacity-60"
+              />
+            </label>
+            {props.comp === null ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={saveSpendCap}
+                className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
+              >
+                Save
+              </button>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+
+      <p className="text-sm">
+        <Link href="/pricing" className="text-fg-muted underline-offset-4 hover:underline">
+          Pricing
+        </Link>
+      </p>
+      {props.showOperatorLink ? (
+        <p className="text-sm">
+          <Link
+            href="/app/admin/billing"
+            className="text-fg-muted underline-offset-4 hover:underline"
+          >
+            Operator billing
+          </Link>
+        </p>
+      ) : null}
+      {form.error ? <p className="text-sm text-danger">{form.error}</p> : null}
+      {form.message ? <p className="text-sm text-fg-muted">{form.message}</p> : null}
     </div>
   );
 }

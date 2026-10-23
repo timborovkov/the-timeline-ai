@@ -51,13 +51,8 @@ function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
       planId="free"
       planName="Free"
       billingState="free"
-      shadowBilling
       spendCapCents={0}
-      includedDiscountRemainingCents={0}
       meteredSpendCents={0}
-      periodYm="2026-10"
-      meters={{}}
-      capacityUsage={[]}
       utilization={{
         spendCapCents: 0,
         meteredSpendCents: 0,
@@ -71,40 +66,40 @@ function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
         storageGb: 1,
         acceptedSources: 1000,
       }}
-      nudge={null}
       costBearingPaused={false}
       polarConfigured
       hasPolarSubscription={false}
       canManage
       planPreview={planPreview}
-      activeMemberCount={1}
       comp={null}
-      priceNotice={null}
       showOperatorLink={false}
       {...overrides}
     />,
   );
 }
 
-describe('BillingSettingsPanel collection copy', () => {
-  it('offers PAYG checkout that saves a card for monthly invoicing', () => {
+function planButton(html: string, label: string): string {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const match = new RegExp(`<button[^>]*>${escaped}</button>`, 'u').exec(html);
+  return match?.[0] ?? '';
+}
+
+describe('BillingSettingsPanel', () => {
+  it('offers a plan change without collection essays', () => {
     const html = panel();
+    expect(html).toContain('Change plan');
     expect(html).toContain('Pay as you go');
-    expect(html).toContain('€0 Polar subscription');
-    expect(html).toContain('Checkout saves the card');
-    expect(html).toContain('invoiced monthly');
-    expect(html).toContain('Monthly Polar invoice on the card on file');
+    expect(html).toContain('Next invoice');
+    expect(html).toContain('href="/pricing"');
+    expect(html).not.toContain('€0 Polar subscription');
+    expect(html).not.toContain('Shadow billing');
+    expect(html).not.toContain('Billing state');
     expect(html).not.toContain('Top up');
     expect(html).not.toContain('Auto-reload');
     expect(html).not.toContain('Wallet');
   });
 
   it('keeps checkout available for the current plan until a Polar subscription exists', () => {
-    function planButton(html: string, label: string): string {
-      const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-      const match = new RegExp(`<button[^>]*>${escaped}</button>`, 'u').exec(html);
-      return match?.[0] ?? '';
-    }
     const open = panel({ planId: 'payg', planName: 'Pay as you go', hasPolarSubscription: false });
     expect(planButton(open, 'Pay as you go')).not.toContain('disabled=""');
     const subscribed = panel({
@@ -114,9 +109,10 @@ describe('BillingSettingsPanel collection copy', () => {
     });
     expect(planButton(subscribed, 'Pay as you go')).toContain('disabled=""');
     expect(planButton(subscribed, 'Team · €49/mo')).not.toContain('disabled=""');
+    expect(subscribed).toContain('Manage payment');
   });
 
-  it('turns checkout off on a comp without the enterprise message', () => {
+  it('turns checkout off on a comp', () => {
     const html = panel({
       planId: 'team',
       planName: 'Team',
@@ -127,40 +123,63 @@ describe('BillingSettingsPanel collection copy', () => {
         expiresOn: null,
       },
     });
-    expect(html).toContain('Polar checkout is turned off while this workspace is comped');
-    expect(html).not.toContain('Enterprise plan changes');
+    expect(html).toContain('Comped');
+    expect(html).toContain('No charge');
+    expect(html).not.toContain('would save');
+    expect(html).not.toContain('>Pay as you go<');
+    expect(html).not.toContain('Change plan');
     expect(html).not.toContain('Assign comp');
   });
 
-  it('shows the Enterprise subscription hold and the negotiated platform fee', () => {
+  it('shows a pending Enterprise subscription and the negotiated price', () => {
     const html = panel({
       planId: 'enterprise',
       planName: 'Enterprise',
       billingState: 'enterprise_active',
       hasPolarSubscription: false,
       platformFeeCents: 250_000,
-      includedActiveMembers: 40,
-      additionalMemberCents: 500,
+      meteredSpendCents: 0,
     });
     expect(html).toContain('data-enterprise-subscription="pending"');
-    expect(html).toContain('Usage is recorded locally and invoiced after an operator attaches');
-    expect(html).toContain('Negotiated platform fee');
+    expect(html).toContain('Subscription pending');
     expect(html).toContain('€2,500');
+    expect(html).toContain('Next invoice');
     expect(html).not.toContain('>Pay as you go<');
+    expect(html).not.toContain('Negotiated platform fee');
+    expect(html).not.toContain('enterprise_active');
   });
 
-  it('shows the past_due pause and a payment-method update', () => {
+  it('shows the past_due banner and a payment-method update', () => {
     const html = panel({
       planId: 'payg',
       planName: 'Pay as you go',
       billingState: 'past_due',
-      shadowBilling: false,
       costBearingPaused: true,
     });
-    expect(html).toContain('Payment failed');
-    expect(html).toContain('New cost-bearing work is paused');
+    expect(html).toContain('Payment failed.');
     expect(html).toContain('Update payment method');
+    expect(html).not.toContain('bg-signal');
     expect(html).not.toContain('Top up');
     expect(html).not.toContain('Auto-reload');
+  });
+
+  it('shows one spend-cap banner when the cap is reached', () => {
+    const html = panel({
+      planId: 'payg',
+      planName: 'Pay as you go',
+      billingState: 'payg_active',
+      spendCapCents: 2500,
+      meteredSpendCents: 2500,
+      utilization: {
+        spendCapCents: 2500,
+        meteredSpendCents: 2500,
+        percent: 100,
+        warnLevel: 100,
+      },
+    });
+    expect(html).toContain('Spend cap reached.');
+    expect(html).toContain('Raise cap');
+    expect(html).toContain('€25 of');
+    expect(html).toContain('€25');
   });
 });

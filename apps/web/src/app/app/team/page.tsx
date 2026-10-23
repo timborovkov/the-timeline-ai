@@ -7,12 +7,10 @@ import {
   users,
 } from '@timeline/db';
 import {
-  describePriceOverride,
   describeTeamComp,
   effectiveBillingPlanId,
   resolveTeamCommercialTerms,
   isPlatformAdminEmail,
-  getTeamCapacityUsage,
   isPolarBillingConfigured,
   PLAN_CATALOG,
 } from '@timeline/shared/billing';
@@ -211,15 +209,7 @@ export default async function TeamSettingsPage({
     ? effectiveBillingPlanId(billingDashboard.account)
     : 'free';
   const comp = billingDashboard ? describeTeamComp(billingDashboard.account) : null;
-  const priceNotice = billingDashboard ? describePriceOverride(billingDashboard.account) : null;
   const commercial = billingDashboard ? resolveTeamCommercialTerms(billingDashboard.account) : null;
-  const capacityUsage = billingDashboard
-    ? await getTeamCapacityUsage({
-        db,
-        teamId: active.teamId,
-        planId: entitlementsPlanId,
-      })
-    : [];
 
   return (
     <div className="space-y-4">
@@ -311,32 +301,20 @@ export default async function TeamSettingsPage({
               planId={entitlementsPlanId}
               planName={PLAN_CATALOG[entitlementsPlanId].name}
               billingState={billingDashboard.account.billingState}
-              shadowBilling={billingDashboard.account.shadowBilling}
               spendCapCents={billingDashboard.account.spendCapCents}
-              includedDiscountRemainingCents={
-                billingDashboard.account.includedDiscountRemainingCents
-              }
               meteredSpendCents={billingDashboard.meteredSpendCents}
-              periodYm={billingDashboard.periodYm}
-              meters={billingDashboard.meters}
-              capacityUsage={capacityUsage}
               utilization={billingDashboard.utilization}
               freeRemaining={billingDashboard.freeRemaining}
-              nudge={billingDashboard.nudge}
               costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
               hasPolarSubscription={Boolean(billingDashboard.account.polarSubscriptionId)}
               canManage={isAdmin}
               planPreview={billingDashboard.planPreview}
-              activeMemberCount={billingDashboard.activeMemberCount}
               comp={comp}
-              priceNotice={priceNotice}
               showOperatorLink={isPlatformAdminEmail(
                 session.user.email ?? '',
                 getEnv().PLATFORM_ADMIN_EMAILS,
               )}
-              includedActiveMembers={commercial?.includedActiveMembers}
-              additionalMemberCents={commercial?.additionalMemberCents}
               platformFeeCents={commercial?.platformFeeCents}
             />
           ) : null}

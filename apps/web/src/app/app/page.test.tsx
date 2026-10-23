@@ -268,7 +268,26 @@ describe('HomeDashboardPage', () => {
     });
   });
 
-  it('shows a billing upgrade nudge when the dashboard returns one', async () => {
+  it('hides billing nudges from members', async () => {
+    fakes.getDashboard.mockResolvedValue({
+      nudge: {
+        kind: 'free_near_limit',
+        title: 'You are close to the Free allowance',
+        body: 'Add a payment method before the next Ask.',
+        href: '/app/team?section=billing',
+        ctaLabel: 'Review billing',
+      },
+    });
+
+    const html = renderToStaticMarkup(await HomeDashboardPage());
+
+    expect(html).not.toContain('data-billing-nudge');
+    expect(html).not.toContain('You are close to the Free allowance');
+    expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: false });
+  });
+
+  it('shows admins a one-line billing nudge', async () => {
+    fakes.role = 'owner';
     fakes.getDashboard.mockResolvedValue({
       nudge: {
         kind: 'free_near_limit',
@@ -283,8 +302,11 @@ describe('HomeDashboardPage', () => {
 
     expect(html).toContain('data-billing-nudge="free_near_limit"');
     expect(html).toContain('You are close to the Free allowance');
+    expect(html).toContain('Review billing');
     expect(html).toContain('href="/app/team?section=billing"');
-    expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: false });
+    expect(html).not.toContain('Add a payment method before the next Ask.');
+    expect(html).not.toContain('See pricing');
+    expect(fakes.getDashboard).toHaveBeenCalledWith({ canManageBilling: true });
   });
 
   it('still renders Home when the billing dashboard fails to load', async () => {

@@ -1,16 +1,12 @@
-import {
-  effectiveBillingPlanId,
-  getTeamCapacityUsage,
-  PLAN_CATALOG,
-  resolveTeamCommercialTerms,
-} from '@timeline/shared/billing';
+import { getTeamCapacityUsage, resolveTeamCommercialTerms } from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
+import { customerBillingState } from '@/components/billing-customer-state';
+import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
 import { PageHeader } from '@/components/page-header';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -19,8 +15,14 @@ import { db } from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'Usage',
-  description: 'Metered usage, Free allowances, and spend-cap utilization for this workspace.',
+  description: 'Metered usage for this workspace.',
 };
+
+const NOTICE_TITLE = {
+  payment_failed: 'Payment failed.',
+  spend_cap: 'Spend cap reached.',
+  allowance: 'Free allowance used up.',
+} as const;
 
 export default async function UsagePage() {
   const session = await auth();
@@ -32,13 +34,31 @@ export default async function UsagePage() {
   const role = await scope.requireMembership();
   const canManage = role === 'owner' || role === 'admin';
   const dashboard = await scope.billing.getDashboard({ canManageBilling: canManage });
-  const entitlementsPlanId = effectiveBillingPlanId(dashboard.account);
   const commercial = resolveTeamCommercialTerms(dashboard.account);
-  const planName = PLAN_CATALOG[entitlementsPlanId].name;
+  const planId = commercial.planId;
+  const state = customerBillingState({
+    planId,
+    billingState: dashboard.account.billingState,
+    costBearingPaused: dashboard.costBearingPaused,
+    spendCapCents: dashboard.account.spendCapCents,
+    meteredSpendCents: dashboard.meteredSpendCents,
+    warnPercent: dashboard.utilization.percent,
+  });
+  const notice = state ? NOTICE_TITLE[state] : null;
+
+  if (!canManage) {
+    return (
+      <div className="space-y-5">
+        <PageHeader variant="collection" title="Usage" />
+        {notice ? <BillingStateBanner title={notice} /> : null}
+      </div>
+    );
+  }
+
   const capacityUsage = await getTeamCapacityUsage({
     db,
     teamId: active.teamId,
-    planId: entitlementsPlanId,
+    planId,
   });
 
   return (
@@ -46,36 +66,31 @@ export default async function UsagePage() {
       <PageHeader
         variant="collection"
         title="Usage"
-        subtitle="Native meters and euro values for this billing period."
-        metadata={[
-          { label: 'Plan', value: planName },
-          { label: 'Period', value: dashboard.periodYm, mono: true },
-        ]}
-      >
-        <PageHeader.Trailing>
-          {canManage ? (
+        metadata={[{ label: 'Period', value: dashboard.periodYm, mono: true }]}
+      />
+      {notice ? (
+        <BillingStateBanner title={notice}>
+          {state === 'spend_cap' ? (
+            <Link
+              href="/app/team?section=billing#billing-spend-cap"
+              className="text-sm font-medium text-fg underline-offset-4 hover:underline"
+            >
+              Raise cap
+            </Link>
+          ) : state === 'payment_failed' ? (
             <Link
               href="/app/team?section=billing"
-              className="inline-flex min-h-10 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg"
+              className="text-sm font-medium text-fg underline-offset-4 hover:underline"
             >
-              Billing settings
+              Update payment method
             </Link>
           ) : null}
-        </PageHeader.Trailing>
-      </PageHeader>
-
-      {dashboard.nudge ? <BillingUpgradeNudge nudge={dashboard.nudge} /> : null}
-
+        </BillingStateBanner>
+      ) : null}
       <BillingUsageSummary
-        periodYm={dashboard.periodYm}
-        planName={planName}
-        planId={dashboard.account.planId}
-        utilization={dashboard.utilization}
-        freeRemaining={dashboard.freeRemaining}
-        meteredSpendCents={dashboard.meteredSpendCents}
+        planId={planId}
         meters={dashboard.meters}
         capacityUsage={capacityUsage}
-        costBearingPaused={dashboard.costBearingPaused}
         includedActiveMembers={commercial.includedActiveMembers}
         additionalMemberCents={commercial.additionalMemberCents}
       />

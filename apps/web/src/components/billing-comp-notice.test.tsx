@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
 
 describe('BillingCompNotice', () => {
-  it('states that a comp has no Polar charges and still meters usage', () => {
+  it('states that a comp has no charge', () => {
     const html = renderToStaticMarkup(
       <BillingCompNotice
         planName="Team"
@@ -13,19 +13,16 @@ describe('BillingCompNotice', () => {
         expiresOn="2026-12-31"
       />,
     );
-    expect(html).toContain('Comped internal plan (Team)');
-    expect(html).toContain('No Polar charges');
-    expect(html).toContain('spend cap still pauses');
-    expect(html).toContain('Tim internal');
-    expect(html).toContain('2026-12-31');
+    expect(html).toContain('Comped through 2026-12-31. No charge.');
+    expect(html).not.toContain('Tim internal');
+    expect(html).not.toContain('Polar');
   });
 
   it('states when a comp has expired', () => {
     const html = renderToStaticMarkup(
       <BillingCompNotice planName="Free" expired reason={null} expiresOn="2026-01-01" />,
     );
-    expect(html).toContain('Comped internal plan expired');
-    expect(html).toContain('fell back to Free');
+    expect(html).toContain('Comp ended. This workspace is on Free.');
     expect(html).not.toContain('2026-01-01');
   });
 });

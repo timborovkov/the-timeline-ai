@@ -546,7 +546,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       `team_billing_*` ledger, `/pricing`, team Billing settings, webhook verify,
       shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
-      contact nudge; `/app/usage` tracking (meters plus folded infrastructure limits); Home/Usage/Billing upgrade nudges;
+      contact nudge; `/app/usage` is a meter, amount, and cost table (infrastructure limits stay
+      folded); team Billing shows the plan price, one spend-versus-cap bar, the next invoice, and
+      one action; members only see a cap or allowance notice; Home keeps a one-line admin nudge.
       Free hard-stop + spend-cap admission in billing scope (`release` included).
 - [x] Wire native v1 meters at production call sites: Ask + Recall (existing),
       background LLM workers via ALS (`withAiMetering` in the OpenRouter wrappers),

@@ -177,7 +177,9 @@ export default async function HomeDashboardPage() {
 
       <OnboardingChecklist initialData={initialChecklist} />
 
-      {billingDashboard?.nudge ? <BillingUpgradeNudge nudge={billingDashboard.nudge} /> : null}
+      {isAdmin && billingDashboard?.nudge ? (
+        <BillingUpgradeNudge nudge={billingDashboard.nudge} />
+      ) : null}
 
       <HomeAttention
         groups={[
