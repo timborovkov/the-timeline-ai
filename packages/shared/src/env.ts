@@ -194,6 +194,27 @@ const baseSchema = z.object({
   QDRANT_URL: z.url().optional(),
   QDRANT_API_KEY: z.string().optional(),
   QDRANT_COLLECTION: z.string().default('events'),
+  /**
+   * Quantization used when auto-creating a collection. `scalar` (default)
+   * stores int8 quantized vectors in RAM with original float32 vectors on
+   * disk. `binary` is the more aggressive option; pair it with search
+   * rescore/oversampling. Existing collections are not rewritten — copy
+   * points into a new collection, then switch `QDRANT_COLLECTION`.
+   */
+  QDRANT_QUANTIZATION: z.preprocess(
+    emptyStringAsUnset,
+    z.enum(['scalar', 'binary']).default('scalar'),
+  ),
+  /** Search-time rescore of quantized hits against original vectors. */
+  QDRANT_QUANTIZATION_RESCORE: z.preprocess(booleanString, z.boolean().default(true)),
+  /**
+   * Extra quantized candidates fetched before rescore. Unset uses 2 for
+   * scalar and 4 for binary. Blank values from `.env.example` are unset.
+   */
+  QDRANT_QUANTIZATION_OVERSAMPLING: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce.number().positive().optional(),
+  ),
 
   // S3 / RustFS (Phase 3+)
   S3_ENDPOINT: z.url().optional(),

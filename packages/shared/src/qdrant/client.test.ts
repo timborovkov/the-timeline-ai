@@ -95,6 +95,14 @@ function makeFetcher(
     if (method === 'POST' && url.endsWith('/points/delete')) {
       return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
     }
+    if (method === 'POST' && url.endsWith('/points/count')) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ result: { count: searchResult.length } }), { status: 200 }),
+      );
+    }
+    if (method === 'GET' && url.endsWith('/metrics')) {
+      return Promise.resolve(new Response('', { status: 200 }));
+    }
     // POST /collections/<name>/points/scroll
     if (method === 'POST' && url.endsWith('/points/scroll')) {
       return Promise.resolve(
@@ -188,6 +196,13 @@ describe('createQdrantClient', () => {
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
     expect(creates).toHaveLength(1);
+    expect(creates[0]?.body).toEqual({
+      vectors: { size: 4, distance: 'Cosine', on_disk: true },
+      quantization_config: {
+        scalar: { type: 'int8', quantile: 0.99, always_ram: true },
+      },
+      on_disk_payload: true,
+    });
     const indexes = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
     expect(indexes).toHaveLength(1);
     expect(indexes[0]?.body).toEqual({
@@ -213,6 +228,7 @@ describe('createQdrantClient', () => {
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
     );
     expect(creates).toHaveLength(0);
+    expect(calls.some((call) => call.method === 'PATCH')).toBe(false);
     const indexes = calls.filter((c) => c.method === 'PUT' && c.url.endsWith('/index'));
     expect(indexes).toHaveLength(0);
   });
@@ -328,6 +344,68 @@ describe('createQdrantClient', () => {
     await expect(client.countDistinctSources('team-A', { sourceKind: 'raw_event' })).resolves.toBe(
       2,
     );
+  });
+
+  it('countAllPoints uses an unfiltered exact count', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await expect(client.countAllPoints()).resolves.toBe(0);
+    const count = calls.find((c) => c.url.endsWith('/points/count'));
+    expect(count?.body).toEqual({ exact: true });
+  });
+
+  it('honors an exact searchParams override for recall probes', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0], { searchParams: { exact: true } });
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    expect(search?.body).toMatchObject({ params: { exact: true } });
+    expect(
+      (search?.body as { params?: { quantization?: unknown } }).params?.quantization,
+    ).toBeUndefined();
+  });
+
+  it('search sends quantization rescore params', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0.1, 0.2, 0.3, 0.4]);
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    expect(search?.body).toMatchObject({
+      params: { quantization: { rescore: true, oversampling: 2 } },
+    });
+  });
+
+  it('honors QDRANT_QUANTIZATION_RESCORE=false on the search path', async () => {
+    process.env.QDRANT_QUANTIZATION_RESCORE = 'false';
+    resetEnvForTests();
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0]);
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    expect(search?.body).toMatchObject({
+      params: { quantization: { rescore: false, oversampling: 2 } },
+    });
+  });
+
+  it('binary quantization env changes collection create body and oversampling', async () => {
+    process.env.QDRANT_QUANTIZATION = 'binary';
+    resetEnvForTests();
+    const { fetcher, calls } = makeFetcher({ collectionExists: false });
+    const client = createQdrantClient({ fetcher, vectorSize: 4 });
+    await client.ensureCollection();
+    const create = calls.find(
+      (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_test'),
+    );
+    expect(create?.body).toMatchObject({
+      quantization_config: { binary: { always_ram: true } },
+      vectors: { on_disk: true },
+      on_disk_payload: true,
+    });
+    await client.search('team-A', 'user-1', [0, 0, 0, 0]);
+    const search = calls.find((c) => c.url.endsWith('/points/search'));
+    expect(search?.body).toMatchObject({
+      params: { quantization: { rescore: true, oversampling: 4 } },
+    });
   });
 
   it('search filter ALWAYS includes team_id in must (load-bearing)', async () => {
@@ -506,7 +584,9 @@ describe('createQdrantClient', () => {
   it('requireExisting throws on missing collection instead of auto-creating', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: false });
     const client = createQdrantClient({ fetcher, collection: 'events_v2', requireExisting: true });
-    await expect(client.ensureCollection()).rejects.toThrow(/does not exist/);
+    await expect(client.ensureCollection()).rejects.toThrow(
+      /does not exist.*on-disk collection-copy/,
+    );
     // Must NOT have attempted to PUT the collection.
     const creates = calls.filter(
       (c) => c.method === 'PUT' && c.url.endsWith('/collections/events_v2'),

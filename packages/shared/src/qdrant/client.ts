@@ -1,5 +1,11 @@
 import { getEnv } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
+import {
+  qdrantCollectionCreateBody,
+  qdrantQuantizationFromEnv,
+  qdrantSearchQuantizationParams,
+  type QdrantQuantizationSettings,
+} from '#src/qdrant/collection-config.js';
 import { buildPointId, type PointScope } from '#src/qdrant/point-id.js';
 
 /**
@@ -163,6 +169,42 @@ export interface SearchOpts {
   /** Restrict results to points written by one embedding model. Useful for
    * model migrations where old and new deterministic point ids coexist. */
   embeddingModel?: string;
+  /**
+   * Override HNSW / quantization search params. Production search always
+   * sends quantization rescore from env. The storage-layout recall probe
+   * uses `exact: true` as the uncompressed ground truth.
+   */
+  searchParams?: {
+    exact?: boolean;
+    quantization?: {
+      ignore?: boolean;
+      rescore?: boolean;
+      oversampling?: number;
+    };
+  };
+}
+
+export interface QdrantPointRecord {
+  id: string | number;
+  vector: number[];
+  payload: QdrantPayload;
+}
+
+export interface ScrollPointsInput {
+  filter?: Record<string, unknown>;
+  limit?: number;
+  offset?: unknown;
+  withPayload?: boolean | string[];
+  withVector?: boolean;
+}
+
+export interface ScrollPointsPage {
+  points: {
+    id: string | number;
+    vector?: unknown;
+    payload?: QdrantPayload | undefined;
+  }[];
+  nextOffset: unknown;
 }
 
 export interface SearchHit {
@@ -213,6 +255,22 @@ export interface QdrantClient {
    */
   countPoints(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
   countDistinctSources(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
+  /**
+   * Exact collection-wide point count (no team filter). Used by the
+   * storage-layout copy to verify source and target collections match.
+   */
+  countAllPoints(): Promise<number>;
+  /**
+   * One scroll page. Used by the storage-layout copy (vectors + payload)
+   * and by the recall probe (sample query vectors).
+   */
+  scrollPoints(input?: ScrollPointsInput): Promise<ScrollPointsPage>;
+  /** Batch upsert used by the storage-layout copy. */
+  upsertPoints(points: QdrantPointRecord[]): Promise<void>;
+  /** Raw collection info (config, counts). Used by RAM/recall measurement. */
+  collectionInfo(): Promise<unknown>;
+  /** Prometheus text from `/metrics`. Used by RAM measurement. */
+  metricsText(): Promise<string>;
   /** Test/admin-only: read the collection name this instance writes to. */
   collectionName(): string;
 }
@@ -237,11 +295,11 @@ export interface QdrantClientOptions {
   fetcher?: typeof fetch;
   /**
    * Require the collection to already exist; do not auto-create on 404.
-   * Used by the re-embed script when writing into a migration collection,
-   * so that a stale worker process (started before embedding dimensions
-   * changed) cannot silently create the new collection at the old size and
-   * corrupt the cutover. The operator must follow the documented step-2
-   * explicit create.
+   * Used by the re-embed script and the on-disk collection copy when writing
+   * into a migration collection, so that a stale worker process cannot
+   * silently create the new collection at the old size or in-RAM layout and
+   * corrupt the cutover. The operator must create the target collection
+   * explicitly (`--create-target` or the documented PUT).
    */
   requireExisting?: boolean;
 }
@@ -301,6 +359,27 @@ function tenantPayloadIndexBody(): unknown {
   };
 }
 
+function pointIdFromUnknown(value: unknown): string | number | null {
+  if (typeof value === 'string' && value.length > 0) return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  return null;
+}
+
+function searchParamsBody(
+  searchOpts: SearchOpts,
+  quantization: QdrantQuantizationSettings,
+): Record<string, unknown> {
+  if (searchOpts.searchParams) {
+    return {
+      ...(searchOpts.searchParams.exact ? { exact: true } : {}),
+      ...(searchOpts.searchParams.quantization
+        ? { quantization: searchOpts.searchParams.quantization }
+        : {}),
+    };
+  }
+  return qdrantSearchQuantizationParams(quantization);
+}
+
 /**
  * Construct a Qdrant client bound to a single collection. The raw REST surface
  * is intentionally hidden — every read path goes through `search`, which bakes
@@ -321,6 +400,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   const vectorSize = opts.vectorSize ?? TIMELINE_MODELS.embedding.embeddingDimensions;
   const fetcher = opts.fetcher ?? fetch;
   const requireExisting = opts.requireExisting ?? false;
+  const quantization = qdrantQuantizationFromEnv(env);
   const headers = buildHeaders(env.QDRANT_API_KEY);
 
   let ensurePromise: Promise<void> | undefined;
@@ -371,21 +451,24 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         }
         return;
       }
-      // requireExisting: used by the re-embed script's --target-collection
-      // path. The operator pre-creates the new collection at the new vector
-      // size (documented step 2). Without this guard, a worker process
-      // started before the env change would auto-create the new collection
-      // at the old embedding dimensions, silently corrupting the cutover.
+      // requireExisting: used by re-embed and the on-disk collection copy
+      // when writing into --target-collection. The operator pre-creates the
+      // destination (documented create step / --create-target). Without this
+      // guard, a stale worker could auto-create the target at the wrong
+      // vector size or in-RAM layout and corrupt the cutover.
       if (requireExisting) {
         throw new Error(
-          `Qdrant collection '${collection}' does not exist and requireExisting=true. Create it explicitly per the re-embed procedure.`,
+          `Qdrant collection '${collection}' does not exist and requireExisting=true. Create it explicitly per the re-embed or on-disk collection-copy procedure.`,
         );
       }
-      // 404 → create. PUT is idempotent in Qdrant (returns 200 if it exists),
-      // so two concurrent boots racing here is safe.
-      const create = await request('PUT', `/collections/${encodeURIComponent(collection)}`, {
-        vectors: { size: vectorSize, distance: 'Cosine' },
-      });
+      // 404 → create. Existing collections are left untouched (no PATCH of
+      // on-disk / quantization). PUT is idempotent in Qdrant when two
+      // concurrent boots race on a missing collection.
+      const create = await request(
+        'PUT',
+        `/collections/${encodeURIComponent(collection)}`,
+        qdrantCollectionCreateBody(vectorSize, quantization.kind),
+      );
       if (create.status !== 200 && create.status !== 201) {
         // 409-ish "already exists" responses come back as 200 here; if we still
         // see a non-success, throw so the caller (worker boot) fails loudly.
@@ -416,18 +499,25 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   }
 
   async function upsertVector(id: string, vector: number[], payload: QdrantPayload): Promise<void> {
-    if (vector.length !== vectorSize) {
-      throw new Error(
-        `Qdrant vector length ${String(vector.length)} != configured collection size ${String(
-          vectorSize,
-        )}. Check TIMELINE_MODELS.embedding and run the documented re-embed/QDRANT_COLLECTION migration before retrying jobs.`,
-      );
+    await upsertPoints([{ id, vector, payload }]);
+  }
+
+  async function upsertPoints(points: QdrantPointRecord[]): Promise<void> {
+    if (points.length === 0) return;
+    for (const point of points) {
+      if (point.vector.length !== vectorSize) {
+        throw new Error(
+          `Qdrant vector length ${String(point.vector.length)} != configured collection size ${String(
+            vectorSize,
+          )}. Check TIMELINE_MODELS.embedding and run the documented re-embed/QDRANT_COLLECTION migration before retrying jobs.`,
+        );
+      }
     }
     await ensureCollection();
     const res = await request(
       'PUT',
       `/collections/${encodeURIComponent(collection)}/points?wait=true`,
-      { points: [{ id, vector, payload }] },
+      { points },
     );
     if (res.status !== 200 && res.status !== 202) {
       throw new Error(`Qdrant upsert failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
@@ -594,6 +684,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
         limit: searchOpts.limit ?? 20,
         ...(searchOpts.offset ? { offset: searchOpts.offset } : {}),
         with_payload: true,
+        params: searchParamsBody(searchOpts, quantization),
       },
     );
     if (res.status !== 200) {
@@ -789,11 +880,20 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     if (opts.sourceKind) {
       must.push({ key: 'source_kind', match: { value: opts.sourceKind } });
     }
+    return countWithFilter({ must });
+  }
+
+  async function countAllPoints(): Promise<number> {
+    await ensureCollection();
+    return countWithFilter();
+  }
+
+  async function countWithFilter(filter?: Record<string, unknown>): Promise<number> {
     const res = await request(
       'POST',
       `/collections/${encodeURIComponent(collection)}/points/count`,
       {
-        filter: { must },
+        ...(filter ? { filter } : {}),
         exact: true,
       },
     );
@@ -804,46 +904,84 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     return body.result?.count ?? 0;
   }
 
+  async function scrollPoints(input: ScrollPointsInput = {}): Promise<ScrollPointsPage> {
+    await ensureCollection();
+    const body: Record<string, unknown> = {
+      limit: input.limit ?? 64,
+      with_payload: input.withPayload ?? true,
+      with_vector: input.withVector ?? false,
+    };
+    if (input.filter) body.filter = input.filter;
+    if (input.offset !== undefined && input.offset !== null) body.offset = input.offset;
+    const res = await request(
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/points/scroll`,
+      body,
+    );
+    if (res.status !== 200) {
+      throw new Error(`Qdrant scroll failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+    }
+    const result = (res.data ?? {}) as {
+      result?: {
+        points?: { id?: unknown; vector?: unknown; payload?: QdrantPayload }[];
+        next_page_offset?: unknown;
+      };
+    };
+    const points = (result.result?.points ?? [])
+      .map((point) => {
+        const id = pointIdFromUnknown(point.id);
+        if (id === null) return null;
+        return { id, vector: point.vector, payload: point.payload };
+      })
+      .filter((point): point is NonNullable<typeof point> => point !== null);
+    return { points, nextOffset: result.result?.next_page_offset ?? null };
+  }
+
+  async function collectionInfo(): Promise<unknown> {
+    await ensureCollection();
+    const res = await request('GET', `/collections/${encodeURIComponent(collection)}`);
+    if (res.status !== 200) {
+      throw new Error(
+        `Qdrant collection info failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
+      );
+    }
+    return res.data;
+  }
+
+  async function metricsText(): Promise<string> {
+    const res = await fetcher(`${baseUrl}/metrics`, { headers });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`Qdrant metrics failed: ${String(res.status)} ${text}`);
+    }
+    return text;
+  }
+
   async function scrollPointPayloads(
     filter: Record<string, unknown>,
     payloadFields: string[],
     pageLimit = 256,
-  ): Promise<Record<string, unknown>[]> {
-    const payloads: Record<string, unknown>[] = [];
+  ): Promise<QdrantPayload[]> {
+    const payloads: QdrantPayload[] = [];
     let offset: unknown;
     for (;;) {
-      const body: Record<string, unknown> = {
-        limit: pageLimit,
+      const page = await scrollPoints({
         filter,
-        with_payload: payloadFields,
-        with_vector: false,
-        with_vectors: false,
-      };
-      if (offset !== undefined && offset !== null) body.offset = offset;
-      const res = await request(
-        'POST',
-        `/collections/${encodeURIComponent(collection)}/points/scroll`,
-        body,
-      );
-      if (res.status !== 200) {
-        throw new Error(`Qdrant scroll failed: ${String(res.status)} ${JSON.stringify(res.data)}`);
+        limit: pageLimit,
+        offset,
+        withPayload: payloadFields,
+        withVector: false,
+      });
+      for (const point of page.points) {
+        if (point.payload) payloads.push(point.payload);
       }
-      const result = (res.data ?? {}) as {
-        result?: {
-          points?: { payload?: Record<string, unknown> }[];
-          next_page_offset?: unknown;
-        };
-      };
-      for (const point of result.result?.points ?? []) {
-        payloads.push(point.payload ?? {});
-      }
-      offset = result.result?.next_page_offset;
+      offset = page.nextOffset;
       if (offset === undefined || offset === null) return payloads;
     }
   }
 
-  function sourceIdFromPayload(payload: Record<string, unknown>, kind?: SourceKind): string | null {
-    if (typeof payload.source_id === 'string') return payload.source_id;
+  function sourceIdFromPayload(payload: QdrantPayload, kind?: SourceKind): string | null {
+    if (payload.source_id) return payload.source_id;
     const field =
       kind === 'fact'
         ? 'fact_id'
@@ -901,6 +1039,11 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     pointsExist,
     countPoints,
     countDistinctSources,
+    countAllPoints,
+    scrollPoints,
+    upsertPoints,
+    collectionInfo,
+    metricsText,
     collectionName: () => collection,
   };
 }

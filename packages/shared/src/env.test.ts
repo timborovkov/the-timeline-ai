@@ -147,6 +147,43 @@ describe('getEnv', () => {
     });
   });
 
+  it('defaults Qdrant quantization to scalar int8 with search rescore', () => {
+    setBaseEnv({
+      QDRANT_COLLECTION: undefined,
+      QDRANT_QUANTIZATION: undefined,
+      QDRANT_QUANTIZATION_RESCORE: undefined,
+      QDRANT_QUANTIZATION_OVERSAMPLING: undefined,
+    });
+    expect(getEnv()).toMatchObject({
+      QDRANT_COLLECTION: 'events',
+      QDRANT_QUANTIZATION: 'scalar',
+      QDRANT_QUANTIZATION_RESCORE: true,
+    });
+    expect(getEnv().QDRANT_QUANTIZATION_OVERSAMPLING).toBeUndefined();
+  });
+
+  it('treats blank Qdrant quantization env as the documented defaults', () => {
+    setBaseEnv({
+      QDRANT_QUANTIZATION: '',
+      QDRANT_QUANTIZATION_OVERSAMPLING: '',
+    });
+    expect(getEnv().QDRANT_QUANTIZATION).toBe('scalar');
+    expect(getEnv().QDRANT_QUANTIZATION_OVERSAMPLING).toBeUndefined();
+  });
+
+  it('accepts binary quantization and an explicit oversampling factor', () => {
+    setBaseEnv({
+      QDRANT_QUANTIZATION: 'binary',
+      QDRANT_QUANTIZATION_RESCORE: 'false',
+      QDRANT_QUANTIZATION_OVERSAMPLING: '3.5',
+    });
+    expect(getEnv()).toMatchObject({
+      QDRANT_QUANTIZATION: 'binary',
+      QDRANT_QUANTIZATION_RESCORE: false,
+      QDRANT_QUANTIZATION_OVERSAMPLING: 3.5,
+    });
+  });
+
   it('keeps cross-source evidence disabled until an operator selects a rollout mode', () => {
     setBaseEnv({ CROSS_SOURCE_EVIDENCE_MODE: undefined });
     expect(getEnv().CROSS_SOURCE_EVIDENCE_MODE).toBe('off');
