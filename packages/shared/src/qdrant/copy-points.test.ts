@@ -9,6 +9,8 @@ import {
 import {
   copyCollectionPoints,
   denseVectorFromUnknown,
+  listCollectionTeamIds,
+  teamIdScrollFilter,
   verifyCollectionCounts,
   verifyCollectionIdentity,
 } from '#src/qdrant/copy-points.js';
@@ -52,6 +54,21 @@ interface StoredPoint {
   payload: QdrantPayload;
 }
 
+const TEAM_IDS = [payload.team_id];
+
+function applyTeamFilter(points: StoredPoint[], filter: unknown): StoredPoint[] {
+  const record = filter && typeof filter === 'object' ? (filter as { must?: unknown }) : null;
+  const must = Array.isArray(record?.must) ? record.must : [];
+  const teamClause = must.find(
+    (clause): clause is { key: string; match: { value: string } } =>
+      Boolean(clause) &&
+      typeof clause === 'object' &&
+      (clause as { key?: string }).key === 'team_id',
+  );
+  if (!teamClause) return points;
+  return points.filter((point) => point.payload.team_id === teamClause.match.value);
+}
+
 function memoryQdrant(initial: Record<string, StoredPoint[]>): {
   fetcher: typeof fetch;
   store: Record<string, StoredPoint[]>;
@@ -85,8 +102,8 @@ function memoryQdrant(initial: Record<string, StoredPoint[]>): {
       );
     }
     if (method === 'POST' && url.endsWith('/points/scroll')) {
-      const req = (body ?? {}) as { offset?: string; limit?: number };
-      const points = store[collection] ?? [];
+      const req = (body ?? {}) as { offset?: string; limit?: number; filter?: unknown };
+      const points = applyTeamFilter(store[collection] ?? [], req.filter);
       const start = req.offset ? points.findIndex((point) => point.id === req.offset) + 1 : 0;
       const slice = points.slice(start, start + (req.limit ?? 64));
       const last = slice[slice.length - 1];
@@ -117,8 +134,10 @@ function memoryQdrant(initial: Record<string, StoredPoint[]>): {
       );
     }
     if (method === 'POST' && url.endsWith('/points/count')) {
+      const req = (body ?? {}) as { filter?: unknown };
+      const points = applyTeamFilter(store[collection] ?? [], req.filter);
       return Promise.resolve(
-        new Response(JSON.stringify({ result: { count: store[collection].length } }), {
+        new Response(JSON.stringify({ result: { count: points.length } }), {
           status: 200,
         }),
       );
@@ -176,7 +195,12 @@ describe('copyCollectionPoints', () => {
       requireExisting: true,
     });
 
-    const copied = await copyCollectionPoints({ source, target, pageSize: 1 });
+    const copied = await copyCollectionPoints({
+      source,
+      target,
+      teamIds: TEAM_IDS,
+      pageSize: 1,
+    });
     expect(copied).toMatchObject({
       scanned: 2,
       upserted: 2,
@@ -186,15 +210,19 @@ describe('copyCollectionPoints', () => {
     });
     expect(store.events_ondisk).toEqual(sourcePoints);
 
-    const counts = await verifyCollectionCounts(source, target);
+    const counts = await verifyCollectionCounts(source, target, TEAM_IDS);
     expect(counts).toEqual({
       sourceCollection: 'events',
       targetCollection: 'events_ondisk',
+      teamIds: TEAM_IDS,
       sourceCount: 2,
       targetCount: 2,
       matched: true,
     });
-    const identity = await verifyCollectionIdentity(source, target, { pageSize: 1 });
+    const identity = await verifyCollectionIdentity(source, target, {
+      teamIds: TEAM_IDS,
+      pageSize: 1,
+    });
     expect(identity.matched).toBe(true);
   });
 
@@ -236,14 +264,21 @@ describe('copyCollectionPoints', () => {
       requireExisting: true,
     });
 
-    const copied = await copyCollectionPoints({ source, target, pageSize: 8 });
+    const copied = await copyCollectionPoints({
+      source,
+      target,
+      teamIds: TEAM_IDS,
+      pageSize: 8,
+    });
     expect(copied).toMatchObject({
       scanned: 1,
       upserted: 1,
       resync: { scanned: 2, upserted: 2 },
     });
     expect(store.events_ondisk?.map((point) => point.id)).toEqual(['p1', 'p-late']);
-    await expect(verifyCollectionIdentity(source, target)).resolves.toMatchObject({
+    await expect(
+      verifyCollectionIdentity(source, target, { teamIds: TEAM_IDS }),
+    ).resolves.toMatchObject({
       matched: true,
       sourceCount: 2,
       targetCount: 2,
@@ -267,8 +302,12 @@ describe('copyCollectionPoints', () => {
       vectorSize: 4,
       requireExisting: true,
     });
-    await expect(verifyCollectionCounts(source, target)).resolves.toMatchObject({ matched: true });
-    await expect(verifyCollectionIdentity(source, target)).resolves.toMatchObject({
+    await expect(verifyCollectionCounts(source, target, TEAM_IDS)).resolves.toMatchObject({
+      matched: true,
+    });
+    await expect(
+      verifyCollectionIdentity(source, target, { teamIds: TEAM_IDS }),
+    ).resolves.toMatchObject({
       matched: false,
       vectorMismatches: ['p1'],
     });
@@ -293,7 +332,12 @@ describe('copyCollectionPoints', () => {
       requireExisting: true,
     });
 
-    const copied = await copyCollectionPoints({ source, target, dryRun: true });
+    const copied = await copyCollectionPoints({
+      source,
+      target,
+      teamIds: TEAM_IDS,
+      dryRun: true,
+    });
     expect(copied.upserted).toBe(1);
     expect(copied.dryRun).toBe(true);
     expect(store.events_ondisk).toEqual([]);
@@ -327,11 +371,11 @@ describe('copyCollectionPoints', () => {
     });
     store.events = sourcePoints;
 
-    const copied = await copyCollectionPoints({ source, target });
+    const copied = await copyCollectionPoints({ source, target, teamIds: TEAM_IDS });
     expect(copied).toMatchObject({ scanned: 3, upserted: 1, skipped: 2 });
     expect(store.events_ondisk).toEqual([{ id: 'p1', vector: [0.1, 0.2, 0.3, 0.4], payload }]);
 
-    const counts = await verifyCollectionCounts(source, target);
+    const counts = await verifyCollectionCounts(source, target, TEAM_IDS);
     expect(counts.matched).toBe(false);
     expect(counts).toMatchObject({ sourceCount: 3, targetCount: 1 });
   });
@@ -339,8 +383,84 @@ describe('copyCollectionPoints', () => {
   it('refuses to copy a collection onto itself', async () => {
     const { fetcher } = memoryQdrant({ events: [] });
     const client = createQdrantClient({ fetcher, collection: 'events', vectorSize: 4 });
-    await expect(copyCollectionPoints({ source: client, target: client })).rejects.toThrow(
-      /distinct/,
+    await expect(
+      copyCollectionPoints({ source: client, target: client, teamIds: TEAM_IDS }),
+    ).rejects.toThrow(/distinct/);
+  });
+
+  it('refuses a copy without team ids', async () => {
+    const { fetcher } = memoryQdrant({ events: [] });
+    const source = createQdrantClient({ fetcher, collection: 'events', vectorSize: 4 });
+    const target = createQdrantClient({
+      fetcher,
+      collection: 'events_ondisk',
+      vectorSize: 4,
+    });
+    await expect(copyCollectionPoints({ source, target, teamIds: [] })).rejects.toThrow(
+      /at least one teamId/,
     );
+  });
+
+  it('copies only the requested team and leaves other tenants in the source', async () => {
+    const otherPayload: QdrantPayload = { ...payload, team_id: 'team-B' };
+    const { fetcher, store } = memoryQdrant({
+      events: [
+        { id: 'p-a', vector: [0.1, 0.2, 0.3, 0.4], payload },
+        { id: 'p-b', vector: [0.5, 0.6, 0.7, 0.8], payload: otherPayload },
+      ],
+      events_ondisk: [],
+    });
+    const source = createQdrantClient({
+      fetcher,
+      collection: 'events',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    const target = createQdrantClient({
+      fetcher,
+      collection: 'events_ondisk',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+
+    const copied = await copyCollectionPoints({
+      source,
+      target,
+      teamIds: ['team-A'],
+      resync: false,
+    });
+    expect(copied.upserted).toBe(1);
+    expect(store.events_ondisk?.map((point) => point.id)).toEqual(['p-a']);
+    expect(teamIdScrollFilter('team-A')).toEqual({
+      must: [{ key: 'team_id', match: { value: 'team-A' } }],
+    });
+  });
+
+  it('discovers team ids then copies each tenant in a filtered loop', async () => {
+    const otherPayload: QdrantPayload = { ...payload, team_id: 'team-B' };
+    const { fetcher, store } = memoryQdrant({
+      events: [
+        { id: 'p-a', vector: [0.1, 0.2, 0.3, 0.4], payload },
+        { id: 'p-b', vector: [0.5, 0.6, 0.7, 0.8], payload: otherPayload },
+      ],
+      events_ondisk: [],
+    });
+    const source = createQdrantClient({
+      fetcher,
+      collection: 'events',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+    const target = createQdrantClient({
+      fetcher,
+      collection: 'events_ondisk',
+      vectorSize: 4,
+      requireExisting: true,
+    });
+
+    const teamIds = await listCollectionTeamIds(source);
+    expect(teamIds).toEqual(['team-A', 'team-B']);
+    await copyCollectionPoints({ source, target, teamIds, resync: false });
+    expect(store.events_ondisk?.map((point) => point.id).sort()).toEqual(['p-a', 'p-b']);
   });
 });

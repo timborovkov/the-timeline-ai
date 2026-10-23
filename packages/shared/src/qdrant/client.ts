@@ -196,6 +196,11 @@ export interface ScrollPointsInput {
   offset?: unknown;
   withPayload?: boolean | string[];
   withVector?: boolean;
+  /**
+   * Operator-only escape hatch for listing distinct `team_id` values before a
+   * filtered copy. Copy, verify, and recall must pass a `team_id` filter.
+   */
+  unfiltered?: boolean;
 }
 
 export interface ScrollPointsPage {
@@ -256,17 +261,23 @@ export interface QdrantClient {
   countPoints(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
   countDistinctSources(teamId: string, opts?: { sourceKind?: SourceKind }): Promise<number>;
   /**
-   * Exact collection-wide point count (no team filter). Used by the
-   * storage-layout copy to verify source and target collections match.
+   * Exact collection-wide point count (no team filter). Used by operator
+   * team discovery before a filtered copy; verify itself counts per team.
    */
   countAllPoints(): Promise<number>;
   /**
-   * One scroll page. Used by the storage-layout copy (vectors + payload)
-   * and by the recall probe (sample query vectors).
+   * One scroll page. Copy, verify, and recall must pass a `team_id` filter.
+   * Team discovery may set `unfiltered: true`.
    */
   scrollPoints(input?: ScrollPointsInput): Promise<ScrollPointsPage>;
   /** Batch upsert used by the storage-layout copy. */
   upsertPoints(points: QdrantPointRecord[]): Promise<void>;
+  /**
+   * Tune optimizer/HNSW thresholds so small collections build quantized HNSW
+   * before a recall probe. Does not PATCH on-disk or quantization. Qdrant
+   * treats `indexing_threshold: 0` as "disable indexing".
+   */
+  patchOptimizers(input: { indexingThreshold: number; fullScanThreshold?: number }): Promise<void>;
   /** Raw collection info (config, counts). Used by RAM/recall measurement. */
   collectionInfo(): Promise<unknown>;
   /**
@@ -368,6 +379,17 @@ function pointIdFromUnknown(value: unknown): string | number | null {
   if (typeof value === 'string' && value.length > 0) return value;
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   return null;
+}
+
+function filterIncludesTeamId(filter: unknown): boolean {
+  if (!filter || typeof filter !== 'object') return false;
+  const record = filter as Record<string, unknown>;
+  if (record.key === 'team_id') return true;
+  for (const key of ['must', 'should', 'must_not', 'min_should']) {
+    const bag = record[key];
+    if (Array.isArray(bag) && bag.some((clause) => filterIncludesTeamId(clause))) return true;
+  }
+  return false;
 }
 
 function searchParamsBody(
@@ -910,6 +932,11 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
   }
 
   async function scrollPoints(input: ScrollPointsInput = {}): Promise<ScrollPointsPage> {
+    if (!input.unfiltered && !filterIncludesTeamId(input.filter)) {
+      throw new Error(
+        'Qdrant scroll requires a team_id filter (set unfiltered=true only for operator team discovery)',
+      );
+    }
     await ensureCollection();
     const body: Record<string, unknown> = {
       limit: input.limit ?? 64,
@@ -940,6 +967,35 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
       })
       .filter((point): point is NonNullable<typeof point> => point !== null);
     return { points, nextOffset: result.result?.next_page_offset ?? null };
+  }
+
+  async function patchOptimizers(input: {
+    indexingThreshold: number;
+    fullScanThreshold?: number;
+  }): Promise<void> {
+    if (!Number.isFinite(input.indexingThreshold) || input.indexingThreshold < 1) {
+      throw new Error(
+        'Qdrant indexing_threshold must be >= 1 (0 disables indexing in Qdrant 1.19+)',
+      );
+    }
+    const body: Record<string, unknown> = {
+      optimizers_config: { indexing_threshold: input.indexingThreshold },
+    };
+    if (input.fullScanThreshold !== undefined) {
+      if (!Number.isFinite(input.fullScanThreshold) || input.fullScanThreshold < 10) {
+        throw new Error(
+          'Qdrant full_scan_threshold must be >= 10 (Qdrant 1.19.2 rejects smaller values)',
+        );
+      }
+      body.hnsw_config = { full_scan_threshold: input.fullScanThreshold };
+    }
+    await ensureCollection();
+    const res = await request('PATCH', `/collections/${encodeURIComponent(collection)}`, body);
+    if (res.status !== 200) {
+      throw new Error(
+        `Qdrant patch optimizers failed: ${String(res.status)} ${JSON.stringify(res.data)}`,
+      );
+    }
   }
 
   async function collectionInfo(): Promise<unknown> {
@@ -1058,6 +1114,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     countAllPoints,
     scrollPoints,
     upsertPoints,
+    patchOptimizers,
     collectionInfo,
     collectionMemory,
     metricsText,

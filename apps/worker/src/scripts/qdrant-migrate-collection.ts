@@ -14,7 +14,7 @@
  *   pnpm --filter @timeline/worker qdrant-migrate-collection -- \
  *     --source-collection=events \
  *     --target-collection=events_ondisk \
- *     --create-target --copy --verify --writers-paused
+ *     --create-target --copy --verify --writers-paused --all-teams
  *
  * Optional:
  *   --measure --team=<uuid> --user=<uuid> [--recall-sample=32] [--recall-k=10]
@@ -51,6 +51,8 @@ export interface QdrantMigrateArgs {
   recallK: number;
   teamId?: string;
   userId?: string;
+  teamIds: string[];
+  allTeams: boolean;
 }
 
 export interface QdrantMigrateDeps {
@@ -81,6 +83,8 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
   let recallK = 10;
   let teamId: string | undefined;
   let userId: string | undefined;
+  const teamIds: string[] = [];
+  let allTeams = false;
 
   for (const arg of argv) {
     if (arg === '--') continue;
@@ -94,6 +98,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
     else if (arg === '--measure') measure = true;
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--writers-paused') writersPaused = true;
+    else if (arg === '--all-teams') allTeams = true;
     else if (arg.startsWith('--page-size=')) {
       pageSize = parsePositiveInt(arg.slice('--page-size='.length), '--page-size');
     } else if (arg.startsWith('--recall-sample=')) {
@@ -102,6 +107,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
       recallK = parsePositiveInt(arg.slice('--recall-k='.length), '--recall-k');
     } else if (arg.startsWith('--team=')) {
       teamId = arg.slice('--team='.length).trim();
+      if (teamId) teamIds.push(teamId);
     } else if (arg.startsWith('--user=')) {
       userId = arg.slice('--user='.length).trim();
     } else {
@@ -122,6 +128,11 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
   if (copy && !dryRun && !writersPaused) {
     throw new QdrantMigrateUsageError(
       'Live --copy requires --writers-paused after pausing embed workers so upserts during the copy are not lost',
+    );
+  }
+  if ((copy || verify) && !allTeams && teamIds.length === 0) {
+    throw new QdrantMigrateUsageError(
+      'copy/verify requires --team=<uuid> (repeatable) or --all-teams',
     );
   }
   if (measure) {
@@ -145,6 +156,8 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
     pageSize,
     recallSample,
     recallK,
+    teamIds: qdrant.normalizeTeamIds(teamIds),
+    allTeams,
   };
   if (teamId) args.teamId = teamId;
   if (userId) args.userId = userId;
@@ -163,6 +176,7 @@ export function usage(): string {
   return (
     'Usage: qdrant-migrate-collection --source-collection=<name> --target-collection=<name>\n' +
     '       [--create-target] [--copy] [--verify] [--writers-paused]\n' +
+    '       [--all-teams | --team=<uuid> ...]\n' +
     '       [--measure --team=<uuid> --user=<uuid>]\n' +
     '       [--dry-run] [--page-size=64] [--recall-sample=32] [--recall-k=10]'
   );
@@ -236,10 +250,26 @@ export async function runQdrantMigrateCollection(
     report.targetLayout = 'ok';
   }
 
+  let teamIds = args.teamIds;
+  if (args.copy || args.verify) {
+    if (args.allTeams) {
+      teamIds = await qdrant.listCollectionTeamIds(source, { pageSize: args.pageSize });
+      if (teamIds.length === 0) {
+        throw new QdrantMigrateUsageError(
+          'Source collection has no team_id payload values to copy/verify',
+        );
+      }
+    } else {
+      teamIds = qdrant.requireTeamIds(args.teamIds);
+    }
+    report.teamIds = teamIds;
+  }
+
   if (args.copy) {
     report.copy = await qdrant.copyCollectionPoints({
       source,
       target,
+      teamIds,
       pageSize: args.pageSize,
       dryRun: args.dryRun,
     });
@@ -249,9 +279,10 @@ export async function runQdrantMigrateCollection(
     if (args.dryRun) {
       report.verify = 'dry-run';
     } else {
-      const counts = await qdrant.verifyCollectionCounts(source, target);
+      const counts = await qdrant.verifyCollectionCounts(source, target, teamIds);
       const identity = await qdrant.verifyCollectionIdentity(source, target, {
         pageSize: args.pageSize,
+        teamIds,
       });
       const matched = counts.matched && identity.matched;
       report.verify = { ...counts, identity, matched };

@@ -210,10 +210,11 @@ const baseSchema = z.object({
   /**
    * Extra quantized candidates fetched before rescore. Unset uses 2 for
    * scalar and 4 for binary. Blank values from `.env.example` are unset.
+   * Qdrant 1.19.2 rejects oversampling below 1.
    */
   QDRANT_QUANTIZATION_OVERSAMPLING: z.preprocess(
     emptyStringAsUnset,
-    z.coerce.number().positive().optional(),
+    z.coerce.number().min(1).optional(),
   ),
 
   // S3 / RustFS (Phase 3+)

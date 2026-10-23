@@ -42,7 +42,7 @@ pnpm --filter @timeline/worker start:extract
 pnpm --filter @timeline/worker create-document-extract-snapshot  # Daytona snapshot ensure (content-hash; --force to rebuild)
 pnpm --filter @timeline/worker reextract -- --team=<teamId>
 pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
-pnpm --filter @timeline/worker qdrant-migrate-collection -- --source-collection=events --target-collection=events_ondisk --create-target --copy --verify --writers-paused
+pnpm --filter @timeline/worker qdrant-migrate-collection -- --source-collection=events --target-collection=events_ondisk --create-target --copy --verify --writers-paused --all-teams
 pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
 pnpm --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
 pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=2026-06-01] [--to=2026-07-01] [--apply] [--no-ai]
@@ -53,7 +53,8 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-bac
 
 `qdrant-migrate-collection` copies an existing collection onto a new on-disk + quantized
 collection without re-embedding. Pause embed writers first; live `--copy` requires
-`--writers-paused` and re-syncs a second pass. It refuses production, Railway production, and
+`--writers-paused`, re-syncs a second pass, and copies per `team_id` (`--all-teams` or `--team`).
+It refuses production, Railway production, and
 non-loopback `QDRANT_URL` unless `ALLOW_QDRANT_MIGRATE_REMOTE` is set. After counts and point
 identity match, switch `QDRANT_COLLECTION` and restart web + workers. See
 [docs/setup/openrouter.html](../../docs/setup/openrouter.html#qdrant-storage).

@@ -184,6 +184,11 @@ describe('getEnv', () => {
     });
   });
 
+  it('rejects Qdrant oversampling below 1', () => {
+    setBaseEnv({ QDRANT_QUANTIZATION_OVERSAMPLING: '0.5' });
+    expect(() => getEnv()).toThrow(/QDRANT_QUANTIZATION_OVERSAMPLING/);
+  });
+
   it('keeps cross-source evidence disabled until an operator selects a rollout mode', () => {
     setBaseEnv({ CROSS_SOURCE_EVIDENCE_MODE: undefined });
     expect(getEnv().CROSS_SOURCE_EVIDENCE_MODE).toBe('off');

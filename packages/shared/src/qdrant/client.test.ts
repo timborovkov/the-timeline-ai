@@ -85,6 +85,9 @@ function makeFetcher(
       collectionExists = true;
       return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
     }
+    if (method === 'PATCH' && /\/collections\/[^/]+$/.exec(url)) {
+      return Promise.resolve(new Response(JSON.stringify({ result: true }), { status: 200 }));
+    }
     // PUT /collections/<name>/index — payload index creation
     if (method === 'PUT' && url.endsWith('/index')) {
       teamIndexExists = true;
@@ -389,6 +392,38 @@ describe('createQdrantClient', () => {
     expect(search?.body).toMatchObject({
       params: { exact: true, quantization: { ignore: true } },
     });
+  });
+
+  it('refuses an unfiltered scroll unless the operator marks team discovery', async () => {
+    const { fetcher } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher });
+    await expect(client.scrollPoints({ limit: 1 })).rejects.toThrow(/team_id filter/);
+    await expect(
+      client.scrollPoints({
+        limit: 1,
+        filter: { must: [{ key: 'team_id', match: { value: 'team-A' } }] },
+      }),
+    ).resolves.toMatchObject({ nextOffset: null });
+    await expect(client.scrollPoints({ limit: 1, unfiltered: true })).resolves.toMatchObject({
+      nextOffset: null,
+    });
+  });
+
+  it('patches indexing_threshold and HNSW full_scan_threshold before recall', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true });
+    const client = createQdrantClient({ fetcher, collection: 'events_test' });
+    await client.patchOptimizers({ indexingThreshold: 1, fullScanThreshold: 10 });
+    const patch = calls.find((call) => call.method === 'PATCH');
+    expect(patch?.body).toEqual({
+      optimizers_config: { indexing_threshold: 1 },
+      hnsw_config: { full_scan_threshold: 10 },
+    });
+    await expect(client.patchOptimizers({ indexingThreshold: 0 })).rejects.toThrow(
+      /disables indexing/,
+    );
+    await expect(
+      client.patchOptimizers({ indexingThreshold: 1, fullScanThreshold: 1 }),
+    ).rejects.toThrow(/full_scan_threshold must be >= 10/);
   });
 
   it('reads collection RAM from GET /collections/{name}/memory', async () => {

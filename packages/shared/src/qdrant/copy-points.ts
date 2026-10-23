@@ -6,6 +6,8 @@ const IDENTITY_MISMATCH_CAP = 32;
 export interface CopyCollectionPointsInput {
   source: QdrantClient;
   target: QdrantClient;
+  /** One or more team ids. Copy always scrolls with a `team_id` filter. */
+  teamIds: string[];
   pageSize?: number;
   dryRun?: boolean;
   /**
@@ -25,6 +27,7 @@ export interface CopyPassStats {
 export interface CopyCollectionPointsResult {
   sourceCollection: string;
   targetCollection: string;
+  teamIds: string[];
   scanned: number;
   upserted: number;
   skipped: number;
@@ -35,6 +38,7 @@ export interface CopyCollectionPointsResult {
 export interface VerifyCollectionCountsResult {
   sourceCollection: string;
   targetCollection: string;
+  teamIds: string[];
   sourceCount: number;
   targetCount: number;
   matched: boolean;
@@ -43,6 +47,7 @@ export interface VerifyCollectionCountsResult {
 export interface VerifyCollectionIdentityResult {
   sourceCollection: string;
   targetCollection: string;
+  teamIds: string[];
   sourceCount: number;
   targetCount: number;
   missingInTarget: string[];
@@ -65,6 +70,32 @@ export function denseVectorFromUnknown(value: unknown, expectedSize?: number): n
     return denseVectorFromUnknown(named, expectedSize);
   }
   return null;
+}
+
+export function normalizeTeamIds(teamIds: Iterable<string>): string[] {
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of teamIds) {
+    const teamId = raw.trim();
+    if (!teamId) continue;
+    if (seen.has(teamId)) continue;
+    seen.add(teamId);
+    unique.push(teamId);
+  }
+  return unique;
+}
+
+export function requireTeamIds(teamIds: Iterable<string>): string[] {
+  const unique = normalizeTeamIds(teamIds);
+  if (unique.length === 0) {
+    throw new Error('Qdrant copy/verify requires at least one teamId (or --all-teams)');
+  }
+  return unique;
+}
+
+export function teamIdScrollFilter(teamId: string): Record<string, unknown> {
+  if (!teamId) throw new Error('Qdrant copy/verify requires teamId');
+  return { must: [{ key: 'team_id', match: { value: teamId } }] };
 }
 
 function pointIdKey(id: string | number): string {
@@ -106,6 +137,7 @@ interface PointIdentity {
 async function scrollCollectionIdentity(
   client: QdrantClient,
   pageSize: number,
+  teamId: string,
 ): Promise<Map<string, PointIdentity>> {
   const identities = new Map<string, PointIdentity>();
   let offset: unknown;
@@ -115,6 +147,7 @@ async function scrollCollectionIdentity(
       offset,
       withPayload: true,
       withVector: true,
+      filter: teamIdScrollFilter(teamId),
     });
     for (const point of page.points) {
       const vector = denseVectorFromUnknown(point.vector);
@@ -133,9 +166,39 @@ function cappedKeys(keys: Iterable<string>): string[] {
   return [...keys].slice(0, IDENTITY_MISMATCH_CAP);
 }
 
-async function copyPass(
+/**
+ * Payload-only discovery of distinct `team_id` values. This is the one
+ * collection-wide scroll; copy/verify then loop those teams with a filter.
+ */
+export async function listCollectionTeamIds(
+  client: QdrantClient,
+  opts: { pageSize?: number } = {},
+): Promise<string[]> {
+  const pageSize = opts.pageSize ?? DEFAULT_COPY_PAGE_SIZE;
+  const teamIds = new Set<string>();
+  let offset: unknown;
+  for (;;) {
+    const page = await client.scrollPoints({
+      limit: pageSize,
+      offset,
+      withPayload: ['team_id'],
+      withVector: false,
+      unfiltered: true,
+    });
+    for (const point of page.points) {
+      const teamId = point.payload?.team_id;
+      if (typeof teamId === 'string' && teamId.trim()) teamIds.add(teamId);
+    }
+    offset = page.nextOffset;
+    if (offset === undefined || offset === null) break;
+  }
+  return [...teamIds].sort();
+}
+
+async function copyPassForTeam(
   input: CopyCollectionPointsInput,
   pageSize: number,
+  teamId: string,
 ): Promise<CopyPassStats> {
   let scanned = 0;
   let upserted = 0;
@@ -148,6 +211,7 @@ async function copyPass(
       offset,
       withPayload: true,
       withVector: true,
+      filter: teamIdScrollFilter(teamId),
     });
     const batch: QdrantPointRecord[] = [];
     for (const point of page.points) {
@@ -174,10 +238,27 @@ async function copyPass(
   return { scanned, upserted, skipped };
 }
 
+async function copyPass(
+  input: CopyCollectionPointsInput,
+  pageSize: number,
+  teamIds: string[],
+): Promise<CopyPassStats> {
+  let scanned = 0;
+  let upserted = 0;
+  let skipped = 0;
+  for (const teamId of teamIds) {
+    const pass = await copyPassForTeam(input, pageSize, teamId);
+    scanned += pass.scanned;
+    upserted += pass.upserted;
+    skipped += pass.skipped;
+  }
+  return { scanned, upserted, skipped };
+}
+
 /**
  * Copy every point (id + vector + payload) from one collection into another
- * without re-embedding. Source is scrolled; target is upserted with
- * `wait=true`. Re-running is idempotent because point ids are preserved.
+ * without re-embedding. Source is scrolled per `team_id`; target is upserted
+ * with `wait=true`. Re-running is idempotent because point ids are preserved.
  * Live copies run a second pass by default so inserts/updates that landed
  * during the first pass are not lost.
  */
@@ -188,19 +269,21 @@ export async function copyCollectionPoints(
   if (!Number.isInteger(pageSize) || pageSize < 1) {
     throw new Error('Qdrant copy page size must be a positive integer');
   }
+  const teamIds = requireTeamIds(input.teamIds);
   const sourceCollection = input.source.collectionName();
   const targetCollection = input.target.collectionName();
   if (sourceCollection === targetCollection) {
     throw new Error('Qdrant copy requires distinct --source-collection and --target-collection');
   }
 
-  const first = await copyPass(input, pageSize);
+  const first = await copyPass(input, pageSize, teamIds);
   const shouldResync = input.dryRun !== true && input.resync !== false;
-  const resync = shouldResync ? await copyPass(input, pageSize) : null;
+  const resync = shouldResync ? await copyPass(input, pageSize, teamIds) : null;
 
   return {
     sourceCollection,
     targetCollection,
+    teamIds,
     scanned: first.scanned,
     upserted: first.upserted,
     skipped: first.skipped,
@@ -212,12 +295,19 @@ export async function copyCollectionPoints(
 export async function verifyCollectionCounts(
   source: QdrantClient,
   target: QdrantClient,
+  teamIds: Iterable<string>,
 ): Promise<VerifyCollectionCountsResult> {
-  const sourceCount = await source.countAllPoints();
-  const targetCount = await target.countAllPoints();
+  const teams = requireTeamIds(teamIds);
+  let sourceCount = 0;
+  let targetCount = 0;
+  for (const teamId of teams) {
+    sourceCount += await source.countPoints(teamId);
+    targetCount += await target.countPoints(teamId);
+  }
   return {
     sourceCollection: source.collectionName(),
     targetCollection: target.collectionName(),
+    teamIds: teams,
     sourceCount,
     targetCount,
     matched: sourceCount === targetCount,
@@ -227,18 +317,25 @@ export async function verifyCollectionCounts(
 /**
  * Compare source and target by point id, vector fingerprint, and a payload
  * identity tuple. Count equality alone cannot detect a lost update that
- * replaced a vector in place.
+ * replaced a vector in place. Scrolls each requested team separately.
  */
 export async function verifyCollectionIdentity(
   source: QdrantClient,
   target: QdrantClient,
-  opts: { pageSize?: number } = {},
+  opts: { pageSize?: number; teamIds: Iterable<string> },
 ): Promise<VerifyCollectionIdentityResult> {
   const pageSize = opts.pageSize ?? DEFAULT_COPY_PAGE_SIZE;
-  const [sourceIdentities, targetIdentities] = await Promise.all([
-    scrollCollectionIdentity(source, pageSize),
-    scrollCollectionIdentity(target, pageSize),
-  ]);
+  const teamIds = requireTeamIds(opts.teamIds);
+  const sourceIdentities = new Map<string, PointIdentity>();
+  const targetIdentities = new Map<string, PointIdentity>();
+  for (const teamId of teamIds) {
+    const [sourcePage, targetPage] = await Promise.all([
+      scrollCollectionIdentity(source, pageSize, teamId),
+      scrollCollectionIdentity(target, pageSize, teamId),
+    ]);
+    for (const [id, identity] of sourcePage) sourceIdentities.set(id, identity);
+    for (const [id, identity] of targetPage) targetIdentities.set(id, identity);
+  }
 
   const missingInTarget: string[] = [];
   const vectorMismatches: string[] = [];
@@ -260,6 +357,7 @@ export async function verifyCollectionIdentity(
   return {
     sourceCollection: source.collectionName(),
     targetCollection: target.collectionName(),
+    teamIds,
     sourceCount: sourceIdentities.size,
     targetCount: targetIdentities.size,
     missingInTarget: cappedKeys(missingInTarget),

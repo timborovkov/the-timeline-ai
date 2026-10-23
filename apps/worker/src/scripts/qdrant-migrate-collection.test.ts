@@ -27,6 +27,8 @@ function migrateArgs(overrides: Partial<QdrantMigrateArgs> = {}): QdrantMigrateA
     pageSize: 64,
     recallSample: 8,
     recallK: 5,
+    teamIds: [],
+    allTeams: false,
     ...overrides,
   };
 }
@@ -50,6 +52,8 @@ function fakeClient(
   const collectionInfo = vi.fn().mockResolvedValue({
     result: {
       points_count: points,
+      indexed_vectors_count: points,
+      optimizer_status: 'ok',
       config:
         layout === 'ondisk'
           ? {
@@ -76,7 +80,12 @@ function fakeClient(
       payload: { ram_bytes: 20 },
     },
   });
-  const searchHits = opts.searchHits ?? [{ id: 'p1', score: 1 }];
+  const searchHits = opts.searchHits ?? [
+    { id: 'p1', score: 1 },
+    { id: 'p2', score: 0.9 },
+  ];
+  const patchOptimizers = vi.fn().mockResolvedValue(undefined);
+  const countPoints = vi.fn().mockResolvedValue(points);
   const search = vi.fn().mockResolvedValue(searchHits.map((hit) => ({ ...hit, payload: {} })));
   const scrollPoints = vi.fn().mockResolvedValue({
     points: [
@@ -92,6 +101,8 @@ function fakeClient(
     collectionName: () => name,
     ensureCollection,
     countAllPoints: vi.fn().mockResolvedValue(points),
+    countPoints,
+    patchOptimizers,
     scrollPoints,
     upsertPoints,
     collectionInfo,
@@ -120,6 +131,7 @@ describe('qdrant-migrate-collection CLI', () => {
         '--copy',
         '--verify',
         '--writers-paused',
+        '--all-teams',
       ]),
     ).toMatchObject({
       sourceCollection: 'events',
@@ -128,6 +140,7 @@ describe('qdrant-migrate-collection CLI', () => {
       copy: true,
       verify: true,
       writersPaused: true,
+      allTeams: true,
       dryRun: false,
     });
   });
@@ -143,6 +156,14 @@ describe('qdrant-migrate-collection CLI', () => {
       parseArgs(['--source-collection=events', '--target-collection=events_ondisk', '--copy']),
     ).toThrow(/--writers-paused/);
     expect(() =>
+      parseArgs([
+        '--source-collection=events',
+        '--target-collection=events_ondisk',
+        '--copy',
+        '--writers-paused',
+      ]),
+    ).toThrow(/--all-teams/);
+    expect(() =>
       parseArgs(['--source-collection=events', '--target-collection=events_ondisk', '--measure']),
     ).toThrow(/--team=/);
   });
@@ -156,7 +177,13 @@ describe('qdrant-migrate-collection CLI', () => {
     const setExitCode = vi.fn();
 
     await runQdrantMigrateCollection(
-      migrateArgs({ createTarget: true, copy: true, verify: true, writersPaused: true }),
+      migrateArgs({
+        createTarget: true,
+        copy: true,
+        verify: true,
+        writersPaused: true,
+        teamIds: [TEAM],
+      }),
       {
         env: LOCAL_ENV,
         createClient: () => {
@@ -208,7 +235,13 @@ describe('qdrant-migrate-collection CLI', () => {
     const write = vi.fn();
 
     await runQdrantMigrateCollection(
-      migrateArgs({ createTarget: true, copy: true, verify: true, dryRun: true }),
+      migrateArgs({
+        createTarget: true,
+        copy: true,
+        verify: true,
+        dryRun: true,
+        teamIds: [TEAM],
+      }),
       {
         env: LOCAL_ENV,
         createClient: (opts) => (opts.collection === 'events' ? source.client : target.client),
@@ -232,10 +265,13 @@ describe('qdrant-migrate-collection CLI', () => {
     const source = fakeClient('events', 1);
     const target = fakeClient('events_ondisk', 1, { layout: 'inram' });
     await expect(
-      runQdrantMigrateCollection(migrateArgs({ copy: true, writersPaused: true }), {
-        env: LOCAL_ENV,
-        createClient: (opts) => (opts.collection === 'events' ? source.client : target.client),
-      }),
+      runQdrantMigrateCollection(
+        migrateArgs({ copy: true, writersPaused: true, teamIds: [TEAM] }),
+        {
+          env: LOCAL_ENV,
+          createClient: (opts) => (opts.collection === 'events' ? source.client : target.client),
+        },
+      ),
     ).rejects.toThrow(/on_disk/);
     expect(target.upsertPoints).not.toHaveBeenCalled();
   });
@@ -255,6 +291,7 @@ describe('qdrant-migrate-collection CLI', () => {
         writersPaused: true,
         teamId: TEAM,
         userId: USER,
+        teamIds: [TEAM],
       }),
       {
         env: LOCAL_ENV,

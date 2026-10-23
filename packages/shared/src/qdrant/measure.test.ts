@@ -4,11 +4,14 @@ import type { QdrantClient, SearchHit } from '#src/qdrant/client.js';
 
 import { QDRANT_EXACT_SEARCH_PARAMS } from '#src/qdrant/collection-config.js';
 import {
+  collectionIndexReady,
   collectionMemoryBytesFromResponse,
   collectionRamSnapshotFromInfo,
+  hitsWithoutId,
   measureQuantizedRecall,
   recallAtK,
   teamScopedScrollFilter,
+  waitForQuantizedIndex,
 } from '#src/qdrant/measure.js';
 
 const TEAM = 'team-A';
@@ -22,15 +25,18 @@ function mockMeasureClient(input: {
   points?: { id: string; vector: number[] }[];
   exactHits?: SearchHit[];
   quantizedHits?: SearchHit[];
+  indexed?: boolean;
 }): {
   client: QdrantClient;
   search: ReturnType<typeof vi.fn>;
   scrollPoints: ReturnType<typeof vi.fn>;
+  patchOptimizers: ReturnType<typeof vi.fn>;
+  collectionInfo: ReturnType<typeof vi.fn>;
 } {
   const search = vi.fn(
     (_teamId: string, _userId: string, _vector: number[], opts?: { searchParams?: unknown }) => {
-      if (opts?.searchParams) return input.exactHits ?? [hit('p1'), hit('p2')];
-      return input.quantizedHits ?? [hit('p1'), hit('p2')];
+      if (opts?.searchParams) return input.exactHits ?? [hit('p1'), hit('p2'), hit('p3')];
+      return input.quantizedHits ?? [hit('p1'), hit('p2'), hit('p3')];
     },
   );
   const scrollPoints = vi.fn().mockResolvedValue({
@@ -40,12 +46,23 @@ function mockMeasureClient(input: {
     })),
     nextOffset: null,
   });
+  const indexed = input.indexed !== false;
+  const patchOptimizers = vi.fn().mockResolvedValue(undefined);
+  const collectionInfo = vi.fn().mockResolvedValue({
+    result: {
+      points_count: 3,
+      indexed_vectors_count: indexed ? 3 : 0,
+      optimizer_status: 'ok',
+    },
+  });
   const client = {
     collectionName: () => 'events_ondisk',
     scrollPoints,
     search,
+    patchOptimizers,
+    collectionInfo,
   } as unknown as QdrantClient;
-  return { client, search, scrollPoints };
+  return { client, search, scrollPoints, patchOptimizers, collectionInfo };
 }
 
 describe('qdrant RAM and recall helpers', () => {
@@ -170,6 +187,7 @@ describe('qdrant RAM and recall helpers', () => {
       USER,
       [0.1, 0.2, 0.3, 0.4],
       expect.objectContaining({
+        limit: 3,
         searchParams: { ...QDRANT_EXACT_SEARCH_PARAMS },
       }),
     );
@@ -201,5 +219,87 @@ describe('qdrant RAM and recall helpers', () => {
     await expect(
       measureQuantizedRecall(client, { teamId: TEAM, userId: USER, k: 10 }),
     ).resolves.toMatchObject({ status: 'no_data', meanRecall: null, queriesCompared: 0 });
+  });
+
+  it('excludes the sampled point from both rankings so self-hits do not inflate recall', async () => {
+    expect(
+      hitsWithoutId([hit('p1'), hit('p2'), hit('p3')], 'p1', 2).map((item) => item.id),
+    ).toEqual(['p2', 'p3']);
+    const { client } = mockMeasureClient({
+      points: [{ id: 'p1', vector: [0.1, 0.2, 0.3, 0.4] }],
+      exactHits: [hit('p1'), hit('p2'), hit('p3')],
+      quantizedHits: [hit('p1'), hit('p2'), hit('p9')],
+    });
+    await expect(
+      measureQuantizedRecall(client, { teamId: TEAM, userId: USER, k: 2 }),
+    ).resolves.toMatchObject({ status: 'ok', meanRecall: 0.5, queriesCompared: 1 });
+  });
+
+  it('treats a ranking that only contains the query point as no_data', async () => {
+    const { client } = mockMeasureClient({
+      points: [{ id: 'p1', vector: [0.1, 0.2, 0.3, 0.4] }],
+      exactHits: [hit('p1')],
+      quantizedHits: [hit('p1')],
+    });
+    await expect(
+      measureQuantizedRecall(client, { teamId: TEAM, userId: USER, k: 10 }),
+    ).resolves.toMatchObject({ status: 'no_data', meanRecall: null, queriesCompared: 0 });
+  });
+
+  it('forces indexing and waits until quantized segments are ready', async () => {
+    expect(
+      collectionIndexReady({
+        result: { points_count: 2800, indexed_vectors_count: 0, optimizer_status: 'ok' },
+      }),
+    ).toBe(false);
+    expect(
+      collectionIndexReady({
+        result: { points_count: 2800, indexed_vectors_count: 2800, optimizer_status: 'ok' },
+      }),
+    ).toBe(true);
+
+    let indexed = 0;
+    const patchOptimizers = vi.fn(() => {
+      indexed = 3;
+    });
+    const collectionInfo = vi.fn(() => ({
+      result: { points_count: 3, indexed_vectors_count: indexed, optimizer_status: 'ok' },
+    }));
+    const client = {
+      collectionName: () => 'events_ondisk',
+      patchOptimizers,
+      collectionInfo,
+    } as unknown as QdrantClient;
+    await waitForQuantizedIndex(client, {
+      timeoutMs: 1000,
+      pollMs: 1,
+      sleep: () => Promise.resolve(),
+    });
+    expect(patchOptimizers).toHaveBeenCalledWith({
+      indexingThreshold: 1,
+      fullScanThreshold: 10,
+    });
+    expect(collectionInfo).toHaveBeenCalled();
+  });
+
+  it('throws when indexing does not finish in time', async () => {
+    const client = {
+      patchOptimizers: vi.fn().mockResolvedValue(undefined),
+      collectionInfo: vi.fn().mockResolvedValue({
+        result: { points_count: 3, indexed_vectors_count: 0, optimizer_status: 'ok' },
+      }),
+    } as unknown as QdrantClient;
+    let now = 0;
+    await expect(
+      waitForQuantizedIndex(client, {
+        timeoutMs: 5,
+        pollMs: 1,
+        now: () => {
+          now += 10;
+          return now;
+        },
+        sleep: () => Promise.resolve(),
+      }),
+    ).rejects.toThrow(/did not finish indexing/);
   });
 });
