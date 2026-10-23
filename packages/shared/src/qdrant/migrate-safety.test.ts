@@ -6,6 +6,36 @@ import {
 } from '#src/qdrant/migrate-safety.js';
 
 describe('assertQdrantMigrateAllowed', () => {
+  // Production copies need an explicit acknowledgement and a complete, tenant-safe cutover plan.
+  it('allows production only with all maintenance safeguards', () => {
+    const env = {
+      NODE_ENV: 'production',
+      QDRANT_URL: 'https://qdrant.example.com',
+      ALLOW_QDRANT_MIGRATE_PRODUCTION: 'I_UNDERSTAND_THIS_MIGRATES_PRODUCTION_QDRANT',
+    };
+    const options = {
+      production: true,
+      writersPaused: true,
+      copy: true,
+      verify: true,
+      allTeams: true,
+    };
+    expect(() => {
+      assertQdrantMigrateAllowed(env, options);
+    }).not.toThrow();
+    for (const key of ['writersPaused', 'copy', 'verify', 'allTeams'] as const) {
+      expect(() => {
+        assertQdrantMigrateAllowed(env, { ...options, [key]: false });
+      }).toThrow();
+    }
+    expect(() => {
+      assertQdrantMigrateAllowed(env, { ...options, measure: true });
+    }).toThrow();
+    expect(() => {
+      assertQdrantMigrateAllowed({ ...env, ALLOW_QDRANT_MIGRATE_PRODUCTION: '' }, options);
+    }).toThrow();
+  });
+
   it('allows loopback Qdrant in development and staging', () => {
     expect(() => {
       assertQdrantMigrateAllowed({
