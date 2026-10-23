@@ -397,16 +397,16 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   } catch (err) {
     throw new JsonObjectFallbackParseError(err, {
       usage: result.usage,
-      providerMetadata: result.providerMetadata,
-      totalUsage: result.totalUsage,
+      providerMetadata: result.finalStep.providerMetadata,
+      totalUsage: result.usage,
     });
   }
   const object: z.infer<TSchema> = schema.parse(parsed);
   return {
     object,
     usage: result.usage,
-    providerMetadata: result.providerMetadata,
-    totalUsage: result.totalUsage,
+    providerMetadata: result.finalStep.providerMetadata,
+    totalUsage: result.usage,
   };
 }
 

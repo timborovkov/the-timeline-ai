@@ -217,8 +217,8 @@ export async function compressMessagesForContext(
     openRouterUsd: openRouterUsdCostFromFinishEvent(
       openRouterFinishFromAiResult({
         usage: result.usage,
-        providerMetadata: result.providerMetadata,
-        totalUsage: result.totalUsage,
+        providerMetadata: result.finalStep.providerMetadata,
+        totalUsage: result.usage,
       }),
     ),
   };

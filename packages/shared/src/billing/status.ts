@@ -383,7 +383,6 @@ export function deriveSidebarBillingSummary(input: {
   includedDiscountRemainingCents: number;
   freeRemaining: FreeAllowanceRemaining;
 }): SidebarBillingSummary {
-  void input.includedDiscountRemainingCents;
   const plan = PLAN_CATALOG[input.planId];
   const href = input.canManageBilling ? '/app/team?section=billing' : '/app/usage';
 

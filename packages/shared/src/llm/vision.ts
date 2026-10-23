@@ -189,8 +189,8 @@ export async function extractTextFromMedia(
           value: generated,
           finish: openRouterFinishFromAiResult({
             usage: generated.usage,
-            providerMetadata: generated.providerMetadata,
-            totalUsage: generated.totalUsage,
+            providerMetadata: generated.finalStep.providerMetadata,
+            totalUsage: generated.usage,
           }),
         };
       });
