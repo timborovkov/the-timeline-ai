@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { agentSuggestions, mcpOutboundKeys, rawEvents } from '@timeline/db';
+import { agentSuggestionItems, agentSuggestions, mcpOutboundKeys, rawEvents } from '@timeline/db';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -686,6 +686,13 @@ describe('handleMcpRequest', () => {
     });
     const tools = buildAgentTools(scope, {
       toolMode: 'proposal_only',
+      taskCategoryClassificationEnabled: true,
+      classifyTaskCategory: () =>
+        Promise.resolve({
+          category: 'marketing' as const,
+          confidence: 0.91,
+          model: 'test-model',
+        }),
       proposalOrigin: {
         surface: 'mcp',
         actorKind: 'team_agent',
@@ -714,6 +721,14 @@ describe('handleMcpRequest', () => {
       origin_surface: 'mcp',
       origin_actor_kind: 'team_agent',
       mcp_outbound_key_id: '99999999-9999-4999-8999-999999999999',
+    });
+    const items = await db.select().from(agentSuggestionItems);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.proposedPayload).toMatchObject({
+      canonicalName: 'Send the launch note',
+      taskCategory: 'marketing',
+      taskCategoryMode: 'automatic',
+      taskCategoryTaxonomyVersion: 'task-categories-v1',
     });
   });
 

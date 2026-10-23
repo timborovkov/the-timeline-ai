@@ -186,21 +186,30 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         >. Enqueueing requires both <code>--enqueue</code> and a projected-cost guard such as
         <code>--max-cost-usd=0.10</code>. The guard compares a fixed $0.0002 per-task estimate
         (about 2× weekday-peak Flash 1017 spend on a 220/20 token packet), not actual provider
-        spend; retries and provider pricing can differ. Each execution is bounded; rerun it to
-        resume. Already pending, manual, archived, and ready tasks are skipped.
+        spend; retries and provider pricing can differ. <code>--max-cost-usd</code> cannot exceed
+        $1, and each execution is limited to 5,000 tasks. Rerun it to resume. Already pending,
+        manual, archived, and ready tasks are skipped.
       </p>
       <p>
-        <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop. While
-        classification is enabled, suggestion and agent task proposals stamp
+        Classification, automatic enqueue, the BullMQ worker, and the category UI default on.
+        <code>TASK_CATEGORY_BACKFILL_ENABLED</code> stays off. Historical enqueue is a dry-run CLI
+        until an operator passes <code>--enqueue</code> and <code>--max-cost-usd</code>. That cost
+        flag cannot exceed $1, the 5,000-task batch ceiling at the $0.0002 estimate.
+        <code>TASK_CATEGORY_DISABLED=true</code> is the emergency stop: it forces classification,
+        enqueue, the worker, backfill, and the UI off together, even when those flags are set true.
+        While classification is enabled, suggestion and agent task proposals stamp
         <code>task-categories-v1</code> before they are stored. A classifier response that omits a
         proposal, or that cannot be normalized, fails that suggestion job instead of saving an
-        unstamped task. Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
-        <code>TASK_CATEGORY_WORKER_ENABLED</code>, <code>TASK_CATEGORY_BACKFILL_ENABLED</code>, and
-        <code>TASK_CATEGORY_UI_ENABLED</code>. Disabling any control preserves stored categories and
-        manual history. A disabled classification or worker control does not register the BullMQ
-        consumer, so queued jobs remain available. Re-enable worker and enqueue controls together
-        after an outage; the janitor repairs eligible pending rows and durable project fan-out
-        cursors.
+        unstamped task. The other controls remain independent when the kill switch is off:
+        <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>, <code>TASK_CATEGORY_WORKER_ENABLED</code>,
+        <code>TASK_CATEGORY_BACKFILL_ENABLED</code>, and <code>TASK_CATEGORY_UI_ENABLED</code>.
+        Disabling any control preserves stored categories and manual history. A disabled
+        classification or worker control does not register the BullMQ consumer, so queued jobs
+        remain available. Re-enable worker and enqueue controls together after an outage; the
+        janitor repairs eligible pending rows and durable project fan-out cursors. A deployed
+        environment that still sets a flag to <code>false</code> keeps that control off; the code
+        default does not override an explicit value. The credential-thin document-extract service
+        rejects <code>TASK_CATEGORY_*</code> variables, including the kill switch.
       </p>
 
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>

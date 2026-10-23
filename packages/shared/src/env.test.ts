@@ -129,8 +129,9 @@ describe('getEnv', () => {
     });
   });
 
-  it('keeps task category rollout controls disabled until explicitly enabled', () => {
+  it('enables task categories by default and keeps historical backfill off', () => {
     setBaseEnv({
+      TASK_CATEGORY_DISABLED: undefined,
       TASK_CATEGORY_CLASSIFICATION_ENABLED: undefined,
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: undefined,
       TASK_CATEGORY_WORKER_ENABLED: undefined,
@@ -139,6 +140,27 @@ describe('getEnv', () => {
     });
 
     expect(getEnv()).toMatchObject({
+      TASK_CATEGORY_DISABLED: false,
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: true,
+      TASK_CATEGORY_WORKER_ENABLED: true,
+      TASK_CATEGORY_BACKFILL_ENABLED: false,
+      TASK_CATEGORY_UI_ENABLED: true,
+    });
+  });
+
+  it('forces every task category control off when the kill switch is set', () => {
+    setBaseEnv({
+      TASK_CATEGORY_DISABLED: 'true',
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: 'true',
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: 'true',
+      TASK_CATEGORY_WORKER_ENABLED: 'true',
+      TASK_CATEGORY_BACKFILL_ENABLED: 'true',
+      TASK_CATEGORY_UI_ENABLED: 'true',
+    });
+
+    expect(getEnv()).toMatchObject({
+      TASK_CATEGORY_DISABLED: true,
       TASK_CATEGORY_CLASSIFICATION_ENABLED: false,
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false,
       TASK_CATEGORY_WORKER_ENABLED: false,
@@ -337,6 +359,9 @@ describe('getEnv', () => {
   it('rejects credential-thick secrets on production document-extract mode via process.env allowlist', () => {
     setExtractProductionEnv({ SECRETS_ENCRYPTION_KEY: 'not-for-extract' });
     expect(() => getEnv()).toThrow(/SECRETS_ENCRYPTION_KEY must not be set/);
+
+    setExtractProductionEnv({ TASK_CATEGORY_DISABLED: 'true' });
+    expect(() => getEnv()).toThrow(/TASK_CATEGORY_DISABLED must not be set/);
 
     setExtractProductionEnv({ CRON_SECRET: 'cron' });
     expect(() => getEnv()).toThrow(/CRON_SECRET must not be set/);
