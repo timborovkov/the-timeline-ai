@@ -25,6 +25,7 @@ import {
   streamText,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
+import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
 
 type GenerateObjectProviderOptions = NonNullable<
   Parameters<typeof generateObject>[0]['providerOptions']
@@ -238,37 +239,60 @@ function shouldFallbackToAlternateModel(err: unknown): boolean {
   );
 }
 
+function parseStructuredRepairText(text: string): unknown {
+  const stripped = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const start = stripped.search(/[{[]/);
+    const end = Math.max(stripped.lastIndexOf('}'), stripped.lastIndexOf(']'));
+    if (start < 0 || end <= start) return null;
+    try {
+      return JSON.parse(stripped.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function repairFactShape(value: unknown): unknown {
+  const candidate = Array.isArray(value) ? { facts: value } : value;
+  if (!candidate || typeof candidate !== 'object') return value;
+  const row = candidate as Record<string, unknown>;
+  const facts = Array.isArray(row.facts) ? (row.facts as unknown[]) : null;
+  return {
+    ...row,
+    ...(facts
+      ? {
+          facts: facts.map((fact) => {
+            if (!fact || typeof fact !== 'object') return fact;
+            const factRow = fact as Record<string, unknown>;
+            return {
+              ...factRow,
+              statement: factRow.statement ?? factRow.text,
+              mentions: factRow.mentions ?? factRow.entities,
+            };
+          }),
+        }
+      : {}),
+    action_items: row.action_items ?? row.actionItems,
+    choice: row.choice ?? row.candidate_index ?? row.candidateIndex ?? row.index,
+  };
+}
+
 function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
   return ({ text }) => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return Promise.resolve(null);
+    const parsed = parseStructuredRepairText(text);
+    if (parsed === null) return Promise.resolve(null);
+    const candidates = [repairFactShape(parsed), normalizeTaskCategoryModelJson(parsed)];
+    for (const candidate of candidates) {
+      if (schema.safeParse(candidate).success) return Promise.resolve(JSON.stringify(candidate));
     }
-    const candidate = Array.isArray(parsed) ? { facts: parsed } : parsed;
-    if (!candidate || typeof candidate !== 'object') return Promise.resolve(null);
-    const row = candidate as Record<string, unknown>;
-    const facts = Array.isArray(row.facts) ? (row.facts as unknown[]) : null;
-    const repaired = {
-      ...row,
-      ...(facts
-        ? {
-            facts: facts.map((fact) => {
-              if (!fact || typeof fact !== 'object') return fact;
-              const factRow = fact as Record<string, unknown>;
-              return {
-                ...factRow,
-                statement: factRow.statement ?? factRow.text,
-                mentions: factRow.mentions ?? factRow.entities,
-              };
-            }),
-          }
-        : {}),
-      action_items: row.action_items ?? row.actionItems,
-      choice: row.choice ?? row.candidate_index ?? row.candidateIndex ?? row.index,
-    };
-    return Promise.resolve(schema.safeParse(repaired).success ? JSON.stringify(repaired) : null);
+    return Promise.resolve(null);
   };
 }
 

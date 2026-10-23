@@ -186,8 +186,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
         resume. Already pending, manual, archived, and ready tasks are skipped.
       </p>
       <p>
-        <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop.
-        Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
+        <code>TASK_CATEGORY_CLASSIFICATION_ENABLED=false</code> is the master emergency stop. While
+        classification is enabled, suggestion and agent task proposals stamp
+        <code>task-categories-v1</code> before they are stored. A classifier response that omits a
+        proposal, or that cannot be normalized, fails that suggestion job instead of saving an
+        unstamped task. Independent controls are <code>TASK_CATEGORY_AUTO_ENQUEUE_ENABLED</code>,
         <code>TASK_CATEGORY_WORKER_ENABLED</code>, <code>TASK_CATEGORY_BACKFILL_ENABLED</code>, and
         <code>TASK_CATEGORY_UI_ENABLED</code>. Disabling any control preserves stored categories and
         manual history. A disabled classification or worker control does not register the BullMQ

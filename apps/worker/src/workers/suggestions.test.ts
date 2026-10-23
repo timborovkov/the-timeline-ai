@@ -5224,6 +5224,114 @@ describe('processSuggestionJobForTests', () => {
     expect(classifyTaskCategories.mock.calls[0]?.[0]).toHaveLength(25);
   });
 
+  it('stamps a suggestion task with task-categories-v1 before storing it', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c3';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'I will send the Northstar security questionnaire by Friday.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Send the security questionnaire',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send the security questionnaire',
+                proposedPayload: { canonicalName: 'Send the security questionnaire' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const classifyTaskCategories = vi.fn().mockResolvedValue([
+      {
+        key: '0:0',
+        category: 'customer_success',
+        confidence: 0.91,
+        model: 'task-category-model',
+      },
+    ]);
+
+    await processSuggestionJobForTests(
+      { db: db as never },
+      { rawEventId, teamId: TEAM_ID },
+      { getEnv: env, chatStructured: chat, classifyTaskCategories, modelId: MODEL_ID },
+    );
+
+    const [bundle] = await withTeam(
+      db as never,
+      TEAM_ID,
+      OWNER_ID,
+    ).suggestions.listPendingSuggestions();
+    expect(bundle?.items[0]?.proposedPayload).toMatchObject({
+      canonicalName: 'Send the security questionnaire',
+      taskCategory: 'customer_success',
+      taskCategoryConfidence: 0.91,
+      taskCategoryModel: 'task-category-model',
+      taskCategoryMode: 'automatic',
+      taskCategoryTaxonomyVersion: 'task-categories-v1',
+    });
+    expect(bundle?.items[0]?.proposedPayload.taskCategoryInputHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('does not store a suggestion task when the classifier drops its prediction', async () => {
+    const rawEventId = '10000000-0000-0000-0000-0000000000c4';
+    await seedRawEvent(db as never, {
+      id: rawEventId,
+      text: 'I will send the Northstar security questionnaire by Friday.',
+      sourceMetadata: {
+        extracted_at: new Date('2026-05-27T10:01:00.000Z').toISOString(),
+        extraction_model_version: 'test-extract@1',
+      },
+    });
+    const chat = vi.fn().mockResolvedValue({
+      model: MODEL_ID,
+      object: {
+        bundles: [
+          {
+            title: 'Send the security questionnaire',
+            confidence: 'high',
+            items: [
+              {
+                operation: 'create',
+                targetKind: 'task',
+                title: 'Send the security questionnaire',
+                proposedPayload: { canonicalName: 'Send the security questionnaire' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const classifyTaskCategories = vi.fn().mockResolvedValue([
+      {
+        key: 'missing',
+        category: 'customer_success',
+        confidence: 0.91,
+        model: 'task-category-model',
+      },
+    ]);
+
+    await expect(
+      processSuggestionJobForTests(
+        { db: db as never },
+        { rawEventId, teamId: TEAM_ID },
+        { getEnv: env, chatStructured: chat, classifyTaskCategories, modelId: MODEL_ID },
+      ),
+    ).rejects.toThrow(/omitted a task proposal/);
+    await expect(suggestionCounts(pg)).resolves.toEqual({ suggestions: 0, items: 0 });
+  });
+
   it('rewrites duplicate creates using objects outside the prompt context window', async () => {
     const rawEventId = '10000000-0000-0000-0000-000000000031';
     const [oldObject] = await db
