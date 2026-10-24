@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   billingStateFromPolarSubscriptionStatus,
   handlePolarWebhookEvent,
+  polarTopupRefundRequest,
   shouldApplyPaidSubscriptionUpdate,
   shouldResetIncludedDiscount,
   spendCapCentsForPaidActivation,
@@ -59,6 +60,27 @@ afterEach(async () => {
 });
 
 describe('Polar webhook helpers', () => {
+  it('uses the cumulative refunded total on order.refunded', () => {
+    expect(
+      polarTopupRefundRequest({
+        eventType: 'order.refunded',
+        amount: 1000,
+        refundedAmount: 200,
+      }),
+    ).toEqual({ cents: 200, amountKind: 'cumulative' });
+    expect(
+      polarTopupRefundRequest({
+        eventType: 'refund.created',
+        amount: 200,
+        refundedAmount: 200,
+      }),
+    ).toEqual({ cents: 200, amountKind: 'incremental' });
+    expect(polarTopupRefundRequest({ eventType: 'order.refunded', amount: 1000 })).toEqual({
+      cents: 1000,
+      amountKind: 'cumulative',
+    });
+  });
+
   it('maps Polar subscription status instead of activating from product id', () => {
     expect(billingStateFromPolarSubscriptionStatus('team', 'active')).toBe('team_active');
     expect(billingStateFromPolarSubscriptionStatus('team', 'past_due')).toBe('past_due');
@@ -451,6 +473,149 @@ describe('handlePolarWebhookEvent', () => {
     const afterRace = await billing.getAccount();
     expect(afterRace.billingState).toBe('team_active');
     expect(afterRace.polarEventModifiedAt?.toISOString()).toBe('2026-08-11T00:00:00.000Z');
+  });
+
+  it('reverses only the refunded amount of a partial top-up', async () => {
+    await enablePrepaidWallet();
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_partial',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.refunded',
+        data: {
+          id: 'ord_partial',
+          product_id: 'prod_topup',
+          amount: 1000,
+          refunded_amount: 200,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(800);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'refund.created',
+        data: {
+          id: 'ref_partial',
+          order_id: 'ord_partial',
+          amount: 200,
+          status: 'succeeded',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(800);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'refund.created',
+        data: {
+          id: 'ref_partial_more',
+          order_id: 'ord_partial',
+          amount: 300,
+          status: 'succeeded',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(500);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.refunded',
+        data: {
+          id: 'ord_partial',
+          product_id: 'prod_topup',
+          amount: 1000,
+          refunded_amount: 500,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(500);
+  });
+
+  it('does not double-debit a partial refund when the refund event arrives first', async () => {
+    await enablePrepaidWallet();
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_partial_first',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'refund.created',
+        data: {
+          id: 'ref_first',
+          order_id: 'ord_partial_first',
+          amount: 200,
+          status: 'succeeded',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.refunded',
+        data: {
+          id: 'ord_partial_first',
+          product_id: 'prod_topup',
+          amount: 1000,
+          refunded_amount: 200,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).walletBalanceCents).toBe(800);
   });
 
   it('reverses a prepaid top-up when Polar refunds the order', async () => {

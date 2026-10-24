@@ -1,6 +1,8 @@
 import { billingFreeGrants, teamBillingAccounts, type Db } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
+import type { PolarRefundAmountKind } from '#src/billing/charge.js';
+
 import { PLAN_CATALOG, PREPAID_TOPUP_CENTS, type BillingPlanId } from '#src/billing/catalog.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { creditWalletFromPolarOrder, debitWalletFromPolarRefund } from '#src/billing/runtime.js';
@@ -84,6 +86,32 @@ export function spendCapCentsForPaidActivation(input: {
   // keep an administrator-selected cap, including €0 as a hard stop.
   if (!input.existing || input.existing.planId === 'free') return catalogDefault;
   return input.existing.spendCapCents;
+}
+
+function positiveRefundCents(value: number | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
+  return Math.round(value);
+}
+
+/**
+ * `order.refunded` carries the original order `amount` and the cumulative
+ * `refunded_amount`. Individual refund events carry that refund's own amount.
+ */
+export function polarTopupRefundRequest(input: {
+  eventType: string;
+  amount?: number;
+  refundedAmount?: number;
+}): { cents: number; amountKind: PolarRefundAmountKind } {
+  const refunded = positiveRefundCents(input.refundedAmount);
+  const amount = positiveRefundCents(input.amount);
+  if (input.eventType === 'order.refunded') {
+    if (refunded !== null) return { cents: refunded, amountKind: 'cumulative' };
+    if (amount !== null) return { cents: amount, amountKind: 'cumulative' };
+    return { cents: 0, amountKind: 'cumulative' };
+  }
+  if (amount !== null) return { cents: amount, amountKind: 'incremental' };
+  if (refunded !== null) return { cents: refunded, amountKind: 'incremental' };
+  return { cents: 0, amountKind: 'incremental' };
 }
 
 export function billingStateForPolarPlan(plan: PolarPaidPlanId) {
@@ -394,21 +422,24 @@ export async function handlePolarWebhookEvent(input: {
     const orderId =
       type === 'order.refunded' ? (data?.id ?? null) : (data?.order_id ?? data?.orderId ?? null);
     const refundId = type === 'order.refunded' ? null : (data?.id ?? null);
-    const cents =
-      typeof data?.amount === 'number' && data.amount > 0
-        ? data.amount
-        : typeof data?.refunded_amount === 'number' && data.refunded_amount > 0
-          ? data.refunded_amount
-          : typeof data?.refundedAmount === 'number' && data.refundedAmount > 0
-            ? data.refundedAmount
-            : 0;
-    if (orderId && (isTopupProduct || type !== 'order.refunded' || cents > 0)) {
+    const refundedAmount = data?.refunded_amount ?? data?.refundedAmount;
+    const request = polarTopupRefundRequest({
+      eventType: type,
+      ...(typeof data?.amount === 'number' ? { amount: data.amount } : {}),
+      ...(typeof refundedAmount === 'number' ? { refundedAmount } : {}),
+    });
+    if (orderId && (isTopupProduct || type !== 'order.refunded' || request.cents > 0)) {
+      const refundKey =
+        type === 'order.refunded'
+          ? `order:${orderId}:${request.cents}`
+          : (refundId ?? `order:${orderId}:${request.cents}`);
       await debitWalletFromPolarRefund({
         db: input.db,
         teamId,
         orderId,
-        refundKey: refundId ?? `order:${orderId}`,
-        cents,
+        refundKey,
+        cents: request.cents,
+        amountKind: request.amountKind,
       });
     }
   }

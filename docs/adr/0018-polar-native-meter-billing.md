@@ -71,7 +71,8 @@ credit hides margin and confuses prospects.
    the included-usage discount, settle per extra member per day, and accrue a
    member added after the first daily tick. Reservations stamp `wallet_lock_cents`
    when the wallet lock is applied and unwind that amount on settle/release/expire
-   even if the live/shadow toggle flipped. Concurrent Polar refunds serialize
+   even if the live/shadow toggle flipped. Release, reserve, settle, and expiry
+   lock the billing account before the reservation row. Concurrent Polar refunds serialize
    remaining clawback under an account lock. Concurrent invite accepts serialize
    member-seat claims with advisory lock key 4. Ask chat titles settle inside
    the Ask reservation. Failed post-verification Free-grant claims retry on the
@@ -150,20 +151,27 @@ credit hides margin and confuses prospects.
    per-extra-member operation id and a cumulative monthly cent delta so daily
    rounding still totals €2 per extra member-month. AI customer charges keep
    fractional cents on `nativeUnits` and round the cumulative delta, so
-   sub-cent embeddings still consume the Free/PAYG floor. Email, accepted-source,
+   sub-cent embeddings still consume the Free/PAYG floor. PAYG AI overage is
+   the difference of those rounded cumulative totals above the €5 allowance, so
+   a fractional remainder is not subtracted from an already-rounded list delta. Email, accepted-source,
    and storage settlements recompute the same cumulative delta under the account
    lock. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
    and sends a stable Polar event `id` so settle and the janitor cannot
    double-ingest; a failed ingest returns the row to `pending`. Polar
    `refund.created` /
    `order.refunded` claw back prepaid top-ups under a serialized remaining-total
-   lock, persist out-of-order refunds until `order.paid`, and freeze the
-   workspace if the credit was already spent. Auto-reload checkout markers stay
+   lock. `order.refunded` uses `refunded_amount` as the cumulative refunded
+   total (`amount` is the original order). Individual refund events add their
+   own amount. The debit is that reconciled target minus reversals already
+   recorded, so a partial refund does not take the whole top-up and paired
+   events do not double-debit. Out-of-order refunds wait until `order.paid`.
+   A shortfall freezes the workspace if the credit was already spent. Auto-reload checkout markers stay
    retryable until Polar checkout succeeds and skip when spend-cap headroom
    cannot cover the €10 product, including a €0 cap. Credentials signup keeps the
    workspace restricted until the owner email is verified; unverified owners are
    excluded from the Free-grant backfill; `email_verification`
-   mail is not metered against that restricted workspace. OpenRouter
+   mail and `support_request` mail are not metered against that restricted
+   workspace. OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
    Janitor included-discount resets lock the billing account and refuse to
    overwrite a newer Polar plan or period. Client-aborted Ask streams settle at

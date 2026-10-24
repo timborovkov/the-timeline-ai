@@ -40,13 +40,104 @@ export function paygOverageCustomerChargeCents(input: {
   const allowance = freeAllowanceConsumedForMeter(input.meterId, input.meters);
   if (!allowance) return Math.max(0, input.listChargeCents);
   const remaining = Math.max(0, allowance.limit - allowance.consumed);
-  if (remaining <= 0) return Math.max(0, input.listChargeCents);
+  if (remaining <= 0 && allowance.unit !== 'cents') return Math.max(0, input.listChargeCents);
   if (allowance.unit === 'cents') {
-    return Math.max(0, input.listChargeCents - remaining);
+    // Difference of rounded cumulative totals above the allowance. Subtracting
+    // the fractional remainder from an already-rounded list delta is not an
+    // integer (499.4 → 499.6 is still inside the €5 floor).
+    const previousGross = Math.max(0, allowance.consumed);
+    const nextGross = previousGross + Math.max(0, input.nativeUnits);
+    return (
+      roundedPostAllowanceCents(nextGross, allowance.limit) -
+      roundedPostAllowanceCents(previousGross, allowance.limit)
+    );
   }
   const overageUnits = Math.max(0, input.nativeUnits - remaining);
   if (overageUnits <= 0) return 0;
   return listChargeCentsForMeter(input.meterId, overageUnits);
+}
+
+function roundedPostAllowanceCents(grossCents: number, allowanceLimitCents: number): number {
+  return Math.max(0, Math.round(grossCents) - allowanceLimitCents);
+}
+
+export type PolarRefundAmountKind = 'incremental' | 'cumulative';
+
+function metadataPositiveCents(
+  metadata: Record<string, unknown> | null | undefined,
+  key: string,
+): number {
+  const value = metadata?.[key];
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.round(value);
+}
+
+/** Prior wallet reversals for one top-up, split into debited cents and reported totals. */
+export function summedPolarRefundReversals(
+  rows: readonly { operationId: string; metadata: Record<string, unknown> | null }[],
+  refundOperationId: string,
+): {
+  duplicate: boolean;
+  alreadyDebitedCents: number;
+  incrementalReportedCents: number;
+  cumulativeReportedCents: number;
+} {
+  if (rows.some((row) => row.operationId === refundOperationId)) {
+    return {
+      duplicate: true,
+      alreadyDebitedCents: 0,
+      incrementalReportedCents: 0,
+      cumulativeReportedCents: 0,
+    };
+  }
+  let alreadyDebitedCents = 0;
+  let incrementalReportedCents = 0;
+  let cumulativeReportedCents = 0;
+  for (const row of rows) {
+    const metadata = row.metadata ?? {};
+    const debited = metadataPositiveCents(metadata, 'cents');
+    alreadyDebitedCents += debited;
+    const reported = metadataPositiveCents(metadata, 'reported_cents') || debited;
+    if (reported <= 0) continue;
+    if (metadata.amount_kind === 'cumulative') {
+      cumulativeReportedCents = Math.max(cumulativeReportedCents, reported);
+    } else {
+      incrementalReportedCents += reported;
+    }
+  }
+  return {
+    duplicate: false,
+    alreadyDebitedCents,
+    incrementalReportedCents,
+    cumulativeReportedCents,
+  };
+}
+
+/**
+ * Wallet cents still to claw back for one Polar refund event.
+ * `order.refunded` reports a cumulative refunded total. `refund.created` reports
+ * that refund's own amount. The target is the larger of those figures, capped
+ * at the original top-up, minus reversals already recorded.
+ */
+export function reconciledPolarRefundClawbackCents(input: {
+  originalCents: number;
+  alreadyDebitedCents: number;
+  incrementalReportedCents: number;
+  cumulativeReportedCents: number;
+  incomingKind: PolarRefundAmountKind;
+  incomingReportedCents: number;
+}): number {
+  const original = Math.max(0, Math.round(input.originalCents));
+  const already = Math.max(0, Math.round(input.alreadyDebitedCents));
+  const incoming = input.incomingReportedCents > 0 ? Math.round(input.incomingReportedCents) : 0;
+  let incremental = Math.max(0, input.incrementalReportedCents);
+  let cumulative = Math.max(0, input.cumulativeReportedCents);
+  if (incoming > 0) {
+    if (input.incomingKind === 'cumulative') cumulative = Math.max(cumulative, incoming);
+    else incremental += incoming;
+  }
+  const target = incoming > 0 ? Math.min(original, Math.max(incremental, cumulative)) : original;
+  return Math.max(0, target - already);
 }
 
 /** Cumulative extra-member-day charge so daily rounding still totals €2/member-month. */

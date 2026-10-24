@@ -5,10 +5,12 @@ import {
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
+  reconciledPolarRefundClawbackCents,
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
   splitDurationNativeUnitsByUtcMonth,
+  summedPolarRefundReversals,
 } from '#src/billing/charge.js';
 import {
   allFreeAllowancesExhausted,
@@ -88,6 +90,28 @@ describe('billing charge split', () => {
     ).toBe(20);
   });
 
+  it('rounds PAYG AI overage from cumulative post-allowance totals', () => {
+    const nearFloor = paygOverageCustomerChargeCents({
+      planId: 'payg',
+      meterId: 'ai',
+      nativeUnits: 0.2,
+      listChargeCents: 1,
+      meters: { ai: { nativeUnits: 499.4, customerChargeCents: 0 } },
+    });
+    expect(nearFloor).toBe(0);
+    expect(Number.isInteger(nearFloor)).toBe(true);
+
+    const crossed = paygOverageCustomerChargeCents({
+      planId: 'payg',
+      meterId: 'ai',
+      nativeUnits: 1.2,
+      listChargeCents: 2,
+      meters: { ai: { nativeUnits: 499.4, customerChargeCents: 0 } },
+    });
+    expect(crossed).toBe(1);
+    expect(Number.isInteger(crossed)).toBe(true);
+  });
+
   it('charges accepted sources on the cumulative cent boundary', () => {
     expect(
       cumulativeChargeDeltaCents({
@@ -103,6 +127,65 @@ describe('billing charge split', () => {
         nextNativeUnits: 10,
       }),
     ).toBe(1);
+  });
+});
+
+describe('prepaid refund clawback', () => {
+  it('debits only the cumulative refunded total above reversals already recorded', () => {
+    expect(
+      reconciledPolarRefundClawbackCents({
+        originalCents: 1000,
+        alreadyDebitedCents: 0,
+        incrementalReportedCents: 0,
+        cumulativeReportedCents: 0,
+        incomingKind: 'cumulative',
+        incomingReportedCents: 200,
+      }),
+    ).toBe(200);
+    expect(
+      reconciledPolarRefundClawbackCents({
+        originalCents: 1000,
+        alreadyDebitedCents: 200,
+        incrementalReportedCents: 200,
+        cumulativeReportedCents: 0,
+        incomingKind: 'cumulative',
+        incomingReportedCents: 200,
+      }),
+    ).toBe(0);
+    expect(
+      reconciledPolarRefundClawbackCents({
+        originalCents: 1000,
+        alreadyDebitedCents: 200,
+        incrementalReportedCents: 0,
+        cumulativeReportedCents: 200,
+        incomingKind: 'incremental',
+        incomingReportedCents: 200,
+      }),
+    ).toBe(0);
+    expect(
+      reconciledPolarRefundClawbackCents({
+        originalCents: 1000,
+        alreadyDebitedCents: 200,
+        incrementalReportedCents: 200,
+        cumulativeReportedCents: 200,
+        incomingKind: 'incremental',
+        incomingReportedCents: 300,
+      }),
+    ).toBe(300);
+  });
+
+  it('treats a repeated refund operation as already recorded', () => {
+    expect(
+      summedPolarRefundReversals(
+        [
+          {
+            operationId: 'polar_refund:order:ord_1:200',
+            metadata: { cents: 200, reported_cents: 200, amount_kind: 'cumulative' },
+          },
+        ],
+        'polar_refund:order:ord_1:200',
+      ).duplicate,
+    ).toBe(true);
   });
 });
 

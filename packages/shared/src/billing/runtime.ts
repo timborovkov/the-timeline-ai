@@ -31,6 +31,9 @@ import {
   cumulativeChargeDeltaCents,
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
+  reconciledPolarRefundClawbackCents,
+  summedPolarRefundReversals,
+  type PolarRefundAmountKind,
 } from '#src/billing/charge.js';
 import {
   BILLING_SYSTEM_USER_ID,
@@ -173,12 +176,20 @@ async function applyPendingPolarRefundsForOrder(input: {
       : row.operationId;
     const centsRaw = row.metadata.cents;
     const cents = typeof centsRaw === 'number' && centsRaw > 0 ? centsRaw : 0;
+    const storedKind = row.metadata.amount_kind;
+    const amountKind: PolarRefundAmountKind =
+      storedKind === 'cumulative' || storedKind === 'incremental'
+        ? storedKind
+        : refundKey.startsWith('order:')
+          ? 'cumulative'
+          : 'incremental';
     await debitWalletFromPolarRefund({
       db: input.db,
       teamId: input.teamId,
       orderId: input.orderId,
       refundKey,
       cents,
+      amountKind,
     });
     await input.db
       .update(billingUsageLedger)
@@ -200,7 +211,10 @@ export async function debitWalletFromPolarRefund(input: {
   orderId: string;
   refundKey: string;
   cents: number;
+  amountKind?: PolarRefundAmountKind;
 }): Promise<{ duplicate: boolean; reversed: boolean; shortfallCents: number }> {
+  const amountKind = input.amountKind ?? 'incremental';
+  const reportedCents = input.cents > 0 ? input.cents : 0;
   return input.db.transaction(async (tx) => {
     await tx
       .select({ teamId: teamBillingAccounts.teamId })
@@ -238,7 +252,8 @@ export async function debitWalletFromPolarRefund(input: {
           metadata: {
             pending: true,
             order_id: input.orderId,
-            cents: input.cents > 0 ? input.cents : PREPAID_TOPUP_CENTS,
+            cents: reportedCents > 0 ? reportedCents : PREPAID_TOPUP_CENTS,
+            amount_kind: amountKind,
           },
         })
         .onConflictDoNothing();
@@ -249,8 +264,12 @@ export async function debitWalletFromPolarRefund(input: {
       typeof originalCentsRaw === 'number' && originalCentsRaw > 0
         ? originalCentsRaw
         : PREPAID_TOPUP_CENTS;
+    const refundOperationId = `polar_refund:${input.refundKey}`;
     const priorReversals = await tx
-      .select({ metadata: billingUsageLedger.metadata })
+      .select({
+        operationId: billingUsageLedger.operationId,
+        metadata: billingUsageLedger.metadata,
+      })
       .from(billingUsageLedger)
       .where(
         and(
@@ -259,15 +278,47 @@ export async function debitWalletFromPolarRefund(input: {
           sql`${billingUsageLedger.metadata}->>'order_id' = ${input.orderId}`,
         ),
       );
-    const alreadyReversed = priorReversals.reduce((sum, row) => {
-      const cents = row.metadata.cents;
-      return sum + (typeof cents === 'number' && cents > 0 ? cents : 0);
-    }, 0);
-    const remaining = Math.max(0, originalCents - alreadyReversed);
-    const requested = input.cents > 0 ? input.cents : remaining;
-    const debitCents = Math.min(remaining, requested);
-    if (debitCents <= 0) {
+    const prior = summedPolarRefundReversals(priorReversals, refundOperationId);
+    if (prior.duplicate) {
       return { duplicate: true, reversed: false, shortfallCents: 0 };
+    }
+    const debitCents = reconciledPolarRefundClawbackCents({
+      originalCents,
+      alreadyDebitedCents: prior.alreadyDebitedCents,
+      incrementalReportedCents: prior.incrementalReportedCents,
+      cumulativeReportedCents: prior.cumulativeReportedCents,
+      incomingKind: amountKind,
+      incomingReportedCents: reportedCents,
+    });
+    const refundMetadata = {
+      order_id: input.orderId,
+      cents: debitCents,
+      reported_cents: reportedCents > 0 ? reportedCents : debitCents,
+      amount_kind: amountKind,
+    };
+    if (debitCents <= 0) {
+      if (reportedCents <= 0) {
+        return { duplicate: true, reversed: false, shortfallCents: 0 };
+      }
+      // Remember a paired event that clawed nothing so a later partial refund
+      // still adds its own amount on top of the cumulative total.
+      await tx
+        .insert(billingUsageLedger)
+        .values({
+          teamId: input.teamId,
+          operationId: refundOperationId,
+          kind: 'reversal',
+          meterId: 'ai',
+          nativeUnits: '0',
+          customerChargeCents: 0,
+          billable: false,
+          nonBillableReason: 'wallet_refund',
+          operationClass: 'wallet_refund',
+          source: 'polar_refund',
+          metadata: refundMetadata,
+        })
+        .onConflictDoNothing();
+      return { duplicate: false, reversed: false, shortfallCents: 0 };
     }
     const billing = billingScope({
       db: tx as unknown as Db,
@@ -275,11 +326,11 @@ export async function debitWalletFromPolarRefund(input: {
       userId: BILLING_SYSTEM_USER_ID,
     });
     const result = await billing.debitWallet({
-      operationId: `polar_refund:${input.refundKey}`,
+      operationId: refundOperationId,
       cents: debitCents,
       source: 'polar_refund',
       freezeOnShortfall: true,
-      metadata: { order_id: input.orderId, cents: debitCents },
+      metadata: refundMetadata,
     });
     return {
       duplicate: result.duplicate,

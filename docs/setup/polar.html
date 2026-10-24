@@ -117,43 +117,45 @@ BILLING_CHARGES_ENABLED=false
         post-verify Free-grant backfill prefers oldest restricted Free workspaces and never assigns
         the grant to a paid team. Scheduled join billing denials fail the occurrence without pausing
         auto-join as consecutive failures. Document uploads are blocked in every non-reservable
-        billing state. Refunds of the €10 top-up debit the prepaid wallet, serialize concurrent
-        <code>refund.created</code> / <code>order.refunded</code> totals, and freeze the workspace
-        if that credit was already spent. Refunds that arrive before <code>order.paid</code> are
-        stored and applied when the top-up credits. Local usage settlement is independent of Polar
-        ingest: prepaid wallet and included discount already collect locally, including sub-cent
-        rounds, so those units are not sent to Polar meters. Only Enterprise usage is ingested to
-        Polar meters. Remaining Polar ingest uses a ledger outbox that claims a row before
-        ingesting, Polar receives a stable event id, and a failed ingest does not undo a committed
-        charge. Janitor included-discount resets lock the billing account so they cannot overwrite a
-        newer Polar plan or period. Ask streams that abort after work starts settle at least the
-        reserved customer charge. Failed structured-output attempts still contribute OpenRouter
-        <code>usage.cost</code>. Recall minutes that cross a UTC month are attributed to each month
-        they span. Document create serializes capacity under advisory lock key 1; restore takes key
-        1 then key 2 so restored chunks serialize with extraction writes. Worker AI reservations
-        count against plan <code>costlyWorkerConcurrency</code> and delay the job when busy.
-        Background AI metering keeps the reservation when settle fails after a successful provider
-        call and reuses the BullMQ job id. A thrown call that already reported OpenRouter usage
-        settles that attempt, then releases the reservation. Each transcription chunk gets its own
-        operation id. Aborting a Recall join after the bot is accepted keeps the reservation when
-        leave fails so the janitor can retry. Terminal Recall settlement errors propagate so the
-        status webhook can 503 and retry. Re-accepting a removed member stamps a new membership
-        <code>createdAt</code> and appends the previous interval to <code>prior_intervals</code>. A
-        leftover Free team stays unrestricted while another owner's grant remains assigned. Storage
-        snapshots backfill missed days across the 31-day lookback, count each day in that day's
-        month, and price it on the plan in force then. A prior month does not draw the live included
-        discount. Wallet overage on the same plan is still collected. A missed renewal advances by
-        calendar months from the subscription anchor day. Settled reservations are recognized before
-        a new wallet check. Free in-allowance settlement does not create a wallet shortfall.
-        Restoring a document keeps the closed absence interval so those days are not billed again.
-        Slack/Telegram/MCP Ask and web chat save the completed cost before settle and keep the
-        reservation when settlement fails so the janitor can retry it. Paid-plan changes reuse the
-        Polar subscription in non-active paid states. Extra-member plan preview prorates from period
-        member-days, including person-days when the current plan has no extras. Auto-reload retries
-        owner notification after delivery failure without a second Polar checkout. Inbound email
-        audio skipped for a denied email meter is flushed by the janitor when billing can reserve
-        again. Denied inbound-email parent enrichment is stamped
-        <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
+        billing state. Refunds of a prepaid top-up debit the wallet for the cumulative
+        <code>refunded_amount</code>, not the original order <code>amount</code>. Paired
+        <code>refund.created</code> and <code>order.refunded</code> events reconcile against
+        reversals already recorded so a partial refund cannot take the whole top-up or debit twice.
+        A shortfall freezes the workspace if that credit was already spent. Refunds that arrive
+        before <code>order.paid</code> are stored and applied when the top-up credits. Local usage
+        settlement is independent of Polar ingest: prepaid wallet and included discount already
+        collect locally, including sub-cent rounds, so those units are not sent to Polar meters.
+        Only Enterprise usage is ingested to Polar meters. Remaining Polar ingest uses a ledger
+        outbox that claims a row before ingesting, Polar receives a stable event id, and a failed
+        ingest does not undo a committed charge. Janitor included-discount resets lock the billing
+        account so they cannot overwrite a newer Polar plan or period. Ask streams that abort after
+        work starts settle at least the reserved customer charge. Failed structured-output attempts
+        still contribute OpenRouter <code>usage.cost</code>. Recall minutes that cross a UTC month
+        are attributed to each month they span. Document create serializes capacity under advisory
+        lock key 1; restore takes key 1 then key 2 so restored chunks serialize with extraction
+        writes. Worker AI reservations count against plan <code>costlyWorkerConcurrency</code> and
+        delay the job when busy. Background AI metering keeps the reservation when settle fails
+        after a successful provider call and reuses the BullMQ job id. A thrown call that already
+        reported OpenRouter usage settles that attempt, then releases the reservation. Each
+        transcription chunk gets its own operation id. Aborting a Recall join after the bot is
+        accepted keeps the reservation when leave fails so the janitor can retry. Terminal Recall
+        settlement errors propagate so the status webhook can 503 and retry. Re-accepting a removed
+        member stamps a new membership <code>createdAt</code> and appends the previous interval to
+        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
+        grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
+        count each day in that day's month, and price it on the plan in force then. A prior month
+        does not draw the live included discount. Wallet overage on the same plan is still
+        collected. A missed renewal advances by calendar months from the subscription anchor day.
+        Settled reservations are recognized before a new wallet check. Free in-allowance settlement
+        does not create a wallet shortfall. Restoring a document keeps the closed absence interval
+        so those days are not billed again. Slack/Telegram/MCP Ask and web chat save the completed
+        cost before settle and keep the reservation when settlement fails so the janitor can retry
+        it. Paid-plan changes reuse the Polar subscription in non-active paid states. Extra-member
+        plan preview prorates from period member-days, including person-days when the current plan
+        has no extras. Auto-reload retries owner notification after delivery failure without a
+        second Polar checkout. Inbound email audio skipped for a denied email meter is flushed by
+        the janitor when billing can reserve again. Denied inbound-email parent enrichment is
+        stamped <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
         accepted-source meter. Deferred accepted-source flush rotates past still-blocked rows; a
         replay after an insert crash meters the existing dedup row. Seat claims are blocked while
         billing is paused. Enterprise settlement skips prepaid freezes and does not debit a prepaid
