@@ -666,7 +666,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reports a newer active status. A confirmed subscription cancel clears the Polar subscription
       id and the contracted Enterprise fee. Plan preview discounts extra-member cents. Recall
       reservations and included-discount refills follow the effective plan after a comp expires.
-      Member-day ticks reuse the `plan_id` stamped on that day. A missed day with no stamp uses the plan effective that day. Re-accept appends `prior_intervals`. Denied inbound email
+      Member-day ticks reuse the `plan_id` stamped on that day. A missed day with no stamp uses one helper for plan history, comp expiry, and Enterprise contracts: Free after `comp_expires_at`, and the comped plan's price before that. Storage replay uses the same helper. Re-accept appends `prior_intervals`. Denied inbound email
       enrichment is recoverable via `billing_enrichment_deferred`. Storage-cap
       finalization deletes the rejected object. Captured chat attachments enforce
       document/storage limits. Free in-allowance usage is not invoiced under

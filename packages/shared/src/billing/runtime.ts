@@ -46,8 +46,8 @@ import {
 } from '#src/billing/openrouter-usage.js';
 import { effectiveBillingPlanId, resolveTeamCommercialTerms } from '#src/billing/operator.js';
 import {
+  billingPlanIdOnDay,
   includedDiscountRemainingForReplay,
-  planIdEffectiveOnDay,
 } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
@@ -498,11 +498,11 @@ export async function snapshotTeamStorageGbMonth(input: {
       'storage_gb_month',
       replayPeriodYm,
     );
-    const pricingPlanId = await planIdEffectiveOnDay({
+    const pricingPlanId = await billingPlanIdOnDay({
       db: input.db,
       teamId: input.teamId,
       day,
-      fallback: livePlan,
+      account: account ?? { planId: 'free', billingState: 'free', spendCapCents: 0 },
     });
     const differentPlan = pricingPlanId !== livePlan;
     const priorPeriod = replayPeriodYm !== periodYm();
@@ -649,7 +649,11 @@ async function planEntitlementForMemberDay(input: {
   db: Db;
   teamId: string;
   day: string;
-  currentPlanId: BillingPlanId;
+  account: {
+    planId: BillingPlanId;
+    arrangement?: 'standard' | 'comped' | null;
+    compExpiresAt?: Date | null;
+  };
 }): Promise<{ planId: BillingPlanId; included: number | null }> {
   const [existing] = await input.db
     .select({ planId: billingMemberDayLedger.planId })
@@ -663,15 +667,15 @@ async function planEntitlementForMemberDay(input: {
     .limit(1);
   const stampedPlanId =
     existing?.planId && isBillingPlanId(existing.planId) ? existing.planId : null;
-  // A missed day has no stamp yet. Price it on the plan in force that day,
-  // the same way storage backfill does, before the first member-day write.
+  // A missed day has no stamp yet. One helper applies plan history, comp
+  // expiry, and a contractual Enterprise plan before the first write.
   const planId =
     stampedPlanId ??
-    (await planIdEffectiveOnDay({
+    (await billingPlanIdOnDay({
       db: input.db,
       teamId: input.teamId,
       day: input.day,
-      fallback: input.currentPlanId,
+      account: input.account,
     }));
   return { planId, included: PLAN_CATALOG[planId].includedActiveMembers };
 }
@@ -809,9 +813,7 @@ export async function accrueTeamMemberDays(input: {
       db: input.db,
       teamId: input.teamId,
       day,
-      currentPlanId: effectiveBillingPlanId(
-        account ?? { planId: 'free', billingState: 'free', spendCapCents: 0 },
-      ),
+      account: account ?? { planId: 'free', billingState: 'free', spendCapCents: 0 },
     });
     const samePlan = entitlement.planId === commercial.planId;
     const result = await accrueTeamMemberDaysForDay({

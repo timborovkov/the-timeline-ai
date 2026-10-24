@@ -145,8 +145,9 @@ credit hides margin and confuses prospects.
    including an already-expired row, before the TTL sweep, and a retry keeps the
    completed result instead of calling the provider again. Member-day ledger rows stamp `plan_id`; later
    janitor ticks reuse that day's included-member count after a plan change. A missed
-   day with no stamp yet uses the plan effective that day from `billing_plan_history`,
-   then the current plan, before the first member-day write. Re-accepting a removed
+   day with no stamp yet uses one helper: `billing_plan_history`, then comp expiry
+   (Free after `comp_expires_at`), while a non-comp Enterprise contract stays
+   Enterprise. Storage replay uses the same helper. An existing stamp still wins. Re-accepting a removed
    member appends the previous interval to `prior_intervals` and stamps a new
    `createdAt`. Interactive search embeddings run under billing ALS.
    The person-level Free grant unassigns when its owner leaves or is demoted, but
@@ -206,8 +207,10 @@ credit hides margin and confuses prospects.
    to the gross list charge and to extra-member cents before included credit, in
    settlement and in the plan preview. Capacity, Recall reservations, nudges, and
    included-discount refills follow the effective plan, so an expired comp uses
-   Free rather than the stored comp plan. Replayed member-days keep the historical plan's extra-member rate.
-   A day with no stamp yet resolves that plan from `billing_plan_history` before the current plan.
+   Free rather than the stored comp plan. Replayed member-days and storage days use
+   the same per-day helper. A day before comp expiry keeps that plan's catalog price.
+   A day after `comp_expires_at` is Free. A contractual Enterprise day stays Enterprise.
+   An existing member-day stamp still wins.
    Platform-fee overrides are not applied to fixed Polar products. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
    and sends a stable Polar event `id` so settle and the janitor cannot
    double-ingest; a failed ingest returns the row to `pending`. `order.paid`

@@ -184,6 +184,26 @@ export function effectiveBillingPlanId(
   return 'free';
 }
 
+/**
+ * Stored plan for one UTC day after comp expiry.
+ * Plan history supplies `storedPlanId`. A comp keeps that plan through the end
+ * of the last day before `compExpiresAt`, then the day is Free. A standard
+ * arrangement, including a contractual Enterprise plan and a cleared comp,
+ * stays on the stored plan. Enterprise included seats stay null in the catalog.
+ */
+export function historicalPlanIdOnDay(input: {
+  storedPlanId: BillingPlanId;
+  arrangement?: BillingArrangement | null;
+  compExpiresAt?: Date | null;
+  day: string;
+}): BillingPlanId {
+  if (input.arrangement !== 'comped') return input.storedPlanId;
+  const end = new Date(`${input.day}T23:59:59.999Z`);
+  if (Number.isNaN(end.getTime())) return input.storedPlanId;
+  if (timestampExpired(input.compExpiresAt, end)) return 'free';
+  return input.storedPlanId;
+}
+
 export function activePriceOverride(
   account: BillingOperatorAccount,
   now = new Date(),

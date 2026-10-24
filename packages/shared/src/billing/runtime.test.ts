@@ -400,7 +400,7 @@ describe('billing runtime', () => {
         ('${TEAM_ID}', '31111111-2222-4333-8444-555555555555', 'member'),
         ('${TEAM_ID}', '41111111-2222-4333-8444-555555555555', 'member');
     `);
-    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-27' });
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: utcDay() });
     expect(accrued.extraMembers).toBe(1);
     expect(accrued.chargeCents).toBeGreaterThan(0);
     const after = await billing.getAccount();
@@ -608,6 +608,124 @@ describe('billing runtime', () => {
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
     expect(account?.wallet).toBe(5000);
+  });
+
+  it('prices member-days before comp expiry and Free after it', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const before = '2026-08-10';
+    const after = '2026-08-20';
+    const extraIds = Array.from({ length: 25 }, (_, index) => {
+      const n = (index + 2).toString(16).padStart(8, '0');
+      return `${n}-2222-4333-8444-555555555555`;
+    });
+    const paidDayCharge = memberDayChargeDelta({
+      previousNativeUnits: 0,
+      nextNativeUnits: 1,
+      centsPerMemberMonth: 200,
+      daysInMonth: daysInPeriodYm(before.slice(0, 7)),
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', arrangement = 'comped',
+          comp_expires_at = '2026-08-15T00:00:00Z', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'team', '2026-08-01T00:00:00Z');
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'comp${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const paid = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: before });
+    expect(paid.extraMembers).toBe(1);
+    expect(paid.chargeCents).toBe(paidDayCharge);
+    const freeDay = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: after });
+    expect(freeDay.extraMembers).toBe(0);
+    expect(freeDay.chargeCents).toBe(0);
+    const stamped = await db
+      .select({ day: billingMemberDayLedger.day, planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped.filter((row) => row.day === before).every((row) => row.planId === 'team')).toBe(
+      true,
+    );
+    expect(stamped.filter((row) => row.day === after).every((row) => row.planId === 'free')).toBe(
+      true,
+    );
+  });
+
+  it('keeps a stamped member-day on its plan after the comp expires', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const day = '2026-08-20';
+    const extraIds = Array.from({ length: 25 }, (_, index) => {
+      const n = (index + 2).toString(16).padStart(8, '0');
+      return `${n}-2222-4333-8444-555555555555`;
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', arrangement = 'comped',
+          comp_expires_at = '2026-08-15T00:00:00Z', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'stamp${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+      INSERT INTO billing_member_day_ledger (team_id, user_id, day, plan_id, role, billable)
+      VALUES ('${TEAM_ID}', '${USER_ID}', '${day}', 'team', 'owner', true);
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(accrued.extraMembers).toBe(1);
+    expect(accrued.chargeCents).toBeGreaterThan(0);
+    const stamped = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped).toHaveLength(26);
+    expect(stamped.every((row) => row.planId === 'team')).toBe(true);
+  });
+
+  it('keeps a contractual Enterprise day on Enterprise', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', arrangement = 'standard',
+          spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'enterprise', '2026-08-01T00:00:00Z');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-20' });
+    expect(accrued.extraMembers).toBe(0);
+    expect(accrued.chargeCents).toBe(0);
+    const [stamped] = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped?.planId).toBe('enterprise');
   });
 
   it('backfills member-days from preserved prior membership intervals', async () => {
@@ -1303,6 +1421,57 @@ describe('billing runtime', () => {
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
     expect(account?.included).toBe(100);
     expect(account?.billingState).toBe('payg_active');
+  });
+
+  it('prices storage before comp expiry on the comp plan and Free after it', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const before = '2026-08-20';
+    const after = '2026-09-15';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', arrangement = 'comped',
+          comp_expires_at = '2026-09-01T00:00:00Z', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'team', '2026-08-01T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000051', '${TEAM_ID}', 'comp.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000052',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000051',
+        1,
+        'team/docs/comp.bin',
+        10737418240,
+        '${before}T00:00:00Z'
+      );
+    `);
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: before });
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: after });
+    const rows = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const beforeRow = rows.find((row) => row.operationId === `storage_gb:${TEAM_ID}:${before}`);
+    const afterRow = rows.find((row) => row.operationId === `storage_gb:${TEAM_ID}:${after}`);
+    expect(beforeRow?.metadata).toMatchObject({ pricing_plan_id: 'team' });
+    expect(afterRow?.metadata.pricing_plan_id).toBeUndefined();
+    expect(afterRow?.metadata.discount_cents).toBe(0);
+    const [account] = await db
+      .select({ billingState: teamBillingAccounts.billingState })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.billingState).toBe('team_active');
   });
 
   it('skips storage days covered by a closed document absence interval', async () => {

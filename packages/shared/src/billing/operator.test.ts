@@ -6,6 +6,7 @@ import {
   checkoutDiscountId,
   describeTeamComp,
   effectiveBillingPlanId,
+  historicalPlanIdOnDay,
   isActiveComp,
   isPlatformAdminEmail,
   localChargeSpendCapApplies,
@@ -18,6 +19,65 @@ const base = {
   billingState: 'team_active',
   spendCapCents: 10_000,
 };
+
+describe('historical plan on a UTC day', () => {
+  it('keeps a comped plan through the day before expiry', () => {
+    expect(
+      historicalPlanIdOnDay({
+        storedPlanId: 'team',
+        arrangement: 'comped',
+        compExpiresAt: new Date('2026-08-15T00:00:00.000Z'),
+        day: '2026-08-14',
+      }),
+    ).toBe('team');
+  });
+
+  it('prices days after comp expiry as Free, including an Enterprise comp', () => {
+    const expiresAt = new Date('2026-08-15T00:00:00.000Z');
+    expect(
+      historicalPlanIdOnDay({
+        storedPlanId: 'team',
+        arrangement: 'comped',
+        compExpiresAt: expiresAt,
+        day: '2026-08-15',
+      }),
+    ).toBe('free');
+    expect(
+      historicalPlanIdOnDay({
+        storedPlanId: 'enterprise',
+        arrangement: 'comped',
+        compExpiresAt: expiresAt,
+        day: '2026-08-20',
+      }),
+    ).toBe('free');
+  });
+
+  it('leaves a contractual Enterprise plan and a cleared comp on the stored plan', () => {
+    expect(
+      historicalPlanIdOnDay({
+        storedPlanId: 'enterprise',
+        arrangement: 'standard',
+        compExpiresAt: new Date('2026-08-15T00:00:00.000Z'),
+        day: '2026-08-20',
+      }),
+    ).toBe('enterprise');
+    expect(
+      historicalPlanIdOnDay({
+        storedPlanId: 'team',
+        arrangement: 'standard',
+        day: '2026-08-20',
+      }),
+    ).toBe('team');
+    expect(
+      historicalPlanIdOnDay({
+        storedPlanId: 'team',
+        arrangement: 'comped',
+        compExpiresAt: null,
+        day: '2026-08-20',
+      }),
+    ).toBe('team');
+  });
+});
 
 describe('platform admin allowlist', () => {
   it('matches emails and ignores team role', () => {
