@@ -106,6 +106,11 @@ This is a single-case shape illustration, not a complete valid corpus:
 }
 ```
 
+Audio requests use the shared `llm.transcribeAudio()` wrapper, including the
+eval model override, cache-disable header, and JSON audio contract. ZDR
+registry inspection and generation-route metadata stay on the eval transport
+because they are evidence, not product transcription.
+
 ## Running the bake-off
 
 Keep the API key and manifest outside source control. The ignored environment

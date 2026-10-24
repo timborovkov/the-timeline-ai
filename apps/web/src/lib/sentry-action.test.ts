@@ -58,6 +58,7 @@ describe('runSentryServerAction', () => {
       throw new Error('NEXT_REDIRECT');
     });
     mocks.withServerActionInstrumentation.mockClear();
+    vi.unstubAllEnvs();
   });
 
   it('passes only a valid trace header into Sentry instrumentation', async () => {
@@ -113,6 +114,45 @@ describe('runSentryServerAction', () => {
 
     await expect(runSentryServerAction('create_team', () => 'ok')).resolves.toBe('ok');
     expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it('skips the legal session gate while publication is withheld', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');
+    mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
+    const callback = vi.fn(() => 'ok');
+    mocks.auth.mockResolvedValue({
+      user: {
+        legalTermsVersion: 'old',
+        legalPrivacyVersion: 'old',
+        legalAcceptedAt: '2026-06-02T00:00:00.000Z',
+      },
+    });
+
+    await expect(runSentryServerAction('create_team', callback)).resolves.toBe('ok');
+    expect(mocks.redirect).not.toHaveBeenCalled();
+    expect(mocks.auth).not.toHaveBeenCalled();
+    expect(callback).toHaveBeenCalledOnce();
+    vi.unstubAllEnvs();
+  });
+
+  it('redirects a stale production session once publication is ready', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LEGAL_PUBLICATION_READY', 'true');
+    mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
+    const callback = vi.fn(() => 'should not run');
+    mocks.auth.mockResolvedValue({
+      user: {
+        legalTermsVersion: 'old',
+        legalPrivacyVersion: 'old',
+        legalAcceptedAt: '2026-06-02T00:00:00.000Z',
+      },
+    });
+
+    await expect(runSentryServerAction('create_team', callback)).rejects.toThrow('NEXT_REDIRECT');
+    expect(mocks.redirect).toHaveBeenCalledWith('/legal/accept?returnTo=%2Fapp');
+    expect(callback).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
   });
 
   it('redirects a stale authenticated action before its callback runs', async () => {

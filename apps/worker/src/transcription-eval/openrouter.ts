@@ -1,5 +1,11 @@
 import { setTimeout as delay } from 'node:timers/promises';
 
+import {
+  OpenRouterTranscriptionHttpError,
+  TimelineAiError,
+  transcribeAudio,
+} from '@timeline/shared/llm';
+
 import type {
   TranscriptionEvalTransport,
   TranscriptionEvalTransportRequest,
@@ -58,6 +64,27 @@ function elapsedMs(startedAt: number, nowMs: () => number): number {
   return Math.max(0, nowMs() - startedAt);
 }
 
+function categoryFromTranscriptionFailure(
+  error: unknown,
+): TranscriptionEvalRequestError['category'] {
+  if (error instanceof TimelineAiError) {
+    if (error.causeName === 'AbortError' || error.causeName === 'TimeoutError') return 'timeout';
+    if (error.causeName === OpenRouterTranscriptionHttpError.name) {
+      const status =
+        error.cause && typeof error.cause === 'object' && 'status' in error.cause
+          ? Number(error.cause.status)
+          : Number(/failed with (\d+)/u.exec(error.causeMessage)?.[1]);
+      if (Number.isInteger(status) && status > 0) return errorCategoryForStatus(status);
+    }
+    if (error.causeMessage.includes('did not include text')) return 'invalid_response';
+  }
+  const cause = error instanceof TimelineAiError ? error.cause : error;
+  if (cause instanceof Error && (cause.name === 'AbortError' || cause.name === 'TimeoutError')) {
+    return 'timeout';
+  }
+  return 'provider';
+}
+
 async function jsonOrNull(response: Response): Promise<unknown> {
   try {
     const json: unknown = await response.json();
@@ -65,18 +92,6 @@ async function jsonOrNull(response: Response): Promise<unknown> {
   } catch {
     return null;
   }
-}
-
-function parseTranscriptionResponse(payload: unknown): { text: string; costUsd?: number } | null {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-  const record = payload as Record<string, unknown>;
-  if (typeof record.text !== 'string') return null;
-  const usage =
-    record.usage && typeof record.usage === 'object' && !Array.isArray(record.usage)
-      ? (record.usage as Record<string, unknown>)
-      : null;
-  const costUsd = finiteNonNegative(usage?.cost);
-  return { text: record.text, ...(costUsd === undefined ? {} : { costUsd }) };
 }
 
 function parseGenerationRoute(payload: unknown): GenerationRoute | null {
@@ -298,52 +313,38 @@ export function createOpenRouterTranscriptionEvalTransport(
       input: TranscriptionEvalTransportRequest,
     ): Promise<TranscriptionEvalTransportSuccess> {
       const startedAt = nowMs();
-      let response: Response;
+      let transcribed: Awaited<ReturnType<typeof transcribeAudio>>;
       try {
-        response = await fetchImpl(
-          `${OPENROUTER_TRANSCRIPTION_EVAL_BASE_URL}/audio/transcriptions`,
+        transcribed = await transcribeAudio(
           {
-            method: 'POST',
-            headers: {
-              Accept: 'application/json',
-              Authorization: `Bearer ${options.apiKey}`,
-              'Content-Type': 'application/json',
-              'X-OpenRouter-Cache': 'false',
-            },
-            body: JSON.stringify({
-              model: input.modelId,
-              input_audio: {
-                data: input.audio.toString('base64'),
-                format: input.format,
-              },
-              response_format: 'json',
-            }),
-            signal: AbortSignal.timeout(input.timeoutMs),
+            audio: input.audio,
+            format: input.format,
+            modelId: input.modelId,
+            timeoutMs: input.timeoutMs,
+            responseFormat: 'json',
+          },
+          {
+            apiKey: options.apiKey,
+            baseURL: OPENROUTER_TRANSCRIPTION_EVAL_BASE_URL,
+            fetch: fetchImpl,
           },
         );
       } catch (error) {
-        const category =
-          error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')
-            ? 'timeout'
-            : 'provider';
-        throw new TranscriptionEvalRequestError(category, elapsedMs(startedAt, nowMs));
+        throw new TranscriptionEvalRequestError(
+          categoryFromTranscriptionFailure(error),
+          elapsedMs(startedAt, nowMs),
+        );
       }
       const latencyMs = elapsedMs(startedAt, nowMs);
-      if (!response.ok) {
-        throw new TranscriptionEvalRequestError(errorCategoryForStatus(response.status), latencyMs);
-      }
-      const parsed = parseTranscriptionResponse(await jsonOrNull(response));
-      if (!parsed) throw new TranscriptionEvalRequestError('invalid_response', latencyMs);
-
       const route = await fetchGenerationRoute(
-        response.headers.get('x-generation-id'),
+        transcribed.generationId ?? null,
         options.apiKey,
         fetchImpl,
       );
-      const costUsd = parsed.costUsd ?? route.totalCostUsd;
+      const costUsd = transcribed.costUsd ?? route.totalCostUsd;
       return {
         ok: true,
-        text: parsed.text,
+        text: transcribed.text,
         latencyMs,
         ...(costUsd === undefined ? {} : { costUsd }),
         ...(route.provider ? { provider: route.provider } : {}),

@@ -132,7 +132,6 @@ export async function capturePostHogProductEvent<Name extends ProductEventName>(
     distinctId: pseudonymous.distinctId,
     event,
     disableGeoip: true,
-    sendFeatureFlags: false,
     properties: {
       ...validatedProperties,
       ...(pseudonymous.teamKey ? { team_key: pseudonymous.teamKey } : {}),
@@ -167,7 +166,6 @@ export async function capturePostHogPersonlessSurfaceRequest(
     distinctId: PERSONLESS_STREAM_IDS[stream],
     event: stream === 'public' ? 'public_surface_requested' : 'app_surface_requested',
     disableGeoip: true,
-    sendFeatureFlags: false,
     properties: {
       surface: validatedSurface,
       $process_person_profile: false,

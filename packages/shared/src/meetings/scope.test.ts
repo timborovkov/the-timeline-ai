@@ -433,13 +433,12 @@ describe('meetings scope', () => {
     expect(chunkRows[0]?.rawEventId).toBe(rawEventId);
 
     const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
-    expect(event?.contentText).toBe('[1s] Alice: late utterance');
+    expect(event?.contentText).toBe('Meeting (no transcript)');
     const eventMeta = event?.sourceMetadata as Record<string, unknown>;
-    expect(eventMeta.chunk_count).toBe(1);
-    expect(eventMeta.speakers).toEqual(['Alice']);
-    expect(eventMeta.summary).toBeUndefined();
-    expect(eventMeta.action_items).toBeUndefined();
-    expect(eventMeta.summary_stale_at).toBeTypeOf('string');
+    expect(eventMeta.chunk_count).toBe(0);
+    expect(eventMeta.summary).toBe('Old summary');
+    expect(eventMeta.action_items).toEqual([{ text: 'Old action', owner: null }]);
+    expect(eventMeta.summary_stale_at).toBeUndefined();
 
     const meeting = (await db.select().from(meetings).where(eq(meetings.id, m.id)))[0];
     const meetingMeta = meeting?.metadata as Record<string, unknown>;
@@ -615,9 +614,15 @@ describe('meetings scope', () => {
       expect(chunks).toHaveLength(2);
       expect(chunks.find((chunk) => chunk.id === late?.chunkId)?.rawEventId).toBe(rawEventId);
       const event = (await db.select().from(rawEvents).where(eq(rawEvents.id, rawEventId)))[0];
-      expect(event?.contentText).toContain('distinct late chunk');
-      expect(event?.sourceMetadata).toMatchObject({ chunk_count: 2 });
-      expect(event?.sourceMetadata).not.toMatchObject({ summary: 'Now stale' });
+      expect(event?.contentText).toBe('[0s] Alice: first chunk');
+      expect(event?.sourceMetadata).toMatchObject({
+        summary: 'Now stale',
+        action_items: [{ text: 'Old action' }],
+      });
+      expect(event?.sourceMetadata).not.toMatchObject({ chunk_count: 2 });
+      const meetingRow = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+      expect(meetingRow?.metadata).toMatchObject({ chunk_count: 2 });
+      expect(meetingRow?.metadata).not.toMatchObject({ summary: 'Now stale' });
     },
   );
 

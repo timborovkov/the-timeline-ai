@@ -31,7 +31,6 @@ import {
 
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { participantNames } from '#src/meetings/participants.js';
-import { formatMeetingTranscript } from '#src/meetings/transcript.js';
 import { decodeCursor } from '#src/pagination.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -387,7 +386,7 @@ function staleMeetingCalendarRawText(args: {
 
 async function refreshFinalizedMeetingEvent(
   tx: DbOrTx,
-  args: { meetingId: string; teamId: string; rawEventId: string },
+  args: { meetingId: string; teamId: string },
 ): Promise<string | undefined> {
   const chunks = await tx
     .select()
@@ -401,22 +400,15 @@ async function refreshFinalizedMeetingEvent(
     .orderBy(asc(meetingTranscriptChunks.startMs));
 
   const speakers = [...new Set(chunks.map((c) => c.speaker).filter(Boolean))];
-  const contentText =
-    chunks.length > 0 ? formatMeetingTranscript(chunks) : 'Meeting (no transcript)';
   const metadataPatch = JSON.stringify({
     speakers,
     chunk_count: chunks.length,
     summary_stale_at: new Date().toISOString(),
   });
 
-  await tx
-    .update(rawEvents)
-    .set({
-      contentText,
-      sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'summary' - 'action_items') || ${metadataPatch}::jsonb`,
-    })
-    .where(and(eq(rawEvents.id, args.rawEventId), eq(rawEvents.teamId, args.teamId)));
-
+  // Captured meeting raw-event content is immutable. Late chunks append to
+  // meeting_transcript_chunks and only refresh derived meeting/calendar
+  // metadata plus calendar schedule mirrors.
   await tx
     .update(meetings)
     .set({
@@ -695,7 +687,6 @@ async function appendMeetingChunkTx(
     const refreshedCalendarEventId = await refreshFinalizedMeetingEvent(tx, {
       meetingId: args.meetingId,
       teamId: args.teamId,
-      rawEventId,
     });
     return refreshedCalendarEventId
       ? { chunkId, deduplicated: false, refreshedCalendarEventId }

@@ -80,6 +80,7 @@ describe('transcribeAudio', () => {
     expect(init).toMatchObject({
       method: 'POST',
       headers: {
+        Accept: 'application/json',
         Authorization: 'Bearer sk-test-key',
         'Content-Type': 'application/json',
         'X-OpenRouter-Cache': 'false',
@@ -92,6 +93,42 @@ describe('transcribeAudio', () => {
         format: 'm4a',
       },
       language: 'en',
+    });
+  });
+
+  it('accepts an eval model and key without reading shared env', async () => {
+    delete process.env.OPENROUTER_API_KEY;
+    resetEnvForTests();
+    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+      if (!init || typeof init.body !== 'string') throw new Error('expected JSON request body');
+      expect(JSON.parse(init.body)).toMatchObject({
+        model: 'openai/whisper-large-v3',
+        response_format: 'json',
+      });
+      return Promise.resolve(
+        new Response(JSON.stringify({ text: 'eval transcript', usage: { cost: 0.002 } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json', 'x-generation-id': 'gen-eval' },
+        }),
+      );
+    });
+
+    const result = await transcribeAudio(
+      {
+        audio: Buffer.from('eval-audio'),
+        format: 'wav',
+        modelId: 'openai/whisper-large-v3',
+        timeoutMs: 5_000,
+        responseFormat: 'json',
+      },
+      { fetch, apiKey: 'eval-key', baseURL: 'https://openrouter.ai/api/v1' },
+    );
+
+    expect(result).toEqual({
+      text: 'eval transcript',
+      model: 'openai/whisper-large-v3',
+      costUsd: 0.002,
+      generationId: 'gen-eval',
     });
   });
 

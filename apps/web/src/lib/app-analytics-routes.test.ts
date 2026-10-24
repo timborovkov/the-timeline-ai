@@ -21,6 +21,7 @@ describe('app analytics route classification', () => {
 
   it('fails closed for unknown, token-bearing, query, and malformed paths', () => {
     expect(classifyAppAnalyticsPath('/app/team/switch/team-secret-id')).toBeUndefined();
+    expect(classifyAppAnalyticsPath('/app/billing')).toBeUndefined();
     expect(classifyAppAnalyticsPath('/app/unknown')).toBeUndefined();
     expect(classifyAppAnalyticsPath('/app/timeline?event=secret')).toBeUndefined();
     expect(classifyAppAnalyticsPath('/app/timeline/')).toBeUndefined();

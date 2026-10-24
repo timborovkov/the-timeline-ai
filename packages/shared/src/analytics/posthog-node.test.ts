@@ -95,7 +95,6 @@ describe('PostHog Node analytics helper', () => {
       distinctId: userKey,
       event: 'capture_created',
       disableGeoip: true,
-      sendFeatureFlags: false,
       properties: {
         captureType: 'text',
         visibility: 'team',
@@ -103,6 +102,8 @@ describe('PostHog Node analytics helper', () => {
         $process_person_profile: false,
       },
     });
+    expect(captureImmediate.mock.calls[0]?.[0]).not.toHaveProperty('sendFeatureFlags');
+    expect(captureImmediate.mock.calls[0]?.[0]).not.toHaveProperty('flags');
     expect(JSON.stringify(captureImmediate.mock.calls)).not.toContain('user-1');
     expect(JSON.stringify(captureImmediate.mock.calls)).not.toContain('team-1');
     expect(shutdown).not.toHaveBeenCalled();
@@ -151,16 +152,18 @@ describe('PostHog Node analytics helper', () => {
       distinctId: '__timeline_personless__:public:v1',
       event: 'public_surface_requested',
       disableGeoip: true,
-      sendFeatureFlags: false,
       properties: { surface: 'help_capture', $process_person_profile: false },
     });
     expect(captureImmediate).toHaveBeenNthCalledWith(2, {
       distinctId: '__timeline_personless__:app:v1',
       event: 'app_surface_requested',
       disableGeoip: true,
-      sendFeatureFlags: false,
       properties: { surface: 'board_detail', $process_person_profile: false },
     });
+    expect(captureImmediate.mock.calls[0]?.[0]).not.toHaveProperty('sendFeatureFlags');
+    expect(captureImmediate.mock.calls[0]?.[0]).not.toHaveProperty('flags');
+    expect(captureImmediate.mock.calls[1]?.[0]).not.toHaveProperty('sendFeatureFlags');
+    expect(captureImmediate.mock.calls[1]?.[0]).not.toHaveProperty('flags');
     expect(ctor).toHaveBeenCalledOnce();
     await analytics.shutdownPostHogNodeClients();
   });

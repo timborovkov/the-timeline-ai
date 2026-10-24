@@ -1,7 +1,6 @@
 'use client';
 
 import { LifeBuoy, LogOut, MailWarning, User } from 'lucide-react';
-import { signOut } from 'next-auth/react';
 import { useActionState } from 'react';
 
 import { resendEmailVerificationAction, type EmailVerificationState } from '@/app/actions/auth';
@@ -16,7 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { clearAllFloatingChatSessionIds } from '@/lib/floating-chat-session-storage';
+import { signOutAfterClearingLocalSession } from '@/lib/sign-out-session';
 
 interface Props {
   user: { name?: string | null; email?: string | null; emailVerified?: Date | string | null };
@@ -85,10 +84,7 @@ export function UserMenu({ user }: Props) {
           <button
             type="button"
             onClick={() => {
-              clearAllFloatingChatSessionIds(window.localStorage);
-              void signOut({ redirect: false, redirectTo: '/sign-in' }).then(() => {
-                window.location.assign('/sign-in');
-              });
+              void signOutAfterClearingLocalSession();
             }}
             className="flex w-full items-center gap-2"
           >

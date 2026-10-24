@@ -42,11 +42,16 @@ async function requireCurrentLegalSession(requestHeaders: Promise<Headers>): Pro
   // Unit tests invoke exported functions directly, outside the Next.js action
   // transport. Dedicated tests supply Next-Action and exercise this boundary.
   if (process.env.NODE_ENV === 'test' && !(await requestHeaders).has('next-action')) return;
-  const [{ auth }, { hasCurrentLegalSession }, { redirect }] = await Promise.all([
-    import('@/lib/auth'),
-    import('@/lib/auth.config'),
-    import('next/navigation'),
-  ]);
+  const [{ auth }, { hasCurrentLegalSession }, { isLegalPublicationReady }, { redirect }] =
+    await Promise.all([
+      import('@/lib/auth'),
+      import('@/lib/auth.config'),
+      import('@/lib/legal-publication'),
+      import('next/navigation'),
+    ]);
+  // Match the proxy/auth gate: withheld publication must not send existing
+  // sessions into /legal/accept, which immediately redirects away.
+  if (!isLegalPublicationReady()) return;
   const session = await auth();
   // Individual actions remain responsible for authentication and authorization.
   // This shared boundary adds the current-document gate for authenticated users.

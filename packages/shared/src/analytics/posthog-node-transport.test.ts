@@ -49,6 +49,9 @@ describe('PostHog Node fixed-stream transport', () => {
       { body: string; method: string },
     ];
     expect(url).toBe('https://eu.i.posthog.com/batch/');
+    expect(transport.fetch.mock.calls.map(([requestUrl]) => String(requestUrl))).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('/flags')]),
+    );
     expect(options.method).toBe('POST');
 
     const payload = JSON.parse(options.body) as {
