@@ -594,7 +594,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reported usage settles that attempt, then releases. Transcription chunks use distinct
       operation ids. Ask and web chat save the completed cost before settle and the janitor retries
       a failed settlement. Storage replay uses the plan effective that day, counts the day in
-      that month, leaves the live wallet untouched, and skips closed document absence intervals. A €10 top-up collects outstanding wallet shortfalls before crediting the
+      that month, leaves the live included discount untouched, and still collects same-plan
+      wallet overage. A different historical plan does not spend the live wallet. Closed
+      document absence intervals are skipped. Delivered email whose settlement fails stays
+      reserved for the janitor and is not resent. Reservation expiry locks the billing account
+      before the reservation row. A €10 top-up collects outstanding wallet shortfalls before crediting the
       remainder. Enterprise settlement does not debit a prepaid wallet. Member-day janitor ticks
       retry unsettled facts across the full 31-day lookback, including the previous calendar month.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.

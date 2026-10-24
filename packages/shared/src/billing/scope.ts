@@ -812,7 +812,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
       metadata?: Record<string, unknown>;
       /** Price this settlement as the plan in force on a replayed day. */
       pricingPlanId?: BillingPlanId;
-      /** Included-discount pool for that day. Skips the live wallet and discount when set. */
+      /** Included-discount pool for that day. Skips the live discount balance when set. */
       historicalIncludedDiscountCents?: number;
       pricingPeriodYm?: string;
       /** When the usage happened. Backfills use this instead of reservation time. */
@@ -955,8 +955,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
           : { polar_ingest_status: 'not_required' };
 
         const applyCharges = !accountUsesShadowBilling(account);
+        // A different historical plan must not spend the live wallet. The same
+        // plan still collects wallet overage; only the included-discount pool
+        // stays on the historical balance.
+        const replayOnDifferentPlan =
+          input.pricingPlanId !== undefined && input.pricingPlanId !== account.planId;
+        const collectLiveWallet = applyCharges && !enterpriseContract && !replayOnDifferentPlan;
         const walletShortfallCents =
-          applyCharges && !enterpriseContract && walletCents > account.walletBalanceCents
+          collectLiveWallet && walletCents > account.walletBalanceCents
             ? walletCents - account.walletBalanceCents
             : 0;
         const periodSpendCents = countersBefore.reduce(
@@ -1071,9 +1077,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
             );
         }
 
+        const debitLiveDiscount =
+          historicalDiscount === undefined &&
+          applyCharges &&
+          !enterpriseContract &&
+          discountCents > 0;
         if (
           walletLockCents > 0 ||
-          (applyCharges && (walletCents > 0 || discountCents > 0)) ||
+          (collectLiveWallet && walletCents > 0) ||
+          debitLiveDiscount ||
           freezeAccount
         ) {
           await tx
@@ -1084,12 +1096,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
                     reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
                   }
                 : {}),
-              ...(historicalDiscount === undefined &&
-              applyCharges &&
-              !enterpriseContract &&
-              (walletCents > 0 || discountCents > 0)
+              ...(collectLiveWallet && walletCents > 0
                 ? {
                     walletBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.walletBalanceCents} - ${walletCents})`,
+                  }
+                : {}),
+              ...(debitLiveDiscount
+                ? {
                     includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
                   }
                 : {}),

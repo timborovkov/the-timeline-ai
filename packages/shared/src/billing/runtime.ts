@@ -436,6 +436,14 @@ export async function settleEmailUnits(input: {
     teamId: input.teamId,
     userId: input.userId ?? BILLING_SYSTEM_USER_ID,
   });
+  // Stamp before settle. A throw after Postmark already accepted the mail
+  // leaves the reservation for the janitor instead of expiring the charge.
+  await billing.patchReservationMetadata(input.operationId, {
+    pending_settlement: true,
+    pending_meter: 'email_units',
+    pending_email_units: units,
+    pending_operation_class: input.operationClass,
+  });
   await billing.settle({
     operationId: input.operationId,
     meterId: 'email_units',
@@ -960,6 +968,29 @@ export async function settlePendingBillingReservations(db: Db): Promise<number> 
   let settled = 0;
   for (const row of rows) {
     const metadata = reservationMetadataRecord(row.metadata);
+    if (metadata.pending_meter === 'email_units') {
+      const units = metadataNumber(metadata, 'pending_email_units') ?? 0;
+      const operationClass =
+        typeof metadata.pending_operation_class === 'string'
+          ? metadata.pending_operation_class
+          : 'email_outbound';
+      try {
+        await settleEmailUnits({
+          db,
+          teamId: row.teamId,
+          operationId: row.operationId,
+          units,
+          operationClass,
+        });
+        settled += 1;
+      } catch (err) {
+        log.warn(
+          { err, teamId: row.teamId, operationId: row.operationId },
+          'pending email settlement failed',
+        );
+      }
+      continue;
+    }
     const openRouterUsd = metadataNumber(metadata, 'pending_openrouter_usd') ?? 0;
     const deliverySurface =
       typeof metadata.pending_delivery_surface === 'string'

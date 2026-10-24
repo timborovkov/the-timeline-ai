@@ -179,7 +179,8 @@ credit hides margin and confuses prospects.
    Janitor storage snapshots backfill missed days across the full 31-day lookback,
    including the previous calendar month, and count each day in that day's month.
    Each day is priced on the plan effective that day. A prior month does not draw
-   the live included discount or prepaid wallet. Closed document absence intervals
+   the live included-discount balance. Wallet overage on the same plan is still
+   collected. A day priced on a different plan does not spend the live wallet. Closed document absence intervals
    are excluded. Paid-plan changes reuse the Polar subscription id in `past_due`,
    `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
    preview prorates extra members from `member_days` rather than a full month.

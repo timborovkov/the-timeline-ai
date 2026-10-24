@@ -869,6 +869,42 @@ describe('billing runtime', () => {
     expect(ledger?.customerChargeCents).toBeGreaterThan(0);
   });
 
+  it('settles a delivered email from the reservation without sending it again', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const operationId = 'email_out:digest:retry';
+    const reserved = await billing.reserve({
+      operationId,
+      meterId: 'email_units',
+      reservedNativeUnits: 2,
+      reservedChargeCents: 1,
+    });
+    expect(reserved.ok).toBe(true);
+    await billing.patchReservationMetadata(operationId, {
+      pending_settlement: true,
+      pending_meter: 'email_units',
+      pending_email_units: 2,
+      pending_operation_class: 'email_outbound:daily_digest',
+    });
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(reservation?.state).toBe('settled');
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.meterId).toBe('email_units');
+    expect(Number(ledger?.nativeUnits)).toBe(2);
+  });
+
   it('does not expire an Ask reservation that still needs settlement', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
@@ -956,6 +992,57 @@ describe('billing runtime', () => {
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
     expect(account?.wallet).toBe(400);
     expect(account?.included).toBe(400);
+  });
+
+  it('collects PAYG wallet overage for storage recovered in a prior month', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = '2026-09-15';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          wallet_balance_cents = 5000, included_discount_remaining_cents = 100,
+          spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '2026-09', 'storage_gb_month', 1, 0);
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000041', '${TEAM_ID}', 'prior.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000042',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000041',
+        1,
+        'team/docs/prior.bin',
+        1073741824,
+        '${day}T00:00:00Z'
+      );
+    `);
+    await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day });
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${day}`));
+    const walletCents = ledger?.metadata.wallet_cents;
+    expect(typeof walletCents).toBe('number');
+    expect(walletCents).toBeGreaterThan(0);
+    const [account] = await db
+      .select({
+        wallet: teamBillingAccounts.walletBalanceCents,
+        included: teamBillingAccounts.includedDiscountRemainingCents,
+      })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.wallet).toBe(5000 - Number(walletCents));
+    expect(account?.included).toBe(100);
   });
 
   it('skips storage days covered by a closed document absence interval', async () => {
