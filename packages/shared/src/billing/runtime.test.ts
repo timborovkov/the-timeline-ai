@@ -1,12 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   billingMemberDayLedger,
+  billingUsageCounters,
   billingUsageLedger,
   billingUsageReservations,
   teamBillingAccounts,
   type Db,
 } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -758,6 +759,17 @@ describe('billing runtime', () => {
       .from(billingUsageLedger)
       .where(eq(billingUsageLedger.teamId, TEAM_ID));
     expect(storage.map((row) => row.operationId)).toContain(`storage_gb:${TEAM_ID}:${missed}`);
+    const [storageCounter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.meterId, 'storage_gb_month'),
+          eq(billingUsageCounters.periodYm, missed.slice(0, 7)),
+        ),
+      );
+    expect(Number(storageCounter?.nativeUnits ?? 0)).toBeGreaterThan(0);
     const memberDays = await db
       .select({ day: billingMemberDayLedger.day })
       .from(billingMemberDayLedger)

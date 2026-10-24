@@ -561,8 +561,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       headroom covers the full €10 product, cheapest-plan preview from gross native
       usage (informational, never auto-switch; hidden unless another plan saves at
       least €5 and 10% of the current projected bill), Team/Business included-discount
-      period reset (webhook + janitor advancing the stored Polar window; not
-      every Polar retry). Paid-plan changes update the existing Polar subscription.
+      period reset (webhook + janitor advancing the stored Polar window by calendar
+      months from the subscription anchor; not every Polar retry). Paid-plan changes update the existing Polar subscription.
       Prepaid wallet/included-discount collection is not ingested to Polar meters,
       including sub-cent rounds; only Enterprise usage is ingested. Polar webhooks
       do not overwrite Enterprise contracts or credit top-ups onto Free/Enterprise wallets.
@@ -593,8 +593,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       after a successful provider call and reuses the BullMQ job id. A thrown call that already
       reported usage settles that attempt, then releases. Transcription chunks use distinct
       operation ids. Ask and web chat save the completed cost before settle and the janitor retries
-      a failed settlement. Storage replay uses the plan effective that day, leaves the live wallet
-      untouched, and skips closed document absence intervals. A €10 top-up collects outstanding wallet shortfalls before crediting the
+      a failed settlement. Storage replay uses the plan effective that day, counts the day in
+      that month, leaves the live wallet untouched, and skips closed document absence intervals. A €10 top-up collects outstanding wallet shortfalls before crediting the
       remainder. Enterprise settlement does not debit a prepaid wallet. Member-day janitor ticks
       retry unsettled facts across the full 31-day lookback, including the previous calendar month.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.
@@ -620,8 +620,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       that debt remains. Re-accept appends `prior_intervals`. Denied inbound email
       enrichment is recoverable via `billing_enrichment_deferred`. Storage-cap
       finalization deletes the rejected object. Captured chat attachments enforce
-      document/storage limits. Free in-allowance usage is not wallet-billable under
-      live charging. Recall leave retries run before reservation expiry.
+      document/storage limits. Free in-allowance settlement does not debit the wallet
+      or freeze the workspace under live charging. A settled reservation is recognized
+      before a new funding check. Billing admission errors stay intact through the LLM
+      wrapper so a busy worker job still delays. Recall leave retries run before reservation expiry.
 - [x] Owner email reminders at spend-cap 50/75/90/100% and Free near-limit /
       exhaustion (once per threshold/period via `billing_usage_alert` Postmark
       template; in-app nudges remain).

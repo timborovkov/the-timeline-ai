@@ -198,6 +198,18 @@ describe('nextIncludedDiscountPeriod', () => {
     });
   });
 
+  it('keeps the anchor day when the closed month is shorter than the next one', () => {
+    const next = nextIncludedDiscountPeriod({
+      now: new Date('2026-03-20T12:00:00Z'),
+      periodStartedAt: new Date('2026-02-15T00:00:00Z'),
+      periodEndsAt: new Date('2026-03-15T00:00:00Z'),
+    });
+    expect(next).toEqual({
+      periodStartedAt: new Date('2026-03-15T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-04-15T00:00:00.000Z'),
+    });
+  });
+
   it('does not reset while the stored Polar window is still open', () => {
     expect(
       nextIncludedDiscountPeriod({

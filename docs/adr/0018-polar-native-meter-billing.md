@@ -77,7 +77,8 @@ credit hides margin and confuses prospects.
    the Ask reservation. Failed post-verification Free-grant claims retry on the
    next signed-in load. Polar webhook HMAC timestamps follow the same 5-minute
    replay window as Svix. Janitor fallback refills that discount by advancing the stored Polar
-   renewal window, not by snapping to UTC calendar months. Paid-plan changes
+   renewal window by calendar months from the subscription anchor day, not by the millisecond
+   length of the previous period and not by snapping to UTC calendar months. Paid-plan changes
    PATCH the existing Polar subscription (or open the customer portal) instead
    of creating a second checkout. Prepaid wallet and included-discount collection
    is local, including sub-cent rounds; Polar meters are ingested only for
@@ -143,8 +144,9 @@ credit hides margin and confuses prospects.
    in-flight included-discount claims against `includedDiscountRemainingCents`,
    expire on TTL, and Free pause copy follows admission (not a single exhausted
    meter). Released or expired reservations unwind the stamped wallet lock and
-   may be replaced for the same operation id; settled rows are reused as
-   already-final rather than a fresh lock. Extra member-days accrue with a
+   may be replaced for the same operation id; settled and still-open rows are
+   recognized before a new funding check, so a retry after a later step fails is
+   not rejected for lack of wallet. Extra member-days accrue with a
    per-extra-member operation id and a cumulative monthly cent delta so daily
    rounding still totals €2 per extra member-month. AI customer charges keep
    fractional cents on `nativeUnits` and round the cumulative delta, so
@@ -172,11 +174,12 @@ credit hides margin and confuses prospects.
    OpenRouter. Reactivating a released or expired reservation resets `createdAt`
    so a later retry is attributed to the new attempt. Worker AI reservations
    (`metadata.source=worker`) count against `costlyWorkerConcurrency`; a busy
-   workspace delays the BullMQ job instead of failing it. Janitor storage
-   snapshots backfill missed days across the full 31-day lookback, including the
-   previous calendar month, from absent storage operation ids. Each day is priced
-   on the plan effective that day, and that plan's included discount and prepaid
-   wallet are not taken from the live balances. Closed document absence intervals
+   workspace delays the BullMQ job instead of failing it. Billing admission
+   errors stay intact through the LLM failure wrapper so that delay still runs.
+   Janitor storage snapshots backfill missed days across the full 31-day lookback,
+   including the previous calendar month, and count each day in that day's month.
+   Each day is priced on the plan effective that day. A prior month does not draw
+   the live included discount or prepaid wallet. Closed document absence intervals
    are excluded. Paid-plan changes reuse the Polar subscription id in `past_due`,
    `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
    preview prorates extra members from `member_days` rather than a full month.
@@ -191,7 +194,9 @@ credit hides margin and confuses prospects.
    document, and indexed-chunk capacity under advisory lock key 1 then key 2
    (chunk admission reuses key 2). Storage-cap finalization deletes the uploaded
    object when admission fails. Captured Slack/Telegram/email attachments assert
-   document and storage capacity. Free in-allowance usage is not wallet-billable
+   document and storage capacity. Free in-allowance settlement does not debit the
+   wallet or freeze the workspace when live charging is enabled. Free in-allowance
+   usage is not wallet-billable
    when live charging is enabled. Janitor Recall leave retries run before reservation
    expiry, and expiry skips rows with `pending_recall_leave_bot_id`.
    Failed structured-output attempts still contribute OpenRouter `usage.cost` to

@@ -1,11 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  billingUsageCounters,
   billingUsageLedger,
   billingUsageReservations,
   teamBillingAccounts,
   type Db,
 } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -418,6 +419,38 @@ describe('billing scope', () => {
     });
   });
 
+  it('does not freeze a Free workspace when in-allowance usage settles', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'free', billing_state = 'free',
+          wallet_balance_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-free-settle',
+      meterId: 'ai',
+      nativeUnits: 20,
+      customerChargeCents: 20,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.customerChargeCents).toBe(20);
+      expect(settled.ledger.metadata).toMatchObject({ wallet_cents: 0 });
+      expect(settled.ledger.metadata).not.toHaveProperty('wallet_shortfall_cents');
+    }
+    const account = await scope.getAccount();
+    expect(account.billingState).toBe('free');
+    expect(account.walletBalanceCents).toBe(0);
+  });
+
   it('persists wallet_shortfall_cents on a refund reversal before freezing', async () => {
     const scope = createBillingScope({
       db,
@@ -787,6 +820,147 @@ describe('billing scope', () => {
     });
     expect(retry.ok).toBe(true);
     if (retry.ok) expect(retry.alreadySettled).toBe(true);
+  });
+
+  it('attributes a backfilled storage day to that month', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await scope.settle({
+      operationId: 'storage_gb:backfill:2026-09-30',
+      meterId: 'storage_gb_month',
+      nativeUnits: 0.1,
+      customerChargeCents: 1,
+      usageAt: new Date('2026-09-30T12:00:00Z'),
+      pricingPeriodYm: '2026-09',
+    });
+    const [counter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.meterId, 'storage_gb_month'),
+        ),
+      );
+    expect(counter?.periodYm).toBe('2026-09');
+  });
+
+  it('prices a backfilled member-day with that month length', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    const settled = await scope.settle({
+      operationId: 'member_days:backfill:2026-02-15',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 1,
+      usageAt: new Date('2026-02-15T12:00:00Z'),
+      pricingPeriodYm: '2026-02',
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) expect(settled.ledger.customerChargeCents).toBe(7);
+    const [counter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.meterId, 'member_days'),
+        ),
+      );
+    expect(counter?.periodYm).toBe('2026-02');
+  });
+
+  it('reuses a settled reservation after the wallet can no longer fund new work', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, wallet_balance_cents = 25,
+          spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-wallet-settled-retry',
+      meterId: 'ai',
+      reservedNativeUnits: 25,
+      reservedChargeCents: 25,
+    });
+    expect(reserved.ok).toBe(true);
+    await scope.settle({
+      operationId: 'op-wallet-settled-retry',
+      meterId: 'ai',
+      nativeUnits: 20,
+      customerChargeCents: 20,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET wallet_balance_cents = 0, billing_state = 'team_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const again = await scope.reserve({
+      operationId: 'op-wallet-settled-retry',
+      meterId: 'ai',
+      reservedNativeUnits: 25,
+      reservedChargeCents: 25,
+    });
+    expect(again.ok).toBe(true);
+    if (again.ok) expect(again.alreadySettled).toBe(true);
+  });
+
+  it('reuses an open reservation after the wallet is emptied', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, wallet_balance_cents = 50,
+          spend_cap_cents = 10000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-wallet-reuse',
+      meterId: 'ai',
+      reservedNativeUnits: 25,
+      reservedChargeCents: 25,
+    });
+    expect(reserved.ok).toBe(true);
+    await pg.exec(`
+      UPDATE team_billing_accounts SET wallet_balance_cents = 0 WHERE team_id = '${TEAM_ID}';
+    `);
+    const again = await scope.reserve({
+      operationId: 'op-wallet-reuse',
+      meterId: 'ai',
+      reservedNativeUnits: 25,
+      reservedChargeCents: 25,
+    });
+    expect(again.ok).toBe(true);
+    if (again.ok) {
+      expect(again.reused).toBe(true);
+      expect(again.alreadySettled).toBeUndefined();
+    }
   });
 
   it('reserves included discount only once across overlapping Team reservations', async () => {

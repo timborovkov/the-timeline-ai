@@ -85,6 +85,7 @@ async function currentMeterNativeUnits(
   db: Db,
   teamId: string,
   meterId: BillingMeterId,
+  period = periodYm(),
 ): Promise<number> {
   const [row] = await db
     .select()
@@ -92,7 +93,7 @@ async function currentMeterNativeUnits(
     .where(
       and(
         eq(billingUsageCounters.teamId, teamId),
-        eq(billingUsageCounters.periodYm, periodYm()),
+        eq(billingUsageCounters.periodYm, period),
         eq(billingUsageCounters.meterId, meterId),
       ),
     )
@@ -306,6 +307,7 @@ export async function settleTeamMeter(input: {
   pricingPlanId?: BillingPlanId;
   historicalIncludedDiscountCents?: number;
   pricingPeriodYm?: string;
+  usageAt?: Date;
 }): Promise<{ ok: true; duplicate: boolean } | { ok: false; code: BillingReserveFailureCode }> {
   const userId = input.userId ?? BILLING_SYSTEM_USER_ID;
   const billing = billingScope({ db: input.db, teamId: input.teamId, userId });
@@ -323,6 +325,7 @@ export async function settleTeamMeter(input: {
       ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
       : {}),
     ...(input.pricingPeriodYm ? { pricingPeriodYm: input.pricingPeriodYm } : {}),
+    ...(input.usageAt ? { usageAt: input.usageAt } : {}),
   };
   if (input.persistWhenDenied) {
     const account = await billing.getAccount();
@@ -630,27 +633,31 @@ export async function snapshotTeamStorageGbMonth(input: {
     lastGb = gb;
     if (gb <= 0) continue;
     const gbMonthSlice = gb / daysInUtcMonth(new Date(`${day}T00:00:00.000Z`));
-    const previous = await currentMeterNativeUnits(input.db, input.teamId, 'storage_gb_month');
+    const replayPeriodYm = day.slice(0, 7);
+    const usageAt = new Date(`${day}T12:00:00.000Z`);
+    const previous = await currentMeterNativeUnits(
+      input.db,
+      input.teamId,
+      'storage_gb_month',
+      replayPeriodYm,
+    );
     const pricingPlanId = await planIdEffectiveOnDay({
       db: input.db,
       teamId: input.teamId,
       day,
       fallback: livePlan,
     });
-    const replayPeriodYm = day.slice(0, 7);
-    const replay =
-      pricingPlanId === livePlan
-        ? undefined
-        : {
-            pricingPlanId,
-            historicalIncludedDiscountCents: await includedDiscountRemainingForReplay({
-              db: input.db,
-              teamId: input.teamId,
-              planId: pricingPlanId,
-              periodYm: replayPeriodYm,
-            }),
-            pricingPeriodYm: replayPeriodYm,
-          };
+    const differentPlan = pricingPlanId !== livePlan;
+    const priorPeriod = replayPeriodYm !== periodYm();
+    const historicalIncludedDiscountCents =
+      differentPlan || priorPeriod
+        ? await includedDiscountRemainingForReplay({
+            db: input.db,
+            teamId: input.teamId,
+            planId: pricingPlanId,
+            periodYm: replayPeriodYm,
+          })
+        : undefined;
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
@@ -664,7 +671,10 @@ export async function snapshotTeamStorageGbMonth(input: {
       }),
       operationClass: 'storage_snapshot',
       source: 'janitor',
-      ...(replay ?? {}),
+      usageAt,
+      pricingPeriodYm: replayPeriodYm,
+      ...(differentPlan ? { pricingPlanId } : {}),
+      ...(historicalIncludedDiscountCents !== undefined ? { historicalIncludedDiscountCents } : {}),
     });
     settled = result.ok || settled;
   }
@@ -842,8 +852,9 @@ async function accrueTeamMemberDaysForDay(input: {
   if (extraRows.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
   }
-  let previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days');
-  const daysInMonth = daysInUtcMonth();
+  const period = day.slice(0, 7);
+  let previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days', period);
+  const daysInMonth = daysInUtcMonth(new Date(`${day}T00:00:00.000Z`));
   let chargeCents = 0;
   for (const extra of extraRows) {
     const nextChargeCents =
@@ -868,6 +879,8 @@ async function accrueTeamMemberDaysForDay(input: {
       source: 'janitor',
       billable: true,
       persistWhenDenied: true,
+      usageAt: new Date(`${day}T12:00:00.000Z`),
+      pricingPeriodYm: period,
     });
     if (result.ok && !result.duplicate) {
       previousNative += 1;
