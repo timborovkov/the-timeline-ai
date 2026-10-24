@@ -1042,7 +1042,7 @@ export async function resetIncludedDiscountIfPeriodElapsed(input: {
       periodEndsAt: account.periodEndsAt,
     });
     if (!next) return false;
-    const included = PLAN_CATALOG[account.planId].includedUsageDiscountCents;
+    const included = PLAN_CATALOG[effectiveBillingPlanId(account)].includedUsageDiscountCents;
     const [updated] = await tx
       .update(teamBillingAccounts)
       .set({

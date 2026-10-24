@@ -113,6 +113,17 @@ describe('custom pricing', () => {
       includedActiveMembers: null,
       meteredDiscountPercent: null,
     });
+    expect(
+      resolveTeamCommercialTerms(
+        {
+          ...base,
+          planId: 'payg',
+          billingState: 'payg_active',
+          enterprisePlatformFeeCents: 250_000,
+        },
+        now,
+      ).platformFeeCents,
+    ).toBe(0);
     expect(applyMeteredDiscountCents(1_000, 10)).toBe(900);
   });
 

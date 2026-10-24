@@ -120,16 +120,19 @@ function billForPlan(input: {
   const plan = PLAN_CATALOG[input.planId];
   const includedSeats = input.terms?.includedActiveMembers ?? plan.includedActiveMembers;
   const extra = extraMembers(input.activeMembers, includedSeats);
-  const extraMemberCents = extraMemberCentsForPreview({
-    extraMembers: extra,
-    additionalMemberCents: input.terms?.additionalMemberCents ?? plan.additionalMemberCents ?? 0,
-    activeMembers: input.activeMembers,
-    includedActiveMembers: input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
-    ...(input.meters !== undefined ? { meters: input.meters } : {}),
-    ...(input.billableMemberDays !== undefined
-      ? { billableMemberDays: input.billableMemberDays }
-      : {}),
-  });
+  const extraMemberCents = applyMeteredDiscountCents(
+    extraMemberCentsForPreview({
+      extraMembers: extra,
+      additionalMemberCents: input.terms?.additionalMemberCents ?? plan.additionalMemberCents ?? 0,
+      activeMembers: input.activeMembers,
+      includedActiveMembers: input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
+      ...(input.meters !== undefined ? { meters: input.meters } : {}),
+      ...(input.billableMemberDays !== undefined
+        ? { billableMemberDays: input.billableMemberDays }
+        : {}),
+    }),
+    input.terms?.meteredDiscountPercent,
+  );
   // Settlement applies the metered percentage to the gross list charge, then
   // subtracts included credit. Preview uses that same order.
   const meteredAfterDiscountCents = Math.max(

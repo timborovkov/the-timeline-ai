@@ -240,16 +240,21 @@ PLATFORM_ADMIN_EMAILS=
         subscription webhook for the same checkout. A later checkout does not replace an earlier
         checkout's terms, including when Polar fails to open the later link. Paying that checkout
         stores the contracted platform fee apart from the usage override. Clearing or replacing the
-        usage override leaves the fee in place. Plan preview applies a metered percentage before
-        included credit. Polar price coverage is read only when a settlement is payable, and that
-        product's priced events are reused for later settlements. Replayed member-days keep the
-        historical plan's extra-member rate. Enterprise checkout does not clear a canceled
-        subscription id and does not copy an expired price override into those terms. Platform-fee
-        overrides are not saved on Pay as you go, Team, or Business; the Enterprise checkout sends
-        that fee to Polar. Clearing a comp refuses while a Polar subscription id remains, then
-        restores unrestricted Free only when this workspace holds the Free grant. Background AI
-        metering skips OpenRouter when the durable operation is already settled or the reservation
-        is reused with <code>provider_completed</code>. A successful worker call stamps
+        usage override leaves the fee in place. That fee is used only while the effective plan is
+        Enterprise. A confirmed subscription cancel clears the Polar subscription id and the
+        contracted fee, and an Enterprise cancel also clears the usage override. Plan preview
+        applies a metered percentage to usage and to extra-member cents before included credit.
+        Recall reservations, capacity, and included-discount refills follow the effective plan, so
+        an expired comp uses the Free minute cap rather than the stored comp plan. Polar price
+        coverage is read only when a settlement is payable, and that product's priced events are
+        reused for later settlements. Replayed member-days keep the historical plan's extra-member
+        rate. Enterprise checkout does not clear a canceled subscription id and does not copy an
+        expired price override into those terms. Platform-fee overrides are not saved on Pay as you
+        go, Team, or Business; the Enterprise checkout sends that fee to Polar. Clearing a comp
+        refuses while a Polar subscription id remains, then restores unrestricted Free only when
+        this workspace holds the Free grant. Background AI metering skips OpenRouter when the
+        durable operation is already settled or the reservation is reused with
+        <code>provider_completed</code>. A successful worker call stamps
         <code>worker_settlement_pending</code> before settle. The janitor drains that marker,
         including an already-expired row, before the reservation TTL, and a retry keeps the
         completed result. Member-day ledger rows stamp <code>plan_id</code>; later ticks reuse that

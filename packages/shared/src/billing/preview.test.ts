@@ -119,6 +119,16 @@ describe('cheapestPlanPreview', () => {
     });
     expect(partial.bills.team.meteredAfterDiscountCents).toBe(4_000);
   });
+
+  it('applies a metered percentage to extra-member cents', () => {
+    const preview = cheapestPlanPreview({
+      activeMembers: 5,
+      meteredSpendCents: 0,
+      planTerms: { payg: { meteredDiscountPercent: 50 } },
+    });
+    expect(preview.bills.payg.extraMemberCents).toBe(200);
+    expect(preview.bills.team.extraMemberCents).toBe(0);
+  });
 });
 
 function recommendation(input: {

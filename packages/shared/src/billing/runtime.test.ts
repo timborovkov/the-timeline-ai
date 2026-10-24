@@ -797,6 +797,31 @@ describe('billing runtime', () => {
     expect(after.periodEndsAt?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
   });
 
+  it('refills an expired comp from the Free allowance, not the stored plan', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          comp_reason = 'trial', comp_expires_at = '2020-01-01T00:00:00Z',
+          included_discount_remaining_cents = 0,
+          period_started_at = '2026-07-15T00:00:00Z', period_ends_at = '2026-08-15T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({
+      db,
+      teamId: TEAM_ID,
+      now: new Date('2026-08-20T12:00:00Z'),
+    });
+    expect(reset).toBe(true);
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(0);
+  });
+
   it('does not overwrite a newer Polar plan or period already on the locked row', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,

@@ -220,7 +220,12 @@ export function resolveTeamCommercialTerms(
   const planId = effectiveBillingPlanId(account, now);
   const catalog = PLAN_CATALOG[planId];
   const override = activePriceOverride(account, now);
-  const contractedFee = account.enterprisePlatformFeeCents ?? override?.platformFeeCents;
+  // The column is the Enterprise contract. PAYG, Team, and Business keep the
+  // catalog fee (or an active override) after that contract ends.
+  const contractedFee =
+    planId === 'enterprise'
+      ? (account.enterprisePlatformFeeCents ?? override?.platformFeeCents)
+      : override?.platformFeeCents;
   return {
     planId,
     platformFeeCents: contractedFee ?? catalog.platformFeeCents,

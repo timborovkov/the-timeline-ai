@@ -447,6 +447,39 @@ describe('billing operator store', () => {
     expect(replaced?.billingState).toBe('canceled');
     expect(replaced?.polarSubscriptionId).toBe('sub_old');
     expect(replaced?.polarProductId).toBe('prod_team');
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'restricted', polar_subscription_id = 'sub_revoked',
+          polar_product_id = 'prod_enterprise'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 100,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider,
+      }),
+    ).rejects.toThrow(/Cancel the current Polar subscription/);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET polar_subscription_id = NULL, polar_product_id = NULL
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const afterRevoke = await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 100,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+    expect(afterRevoke.url).toContain('https://sandbox.polar.sh/');
     expect(replaced?.pendingEnterpriseTerms).toEqual({
       byCheckoutId: { chk_fake_1: { platformFeeCents: 100 } },
     });

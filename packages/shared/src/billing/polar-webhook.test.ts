@@ -588,6 +588,8 @@ describe('handlePolarWebhookEvent', () => {
     const canceled = await billing.getAccount();
     expect(canceled.planId).toBe('free');
     expect(canceled.billingState).toBe('restricted');
+    expect(canceled.polarSubscriptionId).toBeNull();
+    expect(canceled.polarProductId).toBeNull();
 
     await handlePolarWebhookEvent({
       db,
@@ -607,6 +609,76 @@ describe('handlePolarWebhookEvent', () => {
     const ignoredStale = await billing.getAccount();
     expect(ignoredStale.billingState).toBe('restricted');
     expect(ignoredStale.planId).toBe('free');
+  });
+
+  it('drops a canceled Enterprise contract before a later self-serve plan', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active',
+          pending_enterprise_terms = '{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_enterprise',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          modified_at: '2026-08-01T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.canceled',
+        data: {
+          id: 'sub_enterprise',
+          product_id: 'prod_enterprise',
+          modified_at: '2026-08-02T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const canceled = await billing.getAccount();
+    expect(canceled.planId).toBe('free');
+    expect(canceled.polarSubscriptionId).toBeNull();
+    expect(canceled.polarProductId).toBeNull();
+    expect(canceled.enterprisePlatformFeeCents).toBeNull();
+    expect(canceled.priceOverride).toBeNull();
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_payg',
+          status: 'active',
+          product_id: 'prod_payg',
+          modified_at: '2026-08-03T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.plan.id).toBe('payg');
+    expect(dash.account.enterprisePlatformFeeCents).toBeNull();
+    expect(dash.planPreview.bills.payg.platformFeeCents).toBe(0);
   });
 
   it('applies the paid plan default spend cap when upgrading from Free', async () => {

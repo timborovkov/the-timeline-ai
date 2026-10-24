@@ -405,6 +405,7 @@ async function upsertPaidSubscription(input: {
               existing,
               plan: input.plan,
             }),
+          ...(input.plan === 'enterprise' ? {} : { enterprisePlatformFeeCents: null }),
           ...(activatedPricing
             ? {
                 enterprisePlatformFeeCents: activatedPricing.platformFeeCents,
@@ -455,12 +456,18 @@ async function cancelMatchingSubscription(input: {
         ),
       )
       .limit(1);
+    const leavingEnterprise =
+      existing.planId === 'enterprise' || existing.billingState === 'enterprise_active';
     await tx
       .update(teamBillingAccounts)
       .set({
         billingState: grant ? 'free' : 'restricted',
         planId: 'free',
         spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
+        polarSubscriptionId: null,
+        polarProductId: null,
+        enterprisePlatformFeeCents: null,
+        ...(leavingEnterprise ? { priceOverride: null, priceOverrideExpiresAt: null } : {}),
         polarEventModifiedAt:
           input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? new Date(),
         updatedAt: new Date(),

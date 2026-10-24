@@ -356,7 +356,7 @@ async function dispositionForLiveAccount(
     polarUnits: event.units,
     invoiceCents,
     subscriptionCoversMeter: polarSubscriptionCoversMeter({
-      planId: account.planId,
+      planId: effectiveBillingPlanId(account),
       billingState: account.billingState,
       polarSubscriptionId: account.polarSubscriptionId,
       polarProductId: account.polarProductId,
@@ -483,14 +483,14 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const freeRemaining = freeAllowanceRemaining(byMeter);
       const canManageBilling = options?.canManageBilling ?? false;
       const nudge = deriveBillingNudge({
-        planId: account.planId,
+        planId: commercial.planId,
         canManageBilling,
         utilization,
         freeRemaining,
         meteredSpendCents,
       });
       const sidebar = deriveSidebarBillingSummary({
-        planId: account.planId,
+        planId: commercial.planId,
         canManageBilling,
         meteredSpendCents,
         spendCapCents: account.spendCapCents,
@@ -564,7 +564,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               freeAllowanceExhausted: allFreeAllowancesExhausted(freeRemaining),
             })
           : costBearingPausedFromAccount({
-              planId: account.planId,
+              planId: commercial.planId,
               billingState: account.billingState,
               shadowBilling,
               spendCapCents: account.spendCapCents,
@@ -1220,7 +1220,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             polarIngestDisposition({
               ...coverageInput,
               subscriptionCoversMeter: polarSubscriptionCoversMeter({
-                planId: account.planId,
+                planId: effectiveBillingPlanId(account),
                 billingState: account.billingState,
                 polarSubscriptionId: account.polarSubscriptionId,
                 polarProductId: account.polarProductId,
@@ -1322,7 +1322,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               kind: 'done' as const,
               duplicate: true as const,
               ledger: existingLedger ?? null,
-              planId: account.planId,
+              planId: effectiveBillingPlanId(account),
               spendCapCents: account.spendCapCents,
             };
           }
@@ -1400,7 +1400,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             kind: 'done' as const,
             duplicate: false as const,
             ledger: ledgerRow,
-            planId: account.planId,
+            planId: effectiveBillingPlanId(account),
             spendCapCents: freezeAccount ? 0 : account.spendCapCents,
           };
         });

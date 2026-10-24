@@ -185,14 +185,20 @@ credit hides margin and confuses prospects.
    webhook activates only that checkout's terms. The contracted platform fee is
    stored on `enterprise_platform_fee_cents`, separate from the removable usage
    override, so clearing or replacing that override does not zero the next invoice.
+   That fee is quoted only while the effective plan is Enterprise. A confirmed
+   subscription cancel clears `polarSubscriptionId` and the contracted fee, and
+   an Enterprise cancel also clears the usage override, so a later PAYG, Team,
+   or Business plan does not inherit them.
    Spend caps compare the locally metered charge and ignore whether Polar will
    invoice it. Standard Free stays on the allowance. A contractual Enterprise
    subscription does not freeze on the cap. Comps, including an expired comp on
    Free entitlements, still enforce it, and open reservations count. Polar product
    coverage is fetched only for a payable ingest, outside the account lock, and
-   reused for later settlements of the same product. A percentage discount is applied
-   to the gross list charge before included credit, in settlement and in the plan
-   preview. Replayed member-days keep the historical plan's extra-member rate.
+   reused for later settlements of the same product.    A percentage discount is applied
+   to the gross list charge and to extra-member cents before included credit, in
+   settlement and in the plan preview. Capacity, Recall reservations, nudges, and
+   included-discount refills follow the effective plan, so an expired comp uses
+   Free rather than the stored comp plan. Replayed member-days keep the historical plan's extra-member rate.
    Platform-fee overrides are not applied to fixed Polar products. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
    and sends a stable Polar event `id` so settle and the janitor cannot
    double-ingest; a failed ingest returns the row to `pending`. `order.paid`
