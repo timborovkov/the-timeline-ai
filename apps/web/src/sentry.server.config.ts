@@ -4,7 +4,7 @@ import { RESTRICTED_SENTRY_DATA_COLLECTION } from '@timeline/shared/monitoring/s
 import {
   scrubSentryBreadcrumbEvent,
   scrubSentryEvent,
-  scrubSentryTransactionEvent,
+  scrubSentrySpanEvent,
   sentrySampleRate,
 } from '@/sentry.shared';
 
@@ -17,7 +17,7 @@ if (dsn) {
     tracesSampleRate: sentrySampleRate('SENTRY_TRACES_SAMPLE_RATE'),
     dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend: scrubSentryEvent,
-    beforeSendTransaction: scrubSentryTransactionEvent,
+    beforeSendSpan: scrubSentrySpanEvent,
     beforeBreadcrumb: scrubSentryBreadcrumbEvent,
   });
 }

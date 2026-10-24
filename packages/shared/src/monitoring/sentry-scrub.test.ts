@@ -4,8 +4,10 @@ import {
   RESTRICTED_SENTRY_DATA_COLLECTION,
   redactTelegramBotTokenInUrl,
   sanitizeRequestUrl,
+  sanitizeSpanName,
   scrubSentryBreadcrumb,
   scrubSentryRequestEvent,
+  scrubSentrySpan,
 } from '#src/monitoring/sentry-scrub.js';
 
 describe('Sentry scrubber', () => {
@@ -106,6 +108,32 @@ describe('Sentry scrubber', () => {
       href: 'https://storage.timeline.test/team/private-document.pdf',
       method: 'GET',
     });
+  });
+
+  it('scrubs streamed span names and URL attributes without sending query or header data', () => {
+    const span = scrubSentrySpan({
+      name: 'GET /app/search?q=private',
+      attributes: {
+        'http.url': 'https://app.timeline.test/app/search?q=private#frag',
+        'http.target': '/accept-invite/sensitive-token?invite=secret',
+        'http.request.header.authorization': 'Bearer token',
+        'http.request.header.cookie': 'session=secret',
+        'url.query': 'q=private',
+        'http.method': 'GET',
+        'sentry.op': 'http.server',
+      },
+    });
+
+    expect(span.name).toBe('GET /app/search');
+    expect(span.attributes).toEqual({
+      'http.url': 'https://app.timeline.test/app/search',
+      'http.target': '/accept-invite/[redacted]',
+      'http.method': 'GET',
+      'sentry.op': 'http.server',
+    });
+    expect(sanitizeSpanName('https://app.timeline.test/verify-email/secret?x=1')).toBe(
+      'https://app.timeline.test/verify-email/[redacted]',
+    );
   });
 
   it('restricts Sentry 11 dataCollection to the v10 sendDefaultPii:false shape', () => {

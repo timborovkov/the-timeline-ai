@@ -2,6 +2,7 @@ import {
   sanitizeRequestUrl,
   scrubSentryBreadcrumb,
   scrubSentryRequestEvent,
+  scrubSentrySpan,
 } from '@timeline/shared/monitoring/sentry-scrub';
 
 import type { Breadcrumb, ErrorEvent, EventHint } from '@sentry/nextjs';
@@ -65,6 +66,12 @@ export function scrubSentryTransactionEvent<
   Event extends Parameters<typeof scrubSentryRequestEvent>[0],
 >(event: Event): Event {
   return scrubSentryRequestEvent(event);
+}
+
+export function scrubSentrySpanEvent<Span extends Parameters<typeof scrubSentrySpan>[0]>(
+  span: Span,
+): Span {
+  return scrubSentrySpan(span);
 }
 
 export function scrubSentryBreadcrumbEvent(breadcrumb: Breadcrumb): Breadcrumb {

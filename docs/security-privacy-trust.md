@@ -461,7 +461,11 @@ The current source has four analytics paths and one separate reliability path:
 5. **Sentry is separate reliability/security monitoring.** It does not share a
    PostHog identity or turn analytics consent into error-monitoring consent. Its
    minimization, scrubber, provider, retention, and legal-basis controls remain
-   independently subject to G-11.
+   independently subject to G-11. Error events strip request headers/cookies and
+   sanitize URLs. Streamed traces use `beforeSendSpan` (Sentry 11 ignores
+   `beforeSendTransaction` under the default span-stream lifecycle) so span
+   names and URL attributes cannot carry query strings, invite tokens, or
+   request headers.
 
 Declining optional browser analytics does not affect the personless server
 surface streams and must not affect public content, signup, authentication,

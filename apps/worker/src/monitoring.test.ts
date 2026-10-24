@@ -33,6 +33,10 @@ interface WorkerBreadcrumb {
 
 interface WorkerSentryInitOptions {
   beforeSend?: (event: WorkerBeforeSendEvent) => WorkerBeforeSendEvent;
+  beforeSendSpan?: (span: { name?: string; attributes?: Record<string, unknown> }) => {
+    name?: string;
+    attributes?: Record<string, unknown>;
+  };
   beforeBreadcrumb?: (breadcrumb: WorkerBreadcrumb) => WorkerBreadcrumb;
 }
 
@@ -139,6 +143,18 @@ describe('worker Sentry monitoring', () => {
     expect(event?.request?.url).toBe('https://app.timeline.test/api/mcp/oauth/callback');
     expect(event?.request?.cookies).toBeUndefined();
     expect(event?.request?.headers).toBeUndefined();
+
+    const span = initOptions?.beforeSendSpan?.({
+      name: 'GET /api/mcp/oauth/callback?code=secret',
+      attributes: {
+        'http.url': 'https://app.timeline.test/api/mcp/oauth/callback?code=secret',
+        'http.request.header.authorization': 'Bearer token',
+      },
+    });
+    expect(span?.name).toBe('GET /api/mcp/oauth/callback');
+    expect(span?.attributes).toEqual({
+      'http.url': 'https://app.timeline.test/api/mcp/oauth/callback',
+    });
   });
 
   it('redacts invite token path segments from request URLs', async () => {

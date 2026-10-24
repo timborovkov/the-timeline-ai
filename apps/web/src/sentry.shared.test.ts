@@ -6,6 +6,7 @@ import {
   parseSentrySampleRate,
   sanitizeRequestUrl,
   scrubSentryEvent,
+  scrubSentrySpanEvent,
   scrubSentryTransactionEvent,
   sentrySampleRate,
   shouldDropBrowserExtensionEvent,
@@ -56,6 +57,18 @@ describe('Sentry web config helpers', () => {
     });
     expect(transaction.request.url).toBe('https://app.timeline.test/app/search');
     expect(transaction.request.headers).toBeUndefined();
+
+    const span = scrubSentrySpanEvent({
+      name: 'GET /app/search?q=private',
+      attributes: {
+        'http.url': 'https://app.timeline.test/app/search?q=private',
+        'http.request.header.referer': 'https://app.timeline.test/private?token=secret',
+      },
+    });
+    expect(span.name).toBe('GET /app/search');
+    expect(span.attributes).toEqual({
+      'http.url': 'https://app.timeline.test/app/search',
+    });
   });
 
   it('strips query strings and redacts invite tokens from request URLs', () => {

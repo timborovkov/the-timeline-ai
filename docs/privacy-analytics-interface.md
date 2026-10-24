@@ -76,7 +76,9 @@ stream IDs so neither stream can be mistaken for a real person.
 The two exact events are `public_surface_requested` and
 `app_surface_requested`. Their only variable property is a source-controlled
 `surface` enum. Each capture must set `$process_person_profile: false` and
-disable GeoIP enrichment. The shared product-event helper must not be reused
+disable GeoIP enrichment. Capture omits both `flags` and the deprecated
+`sendFeatureFlags` option so posthog-node does not request `/flags` or attach
+flag properties. The shared product-event helper must not be reused
 because personless events may not receive groups, feature flags, actor IDs, or
 arbitrary properties.
 
@@ -232,7 +234,9 @@ Sentry may be initialized where its separate necessity, legal-basis, provider,
 retention, and scrubber review permits. It must keep session replay disabled,
 default PII collection disabled, production sampling minimized, secret-bearing
 headers and URLs scrubbed, and unexpected event payloads sampled and audited.
-It must not receive customer content merely because an exception included it.
+Streamed traces must be scrubbed with `beforeSendSpan`; `beforeSendTransaction`
+is ignored under Sentry 11's default span-stream lifecycle. It must not receive
+customer content merely because an exception included it.
 
 G-11 in the parent standard remains open independently of browser analytics
 acceptance and independently of G-10.
