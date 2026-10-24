@@ -554,6 +554,62 @@ describe('billing runtime', () => {
     expect(row?.customerChargeCents).toBe(expected);
   });
 
+  it('prices a missed member-day from plan history before the current plan', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const day = '2026-08-10';
+    const extraIds = [
+      '21111111-2222-4333-8444-555555555555',
+      '31111111-2222-4333-8444-555555555555',
+      '41111111-2222-4333-8444-555555555555',
+      '51111111-2222-4333-8444-555555555555',
+      '61111111-2222-4333-8444-555555555555',
+      '71111111-2222-4333-8444-555555555555',
+      '81111111-2222-4333-8444-555555555555',
+      '91111111-2222-4333-8444-555555555555',
+      'a1111111-2222-4333-8444-555555555555',
+    ];
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          wallet_balance_cents = 5000, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${day}T00:00:00Z'),
+        ('${TEAM_ID}', 'payg', '2026-08-11T00:00:00Z');
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'seat${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(accrued.extraMembers).toBe(0);
+    expect(accrued.chargeCents).toBe(0);
+    const stamped = await db
+      .select({ planId: billingMemberDayLedger.planId })
+      .from(billingMemberDayLedger)
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    expect(stamped).toHaveLength(10);
+    expect(stamped.every((row) => row.planId === 'team')).toBe(true);
+    const ledger = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledger.some((row) => row.operationId.includes('member_days:'))).toBe(false);
+    const [account] = await db
+      .select({ wallet: teamBillingAccounts.walletBalanceCents })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.wallet).toBe(5000);
+  });
+
   it('backfills member-days from preserved prior membership intervals', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,

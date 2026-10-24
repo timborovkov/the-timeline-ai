@@ -661,8 +661,18 @@ async function planEntitlementForMemberDay(input: {
       ),
     )
     .limit(1);
+  const stampedPlanId =
+    existing?.planId && isBillingPlanId(existing.planId) ? existing.planId : null;
+  // A missed day has no stamp yet. Price it on the plan in force that day,
+  // the same way storage backfill does, before the first member-day write.
   const planId =
-    existing?.planId && isBillingPlanId(existing.planId) ? existing.planId : input.currentPlanId;
+    stampedPlanId ??
+    (await planIdEffectiveOnDay({
+      db: input.db,
+      teamId: input.teamId,
+      day: input.day,
+      fallback: input.currentPlanId,
+    }));
   return { planId, included: PLAN_CATALOG[planId].includedActiveMembers };
 }
 

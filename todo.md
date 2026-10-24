@@ -639,7 +639,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.
       Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep
       the leftover team unrestricted. Re-accepting a removed member stamps a new `createdAt`.
-      Storage snapshots backfill missed days. Reactivating a reservation resets `createdAt`.
+      Storage snapshots backfill missed days. Missed member-days with no stamp use the
+      plan effective that day before the current plan. Reactivating a reservation resets `createdAt`.
       Restore takes advisory lock 1 then 2. Worker AI concurrency follows
       `costlyWorkerConcurrency` and delays a busy job. Paid-plan changes reuse the Polar
       subscription in non-active paid states. Extra-member plan preview prorates from period
@@ -659,7 +660,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reports a newer active status. A confirmed subscription cancel clears the Polar subscription
       id and the contracted Enterprise fee. Plan preview discounts extra-member cents. Recall
       reservations and included-discount refills follow the effective plan after a comp expires.
-      Member-day ticks reuse the `plan_id` stamped on that day. Re-accept appends `prior_intervals`. Denied inbound email
+      Member-day ticks reuse the `plan_id` stamped on that day. A missed day with no stamp uses the plan effective that day. Re-accept appends `prior_intervals`. Denied inbound email
       enrichment is recoverable via `billing_enrichment_deferred`. Storage-cap
       finalization deletes the rejected object. Captured chat attachments enforce
       document/storage limits. Free in-allowance usage is not invoiced under
