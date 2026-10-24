@@ -1216,7 +1216,12 @@ describe('billing scope', () => {
     expect(settled.ok).toBe(true);
     expect(provider.events).toHaveLength(0);
     if (!settled.duplicate) {
-      expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+      expect(settled.ledger.customerChargeCents).toBe(20);
+      expect(settled.ledger.metadata).toMatchObject({
+        polar_ingest_status: 'not_required',
+        invoice_cents: 0,
+      });
+      expect(settled.ledger.metadata).not.toHaveProperty('polar_ingest_units');
       expect(settled.ledger.metadata).not.toMatchObject({
         polar_ingest_block: 'missing_subscription_price',
       });
@@ -1224,6 +1229,16 @@ describe('billing scope', () => {
     const account = await scope.getAccount();
     expect(account.billingState).toBe('free');
     expect(account.spendCapCents).toBeGreaterThanOrEqual(0);
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active',
+          polar_customer_id = 'cus_upgrade', polar_subscription_id = 'sub_team',
+          polar_product_id = '${POLAR_PRODUCT_IDS.team}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await flushPendingPolarUsageIngest({ db, provider, teamId: TEAM_ID });
+    expect(provider.events).toHaveLength(0);
   });
 
   it('attributes a backfilled storage day to that month', async () => {
@@ -1320,6 +1335,38 @@ describe('billing scope', () => {
     });
     expect(reserved.ok).toBe(false);
     if (!reserved.ok) expect(reserved.code).toBe('spend_cap_reached');
+  });
+
+  it('counts open reservations against a comped Enterprise spend cap', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', shadow_billing = false, plan_id = 'enterprise',
+          billing_state = 'enterprise_active', spend_cap_cents = 15, comp_reason = 'internal'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const first = await scope.reserve({
+      operationId: 'op-comp-enterprise-open',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(first.ok).toBe(true);
+    const second = await scope.reserve({
+      operationId: 'op-comp-enterprise-over',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('spend_cap_reached');
   });
 
   it('accumulates sub-cent email charges from locked counters', async () => {
@@ -1672,6 +1719,51 @@ describe('billing scope', () => {
     });
     expect(settled.ok).toBe(true);
     if (!settled.duplicate) expect(settled.ledger.customerChargeCents).toBe(40);
+  });
+
+  it('sends Polar the discounted AI units when included credit is gone', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000,
+          polar_customer_id = 'cus_discount', polar_subscription_id = 'sub_team',
+          polar_product_id = '${POLAR_PRODUCT_IDS.team}',
+          price_override = '{"meteredDiscountPercent":50}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-discount-units',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.customerChargeCents).toBe(40);
+      expect(settled.ledger.metadata).toMatchObject({
+        invoice_cents: 40,
+        polar_ingest_units: 40,
+        polar_ingest_charge_cents: 40,
+        polar_ingest_status: 'pending',
+      });
+    }
+    expect(provider.events).toEqual([
+      expect.objectContaining({
+        name: 'timeline_ai_eur_cents',
+        units: 40,
+        externalCustomerId: TEAM_ID,
+      }),
+    ]);
   });
 
   it('forces shadow mode when BILLING_CHARGES_ENABLED is off even if the row is live', async () => {
