@@ -58,13 +58,17 @@ export function attentionCount(...counts: number[]): number {
   return counts.reduce((sum, count) => sum + Math.max(0, count), 0);
 }
 
+export function isPlaceholderInboundEmail(inboundEmail: string | null | undefined): boolean {
+  return Boolean(inboundEmail?.toLowerCase().endsWith('@inbound.invalid'));
+}
+
 export function displayInboundEmail(
   team: { slug: string; inboundEmail: string | null } | null,
   postmarkInboundAddress: string | undefined,
 ): string | null {
   if (!team) return null;
   const configuredAddress =
-    team.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid') ? team.inboundEmail : null;
+    team.inboundEmail && !isPlaceholderInboundEmail(team.inboundEmail) ? team.inboundEmail : null;
   return configuredAddress ?? composePostmarkHashAddress(team.slug, postmarkInboundAddress);
 }
 

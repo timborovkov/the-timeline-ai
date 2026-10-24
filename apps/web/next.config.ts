@@ -34,7 +34,10 @@ const sentryOptions = {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
   authToken: process.env.SENTRY_AUTH_TOKEN,
-  tunnelRoute: '/sentry-tunnel',
+  // Browser envelopes POST to the App Router handler at /sentry-tunnel.
+  // Do not set `tunnelRoute`: Next 16.3+ implements that option as a rewrite
+  // through proxyRequest/httpxy, which stacks 11 `close` listeners on the
+  // Node ServerResponse and trips MaxListenersExceededWarning.
   silent: !process.env.CI,
   widenClientFileUpload: Boolean(process.env.SENTRY_AUTH_TOKEN),
 };

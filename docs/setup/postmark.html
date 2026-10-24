@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Postmark email setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-21</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-24</span></div>
       <p class="tldr">Postmark powers inbound timeline capture and outbound product emails.</p>
 
       <p>
@@ -220,9 +220,11 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       <pre><code>MX in inbound.postmarkapp.com 10
 </code></pre>
       <p>
-        Teams created before Phase 7 are backfilled to <code>&lt;slug&gt;@inbound.invalid</code>.
-        Run a one-off <code>UPDATE teams SET inbound_email = slug || '@in.thetimeline.cc'</code> if
-        you need to flip a legacy team to the production domain.
+        Teams created before Phase 7, or without <code>INBOUND_EMAIL_DOMAIN</code>, persist
+        <code>&lt;slug&gt;@inbound.invalid</code>. Team → Email flags that leftover placeholder so
+        operators can see mail will not be captured until inbound email is configured. Run a one-off
+        <code>UPDATE teams SET inbound_email = slug || '@in.thetimeline.cc'</code> if you need to
+        flip a legacy team to the production domain.
       </p>
 
       <h2 id="public-mailboxes">6. Public contact mailboxes</h2>
@@ -299,7 +301,9 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       <p>
         Idempotency: a partial unique index on
         <code>(team_id, source_metadata-&gt;&gt;'message_id')</code> makes Postmark retries silent
-        no-ops.
+        no-ops. Dropped deliveries log a concise reason (<code>no_matching_team</code>,
+        <code>no_recipients</code>, invalid JSON, dedup, webhook disabled, unauthorized) without
+        message bodies or full addresses — only the recipient domain and team slug.
       </p>
 
       <h2 id="smoke-test">8. Smoke test</h2>

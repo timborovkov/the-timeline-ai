@@ -10,6 +10,7 @@ import {
   getWorkAttentionSummary,
   homeOpenObjectTotal,
   homeWorkNeedingAttentionCount,
+  isPlaceholderInboundEmail,
   workAttentionCount,
 } from '@/lib/hub-status';
 
@@ -162,6 +163,9 @@ describe('hub status helpers', () => {
   });
 
   it('never exposes an inbound.invalid placeholder as a usable address', () => {
+    expect(isPlaceholderInboundEmail('acme@inbound.invalid')).toBe(true);
+    expect(isPlaceholderInboundEmail('Acme@Inbound.Invalid')).toBe(true);
+    expect(isPlaceholderInboundEmail('acme@inbound.timeline.test')).toBe(false);
     expect(
       displayInboundEmail(
         { slug: 'acme', inboundEmail: 'acme@inbound.invalid' },

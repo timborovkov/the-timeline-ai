@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/page-header';
 import { SettingsSection } from '@/components/section-heading';
 import { SettingsNav } from '@/components/settings-nav';
 import {
+  InboundEmailPlaceholderNotice,
   InboundEmailWhitelistForm,
   DigestPreferenceForm,
   RenameTeamForm,
@@ -38,7 +39,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
-import { displayInboundEmail } from '@/lib/hub-status';
+import { displayInboundEmail, isPlaceholderInboundEmail } from '@/lib/hub-status';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -104,6 +105,7 @@ export default async function TeamSettingsPage({
     { slug: active.teamSlug, inboundEmail: inboundEmailSettings.inboundEmail },
     process.env.POSTMARK_INBOUND_ADDRESS,
   );
+  const placeholderInbound = isPlaceholderInboundEmail(inboundEmailSettings.inboundEmail);
   if (isAdmin) {
     await db
       .update(teamExports)
@@ -274,7 +276,11 @@ export default async function TeamSettingsPage({
           {section === 'email' ? (
             <SettingsSection title="Team email">
               {isAdmin ? (
-                <InboundEmailWhitelistForm {...inboundEmailSettings} inboundEmail={inboundEmail} />
+                <InboundEmailWhitelistForm
+                  {...inboundEmailSettings}
+                  inboundEmail={inboundEmail}
+                  placeholderInbound={placeholderInbound}
+                />
               ) : (
                 <div className="space-y-3">
                   <CopyableTextField
@@ -284,6 +290,7 @@ export default async function TeamSettingsPage({
                     copyLabel="Copy team email"
                     description="Forward, CC, or BCC mail to this address to capture it on the timeline."
                   />
+                  {placeholderInbound ? <InboundEmailPlaceholderNotice /> : null}
                   <p className="text-sm text-fg-muted">
                     Only team administrators can change the sender whitelist.
                   </p>

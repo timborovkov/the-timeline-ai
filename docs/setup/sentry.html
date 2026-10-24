@@ -83,10 +83,14 @@ SENTRY_PROFILES_SAMPLE_RATE=0
       <h2 id="wiring">2. Wiring</h2>
       <p>
         The web service initializes Sentry from the Next.js instrumentation files and routes browser
-        events through <code>/sentry-tunnel</code>. The worker initializes
-        <code>@sentry/node</code> on startup, captures fatal startup/shutdown errors, captures
-        BullMQ job failures on every failed attempt with a <code>terminal</code> tag for exhausted
-        or unrecoverable failures, and flushes before exit.
+        events through the App Router handler at <code>/sentry-tunnel</code>, which forwards
+        envelopes only to the configured DSN ingest host. That handler is not a Next.js
+        <code>tunnelRoute</code> rewrite: on Next 16.3+ the rewrite proxies through
+        <code>proxyRequest</code> and stacks enough <code>ServerResponse</code>
+        <code>close</code> listeners to emit <code>MaxListenersExceededWarning</code>. The worker
+        initializes <code>@sentry/node</code> on startup, captures fatal startup/shutdown errors,
+        captures BullMQ job failures on every failed attempt with a <code>terminal</code> tag for
+        exhausted or unrecoverable failures, and flushes before exit.
       </p>
       <p>
         App Router render boundaries, API route handlers, server actions, webhook background

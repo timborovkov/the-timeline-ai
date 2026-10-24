@@ -16,6 +16,7 @@ const pgliteChunks = [
     'src/documents/related-chunks.test.ts',
     'src/documents/scope.test.ts',
     'src/email/dispatcher.test.ts',
+    'src/email/dispatcher-logging.test.ts',
     'src/embedding/sources.test.ts',
     'src/extract/resolve.test.ts',
     'src/ingest-webhooks/keys.test.ts',

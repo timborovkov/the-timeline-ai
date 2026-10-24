@@ -4,7 +4,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ExternalHttpError } from '#src/http/external-fetch.js';
 
-import { externalFetch, resolveExternalAddresses } from '#src/http/external-fetch.js';
+import {
+  createPinnedAddressLookup,
+  externalFetch,
+  resolveExternalAddresses,
+} from '#src/http/external-fetch.js';
 
 /**
  * The outbound HTTP boundary must reject private DNS results, pin the address
@@ -50,6 +54,61 @@ describe('external HTTP boundary', () => {
           ]),
       }),
     ).rejects.toMatchObject({ code: 'blocked_address' });
+  });
+
+  it('pinned lookup answers Node Happy Eyeballs all:true and two-arg forms', () => {
+    const lookup = createPinnedAddressLookup([
+      { address: '140.82.112.6', family: 4 },
+      { address: '2606:50c0:8000::153', family: 6 },
+    ]) as unknown as {
+      (hostname: string, callback: (...args: unknown[]) => void): void;
+      (hostname: string, options: object, callback: (...args: unknown[]) => void): void;
+    };
+
+    let twoArg: { address: unknown; family: unknown } | undefined;
+    lookup('api.github.com', (err, address, family) => {
+      expect(err).toBeNull();
+      twoArg = { address, family };
+    });
+    expect(twoArg).toEqual({ address: '140.82.112.6', family: 4 });
+
+    let allAddresses: unknown;
+    lookup('api.github.com', { all: true }, (err, addresses) => {
+      expect(err).toBeNull();
+      allAddresses = addresses;
+    });
+    expect(allAddresses).toEqual([
+      { address: '140.82.112.6', family: 4 },
+      { address: '2606:50c0:8000::153', family: 6 },
+    ]);
+
+    let ipv4: { address: unknown; family: unknown } | undefined;
+    lookup('api.github.com', { family: 4 }, (err, address, family) => {
+      expect(err).toBeNull();
+      ipv4 = { address, family };
+    });
+    expect(ipv4).toEqual({ address: '140.82.112.6', family: 4 });
+  });
+
+  it('puts the structured code and cause chain on ExternalHttpError.message', async () => {
+    await expect(
+      externalFetch(
+        'https://blocked.example',
+        {},
+        {
+          lookup: () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]),
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'blocked_address' });
+    await expect(
+      externalFetch(
+        'https://blocked.example',
+        {},
+        {
+          lookup: () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]),
+        },
+      ),
+    ).rejects.toThrow(/code=blocked_address/);
   });
 
   it('uses the validated lookup result for the connection', async () => {
