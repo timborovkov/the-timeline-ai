@@ -54,7 +54,7 @@ review requirements may change independently of this repository.
 | Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open; refreshed onto current `main` on 2026-10-24; not merged |
 | Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27; plugin source files were not changed in the 2026-10-24 refresh |
 | Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-10-24 after merging latest `main` |
-| Production deployment | Migration `0073_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
+| Production deployment | Migration `0075_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
 | Production MCP smoke | OAuth discovery, consent, tools, refresh, revocation, role and membership invalidation | Blocked: production still serves the legacy MCP implementation |
 | OpenAI draft | Portal draft URL and ID | Not created; verified developer identity and production deployment required |
 | OpenAI review | Submission timestamp and review status | Not submitted |
@@ -119,7 +119,7 @@ signal is `GET https://thetimeline.cc/.well-known/oauth-authorization-server`
 returning HTTP 200 with PKCE `S256` and scopes `read` plus `agent:ask`.
 Production still returned 404 for that document on 2026-08-27.
 
-1. Merge and deploy the release containing migration 0073 and the matching web
+1. Merge and deploy the release containing migration 0075 and the matching web
    and worker revisions.
 2. Confirm the following public endpoints return the new production behavior:
    - `GET https://thetimeline.cc/.well-known/oauth-protected-resource/api/mcp/server`

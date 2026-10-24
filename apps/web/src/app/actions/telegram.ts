@@ -76,12 +76,14 @@ async function generateLinkTokenAction(
   });
   const completedTelegram = await safeMarkOnboardingStep(teamScope, 'telegram');
   if (completedTelegram) {
-    trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-      teamId: active.teamId,
-      userId: session.user.id,
-      step: 'telegram',
-      source: 'automatic',
-    });
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: active.teamId },
+      'onboarding_step_completed',
+      {
+        step: 'telegram',
+        source: 'automatic',
+      },
+    );
   }
   revalidatePath('/app/team/telegram');
   revalidatePath('/app/timeline');

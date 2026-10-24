@@ -4,7 +4,7 @@ The `timeline` skill teaches agents how to use Timeline's MCP tools as cited wor
 
 The bundled Codex and Claude Code connections use Timeline's OAuth flow. On first connection, a compatible host opens Timeline in the browser: sign in, choose the team to share, review the requested scopes, and approve or deny access. The default `read` scope follows that member's visibility in the selected team, including private and specifically shared items the member can access. The optional `agent:ask` scope enables paid, proposal-only Timeline agent turns and is never implied by `read`; only a current team owner or admin can grant it, and demotion invalidates it.
 
-> Release status: these OAuth instructions describe this repository version. The hosted URL will not provide this flow until migration `0073_mcp_oauth_server.sql` and the matching web release are deployed. Repository packaging is not a public marketplace listing.
+> Release status: these OAuth instructions describe this repository version. The hosted URL will not provide this flow until migration `0075_mcp_oauth_server.sql` and the matching web release are deployed. Repository packaging is not a public marketplace listing.
 
 ## Install in Codex
 
@@ -36,7 +36,7 @@ OpenAI uses one universal Plugins Directory across ChatGPT and Codex. Timeline m
 
 ## Install the standalone skill
 
-Use this route when you want only the skill or when your Timeline is self-hosted. Paste this into Codex:
+Use this route when you want only the skill or operate a separately licensed customer-controlled Timeline deployment. Paste this into Codex:
 
 ```text
 $skill-installer Install this Timeline skill from GitHub:
@@ -76,9 +76,9 @@ A default key exposes only team-visible retrieval. Private and specific-user eve
 
 Keep the key in an environment variable; do not paste it into agent chats, repository files, or shell command arguments. Some clients require the header in local JSON. Treat that file as a secret, keep it out of repositories and shared folders, and follow the client's secure credential-storage guidance.
 
-## Self-hosted Timeline
+## Customer-controlled Timeline
 
-The bundled plugin connection targets the hosted service. For a self-hosted deployment, install the standalone skill and replace the URL in the direct MCP command with:
+The bundled plugin connection targets the hosted service. For a separately licensed customer-controlled deployment, install the standalone skill and replace the URL in the direct MCP command with:
 
 ```text
 https://<your-timeline-origin>/api/mcp/server

@@ -3,6 +3,34 @@ import { describe, expect, it } from 'vitest';
 import { renderMessage } from '#src/messaging/templates.js';
 
 describe('messaging templates', () => {
+  it('renders minimized support context without a raw page URL', () => {
+    const message = renderMessage('support_request', {
+      supportEmail: 'contact@thetimeline.cc',
+      requestId: 'request-reference',
+      requestType: 'technical_support',
+      name: 'Ada Lovelace',
+      email: 'ada@example.test',
+      message: 'The board did not load after I selected it.',
+      surface: 'board_detail',
+      errorReference: 'sentry-reference',
+      release: 'release-sha',
+      userId: 'user-id',
+      teamId: 'team-id',
+      teamRole: 'admin',
+    });
+
+    expect(message.textBody).toContain('Surface: board_detail');
+    expect(message.textBody).toContain('Error reference: sentry-reference');
+    expect(message.textBody).toContain('Release: release-sha');
+    expect(message.textBody).toContain('Team role: admin');
+    expect(message.htmlBody).toContain('Reference: request-reference');
+    expect(message.htmlBody).toContain('Account ID: user-id');
+    expect(message.htmlBody).toContain('Team ID and role: team-id · admin');
+    expect(message.htmlBody).not.toContain('Acme Labs');
+    expect(message.htmlBody).not.toContain('Current page:');
+    expect(message.htmlBody).not.toContain('?');
+  });
+
   it('renders invite HTML and text with escaped user content', () => {
     const message = renderMessage('team_invite', {
       to: 'new@example.test',

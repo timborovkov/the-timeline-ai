@@ -33,6 +33,10 @@ interface WorkerBreadcrumb {
 
 interface WorkerSentryInitOptions {
   beforeSend?: (event: WorkerBeforeSendEvent) => WorkerBeforeSendEvent;
+  beforeSendSpan?: (span: { name?: string; attributes?: Record<string, unknown> }) => {
+    name?: string;
+    attributes?: Record<string, unknown>;
+  };
   beforeBreadcrumb?: (breadcrumb: WorkerBreadcrumb) => WorkerBreadcrumb;
 }
 
@@ -116,7 +120,7 @@ describe('worker Sentry monitoring', () => {
     expect(setScopeTag).not.toHaveBeenCalledWith('prompt', expect.anything());
   });
 
-  it('scrubs request auth material case-insensitively', async () => {
+  it('removes request headers and cookies before sending an event', async () => {
     process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
     const monitoring = await import('#src/monitoring.js');
 
@@ -138,7 +142,19 @@ describe('worker Sentry monitoring', () => {
 
     expect(event?.request?.url).toBe('https://app.timeline.test/api/mcp/oauth/callback');
     expect(event?.request?.cookies).toBeUndefined();
-    expect(event?.request?.headers).toEqual({ 'x-request-id': 'req-1' });
+    expect(event?.request?.headers).toBeUndefined();
+
+    const span = initOptions?.beforeSendSpan?.({
+      name: 'GET /api/mcp/oauth/callback?code=secret',
+      attributes: {
+        'http.url': 'https://app.timeline.test/api/mcp/oauth/callback?code=secret',
+        'http.request.header.authorization': 'Bearer token',
+      },
+    });
+    expect(span?.name).toBe('GET /api/mcp/oauth/callback');
+    expect(span?.attributes).toEqual({
+      'http.url': 'https://app.timeline.test/api/mcp/oauth/callback',
+    });
   });
 
   it('redacts invite token path segments from request URLs', async () => {

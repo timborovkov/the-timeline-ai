@@ -425,11 +425,27 @@ describe('board scope', () => {
       }),
     ).rejects.toThrow();
 
-    await scope.boards.updateBoardItem(
+    const update = await scope.boards.updateBoardItem(
       item.id,
       { laneId: board.lanes[1]?.id ?? null, priority: 2 },
       { kind: 'user', userId: USER_OWNER },
     );
+    expect(update).toMatchObject({
+      changed: true,
+      changedFields: ['laneId', 'priority'],
+      item: { id: item.id, laneId: board.lanes[1]?.id, priority: 2 },
+    });
+
+    const noOpUpdate = await scope.boards.updateBoardItem(
+      item.id,
+      { laneId: board.lanes[1]?.id ?? null, priority: 2 },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    expect(noOpUpdate).toMatchObject({
+      changed: false,
+      changedFields: [],
+      item: { id: item.id, laneId: board.lanes[1]?.id, priority: 2 },
+    });
 
     const changes = await db
       .select()

@@ -13,9 +13,13 @@ const fakes = vi.hoisted(() => ({
   addServer: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
   listCatalog: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }));
@@ -142,6 +146,11 @@ describe('/api/team/mcp-servers', () => {
     expect(fakes.safeMarkOnboardingStep).toHaveBeenCalledWith(
       expect.any(Object),
       'first_integration',
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'mcp_server_add', kind: 'mcp_inbound' },
     );
   });
 

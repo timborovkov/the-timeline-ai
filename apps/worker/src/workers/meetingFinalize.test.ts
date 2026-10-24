@@ -500,6 +500,37 @@ describe('processMeetingFinalizeJob', () => {
     }
   });
 
+  it('rechecks terminal status after summarization before writing final output', async () => {
+    await seedMeeting(db as never, { status: 'processing' });
+    await seedChunk(db as never, 0, 'Do not retain this after cancellation.', 'Alice');
+    const chat = vi.fn().mockImplementation(async () => {
+      await db
+        .update(meetingsTable)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(meetingsTable.id, MEETING_ID));
+      return {
+        object: { summary: 'SHOULD NOT BE WRITTEN', action_items: [] },
+        model: 'test-model@1.0',
+      };
+    });
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result).toEqual({ skipped: 'terminal', meetingId: MEETING_ID });
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('cancelled');
+    expect(meeting?.metadata).not.toMatchObject({ summary: 'SHOULD NOT BE WRITTEN' });
+    await expect(
+      db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')),
+    ).resolves.toHaveLength(0);
+  });
+
   it('finalizes transcript-only when structured summary generation fails', async () => {
     await seedMeeting(db as never);
     await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');

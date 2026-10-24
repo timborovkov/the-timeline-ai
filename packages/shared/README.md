@@ -21,7 +21,7 @@ parsing.
 Two hard rules in this repo route through this package:
 
 1. **Team isolation.** Every Postgres read goes through `withTeam(db, teamId, userId)` so row-level filtering can't be forgotten in a route or worker. Callers use named modules on the returned scope (`timeline`, `documents`, `meetings`, `objects`, `calendar`, `integrations`, `mcp`, `conversations`) instead of passing `db` and team identifiers around.
-2. **One inference layer.** App and worker code call `llm.chatStructured()`, `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and `llm.extractTextFromMedia()` — never the OpenAI or OpenRouter SDK directly. Swapping providers or pinning a model happens here, once.
+2. **One inference layer.** App and worker code call `llm.chatStructured()`, `llm.streamChat()`, `llm.embed()`, `llm.embedMany()`, `llm.transcribeAudio()`, and `llm.extractTextFromMedia()` — never the OpenAI or OpenRouter SDK directly. Exact pins and their `zdr_required` or `retained_no_training_exception` class live together in `src/llm/models.ts`. Recall meeting transcription remains a separate provider pipeline.
 
 Putting both behind a single package keeps the rules enforceable.
 

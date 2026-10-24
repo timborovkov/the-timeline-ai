@@ -184,16 +184,30 @@ export async function POST(req: Request): Promise<Response> {
     reconcileWebhooksBestEffort(scope, integration),
     markFirstIntegrationAfterActivation(scope, integration.id),
   ]);
-  trackProductEventBestEffort(session.user.id, 'integration_connected', {
-    teamId: active.teamId,
+  const analyticsActor = {
+    kind: 'user' as const,
     userId: session.user.id,
-    integrationId: integration.id,
-    provider: integration.provider,
-  });
+    teamId: active.teamId,
+  };
+  if (integration.addedSelectionCount > 0) {
+    trackProductEventBestEffort(analyticsActor, 'integration_connected', {
+      provider: integration.provider,
+    });
+    trackProductEventBestEffort(analyticsActor, 'integration_management_action_completed', {
+      action: 'activate',
+      kind: 'native',
+      provider: integration.provider,
+    });
+  }
+  if (integration.removedSelectionCount > 0) {
+    trackProductEventBestEffort(analyticsActor, 'integration_management_action_completed', {
+      action: 'deactivate',
+      kind: 'native',
+      provider: integration.provider,
+    });
+  }
   if (completedFirstIntegration) {
-    trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-      teamId: active.teamId,
-      userId: session.user.id,
+    trackProductEventBestEffort(analyticsActor, 'onboarding_step_completed', {
       step: 'first_integration',
       source: 'automatic',
     });

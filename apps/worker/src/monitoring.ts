@@ -3,6 +3,7 @@ import {
   RESTRICTED_SENTRY_DATA_COLLECTION,
   scrubSentryBreadcrumb,
   scrubSentryRequestEvent,
+  scrubSentrySpan,
 } from '@timeline/shared/monitoring/sentry-scrub';
 import { UnrecoverableError, type Job } from 'bullmq';
 
@@ -24,6 +25,9 @@ export function initWorkerSentry(): boolean {
     dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend(event) {
       return scrubSentryRequestEvent(event);
+    },
+    beforeSendSpan(span) {
+      return scrubSentrySpan(span);
     },
     beforeBreadcrumb(breadcrumb) {
       return scrubSentryBreadcrumb(breadcrumb);

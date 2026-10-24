@@ -113,6 +113,12 @@
       "import": "./dist/logger.js",
       "default": "./dist/logger.js"
     },
+    "./legal-versions": {
+      "types": "./src/legal-versions.ts",
+      "development": "./src/legal-versions.ts",
+      "import": "./dist/legal-versions.js",
+      "default": "./dist/legal-versions.js"
+    },
     "./messaging": {
       "types": "./src/messaging/index.ts",
       "development": "./src/messaging/index.ts",
@@ -226,6 +232,12 @@
       "development": "./src/llm/index.ts",
       "import": "./dist/llm/index.js",
       "default": "./dist/llm/index.js"
+    },
+    "./llm/privacy-attestation": {
+      "types": "./src/llm/privacy-attestation.ts",
+      "development": "./src/llm/privacy-attestation.ts",
+      "import": "./dist/llm/privacy-attestation.js",
+      "default": "./dist/llm/privacy-attestation.js"
     },
     "./mcp": {
       "types": "./src/mcp/index.ts",

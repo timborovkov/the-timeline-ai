@@ -1,5 +1,16 @@
 import { createHmac } from 'node:crypto';
 
+import {
+  timelineModelEntries,
+  type TimelineModelConfig,
+  type TimelineModelRole,
+} from '#src/llm/models.js';
+import {
+  OPENROUTER_DISABLE_CACHE_HEADERS,
+  OPENROUTER_OFFICIAL_BASE_URL,
+  openRouterPrivateProviderRouting,
+} from '#src/llm/privacy.js';
+
 export type LiveIntegrationCanaryStatus = 'ok' | 'skip' | 'warn';
 
 export interface LiveIntegrationCanaryResult {
@@ -24,6 +35,52 @@ export interface LiveIntegrationCanaryCleanupInput {
   formatError: (error: unknown) => string;
   action: string;
   docs?: string;
+}
+
+export type OpenRouterZdrRegistryInspection =
+  | {
+      ok: true;
+      models: readonly {
+        endpointCount: number;
+        modelId: string;
+      }[];
+    }
+  | {
+      ok: false;
+      reason: 'invalid_request' | 'invalid_response' | 'models_absent';
+      detail: string;
+      missingModelIds?: readonly string[];
+    };
+
+export type OpenRouterZdrCanaryKind = 'chat' | 'embedding' | 'structured' | 'vision';
+
+export interface OpenRouterZdrCanaryTarget {
+  kind: OpenRouterZdrCanaryKind;
+  modelId: string;
+  roles: readonly TimelineModelRole[];
+  embeddingDimensions?: number;
+}
+
+export interface OpenRouterZdrCanaryRequest {
+  init: RequestInit;
+  url: string;
+}
+
+export interface OpenRouterZdrCanaryOutcome {
+  kind: OpenRouterZdrCanaryKind;
+  modelId: string;
+  roles: readonly TimelineModelRole[];
+  ok: boolean;
+  durationMs: number;
+  status?: number;
+  reason?: 'http_error' | 'invalid_response' | 'request_failed';
+}
+
+export interface RunOpenRouterZdrCanariesInput {
+  apiKey: string;
+  fetch?: typeof globalThis.fetch;
+  signal?: AbortSignal;
+  now?: () => number;
 }
 
 export interface PostmarkInboundCaptureCanaryPayloadInput {
@@ -60,6 +117,282 @@ export interface TranscriptionCanaryWavInput {
 }
 
 export const TRANSCRIPTION_SPEECH_CANARY_TEXT = 'Timeline Canary task';
+
+const OPENROUTER_ZDR_CANARY_TEXT = 'Return the status for this synthetic Timeline canary.';
+const OPENROUTER_ZDR_CANARY_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const OPENROUTER_ZDR_CANARY_RESPONSE_FORMAT = {
+  type: 'json_schema',
+  json_schema: {
+    name: 'timeline_zdr_canary',
+    strict: true,
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: { status: { const: 'ok', type: 'string' } },
+      required: ['status'],
+    },
+  },
+} as const;
+
+function openRouterZdrCanaryKind(model: TimelineModelConfig): OpenRouterZdrCanaryKind {
+  if (model.capabilities.includes('embedding')) return 'embedding';
+  if (model.capabilities.includes('vision')) return 'vision';
+  if (model.capabilities.includes('structured')) return 'structured';
+  if (model.capabilities.includes('chat')) return 'chat';
+  throw new Error(`No live OpenRouter canary surface is defined for ZDR model ${model.id}`);
+}
+
+/**
+ * Groups duplicate role pins only when the same model is exercised through the
+ * same API surface. Every ZDR-required role remains named in the target, while
+ * retained exceptions (currently voice transcription) are deliberately absent.
+ */
+export function buildOpenRouterZdrCanaryTargets(): readonly OpenRouterZdrCanaryTarget[] {
+  const targets = new Map<string, OpenRouterZdrCanaryTarget>();
+  for (const [role, model] of timelineModelEntries()) {
+    if (model.privacyMode !== 'zdr_required') continue;
+    const kind = openRouterZdrCanaryKind(model);
+    const key = `${kind}\0${model.id}`;
+    const existing = targets.get(key);
+    if (existing) {
+      targets.set(key, { ...existing, roles: [...existing.roles, role] });
+      continue;
+    }
+    targets.set(key, {
+      kind,
+      modelId: model.id,
+      roles: [role],
+      ...(model.embeddingDimensions ? { embeddingDimensions: model.embeddingDimensions } : {}),
+    });
+  }
+  if (targets.size === 0) {
+    throw new Error('At least one ZDR-required OpenRouter model is required for live canaries');
+  }
+  return [...targets.values()];
+}
+
+export function buildOpenRouterZdrCanaryRequest(
+  target: OpenRouterZdrCanaryTarget,
+  apiKey: string,
+): OpenRouterZdrCanaryRequest {
+  const normalizedApiKey = apiKey.trim();
+  if (normalizedApiKey.length === 0) throw new Error('OpenRouter canary API key is required');
+
+  const provider = openRouterPrivateProviderRouting(
+    target.kind === 'embedding' ? {} : { require_parameters: true },
+  );
+  const body =
+    target.kind === 'embedding'
+      ? {
+          model: target.modelId,
+          input: OPENROUTER_ZDR_CANARY_TEXT,
+          encoding_format: 'float',
+          ...(target.embeddingDimensions ? { dimensions: target.embeddingDimensions } : {}),
+          provider,
+        }
+      : {
+          model: target.modelId,
+          messages: [
+            {
+              role: 'user',
+              content:
+                target.kind === 'vision'
+                  ? [
+                      { type: 'text', text: OPENROUTER_ZDR_CANARY_TEXT },
+                      {
+                        type: 'image_url',
+                        image_url: { url: OPENROUTER_ZDR_CANARY_IMAGE },
+                      },
+                    ]
+                  : OPENROUTER_ZDR_CANARY_TEXT,
+            },
+          ],
+          max_tokens: 16,
+          temperature: 0,
+          ...(target.kind === 'chat'
+            ? {}
+            : { response_format: OPENROUTER_ZDR_CANARY_RESPONSE_FORMAT }),
+          provider,
+        };
+
+  return {
+    url: `${OPENROUTER_OFFICIAL_BASE_URL}/${
+      target.kind === 'embedding' ? 'embeddings' : 'chat/completions'
+    }`,
+    init: {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${normalizedApiKey}`,
+        'content-type': 'application/json',
+        ...OPENROUTER_DISABLE_CACHE_HEADERS,
+      },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isValidOpenRouterZdrCanaryResponse(
+  target: OpenRouterZdrCanaryTarget,
+  payload: unknown,
+): boolean {
+  if (!isJsonObject(payload)) return false;
+  if (target.kind === 'embedding') {
+    const data = payload.data;
+    if (!Array.isArray(data) || !isJsonObject(data[0]) || !Array.isArray(data[0].embedding)) {
+      return false;
+    }
+    const vector = data[0].embedding;
+    return (
+      (target.embeddingDimensions === undefined || vector.length === target.embeddingDimensions) &&
+      vector.every((value) => typeof value === 'number' && Number.isFinite(value))
+    );
+  }
+
+  const choices = payload.choices;
+  if (!Array.isArray(choices) || !isJsonObject(choices[0]) || !isJsonObject(choices[0].message)) {
+    return false;
+  }
+  const content = choices[0].message.content;
+  if (typeof content !== 'string' || content.length === 0) return false;
+  if (target.kind === 'chat') return true;
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    return isJsonObject(parsed) && parsed.status === 'ok' && Object.keys(parsed).length === 1;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Executes one authenticated, synthetic request for every unique ZDR model and
+ * API surface. Outcomes deliberately contain only model/role, HTTP status,
+ * latency, and a bounded reason code—never request or response content.
+ */
+export async function runOpenRouterZdrCanaries(
+  input: RunOpenRouterZdrCanariesInput,
+): Promise<readonly OpenRouterZdrCanaryOutcome[]> {
+  const fetchImpl = input.fetch ?? globalThis.fetch.bind(globalThis);
+  const now = input.now ?? Date.now;
+  const targets = buildOpenRouterZdrCanaryTargets();
+  return Promise.all(
+    targets.map(async (target): Promise<OpenRouterZdrCanaryOutcome> => {
+      const startedAt = now();
+      const request = buildOpenRouterZdrCanaryRequest(target, input.apiKey);
+      const base = () => ({
+        kind: target.kind,
+        modelId: target.modelId,
+        roles: target.roles,
+        durationMs: Math.max(0, Math.round(now() - startedAt)),
+      });
+      try {
+        const response = await fetchImpl(request.url, {
+          ...request.init,
+          signal: input.signal ?? AbortSignal.timeout(30_000),
+        });
+        if (!response.ok) {
+          await response.body?.cancel().catch(() => undefined);
+          return { ...base(), ok: false, status: response.status, reason: 'http_error' };
+        }
+        let payload: unknown;
+        try {
+          payload = await response.json();
+        } catch {
+          return {
+            ...base(),
+            ok: false,
+            status: response.status,
+            reason: 'invalid_response',
+          };
+        }
+        return isValidOpenRouterZdrCanaryResponse(target, payload)
+          ? { ...base(), ok: true, status: response.status }
+          : { ...base(), ok: false, status: response.status, reason: 'invalid_response' };
+      } catch {
+        return { ...base(), ok: false, reason: 'request_failed' };
+      }
+    }),
+  );
+}
+
+export function inspectOpenRouterZdrRegistry(
+  payload: unknown,
+  modelIds: readonly string[],
+): OpenRouterZdrRegistryInspection {
+  const expectedModelIds = [...new Set(modelIds)];
+  if (
+    expectedModelIds.length === 0 ||
+    expectedModelIds.some((modelId) => modelId.trim().length === 0)
+  ) {
+    return {
+      ok: false,
+      reason: 'invalid_request',
+      detail: 'At least one non-empty ZDR-required model id must be inspected',
+    };
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return {
+      ok: false,
+      reason: 'invalid_response',
+      detail: 'ZDR registry response is not an object',
+    };
+  }
+
+  const data = (payload as Record<string, unknown>).data;
+  if (!Array.isArray(data)) {
+    return {
+      ok: false,
+      reason: 'invalid_response',
+      detail: 'ZDR registry response.data is not an array',
+    };
+  }
+
+  const endpointCounts = new Map(expectedModelIds.map((modelId) => [modelId, 0]));
+  for (const [index, endpoint] of data.entries()) {
+    if (!endpoint || typeof endpoint !== 'object' || Array.isArray(endpoint)) {
+      return {
+        ok: false,
+        reason: 'invalid_response',
+        detail: `ZDR registry response.data[${String(index)}] is not an object`,
+      };
+    }
+    const endpointModelId = (endpoint as Record<string, unknown>).model_id;
+    if (typeof endpointModelId !== 'string' || endpointModelId.trim().length === 0) {
+      return {
+        ok: false,
+        reason: 'invalid_response',
+        detail: `ZDR registry response.data[${String(index)}].model_id is not a non-empty string`,
+      };
+    }
+    const count = endpointCounts.get(endpointModelId);
+    if (count !== undefined) endpointCounts.set(endpointModelId, count + 1);
+  }
+
+  const missingModelIds = [...endpointCounts]
+    .filter(([, endpointCount]) => endpointCount === 0)
+    .map(([modelId]) => modelId);
+  if (missingModelIds.length > 0) {
+    return {
+      ok: false,
+      reason: 'models_absent',
+      detail: `Public ZDR registry has no endpoint for: ${missingModelIds.join(', ')}`,
+      missingModelIds,
+    };
+  }
+
+  return {
+    ok: true,
+    models: [...endpointCounts].map(([modelId, endpointCount]) => ({
+      endpointCount,
+      modelId,
+    })),
+  };
+}
 
 export async function completeLiveIntegrationCanaryCleanup(
   input: LiveIntegrationCanaryCleanupInput,

@@ -18,6 +18,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeReportCaughtError: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeCalendar: {
     createCalendarEvent: vi.fn(),
     updateCalendarEvent: vi.fn(),
@@ -32,6 +33,9 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({ calendar: fakes.fakeCalendar, suggestions: fakes.fakeSuggestions }),
@@ -132,6 +136,11 @@ describe('calendar create/update/delete behavior', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'calendar_action_completed',
+      { action: 'create' },
+    );
   });
 
   it('forwards recurring tentative create fields to the calendar scope', async () => {

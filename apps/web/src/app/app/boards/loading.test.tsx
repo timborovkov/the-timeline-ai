@@ -118,7 +118,7 @@ describe('Boards route states', () => {
       expect(screen.getByText(description)).toBeTruthy();
       expect(screen.getAllByRole('button')).toHaveLength(1);
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard('{Enter}');
 

@@ -1,5 +1,6 @@
 'use server';
 
+import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import { taskCategorySchema } from '@timeline/shared/task-categories/types';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
@@ -20,13 +21,15 @@ function trackApprovalDecision(
   isBulk = itemCount > 1,
 ): void {
   if (itemCount < 1) return;
-  trackProductEventBestEffort(resolved.userId, 'approval_decision_submitted', {
-    teamId: resolved.teamId,
-    userId: resolved.userId,
-    decision,
-    itemCount,
-    isBulk,
-  });
+  trackProductEventBestEffort(
+    { kind: 'user', userId: resolved.userId, teamId: resolved.teamId },
+    'approval_decision_submitted',
+    {
+      decision,
+      itemCountBucket: bucketAnalyticsCount(itemCount),
+      isBulk,
+    },
+  );
 }
 
 function revalidateSuggestionSurfaces() {
