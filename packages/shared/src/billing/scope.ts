@@ -28,6 +28,7 @@ import {
 } from '#src/billing/catalog.js';
 import {
   cumulativeChargeDeltaCents,
+  currentPeriodSpendCapExceeded,
   daysInPeriodYm,
   memberDaysChargeCents,
   metersPlusPendingReservations,
@@ -855,7 +856,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 nativeUnits: input.nativeUnits,
                 startedAt,
               });
-        const primaryYm = segments[0]?.periodYm ?? periodYm(startedAt);
         const uniquePeriods = [...new Set(segments.map((row) => row.periodYm))];
         const countersBeforeRows = await tx
           .select()
@@ -924,7 +924,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
           0,
         );
         const polarUnits = segmentCharges.reduce((sum, row) => sum + row.polarUnits, 0);
-        const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
         const historicalDiscount = input.historicalIncludedDiscountCents;
         const entitlementsPlanId = input.pricingPlanId ?? account.planId;
         const freeAllowanceSettlement =
@@ -972,15 +971,22 @@ export function createBillingScope(deps: BillingScopeDeps) {
           collectLiveWallet && walletCents > account.walletBalanceCents
             ? walletCents - account.walletBalanceCents
             : 0;
-        const periodSpendCents = countersBefore.reduce(
-          (sum, row) => sum + row.customerChargeCents,
-          0,
-        );
         const spendCapExceeded =
           applyCharges &&
           !enterpriseContract &&
           account.planId !== 'free' &&
-          periodSpendCents + actualChargeCents > account.spendCapCents;
+          currentPeriodSpendCapExceeded({
+            currentPeriodYm: periodYm(),
+            spendCapCents: account.spendCapCents,
+            segments: segmentCharges.map((row) => ({
+              periodYm: row.periodYm,
+              chargeCents: row.actualChargeCents,
+            })),
+            counterChargeCents: countersBeforeRows.map((row) => ({
+              periodYm: row.periodYm,
+              chargeCents: row.customerChargeCents,
+            })),
+          });
         const freezeAccount = walletShortfallCents > 0 || spendCapExceeded;
 
         const [ledgerRow] = await tx

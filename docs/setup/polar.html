@@ -148,18 +148,20 @@ BILLING_CHARGES_ENABLED=false
         <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
         grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
         count each day in that day's month, and price it on the plan in force then. A prior month
-        does not draw the live included discount. Wallet overage on the same plan is still
-        collected. A missed renewal advances by calendar months from the subscription anchor day.
-        Settled reservations are recognized before a new wallet check. Free in-allowance settlement
-        does not create a wallet shortfall. Restoring a document keeps the closed absence interval
-        so those days are not billed again. Slack/Telegram/MCP Ask and web chat save the completed
-        cost before settle and keep the reservation when settlement fails so the janitor can retry
-        it. Paid-plan changes reuse the Polar subscription in non-active paid states. Extra-member
-        plan preview prorates from period member-days, including person-days when the current plan
-        has no extras. Auto-reload retries owner notification after delivery failure without a
-        second Polar checkout. Inbound email audio skipped for a denied email meter is flushed by
-        the janitor when billing can reserve again. Denied inbound-email parent enrichment is
-        stamped <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
+        does not draw the live included discount, and its counters are not compared to the live
+        spend cap. Only the current UTC period can freeze on that cap. Wallet overage on the same
+        plan is still collected, and a live-wallet shortfall still freezes. A missed renewal
+        advances by calendar months from the subscription anchor day. Settled reservations are
+        recognized before a new wallet check. Free in-allowance settlement does not create a wallet
+        shortfall. Restoring a document keeps the closed absence interval so those days are not
+        billed again. Slack/Telegram/MCP Ask and web chat save the completed cost before settle and
+        keep the reservation when settlement fails so the janitor can retry it. Paid-plan changes
+        reuse the Polar subscription in non-active paid states. Extra-member plan preview prorates
+        from period member-days, including person-days when the current plan has no extras.
+        Auto-reload retries owner notification after delivery failure without a second Polar
+        checkout. Inbound email audio skipped for a denied email meter is flushed by the janitor
+        when billing can reserve again. Denied inbound-email parent enrichment is stamped
+        <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
         accepted-source meter. Deferred accepted-source flush rotates past still-blocked rows; a
         replay after an insert crash meters the existing dedup row. Seat claims are blocked while
         billing is paused. Enterprise settlement skips prepaid freezes and does not debit a prepaid

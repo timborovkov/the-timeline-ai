@@ -306,6 +306,31 @@ export function periodYmUtc(date = new Date()): string {
 }
 
 /**
+ * The live spend cap applies to the current UTC period. A prior-month
+ * settlement still records that month's counters; only a positive charge in
+ * the current period can exceed the cap. A span that crosses into the current
+ * period counts that slice alone.
+ */
+export function currentPeriodSpendCapExceeded(input: {
+  currentPeriodYm: string;
+  spendCapCents: number;
+  segments: readonly { periodYm: string; chargeCents: number }[];
+  counterChargeCents: readonly { periodYm: string; chargeCents: number }[];
+}): boolean {
+  const addedCents = input.segments.reduce(
+    (sum, row) =>
+      row.periodYm === input.currentPeriodYm ? sum + Math.max(0, row.chargeCents) : sum,
+    0,
+  );
+  if (addedCents <= 0) return false;
+  const alreadyCents = input.counterChargeCents.reduce(
+    (sum, row) => (row.periodYm === input.currentPeriodYm ? sum + row.chargeCents : sum),
+    0,
+  );
+  return alreadyCents + addedCents > input.spendCapCents;
+}
+
+/**
  * Split duration-based native units across UTC month boundaries so a Recall
  * meeting that crosses midnight on the 1st is not charged wholly to the new
  * month. Non-duration meters stay in the operation's start period.

@@ -101,8 +101,12 @@ credit hides margin and confuses prospects.
    billing account and recheck Polar `modified_at` in the same transaction so an
    older event cannot overwrite a newer one. Polar webhook bodies are bounded to
    the integration webhook size limit before signature verify. Settlement that
-   exceeds the reserved wallet or paid spend cap still records the full ledger
-   charge and freezes the workspace (`read_only`, spend cap €0). A €10 top-up first
+   exceeds the reserved wallet or the current UTC period's paid spend cap still
+   records the full ledger charge and freezes the workspace (`read_only`, spend
+   cap €0). A prior month's counters and recovered charge are recorded on that
+   month and are not compared to the live cap, so lowering the cap does not
+   freeze the workspace when an earlier month is backfilled. A wallet shortfall
+   on the live wallet still freezes, including for that recovered usage. A €10 top-up first
    collects outstanding wallet shortfalls, then credits any remainder and restores
    the plan's active state only when remaining debt is 0 (and, when the freeze
    zeroed a positive catalog cap, that catalog default). Extra member-days persist

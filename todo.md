@@ -574,8 +574,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       subscription updates. Extra member-days skip included
       usage discount and accrue members added after the first daily tick.
       Polar webhooks bound the request body before signature verify and lock the billing account
-      before applying Polar `modified_at`. Settlement above the reserved wallet or paid
-      spend cap freezes the workspace. A €10 top-up or a positive spend-cap raise restores the plan's
+      before applying Polar `modified_at`. Settlement above the reserved wallet or the current
+      UTC period's paid spend cap freezes the workspace. A prior month is recorded on that month
+      and does not freeze against the live cap. A €10 top-up or a positive spend-cap raise restores the plan's
       active state. Extra member-days persist denied charges. Terminal Recall no-shows settle
       waiting-room minutes. Cancelling a joining/active meeting with no chunks settles elapsed
       minutes. Postmark success is recorded before email settlement. Meeting-finalize
@@ -593,9 +594,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       after a successful provider call and reuses the BullMQ job id. A thrown call that already
       reported usage settles that attempt, then releases. Transcription chunks use distinct
       operation ids. Ask and web chat save the completed cost before settle and the janitor retries
-      a failed settlement. Storage replay uses the plan effective that day, counts the day in
-      that month, leaves the live included discount untouched, and still collects same-plan
-      wallet overage. A different historical plan does not spend the live wallet. Closed
+      a failed settlement.       Storage replay uses the plan effective that day, counts the day in
+      that month, leaves the live included discount untouched, does not apply that month's
+      spend to the live cap, and still collects same-plan wallet overage. A different historical plan does not spend the live wallet. Closed
       document absence intervals are skipped. Delivered email whose settlement fails stays
       reserved for the janitor and is not resent. Reservation expiry locks the billing account
       before the reservation row. A €10 top-up collects outstanding wallet shortfalls before crediting the
