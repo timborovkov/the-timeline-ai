@@ -41,6 +41,7 @@ import {
   DEALFLOW_ITEMS,
   corpusEventId,
   corpusObjectId,
+  type ExpandedDemoCorpusSnapshot,
 } from './demo-corpus/index.js';
 
 const localEnv = {
@@ -458,11 +459,13 @@ for (const beat of cadenceBeats) {
     );
   }
 }
-assert.doesNotThrow(() =>
-  assertExpandedDemoCorpus({
+function createValidExpandedSnapshot(): ExpandedDemoCorpusSnapshot {
+  return {
     people: CORPUS_PEOPLE.length,
     loginEmails: CORPUS_PEOPLE.map((person) => person.email),
     passwordUsableEmails: CORPUS_PEOPLE.map((person) => person.email),
+    currentLegalSnapshotEmails: CORPUS_PEOPLE.map((person) => person.email),
+    matchingLegalAcceptanceEmails: CORPUS_PEOPLE.map((person) => person.email),
     events: 2500,
     objects: 55,
     documents: CORPUS_DOCUMENTS.length + 1,
@@ -498,7 +501,26 @@ assert.doesNotThrow(() =>
     ),
     polarDealflowItems: 0,
     onboardingStepsCompleted: 11,
-  }),
+  };
+}
+
+const validExpandedSnapshot = createValidExpandedSnapshot();
+assert.doesNotThrow(() => assertExpandedDemoCorpus(validExpandedSnapshot));
+assert.throws(
+  () =>
+    assertExpandedDemoCorpus({
+      ...validExpandedSnapshot,
+      currentLegalSnapshotEmails: [],
+    }),
+  /current legal snapshot missing for demo logins/,
+);
+assert.throws(
+  () =>
+    assertExpandedDemoCorpus({
+      ...validExpandedSnapshot,
+      matchingLegalAcceptanceEmails: [],
+    }),
+  /matching legal acceptance evidence missing for demo logins/,
 );
 assert.throws(
   () =>
@@ -506,6 +528,8 @@ assert.throws(
       people: 2,
       loginEmails: ['owner@timeline.dev'],
       passwordUsableEmails: ['owner@timeline.dev'],
+      currentLegalSnapshotEmails: [],
+      matchingLegalAcceptanceEmails: [],
       events: 4,
       objects: 3,
       documents: 1,

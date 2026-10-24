@@ -13,6 +13,7 @@ const fakes = vi.hoisted(() => ({
   existingRow: null as { id: string; revokedAt: Date | null } | null,
   updateRows: [] as unknown[],
   insertValues: [] as unknown[],
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 vi.mock('@timeline/db', () => ({
@@ -29,6 +30,9 @@ vi.mock('drizzle-orm', () => ({
   eq: (...args: unknown[]) => ({ op: 'eq', args }),
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({ requireMembership: fakes.requireMembership }),
@@ -123,6 +127,7 @@ describe('DELETE /api/team/mcp-keys/[id]', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
     expect(fakes.insertValues).toEqual([]);
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('soft revokes open keys and writes audit intent', async () => {
@@ -142,6 +147,11 @@ describe('DELETE /api/team/mcp-keys/[id]', () => {
         metadata: { surface: 'timeline_as_mcp_server' },
       },
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'mcp_key_revoke', kind: 'mcp_outbound' },
+    );
   });
 
   it('returns not_found if the revoke update races and returns no row', async () => {

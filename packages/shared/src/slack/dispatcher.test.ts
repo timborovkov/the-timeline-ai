@@ -236,7 +236,7 @@ describe('Slack dispatcher routing', () => {
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.RECALL_API_KEY = 'recall-test-key';
     process.env.RECALL_BASE_URL = 'https://recall.test/api/v1';
-    process.env.RECALL_STATUS_WEBHOOK_SECRET = `whsec_${Buffer.from('slack-status').toString('base64')}`;
+    process.env.RECALL_WORKSPACE_VERIFICATION_SECRET = `whsec_${Buffer.from('slack-workspace-for-tests').toString('base64')}`;
     resetEnvForTests();
     resetMeetingBotProviderForTests();
     resetSecretsKeyCacheForTests();

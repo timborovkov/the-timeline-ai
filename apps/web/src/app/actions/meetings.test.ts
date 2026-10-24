@@ -15,7 +15,8 @@ const fakes = vi.hoisted(() => ({
     getMeetingSettings: vi.fn(),
     getCurrentMonthMinutes: vi.fn(),
     getMeeting: vi.fn(),
-    listChunks: vi.fn(),
+    cancelMeetingCapture: vi.fn(),
+    confirmMeetingProviderLeave: vi.fn(),
     createMeeting: vi.fn(),
     claimMeetingForJoin: vi.fn(),
     findActiveMeetingForUrl: vi.fn(),
@@ -24,6 +25,7 @@ const fakes = vi.hoisted(() => ({
   },
   fakeCheckRateLimit: vi.fn(),
   fakeJoinMeeting: vi.fn(),
+  fakeLeaveMeeting: vi.fn(),
   fakeRequireRedisQueue: vi.fn(),
 }));
 
@@ -45,8 +47,10 @@ vi.mock('@timeline/shared/meeting-bots', () => ({
   meetingBotDisplayName: vi.fn((teamName: string | null | undefined) =>
     teamName ? `${teamName}'s thetimeline.cc bot` : 'Timeline',
   ),
+  meetingBotErrorCode: vi.fn(() => 'provider_request_failed'),
   getMeetingBotProvider: vi.fn(() => ({
     joinMeeting: fakes.fakeJoinMeeting,
+    leaveMeeting: fakes.fakeLeaveMeeting,
   })),
 }));
 vi.mock('@timeline/shared/rate-limit', async () => {
@@ -81,11 +85,16 @@ beforeEach(() => {
   });
   fakes.fakeMeetings.findActiveMeetingForUrl.mockResolvedValue(null);
   fakes.fakeMeetings.getMeeting.mockResolvedValue(null);
-  fakes.fakeMeetings.listChunks.mockResolvedValue([]);
+  fakes.fakeMeetings.cancelMeetingCapture.mockResolvedValue({ outcome: 'cancelled' });
+  fakes.fakeMeetings.confirmMeetingProviderLeave.mockResolvedValue(true);
   fakes.fakeMeetings.updateMeetingStatus.mockResolvedValue(undefined);
   fakes.fakeMeetings.updateSavedMeeting.mockResolvedValue({ id: MEETING_ID });
-  fakes.fakeJoinMeeting.mockResolvedValue({ botId: 'bot-1', raw: { id: 'bot-1' } });
-  fakes.fakeRequireRedisQueue.mockResolvedValue({ enqueueMeetingFinalizeJob: vi.fn() });
+  fakes.fakeJoinMeeting.mockResolvedValue({ botId: 'bot-1' });
+  fakes.fakeLeaveMeeting.mockResolvedValue(undefined);
+  fakes.fakeRequireRedisQueue.mockResolvedValue({
+    enqueueMeetingFinalizeJob: vi.fn(),
+    enqueueMeetingSchedulerTick: vi.fn(),
+  });
 });
 
 describe('scheduleMeetingBotAction', () => {
@@ -105,28 +114,133 @@ describe('scheduleMeetingBotAction', () => {
         visibilityUserIds: [MEMBER_ID],
       }),
     );
+    expect(fakes.fakeMeetings.updateMeetingStatus).toHaveBeenCalledWith(MEETING_ID, 'joining', {
+      providerBotId: 'bot-1',
+    });
   });
 });
 
 describe('cancelMeetingBotAction', () => {
-  it('does not move partial captures to processing when the finalize queue is unavailable', async () => {
+  it('does not claim cancellation when the provider cannot remove the bot', async () => {
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'active',
+      provider: 'recall',
+      providerBotId: 'bot-1',
+      metadata: {},
+    });
+    fakes.fakeLeaveMeeting.mockRejectedValue(new Error('provider unavailable'));
+
+    const result = await cancelMeetingBotAction(MEETING_ID);
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'Meeting capture is closing, but provider confirmation is still pending.',
+    });
+    expect(fakes.fakeLeaveMeeting).toHaveBeenCalledWith('bot-1');
+    expect(fakes.fakeMeetings.cancelMeetingCapture).toHaveBeenCalledWith(MEETING_ID, {
+      allowPartialProcessing: false,
+    });
+    expect(fakes.fakeMeetings.confirmMeetingProviderLeave).not.toHaveBeenCalled();
+  });
+
+  it('closes local transcript acceptance before confirming the provider stopped', async () => {
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'active',
+      provider: 'recall',
+      providerBotId: 'bot-1',
+      metadata: {},
+    });
+    const result = await cancelMeetingBotAction(MEETING_ID);
+
+    expect(result).toEqual({ ok: true, meetingId: MEETING_ID });
+    expect(fakes.fakeMeetings.cancelMeetingCapture.mock.invocationCallOrder[0]).toBeLessThan(
+      fakes.fakeLeaveMeeting.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
+    expect(fakes.fakeMeetings.confirmMeetingProviderLeave).toHaveBeenCalledWith(
+      MEETING_ID,
+      'bot-1',
+    );
+  });
+
+  it('closes partial capture when the finalize queue is unavailable for janitor recovery', async () => {
     fakes.fakeMeetings.getMeeting.mockResolvedValue({
       id: MEETING_ID,
       teamId: TEAM_ID,
       status: 'active',
       provider: 'recall',
       providerBotId: null,
+      metadata: {},
     });
-    fakes.fakeMeetings.listChunks.mockResolvedValue([{ id: 'chunk-1' }]);
+    fakes.fakeMeetings.cancelMeetingCapture
+      .mockResolvedValueOnce({ outcome: 'requires_finalize_queue' })
+      .mockResolvedValueOnce({ outcome: 'processing' });
     fakes.fakeRequireRedisQueue.mockRejectedValue(new Error('redis unavailable'));
 
     const result = await cancelMeetingBotAction(MEETING_ID);
 
-    expect(result).toMatchObject({
-      ok: false,
-      error: 'Cannot cancel this meeting while finalize queue is unavailable.',
+    expect(result).toEqual({ ok: true, meetingId: MEETING_ID });
+    expect(fakes.fakeMeetings.cancelMeetingCapture).toHaveBeenNthCalledWith(2, MEETING_ID, {
+      allowPartialProcessing: true,
     });
-    expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
+  });
+
+  it('retries a provider leave after local transcript acceptance was already closed', async () => {
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'processing',
+      provider: 'recall',
+      providerBotId: 'bot-1',
+      metadata: {
+        transcript_closed_at: '2026-08-28T00:00:00.000Z',
+        provider_leave_pending: true,
+      },
+    });
+
+    await expect(cancelMeetingBotAction(MEETING_ID)).resolves.toEqual({
+      ok: true,
+      meetingId: MEETING_ID,
+    });
+    expect(fakes.fakeMeetings.cancelMeetingCapture).not.toHaveBeenCalled();
+    expect(fakes.fakeLeaveMeeting).toHaveBeenCalledWith('bot-1');
+    expect(fakes.fakeMeetings.confirmMeetingProviderLeave).toHaveBeenCalledWith(
+      MEETING_ID,
+      'bot-1',
+    );
+  });
+
+  it('atomically moves a partial capture to processing before enqueueing finalization', async () => {
+    const enqueueMeetingFinalizeJob = vi.fn().mockResolvedValue(undefined);
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'active',
+      provider: 'recall',
+      providerBotId: null,
+      metadata: {},
+    });
+    fakes.fakeMeetings.cancelMeetingCapture
+      .mockResolvedValueOnce({ outcome: 'requires_finalize_queue' })
+      .mockResolvedValueOnce({ outcome: 'processing' });
+    fakes.fakeRequireRedisQueue.mockResolvedValue({ enqueueMeetingFinalizeJob });
+
+    const result = await cancelMeetingBotAction(MEETING_ID);
+
+    expect(result).toEqual({ ok: true, meetingId: MEETING_ID });
+    expect(fakes.fakeMeetings.cancelMeetingCapture).toHaveBeenNthCalledWith(1, MEETING_ID, {
+      allowPartialProcessing: false,
+    });
+    expect(fakes.fakeMeetings.cancelMeetingCapture).toHaveBeenNthCalledWith(2, MEETING_ID, {
+      allowPartialProcessing: true,
+    });
+    expect(enqueueMeetingFinalizeJob).toHaveBeenCalledWith({
+      meetingId: MEETING_ID,
+      teamId: TEAM_ID,
+    });
   });
 });
 

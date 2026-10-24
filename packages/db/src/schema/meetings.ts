@@ -138,7 +138,7 @@ export const meetings = pgTable(
     // BaaS / native APIs later without enum churn.
     provider: text('provider').notNull().default('recall'),
     // Provider-issued bot id, set after joinMeeting() returns. Indexed so
-    // the unsigned transcript webhook can look up the meeting in O(1).
+    // an authenticated transcript webhook can look up the meeting in O(1).
     // Nullable until the provider responds with the id.
     providerBotId: text('provider_bot_id'),
     savedMeetingId: uuid('saved_meeting_id').references(() => savedMeetings.id, {
@@ -170,10 +170,11 @@ export const meetings = pgTable(
   (table) => [
     index('meetings_team_created_idx').on(table.teamId, table.createdAt),
     index('meetings_team_status_idx').on(table.teamId, table.status),
-    // One provider can never reuse a bot id across teams (it's a Recall
-    // UUID); we still scope uniqueness per team to keep blast radius small
-    // if a provider ever changes id semantics. Partial: NULL bot ids are
-    // common during the pre-join window.
+    // Provider bot ids are expected to be globally unique, but the constraint
+    // stays team-scoped to limit blast radius if provider semantics change.
+    // The unauthenticated webhook lookup separately fails closed if the same
+    // Recall bot id ever appears in more than one team. Partial: NULL bot ids
+    // are common during the pre-join window.
     uniqueIndex('meetings_team_bot_unq')
       .on(table.teamId, table.providerBotId)
       .where(sql`${table.providerBotId} IS NOT NULL`),

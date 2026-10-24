@@ -54,7 +54,7 @@ describe('Help route states', () => {
       ),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
 
@@ -233,6 +233,31 @@ describe('Help route states', () => {
       expect(link.className).toContain('focus-visible:ring-fg');
       expect(link.className).toContain('forced-colors:focus-visible:outline-2');
     }
+  });
+
+  it('routes readers to private support, public bugs, security, and contributions', async () => {
+    render(<HelpIndexPage />);
+
+    expect(
+      screen.getByRole('link', { name: 'Email contact@thetimeline.cc' }).getAttribute('href'),
+    ).toBe('mailto:contact@thetimeline.cc');
+    expect(screen.getByRole('link', { name: 'Report a bug' }).getAttribute('href')).toContain(
+      'issues/new?template=bug_report.yml',
+    );
+    expect(screen.getByRole('link', { name: 'Security' }).getAttribute('href')).toContain(
+      '/security/policy',
+    );
+    expect(screen.getByRole('link', { name: 'Contribute' }).getAttribute('href')).toContain(
+      '/blob/main/CONTRIBUTING.md',
+    );
+
+    cleanup();
+    render(await HelpTopicPage({ params: Promise.resolve({ slug: 'documents' }) }));
+
+    expect(screen.getByText(/Public GitHub issues must not contain customer content/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Email support' }).getAttribute('href')).toBe(
+      'mailto:contact@thetimeline.cc',
+    );
   });
 
   it('provides a safe, copyable agent install prompt and public source links', async () => {
@@ -444,7 +469,7 @@ describe('Help child route states', () => {
           .getAttribute('aria-current'),
       ).toBe(pathname === '/help/contact' || pathname === '/help/support' ? 'page' : null);
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard('{Enter}');
       await user.keyboard('[Space]');
@@ -452,4 +477,14 @@ describe('Help child route states', () => {
       expect(reset).toHaveBeenCalledTimes(2);
     },
   );
+
+  it('offers direct email instead of looping back to a failed support route', () => {
+    fakes.pathname = '/help/support';
+
+    render(<SupportError error={new Error('route failed')} reset={vi.fn()} />);
+
+    const supportLink = screen.getByRole('link', { name: 'Get support' });
+    expect(supportLink.getAttribute('href')).toBe('mailto:contact@thetimeline.cc');
+    expect(supportLink.getAttribute('target')).toBeNull();
+  });
 });

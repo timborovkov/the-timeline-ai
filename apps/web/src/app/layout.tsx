@@ -5,10 +5,9 @@ import Script from 'next/script';
 import type { Metadata, Viewport } from 'next';
 import type { ReactNode } from 'react';
 
-import { WebsiteAnalytics } from '@/components/analytics-provider';
+import { PublicAnalyticsBoundary } from '@/components/public-analytics';
 import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/sonner';
-import { PUBLIC_DOCUMENT_REGISTRY } from '@/lib/public-site/documents';
 import { appleWebApp, pwaViewport } from '@/lib/pwa-splash';
 import { SIDEBAR_PREFERENCE_BOOTSTRAP } from '@/lib/sidebar-preference';
 import { getSiteUrl } from '@/lib/site-url';
@@ -53,14 +52,6 @@ const commitMono = localFont({
     },
   ],
 });
-
-const websiteAnalyticsPaths = [
-  ...PUBLIC_DOCUMENT_REGISTRY.all().flatMap((document) =>
-    document.kind === 'machine' ? [] : [document.canonicalPath],
-  ),
-  '/sign-in',
-  '/sign-up',
-];
 
 export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
@@ -151,15 +142,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Script id="sidebar-preference" strategy="beforeInteractive">
           {SIDEBAR_PREFERENCE_BOOTSTRAP}
         </Script>
-        <Script
-          src="https://aromatic-caribou-889.convex.site/api/a/am_7eCe5quSdP7W1Kx7"
-          strategy="afterInteractive"
-        />
         <ThemeProvider>
-          {children}
+          <PublicAnalyticsBoundary>{children}</PublicAnalyticsBoundary>
           <Toaster />
         </ThemeProvider>
-        <WebsiteAnalytics paths={websiteAnalyticsPaths} />
       </body>
     </html>
   );

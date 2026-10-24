@@ -34,8 +34,10 @@ export function getMeetingBotProvider(provider = 'recall'): MeetingBotProvider {
  * `AUTH_URL` (the app's public origin — Auth.js requires it to be the
  * publicly-reachable HTTPS endpoint anyway) plus the fixed route path,
  * so most installs need only one env var. `RECALL_TRANSCRIPT_WEBHOOK_URL`
- * remains an explicit override for setups where the webhook should hit a
- * different origin (proxy, tunnel for local dev, separate ingress).
+ * remains an explicit override for local development and self-managed setups
+ * where the webhook should hit a proxy, tunnel, or separate ingress. Hosted
+ * production env validation pins it to AUTH_URL's HTTPS origin and this exact
+ * route so transcripts cannot be redirected by a stale or unsafe override.
  *
  * The trailing slash on AUTH_URL is normalised so `getAuthUrl() + path`
  * produces the same string regardless of how the operator set it.
@@ -51,9 +53,9 @@ export function resolveTranscriptWebhookUrl(): string {
 export function isMeetingBotConfigured(): boolean {
   const env = getEnv();
   // AUTH_URL is required by the schema, so resolveTranscriptWebhookUrl
-  // always produces a value — the only thing that can be missing is the
-  // Recall API key + status secret.
-  return Boolean(env.RECALL_API_KEY && env.RECALL_STATUS_WEBHOOK_SECRET);
+  // always produces a value. A workspace secret is required because it
+  // authenticates the realtime transcript endpoint as well as status events.
+  return Boolean(env.RECALL_API_KEY && env.RECALL_WORKSPACE_VERIFICATION_SECRET);
 }
 
 export function meetingBotDisplayName(teamName: string | null | undefined): string {

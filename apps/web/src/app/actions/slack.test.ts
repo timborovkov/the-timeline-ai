@@ -99,11 +99,9 @@ describe('Slack server actions', () => {
       'slack',
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'onboarding_step_completed',
       {
-        teamId: TEAM_ID,
-        userId: USER_ID,
         step: 'slack',
         source: 'automatic',
       },

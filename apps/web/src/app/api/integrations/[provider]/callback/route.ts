@@ -101,12 +101,18 @@ export async function GET(
       { provider, externalAccountId: result.externalAccountId, displayName: result.displayName },
       null,
     );
-    trackProductEventBestEffort(session.user.id, 'integration_connected', {
-      teamId: verified.teamId,
-      userId: session.user.id,
-      providerConnectionId: created.id,
-      provider,
-    });
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: verified.teamId },
+      'integration_connected',
+      {
+        provider,
+      },
+    );
+    trackProductEventBestEffort(
+      { kind: 'user', userId: session.user.id, teamId: verified.teamId },
+      'integration_management_action_completed',
+      { action: 'connect', kind: 'native', provider },
+    );
     return NextResponse.redirect(
       appUrl(`/app/me/connections?connected=${provider}&providerConnectionId=${created.id}`),
     );

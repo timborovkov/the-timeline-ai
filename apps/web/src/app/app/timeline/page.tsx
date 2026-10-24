@@ -39,14 +39,11 @@ import {
   timelineMomentLookupPlan,
   toTimelineMomentDto,
 } from '@/lib/timeline-moments';
-import { trackTimelineMomentsViewed } from '@/lib/timeline-observability';
 import {
   applyCachedTimelineMomentPresentations,
   collectTimelinePage,
-  emptyTimelineMomentPresentationCacheStats,
   focusedRelatedEventWindow,
   serializeTimelineEvent,
-  type TimelineMomentPresentationCacheStats,
 } from '@/lib/timeline-page';
 
 export const metadata: Metadata = {
@@ -266,8 +263,6 @@ export default async function TimelinePage({ searchParams }: Props) {
     impactFilters.length > 0;
   const hasFilters = hasPanelFilters;
   const originOptions = timelineOriginOptions(sourceFacets);
-  let presentationCacheStats: TimelineMomentPresentationCacheStats =
-    emptyTimelineMomentPresentationCacheStats();
   const initialMoments =
     mode === 'moments'
       ? (
@@ -290,9 +285,6 @@ export default async function TimelinePage({ searchParams }: Props) {
                   rawEventIds,
                 });
               },
-              onCacheStats: (stats) => {
-                presentationCacheStats = stats;
-              },
             },
           )
         ).map(toTimelineMomentDto)
@@ -303,24 +295,6 @@ export default async function TimelinePage({ searchParams }: Props) {
   const pinnedMomentIds = initialMoments.flatMap((moment) =>
     momentPinState[`timeline_moment:${moment.id}`] ? [moment.id] : [],
   );
-  trackTimelineMomentsViewed({
-    teamId: active.teamId,
-    userId: session.user.id,
-    surface: 'page',
-    diagnostics: timelinePage.diagnostics,
-    presentationCacheStats,
-    filters: {
-      author: authorFilterValue || null,
-      from: sp.from ?? null,
-      to: sp.to ?? null,
-      source: sourceFilterValue || null,
-      origin: originFilterValue || null,
-      impact: impactFilterValue || null,
-      event: focusEventId ?? null,
-      moment: focusMomentId ?? null,
-      cursor: null,
-    },
-  });
   const baseParams = {
     author: authorFilterValue || null,
     from: sp.from ?? null,

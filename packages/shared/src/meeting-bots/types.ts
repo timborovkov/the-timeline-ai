@@ -8,9 +8,9 @@
 export type MeetingPlatform = 'meet' | 'teams' | 'zoom';
 
 export interface JoinMeetingInput {
-  /** Internal meeting id. Round-tripped through provider metadata so
-   *  webhooks can look the meeting up without trusting URLs or names. */
+  /** Internal meeting id used only for local logs and state correlation. */
   meetingId: string;
+  /** Internal team id used by Timeline's scoped persistence layer only. */
   teamId: string;
   meetingUrl: string;
   platform: MeetingPlatform;
@@ -24,9 +24,6 @@ export interface JoinMeetingInput {
 export interface JoinMeetingResult {
   /** Provider's id for the bot — used to correlate later webhooks. */
   botId: string;
-  /** Any provider-specific opaque blob worth persisting on the meeting row.
-   *  Stored under `meetings.metadata.provider_join_result` verbatim. */
-  raw?: Record<string, unknown>;
 }
 
 export interface MeetingBotStatus {
@@ -50,4 +47,18 @@ export interface MeetingBotProvider {
   /** Fetch current status. Used as a fallback when status webhooks are
    *  delayed or lost. */
   getStatus(botId: string): Promise<MeetingBotStatus>;
+}
+
+/**
+ * Return a content-free category suitable for persisted meeting metadata.
+ * Provider response bodies and exception messages may echo meeting URLs or
+ * other customer content, so callers must never persist them verbatim.
+ */
+export function meetingBotErrorCode(error: unknown): string {
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number' && Number.isInteger(status) && status >= 100 && status <= 599) {
+    return `provider_http_${String(status)}`;
+  }
+  if (error instanceof Error && error.name === 'AbortError') return 'provider_timeout';
+  return 'provider_request_failed';
 }

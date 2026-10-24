@@ -9,6 +9,7 @@ const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   db: null as ReturnType<typeof drizzle> | null,
 }));
 
@@ -19,6 +20,9 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({ requireMembership: fakes.requireMembership }),
@@ -111,6 +115,11 @@ describe('/api/team/ingest-webhooks', () => {
       targetType: 'ingest_webhook',
       targetId: body.id,
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'webhook_create', kind: 'custom_ingest_webhook' },
+    );
   });
 
   it('lists only non-secret credential metadata', async () => {
@@ -158,6 +167,11 @@ describe('/api/team/ingest-webhooks', () => {
       .from(ingestWebhookCredentials)
       .where(isNull(ingestWebhookCredentials.revokedAt));
     expect(activeCredentials).toHaveLength(1);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'webhook_rotate', kind: 'custom_ingest_webhook' },
+    );
 
     const softDisable = await itemRoute.PATCH(request({ disabled: true }), {
       params: Promise.resolve({ id: created.id }),
@@ -168,6 +182,11 @@ describe('/api/team/ingest-webhooks', () => {
       .from(ingestWebhookCredentials)
       .where(isNull(ingestWebhookCredentials.revokedAt));
     expect(activeAfterSoftDisable).toHaveLength(0);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'webhook_revoke', kind: 'custom_ingest_webhook' },
+    );
 
     const reenable = await itemRoute.PATCH(request({ disabled: false }), {
       params: Promise.resolve({ id: created.id }),
@@ -188,6 +207,11 @@ describe('/api/team/ingest-webhooks', () => {
       .from(ingestWebhooks)
       .where(eq(ingestWebhooks.id, created.id));
     expect(reenabledWebhook?.disabledAt).toBeNull();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'activate', kind: 'custom_ingest_webhook' },
+    );
 
     const disable = await itemRoute.DELETE(new Request('https://timeline.test'), {
       params: Promise.resolve({ id: created.id }),

@@ -5,6 +5,7 @@ import {
   parseSentrySampleRate,
   scrubSentryBreadcrumbEvent,
   scrubSentryEvent,
+  scrubSentrySpanEvent,
 } from '@/sentry.shared';
 
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
@@ -16,6 +17,7 @@ if (dsn) {
     tracesSampleRate,
     dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend: scrubSentryEvent,
+    beforeSendSpan: scrubSentrySpanEvent,
     beforeBreadcrumb: scrubSentryBreadcrumbEvent,
   });
 }

@@ -77,11 +77,11 @@ describe('VerifyEmail route states', () => {
     expect(screen.getByText('Confirm the email address for your Timeline account.')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 2, name: 'Unable to verify email' })).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain(
-      'Unable to verify emailEmail verification could not be confirmed. If you just opened this link, it may already have succeeded. Check your connection, then try again.Try again',
+      'Unable to verify emailEmail verification could not be confirmed. If you just opened this link, it may already have succeeded. Check your connection, then try again.RetryGet support',
     );
     expect(screen.getByRole('link', { name: 'Open dashboard' }).getAttribute('href')).toBe('/app');
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     await user.keyboard('[Space]');

@@ -53,9 +53,6 @@ vi.mock('@timeline/shared/team-scope', () => ({
     },
   }),
 }));
-vi.mock('@/components/analytics-provider', () => ({
-  AnalyticsProvider: ({ children }: { children: ReactNode }) => children,
-}));
 vi.mock('@/components/app-shell', () => ({
   AppShell: ({
     children,

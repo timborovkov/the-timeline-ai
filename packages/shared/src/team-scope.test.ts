@@ -2083,11 +2083,13 @@ describe('withTeam namespaced port', () => {
       resourceShareIds: [orgShare.id, ownerRepoShare.id],
     });
     expect(ownerIntegration.addedSelectionCount).toBe(2);
+    expect(ownerIntegration.removedSelectionCount).toBe(0);
     const unchangedIntegration = await adminScope.integrations.activateSharedResources({
       providerConnectionId: ownerConnection.id,
       resourceShareIds: [orgShare.id, ownerRepoShare.id],
     });
     expect(unchangedIntegration.addedSelectionCount).toBe(0);
+    expect(unchangedIntegration.removedSelectionCount).toBe(0);
     await expect(adminDecryptIntegrationTokens(db as never, ownerIntegration)).resolves.toEqual({
       access_token: 'owner-token',
     });

@@ -41,7 +41,7 @@ describe('authenticated route states', () => {
 
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).not.toContain('font-mono text-xs uppercase');
-    expect(html).toContain('Try again');
+    expect(html).toContain('Retry</button>');
   });
 
   it('preserves Home context without adding a visible dashboard heading to its error state', () => {
@@ -62,7 +62,7 @@ describe('authenticated route states', () => {
 
     render(<AppError error={new Error('route failed')} reset={reset} />);
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     await user.keyboard('[Space]');
