@@ -837,6 +837,67 @@ describe('Timeline MCP OAuth server', () => {
     ).resolves.toMatchObject({ codeChallenge: CHALLENGE });
   });
 
+  it('rejects non-HTTPS remote redirects, PKCE plain, and extra redirect query parameters', async () => {
+    await expect(
+      registerMcpOAuthClient(db, {
+        client_name: 'Remote HTTP client',
+        redirect_uris: ['http://evil.example/callback'],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_redirect_uri' });
+    await expect(
+      registerMcpOAuthClient(db, {
+        client_name: 'Credentialed client',
+        redirect_uris: ['https://user:pass@client.example/callback'],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_redirect_uri' });
+
+    const loopback = await registerMcpOAuthClient(db, {
+      client_name: 'Loopback client',
+      redirect_uris: ['http://127.0.0.1:8787/callback', 'http://[::1]:8787/callback'],
+    });
+    expect(loopback.redirect_uris).toEqual([
+      'http://127.0.0.1:8787/callback',
+      'http://[::1]:8787/callback',
+    ]);
+
+    const client = await registerMcpOAuthClient(db, {
+      client_name: 'Exact redirect client',
+      redirect_uris: [REDIRECT_URI],
+    });
+    await expect(
+      validateMcpAuthorizationRequest(
+        db,
+        {
+          responseType: 'code',
+          clientId: client.client_id,
+          redirectUri: `${REDIRECT_URI}?extra=1`,
+          scope: 'read',
+          state: 'state',
+          codeChallenge: CHALLENGE,
+          codeChallengeMethod: 'S256',
+          resource: RESOURCE,
+        },
+        RESOURCE,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_redirect_uri' });
+    await expect(
+      validateMcpAuthorizationRequest(
+        db,
+        {
+          responseType: 'code',
+          clientId: client.client_id,
+          redirectUri: REDIRECT_URI,
+          scope: 'read',
+          state: 'state',
+          codeChallenge: CHALLENGE,
+          codeChallengeMethod: 'plain',
+          resource: RESOURCE,
+        },
+        RESOURCE,
+      ),
+    ).rejects.toMatchObject({ code: 'invalid_request' });
+  });
+
   it('rejects unsafe or mismatched client metadata and incomplete scope sets', async () => {
     expect(() => parseMcpOAuthScopes('agent:ask')).toThrow(McpOAuthError);
     vi.stubEnv('NODE_ENV', 'production');

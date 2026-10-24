@@ -26,6 +26,11 @@ vi.mock('@timeline/shared/mcp-server', () => {
     McpOAuthError,
     MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
     validateMcpAuthorizationRequest: fakes.validate,
+    isLoopbackHostname: (hostname: string) =>
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '::1' ||
+      hostname === '[::1]',
   };
 });
 vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));

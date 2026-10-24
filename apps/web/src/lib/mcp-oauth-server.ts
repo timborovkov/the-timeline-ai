@@ -76,7 +76,8 @@ export function oauthJsonResponse(
 
 export function oauthErrorResponse(error: unknown, fallback = 'OAuth request failed'): Response {
   if (error instanceof McpOAuthError) {
-    return oauthJsonResponse({ error: error.code, error_description: error.message }, 400);
+    const status = error.code === 'invalid_client' ? 401 : 400;
+    return oauthJsonResponse({ error: error.code, error_description: error.message }, status);
   }
   return oauthJsonResponse({ error: 'server_error', error_description: fallback }, 500);
 }

@@ -1,4 +1,5 @@
 import {
+  isLoopbackHostname,
   McpOAuthError,
   type McpOAuthScope,
   validateMcpAuthorizationRequest,
@@ -63,15 +64,6 @@ function urlHostname(value: string): string | null {
   } catch {
     return null;
   }
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  return (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '[::1]' ||
-    hostname === '::1'
-  );
 }
 
 function HiddenAuthorizationFields({

@@ -8,6 +8,7 @@ export {
   MCP_OAUTH_DEFAULT_SCOPE,
   MCP_OAUTH_SCOPES,
   MCP_TEAM_ACTOR_USER_ID,
+  isLoopbackHostname,
   normalizeMcpResource,
   parseMcpOAuthScopes,
   type McpAuthPrincipal,

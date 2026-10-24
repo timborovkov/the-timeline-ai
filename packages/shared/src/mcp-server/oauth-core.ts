@@ -117,6 +117,15 @@ export function mintSecret(
   };
 }
 
+export function isLoopbackHostname(hostname: string): boolean {
+  return (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '::1' ||
+    hostname === '[::1]'
+  );
+}
+
 function normalizedUrl(raw: string, kind: 'redirect' | 'resource' | 'metadata'): URL {
   let url: URL;
   try {
@@ -138,9 +147,10 @@ function normalizedUrl(raw: string, kind: 'redirect' | 'resource' | 'metadata'):
 
 export function normalizeRedirectUri(raw: string): string {
   const url = normalizedUrl(raw, 'redirect');
-  const loopback =
-    url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+  if (
+    url.protocol !== 'https:' &&
+    !(url.protocol === 'http:' && isLoopbackHostname(url.hostname))
+  ) {
     throw new McpOAuthError(
       'invalid_redirect_uri',
       'Redirect URIs must use HTTPS, except loopback HTTP callbacks',
@@ -152,9 +162,10 @@ export function normalizeRedirectUri(raw: string): string {
 export function normalizeOptionalMetadataUri(raw: string | undefined): string | null {
   if (!raw) return null;
   const url = normalizedUrl(raw, 'metadata');
-  const loopback =
-    url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) {
+  if (
+    url.protocol !== 'https:' &&
+    !(url.protocol === 'http:' && isLoopbackHostname(url.hostname))
+  ) {
     throw new McpOAuthError('invalid_client_metadata', 'Client metadata URLs must use HTTPS');
   }
   return url.toString();

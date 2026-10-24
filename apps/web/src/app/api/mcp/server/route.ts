@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 const MCP_RESOURCE_URL = appUrl('/api/mcp/server').toString();
 const MCP_RESOURCE_METADATA_URL = mcpServer.timelineMcpResourceMetadataUrl(MCP_RESOURCE_URL);
 const canonicalHostname = new URL(MCP_RESOURCE_URL).hostname;
-const localHostnames = ['localhost', '127.0.0.1', '[::1]'];
+const localHostnames = ['localhost', '127.0.0.1', '[::1]', '::1'];
 const allowedHosts = [
   canonicalHostname,
   ...(process.env.NODE_ENV === 'production' ? [] : localHostnames),

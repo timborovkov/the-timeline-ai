@@ -182,6 +182,22 @@ describe('Timeline OAuth protocol routes', () => {
     );
     expect(authenticatedResponse.status).toBe(401);
     await expect(authenticatedResponse.json()).resolves.toMatchObject({ error: 'invalid_client' });
+
+    const secretResponse = await token(
+      formRequest(
+        '/oauth/token',
+        new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: 'tlc_client',
+          client_secret: 'not-accepted',
+          refresh_token: 'tlr_old',
+          resource: 'https://timeline.example/api/mcp/server',
+        }),
+      ),
+    );
+    expect(secretResponse.status).toBe(401);
+    await expect(secretResponse.json()).resolves.toMatchObject({ error: 'invalid_client' });
+    expect(fakes.rotate).toHaveBeenCalledTimes(1);
   });
 
   it('returns protocol errors without leaking internals or accepting ambiguous parameters', async () => {
