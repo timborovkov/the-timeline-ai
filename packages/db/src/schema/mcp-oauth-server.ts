@@ -14,6 +14,16 @@ import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
 /**
+ * Outbound MCP OAuth authorization-server tables.
+ *
+ * `mcp_outbound_oauth_*` and the hashed access/refresh tokens exist only while
+ * Timeline is the OAuth *server* for MCP hosts (ChatGPT, Claude, Codex, and
+ * other DCR clients). Tokens are stored as SHA-256 digests and cannot be
+ * recovered. Do not reuse this schema for native integrations: HubSpot, Slack,
+ * Attio, Pipedrive, and similar provider tokens are OAuth *client* credentials
+ * and need a separate encrypted reversible store, per-workspace installs, and
+ * uninstall webhooks.
+ *
  * OAuth public clients registered by ChatGPT, Claude, Codex, and other MCP
  * hosts. Timeline supports public clients with PKCE, so client secrets are
  * deliberately not stored or issued.

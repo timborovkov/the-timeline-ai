@@ -47,7 +47,7 @@ Then start a new task. If the skill still does not appear, restart Codex and sta
 
 ## Connect Timeline MCP
 
-For hosted Timeline, either plugin configures the remote URL automatically. A compatible OAuth-capable client can also connect directly without a plugin:
+For hosted Timeline, either plugin configures the remote URL automatically. Any MCP host that supports OAuth discovery and dynamic client registration can also connect directly to `https://thetimeline.cc/api/mcp/server` without a directory listing or plugin, once production `/.well-known/oauth-authorization-server` returns 200:
 
 ```bash
 codex mcp add timeline --url "https://thetimeline.cc/api/mcp/server"

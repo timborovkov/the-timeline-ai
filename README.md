@@ -49,6 +49,8 @@ and Timeline skill. Anthropic publication is separate too. Treat deployment,
 submission, review, approval, and publication as independently verified release states.
 The field-by-field listing copy, reviewer cases, provider checklists, and evidence
 ledger live in [docs/marketplace-submissions.md](docs/marketplace-submissions.md).
+That runbook covers OpenAI and Anthropic directories only. HubSpot, Slack, Attio,
+and Pipedrive app listings are separate future work.
 
 ## Quick start
 

@@ -1,15 +1,38 @@
-# Marketplace submissions
+# OpenAI and Anthropic marketplace submissions
 
 Last updated: 2026-10-24
 
 This is the operator runbook and evidence ledger for publishing The Timeline in
-OpenAI's universal Plugins Directory and Anthropic's software directories. It
-records repository readiness, production deployment, provider submission,
-review, approval, and visible publication as separate states.
+**OpenAI's universal Plugins Directory** and **Anthropic's software
+directories** (Claude Code marketplace / plugin directory and Claude.ai
+connectors). It records repository readiness, production deployment, provider
+submission, review, approval, and visible publication as separate states.
+
+Do not create an OpenAI draft, Anthropic directory submission, or public Claude
+connector listing until this revision is deployed and the post-deploy checks
+pass. That includes
+`GET https://thetimeline.cc/.well-known/oauth-authorization-server` returning
+HTTP 200 in production. A 404 or a legacy MCP descriptor means the origin is
+not ready.
 
 Never put reviewer passwords, OAuth tokens, domain-verification tokens, or
 provider recovery codes in this file, a pull request, or an issue. Enter
 reviewer credentials only in the provider portal's protected reviewer field.
+
+## Not covered
+
+HubSpot, Slack, Attio, and Pipedrive app listings treat Timeline as an OAuth
+**client** of those providers. They are separate future work and are not part
+of this OpenAI/Anthropic MCP-server submission. Each listing has its own
+portal requirements. For example:
+
+- HubSpot needs a shared-data/scopes table, a setup guide, and uninstall docs
+- Slack needs 10 active installs and test credentials
+- Pipedrive needs a pricing page
+
+Do not mix those CRM/chat app-store listings with the OpenAI or Anthropic
+submissions, and do not store their provider tokens in the
+`mcp_outbound_oauth_*` tables used when Timeline is the MCP OAuth server.
 
 ## Authoritative provider documentation
 
@@ -90,11 +113,19 @@ Starter prompts:
 
 ## Production gate before either provider submission
 
+Nothing is submitted to OpenAI or Anthropic, and no public connector is saved,
+until this release is deployed and every check below passes. The hard discovery
+signal is `GET https://thetimeline.cc/.well-known/oauth-authorization-server`
+returning HTTP 200 with PKCE `S256` and scopes `read` plus `agent:ask`.
+Production still returned 404 for that document on 2026-08-27.
+
 1. Merge and deploy the release containing migration 0073 and the matching web
    and worker revisions.
 2. Confirm the following public endpoints return the new production behavior:
    - `GET https://thetimeline.cc/.well-known/oauth-protected-resource/api/mcp/server`
-   - `GET https://thetimeline.cc/.well-known/oauth-authorization-server`
+     returns 200
+   - `GET https://thetimeline.cc/.well-known/oauth-authorization-server` returns
+     200
    - unauthenticated `POST https://thetimeline.cc/api/mcp/server` returns `401`
      with a `WWW-Authenticate` resource-metadata challenge
    - current-protocol `initialize`, `tools/list`, and an authorized read tool
@@ -175,6 +206,39 @@ Plugin validators and isolated Codex/Claude installs were not re-run in this
 refresh because `plugins/timeline` and the marketplace manifests did not change.
 Production still serves the legacy MCP implementation; the 2026-08-27 production
 and portal gates remain open.
+
+## Generic MCP clients
+
+A directory listing is not required to use Timeline over MCP. Any MCP host that
+supports OAuth with protected-resource / authorization-server discovery and
+dynamic client registration (DCR) can connect to the production Streamable HTTP
+URL without appearing in OpenAI's Plugins Directory or Anthropic's software
+directories:
+
+`https://thetimeline.cc/api/mcp/server`
+
+Compatible hosts fetch RFC 9728 and RFC 8414 metadata, register a public client
+(`token_endpoint_auth_method=none`), and open Timeline's browser consent flow.
+Leave client ID and client secret empty unless the host cannot do DCR or CIMD.
+Static `tla_` bearer keys remain a manual/developer path; do not put them in
+plugin manifests or shared configuration.
+
+This generic path is still blocked on the production gate above. Until
+`/.well-known/oauth-authorization-server` returns 200 on `thetimeline.cc`,
+hosts cannot complete OAuth against production.
+
+### Hosts verified so far
+
+| Host | What was verified | Date | Production OAuth |
+| --- | --- | --- | --- |
+| Local Timeline origin | Discovery documents 200, unauthenticated MCP `401` challenge, DCR, browser consent, grant revoke UI (Claude-shaped public client, including loopback HTTP) | 2026-10-24 | Not applicable |
+| Codex CLI | Isolated repository marketplace add/install of `timeline@timeline` 0.2.0 | 2026-08-27 | Not verified; plugin install is not live OAuth |
+| Claude Code | Isolated repository marketplace add/install; one skill plus hosted MCP component | 2026-08-27 | Not verified; plugin install is not live OAuth |
+| ChatGPT (With MCP / Developer Mode) | Portal identity-verification gate observed; no connection | 2026-08-27 | Not verified |
+| Claude.ai custom connector | Personal **Add custom connector** form observed; connector not saved | 2026-08-27 | Not verified |
+
+Re-test ChatGPT and Claude against the deployed production origin before
+relaxing `state` or `resource` checks for less strict hosts.
 
 ## Local release checks
 
@@ -442,12 +506,18 @@ identifiers, or private Timeline content.
 
 ## Final publication rule
 
-Do not mark either provider available until all of these are independently
-verified:
+Do not mark either OpenAI or Anthropic directory listing available until all of
+these are independently verified:
 
 1. the reviewed repository commit is merged;
 2. the matching database, web, and worker revisions are deployed;
-3. production OAuth/MCP smoke tests pass from the provider host;
+3. production OAuth/MCP smoke tests pass from the provider host, including
+   `GET https://thetimeline.cc/.well-known/oauth-authorization-server`
+   returning HTTP 200;
 4. the provider submission was accepted;
 5. the approved version was explicitly published where required; and
 6. the listing is visibly discoverable in the intended directory.
+
+Generic MCP hosts may connect without a directory listing after steps 1–3.
+HubSpot, Slack, Attio, and Pipedrive app listings are not covered by this
+rule; they remain separate future work.

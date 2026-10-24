@@ -392,6 +392,23 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       OAuth access, static-key team visibility, provider-side retention/copies,
       and revocation wording; verify public privacy/terms/support links, staffed
       support and security channels, and reviewer accounts with sample data.
+- [ ] Write an ADR or expand the `mcp_outbound_oauth_*` schema comment stating
+      that those tables and their hashed tokens are only for Timeline acting as
+      the MCP OAuth *server*. Provider tokens (HubSpot, Slack, Attio, Pipedrive,
+      and other native integrations) need a separate encrypted, reversible store
+      with per-workspace installs and uninstall webhooks; do not reuse the
+      hashed MCP grant/token tables for them.
+- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `agent:ask`). Do not add CRM or
+      other provider-app scopes to the outbound MCP authorization server.
+- [ ] After testing with real ChatGPT and Claude against production, consider
+      leniency on OAuth `state` and `resource` for less strict hosts. Do not
+      loosen those checks from local evidence alone.
+- [ ] Clean up OAuth clients that registered through DCR but never received a
+      grant, so unused `mcp_outbound_oauth_clients` rows do not accumulate.
+- [ ] Before any HubSpot, Slack, Attio, or Pipedrive app listing, make the
+      public privacy and terms pages cover CRM write-back, subprocessors,
+      retention, and deletion. Those listings are separate from the
+      OpenAI/Anthropic MCP-server runbook in `docs/marketplace-submissions.md`.
 - [x] Let reviewers revise unresolved approval proposals with plain-language
       feedback while preserving their operation, target, evidence, source
       records, and bounded revision history. Route chat corrections between
