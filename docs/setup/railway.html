@@ -107,6 +107,13 @@
         these services.
       </p>
       <p>
+        Node.js is pinned to <code>24.22.1</code> in the root
+        <code>package.json</code> (<code>engines.node</code>) and <code>.nvmrc</code>. Railpack
+        reads that engine pin; remove any conflicting <code>RAILPACK_NODE_VERSION</code> override.
+        Rebuild and redeploy each app service to update an existing runtime. The portable
+        Dockerfiles pin the same Node.js release.
+      </p>
+      <p>
         The <code>document-extract-orchestrator</code> service is the credential-thin
         document-extract consumer (ADR 0013). Set <code>WORKER_MODE=document-extract</code>,
         <code>DAYTONA_API_KEY</code>, <code>OPENROUTER_API_KEY</code>, <code>DATABASE_URL</code>,
