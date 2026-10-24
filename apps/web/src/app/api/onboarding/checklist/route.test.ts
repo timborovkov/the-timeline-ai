@@ -113,12 +113,11 @@ describe('/api/onboarding/checklist', () => {
 
     expect((await PATCH(patch({ action: 'complete', key: 'telegram' }))).status).toBe(200);
     expect(fakes.markStepComplete).toHaveBeenCalledWith('telegram');
-    expect(fakes.track).toHaveBeenCalledWith(USER_ID, 'onboarding_step_completed', {
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      step: 'telegram',
-      source: 'manual',
-    });
+    expect(fakes.track).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'onboarding_step_completed',
+      { step: 'telegram', source: 'manual' },
+    );
     expect(fakes.deleteCacheKey).toHaveBeenCalledWith(`onboarding:${TEAM_ID}:${USER_ID}`);
   });
 

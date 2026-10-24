@@ -12,7 +12,12 @@ const fakes = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => {
-  return { ACTIVE_TEAM_COOKIE: 'tl_active_team', verifyMembership: fakes.fakeVerifyMembership };
+  return {
+    ACTIVE_TEAM_COOKIE: 'tl_active_team',
+    activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+    serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+    verifyMembership: fakes.fakeVerifyMembership,
+  };
 });
 vi.mock('next/headers', () => ({ cookies: fakes.fakeCookies }));
 
@@ -44,7 +49,7 @@ describe('team switch route', () => {
 
     expect(fakes.cookieSet).toHaveBeenCalledWith(
       ACTIVE_TEAM_COOKIE,
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
     expect(response.headers.get('location')).toBe('https://thetimeline.cc/app');

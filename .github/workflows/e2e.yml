@@ -42,7 +42,7 @@ jobs:
       - name: Enable pnpm via corepack
         run: |
           corepack enable
-          corepack prepare pnpm@9.12.0 --activate
+          corepack prepare pnpm@11.8.0 --activate
 
       - name: Configure pnpm store cache
         uses: actions/cache@v6
@@ -112,7 +112,7 @@ jobs:
       - name: Enable pnpm via corepack
         run: |
           corepack enable
-          corepack prepare pnpm@9.12.0 --activate
+          corepack prepare pnpm@11.8.0 --activate
 
       - name: Configure pnpm store cache
         uses: actions/cache@v6

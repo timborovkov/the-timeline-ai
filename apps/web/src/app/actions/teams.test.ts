@@ -9,6 +9,7 @@ import {
   renameTeamAction,
   resendInviteAction,
   revokeInviteAction,
+  updateDigestPreferenceAction,
   updateInboundEmailWhitelistAction,
   updateTeamTimezoneAction,
 } from '@/app/actions/teams';
@@ -27,6 +28,7 @@ const fakes = vi.hoisted(() => ({
   fakeTransaction: vi.fn(),
   fakeDbUpdate: vi.fn(),
   fakeDbInsert: vi.fn(),
+  fakeDbSelect: vi.fn(),
   fakeSendMessage: vi.fn(),
   fakeAssertNotLastOwner: vi.fn(),
   fakeAdminRecordConnectionAttention: vi.fn(),
@@ -34,6 +36,7 @@ const fakes = vi.hoisted(() => ({
   fakeGetCalendarSettings: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeCookieSet: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeRedirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
@@ -42,13 +45,16 @@ const fakes = vi.hoisted(() => ({
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
 vi.mock('@/lib/active-team', () => ({
   ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+  activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
   resolveActiveTeam: fakes.fakeResolveActiveTeam,
+  serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
 }));
 vi.mock('@/lib/db', () => ({
   db: {
     transaction: fakes.fakeTransaction,
     update: fakes.fakeDbUpdate,
     insert: fakes.fakeDbInsert,
+    select: fakes.fakeDbSelect,
   },
 }));
 vi.mock('@timeline/shared/billing', () => ({
@@ -57,6 +63,9 @@ vi.mock('@timeline/shared/billing', () => ({
   assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
   releaseFreeGrantIfOwnerLeaves: vi.fn().mockResolvedValue(undefined),
   isBillingAdmissionError: () => false,
+}));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
 }));
 vi.mock('@timeline/shared/integrations', () => ({
   adminRecordConnectionAttention: fakes.fakeAdminRecordConnectionAttention,
@@ -168,11 +177,15 @@ function selectChain(rows: unknown[]) {
   };
 }
 
-function mutationChain(records: unknown[]) {
+function mutationChain(records: unknown[], returnedRows: unknown[] = [{ id: TEAM_ID }]) {
   return {
     set: vi.fn((values: unknown) => {
       records.push(values);
-      return { where: vi.fn(() => Promise.resolve()) };
+      return {
+        where: vi.fn(() => ({
+          returning: vi.fn().mockResolvedValue(returnedRows),
+        })),
+      };
     }),
     values: vi.fn((values: unknown) => {
       records.push(values);
@@ -185,16 +198,19 @@ function mutationChain(records: unknown[]) {
   };
 }
 
-function makeTx(selectRows: unknown[][]) {
+function makeTx(selectRows: unknown[][], updateReturnRows: unknown[][] = []) {
   const updates: unknown[] = [];
   const inserts: unknown[] = [];
   const deletes: unknown[] = [];
   let selectIndex = 0;
+  let updateIndex = 0;
   return {
     tx: {
       execute: vi.fn(() => Promise.resolve()),
       select: vi.fn(() => selectChain(selectRows[selectIndex++] ?? [])),
-      update: vi.fn(() => mutationChain(updates)),
+      update: vi.fn(() =>
+        mutationChain(updates, updateReturnRows[updateIndex++] ?? [{ id: TEAM_ID }]),
+      ),
       insert: vi.fn(() => mutationChain(inserts)),
       delete: vi.fn((table: unknown) => {
         deletes.push(table);
@@ -226,7 +242,7 @@ beforeEach(() => {
   fakes.fakeAssertNotLastOwner.mockResolvedValue(undefined);
   fakes.fakeAdminRecordConnectionAttention.mockResolvedValue(undefined);
   fakes.fakeGetCalendarSettings.mockResolvedValue({
-    defaultTimezone: 'Europe/Tallinn',
+    defaultTimezone: 'Europe/Helsinki',
   });
   fakes.fakeUpsertCalendarSettings.mockResolvedValue(undefined);
   fakes.fakeTransaction.mockImplementation((fn: (tx: unknown) => unknown) =>
@@ -234,6 +250,7 @@ beforeEach(() => {
   );
   okUpdateChain();
   okInsertChain();
+  fakes.fakeDbSelect.mockReturnValue(selectChain([]));
 });
 
 describe('createTeamAction', () => {
@@ -258,7 +275,7 @@ describe('createTeamAction', () => {
     expect(fakes.fakeTransaction).toHaveBeenCalledOnce();
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
@@ -282,7 +299,11 @@ describe('renameTeamAction', () => {
       Promise.resolve(
         fn({
           update: vi.fn(() => ({
-            set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+            set: vi.fn(() => ({
+              where: vi.fn(() => ({
+                returning: vi.fn().mockResolvedValue([{ id: TEAM_ID }]),
+              })),
+            })),
           })),
           insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
         }),
@@ -296,6 +317,35 @@ describe('renameTeamAction', () => {
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+  });
+
+  it('does not audit, track, or revalidate an unchanged name', async () => {
+    const insert = vi.fn();
+    fakes.fakeTransaction.mockImplementation((fn: (tx: unknown) => unknown) =>
+      Promise.resolve(
+        fn({
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({
+              where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([]) })),
+            })),
+          })),
+          insert,
+        }),
+      ),
+    );
+
+    await expect(
+      renameTeamAction({}, form({ teamId: TEAM_ID, name: 'New name' })),
+    ).resolves.toEqual({ ok: true });
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
 
@@ -395,6 +445,57 @@ describe('updateInboundEmailWhitelistAction', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+  });
+
+  it('does not audit, track, or revalidate an unchanged whitelist', async () => {
+    const tx = makeTx([], [[]]);
+    mockTransactionWithTx(tx.tx);
+
+    await expect(
+      updateInboundEmailWhitelistAction(
+        {},
+        form({ enabled: 'on', senders: 'vendor@example.test' }),
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(tx.inserts).toEqual([]);
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateDigestPreferenceAction', () => {
+  it('treats the implicit enabled default as an unchanged preference', async () => {
+    fakes.fakeDbSelect.mockReturnValueOnce(selectChain([]));
+
+    await expect(
+      updateDigestPreferenceAction({}, form({ dailyDigestEnabled: 'on' })),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeDbInsert).not.toHaveBeenCalled();
+    expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('tracks an explicit disable when no preference row exists', async () => {
+    fakes.fakeDbSelect.mockReturnValueOnce(selectChain([]));
+
+    await expect(updateDigestPreferenceAction({}, form({}))).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeDbInsert).toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
 });
 
@@ -473,6 +574,25 @@ describe('updateTeamTimezoneAction', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/meetings');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+  });
+
+  it('does not write, track, or revalidate an unchanged timezone', async () => {
+    fakes.fakeGetCalendarSettings.mockResolvedValueOnce({
+      defaultTimezone: 'Europe/Tallinn',
+    });
+
+    await expect(
+      updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
   it('reports write failures without masking them as permission failures', async () => {
@@ -559,6 +679,11 @@ describe('inviteMemberAction', () => {
       }),
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'invite_create' },
+    );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
 
@@ -583,6 +708,11 @@ describe('inviteMemberAction', () => {
       sendStatus: 'failed',
       sendError: 'postmark down',
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'invite_create' },
+    );
   });
 
   it('does not mark an invite sent when messaging dedupe skips provider delivery', async () => {
@@ -754,6 +884,8 @@ describe('changeMemberRoleAction', () => {
 
     expect(missing.updates).toEqual([]);
     expect(noChange.updates).toEqual([]);
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
   it('protects the last owner before demotion', async () => {
@@ -793,6 +925,11 @@ describe('changeMemberRoleAction', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'team_management_action_completed',
+      { action: 'member_role_change' },
+    );
   });
 });
 

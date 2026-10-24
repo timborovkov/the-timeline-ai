@@ -1381,8 +1381,9 @@ export async function flushDeferredEmailEnrichment(
         continue;
       }
       const documents = resolved.documents;
+      const pending = pendingEmailDocumentRecords(row.sourceMetadata);
+      let attachmentRecoveryIncomplete = !documents && pending.length > 0;
       if (documents) {
-        const pending = pendingEmailDocumentRecords(row.sourceMetadata);
         const updated: AttachmentRecordForDocument[] = [];
         for (const record of pending) {
           let body: Buffer | undefined;
@@ -1394,9 +1395,14 @@ export async function flushDeferredEmailEnrichment(
                 { err, key: record.key, eventId: row.id },
                 'deferred email attachment read failed',
               );
+              attachmentRecoveryIncomplete = true;
+              continue;
             }
           }
-          if (!body) continue;
+          if (!body) {
+            if (record.key) attachmentRecoveryIncomplete = true;
+            continue;
+          }
           try {
             const created = await createEmailDocumentAttachment(db, documents, {
               teamId: row.teamId,
@@ -1419,12 +1425,24 @@ export async function flushDeferredEmailEnrichment(
             });
           } catch (err) {
             log.error({ err, eventId: row.id }, 'deferred email document attachment failed');
-            updated.push({ ...record, document_failed: true });
+            attachmentRecoveryIncomplete = true;
           }
         }
         if (updated.length > 0) {
           await patchEmailParentAttachments(db, row.id, updated);
         }
+      }
+      if (attachmentRecoveryIncomplete) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
       }
       const clear = JSON.stringify({
         [BILLING_ENRICHMENT_DEFERRED]: false,

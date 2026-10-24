@@ -22,14 +22,11 @@ import {
   timelineMomentLookupPlan,
   toTimelineMomentDto,
 } from '@/lib/timeline-moments';
-import { trackTimelineMomentsViewed } from '@/lib/timeline-observability';
 import {
   applyCachedTimelineMomentPresentations,
   collectTimelinePage,
-  emptyTimelineMomentPresentationCacheStats,
   focusedRelatedEventWindow,
   serializeTimelineEvent,
-  type TimelineMomentPresentationCacheStats,
 } from '@/lib/timeline-page';
 
 export const runtime = 'nodejs';
@@ -202,8 +199,6 @@ export async function GET(req: Request): Promise<Response> {
       }),
     ]);
     const authorMap = new Map(authorRows.map((row) => [row.id, row] as const));
-    let presentationCacheStats: TimelineMomentPresentationCacheStats =
-      emptyTimelineMomentPresentationCacheStats();
     const moments =
       mode === 'moments'
         ? (
@@ -226,9 +221,6 @@ export async function GET(req: Request): Promise<Response> {
                     rawEventIds,
                   });
                 },
-                onCacheStats: (stats) => {
-                  presentationCacheStats = stats;
-                },
               },
             )
           ).map(toTimelineMomentDto)
@@ -249,10 +241,6 @@ export async function GET(req: Request): Promise<Response> {
           ? Object.fromEntries(result.items.map((eventItem) => [eventItem.id, eventItem]))
           : {},
       ...(includeMomentDiagnostics ? { diagnostics: result.diagnostics } : {}),
-      __timelineObservability: {
-        diagnostics: result.diagnostics,
-        presentationCacheStats,
-      },
       items: result.items,
       nextCursor: result.nextCursor,
       authors: Object.fromEntries(authorRows.map((row) => [row.id, row])),
@@ -261,28 +249,9 @@ export async function GET(req: Request): Promise<Response> {
       capturedFiles,
     };
   });
-  const { __timelineObservability, ...responsePage } = page;
-  trackTimelineMomentsViewed({
-    teamId: active.teamId,
-    userId: session.user.id,
-    surface: 'api',
-    diagnostics: __timelineObservability.diagnostics,
-    presentationCacheStats: __timelineObservability.presentationCacheStats,
-    filters: {
-      author: authorUserIds.length > 0 ? authorUserIds.join(',') : null,
-      from: url.searchParams.get('from'),
-      to: url.searchParams.get('to'),
-      source: sourceValue || null,
-      origin: originValue || null,
-      impact: impactValue || null,
-      event: focusEventId,
-      moment: focusMomentId,
-      cursor,
-    },
-  });
 
   return Response.json({
-    ...responsePage,
-    audioUrls: await signAudio(responsePage.items),
+    ...page,
+    audioUrls: await signAudio(page.items),
   });
 }

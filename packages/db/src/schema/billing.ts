@@ -114,8 +114,10 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   polarEventModifiedAt: timestamp('polar_event_modified_at', { withTimezone: true }),
   shadowBilling: boolean('shadow_billing').notNull().default(true),
   /**
-   * `standard` bills through Polar. `comped` skips new Polar charges and
-   * revokes the current subscription.
+   * `standard` bills through Polar. `comped` skips new Polar charges,
+   * closes outstanding Enterprise checkouts before the comp is saved, and
+   * revokes the current subscription. A subscription that arrives afterward
+   * is revoked and does not replace the comp.
    */
   arrangement: text('arrangement').$type<'standard' | 'comped'>().notNull().default('standard'),
   compReason: text('comp_reason'),

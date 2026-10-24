@@ -203,6 +203,93 @@ describe('billing operator store', () => {
     expect(account?.polarSubscriptionId).toBe('sub_stuck');
   });
 
+  it('closes an expired Enterprise checkout before saving a comp', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, spend_cap_cents, shadow_billing, pending_enterprise_terms
+      ) VALUES (
+        '${TEAM_ID}', 'free', 'free', 0, true,
+        '{"byCheckoutId":{"chk_open":{"platformFeeCents":250000,"spendCapCents":80000}}}'::jsonb
+      );
+    `);
+    const expired: string[] = [];
+    await assignCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'team',
+      spendCapCents: 2_500,
+      reason: 'internal comp',
+      expiresAt: null,
+      expireCheckout: (checkoutId) => {
+        expired.push(checkoutId);
+        return Promise.resolve('expired');
+      },
+    });
+    expect(expired).toEqual(['chk_open']);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.arrangement).toBe('comped');
+    expect(account?.planId).toBe('team');
+    expect(account?.pendingEnterpriseTerms).toBeNull();
+  });
+
+  it('refuses a comp while an Enterprise checkout is still payable or already paid', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, spend_cap_cents, shadow_billing, pending_enterprise_terms
+      ) VALUES (
+        '${TEAM_ID}', 'free', 'free', 0, true,
+        '{"byCheckoutId":{"chk_open":{"platformFeeCents":250000,"spendCapCents":80000}}}'::jsonb
+      );
+    `);
+    await expect(
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 2_500,
+        reason: 'internal comp',
+        expiresAt: null,
+      }),
+    ).rejects.toThrow(/Configure Polar/);
+    await expect(
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 2_500,
+        reason: 'internal comp',
+        expiresAt: null,
+        expireCheckout: () => Promise.resolve('still_open'),
+      }),
+    ).rejects.toThrow(/still payable/);
+    await expect(
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 2_500,
+        reason: 'internal comp',
+        expiresAt: null,
+        expireCheckout: () => Promise.resolve('already_paid'),
+      }),
+    ).rejects.toThrow(/already started payment/);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.arrangement).toBe('standard');
+    expect(account?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_open: { platformFeeCents: 250000, spendCapCents: 80000 } },
+    });
+  });
+
   it('restores a spend-cap freeze and leaves past_due paused', async () => {
     await pg.exec(`
       INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, spend_cap_cents, shadow_billing)

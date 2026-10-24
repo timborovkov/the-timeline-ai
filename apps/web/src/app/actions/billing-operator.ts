@@ -111,6 +111,7 @@ export async function assignCompedPlanAction(formData: FormData): Promise<void> 
         ? {
             cancelPolarSubscription: (subscriptionId: string) =>
               provider.revokeSubscription(subscriptionId),
+            expireCheckout: (checkoutId: string) => provider.expireCheckout(checkoutId),
           }
         : {}),
     });

@@ -39,6 +39,12 @@ After **any** code, configuration, or documentation change:
    - Run `pnpm test:task-category-eval:live` with
      `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
      taxonomy, classifier packet, prompt, schema, or pinned model changes.
+   - Run `pnpm eval:transcription-quality:live -- --manifest=/path/to/manifest.json
+     --out=/path/to/new-evidence.json --candidate=<model-id>` before changing the
+     non-meeting transcription pin. The approved corpus must contain no customer
+     data and satisfy the 24-language quality gate documented in
+     [docs/research/transcription-quality-eval.md](docs/research/transcription-quality-eval.md).
+     A live registry entry or single-language smoke test is not promotion evidence.
    - Run `pnpm test:reconciliation-eval` when a change touches reconciliation
      schema, source refs, evidence associations, visibility floors, authority
      policy, or reconciliation output planning. Run
@@ -125,6 +131,13 @@ Treat this file as an operating contract for agents, not a loose README.
 
 ## Project-specific guardrails
 
+- **Privacy and trust changes follow the operating standard.** Before changing
+  an AI model or route, provider, outbound data flow, telemetry, cookie, storage,
+  permission, human-access path, retention/deletion behavior, or public
+  security/legal claim, read and apply
+  [docs/security-privacy-trust.md](docs/security-privacy-trust.md). Keep provider
+  evidence and open gaps current; a public claim may be no stronger than the
+  weakest evidenced code, deployment, account, or contract state.
 - **Team isolation is sacred.** Every Postgres query goes through
   `withTeam(db, teamId, userId)` in `packages/shared`. Use the returned
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
@@ -173,7 +186,8 @@ Treat this file as an operating contract for agents, not a loose README.
   boards, documents, meetings, Ask history, pending proposals, digest history, and the
   deterministic fictional Northstar evidence corpus with encrypted fake integration credentials after
   migrations. `pnpm demo:reset` is `pnpm dev:wipe && pnpm demo:seed`. `pnpm demo:verify` fails closed on all eight login identities, active memberships,
-  password usability, downloaded document-byte checksums, scoped Qdrant
+  password usability, current legal-version snapshots with matching immutable acceptance evidence,
+  downloaded document-byte checksums, scoped Qdrant
   discoverability for Northstar raw events/facts/document chunks/meeting chunks, expanded-corpus
   document `embedded` status and chunk vectors, fixture chronology,
   visibility, source links, canonical support drift, or expanded-corpus volume floors. The commands refuse production and
@@ -342,7 +356,7 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 
 ### Non-obvious env / startup gotchas
 
-- **Node must be >=24.** This Cloud Agent image ships an older Node on `/exec-daemon` ahead of nvm on `PATH`. Prefer the nvm Node 24 binary (see `~/.bashrc` PATH override). Use `pnpm` via Corepack on that Node (`packageManager` pins `pnpm@11.8.0`).
+- **Use the exact Node version in `.nvmrc`.** Keep `engines.node` and every Docker stage aligned with that pin. This Cloud Agent image may put an older Node on `/exec-daemon` ahead of nvm on `PATH`; run `nvm install && nvm use` and verify `node --version` before checks. Use `pnpm` via Corepack on that Node (`packageManager` pins `pnpm@11.8.0`).
 - **Root `.env` is not auto-loaded by the worker or by `drizzle-kit`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `pnpm db:migrate`, `pnpm demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
 - **The root `pnpm dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `pnpm --filter @timeline/web dev` and `pnpm --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.

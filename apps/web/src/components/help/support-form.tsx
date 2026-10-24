@@ -1,6 +1,8 @@
 'use client';
 
-import { useActionState, useSyncExternalStore } from 'react';
+import { useActionState } from 'react';
+
+import type { SupportSurface } from '@/lib/support-context';
 
 import { submitSupportRequestAction, type SupportFormState } from '@/app/actions/support';
 import { FormActionToast } from '@/components/form-action-toast';
@@ -9,31 +11,43 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { PUBLIC_SUPPORT_EMAIL } from '@/lib/support-links';
 
 interface SupportFormProps {
   defaultName?: string;
   defaultEmail?: string;
+  defaultSurface?: SupportSurface;
+  defaultErrorReference?: string;
   turnstileSiteKey?: string;
   requiresTurnstile: boolean;
 }
 
 const initialState: SupportFormState = {};
-const subscribeToPageUrl = () => () => undefined;
 const protectionErrorId = 'support-form-protection-error';
 
 export function SupportForm({
   defaultName,
   defaultEmail,
+  defaultSurface,
+  defaultErrorReference,
   turnstileSiteKey,
   requiresTurnstile,
 }: SupportFormProps) {
   const [state, action, pending] = useActionState(submitSupportRequestAction, initialState);
   const protectionUnavailable = requiresTurnstile && !turnstileSiteKey;
-  const currentPage = useSyncExternalStore(
-    subscribeToPageUrl,
-    () => window.location.href,
-    () => '',
-  );
+
+  if (state.ok && state.requestReference) {
+    return (
+      <output className="block space-y-3 border-l-2 border-signal pl-4 text-sm">
+        <p className="font-semibold text-fg">Request received</p>
+        <p className="text-fg-muted">
+          Keep this reference if you need to follow up:{' '}
+          <code className="font-mono text-xs text-fg">{state.requestReference}</code>
+        </p>
+        {state.warning ? <p className="text-fg-muted">{state.warning}</p> : null}
+      </output>
+    );
+  }
 
   return (
     <form action={action} className="space-y-5">
@@ -43,7 +57,12 @@ export function SupportForm({
         success={state.ok ? 'We received your request' : undefined}
         loading="Sending request…"
       />
-      <input type="hidden" name="currentPage" value={currentPage} readOnly />
+      {defaultSurface ? (
+        <input type="hidden" name="surface" value={defaultSurface} readOnly />
+      ) : null}
+      {defaultErrorReference ? (
+        <input type="hidden" name="errorReference" value={defaultErrorReference} readOnly />
+      ) : null}
       <div className="hidden" aria-hidden="true">
         <Label htmlFor="support-company">Company website</Label>
         <Input
@@ -115,10 +134,21 @@ export function SupportForm({
         <TurnstileWidget action="support" siteKey={turnstileSiteKey} />
       ) : protectionUnavailable ? (
         <p id={protectionErrorId} className="text-sm text-danger">
-          Support form protection is unavailable in this deployment. Contact your workspace
-          administrator.
+          Support form protection is unavailable. Email{' '}
+          <a className="underline underline-offset-4" href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}>
+            {PUBLIC_SUPPORT_EMAIL}
+          </a>{' '}
+          instead.
         </p>
       ) : null}
+
+      <p className="text-xs leading-5 text-fg-muted">
+        When you submit, we store your contact details and message. If you are signed in, we also
+        attach your account ID and active team ID and role. The page category, error reference,
+        deployed release, and browser information are included when available. Workspace content is
+        never attached automatically. Your IP address may be used briefly for abuse prevention but
+        is not saved with the request.
+      </p>
 
       <Button
         type="submit"

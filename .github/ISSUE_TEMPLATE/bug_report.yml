@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a reproducible, non-sensitive problem
+title: '[Bug]: '
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve The Timeline.
+
+        This issue is public. Do not include customer content, personal data, credentials, tokens, invite or verification links, signed URLs, private URLs, or an undisclosed vulnerability. Use only your own or synthetic data. For sensitive reports, email contact@thetimeline.cc. For vulnerabilities, follow SECURITY.md.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Public website or help
+        - Authentication or account
+        - Timeline or capture
+        - Work, tasks, boards, or objects
+        - Documents or meetings
+        - Agent or search
+        - Integrations or MCP
+        - Team management
+        - Development or deployment
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observable problem without private data.
+      placeholder: A concise description of the failure.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use a new test account and synthetic examples where possible.
+      placeholder: |
+        1. Open …
+        2. Select …
+        3. Observe …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the Timeline version or commit, browser, and operating system when relevant. Do not paste full private URLs or request headers.
+      placeholder: Timeline commit, browser version, operating system
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and security check
+      options:
+        - label: I used only data and accounts I own or synthetic test data.
+          required: true
+        - label: I removed customer content, personal data, credentials, tokens, invite links, signed URLs, private URLs, and sensitive identifiers.
+          required: true
+        - label: This report does not disclose an unpatched vulnerability or working exploit.
+          required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution status
+      description: The repository has no general license or contribution terms yet.
+      options:
+        - label: I understand that I must wait for maintainer agreement before substantial implementation or a pull request.
+          required: true

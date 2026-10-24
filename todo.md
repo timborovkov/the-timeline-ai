@@ -10,7 +10,10 @@ surfaces, workers, extraction, embeddings, agent chat, objects, curated boards,
 tasks, documents, meeting bots, calendar basics/subscriptions,
 integrations/custom MCPs, Slack, onboarding, visibility controls, exports, job
 recovery, public help/legal, approval-backed object and board memory, and
-personal universal pinning across durable workspace content. Telegram and Slack
+personal universal pinning across durable workspace content. Public Trust,
+detailed Terms and Privacy surfaces, immutable per-user legal acceptance
+evidence, and current-version gates across human product routes are also shipped.
+Telegram and Slack
 direct text now share the durable agent runtime and web-visible private chat
 history; trusted groups and channels remain ingestion-first while also exposing
 the scoped, proposal-only team agent through explicit ask commands.
@@ -153,10 +156,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       grouping with uniform pulse weight. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
-      Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
-      counters for mode, filters, row-count reduction, scan pressure, missing
-      grouping metadata, AI presentation cache status, and visibility cache
-      partitioning without exposing raw content. Timeline browsing now ends at
+      Timeline page reads contribute only to the fixed, personless `timeline`
+      surface-request stream; filter and cache diagnostics are not correlated
+      to a user or team in product analytics. Timeline browsing now ends at
       the current instant by default; an explicit upcoming control and future
       date filters are bounded to seven days so recurrence materialization
       cannot crowd historical work out of the archive.
@@ -512,6 +514,59 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
 
+## Trust, Privacy, And Legal
+
+- [x] Add the public Trust, Privacy, Terms, and Cookies surfaces; per-user
+      versioned legal acceptance with immutable acceptance history; and
+      non-analytics browser-storage hardening. The Cookies notice inventories
+      the implemented optional public-browser analytics choice and withdrawal
+      controls while keeping provider-account and production evidence explicit.
+- [x] Land the analytics-owned runtime against
+      [`docs/privacy-analytics-interface.md`](./docs/privacy-analytics-interface.md):
+      fixed-stream personless public/app surface requests,
+      affirmative-consent-only public PostHog, no browser analytics in private
+      routes, HMAC-pseudonymous minimized server/worker events, working
+      withdrawal, strict route/property allowlists, separate minimized Sentry
+      handling, and source removal of the legacy Convex tracker.
+- [x] Expand Help into a support-channel router with a minimized private form,
+      direct email, structured non-sensitive GitHub bug reporting, private
+      vulnerability reporting, issue-first contribution guidance, aligned
+      desktop/mobile navigation, and contextual Get support actions on shared
+      error states.
+- [x] Review the PostHog Cloud EU account: enable IP discard; disable
+      autocapture, replay, heatmaps, web-vitals, dead-click, and exception
+      capture; restrict current membership; create and pin the Launch dashboard
+      shell; and queue deletion of the 127-event legacy development dataset.
+      The dated evidence memo records the pay-as-you-go retention and billing
+      constraints without storing account secrets or member details.
+- [ ] Complete the external analytics rollout and evidence: obtain
+      privacy/counsel approval for the legal basis and the seven-year
+      pay-as-you-go retention mismatch; verify deletion completion, DPA,
+      transfers, and provider access; configure the production environment; run
+      the real-browser and production payload canaries; populate the Launch
+      dashboard; and retain dated release evidence.
+- [ ] Inspect, export if necessary, and delete the legacy Convex deployment or
+      data only after confirming it is tracker-only and safe to remove.
+- [ ] Choose and commit a repository license and contribution terms after
+      founder/counsel review. Until then, describe the repository as public
+      source—not open source—and do not promise unrestricted self-hosting.
+- [ ] Capture production OpenRouter evidence: the key-to-guardrail assignment,
+      prompt logging, input/output sharing, response caching, current DPA and
+      subprocessors. Schedule the ZDR-registry/transcription canary and run the
+      multilingual live transcription evaluation before launch.
+- [ ] Have qualified counsel review the published Terms and Privacy Policy, and
+      bind future acceptance events to an immutable rendered legal-text snapshot
+      or digest in addition to the version, timestamp, source, IP, and user agent.
+- [ ] Draft and counsel-review a GDPR Article 28 customer DPA plus an
+      organization-level execution/acceptance path. Per-user Terms acceptance
+      and Privacy notice acknowledgement do not replace that processor contract.
+- [ ] Close the operating gaps tracked in
+      [`docs/security-privacy-trust.md`](./docs/security-privacy-trust.md):
+      provider DPAs/regions/settings, Railway backup and restore evidence,
+      end-to-end deletion verification, operator-access logging and break-glass
+      controls, and investigation/deletion of any data collected by the legacy
+      Convex analytics script.
+
 ## Backup And Operations
 
 - [ ] Add a RustFS backup cron service on Railway: nightly `rclone sync` to
@@ -566,7 +621,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Cheapest-plan preview from gross native
       usage (informational, never auto-switch; hidden unless another plan saves at
       least €5 and 10% of the current projected bill), platform-admin comped plans
-      (assigning a comp revokes the current Polar subscription, and is refused when Polar is not configured) and
+      (assigning a comp revokes the current Polar subscription, and is refused when Polar is not configured; an open Enterprise checkout is closed first, and a checkout that is still payable or already paid blocks the comp; a later subscription webhook on a comped workspace is revoked and stored until that revoke succeeds) and
       per-team price overrides (<code>PLATFORM_ADMIN_EMAILS</code>, audited, spend cap still
       applies; raising a positive cap clears a spend-cap freeze and leaves
       <code>past_due</code> paused), <code>pnpm billing:polar-setup</code> archives a sandbox Timeline Top-up
@@ -686,8 +741,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 ## Standing Items
 
 - [ ] Verify backups weekly and run restore drills quarterly.
-- [ ] Monitor Qdrant RAM usage after the on-disk + int8 collection layout and
-      plan a move to sharded or managed Qdrant before it becomes painful. New
+- [ ] Monitor production CPU and RAM against the
+      [per-service caps](docs/railway.html#resource-caps), including Qdrant after the on-disk + int8 layout, and
+      plan a move to sharded or managed Qdrant before it becomes painful. The
+      2026-10-24 restart and search/ingestion probes informed an initial 3 GB
+      production RAM limit (plus a 2 vCPU cap) with the rollback collection retained; remeasure peaks
+      before lowering it or performing full reindexing (see
+      [production memory measurements](docs/railway.html#qdrant-memory)). New
       collections already store original vectors on disk; copy any older in-RAM
       collection with `pnpm --filter @timeline/worker qdrant-migrate-collection`
       (`--writers-paused --all-teams` after pausing all vector writers; production also

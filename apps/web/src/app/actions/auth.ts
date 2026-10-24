@@ -16,12 +16,19 @@ import { redirect } from 'next/navigation';
 import { AuthError } from 'next-auth';
 import { z } from 'zod';
 
-import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
+import {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team';
 import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth, signIn } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { sendEmailVerification } from '@/lib/email-verification';
+import { legalAcceptanceRequestMetadata, recordCurrentLegalAcceptance } from '@/lib/legal';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
+import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
 import { clientIpFromHeaders } from '@/lib/request-ip';
 import { safeSameOriginPath } from '@/lib/safe-redirect';
 import { runSentryServerAction } from '@/lib/sentry-action';
@@ -35,7 +42,12 @@ const signUpSchema = z.object({
   password: z.string().min(8).max(200),
   inviteToken: z.string().optional(),
   legalAccepted: z.literal('on'),
+  termsVersion: z.literal(TERMS_VERSION),
+  privacyVersion: z.literal(PRIVACY_VERSION),
 });
+
+const LEGAL_VERSION_CHANGED_ERROR =
+  'The Terms of Use or Privacy Policy changed. Reload this page and review the current versions before accepting.';
 
 export interface SignUpState {
   error?: string;
@@ -48,19 +60,33 @@ export interface EmailVerificationState {
 
 export async function signUpAction(_prev: SignUpState, formData: FormData): Promise<SignUpState> {
   return runSentryServerAction('sign_up', async () => {
+    if (!isLegalPublicationReady()) {
+      return {
+        error:
+          'Account creation is temporarily unavailable while our legal publication review is completed.',
+      };
+    }
     const h = await headers();
     const clientIp = clientIpFromHeaders(h);
+    const submittedTermsVersion = formData.get('termsVersion');
+    const submittedPrivacyVersion = formData.get('privacyVersion');
+    if (submittedTermsVersion !== TERMS_VERSION || submittedPrivacyVersion !== PRIVACY_VERSION) {
+      return { error: LEGAL_VERSION_CHANGED_ERROR };
+    }
     const parsed = signUpSchema.safeParse({
       name: formData.get('name'),
       email: formData.get('email'),
       password: formData.get('password'),
       inviteToken: formData.get('inviteToken') ?? undefined,
       legalAccepted: formData.get('legalAccepted'),
+      termsVersion: submittedTermsVersion,
+      privacyVersion: submittedPrivacyVersion,
     });
     if (!parsed.success) {
       return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
     }
     const { name, email, password, inviteToken } = parsed.data;
+    const legalRequestMetadata = legalAcceptanceRequestMetadata(h);
 
     if (clientIp) {
       const ipLimit = await rateLimit.checkRateLimit({
@@ -124,9 +150,6 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
             name,
             email,
             passwordHash,
-            legalTermsVersion: TERMS_VERSION,
-            legalPrivacyVersion: PRIVACY_VERSION,
-            legalAcceptedAt: new Date(),
           })
           .returning({ id: users.id });
         const userId = inserted[0]?.id;
@@ -158,6 +181,11 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
             additionalSeats: 1,
             includePendingInvites: false,
           });
+          await recordCurrentLegalAcceptance(tx, {
+            userId,
+            source: 'credentials_signup',
+            ...legalRequestMetadata,
+          });
           await tx.insert(teamMembers).values({
             teamId: invite.teamId,
             userId,
@@ -187,6 +215,11 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
           };
         }
 
+        await recordCurrentLegalAcceptance(tx, {
+          userId,
+          source: 'credentials_signup',
+          ...legalRequestMetadata,
+        });
         const baseSlug = slugify(`${name}-team`) || 'team';
         const slug = `${baseSlug}-${randomSlugSuffix()}`;
         const inboundEmail = buildInboundEmail(slug, process.env.INBOUND_EMAIL_DOMAIN);
@@ -232,23 +265,32 @@ export async function signUpAction(_prev: SignUpState, formData: FormData): Prom
     }
 
     const cookieStore = await cookies();
-    cookieStore.set(ACTIVE_TEAM_COOKIE, createdAccount.activeTeamId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 365,
+    cookieStore.set(
+      ACTIVE_TEAM_COOKIE,
+      serializeActiveTeamCookie(createdAccount.activeTeamId),
+      activeTeamCookieOptions(),
+    );
+
+    const attribution = readConsentedPublicAttributionCookie(cookieStore);
+    const actor = {
+      kind: 'user' as const,
+      userId: createdAccount.userId,
+      teamId: createdAccount.activeTeamId,
+    };
+    trackProductEventBestEffort(actor, 'account_registered', {
+      source: 'credentials',
+      joinedViaInvite: createdAccount.event === 'invite_accepted',
+      ...(attribution?.source ? { attributionSource: attribution.source } : {}),
+      ...(attribution?.medium ? { attributionMedium: attribution.medium } : {}),
+      ...(attribution?.campaign ? { attributionCampaign: attribution.campaign } : {}),
     });
 
     if (createdAccount.event === 'team_created') {
-      trackProductEventBestEffort(createdAccount.userId, 'team_created', {
-        teamId: createdAccount.activeTeamId,
-        userId: createdAccount.userId,
+      trackProductEventBestEffort(actor, 'team_created', {
         source: 'signup',
       });
     } else {
-      trackProductEventBestEffort(createdAccount.userId, 'invite_accepted', {
-        teamId: createdAccount.activeTeamId,
-        userId: createdAccount.userId,
+      trackProductEventBestEffort(actor, 'invite_accepted', {
         role: createdAccount.role ?? 'member',
         source: 'signup',
       });

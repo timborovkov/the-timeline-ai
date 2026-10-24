@@ -17,6 +17,7 @@ import {
   queue,
   withTeam,
 } from '@timeline/shared';
+import { bucketAnalyticsCount, bucketMeetingDuration } from '@timeline/shared/analytics';
 import {
   BILLING_SYSTEM_USER_ID,
   recallBillableMinutes,
@@ -729,6 +730,22 @@ export async function processMeetingFinalizeJob(
       const dedupKey = meetingDedupKey(meetingId);
       const finalized = await deps.db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+        const currentRows = await tx
+          .select({ status: meetingsTable.status })
+          .from(meetingsTable)
+          .where(and(eq(meetingsTable.id, meetingId), eq(meetingsTable.teamId, teamId)))
+          .for('update')
+          .limit(1);
+        const currentStatus = currentRows[0]?.status;
+        if (!currentStatus) {
+          throw new UnrecoverableError(`meeting ${meetingId} not found during finalization`);
+        }
+        if (['failed', 'cancelled', 'skipped', 'no_show'].includes(currentStatus)) {
+          return { terminalStatus: currentStatus };
+        }
+        if (currentStatus === 'completed' || currentStatus === 'completed_partial') {
+          return { completedStatus: currentStatus };
+        }
         const finalChunks = await loadMeetingChunks(tx, meetingId, teamId);
         const fullTranscript = finalChunks.length > 0 ? formatMeetingTranscript(finalChunks) : null;
         if ((fullTranscript ?? '') !== summarized.transcriptText) {
@@ -931,6 +948,12 @@ export async function processMeetingFinalizeJob(
         };
       });
 
+      if ('terminalStatus' in finalized) {
+        return { skipped: 'terminal', meetingId };
+      }
+      if ('completedStatus' in finalized) {
+        return { skipped: 'already_completed', meetingId };
+      }
       if ('retryChunks' in finalized) {
         summarized = await summarizeTranscript(meeting, finalized.retryChunks, io);
         continue;
@@ -951,14 +974,13 @@ export async function processMeetingFinalizeJob(
       }
 
       trackProductEventBestEffort(
-        meeting.createdByUserId ?? `team:${teamId}`,
+        meeting.createdByUserId
+          ? { kind: 'user', userId: meeting.createdByUserId, teamId }
+          : { kind: 'team', teamId },
         'meeting_finalized',
         {
-          teamId,
-          userId: meeting.createdByUserId,
-          meetingId,
-          minutes: finalized.minutes,
-          actionItems: summarized.actionItems.length,
+          durationBucket: bucketMeetingDuration(finalized.minutes),
+          actionItemCountBucket: bucketAnalyticsCount(summarized.actionItems.length),
         },
       );
 

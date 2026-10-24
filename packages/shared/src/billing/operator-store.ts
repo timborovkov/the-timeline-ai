@@ -166,6 +166,8 @@ export async function assignCompedPlan(input: {
   now?: Date;
   /** Revoke the current Polar subscription after the comp is committed. */
   cancelPolarSubscription?: (subscriptionId: string) => Promise<void>;
+  /** Close an outstanding Enterprise checkout before the comp is saved. */
+  expireCheckout?: (checkoutId: string) => Promise<ExpireCheckoutResult>;
 }): Promise<void> {
   if (!isOperatorScopeReentry(input)) {
     return (await loadBillingOperator(input.db, input.actor, input.teamId)).assignCompedPlan(input);
@@ -177,10 +179,43 @@ export async function assignCompedPlan(input: {
   }
   const now = input.now ?? new Date();
   assertFutureExpiry(input.expiresAt, now);
+  const outstandingCheckoutIds = await input.db.transaction(async (tx) => {
+    const db = tx as unknown as Db;
+    await requirePlatformAdmin(db, input.actor);
+    const existing = await lockAccount(db, input.teamId);
+    return Object.keys(readPendingEnterpriseTerms(existing.pendingEnterpriseTerms).byCheckoutId);
+  });
+  if (outstandingCheckoutIds.length > 0) {
+    if (!input.expireCheckout) {
+      throw new BillingOperatorError(
+        'This workspace has an open Enterprise checkout. Configure Polar before assigning a comp so the checkout can be closed.',
+      );
+    }
+    await closeOutstandingEnterpriseCheckouts(
+      { expireCheckout: input.expireCheckout },
+      outstandingCheckoutIds,
+      {
+        unreachable:
+          'An open Enterprise checkout could not be closed in Polar. Retry before assigning a comp.',
+        paymentStarted:
+          'An Enterprise checkout already started payment. Wait for that subscription to finish before assigning a comp.',
+        stillOpen: 'An Enterprise checkout is still payable. Close it before assigning a comp.',
+      },
+    );
+  }
+  const closedCheckoutIds = new Set(outstandingCheckoutIds);
   const polarSubscriptionId = await input.db.transaction(async (tx) => {
     const db = tx as unknown as Db;
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
+    const stillOpen = Object.keys(
+      readPendingEnterpriseTerms(existing.pendingEnterpriseTerms).byCheckoutId,
+    );
+    if (stillOpen.some((checkoutId) => !closedCheckoutIds.has(checkoutId))) {
+      throw new BillingOperatorError(
+        'An Enterprise checkout opened while the comp was being saved. Close it before assigning a comp.',
+      );
+    }
     if (existing.polarSubscriptionId && !input.cancelPolarSubscription) {
       throw new BillingOperatorError(
         'This workspace has a Polar subscription. Configure Polar before assigning a comp so the subscription fee can be revoked.',
@@ -197,6 +232,7 @@ export async function assignCompedPlan(input: {
         spendCapCents: input.spendCapCents,
         compReason: reason,
         compExpiresAt: input.expiresAt,
+        ...(stillOpen.length > 0 ? { pendingEnterpriseTerms: null } : {}),
         updatedAt: now,
       })
       .where(eq(teamBillingAccounts.teamId, input.teamId))
@@ -659,7 +695,14 @@ export async function startEnterpriseCheckout(input: {
     };
   });
 
-  await closeOutstandingEnterpriseCheckouts(input.provider, prepared.outstandingCheckoutIds);
+  await closeOutstandingEnterpriseCheckouts(input.provider, prepared.outstandingCheckoutIds, {
+    unreachable:
+      'An earlier Enterprise checkout could not be closed in Polar. Retry before opening another link.',
+    paymentStarted:
+      'An earlier Enterprise checkout already started payment. Wait for the subscription webhook before opening another link.',
+    stillOpen:
+      'An earlier Enterprise checkout is still open in Polar. Wait until it expires before opening another link.',
+  });
 
   let checkout: { url: string; id: string };
   try {
@@ -720,8 +763,9 @@ export async function startEnterpriseCheckout(input: {
 }
 
 async function closeOutstandingEnterpriseCheckouts(
-  provider: BillingProvider,
+  provider: { expireCheckout(checkoutId: string): Promise<ExpireCheckoutResult> },
   checkoutIds: readonly string[],
+  failure: { unreachable: string; paymentStarted: string; stillOpen: string },
 ): Promise<void> {
   let paymentStarted = false;
   let stillOpen = false;
@@ -731,23 +775,13 @@ async function closeOutstandingEnterpriseCheckouts(
       result = await provider.expireCheckout(checkoutId);
     } catch (error) {
       if (error instanceof BillingOperatorError) throw error;
-      throw new BillingOperatorError(
-        'An earlier Enterprise checkout could not be closed in Polar. Retry before opening another link.',
-      );
+      throw new BillingOperatorError(failure.unreachable);
     }
     if (result === 'already_paid') paymentStarted = true;
     if (result === 'still_open') stillOpen = true;
   }
-  if (paymentStarted) {
-    throw new BillingOperatorError(
-      'An earlier Enterprise checkout already started payment. Wait for the subscription webhook before opening another link.',
-    );
-  }
-  if (stillOpen) {
-    throw new BillingOperatorError(
-      'An earlier Enterprise checkout is still open in Polar. Wait until it expires before opening another link.',
-    );
-  }
+  if (paymentStarted) throw new BillingOperatorError(failure.paymentStarted);
+  if (stillOpen) throw new BillingOperatorError(failure.stillOpen);
 }
 
 function assertEnterpriseCheckoutAllowed(existing: {

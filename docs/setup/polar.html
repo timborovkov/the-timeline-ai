@@ -71,9 +71,13 @@ PLATFORM_ADMIN_EMAILS=
         Pricing detail lives on <code>/pricing</code>. Members only see a cap or allowance notice.
         Assigning a comp revokes the team's current Polar subscription immediately so the platform
         fee stops. If that subscription exists and Polar is not configured, the comp is refused and
-        nothing is saved. Price overrides (platform fee, included members, per-member price, metered
-        discount percent) and a per-team Polar discount id are optional and can expire. Every change
-        is appended to <code>billing_operator_audit</code>.
+        nothing is saved. An open Enterprise checkout is expired before the comp is saved. A
+        checkout that is still payable, or one that already started payment, blocks the comp. A
+        subscription webhook that still arrives for a comped workspace revokes that subscription,
+        stores its id until the revoke succeeds, and leaves the comp in place. Price overrides
+        (platform fee, included members, per-member price, metered discount percent) and a per-team
+        Polar discount id are optional and can expire. Every change is appended to
+        <code>billing_operator_audit</code>.
       </p>
 
       <h2>Products and meters (v1)</h2>

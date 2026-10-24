@@ -9,6 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type * as objects from '@timeline/shared/objects/types';
 import type { PropsWithChildren, ReactElement, ReactNode } from 'react';
 
+import { useTaskCategoryPolling } from '@/components/tasks/task-category-polling';
+
 const fakes = vi.hoisted(() => {
   const refresh = vi.fn();
   return {
@@ -342,8 +344,14 @@ describe('TaskBoard', () => {
       rows: ids.map((id) => ({ id, taskCategoryStatus: 'pending' })),
     }));
 
-    renderBoard(null, rows);
-
+    function PollingProbe() {
+      const polling = useTaskCategoryPolling(
+        rows.map((row) => row.id),
+        2_500,
+      );
+      return <output aria-label="Polled tasks">{polling.data.rows.length}</output>;
+    }
+    render(<PollingProbe />);
     await waitFor(() => {
       expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledTimes(2);
     });
@@ -351,6 +359,9 @@ describe('TaskBoard', () => {
       ids: rows.slice(0, 200).map((row) => row.id),
     });
     expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-201'] });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Polled tasks').textContent).toBe('201');
+    });
   });
 
   it('applies polled category state to a previously loaded older task', async () => {

@@ -73,6 +73,7 @@ export const RETIRED_TOPUP_ALERT_REASON_PREFIX = 'retired_topup_paid:';
 
 /** One open alert per extra Polar subscription id. Replay does not insert another. */
 export const DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX = 'duplicate_polar_subscription:';
+export const COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX = 'comped_polar_subscription:';
 
 const REPLACED_SUBSCRIPTION_NOT_LIVE = new Set(['canceled', 'deletion_scheduled']);
 
@@ -324,6 +325,13 @@ interface DuplicateSubscription {
   extraSubscriptionId: string;
 }
 
+/** A paid subscription that arrived after the workspace was already comped. */
+interface CompedIncomingSubscription {
+  subscriptionId: string;
+  /** Clear this id after a successful revoke. A different stored id stays. */
+  clearStoredId: boolean;
+}
+
 function liveTrackedSubscriptionId(
   existing: typeof teamBillingAccounts.$inferSelect | undefined,
   incomingSubscriptionId: string | null,
@@ -342,10 +350,16 @@ async function upsertPaidSubscription(input: {
   billingState: TeamBillingState;
   data: PolarWebhookPayload['data'];
   chargesEnabled: boolean;
-}): Promise<{ applied: boolean; duplicate?: DuplicateSubscription }> {
+}): Promise<{
+  applied: boolean;
+  duplicate?: DuplicateSubscription;
+  compedIncoming?: CompedIncomingSubscription;
+}> {
   return input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
-    if (existing?.arrangement === 'comped') return { applied: false };
+    if (existing?.arrangement === 'comped') {
+      return recordCompedIncomingSubscription(tx as unknown as Db, existing, input.data);
+    }
     const polarSubscriptionId = input.data?.id ?? null;
     const trackedSubscriptionId = liveTrackedSubscriptionId(existing, polarSubscriptionId);
     const existingEnterprise =
@@ -476,6 +490,103 @@ async function upsertPaidSubscription(input: {
     }
     return { applied: true };
   });
+}
+
+/**
+ * Keep the comp. Remember the incoming subscription until Polar revoke
+ * succeeds, and drop the checkout that produced it from pending terms.
+ */
+async function recordCompedIncomingSubscription(
+  db: Db,
+  existing: typeof teamBillingAccounts.$inferSelect,
+  data: PolarWebhookPayload['data'],
+): Promise<{ applied: false; compedIncoming?: CompedIncomingSubscription }> {
+  const incomingSubscriptionId = data?.id ?? null;
+  if (!incomingSubscriptionId) return { applied: false };
+  const tracked = existing.polarSubscriptionId;
+  const clearStoredId = !tracked || tracked === incomingSubscriptionId;
+  const checkoutId = polarCheckoutId(data);
+  const pendingAfter = checkoutId
+    ? pendingEnterpriseTermsAfterActivation(existing.pendingEnterpriseTerms ?? null, checkoutId)
+    : undefined;
+  const customerId = polarCustomerId(data);
+  await db
+    .update(teamBillingAccounts)
+    .set({
+      ...(clearStoredId
+        ? {
+            polarSubscriptionId: incomingSubscriptionId,
+            ...(customerId ? { polarCustomerId: customerId } : {}),
+            ...(data?.product_id ? { polarProductId: data.product_id } : {}),
+          }
+        : {}),
+      ...(pendingAfter !== undefined ? { pendingEnterpriseTerms: pendingAfter } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(teamBillingAccounts.teamId, existing.teamId));
+  return {
+    applied: false,
+    compedIncoming: { subscriptionId: incomingSubscriptionId, clearStoredId },
+  };
+}
+
+async function reconcileCompedIncomingSubscription(input: {
+  db: Db;
+  teamId: string;
+  subscriptionId: string;
+  clearStoredId: boolean;
+  provider: BillingProvider | null;
+}): Promise<void> {
+  let revoked = false;
+  if (input.provider) {
+    try {
+      await input.provider.revokeSubscription(input.subscriptionId);
+      revoked = true;
+    } catch (err) {
+      log.warn(
+        { err, teamId: input.teamId, subscriptionId: input.subscriptionId },
+        'comped workspace Polar subscription revoke failed',
+      );
+    }
+  }
+  if (revoked && input.clearStoredId) {
+    await input.db
+      .update(teamBillingAccounts)
+      .set({ polarSubscriptionId: null, polarProductId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(teamBillingAccounts.teamId, input.teamId),
+          eq(teamBillingAccounts.arrangement, 'comped'),
+          eq(teamBillingAccounts.polarSubscriptionId, input.subscriptionId),
+        ),
+      );
+  }
+  const detail = revoked
+    ? `Incoming Polar subscription ${input.subscriptionId} was revoked because the workspace is comped. Refund any charge.`
+    : `Incoming Polar subscription ${input.subscriptionId} is still billing a comped workspace. Revoke it in Polar and refund any charge.`;
+  const reason = `${COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX}${input.subscriptionId}`;
+  const inserted = await input.db
+    .insert(billingUnbilledAlerts)
+    .values({
+      teamId: input.teamId,
+      meterId: 'subscription',
+      periodYm: periodYm(),
+      reason,
+      detail,
+    })
+    .onConflictDoNothing()
+    .returning({ id: billingUnbilledAlerts.id });
+  if (inserted.length > 0) return;
+  await input.db
+    .update(billingUnbilledAlerts)
+    .set({ detail })
+    .where(
+      and(
+        eq(billingUnbilledAlerts.teamId, input.teamId),
+        eq(billingUnbilledAlerts.reason, reason),
+        isNull(billingUnbilledAlerts.resolvedAt),
+      ),
+    );
 }
 
 async function reconcileDuplicateSubscription(input: {
@@ -692,6 +803,15 @@ export async function handlePolarWebhookEvent(input: {
           data,
           chargesEnabled: input.chargesEnabled,
         });
+        if (result.compedIncoming) {
+          await reconcileCompedIncomingSubscription({
+            db: input.db,
+            teamId,
+            subscriptionId: result.compedIncoming.subscriptionId,
+            clearStoredId: result.compedIncoming.clearStoredId,
+            provider: input.provider ?? null,
+          });
+        }
         if (result.duplicate) {
           await reconcileDuplicateSubscription({
             db: input.db,

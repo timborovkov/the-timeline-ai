@@ -40,10 +40,12 @@ export interface SupportRequestMessageInput {
   name: string;
   email: string;
   message: string;
-  currentPage: string | null;
+  surface: string | null;
+  errorReference: string | null;
+  release: string | null;
   userId: string | null;
   teamId: string | null;
-  teamName: string | null;
+  teamRole: 'owner' | 'admin' | 'member' | null;
 }
 
 export interface WelcomeMessageInput {

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   billingStateForPolarSubscriptionUpsert,
   billingStateFromPolarSubscriptionStatus,
+  COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX,
   DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX,
   handlePolarWebhookEvent,
   RETIRED_TOPUP_ALERT_REASON_PREFIX,
@@ -267,7 +268,13 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.arrangement).toBe('comped');
     expect(account.planId).toBe('team');
     expect(account.spendCapCents).toBe(2500);
-    expect(account.polarSubscriptionId).toBeNull();
+    expect(account.billingState).toBe('team_active');
+    expect(account.polarSubscriptionId).toBe('sub_comp');
+    const alerts = await pg.query<{ detail: string }>(
+      `SELECT detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND reason = '${COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_comp'`,
+    );
+    expect(alerts.rows[0]?.detail).toContain('still billing');
   });
 
   it('does not let a Team subscription downgrade an Enterprise contract', async () => {
@@ -683,6 +690,139 @@ describe('handlePolarWebhookEvent', () => {
     expect(alerts.rows[0]?.reason).toBe(`${DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_late`);
     expect(alerts.rows[0]?.detail).toContain('sub_kept');
     expect(alerts.rows[0]?.detail).toContain('revoked');
+  });
+
+  it('revokes a subscription that arrives after the workspace is comped', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          spend_cap_cents = 2500, comp_reason = 'internal',
+          pending_enterprise_terms = '{"byCheckoutId":{"chk_paid":{"platformFeeCents":250000,"spendCapCents":80000},"chk_other":{"platformFeeCents":100000}}}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const provider = createFakeBillingProvider();
+    const payload = {
+      type: 'subscription.active',
+      data: {
+        id: 'sub_after_comp',
+        status: 'active',
+        product_id: 'prod_enterprise',
+        checkout_id: 'chk_paid',
+        customer: { id: 'cus_comp', external_id: TEAM_ID },
+      },
+    };
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload,
+    });
+    const account = await billing.getAccount();
+    expect(account.arrangement).toBe('comped');
+    expect(account.planId).toBe('team');
+    expect(account.spendCapCents).toBe(2500);
+    expect(account.enterprisePlatformFeeCents).toBeNull();
+    expect(account.polarSubscriptionId).toBeNull();
+    expect(account.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_other: { platformFeeCents: 100000 } },
+    });
+    expect(provider.revokedSubscriptionIds).toEqual(['sub_after_comp']);
+    const alerts = await pg.query<{ reason: string; detail: string }>(
+      `SELECT reason, detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(alerts.rows).toHaveLength(1);
+    expect(alerts.rows[0]?.reason).toBe(
+      `${COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_after_comp`,
+    );
+    expect(alerts.rows[0]?.detail).toContain('revoked');
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload,
+    });
+    const replayed = await billing.getAccount();
+    expect(replayed.arrangement).toBe('comped');
+    expect(replayed.planId).toBe('team');
+    expect(replayed.polarSubscriptionId).toBeNull();
+    expect(provider.revokedSubscriptionIds).toEqual(['sub_after_comp', 'sub_after_comp']);
+  });
+
+  it('stores the incoming subscription when a comped workspace cannot revoke it', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'enterprise', billing_state = 'enterprise_active',
+          spend_cap_cents = 0, comp_reason = 'internal',
+          polar_subscription_id = 'sub_stuck'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const provider = createFakeBillingProvider();
+    provider.revokeSubscription = () => Promise.reject(new Error('polar down'));
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_new_comp',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          customer: { id: 'cus_comp', external_id: TEAM_ID },
+        },
+      },
+    });
+    const kept = await billing.getAccount();
+    expect(kept.arrangement).toBe('comped');
+    expect(kept.planId).toBe('enterprise');
+    expect(kept.polarSubscriptionId).toBe('sub_stuck');
+    const failed = await pg.query<{ detail: string }>(
+      `SELECT detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND reason = '${COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_new_comp'`,
+    );
+    expect(failed.rows[0]?.detail).toContain('still billing');
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_stuck',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          customer: { id: 'cus_comp', external_id: TEAM_ID },
+        },
+      },
+    });
+    const stored = await billing.getAccount();
+    expect(stored.polarSubscriptionId).toBe('sub_stuck');
+    expect(stored.arrangement).toBe('comped');
+    const missingProvider = await pg.query<{ detail: string }>(
+      `SELECT detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND reason = '${COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_stuck'`,
+    );
+    expect(missingProvider.rows[0]?.detail).toContain('still billing');
   });
 
   it('does not activate past_due subscriptions and ignores order.paid plan products', async () => {

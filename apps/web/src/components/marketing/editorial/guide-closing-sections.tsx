@@ -9,6 +9,15 @@ import {
 } from '@/components/marketing/editorial/content';
 import { EditorialKicker } from '@/components/marketing/editorial/editorial-kicker';
 import { EditorialSectionHeading } from '@/components/marketing/editorial/editorial-section-heading';
+import {
+  GITHUB_BUG_REPORT_URL,
+  GITHUB_CONTRIBUTING_URL,
+  GITHUB_SECURITY_URL,
+  PUBLIC_SUPPORT_EMAIL,
+} from '@/lib/support-links';
+
+const supportLinkClass =
+  'rounded-sm text-fg transition-colors hover:text-signal focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
   return (
@@ -62,6 +71,27 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
                 </p>
               </details>
             ))}
+            <details className="group border-b border-border">
+              <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-5 rounded-sm py-4 text-base font-semibold outline-none marker:content-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&::-webkit-details-marker]:hidden">
+                Does Timeline train AI models on team data?
+                <span
+                  aria-hidden="true"
+                  className="font-mono text-lg text-signal group-open:rotate-45 motion-safe:transition-transform motion-safe:duration-200"
+                >
+                  +
+                </span>
+              </summary>
+              <p className="max-w-3xl pb-6 text-sm leading-7 text-fg-muted sm:text-base">
+                Timeline does not train or fine-tune models on team content. Hosted inference may be
+                enabled only after the production key and account are verified to enforce
+                zero-data-retention, no-data-collection routing; repository controls then reject
+                weaker eligible routes. The{' '}
+                <Link className="text-fg underline underline-offset-4" href="/trust">
+                  Trust page
+                </Link>{' '}
+                explains the boundary, providers, and what “private” does and does not mean.
+              </p>
+            </details>
           </div>
         </div>
       </section>
@@ -94,6 +124,21 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
             );
           })}
           <Link
+            href="/trust"
+            className="group bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:p-8"
+          >
+            <p className="font-mono text-[0.62rem] tracking-[0.12em] text-signal uppercase">
+              Trust and data privacy
+            </p>
+            <h3 className="mt-5 max-w-xl text-xl font-semibold tracking-[-0.025em] sm:text-2xl">
+              See where data goes, who can access it, and how AI routing stays private.
+            </h3>
+            <span className="mt-7 inline-flex items-center gap-2 text-sm font-semibold">
+              Review the trust model
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </span>
+          </Link>
+          <Link
             href={HOW_IT_WORKS_ROUTE}
             className="group bg-bg p-6 outline-none hover:bg-surface focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset sm:p-8"
           >
@@ -108,6 +153,50 @@ export function GuideClosingSections({ guide }: { guide: EditorialGuide }) {
               <ArrowRight aria-hidden="true" className="size-4" />
             </span>
           </Link>
+        </div>
+      </section>
+
+      <section className="border-t border-border">
+        <div className="mx-auto grid max-w-5xl gap-5 px-4 py-10 sm:px-6 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div>
+            <h2 className="text-lg font-semibold tracking-[-0.02em]">Need help with this guide?</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-fg-muted">
+              Keep account details and sensitive reports private. Public issues must not contain
+              customer content, personal data, credentials, or private URLs.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold md:justify-end">
+            <Link className={supportLinkClass} href="/help/support">
+              Contact support
+            </Link>
+            <a className={supportLinkClass} href={`mailto:${PUBLIC_SUPPORT_EMAIL}`}>
+              Email support
+            </a>
+            <a
+              className={supportLinkClass}
+              href={GITHUB_BUG_REPORT_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Report a bug
+            </a>
+            <a
+              className={supportLinkClass}
+              href={GITHUB_SECURITY_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Security
+            </a>
+            <a
+              className={supportLinkClass}
+              href={GITHUB_CONTRIBUTING_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Contribute
+            </a>
+          </div>
         </div>
       </section>
 

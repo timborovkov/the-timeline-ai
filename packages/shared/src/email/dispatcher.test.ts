@@ -626,6 +626,113 @@ describe('email dispatcher', () => {
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
 
+  it('keeps inbound-email enrichment deferred when an attachment read fails', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const documents = documentDeps();
+    const payload = inboundPayload('deferred-attachment-read');
+    payload.Attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
+    await expect(
+      handleInbound(
+        { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
+        payload,
+      ),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const readAttachment = vi
+      .fn<(input: { key: string }) => Promise<Buffer>>()
+      .mockRejectedValueOnce(new Error('s3 timeout'));
+    const flushed = await flushDeferredEmailEnrichment(db as never, 50, {
+      enqueueExtract: queues.extract.enqueueExtract,
+      enqueueEmbed: queues.embed.enqueueEmbed,
+      enqueueSuggestion: queues.suggestions.enqueueSuggestion,
+      documents,
+      readAttachment,
+    });
+    expect(flushed).toBe(0);
+    expect(documents.upload).not.toHaveBeenCalled();
+    const [kept] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(kept?.sourceMetadata).toMatchObject({
+      billing_enrichment_deferred: true,
+      attachments: [expect.objectContaining({ filename: 'notes.pdf' })],
+    });
+    const keptAttachments = (kept?.sourceMetadata as { attachments?: { document_id?: string }[] })
+      .attachments;
+    expect(keptAttachments?.[0]?.document_id).toBeUndefined();
+
+    readAttachment.mockResolvedValueOnce(Buffer.from('%PDF-1.7'));
+    const retried = await flushDeferredEmailEnrichment(db as never, 50, {
+      enqueueExtract: queues.extract.enqueueExtract,
+      enqueueEmbed: queues.embed.enqueueEmbed,
+      enqueueSuggestion: queues.suggestions.enqueueSuggestion,
+      documents,
+      readAttachment,
+    });
+    expect(retried).toBe(1);
+    expect(documents.upload).toHaveBeenCalledOnce();
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(cleared?.sourceMetadata).toMatchObject({
+      billing_enrichment_deferred: false,
+      attachments: [expect.objectContaining({ filename: 'notes.pdf' })],
+    });
+    const clearedAttachments = (
+      cleared?.sourceMetadata as { attachments?: { document_id?: string }[] }
+    ).attachments;
+    expect(typeof clearedAttachments?.[0]?.document_id).toBe('string');
+  });
+
+  it('keeps inbound-email enrichment deferred when attachment capture fails', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const queues = textQueueDeps();
+    const attachments = attachmentDeps();
+    const documents = documentDeps();
+    documents.upload.mockRejectedValueOnce(new Error('s3 put failed'));
+    const payload = inboundPayload('deferred-attachment-create');
+    payload.Attachments = [attachment('notes.pdf', 'application/pdf', '%PDF-1.7')];
+    await handleInbound(
+      { db: db as never, inboundDomain: 'inbound.test', attachments, ...queues },
+      payload,
+    );
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const readAttachment = vi.fn().mockResolvedValue(Buffer.from('%PDF-1.7'));
+    const flushed = await flushDeferredEmailEnrichment(db as never, 50, {
+      enqueueExtract: queues.extract.enqueueExtract,
+      enqueueEmbed: queues.embed.enqueueEmbed,
+      enqueueSuggestion: queues.suggestions.enqueueSuggestion,
+      documents,
+      readAttachment,
+    });
+    expect(flushed).toBe(0);
+    const [kept] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(kept?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+    const retried = await flushDeferredEmailEnrichment(db as never, 50, {
+      enqueueExtract: queues.extract.enqueueExtract,
+      enqueueEmbed: queues.embed.enqueueEmbed,
+      enqueueSuggestion: queues.suggestions.enqueueSuggestion,
+      documents,
+      readAttachment,
+    });
+    expect(retried).toBe(1);
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(cleared?.sourceMetadata).toMatchObject({
+      billing_enrichment_deferred: false,
+      attachments: [expect.objectContaining({ filename: 'notes.pdf' })],
+    });
+    const clearedAttachments = (
+      cleared?.sourceMetadata as { attachments?: { document_id?: string }[] }
+    ).attachments;
+    expect(typeof clearedAttachments?.[0]?.document_id).toBe('string');
+  });
+
   it('refuses a captured email attachment when the document cap is reached', async () => {
     await pg.exec(`
       INSERT INTO documents (team_id, name)

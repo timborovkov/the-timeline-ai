@@ -12,6 +12,7 @@ import {
   TIMELINE_MODELS,
   truncateTextToTokenBudget,
 } from '#src/llm/models.js';
+import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
 import { generateText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
 
 export interface CompressMessagesInput {
@@ -188,7 +189,7 @@ export async function compressMessagesForContext(
         instructions: SUMMARY_SYSTEM_PROMPT,
         prompt: transcriptForSummaryWithinBudget(summarized),
         maxOutputTokens: DEFAULT_CHAT_MEMORY.summaryMaxOutputTokens,
-        providerOptions: withLangSmithProviderOptions(undefined, {
+        providerOptions: withLangSmithProviderOptions(openRouterPrivateProviderOptions(), {
           name: 'llm.compressMessagesForContext',
           model: summaryModelId,
           metadata: {

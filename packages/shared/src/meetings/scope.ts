@@ -36,7 +36,6 @@ import {
 import { createBillingScope } from '#src/billing/scope.js';
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
 import { participantNames } from '#src/meetings/participants.js';
-import { formatMeetingTranscript } from '#src/meetings/transcript.js';
 import { decodeCursor } from '#src/pagination.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
 
@@ -72,6 +71,7 @@ const TERMINAL_MEETING_STATUSES: MeetingStatus[] = [
   'cancelled',
   'failed',
 ];
+const LATE_CHUNK_MEETING_STATUSES: MeetingStatus[] = ['completed', 'completed_partial'];
 
 export interface MeetingScopeDeps {
   db: Db;
@@ -225,6 +225,12 @@ export interface AppendChunkResult {
   deduplicated: boolean;
   refreshedCalendarEventId?: string;
 }
+
+export type CancelMeetingCaptureResult =
+  | { outcome: 'cancelled' | 'processing' }
+  | { outcome: 'requires_finalize_queue' }
+  | { outcome: 'not_cancellable'; status: MeetingStatus }
+  | { outcome: 'not_found' };
 
 const SAVED_MEETING_MATERIALIZATION_DAYS = 28;
 const SAVED_MEETING_NEARBY_BEFORE_MS = 30 * 60 * 1000;
@@ -385,7 +391,7 @@ function staleMeetingCalendarRawText(args: {
 
 async function refreshFinalizedMeetingEvent(
   tx: DbOrTx,
-  args: { meetingId: string; teamId: string; rawEventId: string },
+  args: { meetingId: string; teamId: string },
 ): Promise<string | undefined> {
   const chunks = await tx
     .select()
@@ -399,22 +405,15 @@ async function refreshFinalizedMeetingEvent(
     .orderBy(asc(meetingTranscriptChunks.startMs));
 
   const speakers = [...new Set(chunks.map((c) => c.speaker).filter(Boolean))];
-  const contentText =
-    chunks.length > 0 ? formatMeetingTranscript(chunks) : 'Meeting (no transcript)';
   const metadataPatch = JSON.stringify({
     speakers,
     chunk_count: chunks.length,
     summary_stale_at: new Date().toISOString(),
   });
 
-  await tx
-    .update(rawEvents)
-    .set({
-      contentText,
-      sourceMetadata: sql`(COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) - 'summary' - 'action_items') || ${metadataPatch}::jsonb`,
-    })
-    .where(and(eq(rawEvents.id, args.rawEventId), eq(rawEvents.teamId, args.teamId)));
-
+  // Captured meeting raw-event content is immutable. Late chunks append to
+  // meeting_transcript_chunks and only refresh derived meeting/calendar
+  // metadata plus calendar schedule mirrors.
   await tx
     .update(meetings)
     .set({
@@ -578,6 +577,27 @@ async function appendMeetingChunkTx(
 ): Promise<AppendChunkResult | null> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${args.meetingId}, 0))`);
 
+  // Serialize against cancellation/finalization updates and re-check status in
+  // the write transaction. The webhook route also pre-checks for a cheap
+  // no-op, but only this row lock closes the lookup-to-insert race.
+  const meetingRows = await tx
+    .select({ status: meetings.status, metadata: meetings.metadata })
+    .from(meetings)
+    .where(and(eq(meetings.id, args.meetingId), eq(meetings.teamId, args.teamId)))
+    .for('update')
+    .limit(1);
+  const meetingStatus = meetingRows[0]?.status;
+  if (!meetingStatus) return null;
+  const meetingMetadata = meetingRows[0]?.metadata;
+  if (
+    meetingMetadata !== null &&
+    typeof meetingMetadata === 'object' &&
+    !Array.isArray(meetingMetadata) &&
+    typeof (meetingMetadata as Record<string, unknown>).transcript_closed_at === 'string'
+  ) {
+    return null;
+  }
+
   const dedupKey = `meeting-finalized:${args.meetingId}`;
   const eventRows = await tx
     .select({ id: rawEvents.id })
@@ -590,6 +610,39 @@ async function appendMeetingChunkTx(
     )
     .limit(1);
   const rawEventId = eventRows[0]?.id ?? null;
+
+  const acceptsLateChunk =
+    rawEventId !== null && LATE_CHUNK_MEETING_STATUSES.includes(meetingStatus);
+  if (TERMINAL_MEETING_STATUSES.includes(meetingStatus) && !acceptsLateChunk) {
+    // A retry of content already stored before terminalization is still a
+    // successful no-op. Only completed captures with an existing consolidated
+    // event may accept distinct late provider deliveries.
+    if (!args.providerChunkId) return null;
+    const existing = await tx
+      .select({ id: meetingTranscriptChunks.id })
+      .from(meetingTranscriptChunks)
+      .where(
+        and(
+          eq(meetingTranscriptChunks.meetingId, args.meetingId),
+          eq(meetingTranscriptChunks.providerChunkId, args.providerChunkId),
+        ),
+      )
+      .limit(1);
+    const existingChunkId = existing[0]?.id;
+    if (!existingChunkId) return null;
+    if (rawEventId) {
+      await tx
+        .update(meetingTranscriptChunks)
+        .set({ rawEventId })
+        .where(
+          and(
+            eq(meetingTranscriptChunks.id, existingChunkId),
+            sql`${meetingTranscriptChunks.rawEventId} IS NULL`,
+          ),
+        );
+    }
+    return { chunkId: existingChunkId, deduplicated: true };
+  }
 
   const chunkInsert = await tx
     .insert(meetingTranscriptChunks)
@@ -639,7 +692,6 @@ async function appendMeetingChunkTx(
     const refreshedCalendarEventId = await refreshFinalizedMeetingEvent(tx, {
       meetingId: args.meetingId,
       teamId: args.teamId,
-      rawEventId,
     });
     return refreshedCalendarEventId
       ? { chunkId, deduplicated: false, refreshedCalendarEventId }
@@ -650,11 +702,11 @@ async function appendMeetingChunkTx(
 }
 
 /**
- * System-mode lookup keyed on the provider's bot id. Used by the Recall
- * status + transcript webhooks, which run without a session and need to
- * resolve a meeting before they can build a `withTeam` scope. Bot ids
- * are globally-unique Recall UUIDs, so a botId match is itself the
- * authorisation signal — there's no team/user context to verify yet.
+ * System-mode lookup keyed on Recall's bot id. Used by the Recall status +
+ * transcript webhooks, which run without a session and need to resolve a
+ * meeting before they can build a `withTeam` scope. The database currently
+ * scopes bot-id uniqueness per team, so an unexpected duplicate across teams
+ * must fail closed instead of selecting one team's row nondeterministically.
  *
  * Extracted from the scope (which requires `ensureMember`) so route
  * handlers can stay thin and mockable.
@@ -691,9 +743,9 @@ export async function lookupMeetingByBotId(
       metadata: meetings.metadata,
     })
     .from(meetings)
-    .where(eq(meetings.providerBotId, botId))
-    .limit(1);
-  const row = rows[0];
+    .where(and(eq(meetings.provider, 'recall'), eq(meetings.providerBotId, botId)))
+    .limit(2);
+  const row = rows.length === 1 ? rows[0] : null;
   if (!row) return null;
   return {
     ...row,
@@ -1754,6 +1806,102 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         .orderBy(asc(meetingTranscriptChunks.startMs));
     },
 
+    /**
+     * Atomically stop transcript acceptance and choose whether a partial
+     * capture must be finalized. Uses the same per-meeting transaction lock as
+     * `appendMeetingChunk`, so the final state can never be `cancelled` with a
+     * concurrently inserted chunk.
+     */
+    async cancelMeetingCapture(
+      meetingId: string,
+      options: { allowPartialProcessing: boolean },
+    ): Promise<CancelMeetingCaptureResult> {
+      await ensureMember();
+      return db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
+
+        const meetingRows = await tx
+          .select({ status: meetings.status, providerBotId: meetings.providerBotId })
+          .from(meetings)
+          .where(and(eq(meetings.id, meetingId), eq(meetings.teamId, teamId), meetingVisibility))
+          .for('update')
+          .limit(1);
+        const status = meetingRows[0]?.status;
+        if (!status) return { outcome: 'not_found' };
+        if (!(['pending', 'joining', 'active'] as MeetingStatus[]).includes(status)) {
+          return { outcome: 'not_cancellable', status };
+        }
+
+        const chunkRows = await tx
+          .select({ id: meetingTranscriptChunks.id })
+          .from(meetingTranscriptChunks)
+          .where(
+            and(
+              eq(meetingTranscriptChunks.meetingId, meetingId),
+              eq(meetingTranscriptChunks.teamId, teamId),
+            ),
+          )
+          .limit(1);
+        const hasPartialCapture = chunkRows.length > 0;
+        if (hasPartialCapture && !options.allowPartialProcessing) {
+          return { outcome: 'requires_finalize_queue' };
+        }
+
+        const now = new Date();
+        const nextStatus: MeetingStatus = hasPartialCapture ? 'processing' : 'cancelled';
+        const providerLeavePending = Boolean(meetingRows[0]?.providerBotId);
+        const metadataPatch = JSON.stringify(
+          hasPartialCapture
+            ? {
+                cancelled_at: now.toISOString(),
+                transcript_closed_at: now.toISOString(),
+                ...(providerLeavePending ? { provider_leave_pending: true } : {}),
+                partial_capture: true,
+                capture_status: 'completed_partial',
+              }
+            : {
+                cancelled_at: now.toISOString(),
+                transcript_closed_at: now.toISOString(),
+                ...(providerLeavePending ? { provider_leave_pending: true } : {}),
+                capture_status: 'cancelled',
+              },
+        );
+        await tx
+          .update(meetings)
+          .set({
+            status: nextStatus,
+            ...(hasPartialCapture ? { endedAt: now } : {}),
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${metadataPatch}::jsonb`,
+            updatedAt: now,
+          })
+          .where(and(eq(meetings.id, meetingId), eq(meetings.teamId, teamId)));
+
+        return { outcome: nextStatus };
+      });
+    },
+
+    async confirmMeetingProviderLeave(meetingId: string, providerBotId: string): Promise<boolean> {
+      await ensureMember();
+      const confirmedPatch = JSON.stringify({
+        provider_leave_confirmed_at: new Date().toISOString(),
+      });
+      const updated = await db
+        .update(meetings)
+        .set({
+          metadata: sql`(COALESCE(${meetings.metadata}, '{}'::jsonb) - 'provider_leave_pending') || ${confirmedPatch}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(meetings.id, meetingId),
+            eq(meetings.teamId, teamId),
+            eq(meetings.providerBotId, providerBotId),
+          ),
+        )
+        .returning({ id: meetings.id });
+      return updated.length > 0;
+    },
+
     async updateMeetingStatus(
       meetingId: string,
       status: MeetingStatus,
@@ -1825,13 +1973,6 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
     },
 
     async appendMeetingChunk(input: AppendChunkInput): Promise<AppendChunkResult | null> {
-      const meetingRow = await db
-        .select({ id: meetings.id, teamId: meetings.teamId })
-        .from(meetings)
-        .where(and(eq(meetings.id, input.meetingId), eq(meetings.teamId, teamId)))
-        .limit(1);
-      if (!meetingRow[0]) return null;
-
       return db.transaction(async (tx) =>
         appendMeetingChunkTx(tx, {
           teamId,

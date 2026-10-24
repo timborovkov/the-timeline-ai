@@ -43,7 +43,11 @@ export function PublicHeader({
         />
         <GitHubSourceLink compact className={styles.githubLink} />
         {showAccountActions && !isSignedIn ? (
-          <Link href="/sign-in" className={cn(styles.navLink, styles.signInLink)}>
+          <Link
+            href="/sign-in"
+            data-public-analytics-cta="sign_in"
+            className={cn(styles.navLink, styles.signInLink)}
+          >
             Sign in
           </Link>
         ) : null}
@@ -51,6 +55,7 @@ export function PublicHeader({
         {showAccountActions ? (
           <Link
             href={isSignedIn ? '/app' : '/sign-up'}
+            data-public-analytics-cta={isSignedIn ? 'open_dashboard' : 'try_project'}
             className={styles.navCta}
             title={isSignedIn ? undefined : 'Free to start — no card required'}
           >

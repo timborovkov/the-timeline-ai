@@ -152,7 +152,10 @@ describe('how-it-works and guide routes', () => {
     expect(guideShell.match(/aria-current="page"[^>]*href="\/how-it-works"/g)).not.toBeNull();
     expect(recordShell).toContain('aria-label="Support and legal"');
     expect(recordShell).toContain('href="/help/support"');
+    expect(recordShell).toContain('href="/trust"');
     expect(recordShell).toContain('href="/terms"');
+    expect(recordShell).toContain('href="/privacy"');
+    expect(recordShell).toContain('href="/cookies"');
   });
 
   it('routes signed-in editorial readers directly to the dashboard', () => {

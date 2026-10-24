@@ -28,7 +28,7 @@ describe('Digests route states', () => {
     expect(screen.getByRole('link', { name: 'Digests' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('heading', { level: 2, name: 'Unable to load digests' })).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     expect(reset).toHaveBeenCalledTimes(1);

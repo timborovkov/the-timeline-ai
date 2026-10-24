@@ -23,13 +23,16 @@
 
       <h2 id="prerequisites">Prerequisites</h2>
       <ul>
-        <li>Node 24+ (LTS — see <code>.nvmrc</code>)</li>
+        <li>Node 24.22.1 (LTS — see <code>.nvmrc</code>)</li>
         <li>pnpm 11.8+</li>
         <li>Docker Desktop (or compatible)</li>
       </ul>
 
       <h2 id="first-time-setup">First-time setup</h2>
-      <pre><code>cp .env.example .env
+      <pre><code>nvm install
+nvm use
+corepack enable
+cp .env.example .env
 # Next.js dev server reads env from the app dir, so symlink:
 ln -sf ../../.env apps/web/.env
 </code></pre>

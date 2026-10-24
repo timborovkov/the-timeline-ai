@@ -1,11 +1,21 @@
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { LanguageModel } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { extractTextFromMedia, resolveVisionModelId } from '#src/llm/vision.js';
+
+vi.mock('#src/billing/runtime.js', () => ({
+  withAiMetering: async (
+    _input: unknown,
+    fn: () => Promise<{ value: { text: string } }>,
+  ): Promise<{ text: string }> => {
+    const { value } = await fn();
+    return JSON.parse(JSON.stringify(value)) as { text: string };
+  },
+}));
 
 // The v3 model layer in `ai` doesn't re-export its call-options type from
 // the package root. We only need the prompt + maxOutputTokens fields for
@@ -67,6 +77,20 @@ afterEach(() => {
 });
 
 describe('extractTextFromMedia', () => {
+  it('recovers OCR text when billing replays a JSON-cached vision result', async () => {
+    const { model, calls } = makeCapturingModel(
+      'SUGGESTED_TITLE:\nScan\n\nSOURCE_TEXT:\nkept ocr\n\nVISUAL_DESCRIPTION:\nA page.',
+    );
+    const result = await extractTextFromMedia(
+      { body: Buffer.from([0xff, 0xd8, 0xff]), mediaType: 'image/jpeg' },
+      { model },
+    );
+    expect(result.text).toBe('kept ocr');
+    expect(result.suggestedTitle).toBe('Scan');
+    expect(result.visualDescription).toBe('A page.');
+    expect(calls).toHaveLength(1);
+  });
+
   it('sends an image content part for image/* media types', async () => {
     const { model, calls } = makeCapturingModel(
       'SUGGESTED_TITLE:\nCRM export screenshot\n\nSOURCE_TEXT:\nalt text from screenshot\n\nVISUAL_DESCRIPTION:\nA screenshot of a web app.',
@@ -192,6 +216,51 @@ describe('extractTextFromMedia', () => {
         : (sysContent as { text?: string }[]).map((c) => c.text ?? '').join('\n');
     expect(text).toMatch(/no commentary|no preamble|transcribe faithfully/i);
     expect(text).toMatch(/SUGGESTED_TITLE/);
+  });
+
+  it('enforces ZDR routing and disables OpenRouter response caching at the HTTP boundary', async () => {
+    let requestBody: unknown;
+    let requestHeaders: Headers | undefined;
+    const fetch: typeof globalThis.fetch = (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
+      requestBody = JSON.parse(init.body) as unknown;
+      requestHeaders = new Headers(init.headers);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-vision-test',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.vision.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content:
+                    'SUGGESTED_TITLE:\nSynthetic scan\n\nSOURCE_TEXT:\nhello\n\nVISUAL_DESCRIPTION:\nA synthetic scan.',
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    await expect(
+      extractTextFromMedia(
+        { body: Buffer.from([0xff, 0xd8, 0xff]), mediaType: 'image/jpeg' },
+        { fetch },
+      ),
+    ).resolves.toMatchObject({ text: 'hello', model: TIMELINE_MODELS.vision.id });
+    expect(requestBody).toMatchObject({
+      model: TIMELINE_MODELS.vision.id,
+      provider: { data_collection: 'deny', zdr: true },
+    });
+    expect(requestHeaders?.get('X-OpenRouter-Cache')).toBe('false');
   });
 
   it('resolveVisionModelId uses the predefined vision model catalog entry', () => {

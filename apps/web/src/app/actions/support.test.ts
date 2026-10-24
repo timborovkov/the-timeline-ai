@@ -55,14 +55,11 @@ interface SupportInsert {
   userId: string | null;
   teamId: string | null;
   context: {
-    userEmail: string | null;
-    userName: string | null;
-    teamName: string | null;
-    teamSlug: string | null;
     teamRole: string | null;
-    ip: string;
+    surface: string | null;
+    errorReference: string | null;
+    release: string | null;
     userAgent: string | null;
-    referer: string | null;
   };
 }
 
@@ -73,7 +70,8 @@ function form(overrides: Record<string, string> = {}): FormData {
     name: 'Ada Lovelace',
     email: 'ADA@EXAMPLE.TEST',
     message: 'The export page fails after I click the retry button.',
-    currentPage: 'https://timeline.test/app/team',
+    surface: 'team_integrations',
+    errorReference: 'sentry-reference',
     company: '',
     'cf-turnstile-response': 'turnstile-token',
     ...overrides,
@@ -85,7 +83,7 @@ function form(overrides: Record<string, string> = {}): FormData {
 function headersFixture(): Headers {
   return new Headers({
     host: 'timeline.test',
-    referer: 'https://timeline.test/contact',
+    referer: 'https://timeline.test/app/team?token=must-not-persist',
     'user-agent': 'Vitest Browser',
     'x-forwarded-for': '203.0.113.10',
   });
@@ -109,6 +107,20 @@ function okUpdateChain(records: unknown[]): void {
       return { where: vi.fn(() => Promise.resolve()) };
     }),
   });
+}
+
+function recordedRateLimitKey(index: number): string {
+  const call = fakes.checkRateLimit.mock.calls.at(index) as unknown[] | undefined;
+  const input = call?.[0];
+  if (
+    input === null ||
+    typeof input !== 'object' ||
+    !('key' in input) ||
+    typeof input.key !== 'string'
+  ) {
+    throw new TypeError(`Expected rate-limit call ${index} to include a string key.`);
+  }
+  return input.key;
 }
 
 function supportInsert(value: unknown): SupportInsert {
@@ -136,7 +148,10 @@ beforeEach(() => {
       role: 'admin',
     },
   });
-  fakes.getEnv.mockReturnValue({ SUPPORT_EMAIL: 'support@timeline.test' });
+  fakes.getEnv.mockReturnValue({
+    SUPPORT_EMAIL: 'support@timeline.test',
+    SENTRY_RELEASE: 'release-sha',
+  });
   fakes.sendMessage.mockResolvedValue({ ok: true });
   okInsertChain([]);
   okUpdateChain([]);
@@ -150,6 +165,20 @@ describe('support request action', () => {
     expect(fakes.headers).not.toHaveBeenCalled();
     expect(fakes.checkRateLimit).not.toHaveBeenCalled();
     expect(fakes.verifyTurnstileToken).not.toHaveBeenCalled();
+    expect(fakes.dbInsert).not.toHaveBeenCalled();
+  });
+
+  it('rejects raw URLs and arbitrary error context before reading request metadata', async () => {
+    const result = await submitSupportRequestAction(
+      {},
+      form({
+        surface: 'https://timeline.test/app/team?token=secret',
+        errorReference: 'reference?token=secret',
+      }),
+    );
+
+    expect(result.error).toBeTruthy();
+    expect(fakes.headers).not.toHaveBeenCalled();
     expect(fakes.dbInsert).not.toHaveBeenCalled();
   });
 
@@ -194,7 +223,10 @@ describe('support request action', () => {
     okInsertChain(inserts);
     okUpdateChain(updates);
 
-    await expect(submitSupportRequestAction({}, form())).resolves.toEqual({ ok: true });
+    await expect(submitSupportRequestAction({}, form())).resolves.toEqual({
+      ok: true,
+      requestReference: REQUEST_ID,
+    });
 
     const inserted = supportInsert(inserts[0]);
     expect(inserted).toMatchObject({
@@ -202,27 +234,37 @@ describe('support request action', () => {
       name: 'Ada Lovelace',
       email: 'ada@example.test',
       message: 'The export page fails after I click the retry button.',
-      currentPage: 'https://timeline.test/app/team',
+      currentPage: '/app/team/integrations',
       userId: USER_ID,
       teamId: TEAM_ID,
     });
-    expect(inserted.context).toMatchObject({
-      userEmail: 'ada@example.test',
-      userName: 'Ada',
-      teamName: 'Acme Labs',
-      teamSlug: 'acme-labs',
+    expect(inserted.context).toEqual({
       teamRole: 'admin',
-      ip: '203.0.113.10',
+      surface: 'team_integrations',
+      errorReference: 'sentry-reference',
+      release: 'release-sha',
       userAgent: 'Vitest Browser',
-      referer: 'https://timeline.test/contact',
     });
+    expect(inserted.context).not.toHaveProperty('ip');
+    expect(inserted.context).not.toHaveProperty('referer');
+    expect(JSON.stringify(inserted)).not.toContain('must-not-persist');
+    const ipRateLimitKey = recordedRateLimitKey(0);
+    expect(ipRateLimitKey).toMatch(/^rl:support:ip:[A-Za-z0-9_-]{43}$/);
+    expect(ipRateLimitKey).not.toContain('203.0.113.10');
+    const accountRateLimitKey = recordedRateLimitKey(1);
+    expect(accountRateLimitKey).toMatch(/^rl:support:identity:[A-Za-z0-9_-]{43}$/);
+    expect(accountRateLimitKey).not.toContain(USER_ID);
     expect(fakes.sendMessage).toHaveBeenCalledWith(
       'support_request',
       expect.objectContaining({
         supportEmail: 'support@timeline.test',
         requestId: REQUEST_ID,
+        surface: 'team_integrations',
+        errorReference: 'sentry-reference',
+        release: 'release-sha',
         teamId: TEAM_ID,
         userId: USER_ID,
+        teamRole: 'admin',
       }),
       expect.objectContaining({
         teamId: TEAM_ID,
@@ -240,9 +282,9 @@ describe('support request action', () => {
     okInsertChain(inserts);
     fakes.auth.mockResolvedValueOnce(null);
 
-    await expect(submitSupportRequestAction({}, form({ currentPage: '' }))).resolves.toEqual({
-      ok: true,
-    });
+    await expect(
+      submitSupportRequestAction({}, form({ surface: '', errorReference: '' })),
+    ).resolves.toEqual({ ok: true, requestReference: REQUEST_ID });
 
     const inserted = supportInsert(inserts[0]);
     expect(inserted).toMatchObject({
@@ -250,26 +292,30 @@ describe('support request action', () => {
       teamId: null,
       currentPage: null,
     });
-    expect(inserted.context).toMatchObject({
-      userEmail: null,
-      userName: null,
-      teamName: null,
-      teamSlug: null,
+    expect(inserted.context).toEqual({
       teamRole: null,
+      surface: null,
+      errorReference: null,
+      release: 'release-sha',
+      userAgent: 'Vitest Browser',
     });
     expect(fakes.resolveActiveTeam).not.toHaveBeenCalled();
-    expect(fakes.checkRateLimit).toHaveBeenLastCalledWith(
-      expect.objectContaining({ key: 'rl:support:identity:ada@example.test' }),
-    );
+    const identityRateLimitKey = recordedRateLimitKey(-1);
+    expect(identityRateLimitKey).toMatch(/^rl:support:identity:[A-Za-z0-9_-]{43}$/);
+    expect(identityRateLimitKey).not.toContain('ada@example.test');
   });
 
-  it('persists delivery errors when support email is missing or sending fails', async () => {
+  it('returns a reference after saving even when email delivery is unavailable', async () => {
     const missingConfigUpdates: unknown[] = [];
     okUpdateChain(missingConfigUpdates);
     fakes.getEnv.mockReturnValueOnce({});
 
     const missingConfig = await submitSupportRequestAction({}, form());
-    expect(missingConfig.error).toContain('support email delivery is not configured');
+    expect(missingConfig).toEqual({
+      ok: true,
+      requestReference: REQUEST_ID,
+      warning: 'Your request was saved, but email delivery is currently unavailable.',
+    });
     expect(missingConfigUpdates[0]).toMatchObject({
       emailError: 'Support delivery is not configured.',
     });
@@ -280,7 +326,11 @@ describe('support request action', () => {
     fakes.sendMessage.mockResolvedValueOnce({ ok: false, error: 'smtp_down' });
 
     const sendFailure = await submitSupportRequestAction({}, form());
-    expect(sendFailure.error).toContain('email delivery failed');
+    expect(sendFailure).toEqual({
+      ok: true,
+      requestReference: REQUEST_ID,
+      warning: 'Your request was saved, but email delivery is currently unavailable.',
+    });
     expect(sendFailureUpdates[0]).toMatchObject({ emailError: 'smtp_down' });
   });
 });

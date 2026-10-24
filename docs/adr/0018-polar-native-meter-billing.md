@@ -66,7 +66,11 @@ credit hides margin and confuses prospects.
    the cap is a hard stop, with owner alerts at 50/75/90/100%. Free workspaces
    hard-stop on native allowances. Comps skip Polar checkout and meter ingest;
    assigning a comp revokes the current Polar subscription, and the comp is
-   refused when that subscription exists and Polar is not configured. Metering and the
+   refused when that subscription exists and Polar is not configured. An open
+   Enterprise checkout is expired before the comp is saved. A checkout that stays
+   payable, or one that already started payment, blocks the comp. A subscription
+   webhook for a workspace that is already comped revokes that subscription,
+   stores its id until the revoke succeeds, and does not replace the comp. Metering and the
    spend cap still apply. `past_due` and `payment_retry`
    pause new cost-bearing work. Entering `past_due` emails owners once per UTC
    month. A later active subscription webhook clears that pause. Polar
@@ -196,7 +200,8 @@ credit hides margin and confuses prospects.
    session is expired when Polar reports it expired, failed, or missing. Polar
    has no merchant expire endpoint, so a session that stays open, or one that
    already started payment, blocks another link. The paid subscription webhook
-   activates only that checkout's terms. A second live subscription is revoked,
+   activates only that checkout's terms. A subscription for a workspace that is
+   already comped is revoked instead of activating. A second live subscription is revoked,
    or opened as an unbilled alert when revoke fails, so it is not dropped or
    left billing in silence. The contracted platform fee is
    stored on `enterprise_platform_fee_cents`, separate from the removable usage

@@ -18,6 +18,7 @@ const MAX_JOIN_OFFSET_MS = 30 * 60 * 1000;
 const DEFAULT_JOIN_OFFSET_MS = 2 * 60 * 1000;
 const SCHEDULED_JOIN_LOOKBACK_MS = 550 * 1000;
 const FAILURE_PAUSE_THRESHOLD = 3;
+const MAX_PROVIDER_LEAVE_RETRIES_PER_TICK = 100;
 
 interface MeetingSchedulerDeps {
   db: Db;
@@ -72,12 +73,54 @@ function joinOffsetMs(scheduleConfig: unknown): number {
     : DEFAULT_JOIN_OFFSET_MS;
 }
 
+async function retryPendingProviderLeaves(db: Db): Promise<number> {
+  const pending = await db
+    .select({
+      id: meetings.id,
+      teamId: meetings.teamId,
+      provider: meetings.provider,
+      providerBotId: meetings.providerBotId,
+    })
+    .from(meetings)
+    .where(
+      and(
+        isNotNull(meetings.providerBotId),
+        sql`(${meetings.metadata} ->> 'provider_leave_pending') = 'true'`,
+      ),
+    )
+    .orderBy(asc(meetings.id))
+    .limit(MAX_PROVIDER_LEAVE_RETRIES_PER_TICK);
+
+  let confirmed = 0;
+  for (const meeting of pending) {
+    if (!meeting.providerBotId) continue;
+    try {
+      const provider = meetingBots.getMeetingBotProvider(meeting.provider);
+      await provider.leaveMeeting(meeting.providerBotId);
+      const scope = withTeam(db, meeting.teamId, PSEUDO_USER, { skipMembershipCheck: true });
+      if (await scope.meetings.confirmMeetingProviderLeave(meeting.id, meeting.providerBotId)) {
+        confirmed += 1;
+      }
+    } catch (err) {
+      const leaveErrorCode = meetingBots.meetingBotErrorCode(err);
+      log.warn({ leaveErrorCode, meetingId: meeting.id }, 'meeting_leave_retry_failed');
+      captureWorkerException(err, {
+        component: 'meeting_scheduler',
+        operation: 'retry_provider_leave',
+      });
+    }
+  }
+  return confirmed;
+}
+
 export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): Promise<{
   materialized: number;
   joined: number;
   failed: number;
+  providerLeavesConfirmed: number;
 }> {
   const now = new Date();
+  const providerLeavesConfirmed = await retryPendingProviderLeaves(deps.db);
   const expiredRetry = deps.db
     .select({ id: meetings.id })
     .from(meetings)
@@ -234,7 +277,6 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
           providerBotId: join.botId,
           metadata: {
-            provider_join_result: join.raw ?? {},
             billing_operation_id: admission.operationId,
             reserved_recall_minutes: admission.reservedMinutes,
             reserved_recall_started_at: new Date().toISOString(),
@@ -242,7 +284,8 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         });
         joined += 1;
       } catch (err) {
-        log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
+        const joinErrorCode = meetingBots.meetingBotErrorCode(err);
+        log.warn({ joinErrorCode, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
         await abortRecallJoinAfterProviderAccept({
           billing: scope.billing,
           operationId: admission.operationId,
@@ -252,7 +295,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
         await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
           metadata: {
             join_failed_at: new Date().toISOString(),
-            join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+            join_error: joinErrorCode,
           },
         });
         await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
@@ -262,11 +305,12 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
       if (isBillingAdmissionError(err)) {
         continue;
       }
-      log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
+      const joinErrorCode = meetingBots.meetingBotErrorCode(err);
+      log.warn({ joinErrorCode, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
       await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
         metadata: {
           join_failed_at: new Date().toISOString(),
-          join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+          join_error: joinErrorCode,
         },
       });
       await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
@@ -274,7 +318,7 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
     }
   }
 
-  return { materialized, joined, failed };
+  return { materialized, joined, failed, providerLeavesConfirmed };
 }
 
 export function startMeetingSchedulerWorker(

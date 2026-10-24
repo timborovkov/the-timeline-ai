@@ -70,10 +70,10 @@ describe('AcceptInvite route states', () => {
       screen.getByRole('heading', { level: 2, name: 'Unable to load invitation' }),
     ).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain(
-      'Unable to load invitationThis failed load did not accept your invitation or change your team access. Check your connection, then try again.Try again',
+      'Unable to load invitationThis failed load did not accept your invitation or change your team access. Check your connection, then try again.RetryGet support',
     );
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     await user.keyboard('[Space]');
