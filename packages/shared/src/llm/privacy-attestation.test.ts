@@ -44,7 +44,7 @@ describe('OpenRouter privacy attestation', () => {
     }
     expect(OPENROUTER_MODEL_CATALOG_FORMAT).toBe('timeline-openrouter-model-catalog.v1');
     expect(OPENROUTER_MODEL_CATALOG_SHA256).toBe(
-      'f5ecce9794f8c85cc129111d687ee1588589db0223ccf7f46df6da0afc00e763',
+      '4ac42145431e322a1554192bb86296fa892335afa2bc5185a12ed7798bf46665',
     );
   });
 

@@ -273,8 +273,7 @@ describe('POST /api/search/global', () => {
     expect(fakes.fakeSearchEvents).toHaveBeenCalled();
     expect(fakes.fakeSearchDocumentChunksPage).toHaveBeenCalled();
     const analyticsCall = fakes.trackProductEventBestEffort.mock.calls.at(-1) as
-      | unknown[]
-      | undefined;
+      unknown[] | undefined;
     expect(analyticsCall?.[0]).toEqual({ kind: 'user', teamId: TEAM_ID, userId: USER_ID });
     expect(analyticsCall?.[1]).toBe('search_performed');
     const analyticsProperties = analyticsCall?.[2];

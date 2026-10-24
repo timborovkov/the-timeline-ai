@@ -120,8 +120,7 @@ export type PublicSurface = (typeof PUBLIC_ANALYTICS_SURFACES)[number];
 export type AppSurface = (typeof APP_ANALYTICS_SURFACES)[number];
 
 export type AnalyticsActor =
-  | { kind: 'user'; userId: string; teamId?: string }
-  | { kind: 'team'; teamId: string };
+  { kind: 'user'; userId: string; teamId?: string } | { kind: 'team'; teamId: string };
 
 const analyticsActorSchema = z.discriminatedUnion('kind', [
   z

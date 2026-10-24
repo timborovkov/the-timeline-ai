@@ -6,12 +6,7 @@ import type {
 } from '#src/transcription-eval/manifest.js';
 
 export type TranscriptionEvalErrorCategory =
-  | 'authentication'
-  | 'format'
-  | 'invalid_response'
-  | 'provider'
-  | 'quota'
-  | 'timeout';
+  'authentication' | 'format' | 'invalid_response' | 'provider' | 'quota' | 'timeout';
 
 export interface TranscriptionEvalTransportSuccess {
   ok: true;
@@ -29,8 +24,7 @@ interface TranscriptionEvalTransportFailure {
 }
 
 type TranscriptionEvalTransportOutcome =
-  | TranscriptionEvalTransportSuccess
-  | TranscriptionEvalTransportFailure;
+  TranscriptionEvalTransportSuccess | TranscriptionEvalTransportFailure;
 
 export interface TranscriptionEvalObservation {
   fixture: TranscriptionEvalCase;

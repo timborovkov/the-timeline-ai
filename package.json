@@ -66,8 +66,7 @@
     "tsx": "^4.23.15",
     "turbo": "^2.11.9",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.2",
-    "zod": "^4.6.7"
+    "typescript-eslint": "^8.71.2"
   },
   "engines": {
     "node": ">=24.0.0",

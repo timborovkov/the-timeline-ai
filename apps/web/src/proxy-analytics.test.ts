@@ -8,8 +8,7 @@ const mocks = vi.hoisted(() => ({
     .fn<(request: NextRequest, response: Response) => Promise<void>>()
     .mockResolvedValue(undefined),
   wrappedAuthMiddleware: undefined as
-    | ((request: NextRequest, event: NextFetchEvent) => Promise<Response>)
-    | undefined,
+    ((request: NextRequest, event: NextFetchEvent) => Promise<Response>) | undefined,
 }));
 
 vi.mock('next-auth', () => ({

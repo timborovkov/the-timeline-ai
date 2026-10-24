@@ -50,17 +50,17 @@ describe('OpenRouter authenticated ZDR model canaries', () => {
     expect(targets).toEqual([
       {
         kind: 'structured',
-        modelId: 'deepseek/deepseek-v4-flash-0731',
+        modelId: 'deepseek/deepseek-v4.1-flash-1017',
         roles: ['extraction', 'agent', 'summarization', 'taskCategorization'],
       },
       {
         kind: 'structured',
-        modelId: 'deepseek/deepseek-v4-pro',
+        modelId: 'deepseek/deepseek-v4-pro-0813',
         roles: ['structuredFallback'],
       },
       {
         kind: 'vision',
-        modelId: 'google/gemini-3.5-flash',
+        modelId: 'google/gemini-3.8-flash',
         roles: ['vision'],
       },
       {
@@ -215,18 +215,18 @@ describe('inspectOpenRouterZdrRegistry', () => {
       inspectOpenRouterZdrRegistry(
         {
           data: [
-            { model_id: 'deepseek/deepseek-v4-flash-0731', provider_name: 'Provider A' },
-            { model_id: 'google/gemini-3.5-flash', provider_name: 'Provider B' },
-            { model_id: 'deepseek/deepseek-v4-flash-0731', provider_name: 'Provider C' },
+            { model_id: 'deepseek/deepseek-v4.1-flash-1017', provider_name: 'Provider A' },
+            { model_id: 'google/gemini-3.8-flash', provider_name: 'Provider B' },
+            { model_id: 'deepseek/deepseek-v4.1-flash-1017', provider_name: 'Provider C' },
           ],
         },
-        ['deepseek/deepseek-v4-flash-0731', 'google/gemini-3.5-flash'],
+        ['deepseek/deepseek-v4.1-flash-1017', 'google/gemini-3.8-flash'],
       ),
     ).toEqual({
       ok: true,
       models: [
-        { endpointCount: 2, modelId: 'deepseek/deepseek-v4-flash-0731' },
-        { endpointCount: 1, modelId: 'google/gemini-3.5-flash' },
+        { endpointCount: 2, modelId: 'deepseek/deepseek-v4.1-flash-1017' },
+        { endpointCount: 1, modelId: 'google/gemini-3.8-flash' },
       ],
     });
   });
@@ -235,11 +235,11 @@ describe('inspectOpenRouterZdrRegistry', () => {
     expect(
       inspectOpenRouterZdrRegistry(
         {
-          data: [{ model_id: 'deepseek/deepseek-v4-flash-0731', provider_name: 'Provider A' }],
+          data: [{ model_id: 'deepseek/deepseek-v4.1-flash-1017', provider_name: 'Provider A' }],
         },
         [
-          'deepseek/deepseek-v4-flash-0731',
-          'google/gemini-3.5-flash',
+          'deepseek/deepseek-v4.1-flash-1017',
+          'google/gemini-3.8-flash',
           'openai/text-embedding-3-small',
         ],
       ),
@@ -247,8 +247,8 @@ describe('inspectOpenRouterZdrRegistry', () => {
       ok: false,
       reason: 'models_absent',
       detail:
-        'Public ZDR registry has no endpoint for: google/gemini-3.5-flash, openai/text-embedding-3-small',
-      missingModelIds: ['google/gemini-3.5-flash', 'openai/text-embedding-3-small'],
+        'Public ZDR registry has no endpoint for: google/gemini-3.8-flash, openai/text-embedding-3-small',
+      missingModelIds: ['google/gemini-3.8-flash', 'openai/text-embedding-3-small'],
     });
   });
 
@@ -272,7 +272,7 @@ describe('inspectOpenRouterZdrRegistry', () => {
       detail: 'ZDR registry response.data[0].model_id is not a non-empty string',
     },
   ])('rejects a malformed registry payload: $detail', ({ payload, detail }) => {
-    expect(inspectOpenRouterZdrRegistry(payload, ['deepseek/deepseek-v4-flash-0731'])).toEqual({
+    expect(inspectOpenRouterZdrRegistry(payload, ['deepseek/deepseek-v4.1-flash-1017'])).toEqual({
       ok: false,
       reason: 'invalid_response',
       detail,
