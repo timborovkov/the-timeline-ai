@@ -550,13 +550,13 @@ function billingUsageAlertCopy(input: BillingUsageAlertMessageInput): {
         ctaLabel: 'Add payment method',
         ctaHref: input.billingUrl,
       };
-    case 'wallet_auto_reload':
+    case 'subscription_past_due':
       return {
-        subject: `${input.teamName}: wallet auto-reload ready`,
-        title: 'Wallet auto-reload',
+        subject: `${input.teamName}: subscription payment failed`,
+        title: 'Subscription payment failed',
         intro:
-          'Your prepaid wallet is at or below the auto-reload threshold. Complete this Polar top-up to credit the wallet; Timeline cannot charge Polar without a checkout.',
-        ctaLabel: 'Complete Polar top-up',
+          'Polar could not collect the subscription invoice. New cost-bearing work is paused until the card on file succeeds. Reading and export stay available.',
+        ctaLabel: 'Update payment method',
         ctaHref: input.billingUrl,
       };
   }

@@ -1,4 +1,5 @@
 import {
+  OVERAGE_RATES,
   acceptedSourcesChargeCents,
   emailChargeCents,
   recallChargeCents,
@@ -13,7 +14,7 @@ export type MeterTotals = Partial<
 >;
 
 /**
- * PAYG keeps the Free native floor; only overage is wallet/Polar-billable.
+ * PAYG keeps the Free native floor; only overage is Polar-billable.
  * Free hard-stops separately. Team/Business use included invoice discount.
  */
 export function paygOverageNativeUnits(input: {
@@ -61,86 +62,7 @@ function roundedPostAllowanceCents(grossCents: number, allowanceLimitCents: numb
   return Math.max(0, Math.round(grossCents) - allowanceLimitCents);
 }
 
-export type PolarRefundAmountKind = 'incremental' | 'cumulative';
-
-function metadataPositiveCents(
-  metadata: Record<string, unknown> | null | undefined,
-  key: string,
-): number {
-  const value = metadata?.[key];
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
-  return Math.round(value);
-}
-
-/** Prior wallet reversals for one top-up, split into debited cents and reported totals. */
-export function summedPolarRefundReversals(
-  rows: readonly { operationId: string; metadata: Record<string, unknown> | null }[],
-  refundOperationId: string,
-): {
-  duplicate: boolean;
-  alreadyDebitedCents: number;
-  incrementalReportedCents: number;
-  cumulativeReportedCents: number;
-} {
-  if (rows.some((row) => row.operationId === refundOperationId)) {
-    return {
-      duplicate: true,
-      alreadyDebitedCents: 0,
-      incrementalReportedCents: 0,
-      cumulativeReportedCents: 0,
-    };
-  }
-  let alreadyDebitedCents = 0;
-  let incrementalReportedCents = 0;
-  let cumulativeReportedCents = 0;
-  for (const row of rows) {
-    const metadata = row.metadata ?? {};
-    const debited = metadataPositiveCents(metadata, 'cents');
-    alreadyDebitedCents += debited;
-    const reported = metadataPositiveCents(metadata, 'reported_cents') || debited;
-    if (reported <= 0) continue;
-    if (metadata.amount_kind === 'cumulative') {
-      cumulativeReportedCents = Math.max(cumulativeReportedCents, reported);
-    } else {
-      incrementalReportedCents += reported;
-    }
-  }
-  return {
-    duplicate: false,
-    alreadyDebitedCents,
-    incrementalReportedCents,
-    cumulativeReportedCents,
-  };
-}
-
-/**
- * Wallet cents still to claw back for one Polar refund event.
- * `order.refunded` reports a cumulative refunded total. `refund.created` reports
- * that refund's own amount. The target is the larger of those figures, capped
- * at the original top-up, minus reversals already recorded.
- */
-export function reconciledPolarRefundClawbackCents(input: {
-  originalCents: number;
-  alreadyDebitedCents: number;
-  incrementalReportedCents: number;
-  cumulativeReportedCents: number;
-  incomingKind: PolarRefundAmountKind;
-  incomingReportedCents: number;
-}): number {
-  const original = Math.max(0, Math.round(input.originalCents));
-  const already = Math.max(0, Math.round(input.alreadyDebitedCents));
-  const incoming = input.incomingReportedCents > 0 ? Math.round(input.incomingReportedCents) : 0;
-  let incremental = Math.max(0, input.incrementalReportedCents);
-  let cumulative = Math.max(0, input.cumulativeReportedCents);
-  if (incoming > 0) {
-    if (input.incomingKind === 'cumulative') cumulative = Math.max(cumulative, incoming);
-    else incremental += incoming;
-  }
-  const target = incoming > 0 ? Math.min(original, Math.max(incremental, cumulative)) : original;
-  return Math.max(0, target - already);
-}
-
-/** Cumulative extra-member-day charge so daily rounding still totals €2/member-month. */
+/** Cumulative extra-member-day charge so daily rounding still totals the member-month price. */
 export function memberDaysChargeCents(input: {
   extraMemberDays: number;
   centsPerMemberMonth: number;
@@ -162,6 +84,29 @@ export function daysInPeriodYm(periodYm: string): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
+/**
+ * One extra member-day's cent delta. The divisor is the counter's period, not
+ * the calendar day being backfilled, so a month of deltas still totals the price.
+ */
+export function memberDayChargeDelta(input: {
+  previousNativeUnits: number;
+  nextNativeUnits: number;
+  centsPerMemberMonth: number;
+  daysInMonth: number;
+}): number {
+  const previous = memberDaysChargeCents({
+    extraMemberDays: input.previousNativeUnits,
+    centsPerMemberMonth: input.centsPerMemberMonth,
+    daysInMonth: input.daysInMonth,
+  });
+  const next = memberDaysChargeCents({
+    extraMemberDays: input.nextNativeUnits,
+    centsPerMemberMonth: input.centsPerMemberMonth,
+    daysInMonth: input.daysInMonth,
+  });
+  return Math.max(0, next - previous);
+}
+
 export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: number): number {
   switch (meterId) {
     case 'ai':
@@ -169,10 +114,8 @@ export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: nu
     case 'member_days':
       return memberDaysChargeCents({
         extraMemberDays: nativeUnits,
-        centsPerMemberMonth: 200,
-        daysInMonth: new Date(
-          Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 0),
-        ).getUTCDate(),
+        centsPerMemberMonth: OVERAGE_RATES.additionalMemberCentsPerMonth,
+        daysInMonth: daysInPeriodYm(periodYmUtc()),
       });
     case 'recall_minutes':
       return recallChargeCents(nativeUnits);
@@ -185,18 +128,22 @@ export function listChargeCentsForMeter(meterId: BillingMeterId, nativeUnits: nu
   }
 }
 
-/** Discount covers first; wallet funds the remainder. Extra member-days are wallet-only. */
+/**
+ * Included invoice discount covers usage meters first. Polar invoices the
+ * remainder on the card. Extra member-days skip that discount: they are a
+ * separate Polar meter and still count on the local spend cap.
+ */
 export function splitDiscountAndWallet(input: {
   chargeCents: number;
   includedDiscountRemainingCents: number;
   meterId?: BillingMeterId;
-}): { discountCents: number; walletCents: number } {
+}): { discountCents: number; invoiceCents: number } {
   const chargeCents = Math.max(0, input.chargeCents);
   if (input.meterId === 'member_days') {
-    return { discountCents: 0, walletCents: chargeCents };
+    return { discountCents: 0, invoiceCents: chargeCents };
   }
   const discountCents = Math.min(Math.max(0, input.includedDiscountRemainingCents), chargeCents);
-  return { discountCents, walletCents: chargeCents - discountCents };
+  return { discountCents, invoiceCents: chargeCents - discountCents };
 }
 
 /**
@@ -211,6 +158,75 @@ export function cumulativeChargeDeltaCents(input: {
   const previous = listChargeCentsForMeter(input.meterId, input.previousNativeUnits);
   const next = listChargeCentsForMeter(input.meterId, input.nextNativeUnits);
   return Math.max(0, next - previous);
+}
+
+/**
+ * Cumulative customer charge before a percentage discount. PAYG subtracts the
+ * Free floor from the running total. Member-days use the commercial price.
+ * Discount the two cumulatives and settle the difference so a 1¢ delta is not
+ * rounded back up to 1¢ on every call.
+ */
+export function cumulativeBillableChargeCents(input: {
+  planId: BillingPlanId;
+  meterId: BillingMeterId;
+  nativeUnits: number;
+  centsPerMemberMonth: number;
+  daysInMonth: number;
+}): number {
+  if (input.meterId === 'member_days') {
+    return memberDaysChargeCents({
+      extraMemberDays: input.nativeUnits,
+      centsPerMemberMonth: input.centsPerMemberMonth,
+      daysInMonth: input.daysInMonth,
+    });
+  }
+  const nativeUnits = Math.max(0, input.nativeUnits);
+  if (input.planId !== 'payg') return listChargeCentsForMeter(input.meterId, nativeUnits);
+  const allowance = freeAllowanceConsumedForMeter(input.meterId, {});
+  if (!allowance) return listChargeCentsForMeter(input.meterId, nativeUnits);
+  if (allowance.unit === 'cents') {
+    return Math.max(0, listChargeCentsForMeter(input.meterId, nativeUnits) - allowance.limit);
+  }
+  const overageUnits = Math.max(0, nativeUnits - allowance.limit);
+  if (overageUnits <= 0) return 0;
+  return listChargeCentsForMeter(input.meterId, overageUnits);
+}
+
+/** Catalog price as integer cents per `units`, so sub-cent meters do not use floats. */
+function catalogUnitPrice(meterId: BillingMeterId): { cents: number; units: number } {
+  switch (meterId) {
+    case 'ai':
+      return { cents: 1, units: 1 };
+    case 'recall_minutes':
+      return { cents: OVERAGE_RATES.recallCentsPerMinute, units: 1 };
+    case 'email_units':
+      return { cents: OVERAGE_RATES.emailCentsPerThousandUnits, units: 1000 };
+    case 'storage_gb_month':
+      return { cents: OVERAGE_RATES.storageCentsPerGbMonth, units: 1 };
+    case 'accepted_sources':
+      return { cents: OVERAGE_RATES.acceptedSourcesCentsPerThousand, units: 1000 };
+    case 'member_days':
+      return { cents: OVERAGE_RATES.additionalMemberCentsPerMonth, units: 1 };
+  }
+}
+
+/**
+ * Native units whose catalog meter price equals `invoiceCents`.
+ * One local cent of email is four €0.0025 units, and one cent of accepted
+ * sources is twenty €0.0005 units, including usage from earlier sub-cent
+ * settlements that were not ingested on their own.
+ */
+export function polarCatalogUnitsForInvoiceCents(
+  meterId: BillingMeterId,
+  invoiceCents: number,
+): number {
+  if (meterId === 'member_days') return polarMemberMonthUnits(invoiceCents);
+  if (!Number.isFinite(invoiceCents) || invoiceCents <= 0) return 0;
+  const price = catalogUnitPrice(meterId);
+  if (price.cents <= 0 || price.units <= 0) return 0;
+  const micros = Math.floor((invoiceCents * POLAR_INVOICE_UNIT_MICROS * price.units) / price.cents);
+  if (!Number.isFinite(micros) || micros <= 0) return 0;
+  return micros / POLAR_INVOICE_UNIT_MICROS;
 }
 
 export function metadataNonNegativeInteger(
@@ -246,6 +262,16 @@ export function pendingBillableChargeCents(
   return pendingListChargeCents(metadata, fallbackChargeCents);
 }
 
+/** Local metered charge reserved for the spend cap, before invoice eligibility. */
+export function pendingMeteredChargeCents(
+  metadata: Record<string, unknown> | null | undefined,
+  fallbackChargeCents: number,
+): number {
+  const raw = metadata?.metered_charge_cents;
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
+  return pendingBillableChargeCents(metadata, fallbackChargeCents);
+}
+
 export function pendingDiscountReservedCents(
   metadata: Record<string, unknown> | null | undefined,
 ): number {
@@ -278,10 +304,49 @@ export function isUniqueViolation(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === '23505';
 }
 
+/** Six decimal places. Flooring keeps float noise from invoicing above the payable ratio. */
+const POLAR_INVOICE_UNIT_MICROS = 1_000_000;
+
 /**
- * Prepaid wallet and included discount already collect locally, including
- * sub-cent rounds that settle at €0. Polar meters invoice the same native
- * units, so ingest only when Polar is the sole collector (Enterprise).
+ * Member-month fractions for the catalog €2 Polar price.
+ * Custom extra-member prices and metered-discount percent change the payable
+ * cents, and therefore the units, so Polar's shared unit price still invoices
+ * the team amount.
+ */
+export function polarMemberMonthUnits(invoiceCents: number): number {
+  const centsPerMonth = OVERAGE_RATES.additionalMemberCentsPerMonth;
+  if (!Number.isFinite(invoiceCents) || invoiceCents <= 0) return 0;
+  const micros = Math.floor((invoiceCents * POLAR_INVOICE_UNIT_MICROS) / centsPerMonth);
+  if (!Number.isFinite(micros) || micros <= 0) return 0;
+  return micros / POLAR_INVOICE_UNIT_MICROS;
+}
+
+export function polarInvoiceNativeUnits(input: {
+  polarUnits: number;
+  chargeCents: number;
+  invoiceCents: number;
+}): number {
+  if (input.polarUnits <= 0 || input.invoiceCents <= 0) return 0;
+  if (
+    !Number.isFinite(input.polarUnits) ||
+    !Number.isFinite(input.chargeCents) ||
+    !Number.isFinite(input.invoiceCents)
+  ) {
+    return 0;
+  }
+  if (input.chargeCents <= 0 || input.invoiceCents >= input.chargeCents) return input.polarUnits;
+  const micros = Math.floor(
+    (input.polarUnits * POLAR_INVOICE_UNIT_MICROS * input.invoiceCents) / input.chargeCents,
+  );
+  if (!Number.isFinite(micros) || micros <= 0) return 0;
+  return micros / POLAR_INVOICE_UNIT_MICROS;
+}
+
+/**
+ * Customer-payable metered usage. Included discount and sub-cent rounds
+ * (invoice cents of 0) stay local. Shadow billing and comps are not payable.
+ * A payable charge still needs a matching subscription price before Polar
+ * ingest; see polarIngestDisposition.
  */
 export function shouldIngestPolarMeteredUsage(input: {
   eventName: string | null | undefined;
@@ -289,16 +354,130 @@ export function shouldIngestPolarMeteredUsage(input: {
   shadowBilling: boolean;
   billable: boolean;
   polarUnits: number;
-  walletCents: number;
-  discountCents: number;
-  enterpriseContract: boolean;
+  invoiceCents: number;
 }): boolean {
   if (!input.eventName || !input.polarCustomerId) return false;
   if (input.shadowBilling || !input.billable) return false;
-  if (input.polarUnits <= 0) return false;
-  if (!input.enterpriseContract) return false;
-  if (input.walletCents > 0 || input.discountCents > 0) return false;
+  if (input.polarUnits <= 0 || input.invoiceCents <= 0) return false;
   return true;
+}
+
+export const POLAR_INGEST_BLOCK_MISSING_PRICE = 'missing_subscription_price';
+
+const POLAR_EVENT_TO_METER: Record<string, BillingMeterId> = {
+  timeline_ai_eur_cents: 'ai',
+  timeline_recall_minutes: 'recall_minutes',
+  timeline_email_units: 'email_units',
+  timeline_storage_gb_month: 'storage_gb_month',
+  timeline_accepted_sources: 'accepted_sources',
+  timeline_extra_member_days: 'member_days',
+};
+
+/** Billing states that still have a subscription price Polar can invoice. */
+const POLAR_SUBSCRIPTION_PRICE_STATES = new Set([
+  'payg_active',
+  'team_active',
+  'business_active',
+  'enterprise_active',
+  'past_due',
+  'payment_retry',
+  'read_only',
+]);
+
+export function billingMeterIdForPolarEvent(name: string): BillingMeterId | null {
+  return POLAR_EVENT_TO_METER[name] ?? null;
+}
+
+export interface PolarPlanProductIds {
+  payg?: string;
+  team?: string;
+  business?: string;
+  enterprise?: string;
+}
+
+function configuredPolarProductId(
+  planId: string,
+  products: PolarPlanProductIds,
+): string | undefined {
+  switch (planId) {
+    case 'payg':
+      return products.payg;
+    case 'team':
+      return products.team;
+    case 'business':
+      return products.business;
+    case 'enterprise':
+      return products.enterprise;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * True when this plan's configured Polar product is the subscription product
+ * and that product's priced-event list includes the meter. A matching product
+ * id is not proof the meter has a price. `pricedEventNames` null means the
+ * catalog could not be read, which does not cover the meter.
+ */
+export function polarSubscriptionCoversMeter(input: {
+  planId: string;
+  billingState: string;
+  polarSubscriptionId: string | null | undefined;
+  polarProductId: string | null | undefined;
+  eventName: string | null | undefined;
+  products: PolarPlanProductIds;
+  pricedEventNames: readonly string[] | null;
+}): boolean {
+  if (!input.polarSubscriptionId || !input.polarProductId || !input.eventName) return false;
+  if (!POLAR_SUBSCRIPTION_PRICE_STATES.has(input.billingState)) return false;
+  if (!billingMeterIdForPolarEvent(input.eventName)) return false;
+  const expected = configuredPolarProductId(input.planId, input.products);
+  if (!expected || input.polarProductId !== expected) return false;
+  if (!input.pricedEventNames) return false;
+  return input.pricedEventNames.includes(input.eventName);
+}
+
+export type PolarIngestDisposition = 'ingest' | 'hold' | 'not_required';
+
+/**
+ * ingest: send the event. hold: keep the local ledger pending and alert an
+ * operator. not_required: shadow, comp, non-billable, or a sub-cent round.
+ * A missing customer is a hold, not a silent skip.
+ */
+/**
+ * Disposition that does not need the product's priced-event list.
+ * Null means the charge is payable and coverage still has to be read.
+ * A missing customer is a hold and does not need that read.
+ */
+export function polarIngestDispositionBeforeCoverage(input: {
+  eventName: string | null | undefined;
+  polarCustomerId: string | null | undefined;
+  shadowBilling: boolean;
+  comped: boolean;
+  billable: boolean;
+  polarUnits: number;
+  invoiceCents: number;
+}): PolarIngestDisposition | null {
+  if (input.shadowBilling || input.comped || !input.billable) return 'not_required';
+  if (!input.eventName || input.polarUnits <= 0 || input.invoiceCents <= 0) return 'not_required';
+  if (!input.polarCustomerId) return 'hold';
+  return null;
+}
+
+export function polarIngestDisposition(input: {
+  eventName: string | null | undefined;
+  polarCustomerId: string | null | undefined;
+  shadowBilling: boolean;
+  comped: boolean;
+  billable: boolean;
+  polarUnits: number;
+  invoiceCents: number;
+  subscriptionCoversMeter: boolean;
+}): PolarIngestDisposition {
+  const early = polarIngestDispositionBeforeCoverage(input);
+  if (early) return early;
+  if (!input.subscriptionCoversMeter) return 'hold';
+  return 'ingest';
 }
 
 export function periodYmUtc(date = new Date()): string {

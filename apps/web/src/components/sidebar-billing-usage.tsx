@@ -21,19 +21,19 @@ function UsageBar({
       aria-hidden="true"
     >
       <div
-        className={cn(
-          'h-full rounded-sm transition-[width]',
-          atLimit ? 'bg-danger' : 'bg-fg-muted',
-        )}
+        className={cn('h-full rounded-sm', atLimit ? 'bg-danger' : 'bg-fg-muted')}
         style={{ width: `${width}%` }}
       />
     </div>
   );
 }
 
+function memberLimitLabel(planId: SidebarBillingSummary['planId']): string {
+  return planId === 'free' ? 'Allowance used up' : 'Spend cap reached';
+}
+
 /**
- * Compact plan + usage meter for the app sidebar / mobile nav.
- * Links to Billing (admins) or Usage (members).
+ * Compact plan + usage meter for admins. Members only see a limit notice.
  */
 export function SidebarBillingUsage({
   summary,
@@ -44,9 +44,28 @@ export function SidebarBillingUsage({
   expanded: boolean;
   className?: string;
 }) {
-  const tooltip = [summary.planName, summary.detailLabel, summary.overageLabel]
-    .filter(Boolean)
-    .join(' · ');
+  if (!summary.canManageBilling) {
+    if (!summary.atLimit) return null;
+    const label = memberLimitLabel(summary.planId);
+    return (
+      <Link
+        href={summary.href}
+        data-sidebar-billing
+        data-plan={summary.planId}
+        aria-label={`${label}. Open usage.`}
+        className={cn(
+          'block rounded-sm border border-border bg-bg text-sm text-fg hover:bg-surface-2',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
+          expanded ? 'w-full px-3 py-2' : 'grid size-9 place-items-center',
+          className,
+        )}
+      >
+        {expanded ? label : <span className="size-2 rounded-full bg-danger" aria-hidden="true" />}
+      </Link>
+    );
+  }
+
+  const tooltip = [summary.planName, summary.detailLabel].filter(Boolean).join(' · ');
 
   if (!expanded) {
     return (
@@ -54,7 +73,7 @@ export function SidebarBillingUsage({
         <TooltipTrigger asChild>
           <Link
             href={summary.href}
-            aria-label={`Plan ${summary.planName}. ${summary.detailLabel}${summary.overageLabel ? `. ${summary.overageLabel}` : ''}. Open ${summary.canManageBilling ? 'billing' : 'usage'}.`}
+            aria-label={`Plan ${summary.planName}. ${summary.detailLabel}. Open billing.`}
             data-sidebar-billing
             data-plan={summary.planId}
             className={cn(
@@ -87,24 +106,16 @@ export function SidebarBillingUsage({
       href={summary.href}
       data-sidebar-billing
       data-plan={summary.planId}
-      aria-label={`Plan ${summary.planName}. ${summary.detailLabel}${summary.overageLabel ? `. ${summary.overageLabel}` : ''}. Open ${summary.canManageBilling ? 'billing' : 'usage'}.`}
+      aria-label={`Plan ${summary.planName}. ${summary.detailLabel}. Open billing.`}
       className={cn(
         'block w-full rounded-sm border border-border bg-bg px-3 py-2.5 transition-colors hover:bg-surface-2',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
         className,
       )}
     >
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="truncate text-xs font-medium text-fg">{summary.planName}</p>
-        <p className="shrink-0 font-mono text-[0.65rem] text-fg-dim">{summary.progressPercent}%</p>
-      </div>
+      <p className="truncate text-xs font-medium text-fg">{summary.planName}</p>
       <UsageBar percent={summary.progressPercent} atLimit={summary.atLimit} className="mt-2" />
       <p className="mt-1.5 truncate text-[0.7rem] leading-4 text-fg-muted">{summary.detailLabel}</p>
-      {summary.overageLabel ? (
-        <p className="mt-0.5 truncate font-mono text-[0.7rem] leading-4 text-fg-dim">
-          {summary.overageLabel}
-        </p>
-      ) : null}
     </Link>
   );
 }

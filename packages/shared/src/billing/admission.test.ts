@@ -174,6 +174,29 @@ describe('billing admission helpers', () => {
     expect(dash.meters.recall_minutes?.customerChargeCents).toBe(36);
   });
 
+  it('reserves Free minutes after a Team comp expires', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          comp_reason = 'trial', comp_expires_at = '2020-01-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await reserveRecallMeetingMinutes(billing, {
+      meetingId: 'cccccccc-dddd-4eee-8fff-000000000099',
+    });
+    expect(reserved.ok).toBe(true);
+    if (!reserved.ok) return;
+    expect(reserved.reservedMinutes).toBe(FREE_ALLOWANCES.recallMinutes);
+    expect(reserved.reservedMinutes).not.toBe(360);
+  });
+
   it('settles elapsed waiting-room minutes and releases when none elapsed', async () => {
     const billing = createBillingScope({
       db,

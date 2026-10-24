@@ -7,7 +7,8 @@ import {
   billingStateForPolarSubscriptionUpsert,
   billingStateFromPolarSubscriptionStatus,
   handlePolarWebhookEvent,
-  polarTopupRefundRequest,
+  RETIRED_TOPUP_ALERT_REASON_PREFIX,
+  isRetiredPaidTopupOrder,
   shouldApplyPaidSubscriptionUpdate,
   shouldResetIncludedDiscount,
   spendCapCentsForPaidActivation,
@@ -21,23 +22,8 @@ const PRODUCTS = {
   payg: 'prod_payg',
   team: 'prod_team',
   business: 'prod_business',
-  topup: 'prod_topup',
+  enterprise: 'prod_enterprise',
 };
-
-async function enablePrepaidWallet(): Promise<void> {
-  const billing = createBillingScope({
-    db,
-    teamId: TEAM_ID,
-    userId: USER_ID,
-    ensureMember: () => Promise.resolve('owner'),
-  });
-  await billing.getAccount();
-  await pg.exec(`
-    UPDATE team_billing_accounts
-    SET plan_id = 'payg', billing_state = 'payg_active'
-    WHERE team_id = '${TEAM_ID}';
-  `);
-}
 
 let pg: PGlite;
 let db: Db;
@@ -61,28 +47,7 @@ afterEach(async () => {
 });
 
 describe('Polar webhook helpers', () => {
-  it('uses the cumulative refunded total on order.refunded', () => {
-    expect(
-      polarTopupRefundRequest({
-        eventType: 'order.refunded',
-        amount: 1000,
-        refundedAmount: 200,
-      }),
-    ).toEqual({ cents: 200, amountKind: 'cumulative' });
-    expect(
-      polarTopupRefundRequest({
-        eventType: 'refund.created',
-        amount: 200,
-        refundedAmount: 200,
-      }),
-    ).toEqual({ cents: 200, amountKind: 'incremental' });
-    expect(polarTopupRefundRequest({ eventType: 'order.refunded', amount: 1000 })).toEqual({
-      cents: 1000,
-      amountKind: 'cumulative',
-    });
-  });
-
-  it('keeps a local debt freeze when Polar reports an active subscription', () => {
+  it('keeps a local spend-cap freeze when Polar reports an active subscription', () => {
     expect(
       billingStateForPolarSubscriptionUpsert({
         incoming: 'team_active',
@@ -137,6 +102,9 @@ describe('Polar webhook helpers', () => {
   });
 
   it('maps Polar subscription status instead of activating from product id', () => {
+    expect(billingStateFromPolarSubscriptionStatus('enterprise', 'active')).toBe(
+      'enterprise_active',
+    );
     expect(billingStateFromPolarSubscriptionStatus('team', 'active')).toBe('team_active');
     expect(billingStateFromPolarSubscriptionStatus('team', 'past_due')).toBe('past_due');
     expect(billingStateFromPolarSubscriptionStatus('payg', 'unpaid')).toBe('past_due');
@@ -265,6 +233,239 @@ describe('handlePolarWebhookEvent', () => {
     expect(retry.includedDiscountRemainingCents).toBe(12);
   });
 
+  it('does not let a Polar subscription overwrite a comped plan', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          spend_cap_cents = 2500, comp_reason = 'internal'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_comp',
+          status: 'active',
+          product_id: 'prod_business',
+          customer: { id: 'cus_comp', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.arrangement).toBe('comped');
+    expect(account.planId).toBe('team');
+    expect(account.spendCapCents).toBe(2500);
+    expect(account.polarSubscriptionId).toBeNull();
+  });
+
+  it('does not let a Team subscription downgrade an Enterprise contract', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          customer: { id: 'cus_team', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.billingState).toBe('enterprise_active');
+    expect(account.polarSubscriptionId).toBeNull();
+  });
+
+  it('attaches an Enterprise subscription onto an operator-prepared team', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', spend_cap_cents = 80000,
+          price_override = '{"platformFeeCents":250000}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_enterprise',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.billingState).toBe('enterprise_active');
+    expect(account.polarSubscriptionId).toBe('sub_enterprise');
+    expect(account.polarProductId).toBe('prod_enterprise');
+    expect(account.polarCustomerId).toBe('cus_enterprise');
+    expect(account.spendCapCents).toBe(80000);
+    expect(account.priceOverride).toMatchObject({ platformFeeCents: 250000 });
+  });
+
+  it('activates pending Enterprise terms from the paid subscription webhook', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
+          pending_enterprise_terms = '{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_enterprise',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.billingState).toBe('enterprise_active');
+    expect(account.polarSubscriptionId).toBe('sub_enterprise');
+    expect(account.spendCapCents).toBe(80000);
+    expect(account.pendingEnterpriseTerms).toBeNull();
+    expect(account.enterprisePlatformFeeCents).toBe(250000);
+    expect(account.priceOverride).toEqual({
+      includedActiveMembers: 12,
+    });
+    expect(account.priceOverrideExpiresAt).toBeNull();
+  });
+
+  it('activates only the Enterprise checkout that Polar says was paid', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
+          pending_enterprise_terms = '{"byCheckoutId":{"chk_early":{"platformFeeCents":100000,"spendCapCents":40000},"chk_later":{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}}}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_early',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          checkout_id: 'chk_early',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.spendCapCents).toBe(40000);
+    expect(account.enterprisePlatformFeeCents).toBe(100000);
+    expect(account.priceOverride).toBeNull();
+    expect(account.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_later: {
+          platformFeeCents: 250000,
+          includedActiveMembers: 12,
+          spendCapCents: 80000,
+        },
+      },
+    });
+  });
+
+  it('does not apply another Enterprise checkout when the paid event names a different one', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
+          pending_enterprise_terms = '{"byCheckoutId":{"chk_later":{"platformFeeCents":250000,"spendCapCents":80000}}}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_other',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          checkout_id: 'chk_early',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.spendCapCents).toBe(2500);
+    expect(account.enterprisePlatformFeeCents).toBeNull();
+    expect(account.priceOverride).toBeNull();
+    expect(account.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_later: { platformFeeCents: 250000, spendCapCents: 80000 },
+      },
+    });
+  });
+
   it('does not activate past_due subscriptions and ignores order.paid plan products', async () => {
     await handlePolarWebhookEvent({
       db,
@@ -287,6 +488,31 @@ describe('handlePolarWebhookEvent', () => {
       ensureMember: () => Promise.resolve('owner'),
     });
     expect((await billing.getAccount()).billingState).toBe('past_due');
+    const notices = await pg.query<{ subject: string }>(
+      `SELECT subject FROM message_deliveries WHERE metadata->>'billing_alert_kind' = 'subscription_past_due'`,
+    );
+    expect(notices.rows.map((row) => row.subject)).toEqual([
+      'Polar Hook: subscription payment failed',
+    ]);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_due',
+          status: 'past_due',
+          product_id: 'prod_team',
+          modified_at: '2099-01-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const retried = await pg.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM message_deliveries WHERE metadata->>'billing_alert_kind' = 'subscription_past_due'`,
+    );
+    expect(Number(retried.rows[0]?.n)).toBe(1);
     await pg.exec(`
       UPDATE team_billing_accounts
       SET included_discount_remaining_cents = 12
@@ -362,6 +588,8 @@ describe('handlePolarWebhookEvent', () => {
     const canceled = await billing.getAccount();
     expect(canceled.planId).toBe('free');
     expect(canceled.billingState).toBe('restricted');
+    expect(canceled.polarSubscriptionId).toBeNull();
+    expect(canceled.polarProductId).toBeNull();
 
     await handlePolarWebhookEvent({
       db,
@@ -381,6 +609,76 @@ describe('handlePolarWebhookEvent', () => {
     const ignoredStale = await billing.getAccount();
     expect(ignoredStale.billingState).toBe('restricted');
     expect(ignoredStale.planId).toBe('free');
+  });
+
+  it('drops a canceled Enterprise contract before a later self-serve plan', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active',
+          pending_enterprise_terms = '{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_enterprise',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          modified_at: '2026-08-01T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.canceled',
+        data: {
+          id: 'sub_enterprise',
+          product_id: 'prod_enterprise',
+          modified_at: '2026-08-02T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const canceled = await billing.getAccount();
+    expect(canceled.planId).toBe('free');
+    expect(canceled.polarSubscriptionId).toBeNull();
+    expect(canceled.polarProductId).toBeNull();
+    expect(canceled.enterprisePlatformFeeCents).toBeNull();
+    expect(canceled.priceOverride).toBeNull();
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_payg',
+          status: 'active',
+          product_id: 'prod_payg',
+          modified_at: '2026-08-03T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const dash = await billing.getDashboard();
+    expect(dash.plan.id).toBe('payg');
+    expect(dash.account.enterprisePlatformFeeCents).toBeNull();
+    expect(dash.planPreview.bills.payg.platformFeeCents).toBe(0);
   });
 
   it('applies the paid plan default spend cap when upgrading from Free', async () => {
@@ -408,7 +706,7 @@ describe('handlePolarWebhookEvent', () => {
     expect((await billing.getAccount()).spendCapCents).toBe(2_500);
   });
 
-  it('keeps a debt freeze across an active renewal and a later spend-cap raise', async () => {
+  it('keeps a spend-cap freeze across an active renewal and restores it when the cap is raised', async () => {
     await handlePolarWebhookEvent({
       db,
       chargesEnabled: true,
@@ -467,16 +765,16 @@ describe('handlePolarWebhookEvent', () => {
     expect(renewed.billingState).toBe('read_only');
     expect(renewed.spendCapCents).toBe(0);
     expect(renewed.includedDiscountRemainingCents).toBe(6_000);
-    const raised = await billing.setSpendCap(10_000);
-    expect(raised.billingState).toBe('read_only');
-    expect(raised.spendCapCents).toBe(10_000);
-    const reserved = await billing.reserve({
-      operationId: 'op-while-debt',
+    const blocked = await billing.reserve({
+      operationId: 'op-while-frozen',
       meterId: 'ai',
       reservedNativeUnits: 20,
       reservedChargeCents: 20,
     });
-    expect(reserved.ok).toBe(false);
+    expect(blocked.ok).toBe(false);
+    const raised = await billing.setSpendCap(10_000);
+    expect(raised.billingState).toBe('team_active');
+    expect(raised.spendCapCents).toBe(10_000);
 
     await pg.exec(`
       UPDATE team_billing_accounts SET billing_state = 'team_active' WHERE team_id = '${TEAM_ID}';
@@ -498,7 +796,31 @@ describe('handlePolarWebhookEvent', () => {
         },
       },
     });
-    expect((await billing.getAccount()).billingState).toBe('read_only');
+    expect((await billing.getAccount()).billingState).toBe('team_active');
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'past_due', polar_event_modified_at = '2026-09-02T00:00:00.000Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          current_period_start: '2026-09-01T00:00:00.000Z',
+          current_period_end: '2026-10-01T00:00:00.000Z',
+          modified_at: '2026-09-03T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).billingState).toBe('team_active');
   });
 
   it('preserves a paid spend cap of 0 across subscription.updated', async () => {
@@ -623,466 +945,6 @@ describe('handlePolarWebhookEvent', () => {
     expect(afterRace.polarEventModifiedAt?.toISOString()).toBe('2026-08-11T00:00:00.000Z');
   });
 
-  it('reverses only the refunded amount of a partial top-up', async () => {
-    await enablePrepaidWallet();
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_partial',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.refunded',
-        data: {
-          id: 'ord_partial',
-          product_id: 'prod_topup',
-          amount: 1000,
-          refunded_amount: 200,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(800);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'refund.created',
-        data: {
-          id: 'ref_partial',
-          order_id: 'ord_partial',
-          amount: 200,
-          status: 'succeeded',
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(800);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'refund.created',
-        data: {
-          id: 'ref_partial_more',
-          order_id: 'ord_partial',
-          amount: 300,
-          status: 'succeeded',
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(500);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.refunded',
-        data: {
-          id: 'ord_partial',
-          product_id: 'prod_topup',
-          amount: 1000,
-          refunded_amount: 500,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(500);
-  });
-
-  it('does not double-debit a partial refund when the refund event arrives first', async () => {
-    await enablePrepaidWallet();
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_partial_first',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'refund.created',
-        data: {
-          id: 'ref_first',
-          order_id: 'ord_partial_first',
-          amount: 200,
-          status: 'succeeded',
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.refunded',
-        data: {
-          id: 'ord_partial_first',
-          product_id: 'prod_topup',
-          amount: 1000,
-          refunded_amount: 200,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(800);
-  });
-
-  it('reverses a prepaid top-up when Polar refunds the order', async () => {
-    await enablePrepaidWallet();
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_top',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(1000);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'refund.created',
-        data: {
-          id: 'ref_1',
-          order_id: 'ord_top',
-          amount: 1000,
-          status: 'succeeded',
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.refunded',
-        data: {
-          id: 'ord_top',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
-  });
-
-  it('does not double-debit concurrent refund.created and order.refunded', async () => {
-    await enablePrepaidWallet();
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_race',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(1000);
-    await Promise.all([
-      handlePolarWebhookEvent({
-        db,
-        chargesEnabled: true,
-        products: PRODUCTS,
-        payload: {
-          type: 'refund.created',
-          data: {
-            id: 'ref_race',
-            order_id: 'ord_race',
-            amount: 1000,
-            status: 'succeeded',
-            customer: { id: 'cus_1', external_id: TEAM_ID },
-          },
-        },
-      }),
-      handlePolarWebhookEvent({
-        db,
-        chargesEnabled: true,
-        products: PRODUCTS,
-        payload: {
-          type: 'order.refunded',
-          data: {
-            id: 'ord_race',
-            product_id: 'prod_topup',
-            amount: 1000,
-            customer: { id: 'cus_1', external_id: TEAM_ID },
-          },
-        },
-      }),
-    ]);
-    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
-  });
-
-  it('applies an out-of-order top-up refund when the paid event arrives later', async () => {
-    await enablePrepaidWallet();
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'refund.created',
-        data: {
-          id: 'ref_early',
-          order_id: 'ord_late',
-          amount: 1000,
-          status: 'succeeded',
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_late',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
-  });
-
-  it('does not overwrite an Enterprise contract with a self-serve Polar subscription', async () => {
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    await billing.getAccount();
-    await pg.exec(`
-      UPDATE team_billing_accounts
-      SET plan_id = 'enterprise', billing_state = 'enterprise_active',
-          polar_customer_id = 'cus_enterprise'
-      WHERE team_id = '${TEAM_ID}';
-    `);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'subscription.active',
-        data: {
-          id: 'sub_payg',
-          status: 'active',
-          product_id: 'prod_payg',
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    const after = await billing.getAccount();
-    expect(after.planId).toBe('enterprise');
-    expect(after.billingState).toBe('enterprise_active');
-    expect(after.polarSubscriptionId).toBeNull();
-  });
-
-  it('credits a paid top-up after the subscription is canceled', async () => {
-    await enablePrepaidWallet();
-    await pg.exec(`
-      UPDATE team_billing_accounts
-      SET polar_subscription_id = 'sub_payg', wallet_balance_cents = 0
-      WHERE team_id = '${TEAM_ID}';
-    `);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'subscription.canceled',
-        data: {
-          id: 'sub_payg',
-          status: 'canceled',
-          product_id: 'prod_payg',
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    const canceled = await billing.getAccount();
-    expect(canceled.planId).toBe('free');
-    expect(canceled.billingState).toBe('restricted');
-
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_after_cancel',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_after_cancel',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-
-    const after = await billing.getAccount();
-    expect(after.planId).toBe('free');
-    expect(after.billingState).toBe('restricted');
-    expect(after.walletBalanceCents).toBe(1000);
-    const ledger = await pg.query<{ kind: string; cents: string }>(
-      `SELECT kind, metadata->>'cents' AS cents
-       FROM billing_usage_ledger
-       WHERE team_id = '${TEAM_ID}' AND operation_id = 'polar_topup:ord_after_cancel'`,
-    );
-    expect(ledger.rows).toEqual([{ kind: 'top_up', cents: '1000' }]);
-  });
-
-  it('credits an already-paid top-up on Enterprise or Free without changing the plan', async () => {
-    const billing = createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    await billing.getAccount();
-    await pg.exec(`
-      UPDATE team_billing_accounts
-      SET plan_id = 'enterprise', billing_state = 'enterprise_active'
-      WHERE team_id = '${TEAM_ID}';
-    `);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_enterprise',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    const enterprise = await billing.getAccount();
-    expect(enterprise.planId).toBe('enterprise');
-    expect(enterprise.billingState).toBe('enterprise_active');
-    expect(enterprise.walletBalanceCents).toBe(1000);
-
-    await pg.exec(`
-      UPDATE team_billing_accounts
-      SET plan_id = 'free', billing_state = 'restricted'
-      WHERE team_id = '${TEAM_ID}';
-    `);
-    await handlePolarWebhookEvent({
-      db,
-      chargesEnabled: true,
-      products: PRODUCTS,
-      payload: {
-        type: 'order.paid',
-        data: {
-          id: 'ord_free',
-          product_id: 'prod_topup',
-          amount: 1000,
-          customer: { id: 'cus_1', external_id: TEAM_ID },
-        },
-      },
-    });
-    const free = await billing.getAccount();
-    expect(free.planId).toBe('free');
-    expect(free.billingState).toBe('restricted');
-    expect(free.walletBalanceCents).toBe(2000);
-  });
-
   it('rejects a delayed older subscription after a newer one is stored', () => {
     expect(
       shouldApplyPaidSubscriptionUpdate({
@@ -1132,5 +994,107 @@ describe('handlePolarWebhookEvent', () => {
         incomingModifiedAt: new Date('2026-08-01T00:00:00Z'),
       }),
     ).toBe(false);
+  });
+
+  it('recognizes a retired top-up and ignores a subscription order', () => {
+    expect(
+      isRetiredPaidTopupOrder({
+        products: PRODUCTS,
+        data: { product: { name: 'Timeline Top-up' }, amount: 1000 },
+      }),
+    ).toBe(true);
+    expect(
+      isRetiredPaidTopupOrder({
+        products: { ...PRODUCTS, topup: 'prod_retired' },
+        data: { product_id: 'prod_retired', amount: 1000 },
+      }),
+    ).toBe(true);
+    expect(
+      isRetiredPaidTopupOrder({
+        products: PRODUCTS,
+        data: { product_id: 'prod_unknown', billing_reason: 'purchase', amount: 2500 },
+      }),
+    ).toBe(true);
+    expect(
+      isRetiredPaidTopupOrder({
+        products: PRODUCTS,
+        data: { product_id: 'prod_payg', billing_reason: 'subscription_cycle', amount: 0 },
+      }),
+    ).toBe(false);
+  });
+
+  it('records a stray paid top-up and alerts without crediting a balance', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'restricted', wallet_balance_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const payload = {
+      type: 'order.paid',
+      data: {
+        id: 'ord_stray',
+        amount: 1000,
+        product: { name: 'Timeline Top-up', is_recurring: false },
+        customer: { id: 'cus_1', external_id: TEAM_ID },
+      },
+    };
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload,
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload,
+    });
+
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('free');
+    expect(account.billingState).toBe('restricted');
+    expect(account.walletBalanceCents).toBe(0);
+    const ledger = await pg.query<{ kind: string; cents: string; credited: string }>(
+      `SELECT kind, metadata->>'cents' AS cents, metadata->>'wallet_credited' AS credited
+       FROM billing_usage_ledger
+       WHERE team_id = '${TEAM_ID}' AND operation_id = 'polar_topup:ord_stray'`,
+    );
+    expect(ledger.rows).toEqual([{ kind: 'top_up', cents: '1000', credited: 'false' }]);
+    const alerts = await pg.query<{ reason: string; meter_id: string }>(
+      `SELECT reason, meter_id FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(alerts.rows).toEqual([
+      { reason: `${RETIRED_TOPUP_ALERT_REASON_PREFIX}ord_stray`, meter_id: 'top_up' },
+    ]);
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_subscription',
+          product_id: 'prod_payg',
+          billing_reason: 'subscription_cycle',
+          amount: 0,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const subscriptionOrders = await pg.query<{ id: string }>(
+      `SELECT id FROM billing_usage_ledger
+       WHERE team_id = '${TEAM_ID}' AND operation_id = 'polar_topup:ord_subscription'`,
+    );
+    expect(subscriptionOrders.rows).toEqual([]);
   });
 });

@@ -18,6 +18,7 @@ outputs/
 .env
 .env.local
 .env.*.local
+.env.setup-tmp
 
 # ---- OS ----
 .DS_Store

@@ -7,9 +7,11 @@ import {
   users,
 } from '@timeline/db';
 import {
-  getTeamCapacityUsage,
+  describeTeamComp,
+  effectiveBillingPlanId,
+  resolveTeamCommercialTerms,
+  isPlatformAdminEmail,
   isPolarBillingConfigured,
-  isPolarTopUpConfigured,
   PLAN_CATALOG,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
@@ -207,13 +209,11 @@ export default async function TeamSettingsPage({
   const billingDashboard = isAdmin
     ? await scope.billing.getDashboard({ canManageBilling: true })
     : null;
-  const capacityUsage = billingDashboard
-    ? await getTeamCapacityUsage({
-        db,
-        teamId: active.teamId,
-        planId: billingDashboard.account.planId,
-      })
-    : [];
+  const entitlementsPlanId = billingDashboard
+    ? effectiveBillingPlanId(billingDashboard.account)
+    : 'free';
+  const comp = billingDashboard ? describeTeamComp(billingDashboard.account) : null;
+  const commercial = billingDashboard ? resolveTeamCommercialTerms(billingDashboard.account) : null;
 
   return (
     <div className="space-y-4">
@@ -311,32 +311,24 @@ export default async function TeamSettingsPage({
           ) : null}
           {section === 'billing' && isAdmin && billingDashboard ? (
             <BillingSettingsPanel
-              planId={billingDashboard.account.planId}
-              planName={PLAN_CATALOG[billingDashboard.account.planId].name}
+              planId={entitlementsPlanId}
+              planName={PLAN_CATALOG[entitlementsPlanId].name}
               billingState={billingDashboard.account.billingState}
-              shadowBilling={billingDashboard.account.shadowBilling}
               spendCapCents={billingDashboard.account.spendCapCents}
-              walletBalanceCents={billingDashboard.account.walletBalanceCents}
-              reservedBalanceCents={billingDashboard.account.reservedBalanceCents}
-              includedDiscountRemainingCents={
-                billingDashboard.account.includedDiscountRemainingCents
-              }
               meteredSpendCents={billingDashboard.meteredSpendCents}
-              periodYm={billingDashboard.periodYm}
-              meters={billingDashboard.meters}
-              capacityUsage={capacityUsage}
               utilization={billingDashboard.utilization}
               freeRemaining={billingDashboard.freeRemaining}
-              nudge={billingDashboard.nudge}
               costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
-              polarTopUpConfigured={isPolarTopUpConfigured()}
+              hasPolarSubscription={Boolean(billingDashboard.account.polarSubscriptionId)}
               canManage={isAdmin}
-              autoReloadEnabled={billingDashboard.account.autoReloadEnabled}
-              autoReloadThresholdCents={billingDashboard.account.autoReloadThresholdCents}
-              autoReloadAmountCents={billingDashboard.account.autoReloadAmountCents}
               planPreview={billingDashboard.planPreview}
-              activeMemberCount={billingDashboard.activeMemberCount}
+              comp={comp}
+              showOperatorLink={isPlatformAdminEmail(
+                session.user.email ?? '',
+                getEnv().PLATFORM_ADMIN_EMAILS,
+              )}
+              platformFeeCents={commercial?.platformFeeCents}
             />
           ) : null}
           {section === 'exports' ? (

@@ -44,7 +44,7 @@ export async function POST(req: Request): Promise<Response> {
       ...(env.POLAR_PRODUCT_ID_PAYG ? { payg: env.POLAR_PRODUCT_ID_PAYG } : {}),
       ...(env.POLAR_PRODUCT_ID_TEAM ? { team: env.POLAR_PRODUCT_ID_TEAM } : {}),
       ...(env.POLAR_PRODUCT_ID_BUSINESS ? { business: env.POLAR_PRODUCT_ID_BUSINESS } : {}),
-      ...(env.POLAR_PRODUCT_ID_TOPUP ? { topup: env.POLAR_PRODUCT_ID_TOPUP } : {}),
+      ...(env.POLAR_PRODUCT_ID_ENTERPRISE ? { enterprise: env.POLAR_PRODUCT_ID_ENTERPRISE } : {}),
     },
   });
   return Response.json(result);

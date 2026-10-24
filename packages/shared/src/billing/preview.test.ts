@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { listChargeCentsForMeter } from '#src/billing/charge.js';
+import {
+  daysInPeriodYm,
+  listChargeCentsForMeter,
+  memberDaysChargeCents,
+  periodYmUtc,
+} from '#src/billing/charge.js';
 import {
   cheapestPlanPreview,
   shouldShowPlanRecommendation,
@@ -71,6 +76,57 @@ describe('cheapestPlanPreview', () => {
     });
     expect(preview.bills.payg.extraMemberCents).toBe(listChargeCentsForMeter('member_days', 5));
     expect(preview.bills.payg.extraMemberCents).not.toBe(1_000);
+    expect(preview.bills.team.extraMemberCents).toBe(0);
+  });
+
+  it('prices prorated extra members at the plan extra-member rate', () => {
+    const catalog = cheapestPlanPreview({
+      activeMembers: 5,
+      meters: {
+        member_days: { nativeUnits: 62, customerChargeCents: 400 },
+      },
+    });
+    const custom = cheapestPlanPreview({
+      activeMembers: 5,
+      meters: {
+        member_days: { nativeUnits: 62, customerChargeCents: 400 },
+      },
+      planTerms: { payg: { additionalMemberCents: 500 } },
+    });
+    expect(custom.bills.payg.extraMemberCents).toBe(
+      memberDaysChargeCents({
+        extraMemberDays: 62,
+        centsPerMemberMonth: 500,
+        daysInMonth: daysInPeriodYm(periodYmUtc()),
+      }),
+    );
+    expect(custom.bills.payg.extraMemberCents).toBeGreaterThan(catalog.bills.payg.extraMemberCents);
+    expect(custom.bills.team.extraMemberCents).toBe(0);
+  });
+
+  it('applies a metered percentage before included credit', () => {
+    const covered = cheapestPlanPreview({
+      activeMembers: 5,
+      meteredSpendCents: 10_000,
+      planTerms: { team: { meteredDiscountPercent: 50 } },
+    });
+    expect(covered.bills.team.meteredAfterDiscountCents).toBe(0);
+
+    const partial = cheapestPlanPreview({
+      activeMembers: 5,
+      meteredSpendCents: 20_000,
+      planTerms: { team: { meteredDiscountPercent: 50 } },
+    });
+    expect(partial.bills.team.meteredAfterDiscountCents).toBe(4_000);
+  });
+
+  it('applies a metered percentage to extra-member cents', () => {
+    const preview = cheapestPlanPreview({
+      activeMembers: 5,
+      meteredSpendCents: 0,
+      planTerms: { payg: { meteredDiscountPercent: 50 } },
+    });
+    expect(preview.bills.payg.extraMemberCents).toBe(200);
     expect(preview.bills.team.extraMemberCents).toBe(0);
   });
 });

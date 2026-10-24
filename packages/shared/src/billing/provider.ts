@@ -13,6 +13,8 @@ export interface CreateCheckoutInput {
   productId: string;
   successUrl: string;
   discountId?: string;
+  /** Custom-price amount in cents. Polar ignores this on a fixed price. */
+  amount?: number;
 }
 
 export interface UpdateSubscriptionInput {
@@ -35,22 +37,50 @@ export interface BillingProvider {
     returnUrl: string;
   }): Promise<{ url: string }>;
   updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
+  /** Cancel immediately so a comp stops the platform fee. 404 and already-canceled are success. */
+  revokeSubscription(subscriptionId: string): Promise<void>;
   ingestUsage(event: PolarUsageEvent): Promise<void>;
+  /**
+   * Event names with an active metered price on this product.
+   * Null means the catalog could not be read. An empty list means it was
+   * read and the meter is absent. A matching product id is not a substitute.
+   */
+  listPricedEventNames(productId: string): Promise<readonly string[] | null>;
 }
+
+/** Timeline meter events. Keep aligned with TIMELINE_METERED_EVENT_NAMES. */
+const POLAR_PRICED_EVENT_NAMES = [
+  'timeline_ai_eur_cents',
+  'timeline_recall_minutes',
+  'timeline_email_units',
+  'timeline_storage_gb_month',
+  'timeline_accepted_sources',
+  'timeline_extra_member_days',
+] as const;
 
 /** In-memory provider for unit/e2e tests — no network. */
 export function createFakeBillingProvider(): BillingProvider & {
   events: PolarUsageEvent[];
   customers: Map<string, { id: string; email: string }>;
   subscriptionUpdates: UpdateSubscriptionInput[];
+  revokedSubscriptionIds: string[];
+  checkouts: CreateCheckoutInput[];
+  /** Per-product priced events. Missing keys default to every Timeline meter. */
+  pricedEventNamesByProduct: Map<string, readonly string[] | null>;
 } {
   const events: PolarUsageEvent[] = [];
   const customers = new Map<string, { id: string; email: string }>();
   const subscriptionUpdates: UpdateSubscriptionInput[] = [];
+  const revokedSubscriptionIds: string[] = [];
+  const checkouts: CreateCheckoutInput[] = [];
+  const pricedEventNamesByProduct = new Map<string, readonly string[] | null>();
   return {
     events,
     customers,
     subscriptionUpdates,
+    revokedSubscriptionIds,
+    checkouts,
+    pricedEventNamesByProduct,
     ensureCustomer(input) {
       const existing = customers.get(input.externalId);
       if (existing) return Promise.resolve(existing);
@@ -59,9 +89,11 @@ export function createFakeBillingProvider(): BillingProvider & {
       return Promise.resolve(created);
     },
     createCheckoutSession(input) {
+      checkouts.push(input);
+      const amount = input.amount === undefined ? '' : `&amount=${String(input.amount)}`;
       return Promise.resolve({
-        id: `chk_fake_${input.productId.slice(0, 8)}`,
-        url: `https://sandbox.polar.sh/checkout/fake?product=${input.productId}`,
+        id: `chk_fake_${String(checkouts.length)}`,
+        url: `https://sandbox.polar.sh/checkout/fake?product=${input.productId}${amount}`,
       });
     },
     createCustomerPortalSession(input) {
@@ -73,9 +105,19 @@ export function createFakeBillingProvider(): BillingProvider & {
       subscriptionUpdates.push(input);
       return Promise.resolve({ ok: true });
     },
+    revokeSubscription(subscriptionId) {
+      revokedSubscriptionIds.push(subscriptionId);
+      return Promise.resolve();
+    },
     ingestUsage(event) {
       events.push(event);
       return Promise.resolve();
+    },
+    listPricedEventNames(productId) {
+      if (pricedEventNamesByProduct.has(productId)) {
+        return Promise.resolve(pricedEventNamesByProduct.get(productId) ?? null);
+      }
+      return Promise.resolve(POLAR_PRICED_EVENT_NAMES);
     },
   };
 }

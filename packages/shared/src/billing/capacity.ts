@@ -20,6 +20,7 @@ import type { BillingReserveFailureCode } from '#src/billing/admission.js';
 import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
+import { effectiveBillingPlanId } from '#src/billing/operator.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
@@ -134,8 +135,9 @@ export async function assertTeamWriteCapacity(input: {
       "This team's billing is paused, so new files cannot be uploaded until billing is restored.",
     );
   }
-  const cap = CAPACITY_BY_PLAN[account.planId];
-  const code = admissionCodeForPlan(account.planId);
+  const entitlementsPlanId = effectiveBillingPlanId(account);
+  const cap = CAPACITY_BY_PLAN[entitlementsPlanId];
+  const code = admissionCodeForPlan(entitlementsPlanId);
 
   if (cap.documents !== null && (input.additionalDocuments ?? 0) > 0) {
     const [row] = await input.db
@@ -208,7 +210,8 @@ export async function assertTeamMemberSeatCapacity(input: {
       "This team's billing is paused, so new members cannot be added until billing is restored.",
     );
   }
-  const max = PLAN_CATALOG[account.planId].maxActiveMembers;
+  const entitlementsPlanId = effectiveBillingPlanId(account);
+  const max = PLAN_CATALOG[entitlementsPlanId].maxActiveMembers;
   if (max === null) return;
   const [memberRow] = await input.db
     .select({ n: sql<number>`count(*)::int` })
@@ -232,7 +235,7 @@ export async function assertTeamMemberSeatCapacity(input: {
   }
   if ((memberRow?.n ?? 0) + pendingInvites + additionalSeats > max) {
     throw new BillingAdmissionError(
-      admissionCodeForPlan(account.planId),
+      admissionCodeForPlan(entitlementsPlanId),
       'Active member limit reached for this plan',
     );
   }
@@ -247,7 +250,8 @@ export async function assertTeamCustomMcpCapacity(input: {
   if (additionalServers <= 0) return;
   const billing = billingScopeForDb(input.db, input.teamId);
   const account = await billing.getAccount();
-  const cap = CAPACITY_BY_PLAN[account.planId].customMcpServers;
+  const entitlementsPlanId = effectiveBillingPlanId(account);
+  const cap = CAPACITY_BY_PLAN[entitlementsPlanId].customMcpServers;
   if (cap === null) return;
   const [row] = await input.db
     .select({ n: sql<number>`count(*)::int` })
@@ -255,7 +259,7 @@ export async function assertTeamCustomMcpCapacity(input: {
     .where(eq(mcpServers.teamId, input.teamId));
   if ((row?.n ?? 0) + additionalServers > cap) {
     throw new BillingAdmissionError(
-      admissionCodeForPlan(account.planId),
+      admissionCodeForPlan(entitlementsPlanId),
       'Custom MCP server limit reached for this plan',
     );
   }
@@ -419,7 +423,8 @@ export async function assertTeamConcurrentRecallCapacity(input: {
       'This extra workspace has no Free allowance. Add a payment method in Billing to start a notetaker.',
     );
   }
-  const cap = CAPACITY_BY_PLAN[account.planId].concurrentRecallBots;
+  const entitlementsPlanId = effectiveBillingPlanId(account);
+  const cap = CAPACITY_BY_PLAN[entitlementsPlanId].concurrentRecallBots;
   if (cap === null) return;
   const [row] = await input.db
     .select({ n: sql<number>`count(*)::int` })
@@ -427,7 +432,7 @@ export async function assertTeamConcurrentRecallCapacity(input: {
     .where(and(eq(meetings.teamId, input.teamId), inArray(meetings.status, ['joining', 'active'])));
   if ((row?.n ?? 0) + additionalBots > cap) {
     throw new BillingAdmissionError(
-      admissionCodeForPlan(account.planId),
+      admissionCodeForPlan(entitlementsPlanId),
       'Concurrent meeting notetaker limit reached for this plan',
     );
   }

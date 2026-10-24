@@ -24,14 +24,37 @@ describe('SidebarBillingUsage', () => {
     canManageBilling: true,
   };
 
-  it('renders plan, progress, and overage when expanded', () => {
+  it('renders plan and spend when expanded', () => {
     const html = renderToStaticMarkup(<SidebarBillingUsage summary={summary} expanded />);
     expect(html).toContain('data-sidebar-billing');
     expect(html).toContain('Pay as you go');
-    expect(html).toContain('72%');
     expect(html).toContain('€18 of €25');
-    expect(html).toContain('+€4.20 overage');
+    expect(html).not.toContain('>72%<');
+    expect(html).not.toContain('+€4.20 overage');
     expect(html).toContain('href="/app/team?section=billing"');
+  });
+
+  it('hides the meter for members under the cap', () => {
+    const html = renderToStaticMarkup(
+      <SidebarBillingUsage
+        summary={{ ...summary, canManageBilling: false, href: '/app/usage', atLimit: false }}
+        expanded
+      />,
+    );
+    expect(html).toBe('');
+  });
+
+  it('shows only a cap notice for members at the cap', () => {
+    const html = renderToStaticMarkup(
+      <SidebarBillingUsage
+        summary={{ ...summary, canManageBilling: false, href: '/app/usage', atLimit: true }}
+        expanded
+      />,
+    );
+    expect(html).toContain('Spend cap reached');
+    expect(html).toContain('href="/app/usage"');
+    expect(html).not.toContain('€18 of €25');
+    expect(html).not.toContain('+€4.20 overage');
   });
 
   it('renders a compact control when collapsed', () => {

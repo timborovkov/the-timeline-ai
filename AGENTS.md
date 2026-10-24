@@ -130,7 +130,8 @@ Treat this file as an operating contract for agents, not a loose README.
   named modules (`scope.timeline`, `scope.documents`, `scope.meetings`,
   `scope.objects`, `scope.boards`, `scope.pins`, `scope.suggestions`, `scope.calendar`,
   `scope.integrations`, `scope.mcp`, `scope.onboarding`, `scope.jobRecovery`,
-  `scope.reconciliation`, `scope.audit`, `scope.conversations`) rather than flat scope methods or
+  `scope.reconciliation`, `scope.audit`, `scope.conversations`, `scope.billing`,
+  `scope.billingOperator`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
   `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
 - **Production Qdrant storage copies require maintenance safeguards.** Follow

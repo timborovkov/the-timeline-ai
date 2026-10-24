@@ -30,6 +30,7 @@ const pgliteChunks = [
     'src/meetings/scope.test.ts',
     'src/onboarding/index.test.ts',
   ],
+  ['src/billing/scope.test.ts'],
   ['src/objects/index.test.ts'],
   ['src/task-categories/state.test.ts', 'src/task-categories/evals.test.ts'],
   ['src/suggestions/index.test.ts'],

@@ -12,11 +12,16 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reserveAskAi } from '#src/billing/admission.js';
+import {
+  daysInPeriodYm,
+  memberDayChargeDelta,
+  periodYmUtc,
+  polarMemberMonthUnits,
+} from '#src/billing/charge.js';
 import { runWithBillingContext } from '#src/billing/context.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import {
   accrueTeamMemberDays,
-  creditWalletFromPolarOrder,
   meterAcceptedSources,
   meterEmailUnits,
   periodYm,
@@ -223,43 +228,6 @@ describe('billing runtime', () => {
     expect(dash.meters.accepted_sources?.customerChargeCents).toBe(1);
   });
 
-  it('credits a Polar top-up once per order id', async () => {
-    const billingSetup = billingScopeMod.createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    await billingSetup.getAccount();
-    await pg.exec(`
-      UPDATE team_billing_accounts
-      SET plan_id = 'payg', billing_state = 'payg_active'
-      WHERE team_id = '${TEAM_ID}';
-    `);
-    const first = await creditWalletFromPolarOrder({
-      db,
-      teamId: TEAM_ID,
-      orderId: 'ord_1',
-      cents: 1000,
-    });
-    expect(first.duplicate).toBe(false);
-    const second = await creditWalletFromPolarOrder({
-      db,
-      teamId: TEAM_ID,
-      orderId: 'ord_1',
-      cents: 1000,
-    });
-    expect(second.duplicate).toBe(true);
-    const billing = billingScopeMod.createBillingScope({
-      db,
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      ensureMember: () => Promise.resolve('owner'),
-    });
-    const dash = await billing.getDashboard();
-    expect(dash.account.walletBalanceCents).toBe(1000);
-  });
-
   it('accrues extra member-days on paid plans and resets included discount', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
@@ -330,7 +298,85 @@ describe('billing runtime', () => {
     expect(third.chargeCents).toBe(0);
   });
 
-  it('persists extra member-day charges when wallet admission is denied', async () => {
+  it('charges members past a custom included count at the custom extra-member price', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const previousPolarToken = process.env.POLAR_ACCESS_TOKEN;
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    delete process.env.POLAR_ACCESS_TOKEN;
+    resetEnvForTests();
+    try {
+      await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
+          wallet_balance_cents = 5000, spend_cap_cents = 2500,
+          polar_customer_id = 'cus_custom_members',
+          price_override = '{"includedActiveMembers":1,"additionalMemberCents":400}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+      VALUES ('21111111-2222-4333-8444-555555555555', 'm2@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+      const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-02' });
+      const expected = memberDayChargeDelta({
+        previousNativeUnits: 0,
+        nextNativeUnits: 1,
+        centsPerMemberMonth: 400,
+        daysInMonth: daysInPeriodYm(periodYmUtc()),
+      });
+      expect(accrued.extraMembers).toBe(1);
+      expect(accrued.chargeCents).toBe(expected);
+      const ledger = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID));
+      const row = ledger.find((entry) => entry.operationId.includes('member_days:'));
+      expect(row?.customerChargeCents).toBe(expected);
+      expect(row?.metadata).toMatchObject({
+        polar_ingest_name: 'timeline_extra_member_days',
+        polar_ingest_units: polarMemberMonthUnits(expected),
+        polar_ingest_status: 'pending',
+      });
+    } finally {
+      if (previousPolarToken === undefined) delete process.env.POLAR_ACCESS_TOKEN;
+      else process.env.POLAR_ACCESS_TOKEN = previousPolarToken;
+      resetEnvForTests();
+    }
+  });
+
+  it('does not bill extra members when Enterprise included members are unlimited', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', shadow_billing = false,
+          spend_cap_cents = 0,
+          price_override = '{"additionalMemberCents":500}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+      VALUES ('21111111-2222-4333-8444-555555555555', 'm2@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const accrued = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-10-02' });
+    expect(accrued.extraMembers).toBe(0);
+    expect(accrued.chargeCents).toBe(0);
+  });
+
+  it('persists extra member-day charges when the spend cap is already exhausted', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -343,7 +389,7 @@ describe('billing runtime', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 0,
-          spend_cap_cents = 2500, shadow_billing = false
+          spend_cap_cents = 0, shadow_billing = false
       WHERE team_id = '${TEAM_ID}';
       INSERT INTO users (id, email) VALUES
         ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
@@ -454,6 +500,58 @@ describe('billing runtime', () => {
       .from(billingMemberDayLedger)
       .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
     expect(after.every((row) => row.planId === 'team')).toBe(true);
+  });
+
+  it('bills unsettled member-days at the paid plan rate after a move to Enterprise', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const day = '2026-02-10';
+    const extraIds = [
+      '21111111-2222-4333-8444-555555555555',
+      '31111111-2222-4333-8444-555555555555',
+      '41111111-2222-4333-8444-555555555555',
+    ];
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'past_due', shadow_billing = false,
+          spend_cap_cents = 2500
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES
+        ${extraIds.map((id, i) => `('${id}', 'extra${i + 2}@example.test')`).join(',\n        ')};
+      INSERT INTO team_members (team_id, user_id, role) VALUES
+        ${extraIds.map((id) => `('${TEAM_ID}', '${id}', 'member')`).join(',\n        ')};
+    `);
+    const denied = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(denied.chargeCents).toBe(0);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', price_override = NULL
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const replayed = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    const expected = memberDayChargeDelta({
+      previousNativeUnits: 0,
+      nextNativeUnits: 1,
+      centsPerMemberMonth: 200,
+      daysInMonth: daysInPeriodYm('2026-02'),
+    });
+    expect(replayed.extraMembers).toBe(1);
+    expect(replayed.chargeCents).toBe(expected);
+    expect(expected).toBe(7);
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const row = ledger.find((entry) => entry.operationId.includes('member_days:'));
+    expect(row?.customerChargeCents).toBe(expected);
   });
 
   it('backfills member-days from preserved prior membership intervals', async () => {
@@ -697,6 +795,31 @@ describe('billing runtime', () => {
     expect(after.includedDiscountRemainingCents).toBe(6_000);
     expect(after.periodStartedAt?.toISOString()).toBe('2026-08-15T00:00:00.000Z');
     expect(after.periodEndsAt?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
+  });
+
+  it('refills an expired comp from the Free allowance, not the stored plan', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'team', billing_state = 'team_active',
+          comp_reason = 'trial', comp_expires_at = '2020-01-01T00:00:00Z',
+          included_discount_remaining_cents = 0,
+          period_started_at = '2026-07-15T00:00:00Z', period_ends_at = '2026-08-15T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reset = await resetIncludedDiscountIfPeriodElapsed({
+      db,
+      teamId: TEAM_ID,
+      now: new Date('2026-08-20T12:00:00Z'),
+    });
+    expect(reset).toBe(true);
+    expect((await billing.getAccount()).includedDiscountRemainingCents).toBe(0);
   });
 
   it('does not overwrite a newer Polar plan or period already on the locked row', async () => {
@@ -1030,8 +1153,7 @@ describe('billing runtime', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
-          wallet_balance_cents = 400, included_discount_remaining_cents = 400,
-          spend_cap_cents = 100000
+          included_discount_remaining_cents = 400, spend_cap_cents = 100000
       WHERE team_id = '${TEAM_ID}';
       INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
       VALUES ('${TEAM_ID}', '${ym}', 'storage_gb_month', 1, 0);
@@ -1064,23 +1186,19 @@ describe('billing runtime', () => {
     expect(ledger?.metadata).toMatchObject({
       pricing_plan_id: 'team',
       pricing_period_ym: yesterday.slice(0, 7),
-      wallet_cents: 0,
+      invoice_cents: 0,
     });
     const discount = ledger?.metadata.discount_cents;
     expect(typeof discount).toBe('number');
     expect(discount).toBeGreaterThan(0);
     const [account] = await db
-      .select({
-        wallet: teamBillingAccounts.walletBalanceCents,
-        included: teamBillingAccounts.includedDiscountRemainingCents,
-      })
+      .select({ included: teamBillingAccounts.includedDiscountRemainingCents })
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
-    expect(account?.wallet).toBe(400);
     expect(account?.included).toBe(400);
   });
 
-  it('collects PAYG wallet overage for storage recovered in a prior month', async () => {
+  it('invoices same-plan PAYG storage recovered in a prior month', async () => {
     process.env.BILLING_CHARGES_ENABLED = 'true';
     resetEnvForTests();
     const billing = billingScopeMod.createBillingScope({
@@ -1094,8 +1212,7 @@ describe('billing runtime', () => {
     await pg.exec(`
       UPDATE team_billing_accounts
       SET plan_id = 'payg', billing_state = 'payg_active', shadow_billing = false,
-          wallet_balance_cents = 5000, included_discount_remaining_cents = 100,
-          spend_cap_cents = 100000
+          included_discount_remaining_cents = 100, spend_cap_cents = 100000
       WHERE team_id = '${TEAM_ID}';
       INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
       VALUES ('${TEAM_ID}', '2026-09', 'storage_gb_month', 1, 0);
@@ -1117,18 +1234,19 @@ describe('billing runtime', () => {
       .select()
       .from(billingUsageLedger)
       .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${day}`));
-    const walletCents = ledger?.metadata.wallet_cents;
-    expect(typeof walletCents).toBe('number');
-    expect(walletCents).toBeGreaterThan(0);
+    const invoiceCents = ledger?.metadata.invoice_cents;
+    expect(typeof invoiceCents).toBe('number');
+    expect(invoiceCents).toBeGreaterThan(0);
+    expect(ledger?.metadata.polar_ingest_status).not.toBe('not_required');
     const [account] = await db
       .select({
-        wallet: teamBillingAccounts.walletBalanceCents,
         included: teamBillingAccounts.includedDiscountRemainingCents,
+        billingState: teamBillingAccounts.billingState,
       })
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
-    expect(account?.wallet).toBe(5000 - Number(walletCents));
     expect(account?.included).toBe(100);
+    expect(account?.billingState).toBe('payg_active');
   });
 
   it('skips storage days covered by a closed document absence interval', async () => {

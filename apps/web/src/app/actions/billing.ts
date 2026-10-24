@@ -1,14 +1,12 @@
 'use server';
 
 import {
+  checkoutDiscountId,
+  compSuppressesPolarCharges,
   createPlanChangeSession,
   createPolarBillingProvider,
   isPolarBillingConfigured,
-  isPolarTopUpConfigured,
   polarProductIdForPlan,
-  polarTopUpProductId,
-  PREPAID_TOPUP_CENTS,
-  planUsesPrepaidWallet,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -50,25 +48,27 @@ export async function startBillingCheckout(input: {
   if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
 
   const env = getEnv();
-  const submittedCode = input.discountCode?.trim();
-  if (submittedCode) {
-    const expected = env.POLAR_DISCOUNT_CODE?.trim();
-    if (
-      !expected ||
-      !env.POLAR_DISCOUNT_ID ||
-      submittedCode.toLowerCase() !== expected.toLowerCase()
-    ) {
-      return { ok: false, error: 'That discount code is not valid.' };
-    }
-  }
   const account = await gate.scope.billing.getAccount();
+  if (compSuppressesPolarCharges(account)) {
+    return {
+      ok: false,
+      error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
+    };
+  }
   if (account.planId === 'enterprise') {
     return {
       ok: false,
       error:
-        'Enterprise plan changes go through support or the Polar customer portal, not self-serve checkout.',
+        'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
     };
   }
+  const discount = checkoutDiscountId({
+    account,
+    submittedCode: input.discountCode,
+    envDiscountId: env.POLAR_DISCOUNT_ID,
+    envDiscountCode: env.POLAR_DISCOUNT_CODE,
+  });
+  if (discount.error) return { ok: false, error: discount.error };
   await provider.ensureCustomer({
     externalId: gate.active.teamId,
     email: gate.email,
@@ -82,7 +82,7 @@ export async function startBillingCheckout(input: {
     customerEmail: gate.email,
     successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
     portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-    ...(submittedCode && env.POLAR_DISCOUNT_ID ? { discountId: env.POLAR_DISCOUNT_ID } : {}),
+    ...(discount.discountId ? { discountId: discount.discountId } : {}),
   });
   return { ok: true, url: checkout.url };
 }
@@ -103,79 +103,32 @@ export async function updateBillingSpendCap(input: {
   }
 }
 
-export async function startWalletTopUp(): Promise<
+export async function startBillingPortal(): Promise<
   { ok: true; url: string } | { ok: false; error: string }
 > {
   const gate = await requireBillingAdmin();
   if (!gate.ok) return gate;
-  if (!isPolarTopUpConfigured()) {
-    return { ok: false, error: 'Prepaid top-up is not configured.' };
+  if (!isPolarBillingConfigured()) {
+    return { ok: false, error: 'Polar billing is not configured.' };
   }
-  const productId = polarTopUpProductId();
-  if (!productId) return { ok: false, error: 'Missing Polar top-up product id.' };
-
-  const account = await gate.scope.billing.getAccount();
-  if (!planUsesPrepaidWallet(account.planId)) {
-    return {
-      ok: false,
-      error:
-        'Prepaid top-up is available on PAYG, Team, and Business. Free workspaces stop at native allowances; Enterprise invoices usage without a prepaid wallet.',
-    };
-  }
-
   const provider = createPolarBillingProvider();
   if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
-
+  const account = await gate.scope.billing.getAccount();
+  if (compSuppressesPolarCharges(account)) {
+    return {
+      ok: false,
+      error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
+    };
+  }
   const env = getEnv();
   await provider.ensureCustomer({
     externalId: gate.active.teamId,
     email: gate.email,
     name: gate.active.teamName,
   });
-  const checkout = await provider.createCheckoutSession({
+  const portal = await provider.createCustomerPortalSession({
     externalCustomerId: gate.active.teamId,
-    customerEmail: gate.email,
-    productId,
-    successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=topup`,
+    returnUrl: `${env.AUTH_URL}/app/team?section=billing`,
   });
-  return { ok: true, url: checkout.url };
-}
-
-export async function updateBillingAutoReload(input: {
-  enabled: boolean;
-  thresholdCents?: number;
-  amountCents?: number;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  const gate = await requireBillingAdmin();
-  if (!gate.ok) return gate;
-  try {
-    const amountCents = input.amountCents ?? PREPAID_TOPUP_CENTS;
-    if (input.enabled && (!Number.isInteger(amountCents) || amountCents <= 0)) {
-      return { ok: false, error: 'Auto-reload amount must be a positive euro amount.' };
-    }
-    const account = await gate.scope.billing.getAccount();
-    if (input.enabled && !planUsesPrepaidWallet(account.planId)) {
-      return {
-        ok: false,
-        error: 'Auto-reload is available on paid plans that spend the prepaid wallet.',
-      };
-    }
-    if (input.enabled && account.spendCapCents > 0 && amountCents > account.spendCapCents) {
-      return {
-        ok: false,
-        error: 'Auto-reload cannot exceed the workspace monthly spend cap.',
-      };
-    }
-    await gate.scope.billing.setAutoReload({
-      enabled: input.enabled,
-      thresholdCents: input.thresholdCents ?? 500,
-      amountCents,
-    });
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to update auto-reload.',
-    };
-  }
+  return { ok: true, url: portal.url };
 }

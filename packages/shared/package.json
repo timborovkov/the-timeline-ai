@@ -281,6 +281,24 @@
       "import": "./dist/billing/preview.js",
       "default": "./dist/billing/preview.js"
     },
+    "./billing/polar-setup": {
+      "types": "./src/billing/polar-setup.ts",
+      "development": "./src/billing/polar-setup.ts",
+      "import": "./dist/billing/polar-setup.js",
+      "default": "./dist/billing/polar-setup.js"
+    },
+    "./billing/operator": {
+      "types": "./src/billing/operator.ts",
+      "development": "./src/billing/operator.ts",
+      "import": "./dist/billing/operator.js",
+      "default": "./dist/billing/operator.js"
+    },
+    "./billing/operator-store": {
+      "types": "./src/billing/operator-store.ts",
+      "development": "./src/billing/operator-store.ts",
+      "import": "./dist/billing/operator-store.js",
+      "default": "./dist/billing/operator-store.js"
+    },
     "./objects": {
       "types": "./src/objects/index.ts",
       "development": "./src/objects/index.ts",
