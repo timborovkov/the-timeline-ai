@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LegalAcceptPage from '@/app/legal/accept/page';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
@@ -46,6 +46,21 @@ describe('LegalAcceptPage', () => {
       throw new Error(`NEXT_REDIRECT:${path}`);
     });
     fakes.getUserLegalAcceptance.mockResolvedValue(currentDbAcceptance);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns to the dashboard when production legal publication is withheld', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');
+    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+    fakes.getUserLegalAcceptance.mockResolvedValue(null);
+
+    await expect(LegalAcceptPage({ searchParams: Promise.resolve({}) })).rejects.toThrow(
+      'NEXT_REDIRECT:/app',
+    );
   });
 
   it('renders the idempotent form when the DB is current but the signed session is stale', async () => {

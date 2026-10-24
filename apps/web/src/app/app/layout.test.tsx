@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReactNode } from 'react';
 
@@ -87,6 +87,7 @@ beforeEach(() => {
   );
   fakes.auth.mockResolvedValue({ user: { id: 'user-1', name: 'Tim', email: 'tim@example.com' } });
   fakes.cookies.mockResolvedValue({ get: () => undefined });
+  fakes.getCalendarSettings.mockResolvedValue({ defaultTimezone: DEFAULT_TIMEZONE });
   fakes.getNavAttentionSummary.mockResolvedValue({});
   fakes.getUserLegalAcceptance.mockResolvedValue({});
   fakes.hasCurrentLegalAcceptance.mockReturnValue(true);
@@ -103,7 +104,58 @@ beforeEach(() => {
   fakes.unreadNotificationCount.mockResolvedValue(0);
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe('AppLayout', () => {
+  it.each([undefined, 'false'])(
+    'allows existing users with stale acceptance when production publication readiness is %s',
+    async (readiness) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('LEGAL_PUBLICATION_READY', readiness);
+      fakes.hasCurrentLegalAcceptance.mockReturnValue(false);
+
+      const html = renderToStaticMarkup(await AppLayout({ children: <p>Home</p>, modal: null }));
+
+      expect(html).toContain('Home');
+    },
+  );
+
+  it('allows existing users without an acceptance snapshot while publication is withheld', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');
+    fakes.getUserLegalAcceptance.mockResolvedValue(null);
+
+    const html = renderToStaticMarkup(await AppLayout({ children: <p>Home</p>, modal: null }));
+
+    expect(html).toContain('Home');
+  });
+
+  it.each(['stale', 'missing'])(
+    'requires %s acceptance once legal publication is ready',
+    async (acceptance) => {
+      vi.stubEnv('NODE_ENV', 'production');
+      vi.stubEnv('LEGAL_PUBLICATION_READY', 'true');
+      fakes.getUserLegalAcceptance.mockResolvedValue(acceptance === 'missing' ? null : {});
+      fakes.hasCurrentLegalAcceptance.mockReturnValue(false);
+
+      await expect(AppLayout({ children: <p>Home</p>, modal: null })).rejects.toThrow(
+        'redirect:/legal/accept',
+      );
+    },
+  );
+
+  it('requires sign-in while legal publication is withheld', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');
+    fakes.auth.mockResolvedValue(null);
+
+    await expect(AppLayout({ children: <p>Home</p>, modal: null })).rejects.toThrow(
+      'redirect:/sign-in',
+    );
+  });
+
   it('renders with the default timezone when calendar settings fail', async () => {
     const error = new Error('calendar settings unavailable');
     fakes.getCalendarSettings.mockRejectedValueOnce(error);

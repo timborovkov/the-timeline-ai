@@ -234,13 +234,14 @@
       <p>
         Keep <code>LEGAL_PUBLICATION_READY=false</code> until G-20 in the security/privacy/trust
         register is resolved and dated official registry evidence is retained. In production that
-        default withholds the binding Terms, legal acceptance, and first-time account signup. The
-        <code>true</code> value is only an operator attestation after evidence exists, not a
-        substitute for evidence. Once ready, a release that changes <code>TERMS_VERSION</code> or
-        <code>PRIVACY_VERSION</code> forces existing people through <code>/legal/accept</code> and
-        makes human product APIs return <code>428 legal_acceptance_required</code> until acceptance.
-        Publish and review the legal text before deploying that bump, brief support/API consumers,
-        and verify the append-only acceptance migration first.
+        default withholds the binding Terms, legal acceptance, and first-time account signup while
+        preserving existing users' signed-in dashboard access. The <code>true</code> value is only
+        an operator attestation after evidence exists, not a substitute for evidence. Once ready, a
+        release that changes <code>TERMS_VERSION</code> or <code>PRIVACY_VERSION</code> forces
+        existing people through <code>/legal/accept</code> and makes human product APIs return
+        <code>428 legal_acceptance_required</code> until acceptance. Publish and review the legal
+        text before deploying that bump, brief support/API consumers, and verify the append-only
+        acceptance migration first.
       </p>
 
       <h2 id="healthchecks">6. Healthchecks</h2>
