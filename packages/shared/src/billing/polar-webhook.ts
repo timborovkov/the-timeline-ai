@@ -3,7 +3,12 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
-import { assertPriceOverride, type PendingEnterpriseTerms } from '#src/billing/operator.js';
+import {
+  assertPriceOverride,
+  pendingEnterpriseTermsAfterActivation,
+  pendingEnterpriseTermsForCheckout,
+  type PendingEnterpriseTerms,
+} from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { childLogger } from '#src/logger.js';
 
@@ -29,6 +34,9 @@ export interface PolarWebhookPayload {
     customer?: { external_id?: string; id?: string };
     customer_id?: string;
     external_customer_id?: string;
+    checkout_id?: string;
+    checkoutId?: string;
+    checkout?: { id?: string };
     order_id?: string;
     orderId?: string;
   };
@@ -190,6 +198,14 @@ function polarCustomerId(data: PolarWebhookPayload['data']): string | null {
   return data?.customer?.id ?? data?.customer_id ?? null;
 }
 
+/** Checkout that created this subscription, when Polar includes it. */
+function polarCheckoutId(data: PolarWebhookPayload['data']): string | null {
+  const raw = data?.checkout_id ?? data?.checkoutId ?? data?.checkout?.id ?? null;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function teamIdFromPayload(payload: PolarWebhookPayload): string | null {
   return payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
 }
@@ -245,8 +261,19 @@ async function upsertPaidSubscription(input: {
     ) {
       return { applied: false };
     }
-    const pending = input.plan === 'enterprise' ? (existing?.pendingEnterpriseTerms ?? null) : null;
+    const checkoutId = polarCheckoutId(input.data);
+    const pending =
+      input.plan === 'enterprise'
+        ? pendingEnterpriseTermsForCheckout(existing?.pendingEnterpriseTerms ?? null, checkoutId)
+        : null;
     const activatedOverride = pending ? enterpriseOverrideFromPending(pending) : null;
+    const pendingAfterActivation =
+      input.plan === 'enterprise' && pending
+        ? pendingEnterpriseTermsAfterActivation(
+            existing?.pendingEnterpriseTerms ?? null,
+            checkoutId,
+          )
+        : undefined;
     const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const resetDiscount = shouldResetIncludedDiscount({
       existing,
@@ -299,8 +326,10 @@ async function upsertPaidSubscription(input: {
             ? {
                 priceOverride: activatedOverride,
                 priceOverrideExpiresAt: null,
-                pendingEnterpriseTerms: null,
               }
+            : {}),
+          ...(pendingAfterActivation !== undefined
+            ? { pendingEnterpriseTerms: pendingAfterActivation }
             : {}),
           polarEventModifiedAt: polarEventModifiedAtValue,
           updatedAt: now,

@@ -92,7 +92,7 @@ export function createFakeBillingProvider(): BillingProvider & {
       checkouts.push(input);
       const amount = input.amount === undefined ? '' : `&amount=${String(input.amount)}`;
       return Promise.resolve({
-        id: `chk_fake_${input.productId.slice(0, 8)}`,
+        id: `chk_fake_${String(checkouts.length)}`,
         url: `https://sandbox.polar.sh/checkout/fake?product=${input.productId}${amount}`,
       });
     },

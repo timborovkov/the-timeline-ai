@@ -278,11 +278,7 @@ describe('billing operator store', () => {
     expect(prepared?.billingState).toBe('free');
     expect(prepared?.polarSubscriptionId).toBeNull();
     expect(prepared?.priceOverride).toBeNull();
-    expect(prepared?.pendingEnterpriseTerms).toMatchObject({
-      platformFeeCents: 150_000,
-      includedActiveMembers: 40,
-      additionalMemberCents: 300,
-    });
+    expect(prepared?.pendingEnterpriseTerms).toBeNull();
 
     const provider = createFakeBillingProvider();
     const result = await startEnterpriseCheckout({
@@ -304,6 +300,73 @@ describe('billing operator store', () => {
       }),
     ]);
     expect(provider.customers.get(TEAM_ID)?.email).toBe('owner@example.test');
+    const [saved] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(saved?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_fake_1: { platformFeeCents: 150_000 },
+      },
+    });
+  });
+
+  it('keeps an earlier Enterprise checkout when a later checkout fails or quotes different terms', async () => {
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
+    `);
+    const provider = createFakeBillingProvider();
+    await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 100_000,
+      spendCapCents: 40_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+    const failing = createFakeBillingProvider();
+    failing.createCheckoutSession = () => Promise.reject(new Error('polar down'));
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 250_000,
+        spendCapCents: 80_000,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider: failing,
+      }),
+    ).rejects.toThrow(/retry/i);
+    await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 250_000,
+      includedActiveMembers: 12,
+      spendCapCents: 80_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.planId).toBe('free');
+    expect(account?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_fake_1: { platformFeeCents: 100_000, spendCapCents: 40_000 },
+        chk_fake_2: {
+          platformFeeCents: 250_000,
+          includedActiveMembers: 12,
+          spendCapCents: 80_000,
+        },
+      },
+    });
   });
 
   it('refuses Enterprise checkout for a comp or a live subscription', async () => {
@@ -382,7 +445,9 @@ describe('billing operator store', () => {
     expect(replaced?.billingState).toBe('canceled');
     expect(replaced?.polarSubscriptionId).toBe('sub_old');
     expect(replaced?.polarProductId).toBe('prod_team');
-    expect(replaced?.pendingEnterpriseTerms).toMatchObject({ platformFeeCents: 100 });
+    expect(replaced?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_fake_1: { platformFeeCents: 100 } },
+    });
   });
 
   it('rejects a platform fee override that Polar would not charge', async () => {
@@ -430,7 +495,9 @@ describe('billing operator store', () => {
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
     expect(account?.planId).toBe('team');
     expect(account?.priceOverrideExpiresAt?.toISOString()).toBe('2020-01-01T00:00:00.000Z');
-    expect(account?.pendingEnterpriseTerms).toEqual({ platformFeeCents: 250_000 });
+    expect(account?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: { chk_fake_1: { platformFeeCents: 250_000 } },
+    });
   });
 
   it('clears a comp to restricted Free when the workspace has no grant and a subscription remains', async () => {

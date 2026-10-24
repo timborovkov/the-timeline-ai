@@ -581,8 +581,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Sub-cent rounds stay local until they become a cent, and that cent is ingested as the
       catalog units that price it. Percentage discounts settle from the cumulative total.
       A Team webhook does not downgrade Enterprise. Enterprise checkout stores pending
-      terms and does not activate the plan. The paid Enterprise subscription webhook
-      applies those terms. Comped plans are not overwritten. Clearing a comp refuses
+      terms for that checkout id and does not activate the plan. The paid Enterprise
+      subscription webhook applies only the checkout that was paid. An expired Enterprise
+      comp uses the Free allowance. Plan preview applies a metered percentage before
+      included credit. Replayed member-days keep the historical plan's extra-member rate. Comped plans are not overwritten. Clearing a comp refuses
       while a Polar subscription id remains, then chooses Free or restricted from the grant.
       Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
       Stale Polar activations are ignored against `polar_event_modified_at`; canceled paid
@@ -596,9 +598,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Team, Business, and Enterprise carry that metered price. Enterprise is the
       Timeline Enterprise Polar product: a per-team custom platform fee opened by
       a platform operator, plus the six metered prices. Opening that checkout stores
-      pending terms only. It does not grant Enterprise entitlements, clear the current
-      subscription id, or revive an expired price override. The first paid Enterprise
-      webhook activates the terms.
+      pending terms for that checkout only. It does not grant Enterprise entitlements, clear the current
+      subscription id, or revive an expired price override. Paying that checkout
+      activates its terms. A different checkout keeps its own terms.
       <code>POLAR_PRODUCT_ID_ENTERPRISE</code> is written by
       <code>pnpm billing:polar-setup</code>. Null included members stay unlimited.
       <code>pnpm billing:polar-setup</code> creates the meter without dropping

@@ -130,9 +130,12 @@ function billForPlan(input: {
       ? { billableMemberDays: input.billableMemberDays }
       : {}),
   });
-  const meteredAfterDiscountCents = applyMeteredDiscountCents(
-    Math.max(0, input.meteredSpendCents - plan.includedUsageDiscountCents),
-    input.terms?.meteredDiscountPercent,
+  // Settlement applies the metered percentage to the gross list charge, then
+  // subtracts included credit. Preview uses that same order.
+  const meteredAfterDiscountCents = Math.max(
+    0,
+    applyMeteredDiscountCents(input.meteredSpendCents, input.terms?.meteredDiscountPercent) -
+      plan.includedUsageDiscountCents,
   );
   const platformFeeCents = input.terms?.platformFeeCents ?? plan.platformFeeCents ?? 0;
   return {

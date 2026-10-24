@@ -323,6 +323,90 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.priceOverrideExpiresAt).toBeNull();
   });
 
+  it('activates only the Enterprise checkout that Polar says was paid', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
+          pending_enterprise_terms = '{"byCheckoutId":{"chk_early":{"platformFeeCents":100000,"spendCapCents":40000},"chk_later":{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}}}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_early',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          checkout_id: 'chk_early',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.spendCapCents).toBe(40000);
+    expect(account.priceOverride).toEqual({ platformFeeCents: 100000 });
+    expect(account.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_later: {
+          platformFeeCents: 250000,
+          includedActiveMembers: 12,
+          spendCapCents: 80000,
+        },
+      },
+    });
+  });
+
+  it('does not apply another Enterprise checkout when the paid event names a different one', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
+          pending_enterprise_terms = '{"byCheckoutId":{"chk_later":{"platformFeeCents":250000,"spendCapCents":80000}}}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_other',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          checkout_id: 'chk_early',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.spendCapCents).toBe(2500);
+    expect(account.priceOverride).toBeNull();
+    expect(account.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_later: { platformFeeCents: 250000, spendCapCents: 80000 },
+      },
+    });
+  });
+
   it('does not activate past_due subscriptions and ignores order.paid plan products', async () => {
     await handlePolarWebhookEvent({
       db,

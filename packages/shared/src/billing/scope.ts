@@ -49,6 +49,7 @@ import {
   applyMeteredDiscountCents,
   compCostBearingPaused,
   compSuppressesPolarCharges,
+  contractualEnterpriseAccount,
   effectiveBillingPlanId,
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
@@ -677,6 +678,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const entitlementsPlanId = effectiveBillingPlanId(locked);
         const commercial = resolveTeamCommercialTerms(locked);
         const comped = compSuppressesPolarCharges(locked);
+        const enterpriseContract = contractualEnterpriseAccount(locked);
         if (isAskTurn) {
           const agentTurnCap = CAPACITY_BY_PLAN[entitlementsPlanId].agentTurnsPerMonth;
           if (agentTurnCap !== null) {
@@ -740,7 +742,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
         const metersForAdmission = metersPlusPendingReservations(byMeter, pending);
 
-        if (entitlementsPlanId === 'free' && locked.billingState !== 'enterprise_active') {
+        if (entitlementsPlanId === 'free' && !enterpriseContract) {
           const allowance = freeAllowanceConsumedForMeter(input.meterId, metersForAdmission);
           if (allowance) {
             const next =
@@ -771,8 +773,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           0,
           locked.includedDiscountRemainingCents - pendingDiscount,
         );
-        const inFreeNativeAllowance =
-          entitlementsPlanId === 'free' && locked.billingState !== 'enterprise_active';
+        const inFreeNativeAllowance = entitlementsPlanId === 'free' && !enterpriseContract;
         const invoiceBillableChargeCents = inFreeNativeAllowance ? 0 : billableChargeCents;
         const { invoiceCents, discountCents } = splitDiscountAndWallet({
           chargeCents: invoiceBillableChargeCents,
@@ -789,9 +790,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
           wallet_lock_cents: walletLockCents,
         };
 
-        const enterpriseContract =
-          !comped &&
-          (locked.planId === 'enterprise' || locked.billingState === 'enterprise_active');
         const enforceSpendCap =
           !accountUsesShadowBilling(locked) &&
           !enterpriseContract &&
@@ -944,6 +942,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
       metadata?: Record<string, unknown>;
       /** Price this settlement as the plan in force on a replayed day. */
       pricingPlanId?: BillingPlanId;
+      /**
+       * Extra-member price of that historical plan, in cents per member-month.
+       * Live settlement omits this and uses the current commercial rate.
+       */
+      pricingAdditionalMemberCents?: number | null;
       /** Included-discount pool for that day. Skips the live balance when set. */
       historicalIncludedDiscountCents?: number;
       pricingPeriodYm?: string;
@@ -1011,18 +1014,24 @@ export function createBillingScope(deps: BillingScopeDeps) {
             ? 0
             : commercial.meteredDiscountPercent;
         const comped = compSuppressesPolarCharges(account);
+        const enterpriseContract = contractualEnterpriseAccount(account);
+        // member_days ignore the caller's customerChargeCents and recompute from
+        // the commercial extra-member price so a custom rate cannot be bypassed.
+        // A replay passes the historical plan's rate instead of the live price.
+        const memberRateCents =
+          input.pricingAdditionalMemberCents !== undefined
+            ? Math.max(0, input.pricingAdditionalMemberCents ?? 0)
+            : (commercial.additionalMemberCents ?? 0);
         const segmentCharges = segments.map((segment) => {
           const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
           const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
-          // member_days ignore the caller's customerChargeCents and recompute from
-          // the commercial extra-member price so a custom rate cannot be bypassed.
           const nextNative = previousNative + segment.nativeUnits;
           const listChargeCents =
             input.meterId === 'member_days'
               ? memberDayChargeDelta({
                   previousNativeUnits: previousNative,
                   nextNativeUnits: nextNative,
-                  centsPerMemberMonth: commercial.additionalMemberCents ?? 0,
+                  centsPerMemberMonth: memberRateCents,
                   daysInMonth: daysInPeriodYm(segment.periodYm),
                 })
               : cumulativeChargeDeltaCents({
@@ -1033,7 +1042,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           const billableInput = {
             planId: entitlementsPlanId,
             meterId: input.meterId,
-            centsPerMemberMonth: commercial.additionalMemberCents ?? 0,
+            centsPerMemberMonth: memberRateCents,
             daysInMonth: daysInPeriodYm(segment.periodYm),
           };
           const previousBillableCents = cumulativeBillableChargeCents({
@@ -1058,17 +1067,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
         );
         const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
         const historicalDiscount = input.historicalIncludedDiscountCents;
-        const freeAllowanceSettlement =
-          entitlementsPlanId === 'free' && account.billingState !== 'enterprise_active';
+        const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
         const { discountCents, invoiceCents } = splitDiscountAndWallet({
           chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,
           includedDiscountRemainingCents:
             historicalDiscount ?? account.includedDiscountRemainingCents,
           meterId: input.meterId,
         });
-        const enterpriseContract =
-          !comped &&
-          (account.planId === 'enterprise' || account.billingState === 'enterprise_active');
         const eventName = polarEventNameForMeter(input.meterId);
         const unitsToInvoice = polarCatalogUnitsForInvoiceCents(input.meterId, invoiceCents);
         const pricedEventNames = await pricedEventNamesForProduct(provider, account.polarProductId);

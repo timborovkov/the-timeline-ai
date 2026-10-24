@@ -140,6 +140,8 @@ export async function settleTeamMeter(input: {
   persistWhenDenied?: boolean;
   /** Price a replayed day on the plan in force then, not the live plan. */
   pricingPlanId?: BillingPlanId;
+  /** Extra-member price of that historical plan. Null means the plan has no seat price. */
+  pricingAdditionalMemberCents?: number | null;
   historicalIncludedDiscountCents?: number;
   pricingPeriodYm?: string;
   usageAt?: Date;
@@ -156,6 +158,9 @@ export async function settleTeamMeter(input: {
     ...(input.source ? { source: input.source } : {}),
     ...(input.billable !== undefined ? { billable: input.billable } : {}),
     ...(input.pricingPlanId ? { pricingPlanId: input.pricingPlanId } : {}),
+    ...(input.pricingAdditionalMemberCents !== undefined
+      ? { pricingAdditionalMemberCents: input.pricingAdditionalMemberCents }
+      : {}),
     ...(input.historicalIncludedDiscountCents !== undefined
       ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
       : {}),
@@ -657,6 +662,7 @@ async function accrueTeamMemberDaysForDay(input: {
   teamId: string;
   day: string;
   planId: BillingPlanId;
+  livePlanId: BillingPlanId;
   included: number | null;
   additionalMemberCents: number | null;
   members: { userId: string; role: string }[];
@@ -712,6 +718,7 @@ async function accrueTeamMemberDaysForDay(input: {
       centsPerMemberMonth: additionalMemberCents,
       daysInMonth,
     });
+    const replayDifferentPlan = planId !== input.livePlanId;
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
@@ -725,6 +732,12 @@ async function accrueTeamMemberDaysForDay(input: {
       persistWhenDenied: true,
       usageAt: new Date(`${day}T12:00:00.000Z`),
       pricingPeriodYm: period,
+      ...(replayDifferentPlan
+        ? {
+            pricingPlanId: planId,
+            pricingAdditionalMemberCents: additionalMemberCents,
+          }
+        : {}),
     });
     if (result.ok && !result.duplicate) {
       previousNative += 1;
@@ -787,6 +800,7 @@ export async function accrueTeamMemberDays(input: {
       teamId: input.teamId,
       day,
       planId: entitlement.planId,
+      livePlanId: commercial.planId,
       included:
         samePlan && commercial.includedActiveMembers !== null
           ? commercial.includedActiveMembers

@@ -103,6 +103,22 @@ describe('cheapestPlanPreview', () => {
     expect(custom.bills.payg.extraMemberCents).toBeGreaterThan(catalog.bills.payg.extraMemberCents);
     expect(custom.bills.team.extraMemberCents).toBe(0);
   });
+
+  it('applies a metered percentage before included credit', () => {
+    const covered = cheapestPlanPreview({
+      activeMembers: 5,
+      meteredSpendCents: 10_000,
+      planTerms: { team: { meteredDiscountPercent: 50 } },
+    });
+    expect(covered.bills.team.meteredAfterDiscountCents).toBe(0);
+
+    const partial = cheapestPlanPreview({
+      activeMembers: 5,
+      meteredSpendCents: 20_000,
+      planTerms: { team: { meteredDiscountPercent: 50 } },
+    });
+    expect(partial.bills.team.meteredAfterDiscountCents).toBe(4_000);
+  });
 });
 
 function recommendation(input: {

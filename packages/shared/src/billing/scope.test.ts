@@ -1337,6 +1337,115 @@ describe('billing scope', () => {
     if (!reserved.ok) expect(reserved.code).toBe('spend_cap_reached');
   });
 
+  it('uses the Free allowance after an Enterprise comp expires', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', shadow_billing = false, plan_id = 'enterprise',
+          billing_state = 'enterprise_active', spend_cap_cents = 100000,
+          comp_reason = 'internal', comp_expires_at = '2020-01-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const blocked = await scope.reserve({
+      operationId: 'op-expired-enterprise-comp',
+      meterId: 'ai',
+      reservedNativeUnits: 600,
+      reservedChargeCents: 600,
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.code).toBe('free_allowance_reached');
+    const settled = await scope.settle({
+      operationId: 'op-expired-enterprise-comp-settle',
+      meterId: 'ai',
+      nativeUnits: 20,
+      customerChargeCents: 20,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.customerChargeCents).toBe(20);
+      expect(settled.ledger.metadata).toMatchObject({
+        polar_ingest_status: 'not_required',
+        invoice_cents: 0,
+      });
+    }
+    expect((await scope.getAccount()).billingState).toBe('enterprise_active');
+  });
+
+  it('does not apply the Free allowance to an active or contractual Enterprise account', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', shadow_billing = false, plan_id = 'enterprise',
+          billing_state = 'enterprise_active', spend_cap_cents = 100000,
+          comp_reason = 'internal', comp_expires_at = '2099-01-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const activeComp = await scope.reserve({
+      operationId: 'op-active-enterprise-comp',
+      meterId: 'ai',
+      reservedNativeUnits: 600,
+      reservedChargeCents: 600,
+    });
+    expect(activeComp.ok).toBe(true);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL,
+          plan_id = 'enterprise', billing_state = 'enterprise_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const contractual = await scope.reserve({
+      operationId: 'op-contract-enterprise',
+      meterId: 'ai',
+      reservedNativeUnits: 600,
+      reservedChargeCents: 600,
+    });
+    expect(contractual.ok).toBe(true);
+  });
+
+  it('bills replayed member-days at the historical plan rate after an Enterprise move', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active', shadow_billing = false,
+          price_override = NULL, spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'member_days:historical-rate',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 0,
+      pricingPlanId: 'team',
+      pricingAdditionalMemberCents: 200,
+      pricingPeriodYm: '2026-02',
+      usageAt: new Date('2026-02-15T12:00:00.000Z'),
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) expect(settled.ledger.customerChargeCents).toBe(7);
+  });
+
   it('counts open reservations against a comped Enterprise spend cap', async () => {
     const scope = createBillingScope({
       db,

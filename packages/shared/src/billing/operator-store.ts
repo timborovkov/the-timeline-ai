@@ -26,8 +26,10 @@ import {
   billingStateForComp,
   isPlatformAdminEmail,
   polarCheckoutUrl,
+  readPendingEnterpriseTerms,
   type BillingOperatorSnapshot,
   type PendingEnterpriseTerms,
+  type StoredPendingEnterpriseTerms,
   type TeamPriceOverride,
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
@@ -600,17 +602,7 @@ export async function startEnterpriseCheckout(input: {
     const db = tx as unknown as Db;
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
-    if (existing.arrangement === 'comped') {
-      throw new BillingOperatorError('Clear the comp before opening an Enterprise checkout.');
-    }
-    if (
-      existing.polarSubscriptionId &&
-      !ENTERPRISE_CHECKOUT_BLOCKED_STATES.has(existing.billingState)
-    ) {
-      throw new BillingOperatorError(
-        'Cancel the current Polar subscription before opening an Enterprise checkout so two subscriptions are not billed.',
-      );
-    }
+    assertEnterpriseCheckoutAllowed(existing);
     const [owner] = await db
       .select({ email: users.email })
       .from(teamMembers)
@@ -632,10 +624,55 @@ export async function startEnterpriseCheckout(input: {
       ...(activePriceOverride(existing, now) ?? {}),
       ...override,
     });
-    const pendingEnterpriseTerms: PendingEnterpriseTerms = {
+    const terms: PendingEnterpriseTerms = {
       ...merged,
       platformFeeCents: merged.platformFeeCents ?? input.platformFeeCents,
       ...(input.spendCapCents !== undefined ? { spendCapCents: input.spendCapCents } : {}),
+    };
+    return {
+      email: owner.email,
+      discountId: activePolarDiscountId(existing, now),
+      terms,
+    };
+  });
+
+  let checkout: { url: string; id: string };
+  try {
+    await input.provider.ensureCustomer({
+      externalId: input.teamId,
+      email: prepared.email,
+    });
+    checkout = await input.provider.createCheckoutSession({
+      externalCustomerId: input.teamId,
+      customerEmail: prepared.email,
+      productId: input.productId,
+      successUrl: input.successUrl,
+      amount: input.platformFeeCents,
+      ...(prepared.discountId ? { discountId: prepared.discountId } : {}),
+    });
+    const url = polarCheckoutUrl(checkout.url);
+    if (!url || checkout.id.trim().length === 0) {
+      throw new BillingOperatorError('Polar returned a checkout URL that is not on polar.sh.');
+    }
+    checkout = { url, id: checkout.id.trim() };
+  } catch (error) {
+    if (error instanceof BillingOperatorError) throw error;
+    throw new BillingOperatorError(
+      'Polar checkout could not be opened; retry to get a checkout link.',
+    );
+  }
+
+  await input.db.transaction(async (tx) => {
+    const db = tx as unknown as Db;
+    await requirePlatformAdmin(db, input.actor);
+    const existing = await lockAccount(db, input.teamId);
+    assertEnterpriseCheckoutAllowed(existing);
+    const parsed = readPendingEnterpriseTerms(existing.pendingEnterpriseTerms);
+    const pendingEnterpriseTerms: StoredPendingEnterpriseTerms = {
+      byCheckoutId: {
+        ...parsed.byCheckoutId,
+        [checkout.id]: prepared.terms,
+      },
     };
     const before = billingOperatorSnapshot(existing);
     const [updated] = await db
@@ -655,34 +692,24 @@ export async function startEnterpriseCheckout(input: {
       before,
       after: billingOperatorSnapshot(updated),
     });
-    return {
-      email: owner.email,
-      discountId: activePolarDiscountId(updated, now),
-    };
   });
+  return { url: checkout.url };
+}
 
-  try {
-    await input.provider.ensureCustomer({
-      externalId: input.teamId,
-      email: prepared.email,
-    });
-    const checkout = await input.provider.createCheckoutSession({
-      externalCustomerId: input.teamId,
-      customerEmail: prepared.email,
-      productId: input.productId,
-      successUrl: input.successUrl,
-      amount: input.platformFeeCents,
-      ...(prepared.discountId ? { discountId: prepared.discountId } : {}),
-    });
-    const url = polarCheckoutUrl(checkout.url);
-    if (!url) {
-      throw new BillingOperatorError('Polar returned a checkout URL that is not on polar.sh.');
-    }
-    return { url };
-  } catch (error) {
-    if (error instanceof BillingOperatorError) throw error;
+function assertEnterpriseCheckoutAllowed(existing: {
+  arrangement: string;
+  polarSubscriptionId: string | null;
+  billingState: string;
+}): void {
+  if (existing.arrangement === 'comped') {
+    throw new BillingOperatorError('Clear the comp before opening an Enterprise checkout.');
+  }
+  if (
+    existing.polarSubscriptionId &&
+    !ENTERPRISE_CHECKOUT_BLOCKED_STATES.has(existing.billingState)
+  ) {
     throw new BillingOperatorError(
-      'Enterprise terms are saved. Polar checkout could not be opened; retry to get a checkout link.',
+      'Cancel the current Polar subscription before opening an Enterprise checkout so two subscriptions are not billed.',
     );
   }
 }

@@ -166,8 +166,12 @@ credit hides margin and confuses prospects.
    delta. Polar ingest converts the resulting invoice cents at the catalog unit
    price, so earlier sub-cent usage is included in the units. A product id match
    does not prove the meter is priced; a missing price holds the ledger and alerts.
-   Enterprise checkout stores pending terms. The paid subscription webhook
-   activates them. Platform-fee overrides are not applied to fixed Polar products. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
+   Enterprise checkout stores pending terms keyed by Polar checkout id and does
+   not replace terms for a checkout that was already opened. The paid subscription
+   webhook activates only that checkout's terms. A percentage discount is applied
+   to the gross list charge before included credit, in settlement and in the plan
+   preview. Replayed member-days keep the historical plan's extra-member rate.
+   Platform-fee overrides are not applied to fixed Polar products. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
    and sends a stable Polar event `id` so settle and the janitor cannot
    double-ingest; a failed ingest returns the row to `pending`. `order.paid`
    does not credit a local balance. Credentials signup keeps the

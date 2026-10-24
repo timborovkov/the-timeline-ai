@@ -16,6 +16,13 @@ export interface PendingEnterpriseTerms extends TeamPriceOverride {
   spendCapCents?: number;
 }
 
+/**
+ * Pending terms keyed by the Polar checkout that quoted them.
+ * A legacy row is one unbound terms object from before checkout ids were stored.
+ */
+export type StoredPendingEnterpriseTerms =
+  PendingEnterpriseTerms | { byCheckoutId: Record<string, PendingEnterpriseTerms> };
+
 /** Fields an operator change snapshots into the audit log. */
 export interface BillingOperatorSnapshot {
   arrangement: BillingArrangement;
@@ -26,7 +33,7 @@ export interface BillingOperatorSnapshot {
   compExpiresAt: string | null;
   priceOverride: TeamPriceOverride | null;
   priceOverrideExpiresAt: string | null;
-  pendingEnterpriseTerms: PendingEnterpriseTerms | null;
+  pendingEnterpriseTerms: StoredPendingEnterpriseTerms | null;
   polarDiscountId: string | null;
   polarDiscountExpiresAt: string | null;
 }
@@ -40,7 +47,7 @@ export interface BillingOperatorAccount {
   compExpiresAt?: Date | null;
   priceOverride?: TeamPriceOverride | null;
   priceOverrideExpiresAt?: Date | null;
-  pendingEnterpriseTerms?: PendingEnterpriseTerms | null;
+  pendingEnterpriseTerms?: StoredPendingEnterpriseTerms | null;
   polarDiscountId?: string | null;
   polarDiscountExpiresAt?: Date | null;
 }
@@ -81,6 +88,74 @@ export function compSuppressesPolarCharges(account: {
   arrangement?: BillingArrangement | null;
 }): boolean {
   return account.arrangement === 'comped';
+}
+
+function isPendingEnterpriseTerms(value: unknown): value is PendingEnterpriseTerms {
+  if (!value || typeof value !== 'object') return false;
+  const fee = (value as { platformFeeCents?: unknown }).platformFeeCents;
+  return typeof fee === 'number' && Number.isInteger(fee) && fee >= 0;
+}
+
+/** Split a stored blob into checkout-keyed terms and one legacy unbound object. */
+export function readPendingEnterpriseTerms(stored: unknown): {
+  byCheckoutId: Record<string, PendingEnterpriseTerms>;
+  legacy: PendingEnterpriseTerms | null;
+} {
+  if (!stored || typeof stored !== 'object') return { byCheckoutId: {}, legacy: null };
+  const record = stored as { byCheckoutId?: unknown };
+  if (record.byCheckoutId && typeof record.byCheckoutId === 'object') {
+    const byCheckoutId: Record<string, PendingEnterpriseTerms> = {};
+    for (const [id, terms] of Object.entries(record.byCheckoutId)) {
+      if (id.trim().length === 0 || !isPendingEnterpriseTerms(terms)) continue;
+      byCheckoutId[id] = terms;
+    }
+    return { byCheckoutId, legacy: null };
+  }
+  if (isPendingEnterpriseTerms(stored)) return { byCheckoutId: {}, legacy: stored };
+  return { byCheckoutId: {}, legacy: null };
+}
+
+/**
+ * Terms for the checkout Polar says was paid.
+ * A legacy unbound blob applies only when no checkout is keyed and the event
+ * has no checkout id. A keyed map never falls through to a different checkout.
+ */
+export function pendingEnterpriseTermsForCheckout(
+  stored: unknown,
+  checkoutId: string | null,
+): PendingEnterpriseTerms | null {
+  const parsed = readPendingEnterpriseTerms(stored);
+  if (checkoutId) return parsed.byCheckoutId[checkoutId] ?? null;
+  if (Object.keys(parsed.byCheckoutId).length > 0) return null;
+  return parsed.legacy;
+}
+
+/** Drop the checkout that just activated. Other unpaid checkouts keep their terms. */
+export function pendingEnterpriseTermsAfterActivation(
+  stored: unknown,
+  checkoutId: string | null,
+): StoredPendingEnterpriseTerms | null {
+  if (!checkoutId) return null;
+  const parsed = readPendingEnterpriseTerms(stored);
+  const rest = { ...parsed.byCheckoutId };
+  delete rest[checkoutId];
+  if (Object.keys(rest).length === 0) return null;
+  return { byCheckoutId: rest };
+}
+
+/**
+ * A paid Enterprise contract, not a comp. Expired comps stay `enterprise_active`
+ * while the effective plan is Free, and those accounts use Free allowances.
+ */
+export function contractualEnterpriseAccount(account: {
+  arrangement?: BillingArrangement | null;
+  planId: string;
+  billingState: string;
+}): boolean {
+  return (
+    account.arrangement !== 'comped' &&
+    (account.planId === 'enterprise' || account.billingState === 'enterprise_active')
+  );
 }
 
 export function isActiveComp(
