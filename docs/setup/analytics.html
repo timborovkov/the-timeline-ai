@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Analytics setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-10</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-24</span></div>
       <blockquote>
         <p>PostHog Cloud EU is the default product analytics and feature flag service.</p>
       </blockquote>
@@ -28,6 +28,69 @@
       <pre><code>NEXT_PUBLIC_POSTHOG_KEY=phc_...
 NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
 </code></pre>
+      <p>
+        Production web and main-worker services have these variables configured. Browser variables
+        must also be present during the web build. The credential-thin document-extract service does
+        not receive a PostHog key; document-upload analytics originate in the web service.
+      </p>
+
+      <h2 id="production-dashboard">Production dashboard</h2>
+      <p>
+        The <a href="https://eu.posthog.com/project/245318/dashboard/917254">Launch dashboard</a>
+        uses explicit product events over the last 30 days:
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Chart</th>
+            <th>Definition</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>New teams</td>
+            <td>Daily <code>team_created</code> count.</td>
+          </tr>
+          <tr>
+            <td>Feature adoption</td>
+            <td>
+              Daily captures, Ask messages, uploads, objects, approval actions, integration
+              connections, and meeting schedules.
+            </td>
+          </tr>
+          <tr>
+            <td>Active users by feature</td>
+            <td>
+              Daily distinct users for captures, Ask, documents, objects, and approvals. Users can
+              appear in multiple series; do not sum them into overall DAU.
+            </td>
+          </tr>
+          <tr>
+            <td>Agent answers</td>
+            <td>Daily <code>agent_answer_generated</code> count.</td>
+          </tr>
+          <tr>
+            <td>Onboarding progress</td>
+            <td>Daily completed checklist steps, not unique onboarded teams.</td>
+          </tr>
+          <tr>
+            <td>Activation</td>
+            <td>
+              User-level sequential conversion from <code>team_created</code> to
+              <code>capture_created</code> within seven days.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        On 2026-10-24, a synthetic <code>analytics_configuration_verified</code> event sent through
+        the Node SDK with Railway's production configuration was confirmed in PostHog Activity. Its
+        distinct ID starts with <code>analytics-smoke-</code>. It is a separate event and does not
+        enter these product-event charts. Empty product charts are valid until real users perform
+        the corresponding actions; the check does not establish end-to-end delivery from every
+        deployed product action. Autocapture, automatic pageviews, and session replay remain
+        disabled.
+      </p>
 
       <h2 id="events">2. Events</h2>
       <p>
