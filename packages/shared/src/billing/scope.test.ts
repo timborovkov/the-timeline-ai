@@ -891,6 +891,41 @@ describe('billing scope', () => {
     if (retry.ok) expect(retry.alreadySettled).toBe(true);
   });
 
+  it('prices a backfilled member-day with that month length', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'member_days:backfill:2026-02-15',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 1,
+      usageAt: new Date('2026-02-15T12:00:00Z'),
+      pricingPeriodYm: '2026-02',
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) expect(settled.ledger.customerChargeCents).toBe(7);
+    const [counter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.meterId, 'member_days'),
+        ),
+      );
+    expect(counter?.periodYm).toBe('2026-02');
+  });
+
   it('reserves included discount once and invoices the next overlapping Team charge', async () => {
     const scope = createBillingScope({
       db,
