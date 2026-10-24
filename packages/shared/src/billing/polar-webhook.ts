@@ -7,6 +7,8 @@ import {
 } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
+import type { BillingProvider } from '#src/billing/provider.js';
+
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import {
@@ -68,6 +70,11 @@ export interface PolarWebhookProductIds {
 }
 
 export const RETIRED_TOPUP_ALERT_REASON_PREFIX = 'retired_topup_paid:';
+
+/** One open alert per extra Polar subscription id. Replay does not insert another. */
+export const DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX = 'duplicate_polar_subscription:';
+
+const REPLACED_SUBSCRIPTION_NOT_LIVE = new Set(['canceled', 'deletion_scheduled']);
 
 const log = childLogger('billing:polar-webhook');
 
@@ -312,6 +319,22 @@ function enterpriseActivationPricing(pending: PendingEnterpriseTerms): {
   };
 }
 
+interface DuplicateSubscription {
+  keptSubscriptionId: string;
+  extraSubscriptionId: string;
+}
+
+function liveTrackedSubscriptionId(
+  existing: typeof teamBillingAccounts.$inferSelect | undefined,
+  incomingSubscriptionId: string | null,
+): string | null {
+  if (!existing || !incomingSubscriptionId) return null;
+  const tracked = existing.polarSubscriptionId;
+  if (!tracked || tracked === incomingSubscriptionId) return null;
+  if (REPLACED_SUBSCRIPTION_NOT_LIVE.has(existing.billingState)) return null;
+  return tracked;
+}
+
 async function upsertPaidSubscription(input: {
   db: Db;
   teamId: string;
@@ -319,14 +342,26 @@ async function upsertPaidSubscription(input: {
   billingState: TeamBillingState;
   data: PolarWebhookPayload['data'];
   chargesEnabled: boolean;
-}): Promise<{ applied: boolean }> {
+}): Promise<{ applied: boolean; duplicate?: DuplicateSubscription }> {
   return input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
     if (existing?.arrangement === 'comped') return { applied: false };
+    const polarSubscriptionId = input.data?.id ?? null;
+    const trackedSubscriptionId = liveTrackedSubscriptionId(existing, polarSubscriptionId);
     const existingEnterprise =
       existing?.planId === 'enterprise' || existing?.billingState === 'enterprise_active';
-    if (existingEnterprise && input.plan !== 'enterprise') return { applied: false };
-    const polarSubscriptionId = input.data?.id ?? null;
+    if (existingEnterprise && input.plan !== 'enterprise') {
+      if (trackedSubscriptionId && polarSubscriptionId) {
+        return {
+          applied: false,
+          duplicate: {
+            keptSubscriptionId: trackedSubscriptionId,
+            extraSubscriptionId: polarSubscriptionId,
+          },
+        };
+      }
+      return { applied: false };
+    }
     const period = polarSubscriptionPeriod(input.data);
     if (
       !shouldApplyPaidSubscriptionUpdate({
@@ -336,6 +371,15 @@ async function upsertPaidSubscription(input: {
         incomingModifiedAt: polarEventModifiedAt(input.data),
       })
     ) {
+      if (trackedSubscriptionId && polarSubscriptionId) {
+        return {
+          applied: false,
+          duplicate: {
+            keptSubscriptionId: trackedSubscriptionId,
+            extraSubscriptionId: polarSubscriptionId,
+          },
+        };
+      }
       return { applied: false };
     }
     const checkoutId = polarCheckoutId(input.data);
@@ -421,8 +465,51 @@ async function upsertPaidSubscription(input: {
         },
       });
     await recordBillingPlan(tx as unknown as Db, input.teamId, input.plan, now);
+    if (trackedSubscriptionId && polarSubscriptionId) {
+      return {
+        applied: true,
+        duplicate: {
+          keptSubscriptionId: polarSubscriptionId,
+          extraSubscriptionId: trackedSubscriptionId,
+        },
+      };
+    }
     return { applied: true };
   });
+}
+
+async function reconcileDuplicateSubscription(input: {
+  db: Db;
+  teamId: string;
+  keptSubscriptionId: string;
+  extraSubscriptionId: string;
+  provider: BillingProvider | null;
+}): Promise<void> {
+  let revoked = false;
+  if (input.provider) {
+    try {
+      await input.provider.revokeSubscription(input.extraSubscriptionId);
+      revoked = true;
+    } catch (err) {
+      log.warn(
+        { err, teamId: input.teamId, extraSubscriptionId: input.extraSubscriptionId },
+        'duplicate Polar subscription revoke failed',
+      );
+    }
+  }
+  const detail = revoked
+    ? `Extra Polar subscription ${input.extraSubscriptionId} was revoked after ${input.keptSubscriptionId} stayed the tracked subscription. Refund any duplicate charge.`
+    : `Extra Polar subscription ${input.extraSubscriptionId} is still billing alongside tracked subscription ${input.keptSubscriptionId}. Revoke it in Polar and refund any duplicate charge.`;
+  await input.db
+    .insert(billingUnbilledAlerts)
+    .values({
+      teamId: input.teamId,
+      meterId: 'subscription',
+      periodYm: periodYm(),
+      reason: `${DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX}${input.extraSubscriptionId}`,
+      detail,
+    })
+    .onConflictDoNothing();
 }
 
 async function cancelMatchingSubscription(input: {
@@ -572,6 +659,8 @@ export async function handlePolarWebhookEvent(input: {
   payload: PolarWebhookPayload;
   chargesEnabled: boolean;
   products: PolarWebhookProductIds;
+  /** Revokes an extra live subscription. Missing provider still alerts. */
+  provider?: BillingProvider | null;
 }): Promise<{ ok: true; ignored?: string }> {
   const teamId = teamIdFromPayload(input.payload);
   if (!teamId) return { ok: true, ignored: 'missing_external_customer' };
@@ -603,6 +692,15 @@ export async function handlePolarWebhookEvent(input: {
           data,
           chargesEnabled: input.chargesEnabled,
         });
+        if (result.duplicate) {
+          await reconcileDuplicateSubscription({
+            db: input.db,
+            teamId,
+            keptSubscriptionId: result.duplicate.keptSubscriptionId,
+            extraSubscriptionId: result.duplicate.extraSubscriptionId,
+            provider: input.provider ?? null,
+          });
+        }
         if (result.applied && billingState === 'past_due') {
           try {
             await notifySubscriptionPastDue({

@@ -313,7 +313,7 @@ describe('billing operator store', () => {
     });
   });
 
-  it('keeps an earlier Enterprise checkout when a later checkout fails or quotes different terms', async () => {
+  it('expires the earlier Enterprise checkout before storing a replacement link', async () => {
     await pg.exec(`
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
@@ -343,6 +343,18 @@ describe('billing operator store', () => {
         provider: failing,
       }),
     ).rejects.toThrow(/retry/i);
+    expect(failing.expiredCheckoutIds).toEqual(['chk_fake_1']);
+    expect(failing.checkouts).toHaveLength(0);
+    const [afterFailure] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(afterFailure?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_fake_1: { platformFeeCents: 100_000, spendCapCents: 40_000 },
+      },
+    });
+
     await startEnterpriseCheckout({
       db,
       actor: { userId: ADMIN_ID, email: 'ops@example.test' },
@@ -354,6 +366,7 @@ describe('billing operator store', () => {
       successUrl: 'https://thetimeline.cc/app/team?section=billing',
       provider,
     });
+    expect(provider.expiredCheckoutIds).toEqual(['chk_fake_1']);
     const [account] = await db
       .select()
       .from(teamBillingAccounts)
@@ -361,12 +374,90 @@ describe('billing operator store', () => {
     expect(account?.planId).toBe('free');
     expect(account?.pendingEnterpriseTerms).toEqual({
       byCheckoutId: {
-        chk_fake_1: { platformFeeCents: 100_000, spendCapCents: 40_000 },
         chk_fake_2: {
           platformFeeCents: 250_000,
           includedActiveMembers: 12,
           spendCapCents: 80_000,
         },
+      },
+    });
+  });
+
+  it('does not open a second Enterprise checkout while an earlier one is still payable', async () => {
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
+    `);
+    const provider = createFakeBillingProvider();
+    await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 100_000,
+      spendCapCents: 40_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+
+    const stillOpen = createFakeBillingProvider();
+    stillOpen.expireCheckout = (checkoutId) => {
+      stillOpen.expiredCheckoutIds.push(checkoutId);
+      return Promise.resolve('still_open');
+    };
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 250_000,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider: stillOpen,
+      }),
+    ).rejects.toThrow(/still open/i);
+    expect(stillOpen.checkouts).toHaveLength(0);
+
+    const paid = createFakeBillingProvider();
+    paid.expireCheckout = (checkoutId) => {
+      paid.expiredCheckoutIds.push(checkoutId);
+      return Promise.resolve('already_paid');
+    };
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 250_000,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider: paid,
+      }),
+    ).rejects.toThrow(/started payment/i);
+    expect(paid.checkouts).toHaveLength(0);
+
+    const broken = createFakeBillingProvider();
+    broken.expireCheckout = () => Promise.reject(new Error('polar down'));
+    await expect(
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents: 250_000,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider: broken,
+      }),
+    ).rejects.toThrow(/could not be closed/i);
+    expect(broken.checkouts).toHaveLength(0);
+
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_fake_1: { platformFeeCents: 100_000, spendCapCents: 40_000 },
       },
     });
   });

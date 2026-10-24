@@ -85,6 +85,40 @@ export function createPolarBillingProvider(options?: {
       return { id: row.id, url: row.url };
     },
 
+    async expireCheckout(checkoutId) {
+      const path = `/checkouts/${encodeURIComponent(checkoutId)}`;
+      const current = await polarFetch(path);
+      if (current.status === 404) return 'expired';
+      if (!current.ok) {
+        throw new Error(`Polar checkout read failed: ${current.status}`);
+      }
+      const row = (await current.json()) as { status?: string };
+      const status = (row.status ?? '').trim().toLowerCase();
+      if (status === 'expired' || status === 'failed') return 'expired';
+      if (status === 'succeeded' || status === 'confirmed') return 'already_paid';
+      if (status !== 'open') {
+        throw new Error(`Polar checkout status is ${status || 'unknown'}`);
+      }
+      // CheckoutUpdate has no status field. A past expires_at expires the
+      // session only when Polar applies it; otherwise the link stays payable.
+      const updated = await polarFetch(path, {
+        method: 'PATCH',
+        body: JSON.stringify({ expires_at: '1970-01-01T00:00:00.000Z' }),
+      });
+      if (updated.status === 404) return 'expired';
+      if (!updated.ok) {
+        await updated.text();
+        if (updated.status >= 500) {
+          throw new Error(`Polar checkout expire failed: ${updated.status}`);
+        }
+        return 'still_open';
+      }
+      const after = (await updated.json()) as { status?: string };
+      const next = (after.status ?? '').trim().toLowerCase();
+      if (next === 'expired' || next === 'failed') return 'expired';
+      return 'still_open';
+    },
+
     async createCustomerPortalSession(input) {
       const created = await polarFetch('/customer-sessions/', {
         method: 'POST',

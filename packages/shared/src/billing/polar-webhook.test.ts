@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   billingStateForPolarSubscriptionUpsert,
   billingStateFromPolarSubscriptionStatus,
+  DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX,
   handlePolarWebhookEvent,
   RETIRED_TOPUP_ALERT_REASON_PREFIX,
   isRetiredPaidTopupOrder,
@@ -13,6 +14,7 @@ import {
   shouldResetIncludedDiscount,
   spendCapCentsForPaidActivation,
 } from '#src/billing/polar-webhook.js';
+import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -464,6 +466,223 @@ describe('handlePolarWebhookEvent', () => {
         chk_later: { platformFeeCents: 250000, spendCapCents: 80000 },
       },
     });
+  });
+
+  it('revokes the previous live subscription when a second Enterprise subscription activates', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active',
+          polar_subscription_id = 'sub_old', polar_product_id = 'prod_enterprise',
+          period_started_at = '2026-01-01T00:00:00Z',
+          polar_event_modified_at = '2026-01-01T00:00:00Z',
+          pending_enterprise_terms = '{"byCheckoutId":{"chk_new":{"platformFeeCents":250000,"spendCapCents":80000}}}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const provider = createFakeBillingProvider();
+    const payload = {
+      type: 'subscription.active',
+      data: {
+        id: 'sub_new',
+        status: 'active',
+        product_id: 'prod_enterprise',
+        checkout_id: 'chk_new',
+        current_period_start: '2026-06-01T00:00:00.000Z',
+        modified_at: '2026-06-01T00:00:00.000Z',
+        customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+      },
+    };
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload,
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload,
+    });
+    const account = await billing.getAccount();
+    expect(account.polarSubscriptionId).toBe('sub_new');
+    expect(account.enterprisePlatformFeeCents).toBe(250000);
+    expect(provider.revokedSubscriptionIds).toEqual(['sub_old']);
+    const alerts = await pg.query<{ reason: string; detail: string }>(
+      `SELECT reason, detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(alerts.rows).toHaveLength(1);
+    expect(alerts.rows[0]?.reason).toBe(`${DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_old`);
+    expect(alerts.rows[0]?.detail).toContain('sub_old');
+    expect(alerts.rows[0]?.detail).toContain('revoked');
+  });
+
+  it('alerts when the extra subscription cannot be revoked and leaves a canceled id alone', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active',
+          polar_subscription_id = 'sub_old', polar_product_id = 'prod_enterprise',
+          period_started_at = '2026-01-01T00:00:00Z',
+          polar_event_modified_at = '2026-01-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const provider = createFakeBillingProvider();
+    provider.revokeSubscription = () => Promise.reject(new Error('polar down'));
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_new',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          current_period_start: '2026-06-01T00:00:00.000Z',
+          modified_at: '2026-06-01T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const replaced = await billing.getAccount();
+    expect(replaced.polarSubscriptionId).toBe('sub_new');
+    expect(provider.revokedSubscriptionIds).toEqual([]);
+    const failed = await pg.query<{ detail: string }>(
+      `SELECT detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(failed.rows).toHaveLength(1);
+    expect(failed.rows[0]?.detail).toContain('sub_old');
+    expect(failed.rows[0]?.detail).toContain('still billing');
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_other',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          current_period_start: '2026-07-01T00:00:00.000Z',
+          modified_at: '2026-07-01T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const unrevoked = await billing.getAccount();
+    expect(unrevoked.polarSubscriptionId).toBe('sub_other');
+    const missingProvider = await pg.query<{ reason: string; detail: string }>(
+      `SELECT reason, detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL
+       ORDER BY reason`,
+    );
+    expect(missingProvider.rows.map((row) => row.reason)).toEqual([
+      `${DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_new`,
+      `${DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_old`,
+    ]);
+    expect(missingProvider.rows[0]?.detail).toContain('still billing');
+    expect(missingProvider.rows[0]?.detail).toContain('sub_new');
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'canceled', polar_subscription_id = 'sub_canceled',
+          period_started_at = '2026-01-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const before = await pg.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM billing_unbilled_alerts WHERE team_id = '${TEAM_ID}'`,
+    );
+    const canceledProvider = createFakeBillingProvider();
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider: canceledProvider,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_after_cancel',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          current_period_start: '2026-08-01T00:00:00.000Z',
+          modified_at: '2026-08-01T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const afterCancel = await billing.getAccount();
+    expect(afterCancel.polarSubscriptionId).toBe('sub_after_cancel');
+    expect(canceledProvider.revokedSubscriptionIds).toEqual([]);
+    const after = await pg.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM billing_unbilled_alerts WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+  });
+
+  it('revokes a newer checkout that loses to the subscription already tracked', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'enterprise', billing_state = 'enterprise_active',
+          polar_subscription_id = 'sub_kept', polar_product_id = 'prod_enterprise',
+          period_started_at = '2026-06-01T00:00:00Z',
+          polar_event_modified_at = '2026-06-01T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const provider = createFakeBillingProvider();
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      provider,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_late',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          current_period_start: '2026-01-01T00:00:00.000Z',
+          modified_at: '2026-07-01T00:00:00.000Z',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.polarSubscriptionId).toBe('sub_kept');
+    expect(provider.revokedSubscriptionIds).toEqual(['sub_late']);
+    const alerts = await pg.query<{ reason: string; detail: string }>(
+      `SELECT reason, detail FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(alerts.rows).toHaveLength(1);
+    expect(alerts.rows[0]?.reason).toBe(`${DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX}sub_late`);
+    expect(alerts.rows[0]?.detail).toContain('sub_kept');
+    expect(alerts.rows[0]?.detail).toContain('revoked');
   });
 
   it('does not activate past_due subscriptions and ignores order.paid plan products', async () => {

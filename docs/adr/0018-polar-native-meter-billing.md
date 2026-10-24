@@ -182,9 +182,13 @@ credit hides margin and confuses prospects.
    delta. Polar ingest converts the resulting invoice cents at the catalog unit
    price, so earlier sub-cent usage is included in the units. A product id match
    does not prove the meter is priced; a missing price holds the ledger and alerts.
-   Enterprise checkout stores pending terms keyed by Polar checkout id and does
-   not replace terms for a checkout that was already opened. The paid subscription
-   webhook activates only that checkout's terms. The contracted platform fee is
+   Enterprise checkout keeps one outstanding Polar session per team. An earlier
+   session is expired when Polar reports it expired, failed, or missing. Polar
+   has no merchant expire endpoint, so a session that stays open, or one that
+   already started payment, blocks another link. The paid subscription webhook
+   activates only that checkout's terms. A second live subscription is revoked,
+   or opened as an unbilled alert when revoke fails, so it is not dropped or
+   left billing in silence. The contracted platform fee is
    stored on `enterprise_platform_fee_cents`, separate from the removable usage
    override, so clearing or replacing that override does not zero the next invoice.
    That fee is quoted only while the effective plan is Enterprise. A confirmed

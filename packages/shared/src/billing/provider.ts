@@ -25,6 +25,13 @@ export interface UpdateSubscriptionInput {
 
 export type UpdateSubscriptionResult = { ok: true } | { ok: false; code: 'portal_required' };
 
+/**
+ * Polar has no merchant expire endpoint. `expired` means the session is gone
+ * or Polar reported `expired` / `failed`. `already_paid` means payment started.
+ * `still_open` means the session is still payable, so a second link must wait.
+ */
+export type ExpireCheckoutResult = 'expired' | 'already_paid' | 'still_open';
+
 export interface BillingProvider {
   ensureCustomer(input: {
     externalId: string;
@@ -32,6 +39,11 @@ export interface BillingProvider {
     name?: string;
   }): Promise<{ id: string }>;
   createCheckoutSession(input: CreateCheckoutInput): Promise<{ url: string; id: string }>;
+  /**
+   * Retire one checkout before another link is issued.
+   * Fail closed with `still_open` when Polar leaves the session payable.
+   */
+  expireCheckout(checkoutId: string): Promise<ExpireCheckoutResult>;
   createCustomerPortalSession(input: {
     externalCustomerId: string;
     returnUrl: string;
@@ -65,6 +77,7 @@ export function createFakeBillingProvider(): BillingProvider & {
   subscriptionUpdates: UpdateSubscriptionInput[];
   revokedSubscriptionIds: string[];
   checkouts: CreateCheckoutInput[];
+  expiredCheckoutIds: string[];
   /** Per-product priced events. Missing keys default to every Timeline meter. */
   pricedEventNamesByProduct: Map<string, readonly string[] | null>;
 } {
@@ -73,6 +86,7 @@ export function createFakeBillingProvider(): BillingProvider & {
   const subscriptionUpdates: UpdateSubscriptionInput[] = [];
   const revokedSubscriptionIds: string[] = [];
   const checkouts: CreateCheckoutInput[] = [];
+  const expiredCheckoutIds: string[] = [];
   const pricedEventNamesByProduct = new Map<string, readonly string[] | null>();
   return {
     events,
@@ -80,6 +94,7 @@ export function createFakeBillingProvider(): BillingProvider & {
     subscriptionUpdates,
     revokedSubscriptionIds,
     checkouts,
+    expiredCheckoutIds,
     pricedEventNamesByProduct,
     ensureCustomer(input) {
       const existing = customers.get(input.externalId);
@@ -95,6 +110,10 @@ export function createFakeBillingProvider(): BillingProvider & {
         id: `chk_fake_${String(checkouts.length)}`,
         url: `https://sandbox.polar.sh/checkout/fake?product=${input.productId}${amount}`,
       });
+    },
+    expireCheckout(checkoutId) {
+      expiredCheckoutIds.push(checkoutId);
+      return Promise.resolve('expired');
     },
     createCustomerPortalSession(input) {
       return Promise.resolve({

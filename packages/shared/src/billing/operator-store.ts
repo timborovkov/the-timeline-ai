@@ -10,7 +10,7 @@ import {
 } from '@timeline/db';
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 
-import type { BillingProvider } from '#src/billing/provider.js';
+import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 
 import {
   BILLING_ENTITLEMENTS_VERSION,
@@ -653,8 +653,13 @@ export async function startEnterpriseCheckout(input: {
       email: owner.email,
       discountId: activePolarDiscountId(existing, now),
       terms,
+      outstandingCheckoutIds: Object.keys(
+        readPendingEnterpriseTerms(existing.pendingEnterpriseTerms).byCheckoutId,
+      ),
     };
   });
+
+  await closeOutstandingEnterpriseCheckouts(input.provider, prepared.outstandingCheckoutIds);
 
   let checkout: { url: string; id: string };
   try {
@@ -687,10 +692,8 @@ export async function startEnterpriseCheckout(input: {
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
     assertEnterpriseCheckoutAllowed(existing);
-    const parsed = readPendingEnterpriseTerms(existing.pendingEnterpriseTerms);
     const pendingEnterpriseTerms: StoredPendingEnterpriseTerms = {
       byCheckoutId: {
-        ...parsed.byCheckoutId,
         [checkout.id]: prepared.terms,
       },
     };
@@ -714,6 +717,37 @@ export async function startEnterpriseCheckout(input: {
     });
   });
   return { url: checkout.url };
+}
+
+async function closeOutstandingEnterpriseCheckouts(
+  provider: BillingProvider,
+  checkoutIds: readonly string[],
+): Promise<void> {
+  let paymentStarted = false;
+  let stillOpen = false;
+  for (const checkoutId of checkoutIds) {
+    let result: ExpireCheckoutResult;
+    try {
+      result = await provider.expireCheckout(checkoutId);
+    } catch (error) {
+      if (error instanceof BillingOperatorError) throw error;
+      throw new BillingOperatorError(
+        'An earlier Enterprise checkout could not be closed in Polar. Retry before opening another link.',
+      );
+    }
+    if (result === 'already_paid') paymentStarted = true;
+    if (result === 'still_open') stillOpen = true;
+  }
+  if (paymentStarted) {
+    throw new BillingOperatorError(
+      'An earlier Enterprise checkout already started payment. Wait for the subscription webhook before opening another link.',
+    );
+  }
+  if (stillOpen) {
+    throw new BillingOperatorError(
+      'An earlier Enterprise checkout is still open in Polar. Wait until it expires before opening another link.',
+    );
+  }
 }
 
 function assertEnterpriseCheckoutAllowed(existing: {

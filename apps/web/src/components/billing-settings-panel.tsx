@@ -81,6 +81,7 @@ function planPriceLabel(planId: BillingPlanId, platformFeeCents?: number | null)
 }
 
 function nextInvoiceCents(props: BillingSettingsPanelProps): number {
+  if (props.comp) return 0;
   if (props.planId === 'free') return 0;
   if (props.planId === 'payg' || props.planId === 'team' || props.planId === 'business') {
     return props.planPreview.bills[props.planId].totalCents;

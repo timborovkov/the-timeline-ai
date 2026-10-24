@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const verifyPolarWebhookSignature = vi.fn();
 const handlePolarWebhookEvent = vi.fn();
+const createPolarBillingProvider = vi.fn(() => null);
 
 vi.mock('@timeline/shared/env', () => ({
   getEnv: () => ({
@@ -19,6 +20,7 @@ vi.mock('@timeline/shared/billing', () => ({
   verifyPolarWebhookSignature: (...args: unknown[]) =>
     verifyPolarWebhookSignature(...args) as boolean,
   handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
+  createPolarBillingProvider: () => createPolarBillingProvider(),
 }));
 
 vi.mock('@/lib/db', () => ({
@@ -70,8 +72,10 @@ describe('POST /api/webhooks/polar', () => {
           team: 'prod_team',
           business: 'prod_business',
         },
+        provider: null,
       }),
     );
+    expect(createPolarBillingProvider).toHaveBeenCalled();
   });
 
   it('rejects invalid JSON after a valid signature', async () => {

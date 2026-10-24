@@ -78,6 +78,11 @@ function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
   );
 }
 
+function invoiceBlock(html: string): string {
+  const match = /data-billing-invoice[\s\S]*?<\/div>/u.exec(html);
+  return match?.[0] ?? '';
+}
+
 function planButton(html: string, label: string): string {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   const match = new RegExp(`<button[^>]*>${escaped}</button>`, 'u').exec(html);
@@ -125,10 +130,29 @@ describe('BillingSettingsPanel', () => {
     });
     expect(html).toContain('Comped');
     expect(html).toContain('No charge');
+    expect(invoiceBlock(html)).toContain('€0');
+    expect(invoiceBlock(html)).not.toContain('€49');
     expect(html).not.toContain('would save');
     expect(html).not.toContain('>Pay as you go<');
     expect(html).not.toContain('Change plan');
     expect(html).not.toContain('Assign comp');
+
+    const enterprise = panel({
+      planId: 'enterprise',
+      planName: 'Enterprise',
+      billingState: 'enterprise_active',
+      platformFeeCents: 250_000,
+      meteredSpendCents: 1_200,
+      comp: {
+        planName: 'Enterprise',
+        expired: false,
+        reason: 'internal',
+        expiresOn: null,
+      },
+    });
+    expect(enterprise).toContain('No charge');
+    expect(invoiceBlock(enterprise)).toContain('€0');
+    expect(invoiceBlock(enterprise)).not.toContain('€2,512');
   });
 
   it('shows a pending Enterprise subscription and the negotiated price', () => {
