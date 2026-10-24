@@ -1,5 +1,6 @@
 export {
   LEGAL_EFFECTIVE_DATE,
+  PRIVACY_EFFECTIVE_DATE,
   PRIVACY_VERSION,
   TERMS_VERSION,
 } from '@timeline/shared/legal-versions';

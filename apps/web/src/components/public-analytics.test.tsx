@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CookieSettingsButton, PublicAnalyticsBoundary } from '@/components/public-analytics';
@@ -54,6 +55,23 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('PublicAnalyticsBoundary', () => {
+  it('counts a consented public visit once through strict-mode effects and rerenders', async () => {
+    writePublicAnalyticsConsent('accepted');
+    const element = (
+      <StrictMode>
+        <PublicAnalyticsBoundary>
+          <CookieSettingsButton />
+        </PublicAnalyticsBoundary>
+      </StrictMode>
+    );
+    const view = render(element);
+    await waitFor(() => {
+      expect(analytics.capturePageView).toHaveBeenCalledOnce();
+    });
+    view.rerender(element);
+    expect(analytics.capturePageView).toHaveBeenCalledExactlyOnceWith('home');
+  });
+
   it('captures nothing before consent, then only the reviewed page and marked CTA', async () => {
     const user = userEvent.setup();
     window.history.replaceState(
@@ -154,7 +172,7 @@ describe('PublicAnalyticsBoundary', () => {
       if (consentState === 'rejected') {
         writePublicAnalyticsConsent('rejected', now);
       } else if (consentState === 'stale-version') {
-        document.cookie = `${PUBLIC_ANALYTICS_CONSENT_COOKIE}=0|accepted|${now}; Path=/`;
+        document.cookie = `${PUBLIC_ANALYTICS_CONSENT_COOKIE}=1|accepted|${now}; Path=/`;
       }
       document.cookie = `${PUBLIC_ATTRIBUTION_COOKIE}=2|${now}|github|referral|launch; Path=/`;
 

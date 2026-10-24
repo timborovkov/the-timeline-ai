@@ -130,7 +130,7 @@ async function expectNoPostHogState(page: Page): Promise<void> {
 async function expectConsentChoice(page: Page, choice: 'accepted' | 'rejected'): Promise<void> {
   await expect
     .poll(async () => (await browserStorage(page)).cookies)
-    .toMatch(new RegExp(`${TIMELINE_CONSENT_COOKIE}=1\\|${choice}\\|\\d{13}`, 'u'));
+    .toMatch(new RegExp(`${TIMELINE_CONSENT_COOKIE}=2\\|${choice}\\|\\d{13}`, 'u'));
 }
 
 async function browserStorage(page: Page): Promise<{

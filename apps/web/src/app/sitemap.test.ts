@@ -46,8 +46,8 @@ describe('sitemap', () => {
     expect(byUrl.get('https://thetimeline.cc/help')).toBe('2026-08-21');
     expect(byUrl.get('https://thetimeline.cc/trust')).toBe('2026-08-21');
     expect(byUrl.get('https://thetimeline.cc/terms')).toBe('2026-08-21');
-    expect(byUrl.get('https://thetimeline.cc/privacy')).toBe('2026-08-21');
-    expect(byUrl.get('https://thetimeline.cc/cookies')).toBe('2026-08-21');
+    expect(byUrl.get('https://thetimeline.cc/privacy')).toBe('2026-10-24');
+    expect(byUrl.get('https://thetimeline.cc/cookies')).toBe('2026-10-24');
     expect(first.every((entry) => typeof entry.lastModified === 'string')).toBe(true);
   });
 

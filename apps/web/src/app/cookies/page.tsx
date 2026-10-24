@@ -16,7 +16,7 @@ export const metadata: Metadata = publicMetadata({
 
 export const dynamic = 'force-dynamic';
 
-const REVIEW_DATE = '21 August 2026';
+const REVIEW_DATE = '24 October 2026';
 
 function CurrentBrowserStorage() {
   return (
@@ -184,11 +184,15 @@ function AnalyticsStatusAndTarget() {
       <p>
         PostHog is the processor for optional public browser analytics. Its purpose is to measure
         visits and selected actions on allowlisted public pages after a separate affirmative choice.
-        Pay-as-you-go currently documents seven-year product-event retention, which exceeds
-        Timeline&apos;s 90-day target. The source-controlled Cookie settings control records that
-        choice. Reading this notice alone does not accept analytics. If this deployment has no
-        reviewed PostHog browser key, the control reports analytics as unavailable and cannot record
-        an acceptance that silently activates later.
+        Consented pageviews also measure referring sites and popular pages using reviewed public
+        paths and referring website origins. Query strings, fragments, referrer paths, and page
+        titles are excluded. Consent format version 2 asks again before enabling these fields; an
+        earlier choice does not authorize them. Recording remains off. Pay-as-you-go currently
+        documents seven-year product-event retention, which exceeds Timeline&apos;s 90-day target.
+        The source-controlled Cookie settings control records that choice. Reading this notice alone
+        does not accept analytics. If this deployment has no reviewed PostHog browser key, the
+        control reports analytics as unavailable and cannot record an acceptance that silently
+        activates later.
       </p>
       <p>When optional analytics is configured and accepted:</p>
       <ul>
@@ -257,8 +261,9 @@ function AnalyticsStatusAndTarget() {
             <td>Event and property allowlist</td>
             <td>
               Manual public_page_viewed and public_cta_clicked events with fixed surface and action
-              values. Project-level client IP discard is enabled; production payload evidence
-              remains open.
+              values, plus manual $pageview events with reviewed public paths and referring website
+              origins/hostnames. Project-level client IP discard is enabled; production payload
+              evidence remains open.
             </td>
           </tr>
           <tr>

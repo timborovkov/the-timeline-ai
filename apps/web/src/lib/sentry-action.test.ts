@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 import { runSentryServerAction } from '@/lib/sentry-action';
 
 type ServerActionInstrumentation = (
@@ -28,8 +29,8 @@ vi.mock('@/lib/auth.config', () => ({
     legalPrivacyVersion?: string | null;
     legalAcceptedAt?: string | null;
   }) =>
-    user.legalTermsVersion === '2026-08-21' &&
-    user.legalPrivacyVersion === '2026-08-21' &&
+    user.legalTermsVersion === TERMS_VERSION &&
+    user.legalPrivacyVersion === PRIVACY_VERSION &&
     Boolean(user.legalAcceptedAt),
 }));
 
@@ -106,8 +107,8 @@ describe('runSentryServerAction', () => {
     mocks.headers.mockReturnValue(new Headers({ 'next-action': 'action-id' }));
     mocks.auth.mockResolvedValue({
       user: {
-        legalTermsVersion: '2026-08-21',
-        legalPrivacyVersion: '2026-08-21',
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: PRIVACY_VERSION,
         legalAcceptedAt: '2026-08-21T00:00:00.000Z',
       },
     });

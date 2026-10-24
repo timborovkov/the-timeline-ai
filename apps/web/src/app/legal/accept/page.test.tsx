@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import LegalAcceptPage from '@/app/legal/accept/page';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
+
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getUserLegalAcceptance: vi.fn(),
@@ -14,8 +17,8 @@ vi.mock('@/lib/auth.config', () => ({
     legalPrivacyVersion?: string | null;
     legalAcceptedAt?: string | null;
   }) =>
-    user.legalTermsVersion === '2026-08-21' &&
-    user.legalPrivacyVersion === '2026-08-21' &&
+    user.legalTermsVersion === TERMS_VERSION &&
+    user.legalPrivacyVersion === PRIVACY_VERSION &&
     Boolean(user.legalAcceptedAt),
 }));
 vi.mock('@/lib/legal', () => ({
@@ -25,16 +28,14 @@ vi.mock('@/lib/legal', () => ({
     legalPrivacyVersion: string;
     legalAcceptedAt: Date | null;
   }) =>
-    legal.legalTermsVersion === '2026-08-21' &&
-    legal.legalPrivacyVersion === '2026-08-21' &&
+    legal.legalTermsVersion === TERMS_VERSION &&
+    legal.legalPrivacyVersion === PRIVACY_VERSION &&
     Boolean(legal.legalAcceptedAt),
 }));
 
-import LegalAcceptPage from '@/app/legal/accept/page';
-
 const currentDbAcceptance = {
-  legalTermsVersion: '2026-08-21',
-  legalPrivacyVersion: '2026-08-21',
+  legalTermsVersion: TERMS_VERSION,
+  legalPrivacyVersion: PRIVACY_VERSION,
   legalAcceptedAt: new Date('2026-08-21T00:00:00.000Z'),
 };
 
@@ -67,8 +68,8 @@ describe('LegalAcceptPage', () => {
     fakes.auth.mockResolvedValue({
       user: {
         id: 'user-1',
-        legalTermsVersion: '2026-08-21',
-        legalPrivacyVersion: '2026-08-21',
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: PRIVACY_VERSION,
         legalAcceptedAt: '2026-08-21T00:00:00.000Z',
       },
     });
