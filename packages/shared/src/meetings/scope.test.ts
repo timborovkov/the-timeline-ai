@@ -779,10 +779,16 @@ describe('meetings scope', () => {
   it('materializes saved meeting schedules in the configured timezone', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const timezone = 'Europe/Helsinki';
-    const target = Temporal.Now.instant()
-      .toZonedDateTimeISO(timezone)
-      .add({ hours: 2 })
-      .with({ second: 0, millisecond: 0, microsecond: 0, nanosecond: 0 });
+    // Civil noon two days out stays off DST fall-back overlaps (02:00–04:00)
+    // and midnight weekday wrap, so the local clock time maps to one instant.
+    const target = Temporal.Now.zonedDateTimeISO(timezone).add({ days: 2 }).with({
+      hour: 12,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+      microsecond: 0,
+      nanosecond: 0,
+    });
     const time = `${String(target.hour).padStart(2, '0')}:${String(target.minute).padStart(2, '0')}`;
 
     const saved = await scope.createSavedMeeting({
