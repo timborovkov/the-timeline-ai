@@ -56,7 +56,10 @@ import {
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
-import { expireStaleBillingReservations } from '#src/billing/reservations.js';
+import {
+  expireStaleBillingReservations,
+  reservationKeepsProviderResult,
+} from '#src/billing/reservations.js';
 import { accountUsesShadowBilling } from '#src/billing/shadow.js';
 import {
   allFreeAllowancesExhausted,
@@ -745,8 +748,29 @@ export function createBillingScope(deps: BillingScopeDeps) {
           )
           .limit(1)
           .for('update');
+        const reuseCompletedProviderWork = async (
+          row: typeof billingUsageReservations.$inferSelect,
+        ) => {
+          if (!reservationKeepsProviderResult(row.metadata)) return null;
+          if (row.state === 'reserved') return row;
+          const [revived] = await tx
+            .update(billingUsageReservations)
+            .set({ state: 'reserved', updatedAt: new Date() })
+            .where(
+              and(
+                eq(billingUsageReservations.id, row.id),
+                inArray(billingUsageReservations.state, ['expired', 'released']),
+              ),
+            )
+            .returning();
+          return revived ?? null;
+        };
         if (existingReservation?.state === 'settled') {
           return { kind: 'already_settled' as const, row: existingReservation };
+        }
+        if (existingReservation) {
+          const completed = await reuseCompletedProviderWork(existingReservation);
+          if (completed) return { kind: 'reused' as const, row: completed };
         }
         if (
           existingReservation?.state === 'reserved' &&
@@ -939,6 +963,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
         if (existing.state === 'settled') {
           return { kind: 'already_settled' as const, row: existing };
         }
+        const completed = await reuseCompletedProviderWork(existing);
+        if (completed) return { kind: 'reused' as const, row: completed };
         if (existing.state === 'reserved' && existing.expiresAt.getTime() > Date.now()) {
           return { kind: 'reused' as const, row: existing };
         }

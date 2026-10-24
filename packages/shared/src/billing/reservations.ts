@@ -3,6 +3,17 @@ import { and, asc, eq, inArray, lt, sql } from 'drizzle-orm';
 
 import { walletLockCentsFromMetadata } from '#src/billing/charge.js';
 
+/**
+ * Provider work already succeeded. Settlement recovery must keep this row
+ * until the ledger write lands, including after the reservation TTL.
+ */
+export function reservationKeepsProviderResult(
+  metadata: Record<string, unknown> | null | undefined,
+): boolean {
+  if (!metadata) return false;
+  return metadata.worker_settlement_pending === true || metadata.provider_completed === true;
+}
+
 export async function expireStaleBillingReservations(input: {
   db: Db;
   teamId?: string;
@@ -13,6 +24,8 @@ export async function expireStaleBillingReservations(input: {
       lt(billingUsageReservations.expiresAt, new Date()),
       sql`coalesce(${billingUsageReservations.metadata}->>'pending_recall_leave_bot_id', '') = ''`,
       sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') <> 'true'`,
+      sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') <> 'true'`,
+      sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') <> 'true'`,
       ...(input.teamId ? [eq(billingUsageReservations.teamId, input.teamId)] : []),
     );
     // Lock billing accounts before reservation rows. Reserve, settle, and

@@ -119,6 +119,41 @@ export function spendCapCentsForPaidActivation(input: {
   return input.existing.spendCapCents;
 }
 
+const ACTIVE_PAID_BILLING_STATES = new Set<TeamBillingState>([
+  'payg_active',
+  'team_active',
+  'business_active',
+  'enterprise_active',
+]);
+
+/**
+ * Polar "active" means the subscription is in good standing with Polar.
+ * `past_due` and `payment_retry` still follow the incoming status, so a later
+ * active event clears a failed-payment pause.
+ *
+ * This invoice branch has no wallet. `preserveLocalFreeze` keeps a spend-cap
+ * settlement freeze (`read_only` / `balance_exhausted`) across that active
+ * update. Raising the spend cap remains the recovery. A historical wallet
+ * shortfall row is not a freeze signal here (`outstandingDebtCents` stays 0).
+ * The wallet branch passes the unpaid shortfall instead and does not preserve
+ * a spend-cap-only freeze once that debt is gone.
+ */
+export function billingStateForPolarSubscriptionUpsert(input: {
+  incoming: TeamBillingState;
+  existingState: string | null | undefined;
+  outstandingDebtCents: number;
+  preserveLocalFreeze?: boolean;
+}): TeamBillingState {
+  if (!ACTIVE_PAID_BILLING_STATES.has(input.incoming)) return input.incoming;
+  const localFreeze =
+    input.existingState === 'read_only' || input.existingState === 'balance_exhausted'
+      ? input.existingState
+      : null;
+  if (input.outstandingDebtCents > 0) return localFreeze ?? 'read_only';
+  if (input.preserveLocalFreeze && localFreeze) return localFreeze;
+  return input.incoming;
+}
+
 export function billingStateForPolarPlan(plan: PolarPaidPlanId) {
   switch (plan) {
     case 'payg':
@@ -316,6 +351,12 @@ async function upsertPaidSubscription(input: {
             checkoutId,
           )
         : undefined;
+    const billingState = billingStateForPolarSubscriptionUpsert({
+      incoming: input.billingState,
+      existingState: existing?.billingState,
+      outstandingDebtCents: 0,
+      preserveLocalFreeze: true,
+    });
     const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const resetDiscount = shouldResetIncludedDiscount({
       existing,
@@ -335,7 +376,7 @@ async function upsertPaidSubscription(input: {
       .values({
         teamId: input.teamId,
         planId: input.plan,
-        billingState: input.billingState,
+        billingState,
         polarCustomerId: polarCustomerId(input.data),
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
@@ -350,7 +391,7 @@ async function upsertPaidSubscription(input: {
         target: [teamBillingAccounts.teamId],
         set: {
           planId: input.plan,
-          billingState: input.billingState,
+          billingState,
           polarCustomerId: polarCustomerId(input.data),
           polarSubscriptionId,
           polarProductId: input.data?.product_id ?? null,

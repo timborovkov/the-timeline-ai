@@ -4,6 +4,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  billingStateForPolarSubscriptionUpsert,
   billingStateFromPolarSubscriptionStatus,
   handlePolarWebhookEvent,
   RETIRED_TOPUP_ALERT_REASON_PREFIX,
@@ -46,6 +47,60 @@ afterEach(async () => {
 });
 
 describe('Polar webhook helpers', () => {
+  it('keeps a local spend-cap freeze when Polar reports an active subscription', () => {
+    expect(
+      billingStateForPolarSubscriptionUpsert({
+        incoming: 'team_active',
+        existingState: 'read_only',
+        outstandingDebtCents: 400,
+      }),
+    ).toBe('read_only');
+    expect(
+      billingStateForPolarSubscriptionUpsert({
+        incoming: 'team_active',
+        existingState: 'balance_exhausted',
+        outstandingDebtCents: 400,
+      }),
+    ).toBe('balance_exhausted');
+    expect(
+      billingStateForPolarSubscriptionUpsert({
+        incoming: 'team_active',
+        existingState: 'team_active',
+        outstandingDebtCents: 400,
+      }),
+    ).toBe('read_only');
+    expect(
+      billingStateForPolarSubscriptionUpsert({
+        incoming: 'past_due',
+        existingState: 'read_only',
+        outstandingDebtCents: 400,
+      }),
+    ).toBe('past_due');
+    expect(
+      billingStateForPolarSubscriptionUpsert({
+        incoming: 'team_active',
+        existingState: 'read_only',
+        outstandingDebtCents: 0,
+      }),
+    ).toBe('team_active');
+    expect(
+      billingStateForPolarSubscriptionUpsert({
+        incoming: 'team_active',
+        existingState: 'read_only',
+        outstandingDebtCents: 0,
+        preserveLocalFreeze: true,
+      }),
+    ).toBe('read_only');
+    expect(
+      billingStateForPolarSubscriptionUpsert({
+        incoming: 'team_active',
+        existingState: 'past_due',
+        outstandingDebtCents: 0,
+        preserveLocalFreeze: true,
+      }),
+    ).toBe('team_active');
+  });
+
   it('maps Polar subscription status instead of activating from product id', () => {
     expect(billingStateFromPolarSubscriptionStatus('enterprise', 'active')).toBe(
       'enterprise_active',
@@ -577,6 +632,123 @@ describe('handlePolarWebhookEvent', () => {
       },
     });
     expect((await billing.getAccount()).spendCapCents).toBe(2_500);
+  });
+
+  it('keeps a spend-cap freeze across an active renewal and restores it when the cap is raised', async () => {
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          current_period_start: '2026-08-01T00:00:00.000Z',
+          current_period_end: '2026-09-01T00:00:00.000Z',
+          modified_at: '2026-08-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'read_only', spend_cap_cents = 0,
+          included_discount_remaining_cents = 12
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_ledger (
+        team_id, operation_id, kind, meter_id, native_units, customer_charge_cents,
+        billable, non_billable_reason, operation_class, metadata
+      ) VALUES (
+        '${TEAM_ID}', 'refund-shortfall', 'reversal', 'ai', 0, 0,
+        false, 'wallet_refund', 'wallet_refund',
+        '{"cents":1000,"wallet_shortfall_cents":400}'::jsonb
+      );
+    `);
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          current_period_start: '2026-09-01T00:00:00.000Z',
+          current_period_end: '2026-10-01T00:00:00.000Z',
+          modified_at: '2026-09-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const renewed = await billing.getAccount();
+    expect(renewed.billingState).toBe('read_only');
+    expect(renewed.spendCapCents).toBe(0);
+    expect(renewed.includedDiscountRemainingCents).toBe(6_000);
+    const blocked = await billing.reserve({
+      operationId: 'op-while-frozen',
+      meterId: 'ai',
+      reservedNativeUnits: 20,
+      reservedChargeCents: 20,
+    });
+    expect(blocked.ok).toBe(false);
+    const raised = await billing.setSpendCap(10_000);
+    expect(raised.billingState).toBe('team_active');
+    expect(raised.spendCapCents).toBe(10_000);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts SET billing_state = 'team_active' WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          current_period_start: '2026-09-01T00:00:00.000Z',
+          current_period_end: '2026-10-01T00:00:00.000Z',
+          modified_at: '2026-09-02T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).billingState).toBe('team_active');
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'past_due', polar_event_modified_at = '2026-09-02T00:00:00.000Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          current_period_start: '2026-09-01T00:00:00.000Z',
+          current_period_end: '2026-10-01T00:00:00.000Z',
+          modified_at: '2026-09-03T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).billingState).toBe('team_active');
   });
 
   it('preserves a paid spend cap of 0 across subscription.updated', async () => {

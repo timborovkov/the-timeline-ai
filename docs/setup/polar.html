@@ -173,13 +173,15 @@ PLATFORM_ADMIN_EMAILS=
         preserve an administrator-selected paid cap, including €0 as a hard stop. Settlement that
         exceeds the paid spend cap still records the full ledger charge and freezes the workspace.
         Raising a positive spend cap restores <code>read_only</code> or
-        <code>balance_exhausted</code> to the plan's active state. <code>past_due</code> and
-        <code>payment_retry</code> stay paused until a later subscription webhook returns an active
-        state. Entering <code>past_due</code> emails owners once per UTC month. Extra member-days
-        persist a denied charge and freeze rather than skipping the extra seat. Janitor member-day
-        ticks retry unsettled facts across the full 31-day lookback, including the previous calendar
-        month, after billing recovery. Terminal Recall no-shows settle elapsed waiting-room minutes;
-        a retry still releases so the same meeting can reserve again. Cancelling a joining/active
+        <code>balance_exhausted</code> to the plan's active state. An active subscription update
+        does not clear that local spend-cap freeze, and a historical wallet shortfall row does not
+        re-freeze an active account. <code>past_due</code> and <code>payment_retry</code> stay
+        paused until a later subscription webhook returns an active state. Entering
+        <code>past_due</code> emails owners once per UTC month. Extra member-days persist a denied
+        charge and freeze rather than skipping the extra seat. Janitor member-day ticks retry
+        unsettled facts across the full 31-day lookback, including the previous calendar month,
+        after billing recovery. Terminal Recall no-shows settle elapsed waiting-room minutes; a
+        retry still releases so the same meeting can reserve again. Cancelling a joining/active
         meeting with no transcript chunks settles elapsed waiting-room minutes instead of releasing
         them. Postmark success is recorded before email settlement. A delivered message whose
         settlement fails stays reserved for the janitor and is not resent. Reserve, settle, release,
@@ -247,19 +249,21 @@ PLATFORM_ADMIN_EMAILS=
         that fee to Polar. Clearing a comp refuses while a Polar subscription id remains, then
         restores unrestricted Free only when this workspace holds the Free grant. Background AI
         metering skips OpenRouter when the durable operation is already settled or the reservation
-        is reused with <code>provider_completed</code>. Member-day ledger rows stamp
-        <code>plan_id</code>; later ticks reuse that day's included-member count. Storage-cap
-        finalization deletes the uploaded object when admission fails. Captured Slack/Telegram/email
-        attachments assert document and storage capacity. Free in-allowance usage is not invoiced
-        when live charging is enabled. Janitor Recall leave retries run before reservation expiry,
-        and expiry skips rows with <code>pending_recall_leave_bot_id</code>. Interactive search
-        embeddings run under billing ALS. The Free grant unassigns when its owner leaves or is
-        demoted. Member-day janitor ticks backfill missed days. Deleted documents are excluded from
-        indexed-chunk capacity; restore counts those chunks. Web chat settles known compression cost
-        when the answer stream fails. <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide
-        shadow kill switch. Set <code>BILLING_CHARGES_ENABLED</code> on
-        <code>document-extract-orchestrator</code> as well as web/worker; it is a non-secret
-        allowlisted toggle, not an extra credential.
+        is reused with <code>provider_completed</code>. A successful worker call stamps
+        <code>worker_settlement_pending</code> before settle. The janitor drains that marker,
+        including an already-expired row, before the reservation TTL, and a retry keeps the
+        completed result. Member-day ledger rows stamp <code>plan_id</code>; later ticks reuse that
+        day's included-member count. Storage-cap finalization deletes the uploaded object when
+        admission fails. Captured Slack/Telegram/email attachments assert document and storage
+        capacity. Free in-allowance usage is not invoiced when live charging is enabled. Janitor
+        Recall leave retries run before reservation expiry, and expiry skips rows with
+        <code>pending_recall_leave_bot_id</code>. Interactive search embeddings run under billing
+        ALS. The Free grant unassigns when its owner leaves or is demoted. Member-day janitor ticks
+        backfill missed days. Deleted documents are excluded from indexed-chunk capacity; restore
+        counts those chunks. Web chat settles known compression cost when the answer stream fails.
+        <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide shadow kill switch. Set
+        <code>BILLING_CHARGES_ENABLED</code> on <code>document-extract-orchestrator</code> as well
+        as web/worker; it is a non-secret allowlisted toggle, not an extra credential.
       </p>
 
       <h2>Public and app surfaces</h2>

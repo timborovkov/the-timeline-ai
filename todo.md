@@ -652,7 +652,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       existing dedup rows. Web chat settles known compression cost when the answer stream fails.
       `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
       Enterprise has no self-serve checkout. `withAiMetering` skips OpenRouter when the durable operation already
-      completed. Member-day ticks reuse the `plan_id` stamped on that day. Re-accept appends `prior_intervals`. Denied inbound email
+      completed, and stamps `worker_settlement_pending` so the janitor can settle a
+      finished call before the reservation TTL. An active Polar subscription update
+      does not clear a local `read_only` or `balance_exhausted` spend-cap freeze;
+      raising the spend cap still restores it. `past_due` still clears when Polar
+      reports a newer active status. Member-day ticks reuse the `plan_id` stamped on that day. Re-accept appends `prior_intervals`. Denied inbound email
       enrichment is recoverable via `billing_enrichment_deferred`. Storage-cap
       finalization deletes the rejected object. Captured chat attachments enforce
       document/storage limits. Free in-allowance usage is not invoiced under
