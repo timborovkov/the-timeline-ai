@@ -29,7 +29,7 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",
     "ical-generator": "^11.1.2",
-    "lucide-react": "^1.59.0",
+    "lucide-react": "^1.61.0",
     "next": "^16.4.2",
     "next-auth": "5.0.0-beta.32",
     "next-themes": "^0.4.6",
@@ -42,7 +42,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite": "^0.5.11",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
@@ -52,7 +52,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "happy-dom": "^20.10.6",
     "postcss": "^8.5.31",
-    "react-doctor": "^0.5.8",
+    "react-doctor": "^0.9.18",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
