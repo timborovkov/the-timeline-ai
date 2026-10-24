@@ -12,10 +12,7 @@ export const EVIDENCE_PACK_VERSION = 'evidence-pack-v1';
 export type EvidencePackPurpose = 'proposal' | 'answer';
 export type EvidencePackRole = 'core' | 'supporting';
 export type EvidencePackErrorCode =
-  | 'missing_anchor'
-  | 'inaccessible_anchor'
-  | 'candidate_failure'
-  | 'empty_audience';
+  'missing_anchor' | 'inaccessible_anchor' | 'candidate_failure' | 'empty_audience';
 
 export interface EvidencePackPolicy {
   version: string;

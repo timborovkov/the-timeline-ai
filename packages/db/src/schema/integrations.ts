@@ -160,7 +160,7 @@ export const mondayConversationTombstones = pgTable(
       table.integrationId,
       table.targetKey,
     ),
-    check('monday_conversation_tombstones_provider_chk', sql`${table.provider} = 'monday'`),
+    check('monday_conversation_tombstones_provider_chk', sql`${table.provider}::text = 'monday'`),
   ],
 );
 

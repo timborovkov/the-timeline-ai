@@ -1,5 +1,5 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
-import { type FilePart, type ImagePart, type LanguageModel } from 'ai';
+import { type FilePart, type LanguageModel } from 'ai';
 
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
@@ -28,7 +28,8 @@ import {
  *
  * Cost notes:
  *   - Vision tokens are 5-10x text tokens on most providers. A 10-page PDF
- *     can run $0.05-$0.20 depending on resolution and model.
+ *     can run a few cents to ~$0.15 depending on resolution and the pinned
+ *     Gemini 3.8 Flash route ($0.825/M prompt and image tokens).
  *   - The 25 MiB document cap upstream is the only structural ceiling
  *     today. Per-team monthly cost tracking is Phase 12.
  */
@@ -135,19 +136,18 @@ export async function extractTextFromMedia(
     );
   }
 
-  // ai-sdk discriminates image vs file content parts. Images go through
-  // the vision endpoint; PDFs are file attachments that vision-capable
-  // models (Claude 3.5+, GPT-4o, Gemini 1.5+) read natively. Sparse PDFs
-  // from Daytona pass rendered page PNGs as multiple image parts.
-  const mediaParts: (ImagePart | FilePart)[] =
+  // AI SDK 7 sends images as file parts with an image mediaType. PDFs stay
+  // file attachments that vision-capable models read natively. Sparse PDFs
+  // from Daytona pass rendered page PNGs as multiple image file parts.
+  const mediaParts: FilePart[] =
     pageImages.length > 0
       ? pageImages.map((image) => ({
-          type: 'image' as const,
-          image,
+          type: 'file' as const,
+          data: image,
           mediaType: 'image/png',
         }))
       : isImage
-        ? [{ type: 'image' as const, image: input.body, mediaType }]
+        ? [{ type: 'file' as const, data: input.body, mediaType }]
         : [
             {
               type: 'file' as const,
@@ -163,7 +163,7 @@ export async function extractTextFromMedia(
       const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
       return generateText({
         model,
-        system: SYSTEM_PROMPT,
+        instructions: SYSTEM_PROMPT,
         messages: [
           {
             role: 'user',

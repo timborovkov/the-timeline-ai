@@ -364,6 +364,20 @@ describe('getEnv', () => {
     });
   });
 
+  it('treats blank integration OAuth credentials from .env.example as unset', () => {
+    setBaseEnv({
+      GITHUB_APP_ID: '',
+      GITHUB_APP_CLIENT_ID: '',
+      SLACK_CLIENT_ID: '',
+      MONDAY_CLIENT_ID: '',
+    });
+
+    expect(getEnv().GITHUB_APP_ID).toBeUndefined();
+    expect(getEnv().GITHUB_APP_CLIENT_ID).toBeUndefined();
+    expect(getEnv().SLACK_CLIENT_ID).toBeUndefined();
+    expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
+  });
+
   it('keeps the legacy invite sender env var available for transactional email fallback', () => {
     setBaseEnv({
       INVITE_EMAIL_FROM: 'Timeline <invites@example.test>',
@@ -384,8 +398,9 @@ describe('getEnv', () => {
     });
   });
 
-  it('keeps task category rollout controls disabled until explicitly enabled', () => {
+  it('enables task categories by default and keeps historical backfill off', () => {
     setBaseEnv({
+      TASK_CATEGORY_DISABLED: undefined,
       TASK_CATEGORY_CLASSIFICATION_ENABLED: undefined,
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: undefined,
       TASK_CATEGORY_WORKER_ENABLED: undefined,
@@ -394,12 +409,75 @@ describe('getEnv', () => {
     });
 
     expect(getEnv()).toMatchObject({
+      TASK_CATEGORY_DISABLED: false,
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: true,
+      TASK_CATEGORY_WORKER_ENABLED: true,
+      TASK_CATEGORY_BACKFILL_ENABLED: false,
+      TASK_CATEGORY_UI_ENABLED: true,
+    });
+  });
+
+  it('forces every task category control off when the kill switch is set', () => {
+    setBaseEnv({
+      TASK_CATEGORY_DISABLED: 'true',
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: 'true',
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: 'true',
+      TASK_CATEGORY_WORKER_ENABLED: 'true',
+      TASK_CATEGORY_BACKFILL_ENABLED: 'true',
+      TASK_CATEGORY_UI_ENABLED: 'true',
+    });
+
+    expect(getEnv()).toMatchObject({
+      TASK_CATEGORY_DISABLED: true,
       TASK_CATEGORY_CLASSIFICATION_ENABLED: false,
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false,
       TASK_CATEGORY_WORKER_ENABLED: false,
       TASK_CATEGORY_BACKFILL_ENABLED: false,
       TASK_CATEGORY_UI_ENABLED: false,
     });
+  });
+
+  it('defaults Qdrant quantization to scalar int8 with search rescore', () => {
+    setBaseEnv({
+      QDRANT_COLLECTION: undefined,
+      QDRANT_QUANTIZATION: undefined,
+      QDRANT_QUANTIZATION_RESCORE: undefined,
+      QDRANT_QUANTIZATION_OVERSAMPLING: undefined,
+    });
+    expect(getEnv()).toMatchObject({
+      QDRANT_COLLECTION: 'events',
+      QDRANT_QUANTIZATION: 'scalar',
+      QDRANT_QUANTIZATION_RESCORE: true,
+    });
+    expect(getEnv().QDRANT_QUANTIZATION_OVERSAMPLING).toBeUndefined();
+  });
+
+  it('treats blank Qdrant quantization env as the documented defaults', () => {
+    setBaseEnv({
+      QDRANT_QUANTIZATION: '',
+      QDRANT_QUANTIZATION_OVERSAMPLING: '',
+    });
+    expect(getEnv().QDRANT_QUANTIZATION).toBe('scalar');
+    expect(getEnv().QDRANT_QUANTIZATION_OVERSAMPLING).toBeUndefined();
+  });
+
+  it('accepts binary quantization and an explicit oversampling factor', () => {
+    setBaseEnv({
+      QDRANT_QUANTIZATION: 'binary',
+      QDRANT_QUANTIZATION_RESCORE: 'false',
+      QDRANT_QUANTIZATION_OVERSAMPLING: '3.5',
+    });
+    expect(getEnv()).toMatchObject({
+      QDRANT_QUANTIZATION: 'binary',
+      QDRANT_QUANTIZATION_RESCORE: false,
+      QDRANT_QUANTIZATION_OVERSAMPLING: 3.5,
+    });
+  });
+
+  it('rejects Qdrant oversampling below 1', () => {
+    setBaseEnv({ QDRANT_QUANTIZATION_OVERSAMPLING: '0.5' });
+    expect(() => getEnv()).toThrow(/QDRANT_QUANTIZATION_OVERSAMPLING/);
   });
 
   it('keeps cross-source evidence disabled until an operator selects a rollout mode', () => {
@@ -543,6 +621,9 @@ describe('getEnv', () => {
   it('rejects credential-thick secrets on production document-extract mode via process.env allowlist', () => {
     setExtractProductionEnv({ SECRETS_ENCRYPTION_KEY: 'not-for-extract' });
     expect(() => getEnv()).toThrow(/SECRETS_ENCRYPTION_KEY must not be set/);
+
+    setExtractProductionEnv({ TASK_CATEGORY_DISABLED: 'true' });
+    expect(() => getEnv()).toThrow(/TASK_CATEGORY_DISABLED must not be set/);
 
     setExtractProductionEnv({ CRON_SECRET: 'cron' });
     expect(() => getEnv()).toThrow(/CRON_SECRET must not be set/);

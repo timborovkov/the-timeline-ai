@@ -95,11 +95,7 @@ export interface ConnectionAttentionInput {
   integrationId?: string | null;
   resourceShareId?: string | null;
   category:
-    | 'needs_reconnect'
-    | 'needs_new_owner'
-    | 'access_changed'
-    | 'sync_error'
-    | 'webhook_degraded';
+    'needs_reconnect' | 'needs_new_owner' | 'access_changed' | 'sync_error' | 'webhook_degraded';
   summary: string;
 }
 

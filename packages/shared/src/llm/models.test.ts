@@ -11,35 +11,35 @@ import {
 describe('TIMELINE_MODELS', () => {
   it('matches OpenRouter metadata for OSS chat-capable roles', () => {
     expect(TIMELINE_MODELS.extraction).toMatchObject({
-      id: 'deepseek/deepseek-v4-flash-0731',
+      id: 'deepseek/deepseek-v4.1-flash-1017',
       provider: 'openrouter',
       privacyMode: 'zdr_required',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.agent).toMatchObject({
-      id: 'deepseek/deepseek-v4-flash-0731',
+      id: 'deepseek/deepseek-v4.1-flash-1017',
       provider: 'openrouter',
       privacyMode: 'zdr_required',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.structuredFallback).toMatchObject({
-      id: 'deepseek/deepseek-v4-pro',
+      id: 'deepseek/deepseek-v4-pro-0813',
       provider: 'openrouter',
       privacyMode: 'zdr_required',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.summarization).toMatchObject({
-      id: 'deepseek/deepseek-v4-flash-0731',
+      id: 'deepseek/deepseek-v4.1-flash-1017',
       provider: 'openrouter',
       privacyMode: 'zdr_required',
       contextWindowTokens: 1_048_576,
       capabilities: ['chat', 'structured', 'tools'],
     });
     expect(TIMELINE_MODELS.taskCategorization).toMatchObject({
-      id: 'deepseek/deepseek-v4-flash-0731',
+      id: 'deepseek/deepseek-v4.1-flash-1017',
       provider: 'openrouter',
       privacyMode: 'zdr_required',
       contextWindowTokens: 1_048_576,
@@ -49,7 +49,7 @@ describe('TIMELINE_MODELS', () => {
 
   it('matches OpenRouter metadata for the PDF-capable vision role', () => {
     expect(TIMELINE_MODELS.vision).toMatchObject({
-      id: 'google/gemini-3.5-flash',
+      id: 'google/gemini-3.8-flash',
       provider: 'openrouter',
       privacyMode: 'zdr_required',
       contextWindowTokens: 1_048_576,

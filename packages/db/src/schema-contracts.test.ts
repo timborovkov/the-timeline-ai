@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
 import { getTableConfig, PgDialect } from 'drizzle-orm/pg-core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { entities } from '#src/schema/entities.js';
 
@@ -84,6 +84,28 @@ afterEach(async () => {
 });
 
 describe('database schema contracts', () => {
+  it('accepts only Monday providers for conversation tombstones', async () => {
+    const integrationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    await pg.exec(`
+      INSERT INTO integrations (id, team_id, provider, display_name)
+      VALUES ('${integrationId}', '${TEAM_ID}', 'monday', 'Monday test');
+      INSERT INTO monday_conversation_tombstones (
+        team_id, integration_id, provider, update_id, target_key,
+        reason, source_event_dedup_key, deleted_at
+      ) VALUES (
+        '${TEAM_ID}', '${integrationId}', 'monday', '123', 'update:123',
+        'deleted', 'monday:123', now()
+      );
+    `);
+    await expect(
+      pg.exec("UPDATE monday_conversation_tombstones SET provider = 'github'"),
+    ).rejects.toThrow(/monday_conversation_tombstones_provider_chk/);
+    const rows = await pg.query<{ provider: string }>(
+      'SELECT provider FROM monday_conversation_tombstones',
+    );
+    expect(rows.rows).toEqual([{ provider: 'monday' }]);
+  });
+
   it('applies every migration to an empty database and exposes critical tables', async () => {
     const tables = await pg.query<{ tablename: string }>(`
       SELECT tablename
@@ -287,13 +309,22 @@ describe('database schema contracts', () => {
     }
   });
 
-  it('backfills canonical shared-link associations at their current strengths', async () => {
-    const migrationPg = new PGlite();
-    try {
+  describe('canonical shared-link migration', () => {
+    let migrationPg: PGlite;
+
+    beforeAll(async () => {
+      migrationPg = new PGlite();
       await applyMigrations(migrationPg, {
         throughFile: '0066_monday_conversation_tombstones.sql',
       });
       await seedBase(migrationPg);
+    });
+
+    afterAll(async () => {
+      await migrationPg.close();
+    });
+
+    it('backfills canonical shared-link associations at their current strengths', async () => {
       const rawEventId = '99999999-9999-4999-8999-999999999940';
       const clusterId = '99999999-9999-4999-8999-999999999941';
       const convertedEvidenceId = '99999999-9999-4999-8999-999999999942';
@@ -362,16 +393,23 @@ describe('database schema contracts', () => {
           association_source: 'structured_anchor',
         },
       ]);
-    } finally {
-      await migrationPg.close();
-    }
+    });
   });
 
-  it('backfills legacy board and object pins into one ordered personal collection', async () => {
-    const migrationPg = new PGlite();
-    try {
+  describe('universal personal pins migration', () => {
+    let migrationPg: PGlite;
+
+    beforeAll(async () => {
+      migrationPg = new PGlite();
       await applyMigrations(migrationPg, { throughFile: '0061_object_pins.sql' });
       await seedBase(migrationPg);
+    });
+
+    afterAll(async () => {
+      await migrationPg.close();
+    });
+
+    it('backfills legacy board and object pins into one ordered personal collection', async () => {
       const firstBoard = '11111111-1111-4111-8111-111111111131';
       const secondBoard = '11111111-1111-4111-8111-111111111132';
       const objectId = '11111111-1111-4111-8111-111111111133';
@@ -415,9 +453,7 @@ describe('database schema contracts', () => {
         WHERE target_kind = 'object' AND target_key = '${objectId}'
       `);
       expect(remainingObjectPins.rows[0]?.count).toBe('0');
-    } finally {
-      await migrationPg.close();
-    }
+    });
   });
 
   it('indexes the global pending task-category recovery sweep', async () => {

@@ -229,6 +229,27 @@ describe('suggestion item actions', () => {
     expectSuggestionSurfacesRevalidated();
   });
 
+  it('returns a retryable message when a proposal keeps changing during revision', async () => {
+    fakes.fakeSuggestions.reviseSuggestionItem.mockRejectedValue(
+      Object.assign(
+        new Error('Proposal changed repeatedly while it was being revised. Try again.'),
+        {
+          code: 'TIMELINE_PROPOSAL_REVISION_CONFLICT',
+        },
+      ),
+    );
+
+    await expect(
+      reviseSuggestionItemAction({
+        itemId: ITEM_ID,
+        feedback: 'Assign this to Otto',
+      }),
+    ).resolves.toEqual({
+      error: 'Proposal changed while it was being revised. Try again.',
+    });
+    expect(fakes.fakeReportCaughtError).not.toHaveBeenCalled();
+  });
+
   it('validates and persists task proposal category and project edits', async () => {
     await expect(
       reviseTaskSuggestionItemAction({

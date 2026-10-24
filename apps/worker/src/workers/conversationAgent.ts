@@ -215,10 +215,13 @@ export async function processConversationAgentJob(
   const timeoutError = new Error('conversation_agent_timeout');
   let stopDeadline = (): void => undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(timeoutError);
-      abortController.abort(timeoutError);
-    }, deps.timeoutMs ?? conversationSurfaces.DIRECT_CONVERSATION_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => {
+        reject(timeoutError);
+        abortController.abort(timeoutError);
+      },
+      deps.timeoutMs ?? conversationSurfaces.conversationTimeoutMs(turn.surface),
+    );
     timeout.unref();
     stopDeadline = () => {
       clearTimeout(timeout);
@@ -328,7 +331,7 @@ export async function processConversationAgentJob(
         {
           status: 'timed_out',
           errorCode: 'agent_timeout',
-          answerText: conversationSurfaces.CONVERSATION_AGENT_TIMEOUT_MESSAGE,
+          answerText: conversationSurfaces.conversationTimeoutMessage(turn.surface),
         },
         () => {
           responseCached = true;

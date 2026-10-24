@@ -270,6 +270,28 @@ const baseSchema = z.object({
   QDRANT_URL: z.url().optional(),
   QDRANT_API_KEY: z.string().optional(),
   QDRANT_COLLECTION: z.string().default('events'),
+  /**
+   * Quantization used when auto-creating a collection. `scalar` (default)
+   * stores int8 quantized vectors in RAM with original float32 vectors on
+   * disk. `binary` is the more aggressive option; pair it with search
+   * rescore/oversampling. Existing collections are not rewritten — copy
+   * points into a new collection, then switch `QDRANT_COLLECTION`.
+   */
+  QDRANT_QUANTIZATION: z.preprocess(
+    emptyStringAsUnset,
+    z.enum(['scalar', 'binary']).default('scalar'),
+  ),
+  /** Search-time rescore of quantized hits against original vectors. */
+  QDRANT_QUANTIZATION_RESCORE: z.preprocess(booleanString, z.boolean().default(true)),
+  /**
+   * Extra quantized candidates fetched before rescore. Unset uses 2 for
+   * scalar and 4 for binary. Blank values from `.env.example` are unset.
+   * Qdrant 1.19.2 rejects oversampling below 1.
+   */
+  QDRANT_QUANTIZATION_OVERSAMPLING: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce.number().min(1).optional(),
+  ),
 
   // S3 / RustFS (Phase 3+)
   S3_ENDPOINT: z.url().optional(),
@@ -320,11 +342,18 @@ const baseSchema = z.object({
    * and guardrail id. It does not prove the provider-side guardrail assignment.
    */
   OPENROUTER_PRIVACY_POLICY_ATTESTATION: z.preprocess(emptyStringAsUnset, z.string().optional()),
-  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  /**
+   * Emergency stop for task categories. When true, the env transform forces
+   * classification, enqueue, the worker, backfill, and the UI off together.
+   * Individual flags still work when this is false. Historical backfill stays
+   * default-off so a deploy cannot enqueue the backlog.
+   */
+  TASK_CATEGORY_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_BACKFILL_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   CROSS_SOURCE_EVIDENCE_MODE: z.enum(['off', 'shadow', 'enforced']).default('off'),
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
@@ -394,9 +423,9 @@ const baseSchema = z.object({
   TURNSTILE_SECRET_KEY: z.string().optional(),
 
   // Slack first-party conversational capture.
-  SLACK_CLIENT_ID: z.string().optional(),
-  SLACK_CLIENT_SECRET: z.string().optional(),
-  SLACK_SIGNING_SECRET: z.string().optional(),
+  SLACK_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SLACK_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SLACK_SIGNING_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
 
   /**
    * Shared secret for protected cron / admin endpoints (e.g. job reconciler).
@@ -411,6 +440,8 @@ const baseSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  // Sentry JS 11 removed transaction `profilesSampleRate`. These stay accepted
+  // so existing deploys keep validating; they currently have no SDK effect.
   NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
   SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
@@ -479,27 +510,29 @@ const baseSchema = z.object({
   // Per-team integrations. The catalog hides any native provider whose
   // OAuth credentials aren't set; provider-specific webhook secrets only
   // apply to providers that expose inbound webhooks.
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  LINEAR_CLIENT_ID: z.string().optional(),
-  LINEAR_CLIENT_SECRET: z.string().optional(),
-  LINEAR_WEBHOOK_SECRET: z.string().optional(),
-  GITHUB_APP_CLIENT_ID: z.string().optional(),
-  GITHUB_APP_CLIENT_SECRET: z.string().optional(),
-  GITHUB_APP_ID: z.string().optional(),
-  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
-  GITHUB_WEBHOOK_SECRET: z.string().optional(),
-  MONDAY_CLIENT_ID: z.string().optional(),
-  MONDAY_CLIENT_SECRET: z.string().optional(),
-  MONDAY_WEBHOOK_SECRET: z.string().optional(),
-  SENTRY_INTEGRATION_CLIENT_ID: z.string().optional(),
-  SENTRY_INTEGRATION_CLIENT_SECRET: z.string().optional(),
+  // Blank values from `.env.example` must stay unset so providerBudgetAppKey
+  // (and catalog visibility) fall back to the provider name defaults.
+  GOOGLE_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GOOGLE_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_PRIVATE_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SENTRY_INTEGRATION_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SENTRY_INTEGRATION_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   // HMAC secret for Google Drive push-channel tokens. The Drive watch
   // registration sets channel_token = HMAC-SHA256(secret, integration.id)
   // so the /api/webhooks/google-drive handler can verify the inbound
   // x-goog-channel-token. Without it, anyone who guesses or leaks an
   // integration UUID can trigger sync jobs for that team.
-  GOOGLE_DRIVE_WEBHOOK_SECRET: z.string().optional(),
+  GOOGLE_DRIVE_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
 });
 
 const schema = baseSchema
@@ -665,6 +698,15 @@ const schema = baseSchema
   .transform((env) => ({
     ...env,
     LANGSMITH_PROJECT: env.LANGSMITH_PROJECT ?? `timeline-${env.NODE_ENV}`,
+    ...(env.TASK_CATEGORY_DISABLED
+      ? {
+          TASK_CATEGORY_CLASSIFICATION_ENABLED: false as const,
+          TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false as const,
+          TASK_CATEGORY_WORKER_ENABLED: false as const,
+          TASK_CATEGORY_BACKFILL_ENABLED: false as const,
+          TASK_CATEGORY_UI_ENABLED: false as const,
+        }
+      : {}),
   }));
 
 export type Env = z.infer<typeof schema>;

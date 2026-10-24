@@ -125,17 +125,13 @@ function PinnedWorkspaceManagerState({
   initialPage: PinPage;
   filter: string;
 }) {
-  const [state, dispatch] = useReducer(
-    managerReducer,
-    initialPage,
-    (page): ManagerState => ({
-      items: page.items,
-      nextCursor: page.nextCursor,
-      reorderMode: false,
-      announcement: '',
-      error: null,
-    }),
-  );
+  const [state, dispatch] = useReducer(managerReducer, initialPage, (page): ManagerState => ({
+    items: page.items,
+    nextCursor: page.nextCursor,
+    reorderMode: false,
+    announcement: '',
+    error: null,
+  }));
   const draggedIdRef = useRef<string | null>(null);
   const [pending, startTransition] = useTransition();
   const canReorder = filter === 'all';

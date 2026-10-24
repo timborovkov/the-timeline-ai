@@ -62,11 +62,16 @@ def render_pages(path: Path, out_dir: Path, max_pages: int) -> tuple[list[str], 
                 bitmap = page.render(scale=2)
                 try:
                     pil_image = bitmap.to_pil()
+                    png_image = (
+                        pil_image.convert("I;16") if pil_image.mode == "I" else pil_image
+                    )
                     try:
                         out_path = out_dir / f"page-{i + 1:04d}.png"
-                        pil_image.save(out_path, format="PNG")
+                        png_image.save(out_path, format="PNG")
                         paths.append(str(out_path))
                     finally:
+                        if png_image is not pil_image:
+                            png_image.close()
                         pil_image.close()
                 finally:
                     bitmap.close()

@@ -12,7 +12,7 @@ import { openRouterPrivateProviderOptions } from '#src/llm/privacy.js';
 import { generateText, withLangSmithProviderOptions } from '#src/llm/tracing.js';
 
 export interface CompressMessagesInput {
-  system: string;
+  instructions: string;
   messages: ModelMessage[];
   model: LanguageModel | (() => LanguageModel);
   modelId?: string;
@@ -144,7 +144,8 @@ export async function compressMessagesForContext(
 ): Promise<CompressMessagesResult> {
   const contextWindow = input.contextWindowTokens ?? TIMELINE_MODELS.agent.contextWindowTokens;
   const triggerTokens = Math.floor(contextWindow * DEFAULT_CHAT_MEMORY.triggerFraction);
-  const estimatedTokens = estimateTextTokens(input.system) + messagesTokenEstimate(input.messages);
+  const estimatedTokens =
+    estimateTextTokens(input.instructions) + messagesTokenEstimate(input.messages);
   if (estimatedTokens < triggerTokens) {
     return {
       messages: input.messages,
@@ -178,7 +179,7 @@ export async function compressMessagesForContext(
     async () =>
       generateText({
         model: resolveSummaryModel(input.model),
-        system: SUMMARY_SYSTEM_PROMPT,
+        instructions: SUMMARY_SYSTEM_PROMPT,
         prompt: transcriptForSummaryWithinBudget(summarized),
         maxOutputTokens: DEFAULT_CHAT_MEMORY.summaryMaxOutputTokens,
         providerOptions: withLangSmithProviderOptions(openRouterPrivateProviderOptions(), {

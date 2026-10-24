@@ -1,9 +1,29 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TaskCategoryBatchItem } from '#src/task-categories/classifier.js';
 
-import { buildAgentTools } from '#src/agent/tools.js';
+import { buildAgentTools, userApprovalForTools } from '#src/agent/tools.js';
+import { resetEnvForTests } from '#src/env.js';
 import { type TeamScope } from '#src/team-scope.js';
+
+const ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED =
+  process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+
+beforeEach(() => {
+  delete process.env.TASK_CATEGORY_DISABLED;
+  process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
+  resetEnvForTests();
+});
+
+afterEach(() => {
+  if (ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED === undefined) {
+    delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+  } else {
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED =
+      ORIGINAL_TASK_CATEGORY_CLASSIFICATION_ENABLED;
+  }
+  resetEnvForTests();
+});
 
 /**
  * Team-isolation tests for the agent tools. These verify by construction
@@ -581,7 +601,8 @@ describe('buildAgentTools — team isolation', () => {
       updatedAt,
     });
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_object_create?.needsApproval).toBe(true);
+    expect(tools.execute_object_create).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_object_create).toBe('user-approval');
     const exec = tools.execute_object_create?.execute as (
       input: unknown,
       opts: unknown,
@@ -705,7 +726,8 @@ describe('buildAgentTools — team isolation', () => {
       changedFields: ['status'],
     });
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_object_update?.needsApproval).toBe(true);
+    expect(tools.execute_object_update).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_object_update).toBe('user-approval');
     const exec = tools.execute_object_update?.execute as (
       input: unknown,
       opts: unknown,
@@ -806,7 +828,8 @@ describe('buildAgentTools — team isolation', () => {
     });
     scope.suggestions.reconcileCanonicalChange.mockResolvedValue(2);
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_object_archive?.needsApproval).toBe(true);
+    expect(tools.execute_object_archive).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_object_archive).toBe('user-approval');
     const exec = tools.execute_object_archive?.execute as (
       input: unknown,
       opts: unknown,
@@ -879,7 +902,8 @@ describe('buildAgentTools — team isolation', () => {
     });
     scope.suggestions.reconcileObjectMerge.mockResolvedValue(1);
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_object_merge?.needsApproval).toBe(true);
+    expect(tools.execute_object_merge).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_object_merge).toBe('user-approval');
     const exec = tools.execute_object_merge?.execute as (
       input: unknown,
       opts: unknown,
@@ -977,7 +1001,8 @@ describe('buildAgentTools — team isolation', () => {
       boardItemFixture({ nextStep: 'Send pilot proposal', priority: 2 }),
     );
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_board_add_item?.needsApproval).toBe(true);
+    expect(tools.execute_board_add_item).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_board_add_item).toBe('user-approval');
     const exec = tools.execute_board_add_item?.execute as (
       input: unknown,
       opts: unknown,
@@ -1097,7 +1122,8 @@ describe('buildAgentTools — team isolation', () => {
     scope.boards.getBoardItem.mockResolvedValue(boardItemFixture());
     scope.boards.removeBoardItem.mockResolvedValue(boardItemFixture({ archivedAt: new Date() }));
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_board_remove_item?.needsApproval).toBe(true);
+    expect(tools.execute_board_remove_item).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_board_remove_item).toBe('user-approval');
     const exec = tools.execute_board_remove_item?.execute as (
       input: unknown,
       opts: unknown,
@@ -1134,7 +1160,8 @@ describe('buildAgentTools — team isolation', () => {
     const event = calendarEventFixture({ title: 'Pilot planning' });
     scope.calendar.createCalendarEvent.mockResolvedValue(event);
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_calendar_create?.needsApproval).toBe(true);
+    expect(tools.execute_calendar_create).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_calendar_create).toBe('user-approval');
     const exec = tools.execute_calendar_create?.execute as (
       input: unknown,
       opts: unknown,
@@ -1219,7 +1246,8 @@ describe('buildAgentTools — team isolation', () => {
     );
     scope.suggestions.reconcileCanonicalChange.mockResolvedValue(1);
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_calendar_update?.needsApproval).toBe(true);
+    expect(tools.execute_calendar_update).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_calendar_update).toBe('user-approval');
     const exec = tools.execute_calendar_update?.execute as (
       input: unknown,
       opts: unknown,
@@ -1260,7 +1288,8 @@ describe('buildAgentTools — team isolation', () => {
     scope.calendar.deleteCalendarEvent.mockResolvedValue(true);
     scope.suggestions.reconcileCanonicalChange.mockResolvedValue(3);
     const tools = buildAgentTools(scope as unknown as TeamScope);
-    expect(tools.execute_calendar_cancel?.needsApproval).toBe(true);
+    expect(tools.execute_calendar_cancel).toBeDefined();
+    expect(userApprovalForTools(tools)?.execute_calendar_cancel).toBe('user-approval');
     const exec = tools.execute_calendar_cancel?.execute as (
       input: unknown,
       opts: unknown,
@@ -1774,8 +1803,7 @@ describe('buildAgentTools — team isolation', () => {
       }),
     );
     const lookupPlan = scope.timeline.listEventsForMomentLookup.mock.calls[0]?.[0] as
-      | { metadataPredicates?: { path: string[]; equals: string }[] }
-      | undefined;
+      { metadataPredicates?: { path: string[]; equals: string }[] } | undefined;
     expect(lookupPlan?.metadataPredicates).toEqual(
       expect.arrayContaining([
         { path: ['provider'], equals: 'github' },
@@ -2005,8 +2033,7 @@ describe('buildAgentTools — team isolation', () => {
     expect(
       (
         scope.timeline.listEventsForMomentLookup.mock.calls[0]?.[0] as
-          | { metadataPredicateGroups?: { path: string[]; equals: string }[][] }
-          | undefined
+          { metadataPredicateGroups?: { path: string[]; equals: string }[][] } | undefined
       )?.metadataPredicateGroups,
     ).toEqual([
       [

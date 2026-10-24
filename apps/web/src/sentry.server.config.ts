@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/nextjs';
+import { RESTRICTED_SENTRY_DATA_COLLECTION } from '@timeline/shared/monitoring/sentry-scrub';
 
 import {
   scrubSentryBreadcrumbEvent,
@@ -14,8 +15,7 @@ if (dsn) {
     dsn,
     environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
     tracesSampleRate: sentrySampleRate('SENTRY_TRACES_SAMPLE_RATE'),
-    profilesSampleRate: sentrySampleRate('SENTRY_PROFILES_SAMPLE_RATE'),
-    sendDefaultPii: false,
+    dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend: scrubSentryEvent,
     beforeSendTransaction: scrubSentryTransactionEvent,
     beforeBreadcrumb: scrubSentryBreadcrumbEvent,

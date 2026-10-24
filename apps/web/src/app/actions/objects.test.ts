@@ -228,7 +228,10 @@ beforeEach(() => {
   fakes.fakeObjects.addRelationship.mockResolvedValue({
     id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   });
-  fakes.fakeObjects.removeRelationship.mockResolvedValue(undefined);
+  fakes.fakeObjects.removeRelationship.mockResolvedValue({
+    removed: true,
+    touchedIds: [OBJECT_ID, OTHER_OBJECT_ID],
+  });
   fakes.fakeObjects.createNote.mockResolvedValue({ id: NOTE_ID });
   fakes.fakeObjects.updateNote.mockResolvedValue(true);
   fakes.fakeObjects.deleteNote.mockResolvedValue(true);
@@ -1095,6 +1098,25 @@ describe('object relationship, note, notification, and suggestion actions', () =
       }),
     ).resolves.toEqual({ ok: true });
     expect(fakes.fakeObjects.removeRelationship).toHaveBeenCalled();
+  });
+
+  it('revalidates every company touched when primary employment clear wipes secondaries', async () => {
+    const secondaryCompanyId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    fakes.fakeObjects.removeRelationship.mockResolvedValueOnce({
+      removed: true,
+      touchedIds: [OBJECT_ID, OTHER_OBJECT_ID, secondaryCompanyId],
+    });
+
+    await expect(
+      removeRelationshipAction({
+        id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        entityId: OBJECT_ID,
+        otherEntityId: OTHER_OBJECT_ID,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OTHER_OBJECT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${secondaryCompanyId}`);
   });
 
   it('treats missing relationship rows as link failures', async () => {

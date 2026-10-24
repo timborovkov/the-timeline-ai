@@ -2,6 +2,24 @@ import { type queue } from '@timeline/shared';
 
 const REMOTE_DEV_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 
+const ORIGINAL_ACME_RAW_EVENT_IDS = new Set([
+  '90000000-0000-4000-8000-000000000001',
+  '90000000-0000-4000-8000-000000000002',
+  '90000000-0000-4000-8000-000000000003',
+  '90000000-0000-4000-8000-000000000004',
+  '90000000-0000-4000-8000-000000000005',
+  '90000000-0000-4000-8000-000000000006',
+  '90000000-0000-4000-8000-000000000007',
+  '90000000-0000-4000-8000-000000000008',
+  '90000000-0000-4000-8000-000000000009',
+]);
+
+const ORIGINAL_ACME_FACT_IDS = new Set([
+  'c0000000-0000-4000-8000-000000000001',
+  'c0000000-0000-4000-8000-000000000002',
+  'c0000000-0000-4000-8000-000000000003',
+]);
+
 export const DEMO_VECTOR_SOURCE_MINIMUMS = {
   rawEvents: 2500,
   facts: 20,
@@ -81,12 +99,27 @@ function assertVectorIdFamily(
   ids: readonly string[],
 ): void {
   const family = DEMO_VECTOR_ID_FAMILIES[kind];
+  let originalIds: ReadonlySet<string> | undefined;
+  if (kind === 'rawEvents') {
+    originalIds = ORIGINAL_ACME_RAW_EVENT_IDS;
+  } else if (kind === 'facts') {
+    originalIds = ORIGINAL_ACME_FACT_IDS;
+  }
   const unexpected = ids.filter(
-    (id) => !id.startsWith(family.northstarPrefix) && !id.startsWith(family.corpusPrefix),
+    (id) =>
+      !id.startsWith(family.northstarPrefix) &&
+      !id.startsWith(family.corpusPrefix) &&
+      !originalIds?.has(id),
   );
   if (unexpected.length > 0) {
     throw new Error(
       `Demo vector source set includes unexpected ${kind} ids: ${unexpected.slice(0, 5).join(', ')}`,
+    );
+  }
+  const missingOriginalIds = [...(originalIds ?? [])].filter((id) => !ids.includes(id));
+  if (missingOriginalIds.length > 0) {
+    throw new Error(
+      `Demo vector source set is incomplete: missing original Acme Labs ${kind} ids: ${missingOriginalIds.join(', ')}`,
     );
   }
   const northstar = ids.filter((id) => id.startsWith(family.northstarPrefix)).length;
@@ -132,30 +165,26 @@ export function assertExpectedDemoVectorSources(rows: DemoVectorRows): void {
 
 export function buildDemoVectorJobs(teamId: string, rows: DemoVectorRows): queue.EmbedJobData[] {
   return [
-    ...rows.rawEvents.map(
-      ({ id }): queue.EmbedRawEventJobData => ({ scope: 'raw_event', rawEventId: id, teamId }),
-    ),
-    ...rows.facts.map(
-      ({ id, rawEventId }): queue.EmbedFactJobData => ({
-        scope: 'fact',
-        factId: id,
-        rawEventId,
-        teamId,
-      }),
-    ),
-    ...rows.documentChunks.map(
-      ({ id }): queue.EmbedDocChunkJobData => ({
-        scope: 'doc_chunk',
-        documentChunkId: id,
-        teamId,
-      }),
-    ),
-    ...rows.meetingChunks.map(
-      ({ id }): queue.EmbedMeetingChunkJobData => ({
-        scope: 'meeting_chunk',
-        meetingChunkId: id,
-        teamId,
-      }),
-    ),
+    ...rows.rawEvents.map(({ id }): queue.EmbedRawEventJobData => ({
+      scope: 'raw_event',
+      rawEventId: id,
+      teamId,
+    })),
+    ...rows.facts.map(({ id, rawEventId }): queue.EmbedFactJobData => ({
+      scope: 'fact',
+      factId: id,
+      rawEventId,
+      teamId,
+    })),
+    ...rows.documentChunks.map(({ id }): queue.EmbedDocChunkJobData => ({
+      scope: 'doc_chunk',
+      documentChunkId: id,
+      teamId,
+    })),
+    ...rows.meetingChunks.map(({ id }): queue.EmbedMeetingChunkJobData => ({
+      scope: 'meeting_chunk',
+      meetingChunkId: id,
+      teamId,
+    })),
   ];
 }

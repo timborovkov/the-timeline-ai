@@ -588,7 +588,7 @@ async function summarizeTranscript(
     const result = await chat({
       schema: finalizeSchema,
       model: modelId,
-      system:
+      instructions:
         'You are summarising a meeting transcript. Produce a concise title, a concise summary (3-5 sentences), and an array of concrete action items mentioned during the meeting. If no action items are present, return an empty array. Do NOT invent owners — only set "owner" when the transcript clearly attributes the task to a named person.',
       prompt: transcriptPrompt,
     });

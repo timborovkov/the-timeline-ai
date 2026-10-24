@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  RESTRICTED_SENTRY_DATA_COLLECTION,
   redactTelegramBotTokenInUrl,
   sanitizeRequestUrl,
   scrubSentryBreadcrumb,
@@ -104,6 +105,24 @@ describe('Sentry scrubber', () => {
       to: '/verify-email/[redacted]',
       href: 'https://storage.timeline.test/team/private-document.pdf',
       method: 'GET',
+    });
+  });
+
+  it('restricts Sentry 11 dataCollection to the v10 sendDefaultPii:false shape', () => {
+    expect(RESTRICTED_SENTRY_DATA_COLLECTION).toEqual({
+      userInfo: false,
+      cookies: false,
+      httpHeaders: {
+        request: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+        response: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      },
+      httpBodies: [],
+      urlQueryParams: { deny: ['forwarded', '-ip', 'remote-', 'via', '-user'] },
+      genAI: { inputs: false, outputs: false },
+      databaseQueryData: false,
+      graphQL: { document: false, variables: false },
+      queues: false,
+      stackFrameVariables: false,
     });
   });
 });

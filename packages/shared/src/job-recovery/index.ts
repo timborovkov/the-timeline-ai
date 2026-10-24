@@ -580,7 +580,7 @@ async function upsertDismissals(
       createdAt,
     },
     ...(updateOnlyIfCreatedBefore
-      ? { where: lt(jobRecoveryDismissals.createdAt, updateOnlyIfCreatedBefore) }
+      ? { setWhere: lt(jobRecoveryDismissals.createdAt, updateOnlyIfCreatedBefore) }
       : {}),
   });
 }
@@ -1652,8 +1652,6 @@ async function assertArtifactVisible(
     if (!rows[0]) throw new Error('not_found');
     return;
   }
-  const artifactKind: 'calendar_event' = parsed.artifactKind;
-  void artifactKind;
   const needsTeamVisibility = parsed.kind === 'embedding';
   if (
     !(await visibleCalendarLabelById(db, teamId, userId, parsed.artifactId, needsTeamVisibility))

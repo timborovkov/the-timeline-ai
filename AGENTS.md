@@ -146,6 +146,11 @@ Treat this file as an operating contract for agents, not a loose README.
   `scope.reconciliation`, `scope.audit`, `scope.conversations`) rather than flat scope methods or
   manually passing `db` into object helpers. Every Qdrant query filters on
   `team_id` via the wrapper. Do not bypass these — even in "internal" tools.
+- **Production Qdrant storage copies require maintenance safeguards.** Follow
+  [the production copy runbook](docs/setup/openrouter.html#qdrant-production-copy):
+  stop every vector writer, require the operator-only production acknowledgement,
+  complete a source snapshot, and verify all teams plus total point coverage before
+  switching collections. Retain the original collection and backup for rollback.
 - **Captured raw event content is immutable.** Never `UPDATE` a source-ingested
   `raw_events` row's content. Derived facts can be re-extracted; the source is
   the source. Calendar raw-event rows are derived schedule mirrors and may

@@ -7,7 +7,7 @@ import {
   OPENROUTER_DISABLE_CACHE_HEADERS,
   OPENROUTER_OFFICIAL_BASE_URL,
 } from '#src/llm/privacy.js';
-import { experimental_transcribe as tracedTranscribe } from '#src/llm/tracing.js';
+import { transcribe as tracedTranscribe } from '#src/llm/tracing.js';
 
 export interface TranscribeInput {
   /** Raw audio bytes. OpenRouter STT accepts JSON with base64 audio data and a format hint. */

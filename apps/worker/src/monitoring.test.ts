@@ -1,3 +1,4 @@
+import { RESTRICTED_SENTRY_DATA_COLLECTION } from '@timeline/shared/monitoring/sentry-scrub';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const init = vi.fn();
@@ -80,7 +81,11 @@ describe('worker Sentry monitoring', () => {
     monitoring.captureWorkerException(new Error('boom'), { jobName: 'meeting-finalize' });
     await expect(monitoring.flushWorkerSentry()).resolves.toBe(true);
 
-    expect(init).toHaveBeenCalledWith(expect.objectContaining({ sendDefaultPii: false }));
+    expect(init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
+      }),
+    );
     expect(setTag).toHaveBeenCalledWith('component', 'worker');
     expect(setScopeTag).toHaveBeenCalledWith('jobName', 'meeting-finalize');
     expect(captureException).toHaveBeenCalledOnce();

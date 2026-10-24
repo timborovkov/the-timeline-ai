@@ -246,6 +246,19 @@ describe('OnboardingChecklist', () => {
     expect(window.location.hash).toBe('#capture');
   });
 
+  it('links the email forwarding step to the Home team email section', () => {
+    renderChecklist({
+      dismissed: false,
+      items: [
+        { key: 'email_forwarding', label: 'Forward email into the timeline', completed: false },
+      ],
+    });
+
+    expect(screen.getByRole('link', { name: 'View team email' }).getAttribute('href')).toBe(
+      '/app#team-email',
+    );
+  });
+
   it('moves focus to the surviving dismiss control after completing the final step', () => {
     const { mutateChecklist, view } = renderChecklist({
       dismissed: false,

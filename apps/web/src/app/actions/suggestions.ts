@@ -140,6 +140,11 @@ export async function reviseSuggestionItemAction(input: unknown): Promise<Action
         error: publicActionError(err, {
           operation: 'revise_suggestion_item',
           fallback: 'Failed to update proposal.',
+          expected: {
+            TIMELINE_PROPOSAL_REVISION_CONFLICT: {
+              message: 'Proposal changed while it was being revised. Try again.',
+            },
+          },
         }),
       };
     }

@@ -18,7 +18,9 @@ beforeEach(() => {
     ...ENV_BACKUP,
     AUTH_SECRET: 'a'.repeat(32),
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
+    NODE_ENV: 'test',
   };
+  delete process.env.LANGSMITH_PROJECT;
   resetEnvForTests();
 });
 
@@ -102,8 +104,8 @@ describe('llm LangSmith tracing', () => {
               filename: 'contract.pdf',
             },
             {
-              type: 'image',
-              image: Buffer.from([0xff, 0xd8, 0xff]),
+              type: 'file',
+              data: Buffer.from([0xff, 0xd8, 0xff]),
               mediaType: 'image/jpeg',
             },
           ],
@@ -120,9 +122,9 @@ describe('llm LangSmith tracing', () => {
       data: { redacted: true, kind: 'buffer', bytes: 8 },
     });
     expect(message?.content[2]).toEqual({
-      type: 'image',
+      type: 'file',
       mediaType: 'image/jpeg',
-      image: { redacted: true, kind: 'buffer', bytes: 3 },
+      data: { redacted: true, kind: 'buffer', bytes: 3 },
     });
     expect(JSON.stringify(inputs)).not.toContain('%PDF-1.4');
   });

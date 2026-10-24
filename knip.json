@@ -13,9 +13,8 @@
         "scripts/*.{ts,mjs}",
         "postcss.config.{js,mjs,cjs,ts}"
       ],
-      "project": ["src/**/*.{ts,tsx}"],
-      "ignore": ["src/components/ui/**"],
-      "ignoreDependencies": ["tailwindcss"]
+      "project": ["src/**/*.{ts,tsx,css}"],
+      "ignore": ["src/components/ui/**"]
     },
     "apps/worker": {
       "entry": [
