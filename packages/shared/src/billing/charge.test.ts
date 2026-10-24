@@ -6,6 +6,7 @@ import {
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
+  polarCatalogUnitsForInvoiceCents,
   polarInvoiceNativeUnits,
   polarIngestDisposition,
   polarMemberMonthUnits,
@@ -15,6 +16,7 @@ import {
   splitDiscountAndWallet,
   splitDurationNativeUnitsByUtcMonth,
 } from '#src/billing/charge.js';
+import { applyMeteredDiscountCents } from '#src/billing/operator.js';
 import {
   allFreeAllowancesExhausted,
   costBearingPausedFromAccount,
@@ -217,6 +219,27 @@ describe('shouldIngestPolarMeteredUsage', () => {
   });
 });
 
+describe('polar catalog units and cumulative discounts', () => {
+  it('turns one invoiced cent into the fractional units that price it', () => {
+    expect(polarCatalogUnitsForInvoiceCents('email_units', 1)).toBe(4);
+    expect(polarCatalogUnitsForInvoiceCents('accepted_sources', 1)).toBe(20);
+    expect(polarCatalogUnitsForInvoiceCents('ai', 40)).toBe(40);
+    expect(polarCatalogUnitsForInvoiceCents('email_units', 0)).toBe(0);
+  });
+
+  it('keeps a 50% discount when each settlement is only one cent', () => {
+    let charged = 0;
+    for (let next = 1; next <= 100; next += 1) {
+      charged += Math.max(
+        0,
+        applyMeteredDiscountCents(next, 50) - applyMeteredDiscountCents(next - 1, 50),
+      );
+    }
+    expect(charged).toBe(50);
+    expect(applyMeteredDiscountCents(1, 50)).toBe(1);
+  });
+});
+
 describe('polar subscription price guard', () => {
   const products = {
     payg: 'prod_payg',
@@ -224,6 +247,14 @@ describe('polar subscription price guard', () => {
     business: 'prod_business',
     enterprise: 'prod_enterprise',
   };
+  const pricedEventNames = [
+    'timeline_ai_eur_cents',
+    'timeline_recall_minutes',
+    'timeline_email_units',
+    'timeline_storage_gb_month',
+    'timeline_accepted_sources',
+    'timeline_extra_member_days',
+  ];
 
   it('ingests only when the active subscription product prices the meter', () => {
     expect(
@@ -234,6 +265,7 @@ describe('polar subscription price guard', () => {
         polarProductId: 'prod_team',
         eventName: 'timeline_ai_eur_cents',
         products,
+        pricedEventNames,
       }),
     ).toBe(true);
     expect(
@@ -244,6 +276,7 @@ describe('polar subscription price guard', () => {
         polarProductId: 'prod_team',
         eventName: 'timeline_extra_member_days',
         products,
+        pricedEventNames,
       }),
     ).toBe(true);
     expect(
@@ -254,6 +287,7 @@ describe('polar subscription price guard', () => {
         polarProductId: 'prod_enterprise',
         eventName: 'timeline_recall_minutes',
         products,
+        pricedEventNames,
       }),
     ).toBe(true);
     expect(
@@ -264,8 +298,34 @@ describe('polar subscription price guard', () => {
         polarProductId: 'prod_enterprise',
         eventName: 'timeline_extra_member_days',
         products,
+        pricedEventNames,
       }),
     ).toBe(true);
+  });
+
+  it('does not treat a matching product id as a priced meter', () => {
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_ai_eur_cents',
+        products,
+        pricedEventNames: ['timeline_extra_member_days'],
+      }),
+    ).toBe(false);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_ai_eur_cents',
+        products,
+        pricedEventNames: null,
+      }),
+    ).toBe(false);
   });
 
   it('holds a payable charge when the subscription price does not match', () => {
@@ -304,6 +364,7 @@ describe('polar subscription price guard', () => {
         polarProductId: row.productId,
         eventName: 'timeline_ai_eur_cents',
         products: 'products' in row ? row.products : products,
+        pricedEventNames,
       });
       expect(covers, row.planId).toBe(false);
       expect(

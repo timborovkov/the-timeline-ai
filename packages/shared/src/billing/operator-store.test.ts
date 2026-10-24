@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BillingOperatorError,
   assignCompedPlan,
+  clearCompedPlan,
   setOperatorSpendCap,
   setTeamPolarDiscount,
   setTeamPriceOverride,
@@ -273,11 +274,11 @@ describe('billing operator store', () => {
       .select()
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
-    expect(prepared?.planId).toBe('enterprise');
-    expect(prepared?.billingState).toBe('enterprise_active');
+    expect(prepared?.planId).toBe('free');
+    expect(prepared?.billingState).toBe('free');
     expect(prepared?.polarSubscriptionId).toBeNull();
-    expect(prepared?.priceOverrideExpiresAt).toBeNull();
-    expect(prepared?.priceOverride).toMatchObject({
+    expect(prepared?.priceOverride).toBeNull();
+    expect(prepared?.pendingEnterpriseTerms).toMatchObject({
       platformFeeCents: 150_000,
       includedActiveMembers: 40,
       additionalMemberCents: 300,
@@ -377,9 +378,127 @@ describe('billing operator store', () => {
       .select()
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
-    expect(replaced?.planId).toBe('enterprise');
-    expect(replaced?.billingState).toBe('enterprise_active');
-    expect(replaced?.polarSubscriptionId).toBeNull();
-    expect(replaced?.polarProductId).toBeNull();
+    expect(replaced?.planId).toBe('team');
+    expect(replaced?.billingState).toBe('canceled');
+    expect(replaced?.polarSubscriptionId).toBe('sub_old');
+    expect(replaced?.polarProductId).toBe('prod_team');
+    expect(replaced?.pendingEnterpriseTerms).toMatchObject({ platformFeeCents: 100 });
+  });
+
+  it('rejects a platform fee override that Polar would not charge', async () => {
+    await expect(
+      setTeamPriceOverride({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        override: { platformFeeCents: 100 },
+        expiresAt: null,
+      }),
+    ).rejects.toThrow(/Enterprise checkout/);
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.priceOverride ?? null).toBeNull();
+  });
+
+  it('does not copy an expired override into Enterprise checkout', async () => {
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, price_override, price_override_expires_at
+      ) VALUES (
+        '${TEAM_ID}', 'team', 'team_active',
+        '{"includedActiveMembers":4,"meteredDiscountPercent":80,"additionalMemberCents":900}'::jsonb,
+        '2020-01-01T00:00:00Z'
+      );
+    `);
+    const provider = createFakeBillingProvider();
+    await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 250_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider,
+    });
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.planId).toBe('team');
+    expect(account?.priceOverrideExpiresAt?.toISOString()).toBe('2020-01-01T00:00:00.000Z');
+    expect(account?.pendingEnterpriseTerms).toEqual({ platformFeeCents: 250_000 });
+  });
+
+  it('clears a comp to restricted Free when the workspace has no grant and a subscription remains', async () => {
+    await assignCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'team',
+      spendCapCents: 2_500,
+      reason: 'internal',
+      expiresAt: null,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET polar_subscription_id = 'sub_left'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await expect(
+      clearCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+      }),
+    ).rejects.toThrow(/Revoke the Polar subscription/);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET polar_subscription_id = NULL
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await clearCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+    });
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.arrangement).toBe('standard');
+    expect(account?.planId).toBe('free');
+    expect(account?.billingState).toBe('restricted');
+    expect(account?.spendCapCents).toBe(0);
+  });
+
+  it('restores unrestricted Free when the cleared comp still holds the grant', async () => {
+    await assignCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      entitlementsPlanId: 'business',
+      spendCapCents: 4_000,
+      reason: 'internal',
+      expiresAt: null,
+    });
+    await pg.exec(`
+      INSERT INTO billing_free_grants (user_id, assigned_team_id)
+      VALUES ('${OWNER_ID}', '${TEAM_ID}');
+    `);
+    await clearCompedPlan({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+    });
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.billingState).toBe('free');
+    expect(account?.planId).toBe('free');
   });
 });

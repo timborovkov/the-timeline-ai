@@ -162,7 +162,12 @@ credit hides margin and confuses prospects.
    fractional cents on `nativeUnits` and round the cumulative delta, so
    sub-cent embeddings still consume the Free/PAYG floor. Email, accepted-source,
    and storage settlements recompute the same cumulative delta under the account
-   lock. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
+   lock. A percentage discount rounds that cumulative total, not each one-cent
+   delta. Polar ingest converts the resulting invoice cents at the catalog unit
+   price, so earlier sub-cent usage is included in the units. A product id match
+   does not prove the meter is priced; a missing price holds the ledger and alerts.
+   Enterprise checkout stores pending terms. The paid subscription webhook
+   activates them. Platform-fee overrides are not applied to fixed Polar products. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
    and sends a stable Polar event `id` so settle and the janitor cannot
    double-ingest; a failed ingest returns the row to `pending`. `order.paid`
    does not credit a local balance. Credentials signup keeps the

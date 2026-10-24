@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import { assertPriceOverride, type PendingEnterpriseTerms } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { childLogger } from '#src/logger.js';
 
@@ -203,6 +204,21 @@ async function lockBillingAccount(db: Db, teamId: string) {
   return row;
 }
 
+function enterpriseOverrideFromPending(pending: PendingEnterpriseTerms) {
+  return assertPriceOverride({
+    platformFeeCents: pending.platformFeeCents,
+    ...(pending.includedActiveMembers !== undefined
+      ? { includedActiveMembers: pending.includedActiveMembers }
+      : {}),
+    ...(pending.additionalMemberCents !== undefined
+      ? { additionalMemberCents: pending.additionalMemberCents }
+      : {}),
+    ...(pending.meteredDiscountPercent !== undefined
+      ? { meteredDiscountPercent: pending.meteredDiscountPercent }
+      : {}),
+  });
+}
+
 async function upsertPaidSubscription(input: {
   db: Db;
   teamId: string;
@@ -229,6 +245,8 @@ async function upsertPaidSubscription(input: {
     ) {
       return { applied: false };
     }
+    const pending = input.plan === 'enterprise' ? (existing?.pendingEnterpriseTerms ?? null) : null;
+    const activatedOverride = pending ? enterpriseOverrideFromPending(pending) : null;
     const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const resetDiscount = shouldResetIncludedDiscount({
       existing,
@@ -271,10 +289,19 @@ async function upsertPaidSubscription(input: {
           periodStartedAt,
           ...(periodEndsAt ? { periodEndsAt } : {}),
           ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
-          spendCapCents: spendCapCentsForPaidActivation({
-            existing,
-            plan: input.plan,
-          }),
+          spendCapCents:
+            pending?.spendCapCents ??
+            spendCapCentsForPaidActivation({
+              existing,
+              plan: input.plan,
+            }),
+          ...(activatedOverride
+            ? {
+                priceOverride: activatedOverride,
+                priceOverrideExpiresAt: null,
+                pendingEnterpriseTerms: null,
+              }
+            : {}),
           polarEventModifiedAt: polarEventModifiedAtValue,
           updatedAt: now,
         },

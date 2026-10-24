@@ -148,6 +148,75 @@ export function cumulativeChargeDeltaCents(input: {
   return Math.max(0, next - previous);
 }
 
+/**
+ * Cumulative customer charge before a percentage discount. PAYG subtracts the
+ * Free floor from the running total. Member-days use the commercial price.
+ * Discount the two cumulatives and settle the difference so a 1¢ delta is not
+ * rounded back up to 1¢ on every call.
+ */
+export function cumulativeBillableChargeCents(input: {
+  planId: BillingPlanId;
+  meterId: BillingMeterId;
+  nativeUnits: number;
+  centsPerMemberMonth: number;
+  daysInMonth: number;
+}): number {
+  if (input.meterId === 'member_days') {
+    return memberDaysChargeCents({
+      extraMemberDays: input.nativeUnits,
+      centsPerMemberMonth: input.centsPerMemberMonth,
+      daysInMonth: input.daysInMonth,
+    });
+  }
+  const nativeUnits = Math.max(0, input.nativeUnits);
+  if (input.planId !== 'payg') return listChargeCentsForMeter(input.meterId, nativeUnits);
+  const allowance = freeAllowanceConsumedForMeter(input.meterId, {});
+  if (!allowance) return listChargeCentsForMeter(input.meterId, nativeUnits);
+  if (allowance.unit === 'cents') {
+    return Math.max(0, listChargeCentsForMeter(input.meterId, nativeUnits) - allowance.limit);
+  }
+  const overageUnits = Math.max(0, nativeUnits - allowance.limit);
+  if (overageUnits <= 0) return 0;
+  return listChargeCentsForMeter(input.meterId, overageUnits);
+}
+
+/** Catalog price as integer cents per `units`, so sub-cent meters do not use floats. */
+function catalogUnitPrice(meterId: BillingMeterId): { cents: number; units: number } {
+  switch (meterId) {
+    case 'ai':
+      return { cents: 1, units: 1 };
+    case 'recall_minutes':
+      return { cents: OVERAGE_RATES.recallCentsPerMinute, units: 1 };
+    case 'email_units':
+      return { cents: OVERAGE_RATES.emailCentsPerThousandUnits, units: 1000 };
+    case 'storage_gb_month':
+      return { cents: OVERAGE_RATES.storageCentsPerGbMonth, units: 1 };
+    case 'accepted_sources':
+      return { cents: OVERAGE_RATES.acceptedSourcesCentsPerThousand, units: 1000 };
+    case 'member_days':
+      return { cents: OVERAGE_RATES.additionalMemberCentsPerMonth, units: 1 };
+  }
+}
+
+/**
+ * Native units whose catalog meter price equals `invoiceCents`.
+ * One local cent of email is four €0.0025 units, and one cent of accepted
+ * sources is twenty €0.0005 units, including usage from earlier sub-cent
+ * settlements that were not ingested on their own.
+ */
+export function polarCatalogUnitsForInvoiceCents(
+  meterId: BillingMeterId,
+  invoiceCents: number,
+): number {
+  if (meterId === 'member_days') return polarMemberMonthUnits(invoiceCents);
+  if (!Number.isFinite(invoiceCents) || invoiceCents <= 0) return 0;
+  const price = catalogUnitPrice(meterId);
+  if (price.cents <= 0 || price.units <= 0) return 0;
+  const micros = Math.floor((invoiceCents * POLAR_INVOICE_UNIT_MICROS * price.units) / price.cents);
+  if (!Number.isFinite(micros) || micros <= 0) return 0;
+  return micros / POLAR_INVOICE_UNIT_MICROS;
+}
+
 export function metadataNonNegativeInteger(
   metadata: Record<string, unknown> | null | undefined,
   key: string,
@@ -324,8 +393,9 @@ function configuredPolarProductId(
 
 /**
  * True when this plan's configured Polar product is the subscription product
- * and that product carries the metered price for the event. Free, canceled,
- * and an unset product id do not cover the meter.
+ * and that product's priced-event list includes the meter. A matching product
+ * id is not proof the meter has a price. `pricedEventNames` null means the
+ * catalog could not be read, which does not cover the meter.
  */
 export function polarSubscriptionCoversMeter(input: {
   planId: string;
@@ -334,13 +404,15 @@ export function polarSubscriptionCoversMeter(input: {
   polarProductId: string | null | undefined;
   eventName: string | null | undefined;
   products: PolarPlanProductIds;
+  pricedEventNames: readonly string[] | null;
 }): boolean {
   if (!input.polarSubscriptionId || !input.polarProductId || !input.eventName) return false;
   if (!POLAR_SUBSCRIPTION_PRICE_STATES.has(input.billingState)) return false;
   if (!billingMeterIdForPolarEvent(input.eventName)) return false;
   const expected = configuredPolarProductId(input.planId, input.products);
-  if (!expected) return false;
-  return input.polarProductId === expected;
+  if (!expected || input.polarProductId !== expected) return false;
+  if (!input.pricedEventNames) return false;
+  return input.pricedEventNames.includes(input.eventName);
 }
 
 export type PolarIngestDisposition = 'ingest' | 'hold' | 'not_required';

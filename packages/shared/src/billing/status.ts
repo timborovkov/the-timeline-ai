@@ -107,6 +107,28 @@ export function freeAllowanceRemaining(meters: {
   };
 }
 
+const EXHAUSTED_FREE_ALLOWANCE_LABELS = [
+  ['aiChargeCents', 'AI'],
+  ['recallMinutes', 'Meeting'],
+  ['emailUnits', 'Email'],
+  ['storageGb', 'Storage'],
+  ['acceptedSources', 'Source'],
+] as const satisfies readonly (readonly [keyof FreeAllowanceRemaining, string])[];
+
+/**
+ * Names the Free meters that are already exhausted. Empty when every allowance
+ * still has room. The workspace pause flag stays false until all five are gone.
+ */
+export function exhaustedFreeAllowanceNotice(remaining: FreeAllowanceRemaining): string | null {
+  const names = EXHAUSTED_FREE_ALLOWANCE_LABELS.filter(([key]) => remaining[key] <= 0).map(
+    ([, label]) => label,
+  );
+  if (names.length === 0) return null;
+  if (names.length === 1) return `${names[0]} allowance used up.`;
+  const last = names[names.length - 1];
+  return `${names.slice(0, -1).join(', ')} and ${last} allowances used up.`;
+}
+
 /** True only when every Free native floor is gone — not a single exhausted meter. */
 export function allFreeAllowancesExhausted(remaining: FreeAllowanceRemaining): boolean {
   return (

@@ -7,6 +7,7 @@ import type {
   UpdateSubscriptionInput,
 } from '#src/billing/provider.js';
 
+import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/polar-setup.js';
 import { getEnv } from '#src/env.js';
 
 export type PolarServer = 'sandbox' | 'production';
@@ -149,6 +150,34 @@ export function createPolarBillingProvider(options?: {
       if (!res.ok) {
         throw new Error(`Polar event ingest failed: ${res.status}`);
       }
+    },
+
+    async listPricedEventNames(productId: string) {
+      const productRes = await polarFetch(`/products/${encodeURIComponent(productId)}`);
+      if (!productRes.ok) return null;
+      const product = (await productRes.json()) as {
+        prices?: { meter_id?: string | null; is_archived?: boolean }[];
+      };
+      const pricedMeterIds = new Set(
+        (product.prices ?? []).flatMap((price) =>
+          price.meter_id && price.is_archived !== true ? [price.meter_id] : [],
+        ),
+      );
+      if (pricedMeterIds.size === 0) return [];
+      const metersRes = await polarFetch('/meters/?limit=100');
+      if (!metersRes.ok) return null;
+      const meters = (await metersRes.json()) as {
+        items?: { id?: string; filter?: { clauses?: { value?: string }[] } }[];
+      };
+      const wanted = new Set<string>(TIMELINE_METERED_EVENT_NAMES);
+      const events: string[] = [];
+      for (const meter of meters.items ?? []) {
+        if (!meter.id || !pricedMeterIds.has(meter.id)) continue;
+        const value = meter.filter?.clauses?.[0]?.value;
+        if (!value || !wanted.has(value) || events.includes(value)) continue;
+        events.push(value);
+      }
+      return events;
     },
   };
 }

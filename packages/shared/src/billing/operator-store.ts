@@ -1,4 +1,5 @@
 import {
+  billingFreeGrants,
   billingOperatorAudit,
   billingUnbilledAlerts,
   teamBillingAccounts,
@@ -18,6 +19,7 @@ import {
 } from '#src/billing/catalog.js';
 import {
   activePolarDiscountId,
+  activePriceOverride,
   assertFutureExpiry,
   assertPriceOverride,
   billingOperatorSnapshot,
@@ -25,6 +27,7 @@ import {
   isPlatformAdminEmail,
   polarCheckoutUrl,
   type BillingOperatorSnapshot,
+  type PendingEnterpriseTerms,
   type TeamPriceOverride,
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
@@ -35,6 +38,19 @@ export class BillingOperatorError extends Error {
     super(message);
     this.name = 'BillingOperatorError';
   }
+}
+
+const FROM_BILLING_OPERATOR_SCOPE = Symbol('billing-operator-scope');
+
+function isOperatorScopeReentry(input: object): boolean {
+  return Boolean(
+    (input as { [FROM_BILLING_OPERATOR_SCOPE]?: boolean })[FROM_BILLING_OPERATOR_SCOPE],
+  );
+}
+
+async function loadBillingOperator(db: Db, actor: BillingOperatorActor, teamId: string) {
+  const { withTeam } = await import('#src/team-scope.js');
+  return withTeam(db, teamId, actor.userId, { skipMembershipCheck: true }).billingOperator;
 }
 
 export interface BillingOperatorActor {
@@ -133,6 +149,9 @@ export async function assignCompedPlan(input: {
   /** Revoke the current Polar subscription after the comp is committed. */
   cancelPolarSubscription?: (subscriptionId: string) => Promise<void>;
 }): Promise<void> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).assignCompedPlan(input);
+  }
   const reason = input.reason.trim();
   if (reason.length < 3) throw new BillingOperatorError('A comp reason is required.');
   if (!Number.isInteger(input.spendCapCents) || input.spendCapCents < 0) {
@@ -202,6 +221,9 @@ export async function clearCompedPlan(input: {
   teamId: string;
   now?: Date;
 }): Promise<void> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).clearCompedPlan(input);
+  }
   const now = input.now ?? new Date();
   await input.db.transaction(async (tx) => {
     const db = tx as unknown as Db;
@@ -210,13 +232,30 @@ export async function clearCompedPlan(input: {
     if (existing.arrangement !== 'comped') {
       throw new BillingOperatorError('This team is not on a comped plan.');
     }
+    if (existing.polarSubscriptionId) {
+      throw new BillingOperatorError(
+        'Revoke the Polar subscription before clearing this comp. The comp stays in place until that subscription is gone.',
+      );
+    }
+    const [grant] = await db
+      .select({ id: billingFreeGrants.id })
+      .from(billingFreeGrants)
+      .where(
+        and(
+          eq(billingFreeGrants.assignedTeamId, input.teamId),
+          isNull(billingFreeGrants.revokedAt),
+        ),
+      )
+      .limit(1);
+    const unrestricted = Boolean(grant);
     const before = billingOperatorSnapshot(existing);
     const [updated] = await db
       .update(teamBillingAccounts)
       .set({
         arrangement: 'standard',
         planId: 'free',
-        billingState: 'free',
+        billingState: unrestricted ? 'free' : 'restricted',
+        spendCapCents: unrestricted ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
         compReason: null,
         compExpiresAt: null,
         updatedAt: now,
@@ -244,7 +283,17 @@ export async function setTeamPriceOverride(input: {
   expiresAt: Date | null;
   now?: Date;
 }): Promise<void> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).setTeamPriceOverride(
+      input,
+    );
+  }
   const override = assertPriceOverride(input.override);
+  if (override.platformFeeCents !== undefined) {
+    throw new BillingOperatorError(
+      'Platform fee changes go through Enterprise checkout so Polar charges the same fee.',
+    );
+  }
   const now = input.now ?? new Date();
   assertFutureExpiry(input.expiresAt, now);
   await input.db.transaction(async (tx) => {
@@ -279,6 +328,11 @@ export async function clearTeamPriceOverride(input: {
   teamId: string;
   now?: Date;
 }): Promise<void> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).clearTeamPriceOverride(
+      input,
+    );
+  }
   const now = input.now ?? new Date();
   await input.db.transaction(async (tx) => {
     const db = tx as unknown as Db;
@@ -314,6 +368,11 @@ export async function setTeamPolarDiscount(input: {
   expiresAt: Date | null;
   now?: Date;
 }): Promise<void> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).setTeamPolarDiscount(
+      input,
+    );
+  }
   const polarDiscountId = input.polarDiscountId.trim();
   if (!/^[A-Za-z0-9_-]{1,128}$/u.test(polarDiscountId)) {
     throw new BillingOperatorError('Polar discount id must be letters, numbers, _ or -.');
@@ -352,6 +411,11 @@ export async function clearTeamPolarDiscount(input: {
   teamId: string;
   now?: Date;
 }): Promise<void> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).clearTeamPolarDiscount(
+      input,
+    );
+  }
   const now = input.now ?? new Date();
   await input.db.transaction(async (tx) => {
     const db = tx as unknown as Db;
@@ -386,6 +450,11 @@ export async function setOperatorSpendCap(input: {
   spendCapCents: number;
   now?: Date;
 }): Promise<void> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).setOperatorSpendCap(
+      input,
+    );
+  }
   if (!Number.isInteger(input.spendCapCents) || input.spendCapCents < 0) {
     throw new BillingOperatorError('Spend cap must be a non-negative integer number of cents.');
   }
@@ -457,6 +526,11 @@ export async function listBillingOperatorAudit(input: {
     createdAt: Date;
   }[]
 > {
+  if (!isOperatorScopeReentry(input)) {
+    return (
+      await loadBillingOperator(input.db, input.actor, input.teamId)
+    ).listBillingOperatorAudit(input);
+  }
   await requirePlatformAdmin(input.db, input.actor);
   const rows = await input.db
     .select()
@@ -490,6 +564,11 @@ export async function startEnterpriseCheckout(input: {
   provider: BillingProvider;
   now?: Date;
 }): Promise<{ url: string }> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).startEnterpriseCheckout(
+      input,
+    );
+  }
   if (!input.productId.trim()) {
     throw new BillingOperatorError('POLAR_PRODUCT_ID_ENTERPRISE is not configured.');
   }
@@ -550,30 +629,24 @@ export async function startEnterpriseCheckout(input: {
       );
     }
     const merged = assertPriceOverride({
-      ...(existing.priceOverride ?? {}),
+      ...(activePriceOverride(existing, now) ?? {}),
       ...override,
     });
+    const pendingEnterpriseTerms: PendingEnterpriseTerms = {
+      ...merged,
+      platformFeeCents: merged.platformFeeCents ?? input.platformFeeCents,
+      ...(input.spendCapCents !== undefined ? { spendCapCents: input.spendCapCents } : {}),
+    };
     const before = billingOperatorSnapshot(existing);
     const [updated] = await db
       .update(teamBillingAccounts)
       .set({
-        planId: 'enterprise',
-        billingState: 'enterprise_active',
-        priceOverride: merged,
-        priceOverrideExpiresAt: null,
-        // A canceled subscription id must not stay on the row. A late cancel
-        // webhook would match it and wipe Enterprise, and the new subscription
-        // webhook would look like a stale older subscription.
-        ...(existing.polarSubscriptionId
-          ? { polarSubscriptionId: null, polarProductId: null }
-          : {}),
-        ...(input.spendCapCents !== undefined ? { spendCapCents: input.spendCapCents } : {}),
+        pendingEnterpriseTerms,
         updatedAt: now,
       })
       .where(eq(teamBillingAccounts.teamId, input.teamId))
       .returning();
     if (!updated) throw new BillingOperatorError('Failed to save the Enterprise terms.');
-    await recordBillingPlan(db, input.teamId, 'enterprise', now);
     await writeAudit({
       tx: db,
       teamId: input.teamId,
@@ -617,7 +690,7 @@ export async function startEnterpriseCheckout(input: {
 export async function listOpenUnbilledAlerts(input: {
   db: Db;
   actor: BillingOperatorActor;
-  teamId?: string;
+  teamId: string;
   limit?: number;
 }): Promise<
   {
@@ -630,6 +703,11 @@ export async function listOpenUnbilledAlerts(input: {
     createdAt: Date;
   }[]
 > {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).listOpenUnbilledAlerts(
+      input,
+    );
+  }
   await requirePlatformAdmin(input.db, input.actor);
   const rows = await input.db
     .select({
@@ -643,14 +721,77 @@ export async function listOpenUnbilledAlerts(input: {
     })
     .from(billingUnbilledAlerts)
     .where(
-      and(
-        isNull(billingUnbilledAlerts.resolvedAt),
-        ...(input.teamId ? [eq(billingUnbilledAlerts.teamId, input.teamId)] : []),
-      ),
+      and(isNull(billingUnbilledAlerts.resolvedAt), eq(billingUnbilledAlerts.teamId, input.teamId)),
     )
     .orderBy(desc(billingUnbilledAlerts.createdAt))
     .limit(input.limit ?? 50);
   return rows;
+}
+
+export async function readOperatorBillingAccount(input: {
+  db: Db;
+  actor: BillingOperatorActor;
+  teamId: string;
+}): Promise<typeof teamBillingAccounts.$inferSelect | null> {
+  if (!isOperatorScopeReentry(input)) {
+    return (await loadBillingOperator(input.db, input.actor, input.teamId)).readAccount(input);
+  }
+  await requirePlatformAdmin(input.db, input.actor);
+  const [row] = await input.db
+    .select()
+    .from(teamBillingAccounts)
+    .where(eq(teamBillingAccounts.teamId, input.teamId))
+    .limit(1);
+  return row ?? null;
+}
+
+function scopedOperatorInput<T extends object>(db: Db, teamId: string, input: T): T {
+  return {
+    ...input,
+    db,
+    teamId,
+    [FROM_BILLING_OPERATOR_SCOPE]: true,
+  };
+}
+
+/** Team-scoped operator reads and writes. `teamId` is fixed by `withTeam`. */
+export function createBillingOperatorScope(deps: { db: Db; teamId: string }) {
+  const { db, teamId } = deps;
+  return {
+    assignCompedPlan(input: Parameters<typeof assignCompedPlan>[0]) {
+      return assignCompedPlan(scopedOperatorInput(db, teamId, input));
+    },
+    clearCompedPlan(input: Parameters<typeof clearCompedPlan>[0]) {
+      return clearCompedPlan(scopedOperatorInput(db, teamId, input));
+    },
+    setTeamPriceOverride(input: Parameters<typeof setTeamPriceOverride>[0]) {
+      return setTeamPriceOverride(scopedOperatorInput(db, teamId, input));
+    },
+    clearTeamPriceOverride(input: Parameters<typeof clearTeamPriceOverride>[0]) {
+      return clearTeamPriceOverride(scopedOperatorInput(db, teamId, input));
+    },
+    setTeamPolarDiscount(input: Parameters<typeof setTeamPolarDiscount>[0]) {
+      return setTeamPolarDiscount(scopedOperatorInput(db, teamId, input));
+    },
+    clearTeamPolarDiscount(input: Parameters<typeof clearTeamPolarDiscount>[0]) {
+      return clearTeamPolarDiscount(scopedOperatorInput(db, teamId, input));
+    },
+    setOperatorSpendCap(input: Parameters<typeof setOperatorSpendCap>[0]) {
+      return setOperatorSpendCap(scopedOperatorInput(db, teamId, input));
+    },
+    listBillingOperatorAudit(input: Parameters<typeof listBillingOperatorAudit>[0]) {
+      return listBillingOperatorAudit(scopedOperatorInput(db, teamId, input));
+    },
+    startEnterpriseCheckout(input: Parameters<typeof startEnterpriseCheckout>[0]) {
+      return startEnterpriseCheckout(scopedOperatorInput(db, teamId, input));
+    },
+    listOpenUnbilledAlerts(input: Parameters<typeof listOpenUnbilledAlerts>[0]) {
+      return listOpenUnbilledAlerts(scopedOperatorInput(db, teamId, input));
+    },
+    readAccount(input: Parameters<typeof readOperatorBillingAccount>[0]) {
+      return readOperatorBillingAccount(scopedOperatorInput(db, teamId, input));
+    },
+  };
 }
 
 export async function lookupOperatorActor(db: Db, email: string): Promise<BillingOperatorActor> {

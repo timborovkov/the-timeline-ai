@@ -10,6 +10,12 @@ export interface TeamPriceOverride {
   meteredDiscountPercent?: number;
 }
 
+/** Saved at Enterprise checkout. Applied by the paid subscription webhook. */
+export interface PendingEnterpriseTerms extends TeamPriceOverride {
+  platformFeeCents: number;
+  spendCapCents?: number;
+}
+
 /** Fields an operator change snapshots into the audit log. */
 export interface BillingOperatorSnapshot {
   arrangement: BillingArrangement;
@@ -20,6 +26,7 @@ export interface BillingOperatorSnapshot {
   compExpiresAt: string | null;
   priceOverride: TeamPriceOverride | null;
   priceOverrideExpiresAt: string | null;
+  pendingEnterpriseTerms: PendingEnterpriseTerms | null;
   polarDiscountId: string | null;
   polarDiscountExpiresAt: string | null;
 }
@@ -33,6 +40,7 @@ export interface BillingOperatorAccount {
   compExpiresAt?: Date | null;
   priceOverride?: TeamPriceOverride | null;
   priceOverrideExpiresAt?: Date | null;
+  pendingEnterpriseTerms?: PendingEnterpriseTerms | null;
   polarDiscountId?: string | null;
   polarDiscountExpiresAt?: Date | null;
 }
@@ -238,6 +246,7 @@ export function billingOperatorSnapshot(account: BillingOperatorAccount): Billin
     priceOverrideExpiresAt: account.priceOverrideExpiresAt
       ? account.priceOverrideExpiresAt.toISOString()
       : null,
+    pendingEnterpriseTerms: account.pendingEnterpriseTerms ?? null,
     polarDiscountId: account.polarDiscountId ?? null,
     polarDiscountExpiresAt: account.polarDiscountExpiresAt
       ? account.polarDiscountExpiresAt.toISOString()

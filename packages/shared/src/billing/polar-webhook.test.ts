@@ -282,6 +282,47 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.priceOverride).toMatchObject({ platformFeeCents: 250000 });
   });
 
+  it('activates pending Enterprise terms from the paid subscription webhook', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 2500,
+          pending_enterprise_terms = '{"platformFeeCents":250000,"includedActiveMembers":12,"spendCapCents":80000}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_enterprise',
+          status: 'active',
+          product_id: 'prod_enterprise',
+          customer: { id: 'cus_enterprise', external_id: TEAM_ID },
+        },
+      },
+    });
+    const account = await billing.getAccount();
+    expect(account.planId).toBe('enterprise');
+    expect(account.billingState).toBe('enterprise_active');
+    expect(account.polarSubscriptionId).toBe('sub_enterprise');
+    expect(account.spendCapCents).toBe(80000);
+    expect(account.pendingEnterpriseTerms).toBeNull();
+    expect(account.priceOverride).toEqual({
+      platformFeeCents: 250000,
+      includedActiveMembers: 12,
+    });
+    expect(account.priceOverrideExpiresAt).toBeNull();
+  });
+
   it('does not activate past_due subscriptions and ignores order.paid plan products', async () => {
     await handlePolarWebhookEvent({
       db,

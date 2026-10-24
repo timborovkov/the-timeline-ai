@@ -127,6 +127,17 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
     meteredDiscountPercent?: number;
   } | null>(),
   priceOverrideExpiresAt: timestamp('price_override_expires_at', { withTimezone: true }),
+  /**
+   * Enterprise checkout terms waiting for the first paid subscription.
+   * They do not change plan, entitlements, or the live price override.
+   */
+  pendingEnterpriseTerms: jsonb('pending_enterprise_terms').$type<{
+    platformFeeCents: number;
+    includedActiveMembers?: number;
+    additionalMemberCents?: number;
+    meteredDiscountPercent?: number;
+    spendCapCents?: number;
+  } | null>(),
   polarDiscountId: text('polar_discount_id'),
   polarDiscountExpiresAt: timestamp('polar_discount_expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

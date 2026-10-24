@@ -1,4 +1,8 @@
-import { getTeamCapacityUsage, resolveTeamCommercialTerms } from '@timeline/shared/billing';
+import {
+  exhaustedFreeAllowanceNotice,
+  getTeamCapacityUsage,
+  resolveTeamCommercialTerms,
+} from '@timeline/shared/billing';
 import { withTeam } from '@timeline/shared/team-scope';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
@@ -47,10 +51,13 @@ export default async function UsagePage() {
   const notice = state ? NOTICE_TITLE[state] : null;
 
   if (!canManage) {
+    const meterNotice =
+      planId === 'free' ? exhaustedFreeAllowanceNotice(dashboard.freeRemaining) : null;
+    const memberNotice = meterNotice ?? notice;
     return (
       <div className="space-y-5">
         <PageHeader variant="collection" title="Usage" />
-        {notice ? <BillingStateBanner title={notice} /> : null}
+        {memberNotice ? <BillingStateBanner title={memberNotice} /> : null}
       </div>
     );
   }

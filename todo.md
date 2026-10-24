@@ -575,10 +575,15 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       every Polar retry). Paid-plan changes update the existing Polar subscription.
       Included-discount collection is not ingested. Polar receives the payable
       remainder for PAYG, Team, Business, and Enterprise only when the active
-      subscription product matches the plan. A payable charge with no matching
-      price stays local and opens an operator unbilled-usage alert. Sub-cent rounds stay
-      local. A Team webhook does not downgrade Enterprise. An Enterprise product
-      webhook attaches the subscription. Comped plans are not overwritten.
+      subscription product matches the plan and that product's priced meters include
+      the event. A product id match alone does not prove the meter is priced. A payable
+      charge with no matching price stays local and opens an operator unbilled-usage alert.
+      Sub-cent rounds stay local until they become a cent, and that cent is ingested as the
+      catalog units that price it. Percentage discounts settle from the cumulative total.
+      A Team webhook does not downgrade Enterprise. Enterprise checkout stores pending
+      terms and does not activate the plan. The paid Enterprise subscription webhook
+      applies those terms. Comped plans are not overwritten. Clearing a comp refuses
+      while a Polar subscription id remains, then chooses Free or restricted from the grant.
       Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
       Stale Polar activations are ignored against `polar_event_modified_at`; canceled paid
       plans become restricted unless the team holds the Free grant. `order.paid` does not
@@ -590,9 +595,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       catalog price (custom extra-member price scales the units). Pay as you go,
       Team, Business, and Enterprise carry that metered price. Enterprise is the
       Timeline Enterprise Polar product: a per-team custom platform fee opened by
-      a platform operator, plus the six metered prices. Opening that checkout on a
-      canceled subscription clears the stored Polar subscription id so a late
-      cancel webhook cannot revert the team.
+      a platform operator, plus the six metered prices. Opening that checkout stores
+      pending terms only. It does not grant Enterprise entitlements, clear the current
+      subscription id, or revive an expired price override. The first paid Enterprise
+      webhook activates the terms.
       <code>POLAR_PRODUCT_ID_ENTERPRISE</code> is written by
       <code>pnpm billing:polar-setup</code>. Null included members stay unlimited.
       <code>pnpm billing:polar-setup</code> creates the meter without dropping

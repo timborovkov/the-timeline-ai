@@ -1115,13 +1115,136 @@ describe('billing scope', () => {
     expect(provider.events).toEqual([
       expect.objectContaining({
         name: 'timeline_email_units',
-        units: 1,
+        units: 4,
         externalCustomerId: TEAM_ID,
       }),
     ]);
     const dash = await scope.getDashboard();
     expect(dash.meters.email_units?.nativeUnits).toBe(4);
     expect(dash.meters.email_units?.customerChargeCents).toBe(1);
+  });
+
+  it('invoices half of a stream of one-cent charges when the metered discount is 50%', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active', shadow_billing = true,
+          price_override = '{"meteredDiscountPercent":50}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    for (let i = 0; i < 100; i += 1) {
+      await scope.settle({
+        operationId: `op-half-${String(i)}`,
+        meterId: 'ai',
+        nativeUnits: 1,
+        customerChargeCents: 1,
+      });
+    }
+    const dash = await scope.getDashboard();
+    expect(dash.meters.ai?.customerChargeCents).toBe(50);
+  });
+
+  it('holds a payable meter when the product id matches but the meter is unpriced', async () => {
+    const provider = createFakeBillingProvider();
+    provider.pricedEventNamesByProduct.set(POLAR_PRODUCT_IDS.team, ['timeline_extra_member_days']);
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, polar_customer_id = 'cus_team',
+          polar_subscription_id = 'sub_team', polar_product_id = '${POLAR_PRODUCT_IDS.team}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-unpriced-ai',
+      meterId: 'ai',
+      nativeUnits: 80,
+      customerChargeCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    expect(provider.events).toHaveLength(0);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({
+        polar_ingest_status: 'pending',
+        polar_ingest_block: 'missing_subscription_price',
+      });
+    }
+    const alerts = await pg.query<{ meter_id: string }>(
+      `SELECT meter_id FROM billing_unbilled_alerts
+       WHERE team_id = '${TEAM_ID}' AND resolved_at IS NULL`,
+    );
+    expect(alerts.rows).toEqual([{ meter_id: 'ai' }]);
+  });
+
+  it('does not keep Free allowance usage pending for a later Polar invoice', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'free', billing_state = 'free'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-free-ai',
+      meterId: 'ai',
+      nativeUnits: 20,
+      customerChargeCents: 20,
+    });
+    expect(settled.ok).toBe(true);
+    expect(provider.events).toHaveLength(0);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({ polar_ingest_status: 'not_required' });
+      expect(settled.ledger.metadata).not.toMatchObject({
+        polar_ingest_block: 'missing_subscription_price',
+      });
+    }
+  });
+
+  it('enforces the spend cap on a comped Enterprise workspace', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', shadow_billing = false, plan_id = 'enterprise',
+          billing_state = 'enterprise_active', spend_cap_cents = 0, comp_reason = 'internal'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-comp-enterprise',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(reserved.ok).toBe(false);
+    if (!reserved.ok) expect(reserved.code).toBe('spend_cap_reached');
   });
 
   it('accumulates sub-cent email charges from locked counters', async () => {

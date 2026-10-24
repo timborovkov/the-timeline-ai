@@ -4,6 +4,7 @@ import { FREE_ALLOWANCES, PLAN_CATALOG } from '#src/billing/catalog.js';
 import {
   deriveBillingNudge,
   deriveSidebarBillingSummary,
+  exhaustedFreeAllowanceNotice,
   freeAllowanceRemaining,
   spendCapUtilization,
 } from '#src/billing/status.js';
@@ -15,6 +16,14 @@ describe('billing status', () => {
     expect(spendCapUtilization(1875, 2500).warnLevel).toBe(75);
     expect(spendCapUtilization(2250, 2500).warnLevel).toBe(90);
     expect(spendCapUtilization(2500, 2500).warnLevel).toBe(100);
+  });
+
+  it('names a single exhausted Free meter without waiting for the other four', () => {
+    const remaining = freeAllowanceRemaining({
+      ai: { customerChargeCents: FREE_ALLOWANCES.aiChargeCents },
+    });
+    expect(exhaustedFreeAllowanceNotice(remaining)).toBe('AI allowance used up.');
+    expect(exhaustedFreeAllowanceNotice(freeAllowanceRemaining({}))).toBeNull();
   });
 
   it('derives free remaining from meter counters', () => {

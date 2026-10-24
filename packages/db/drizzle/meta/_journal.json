@@ -568,6 +568,13 @@
       "when": 1795655160000,
       "tag": "0080_billing_replay_corrections",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1795655220000,
+      "tag": "0081_billing_enterprise_pending",
+      "breakpoints": true
     }
   ]
 }

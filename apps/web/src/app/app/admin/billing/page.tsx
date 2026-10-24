@@ -1,12 +1,11 @@
-import { teamBillingAccounts } from '@timeline/db';
 import { isPlatformAdminEmail, polarCheckoutUrl } from '@timeline/shared/billing/operator';
 import {
   findOperatorTeams,
   listBillingOperatorAudit,
   listOpenUnbilledAlerts,
+  readOperatorBillingAccount,
 } from '@timeline/shared/billing/operator-store';
 import { getEnv } from '@timeline/shared/env';
-import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { BillingOperatorTeamPanel } from '@/components/billing-operator-forms';
@@ -35,20 +34,10 @@ export default async function BillingOperatorPage({
     matches.find((team) => team.id === teamQuery || team.slug === teamQuery) ??
     (matches.length === 1 ? matches[0] : null);
   const account = selected
-    ? ((
-        await db
-          .select()
-          .from(teamBillingAccounts)
-          .where(eq(teamBillingAccounts.teamId, selected.id))
-          .limit(1)
-      )[0] ?? null)
+    ? await readOperatorBillingAccount({ db, actor, teamId: selected.id })
     : null;
   const audit = selected ? await listBillingOperatorAudit({ db, actor, teamId: selected.id }) : [];
-  const unbilled = await listOpenUnbilledAlerts({
-    db,
-    actor,
-    ...(selected ? { teamId: selected.id } : {}),
-  });
+  const unbilled = selected ? await listOpenUnbilledAlerts({ db, actor, teamId: selected.id }) : [];
   const checkoutHref = polarCheckoutUrl(query.checkout ?? '');
 
   return (
