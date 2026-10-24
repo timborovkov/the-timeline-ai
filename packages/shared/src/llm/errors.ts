@@ -1,3 +1,5 @@
+import { isBillingAdmissionError } from '#src/billing/errors.js';
+
 export interface TimelineAiErrorMetadata {
   operation: string;
   model: string;
@@ -35,6 +37,7 @@ export function wrapAiFailure<T>(
   return Promise.resolve()
     .then(fn)
     .catch((err: unknown) => {
+      if (isBillingAdmissionError(err)) throw err;
       throw toTimelineAiError(metadata, err);
     });
 }

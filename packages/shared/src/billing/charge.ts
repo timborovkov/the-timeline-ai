@@ -507,9 +507,33 @@ export function settlementSegmentsForMeter(input: {
   return [{ periodYm: periodYmUtc(input.startedAt), nativeUnits: Math.max(0, input.nativeUnits) }];
 }
 
+function utcMonthIndex(date: Date): number {
+  return date.getUTCFullYear() * 12 + date.getUTCMonth();
+}
+
+/** Keep the subscription anchor day. Shorter months clamp, then later months restore it. */
+function addUtcMonths(anchor: Date, months: number, anchorDay: number): Date {
+  const monthIndex = anchor.getUTCMonth() + months;
+  const year = anchor.getUTCFullYear() + Math.floor(monthIndex / 12);
+  const month = ((monthIndex % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(
+    Date.UTC(
+      year,
+      month,
+      Math.min(anchorDay, lastDay),
+      anchor.getUTCHours(),
+      anchor.getUTCMinutes(),
+      anchor.getUTCSeconds(),
+      anchor.getUTCMilliseconds(),
+    ),
+  );
+}
+
 /**
- * Advance from the stored Polar/subscription window instead of snapping to
- * UTC calendar months. Returns null while the current window is still open.
+ * Advance a closed subscription window by its calendar-month span, using the
+ * original anchor day. A February window therefore renews on the same day in
+ * March, not one short month later. Returns null while the window is open.
  */
 export function nextIncludedDiscountPeriod(input: {
   now: Date;
@@ -518,13 +542,18 @@ export function nextIncludedDiscountPeriod(input: {
 }): { periodStartedAt: Date; periodEndsAt: Date } | null {
   if (input.periodEndsAt && input.periodEndsAt > input.now) return null;
   if (input.periodStartedAt && input.periodEndsAt) {
-    const durationMs = input.periodEndsAt.getTime() - input.periodStartedAt.getTime();
-    const duration = durationMs > 0 ? durationMs : 31 * 24 * 60 * 60 * 1000;
-    let periodStart = input.periodEndsAt;
-    let periodEnd = new Date(periodStart.getTime() + duration);
-    while (periodEnd <= input.now) {
-      periodStart = periodEnd;
-      periodEnd = new Date(periodStart.getTime() + duration);
+    const anchorDay = input.periodStartedAt.getUTCDate();
+    const span = Math.max(
+      1,
+      utcMonthIndex(input.periodEndsAt) - utcMonthIndex(input.periodStartedAt),
+    );
+    let steps = span;
+    let periodStart = addUtcMonths(input.periodStartedAt, steps - span, anchorDay);
+    let periodEnd = addUtcMonths(input.periodStartedAt, steps, anchorDay);
+    while (periodEnd <= input.now && steps < span + 1200) {
+      steps += span;
+      periodStart = addUtcMonths(input.periodStartedAt, steps - span, anchorDay);
+      periodEnd = addUtcMonths(input.periodStartedAt, steps, anchorDay);
     }
     return { periodStartedAt: periodStart, periodEndsAt: periodEnd };
   }

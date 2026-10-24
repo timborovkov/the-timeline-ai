@@ -623,8 +623,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       after a successful provider call and reuses the BullMQ job id. A thrown call that already
       reported usage settles that attempt, then releases. Transcription chunks use distinct
       operation ids. Ask and web chat save the completed cost before settle and the janitor retries
-      a failed settlement. Storage replay uses the plan effective that day and skips closed document
-      absence intervals. Enterprise settlement does not freeze on the spend cap. Member-day janitor ticks
+      a failed settlement. Storage replay uses the plan effective that day, counts that day in its
+      own month, and skips closed document absence intervals. A missed renewal advances by calendar
+      months from the subscription anchor. Settled reservations are recognized before a new funding
+      check, and billing admission errors stay intact through the LLM wrapper. Enterprise settlement does not freeze on the spend cap. Member-day janitor ticks
       retry unsettled facts across the full 31-day lookback, including the previous calendar month.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.
       Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep

@@ -176,7 +176,8 @@ credit hides margin and confuses prospects.
    mail is not metered against that restricted workspace. OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
    Janitor included-discount resets lock the billing account and refuse to
-   overwrite a newer Polar plan or period. Client-aborted Ask streams settle at
+   overwrite a newer Polar plan or period. A missed renewal advances by calendar
+   months from the subscription anchor day. Client-aborted Ask streams settle at
    least the reserved customer charge instead of releasing after work starts.
    `WORKER_MODE=document-extract` allows the non-secret `BILLING_CHARGES_ENABLED`
    toggle so extract AI metering can run live. `withAiMetering` keeps the reservation
@@ -187,8 +188,8 @@ credit hides margin and confuses prospects.
    workspace delays the BullMQ job instead of failing it. Janitor storage
    snapshots backfill missed days across the full 31-day lookback, including the
    previous calendar month, from absent storage operation ids. Each day is priced
-   on the plan effective that day, and that plan's included discount is not taken
-   from the live balance. Closed document absence intervals are excluded. Paid-plan changes reuse the Polar subscription id in `past_due`,
+   on the plan effective that day, counted in that day's month, and that plan's
+   included discount is not taken from the live balance. Closed document absence intervals are excluded. Paid-plan changes reuse the Polar subscription id in `past_due`,
    `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
    preview prorates extra members from `member_days` rather than a full month.
    Inbound

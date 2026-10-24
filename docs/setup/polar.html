@@ -196,7 +196,8 @@ PLATFORM_ADMIN_EMAILS=
         operator alert is opened. Comps are not ingested. Polar ingest uses a ledger outbox that
         claims a row before ingesting, Polar receives a stable event id, and a failed ingest does
         not undo a committed charge. Janitor included-discount resets lock the billing account so
-        they cannot overwrite a newer Polar plan or period. Ask streams that abort after work starts
+        they cannot overwrite a newer Polar plan or period, and a missed renewal advances by
+        calendar months from the subscription anchor. Ask streams that abort after work starts
         settle at least the reserved customer charge. Failed structured-output attempts still
         contribute OpenRouter <code>usage.cost</code>. Recall minutes that cross a UTC month are
         attributed to each month they span. Document create serializes capacity under advisory lock
@@ -210,8 +211,9 @@ PLATFORM_ADMIN_EMAILS=
         propagate so the status webhook can 503 and retry. Re-accepting a removed member stamps a
         new membership <code>createdAt</code> and appends the previous interval to
         <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
-        grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback
-        and price each day on the plan in force then. Restoring a document keeps the closed absence
+        grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
+        price each day on the plan in force then, and count that day in its own month. Restoring a
+        document keeps the closed absence
         interval so those days are not billed again. Slack/Telegram/MCP Ask and web chat save the
         completed cost before settle and keep the reservation when settlement fails so the janitor
         can retry it. Paid-plan changes reuse the Polar subscription in non-active paid states.

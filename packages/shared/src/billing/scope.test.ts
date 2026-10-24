@@ -1,11 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
+  billingUsageCounters,
   billingUsageLedger,
   billingUsageReservations,
   teamBillingAccounts,
   type Db,
 } from '@timeline/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -1220,6 +1221,80 @@ describe('billing scope', () => {
         polar_ingest_block: 'missing_subscription_price',
       });
     }
+    const account = await scope.getAccount();
+    expect(account.billingState).toBe('free');
+    expect(account.spendCapCents).toBeGreaterThanOrEqual(0);
+  });
+
+  it('attributes a backfilled storage day to that month', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    await scope.settle({
+      operationId: 'storage_gb:backfill:2026-09-30',
+      meterId: 'storage_gb_month',
+      nativeUnits: 0.1,
+      customerChargeCents: 1,
+      usageAt: new Date('2026-09-30T12:00:00Z'),
+      pricingPeriodYm: '2026-09',
+    });
+    const [counter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.meterId, 'storage_gb_month'),
+        ),
+      );
+    expect(counter?.periodYm).toBe('2026-09');
+  });
+
+  it('reuses a settled reservation after the spend cap would reject new work', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          spend_cap_cents = 1000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'op-settled-retry',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(reserved.ok).toBe(true);
+    await scope.settle({
+      operationId: 'op-settled-retry',
+      meterId: 'ai',
+      nativeUnits: 10,
+      customerChargeCents: 10,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET spend_cap_cents = 0, billing_state = 'team_active'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const again = await scope.reserve({
+      operationId: 'op-settled-retry',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(again.ok).toBe(true);
+    if (again.ok) expect(again.alreadySettled).toBe(true);
   });
 
   it('enforces the spend cap on a comped Enterprise workspace', async () => {

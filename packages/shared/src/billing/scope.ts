@@ -651,6 +651,26 @@ export function createBillingScope(deps: BillingScopeDeps) {
         if (locked.securityState === 'suspended' || locked.securityState === 'terminated') {
           return { kind: 'reject' as const, code: 'security_blocked' as const };
         }
+        const [existingReservation] = await tx
+          .select()
+          .from(billingUsageReservations)
+          .where(
+            and(
+              eq(billingUsageReservations.teamId, teamId),
+              eq(billingUsageReservations.operationId, input.operationId),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        if (existingReservation?.state === 'settled') {
+          return { kind: 'already_settled' as const, row: existingReservation };
+        }
+        if (
+          existingReservation?.state === 'reserved' &&
+          existingReservation.expiresAt.getTime() > Date.now()
+        ) {
+          return { kind: 'reused' as const, row: existingReservation };
+        }
         if (!billingStateAllowsReservation(locked.billingState)) {
           return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
         }
@@ -927,6 +947,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
       /** Included-discount pool for that day. Skips the live balance when set. */
       historicalIncludedDiscountCents?: number;
       pricingPeriodYm?: string;
+      /** When the usage happened. Backfills use this instead of reservation time. */
+      usageAt?: Date;
     }) {
       await ensureMember();
       await ensureAccount();
@@ -949,12 +971,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
           )
           .limit(1);
 
-        const startedAt = reservation[0]?.createdAt ?? new Date();
-        const segments = settlementSegmentsForMeter({
-          meterId: input.meterId,
-          nativeUnits: input.nativeUnits,
-          startedAt,
-        });
+        const startedAt = input.usageAt ?? reservation[0]?.createdAt ?? new Date();
+        const segments =
+          input.pricingPeriodYm && input.meterId !== 'recall_minutes'
+            ? [{ periodYm: input.pricingPeriodYm, nativeUnits: Math.max(0, input.nativeUnits) }]
+            : settlementSegmentsForMeter({
+                meterId: input.meterId,
+                nativeUnits: input.nativeUnits,
+                startedAt,
+              });
         const primaryYm = segments[0]?.periodYm ?? periodYm(startedAt);
         const uniquePeriods = [...new Set(segments.map((row) => row.periodYm))];
         const countersBeforeRows = await tx
