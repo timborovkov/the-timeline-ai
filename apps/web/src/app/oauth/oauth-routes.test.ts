@@ -34,9 +34,9 @@ vi.mock('@timeline/shared/email', () => ({ clientIpFromHeaders: () => '203.0.113
 vi.mock('@/lib/db', () => ({ db: { name: 'db' } }));
 
 const { McpOAuthError } = await import('@timeline/shared/mcp-server');
-const { POST: register } = await import('@/app/oauth/register/route');
-const { POST: token } = await import('@/app/oauth/token/route');
-const { POST: revoke } = await import('@/app/oauth/revoke/route');
+const { OPTIONS: registerOptions, POST: register } = await import('@/app/oauth/register/route');
+const { OPTIONS: tokenOptions, POST: token } = await import('@/app/oauth/token/route');
+const { OPTIONS: revokeOptions, POST: revoke } = await import('@/app/oauth/revoke/route');
 
 const tokenResult = {
   access_token: 'tlo_access',
@@ -92,6 +92,11 @@ describe('Timeline OAuth protocol routes', () => {
 
     expect(response.status).toBe(201);
     expect(response.headers.get('cache-control')).toBe('no-store');
+    expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    expect(response.headers.get('access-control-allow-credentials')).toBeNull();
+    expect(response.headers.get('access-control-allow-headers')).toBe(
+      'authorization, content-type, mcp-protocol-version',
+    );
     expect(fakes.checkRateLimit).toHaveBeenCalledWith({
       key: 'mcp:oauth:register:203.0.113.10',
       capacity: 10,
@@ -246,6 +251,24 @@ describe('Timeline OAuth protocol routes', () => {
       error: 'invalid_grant',
       error_description: 'Expired token',
     });
+  });
+
+  it('answers CORS preflight for register, token, and revoke without credentials', () => {
+    for (const [name, handler] of [
+      ['register', registerOptions],
+      ['token', tokenOptions],
+      ['revoke', revokeOptions],
+    ] as const) {
+      const response = handler();
+      expect(response.status, name).toBe(204);
+      expect(response.headers.get('access-control-allow-origin'), name).toBe('*');
+      expect(response.headers.get('access-control-allow-methods'), name).toBe('POST, OPTIONS');
+      expect(response.headers.get('access-control-allow-headers'), name).toBe(
+        'authorization, content-type, mcp-protocol-version',
+      );
+      expect(response.headers.get('access-control-max-age'), name).toBe('3600');
+      expect(response.headers.get('access-control-allow-credentials'), name).toBeNull();
+    }
   });
 
   it('revokes by token possession and returns success for an unknown token', async () => {

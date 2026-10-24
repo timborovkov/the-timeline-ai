@@ -6,12 +6,17 @@ import {
   mcpOAuthRateLimitResponse,
   oauthErrorResponse,
   oauthJsonResponse,
+  oauthPreflightResponse,
   requireJsonContentType,
 } from '@/lib/mcp-oauth-server';
 import { readCappedTextBody } from '@/lib/request-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+export function OPTIONS(): Response {
+  return oauthPreflightResponse();
+}
 
 export async function POST(request: Request): Promise<Response> {
   const contentTypeError = requireJsonContentType(request);

@@ -11,6 +11,7 @@ import {
   mcpOAuthResource,
   oauthErrorResponse,
   oauthJsonResponse,
+  oauthPreflightResponse,
   requireFormContentType,
   singleFormValue,
 } from '@/lib/mcp-oauth-server';
@@ -18,6 +19,10 @@ import { readCappedTextBody } from '@/lib/request-body';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+export function OPTIONS(): Response {
+  return oauthPreflightResponse();
+}
 
 function required(params: URLSearchParams, name: string): string {
   const value = singleFormValue(params, name);

@@ -8,6 +8,8 @@ import {
   mcpAuthorizationServerMetadata,
   mcpProtectedResourceMetadata,
   oauthAuthorizationErrorRedirect,
+  oauthJsonResponse,
+  oauthPreflightResponse,
 } from '@/lib/mcp-oauth-server';
 
 afterEach(() => {
@@ -62,6 +64,24 @@ describe('Timeline MCP OAuth metadata', () => {
     expect(metadata).not.toHaveProperty('id_token_signing_alg_values_supported');
     expect(mcpProtectedResourceMetadata().authorization_servers).toEqual([metadata.issuer]);
     await expect(getAuthorizationServerMetadata().json()).resolves.toEqual(metadata);
+  });
+
+  it('publishes public CORS for OAuth protocol JSON and OPTIONS preflight without credentials', async () => {
+    const json = oauthJsonResponse({ ok: true }, 201);
+    expect(json.status).toBe(201);
+    expect(json.headers.get('access-control-allow-origin')).toBe('*');
+    expect(json.headers.get('access-control-allow-methods')).toBe('POST, OPTIONS');
+    expect(json.headers.get('access-control-allow-headers')).toBe(
+      'authorization, content-type, mcp-protocol-version',
+    );
+    expect(json.headers.get('access-control-allow-credentials')).toBeNull();
+    await expect(json.json()).resolves.toEqual({ ok: true });
+
+    const preflight = oauthPreflightResponse();
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get('access-control-allow-origin')).toBe('*');
+    expect(preflight.headers.get('access-control-allow-credentials')).toBeNull();
+    expect(await preflight.text()).toBe('');
   });
 
   it('returns only safe authorization errors, exact state, and issuer to a trusted callback', () => {

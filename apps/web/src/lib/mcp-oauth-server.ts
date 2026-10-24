@@ -50,6 +50,30 @@ export function mcpAuthorizationServerMetadata() {
   };
 }
 
+const OAUTH_CORS_ALLOW_HEADERS = ['authorization', 'content-type', 'mcp-protocol-version'].join(
+  ', ',
+);
+
+/**
+ * Browser MCP clients preflight register/token/revoke. Discovery uses the same
+ * public `*` origin and never credentials; allowed request headers are explicit.
+ */
+function oauthCorsHeaders(): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': OAUTH_CORS_ALLOW_HEADERS,
+    'Access-Control-Max-Age': '3600',
+  };
+}
+
+export function oauthPreflightResponse(): Response {
+  return new Response(null, {
+    status: 204,
+    headers: oauthCorsHeaders(),
+  });
+}
+
 export function oauthMetadataResponse(body: unknown): Response {
   return Response.json(body, {
     headers: {
@@ -67,6 +91,7 @@ export function oauthJsonResponse(
   return Response.json(body, {
     status,
     headers: {
+      ...oauthCorsHeaders(),
       'Cache-Control': 'no-store',
       Pragma: 'no-cache',
       ...Object.fromEntries(new Headers(additionalHeaders)),
