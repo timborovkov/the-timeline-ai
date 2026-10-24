@@ -276,9 +276,13 @@ export async function markDeliveryResult(input: {
 const UNMETERED_WORKSPACE_EMAIL_INTENTS = new Set<MessageIntent>([
   'billing_usage_alert',
   'email_verification',
+  'support_request',
 ]);
 
-/** Verification mail and billing alerts must send even on a restricted workspace. */
+/**
+ * Verification mail, billing alerts, and support requests must send even when
+ * the workspace is restricted, past due, read-only, or out of email allowance.
+ */
 export function shouldMeterWorkspaceEmail(
   intent: MessageIntent,
   options: { db?: unknown; teamId?: string | null },

@@ -182,24 +182,24 @@ PLATFORM_ADMIN_EMAILS=
         a retry still releases so the same meeting can reserve again. Cancelling a joining/active
         meeting with no transcript chunks settles elapsed waiting-room minutes instead of releasing
         them. Postmark success is recorded before email settlement. A delivered message whose
-        settlement fails stays reserved for the janitor and is not resent. Reservation expiry locks
-        the billing account before the reservation row. Meeting-finalize billing uses the system
-        actor so a departed creator cannot skip settlement. Free-grant inserts use
-        <code>ON CONFLICT DO NOTHING</code> so a unique race cannot abort team-create. The
-        post-verify Free-grant backfill prefers oldest restricted Free workspaces and never assigns
-        the grant to a paid team. Scheduled join billing denials fail the occurrence without pausing
-        auto-join as consecutive failures. Document uploads are blocked in every non-reservable
-        billing state. <code>order.paid</code> does not credit a local balance. Included invoice
-        discount is collected locally and is not ingested. Polar receives the customer-payable
-        remainder, with native units scaled by that remainder, including sub-cent rounds that stay
-        local when invoice cents are 0. PAYG, Team, Business, and Enterprise meter events are
-        ingested when charges are live, the workspace is not comped, and the active subscription
-        product matches that plan and prices the meter. Otherwise the charge stays local and an
-        operator alert is opened. Comps are not ingested. Polar ingest uses a ledger outbox that
-        claims a row before ingesting, Polar receives a stable event id, and a failed ingest does
-        not undo a committed charge. Janitor included-discount resets lock the billing account so
-        they cannot overwrite a newer Polar plan or period, and a missed renewal advances by
-        calendar months from the subscription anchor. Ask streams that abort after work starts
+        settlement fails stays reserved for the janitor and is not resent. Reserve, settle, release,
+        and reservation expiry lock the billing account before the reservation row. Meeting-finalize
+        billing uses the system actor so a departed creator cannot skip settlement. Free-grant
+        inserts use <code>ON CONFLICT DO NOTHING</code> so a unique race cannot abort team-create.
+        The post-verify Free-grant backfill prefers oldest restricted Free workspaces and never
+        assigns the grant to a paid team. Scheduled join billing denials fail the occurrence without
+        pausing auto-join as consecutive failures. Document uploads are blocked in every
+        non-reservable billing state. <code>order.paid</code> does not credit a local balance.
+        Included invoice discount is collected locally and is not ingested. Polar receives the
+        customer-payable remainder, with native units scaled by that remainder, including sub-cent
+        rounds that stay local when invoice cents are 0. PAYG, Team, Business, and Enterprise meter
+        events are ingested when charges are live, the workspace is not comped, and the active
+        subscription product matches that plan and prices the meter. Otherwise the charge stays
+        local and an operator alert is opened. Comps are not ingested. Polar ingest uses a ledger
+        outbox that claims a row before ingesting, Polar receives a stable event id, and a failed
+        ingest does not undo a committed charge. Janitor included-discount resets lock the billing
+        account so they cannot overwrite a newer Polar plan or period, and a missed renewal advances
+        by calendar months from the subscription anchor. Ask streams that abort after work starts
         settle at least the reserved customer charge. Failed structured-output attempts still
         contribute OpenRouter <code>usage.cost</code>. Recall minutes that cross a UTC month are
         attributed to each month they span. Document create serializes capacity under advisory lock

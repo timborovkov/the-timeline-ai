@@ -79,7 +79,8 @@ credit hides margin and confuses prospects.
    the included-usage discount, settle per extra member per day, and accrue a
    member added after the first daily tick. New reservations stamp
    `wallet_lock_cents: 0`. A historical stamp still unwinds
-   `reserved_balance_cents` on settle, release, or expire. Concurrent invite accepts serialize
+   `reserved_balance_cents` on settle, release, or expire. Release, reserve,
+   settle, and expiry lock the billing account before the reservation row. Concurrent invite accepts serialize
    member-seat claims with advisory lock key 4. Ask chat titles settle inside
    the Ask reservation. Failed post-verification Free-grant claims retry on the
    next signed-in load. Polar webhook HMAC timestamps follow the same 5-minute
@@ -160,7 +161,9 @@ credit hides margin and confuses prospects.
    per-extra-member operation id and a cumulative monthly cent delta so daily
    rounding still totals €2 per extra member-month. AI customer charges keep
    fractional cents on `nativeUnits` and round the cumulative delta, so
-   sub-cent embeddings still consume the Free/PAYG floor. Email, accepted-source,
+   sub-cent embeddings still consume the Free/PAYG floor. PAYG AI overage is
+   the difference of those rounded cumulative totals above the €5 allowance, so
+   a fractional remainder is not subtracted from an already-rounded list delta. Email, accepted-source,
    and storage settlements recompute the same cumulative delta under the account
    lock. A percentage discount rounds that cumulative total, not each one-cent
    delta. Polar ingest converts the resulting invoice cents at the catalog unit
@@ -177,7 +180,8 @@ credit hides margin and confuses prospects.
    does not credit a local balance. Credentials signup keeps the
    workspace restricted until the owner email is verified; unverified owners are
    excluded from the Free-grant backfill; `email_verification`
-   mail is not metered against that restricted workspace. OpenRouter
+   mail and `support_request` mail are not metered against that restricted
+   workspace. OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
    Janitor included-discount resets lock the billing account and refuse to
    overwrite a newer Polar plan or period. A missed renewal advances by calendar

@@ -95,6 +95,28 @@ describe('billing charge split', () => {
     ).toBe(20);
   });
 
+  it('rounds PAYG AI overage from cumulative post-allowance totals', () => {
+    const nearFloor = paygOverageCustomerChargeCents({
+      planId: 'payg',
+      meterId: 'ai',
+      nativeUnits: 0.2,
+      listChargeCents: 1,
+      meters: { ai: { nativeUnits: 499.4, customerChargeCents: 0 } },
+    });
+    expect(nearFloor).toBe(0);
+    expect(Number.isInteger(nearFloor)).toBe(true);
+
+    const crossed = paygOverageCustomerChargeCents({
+      planId: 'payg',
+      meterId: 'ai',
+      nativeUnits: 1.2,
+      listChargeCents: 2,
+      meters: { ai: { nativeUnits: 499.4, customerChargeCents: 0 } },
+    });
+    expect(crossed).toBe(1);
+    expect(Number.isInteger(crossed)).toBe(true);
+  });
+
   it('charges accepted sources on the cumulative cent boundary', () => {
     expect(
       cumulativeChargeDeltaCents({

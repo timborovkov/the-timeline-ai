@@ -972,7 +972,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
               eq(billingUsageReservations.operationId, input.operationId),
             ),
           )
-          .limit(1);
+          .limit(1)
+          .for('update');
 
         const startedAt = input.usageAt ?? reservation[0]?.createdAt ?? new Date();
         const segments =
@@ -1326,6 +1327,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
       await ensureMember();
       await ensureAccount();
       return db.transaction(async (tx) => {
+        // Account before reservation. Expiry, reserve, and settle take the
+        // account lock first; the opposite order deadlocks a release against
+        // the TTL sweep.
+        const [account] = await tx
+          .select()
+          .from(teamBillingAccounts)
+          .where(eq(teamBillingAccounts.teamId, teamId))
+          .limit(1)
+          .for('update');
+        if (!account) throw new Error('Missing billing account');
         const [reservation] = await tx
           .update(billingUsageReservations)
           .set({ state: 'released', updatedAt: new Date() })
@@ -1354,13 +1365,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
             alreadyFinal: Boolean(existing),
           };
         }
-        const [account] = await tx
-          .select()
-          .from(teamBillingAccounts)
-          .where(eq(teamBillingAccounts.teamId, teamId))
-          .limit(1)
-          .for('update');
-        if (!account) throw new Error('Missing billing account');
         const lockCents = walletLockCentsFromMetadata(reservation.metadata);
         if (lockCents > 0) {
           await tx

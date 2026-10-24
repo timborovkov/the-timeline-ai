@@ -15,9 +15,9 @@ export async function expireStaleBillingReservations(input: {
       sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') <> 'true'`,
       ...(input.teamId ? [eq(billingUsageReservations.teamId, input.teamId)] : []),
     );
-    // Lock billing accounts before reservation rows. Settlement locks the
-    // account first, so the opposite order deadlocks a TTL expiry against an
-    // in-flight settle.
+    // Lock billing accounts before reservation rows. Reserve, settle, and
+    // release take the account lock first, so the opposite order deadlocks a
+    // TTL expiry against an in-flight release or settle.
     const candidateTeams = await tx
       .selectDistinct({ teamId: billingUsageReservations.teamId })
       .from(billingUsageReservations)

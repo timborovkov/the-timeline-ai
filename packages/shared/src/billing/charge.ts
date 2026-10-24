@@ -41,13 +41,25 @@ export function paygOverageCustomerChargeCents(input: {
   const allowance = freeAllowanceConsumedForMeter(input.meterId, input.meters);
   if (!allowance) return Math.max(0, input.listChargeCents);
   const remaining = Math.max(0, allowance.limit - allowance.consumed);
-  if (remaining <= 0) return Math.max(0, input.listChargeCents);
+  if (remaining <= 0 && allowance.unit !== 'cents') return Math.max(0, input.listChargeCents);
   if (allowance.unit === 'cents') {
-    return Math.max(0, input.listChargeCents - remaining);
+    // Difference of rounded cumulative totals above the allowance. Subtracting
+    // the fractional remainder from an already-rounded list delta is not an
+    // integer (499.4 → 499.6 is still inside the €5 floor).
+    const previousGross = Math.max(0, allowance.consumed);
+    const nextGross = previousGross + Math.max(0, input.nativeUnits);
+    return (
+      roundedPostAllowanceCents(nextGross, allowance.limit) -
+      roundedPostAllowanceCents(previousGross, allowance.limit)
+    );
   }
   const overageUnits = Math.max(0, input.nativeUnits - remaining);
   if (overageUnits <= 0) return 0;
   return listChargeCentsForMeter(input.meterId, overageUnits);
+}
+
+function roundedPostAllowanceCents(grossCents: number, allowanceLimitCents: number): number {
+  return Math.max(0, Math.round(grossCents) - allowanceLimitCents);
 }
 
 /** Cumulative extra-member-day charge so daily rounding still totals the member-month price. */
