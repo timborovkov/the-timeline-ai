@@ -10,47 +10,163 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Analytics setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-10</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-26</span></div>
       <blockquote>
-        <p>PostHog Cloud EU is the default product analytics and feature flag service.</p>
+        <p>
+          PostHog Cloud EU is the only product and website analytics provider. Sentry remains a
+          separate reliability service. Do not add advertising pixels, session replay, heatmaps, or
+          another analytics vendor without a new privacy review.
+        </p>
       </blockquote>
       <p class="tldr">
-        Product analytics are explicit lifecycle events only. The app does not auto-track clicks,
-        page views, session replay, prompts, transcripts, filenames, or uploaded content.
+        Timeline separates personless surface-request totals, consented public-browser analytics,
+        and pseudonymous server/worker product events. No path may send Customer Content.
       </p>
 
-      <h2 id="project">1. Project</h2>
+      <h2 id="project">1. Project and environment</h2>
       <ol>
-        <li>Create a PostHog Cloud EU project.</li>
-        <li>Copy the project API key.</li>
-        <li>Set the EU ingestion host.</li>
+        <li>Create or select a PostHog Cloud EU project.</li>
+        <li>
+          Prefer the free plan for launch. If the founder keeps pay-as-you-go to retain platform
+          features, document the decision, monitor the free allowance, and set an approved hard
+          billing limit before production traffic can create overage charges.
+        </li>
+        <li>
+          Disable IP/geolocation enrichment, person profiles, autocapture, automatic page views,
+          session replay, heatmaps, surveys, error tracking, and unreviewed feature flags.
+        </li>
+        <li>
+          Use the shortest practical event retention; the product target is 90 days. PostHog's
+          documented product-event retention is one year on Free and seven years on Pay-as-you-go,
+          with no 90-day project control found in the 2026-08-26 review. Resolve or explicitly
+          approve that mismatch before production enablement.
+        </li>
       </ol>
-      <pre><code>NEXT_PUBLIC_POSTHOG_KEY=phc_...
+      <pre><code># Server and worker capture. Keep these private.
+POSTHOG_PROJECT_KEY=phc_...
+POSTHOG_HOST=https://eu.i.posthog.com
+ANALYTICS_PSEUDONYMIZATION_KEY=&lt;independent high-entropy secret&gt;
+
+# Optional public-browser capture. Leave the key empty to disable it.
+NEXT_PUBLIC_POSTHOG_KEY=
 NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
 </code></pre>
-
-      <h2 id="events">2. Events</h2>
       <p>
-        The typed event map lives in <code>packages/shared/src/analytics/events.ts</code>. Every
-        event has an owner, trigger, no-PII policy, and retention note. Add new events there before
-        emitting them from web or worker code.
-      </p>
-      <p>
-        Allowed payloads: stable user/team/object IDs, enum-like sources/types/statuses, counts,
-        durations, booleans, and model IDs. Disallowed payloads: emails, names, prompts, generated
-        answers, transcripts, document text, filenames, cookies, auth headers, and uploaded content.
-      </p>
-      <p>
-        Approval analytics are action-grained: one successful single, revision, or bulk reviewer
-        action emits one <code>approval_decision_submitted</code> event. The item count describes a
-        bulk action; generated proposals and their individual internal lifecycle changes are not
-        emitted as product events.
+        Use a different pseudonymization key per environment. If that key is missing, correlatable
+        product-action events fail closed instead of sending raw IDs. The public key is
+        intentionally separate so server analytics can run while browser analytics remains disabled.
       </p>
 
-      <h2 id="flags">3. Feature flags</h2>
+      <h2 id="paths">2. Measurement paths</h2>
+      <h3>Personless server surface requests</h3>
       <p>
-        Feature flags are typed in the same analytics contract. Each flag must have an owner and a
-        cleanup note. Do not leave feature flags as permanent configuration.
+        <code>public_surface_requested</code> and <code>app_surface_requested</code> use one fixed,
+        non-visitor stream ID each. Their only variable property is a source-controlled surface key.
+        They do not receive a URL, query, referrer, visitor IP, user agent, request/session ID, user
+        ID, team ID, campaign value, or Customer Content. PostHog receives the server connection and
+        GeoIP enrichment is disabled. Dashboard these events by total count only: unique users,
+        sessions, retention, and returning visitors are deliberately meaningless.
+      </p>
+      <p>
+        The Node SDK adds only reviewed transport metadata: the project key, reserved stream ID,
+        event name, server marker, SDK name/version, event UUID/timestamp, batch send time, and
+        GeoIP-disable flag. A transport-level regression test pins that complete wire schema; none
+        of those fields may be derived from the request.
+      </p>
+      <p>
+        These are surface requests, not verified human visits. Bots, refreshes, retries, framework
+        behavior, and caching can affect totals. Unknown routes are not measured until explicitly
+        reviewed and added to the registry.
+      </p>
+
+      <h3>Optional public-browser analytics</h3>
+      <p>
+        The browser SDK may load only after affirmative analytics consent and only on an allowlisted
+        public route. It emits manual <code>public_page_viewed</code> and
+        <code>public_cta_clicked</code> events. It must never identify, alias, or group the browser
+        identity to an account, user, or team. Rejecting or withdrawing stops capture and clears
+        optional PostHog and campaign-attribution state.
+      </p>
+
+      <h3>Pseudonymous product-action analytics</h3>
+      <p>
+        Explicit server actions, API outcomes, and workers may emit schema-validated product events.
+        Raw user/team UUIDs are transformed with HMAC before capture and never appear in event
+        properties. Pseudonymous analytics remains personal data; do not describe it as anonymous.
+        Browser consent neither authorizes nor disables this separately disclosed server processing.
+      </p>
+
+      <h2 id="contract">3. Event contract</h2>
+      <p>
+        The typed registry lives in <code>packages/shared/src/analytics/events.ts</code>. Every
+        event has an owner, trigger, data class, exact runtime schema, and retention target. Add the
+        event there before emitting it from web or worker code.
+      </p>
+      <p>
+        Allowed properties are stable enums, booleans, bounded counts, coarse durations and sizes,
+        visibility classes, provider/model identifiers, and sanitized campaign dimensions. Never
+        send names, emails, resource IDs, URLs, queries, filenames, titles, prompts, answers,
+        transcripts, document text, cookies, authorization values, headers, arbitrary errors,
+        secrets, or uploaded/workspace content.
+      </p>
+      <p>
+        Emit product events only after a successful meaningful action or durable job outcome. Page
+        popularity belongs to the personless surface stream; do not add client click spam to the
+        private application.
+      </p>
+
+      <h2 id="dashboard">4. Launch dashboard</h2>
+      <p>Create one small dashboard named <strong>Launch</strong> with these insights:</p>
+      <ol>
+        <li>Registrations by week and sanitized first-touch campaign.</li>
+        <li>
+          Activated teams: first evidence plus a first value action within seven days of team
+          creation.
+        </li>
+        <li>
+          Weekly engaged teams: meaningful product actions on at least two distinct days, excluding
+          login, onboarding, and surface-request events.
+        </li>
+        <li>Top public and app surfaces using event totals, never unique-user calculations.</li>
+        <li>Feature-area adoption and agent request/input/output/total token volume.</li>
+        <li>Time to first evidence and first answer.</li>
+        <li>Total event volume compared with the free allowance.</li>
+      </ol>
+      <p>
+        Do not create a person, retention, or session insight from the two fixed personless streams.
+        Consented browser events may be used for public-site sessions and returning-visitor
+        analysis, but they must not be joined to registrations through a PostHog identity. Campaign
+        properties on the registration event are the approved attribution boundary.
+      </p>
+
+      <h2 id="evidence">5. Release evidence</h2>
+      <ul>
+        <li>Clean browser before consent: no browser PostHog request, identifier, or storage.</li>
+        <li>Reject and withdrawal: capture stops and optional state is cleared.</li>
+        <li>Direct and navigated private routes: no browser PostHog SDK or analytics request.</li>
+        <li>
+          Server surface events: exact fixed-stream wire schema, including mandatory SDK metadata,
+          and no request metadata.
+        </li>
+        <li>
+          Product events: deterministic pseudonyms, runtime allowlist, and no raw resource IDs.
+        </li>
+        <li>
+          Provider: project region, retention, IP handling, access, DPA, deletion, and disabled
+          products.
+        </li>
+        <li>Production: legacy Convex script absent and only approved schemas received.</li>
+      </ul>
+      <p>
+        Store dated provider screenshots or exports with the internal control evidence. Source code
+        proves application behavior; it does not prove the live provider account or deployed
+        release.
+      </p>
+      <p>
+        The sanitized 2026-08-26 account review is recorded in
+        <code>docs/research/posthog-rollout-evidence-2026-08-26.md</code>. It verifies the EU
+        project and disabled capture products, but leaves retention, contracts, production canaries,
+        and queued legacy-data deletion open.
       </p>
     </main>
   </body>

@@ -112,7 +112,14 @@ function isNoShowCode(code: string | null | undefined): boolean {
 
 export async function POST(req: Request): Promise<Response> {
   const env = getEnv();
-  if (!env.RECALL_STATUS_WEBHOOK_SECRET) {
+  const verificationSecrets = [
+    ...new Set(
+      [env.RECALL_WORKSPACE_VERIFICATION_SECRET, env.RECALL_STATUS_WEBHOOK_SECRET].filter(
+        (secret): secret is string => Boolean(secret),
+      ),
+    ),
+  ];
+  if (verificationSecrets.length === 0) {
     reportHandledEvent({
       message: 'recall_status_webhook_disabled',
       surface: 'api',
@@ -126,20 +133,23 @@ export async function POST(req: Request): Promise<Response> {
   const bodyResult = await readCappedTextBody(req, REQUEST_BODY_LIMITS.integrationWebhook);
   if (bodyResult.tooLarge) return payloadTooLargeResponse();
   const body = bodyResult.text;
-  const verify = meetingBots.verifySvixSignature({
-    body,
-    headers: req.headers,
-    secret: env.RECALL_STATUS_WEBHOOK_SECRET,
-  });
-  if (!verify.ok) {
-    log.warn({ reason: verify.reason }, 'svix_verification_failed');
+  // Workspace and legacy endpoint secrets may coexist during migration. Verify
+  // every configured candidate so either valid signature is accepted and the
+  // response timing does not disclose which secret matched.
+  const verificationResults = verificationSecrets.map((secret) =>
+    meetingBots.verifySvixSignature({ body, headers: req.headers, secret }),
+  );
+  const verified = verificationResults.some((result) => result.ok);
+  if (!verified) {
+    const reason = verificationResults[0]?.reason ?? 'bad_signature';
+    log.warn({ reason }, 'svix_verification_failed');
     reportHandledEvent({
       message: 'recall_status_svix_verification_failed',
       surface: 'api',
       operation: 'recall_status_svix_verification',
       level: 'warning',
       tags: {
-        reason: verify.reason,
+        reason,
         has_svix_id: req.headers.has('svix-id') || req.headers.has('webhook-id'),
         has_svix_timestamp:
           req.headers.has('svix-timestamp') || req.headers.has('webhook-timestamp'),
@@ -170,9 +180,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true, reason: 'no_bot_id' }, { status: 200 });
   }
 
-  // Resolve the meeting by bot id only — no team scope, this is the
-  // webhook's authoritative lookup. See lookupMeetingByBotId for the
-  // rationale.
+  // Resolve the meeting by Recall bot id before constructing a team scope.
+  // The lookup fails closed if an unexpected cross-team duplicate exists.
   const meeting = await meetingsScope.lookupMeetingByBotId(db, botId);
   if (!meeting) {
     log.warn({ botId, event: parsed.event }, 'meeting_not_found_for_bot');

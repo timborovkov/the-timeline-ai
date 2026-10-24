@@ -1,4 +1,5 @@
 'use server';
+import { bucketDocumentSize, classifyDocumentContentType } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as rateLimit from '@timeline/shared/rate-limit';
@@ -124,6 +125,11 @@ export async function createFolderAction(
         }),
       };
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: got.userId, teamId: got.teamId },
+      'document_action_completed',
+      { action: 'folder_create' },
+    );
     bestEffortRevalidateDocuments();
     return { ok: true, id: folder.id };
   });
@@ -150,6 +156,11 @@ export async function deleteFolderAction(id: string): Promise<Result> {
         }),
       };
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: got.userId, teamId: got.teamId },
+      'document_action_completed',
+      { action: 'folder_delete' },
+    );
     bestEffortRevalidateDocuments();
     return { ok: true };
   });
@@ -320,19 +331,15 @@ export async function finalizeDocumentVersionAction(
       // Do not parallelize with enqueue: the checklist advances only after
       // the extraction job is safely queued.
       const completedFirstDocument = await safeMarkOnboardingStep(got.scope, 'first_document');
-      trackProductEventBestEffort(got.userId, 'document_uploaded', {
-        teamId: got.teamId,
-        userId: got.userId,
-        documentId: finalized.document.id,
-        versionId: finalized.version.id,
-        byteSize: head.contentLength,
-        contentType: head.contentType ?? version.contentType ?? 'application/octet-stream',
+      const analyticsActor = { kind: 'user' as const, userId: got.userId, teamId: got.teamId };
+      const contentType = head.contentType ?? version.contentType ?? 'application/octet-stream';
+      trackProductEventBestEffort(analyticsActor, 'document_uploaded', {
+        sizeBucket: bucketDocumentSize(head.contentLength),
+        contentType: classifyDocumentContentType(contentType),
         visibility: finalized.document.visibility,
       });
       if (completedFirstDocument) {
-        trackProductEventBestEffort(got.userId, 'onboarding_step_completed', {
-          teamId: got.teamId,
-          userId: got.userId,
+        trackProductEventBestEffort(analyticsActor, 'onboarding_step_completed', {
           step: 'first_document',
           source: 'automatic',
         });
@@ -393,6 +400,11 @@ export async function renameDocumentAction(
         }),
       };
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: got.userId, teamId: got.teamId },
+      'document_action_completed',
+      { action: 'document_rename' },
+    );
     bestEffortRevalidateDocuments();
     bestEffortRevalidateDocumentPath(
       `/app/documents/${parsed.data.id}`,
@@ -422,6 +434,11 @@ export async function deleteDocumentAction(id: string): Promise<Result> {
         }),
       };
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: got.userId, teamId: got.teamId },
+      'document_action_completed',
+      { action: 'document_delete' },
+    );
     bestEffortRevalidateDocuments();
     return { ok: true };
   });

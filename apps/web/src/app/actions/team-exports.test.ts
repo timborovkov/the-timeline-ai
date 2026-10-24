@@ -178,9 +178,9 @@ describe('team export actions', () => {
       requestedByUserId: USER_ID,
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'team_export_requested',
-      { teamId: TEAM_ID, userId: USER_ID, exportId: EXPORT_ID },
+      {},
     );
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team');
   });

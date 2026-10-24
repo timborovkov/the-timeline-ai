@@ -78,8 +78,10 @@ vi.mock('@timeline/shared/meetings', async () => {
 
 const { POST } = await import('./route.js');
 
-const SECRET_RAW = 'supersecret-test-key';
+const SECRET_RAW = 'supersecret-test-key-for-tests';
 const SECRET = `whsec_${Buffer.from(SECRET_RAW).toString('base64')}`;
+const LEGACY_SECRET_RAW = 'legacy-status-test-key-for-tests';
+const LEGACY_SECRET = `whsec_${Buffer.from(LEGACY_SECRET_RAW).toString('base64')}`;
 const BOT_ID = 'bot-test-123';
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
@@ -87,19 +89,22 @@ const USER_ID = '22222222-2222-2222-2222-222222222222';
 function setEnv(over: Partial<NodeJS.ProcessEnv> = {}) {
   process.env.AUTH_SECRET = 'test-secret-test-secret';
   process.env.DATABASE_URL = 'postgres://x';
-  process.env.RECALL_STATUS_WEBHOOK_SECRET = SECRET;
+  process.env.RECALL_WORKSPACE_VERIFICATION_SECRET = SECRET;
+  delete process.env.RECALL_STATUS_WEBHOOK_SECRET;
   process.env.RECALL_API_KEY = 'test-key';
   process.env.REDIS_URL = 'redis://localhost:6379';
   Object.assign(process.env, over);
 }
 
-function signedRequest(body: string, override: Partial<Record<string, string>> = {}) {
+function signedRequest(
+  body: string,
+  override: Partial<Record<string, string>> = {},
+  secretRaw = SECRET_RAW,
+) {
   const id = override['svix-id'] ?? `msg_${Date.now()}`;
   const ts = override['svix-timestamp'] ?? String(Math.floor(Date.now() / 1000));
   const sigBase = `${id}.${ts}.${body}`;
-  const sig = createHmac('sha256', Buffer.from(SECRET_RAW, 'utf8'))
-    .update(sigBase)
-    .digest('base64');
+  const sig = createHmac('sha256', Buffer.from(secretRaw, 'utf8')).update(sigBase).digest('base64');
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'svix-id': id,
@@ -166,13 +171,50 @@ afterEach(() => {
 
 describe('POST /api/webhooks/recall/status — config + auth', () => {
   it('returns 503 when secret is unset', async () => {
+    delete process.env.RECALL_WORKSPACE_VERIFICATION_SECRET;
     delete process.env.RECALL_STATUS_WEBHOOK_SECRET;
     resetEnvForTests();
     const r = await POST(signedRequest(statusBody('bot.call_ended', 'call_ended')));
     expect(r.status).toBe(503);
   });
 
+  it('accepts the legacy status-only secret when no workspace secret is configured', async () => {
+    delete process.env.RECALL_WORKSPACE_VERIFICATION_SECRET;
+    process.env.RECALL_STATUS_WEBHOOK_SECRET = SECRET;
+    resetEnvForTests();
+    const body = JSON.stringify({ event: 'bot.status_change', data: {} });
+
+    const r = await POST(signedRequest(body));
+
+    expect(r.status).toBe(200);
+    await expect(r.json()).resolves.toMatchObject({ reason: 'no_bot_id' });
+  });
+
+  it('accepts the workspace signature when both status secrets are configured', async () => {
+    process.env.RECALL_STATUS_WEBHOOK_SECRET = LEGACY_SECRET;
+    resetEnvForTests();
+    const body = JSON.stringify({ event: 'bot.status_change', data: {} });
+
+    const r = await POST(signedRequest(body));
+
+    expect(r.status).toBe(200);
+    await expect(r.json()).resolves.toMatchObject({ reason: 'no_bot_id' });
+  });
+
+  it('accepts the legacy signature when both status secrets are configured', async () => {
+    process.env.RECALL_STATUS_WEBHOOK_SECRET = LEGACY_SECRET;
+    resetEnvForTests();
+    const body = JSON.stringify({ event: 'bot.status_change', data: {} });
+
+    const r = await POST(signedRequest(body, {}, LEGACY_SECRET_RAW));
+
+    expect(r.status).toBe(200);
+    await expect(r.json()).resolves.toMatchObject({ reason: 'no_bot_id' });
+  });
+
   it('returns 401 on bad signature', async () => {
+    process.env.RECALL_STATUS_WEBHOOK_SECRET = LEGACY_SECRET;
+    resetEnvForTests();
     const r = await POST(
       signedRequest(statusBody('bot.call_ended', 'call_ended'), {
         'svix-signature': 'v1,AAAA',
@@ -192,6 +234,36 @@ describe('POST /api/webhooks/recall/status — config + auth', () => {
         has_svix_signature: true,
       },
     });
+  });
+
+  it('returns 401 when signature headers are missing before parsing or database lookup', async () => {
+    const r = await POST(
+      new Request('https://test.local/api/webhooks/recall/status', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: 'not-json',
+      }),
+    );
+
+    expect(r.status).toBe(401);
+    expect(fakes.fakeLookup).not.toHaveBeenCalled();
+    expect(fakes.fakeReportHandledEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'recall_status_svix_verification_failed',
+        tags: expect.objectContaining({ reason: 'missing_headers' }) as unknown,
+      }),
+    );
+  });
+
+  it('returns 401 on a stale signed request before database lookup', async () => {
+    const r = await POST(
+      signedRequest(statusBody('bot.call_ended', 'call_ended'), {
+        'svix-timestamp': String(Math.floor(Date.now() / 1000) - 301),
+      }),
+    );
+
+    expect(r.status).toBe(401);
+    expect(fakes.fakeLookup).not.toHaveBeenCalled();
   });
 
   it('returns 200 with no_bot_id when payload lacks bot.id', async () => {
@@ -307,6 +379,7 @@ describe('POST /api/webhooks/recall/status — state transitions', () => {
       meetingId: 'meeting-1',
       teamId: TEAM_ID,
     });
+    expect(fakes.fakeWithTeam).toHaveBeenCalledWith({}, TEAM_ID, USER_ID);
   });
 
   it('documented bot.call_ended events flip processing + enqueue finalize', async () => {

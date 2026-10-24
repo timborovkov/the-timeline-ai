@@ -69,7 +69,7 @@ describe('Legal acceptance route states', () => {
       ),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard(keys);
 

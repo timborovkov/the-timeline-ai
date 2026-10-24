@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 
@@ -143,6 +144,16 @@ export async function PATCH(
       credential_id: result.credential?.id,
     },
   });
+  if (parsed.data.disabled !== undefined) {
+    trackProductEventBestEffort(
+      { kind: 'user', userId: gate.session.user.id, teamId: gate.active.teamId },
+      'integration_management_action_completed',
+      {
+        action: parsed.data.disabled ? 'webhook_revoke' : 'activate',
+        kind: 'custom_ingest_webhook',
+      },
+    );
+  }
   return NextResponse.json({
     ok: true,
     ...(result.credential && minted
@@ -197,5 +208,10 @@ export async function DELETE(
     return row;
   });
   if (!disabled) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  trackProductEventBestEffort(
+    { kind: 'user', userId: gate.session.user.id, teamId: gate.active.teamId },
+    'integration_management_action_completed',
+    { action: 'webhook_revoke', kind: 'custom_ingest_webhook' },
+  );
   return NextResponse.json({ ok: true });
 }

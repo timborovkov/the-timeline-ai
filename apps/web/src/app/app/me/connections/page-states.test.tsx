@@ -64,7 +64,7 @@ describe('Personal Connections route states', () => {
       ),
     ).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(reset).toHaveBeenCalledTimes(1);
   });

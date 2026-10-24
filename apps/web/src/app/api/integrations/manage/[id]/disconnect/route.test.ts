@@ -17,9 +17,13 @@ const fakes = vi.hoisted(() => ({
   adminDeprovisionIntegrationWebhookSubscriptions: vi.fn(),
   loggerWarn: vi.fn(),
   reportCaughtError: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+vi.mock('@/lib/analytics', () => ({
+  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+}));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
@@ -113,6 +117,11 @@ describe('/api/integrations/manage/[id]/disconnect', () => {
     );
     expect(fakes.deleteIntegration).toHaveBeenCalledWith(INTEGRATION_ID);
     expect(fakes.recordAudit).toHaveBeenCalledWith('disconnect', { provider: 'monday' }, null);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'disconnect', kind: 'native', provider: 'monday' },
+    );
     expect(callOrder).toEqual(['deprovision', 'delete']);
   });
 
@@ -213,5 +222,6 @@ describe('/api/integrations/manage/[id]/disconnect', () => {
       },
       INTEGRATION_ID,
     );
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 });

@@ -54,12 +54,14 @@ export async function PATCH(req: Request): Promise<Response> {
   } else if (parsed.data.key) {
     const completedStep = await scope.onboarding.markStepComplete(parsed.data.key);
     if (completedStep) {
-      trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-        teamId: active.teamId,
-        userId: session.user.id,
-        step: parsed.data.key,
-        source: 'manual',
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: session.user.id, teamId: active.teamId },
+        'onboarding_step_completed',
+        {
+          step: parsed.data.key,
+          source: 'manual',
+        },
+      );
     }
   } else {
     return Response.json({ error: 'invalid_input' }, { status: 400 });

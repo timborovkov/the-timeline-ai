@@ -44,12 +44,14 @@ export async function bindSlackConversationAction(formData: FormData): Promise<v
       });
       const completedSlack = await safeMarkOnboardingStep(scope, 'slack');
       if (completedSlack) {
-        trackProductEventBestEffort(session.user.id, 'onboarding_step_completed', {
-          teamId: active.teamId,
-          userId: session.user.id,
-          step: 'slack',
-          source: 'automatic',
-        });
+        trackProductEventBestEffort(
+          { kind: 'user', userId: session.user.id, teamId: active.teamId },
+          'onboarding_step_completed',
+          {
+            step: 'slack',
+            source: 'automatic',
+          },
+        );
       }
     } catch (err) {
       reportCaughtError(err, { surface: 'server_action', operation: 'bind_slack_conversation' });

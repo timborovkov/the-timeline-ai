@@ -14,6 +14,12 @@ import { Button } from '@/components/ui/button';
 import { getAppMainScrollElement } from '@/lib/app-scroll';
 import { storeChatContextHandoff } from '@/lib/chat-handoff';
 import { chatShortcutLabel } from '@/lib/chat-view';
+import {
+  clearFloatingChatSessionId,
+  pruneFloatingChatSessionIds,
+  readFloatingChatSessionId,
+  storeFloatingChatSessionId,
+} from '@/lib/floating-chat-session-storage';
 import { cn } from '@/lib/utils';
 
 interface FloatingAgentChatProps {
@@ -95,10 +101,9 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   const pathname = usePathname();
   const { current, dashboardContext } = useCurrentChatView();
   const [{ open, activated }, setPanel] = useState({ open: false, activated: false });
-  const storageKey = `timeline:floating-agent-chat:${teamId}:session`;
   const [{ sessionId, initialMessages, ready: sessionReady }, setSessionState] =
     useState<FloatingSessionState>(() => {
-      const storedSessionId = readStoredSessionId(storageKey);
+      const storedSessionId = readStoredSessionId(teamId);
       return {
         sessionId: storedSessionId,
         initialMessages: [],
@@ -137,11 +142,11 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   }, []);
   const resetFloatingSession = useCallback(() => {
     sessionGenerationRef.current += 1;
-    window.localStorage.removeItem(storageKey);
+    clearFloatingChatSessionId(window.localStorage, teamId);
     hydratedSessionIdRef.current = null;
     trailRef.current = excluded ? [] : [current];
     setSessionState({ sessionId: null, initialMessages: [], contextTrail: [], ready: true });
-  }, [current, excluded, storageKey]);
+  }, [current, excluded, teamId]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -153,7 +158,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
     hydratedSessionIdRef.current = activeSessionId;
     const clearStaleSession = () => {
       if (hydratedSessionIdRef.current !== activeSessionId) return;
-      window.localStorage.removeItem(storageKey);
+      clearFloatingChatSessionId(window.localStorage, teamId);
       hydratedSessionIdRef.current = null;
       trailRef.current = excluded ? [] : [current];
       setSessionState({ sessionId: null, initialMessages: [], contextTrail: [], ready: true });
@@ -186,7 +191,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
         if (hydratedSessionIdRef.current !== activeSessionId) return;
         clearStaleSession();
       });
-  }, [current, excluded, sessionId, storageKey]);
+  }, [current, excluded, sessionId, teamId]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -371,7 +376,7 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
                 consumeHandoff={false}
                 onSessionIdChange={(id) => {
                   if (activeSessionGeneration !== sessionGenerationRef.current) return;
-                  window.localStorage.setItem(storageKey, id);
+                  storeFloatingChatSessionId(window.localStorage, teamId, id);
                   setSessionState((state) => ({ ...state, sessionId: id, ready: true }));
                 }}
               />
@@ -383,7 +388,8 @@ function FloatingAgentChatContent({ teamId, teamName }: FloatingAgentChatProps) 
   );
 }
 
-function readStoredSessionId(storageKey: string): string | null {
+function readStoredSessionId(teamId: string): string | null {
   if (typeof window === 'undefined') return null;
-  return window.localStorage.getItem(storageKey);
+  pruneFloatingChatSessionIds(window.localStorage);
+  return readFloatingChatSessionId(window.localStorage, teamId);
 }

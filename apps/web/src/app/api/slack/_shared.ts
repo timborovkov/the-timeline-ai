@@ -1,3 +1,4 @@
+import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
 import { getAudioBucket, getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 
@@ -20,13 +21,15 @@ export function slackIngestDeps() {
   return {
     agentDeps: {
       onApprovalDecision: ({ teamId, userId, decision, itemCount, isBulk }) => {
-        trackProductEventBestEffort(userId, 'approval_decision_submitted', {
-          teamId,
-          userId,
-          decision,
-          itemCount,
-          isBulk,
-        });
+        trackProductEventBestEffort(
+          { kind: 'user', userId, teamId },
+          'approval_decision_submitted',
+          {
+            decision,
+            itemCountBucket: bucketAnalyticsCount(itemCount),
+            isBulk,
+          },
+        );
       },
     },
     audio: audioReady

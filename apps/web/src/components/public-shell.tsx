@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import type { ReactNode } from 'react';
 
+import { CookieSettingsButton } from '@/components/public-analytics';
 import { PublicHeader } from '@/components/public-header';
 import {
   PublicNavigationItems,
@@ -58,6 +59,12 @@ export function PublicShell({
                 Support
               </Link>
               <Link
+                href="/trust"
+                className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                Trust
+              </Link>
+              <Link
                 href="/terms"
                 className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
@@ -69,6 +76,13 @@ export function PublicShell({
               >
                 Privacy
               </Link>
+              <Link
+                href="/cookies"
+                className="rounded-sm outline-none hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                Cookies
+              </Link>
+              <CookieSettingsButton />
             </nav>
           </div>
         </div>

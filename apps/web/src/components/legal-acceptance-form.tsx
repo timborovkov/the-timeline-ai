@@ -23,6 +23,8 @@ export function LegalAcceptanceForm({ returnTo }: { returnTo?: string }) {
   return (
     <form action={action} className="space-y-5">
       {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
+      <input type="hidden" name="termsVersion" value={TERMS_VERSION} />
+      <input type="hidden" name="privacyVersion" value={PRIVACY_VERSION} />
       <div className="rounded-sm border border-border bg-surface p-4 text-sm text-fg-muted">
         <p>
           Current versions: Terms of Use {TERMS_VERSION}, Privacy Policy {PRIVACY_VERSION}.

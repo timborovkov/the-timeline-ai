@@ -8,6 +8,7 @@ import { GitHubSignInButton } from '@/components/github-button';
 import { Separator } from '@/components/ui/separator';
 import { auth, hasGitHubAuth } from '@/lib/auth';
 import { signedInAuthRedirect } from '@/lib/auth-redirect';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { readPendingInvite } from '@/lib/pending-invite';
 
 export const metadata: Metadata = {
@@ -31,13 +32,18 @@ export default async function SignUpPage({ searchParams }: Props) {
 
   const requiresTurnstile = process.env.NODE_ENV === 'production';
   const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY ?? undefined;
+  const legalPublicationReady = isLegalPublicationReady();
   return (
     <AuthShell
       title="Create your account"
       subtitle={
         invite
-          ? 'You’ve been invited to a team. Sign up to accept.'
-          : 'We’ll create your first team automatically.'
+          ? legalPublicationReady
+            ? 'You’ve been invited to a team. Sign up to accept.'
+            : 'New accounts are paused while our legal publication review is completed.'
+          : legalPublicationReady
+            ? 'We’ll create your first team automatically.'
+            : 'New accounts are paused while our legal publication review is completed.'
       }
       secondaryPrefix="Already have an account?"
       secondaryHref={
@@ -47,7 +53,7 @@ export default async function SignUpPage({ searchParams }: Props) {
       }
       secondaryLabel="Sign in"
     >
-      {hasGitHubAuth ? (
+      {hasGitHubAuth && legalPublicationReady ? (
         <>
           {invite ? (
             <GitHubSignInButton callbackUrl={`/accept-invite/${invite}`} inviteToken={invite} />
@@ -69,6 +75,7 @@ export default async function SignUpPage({ searchParams }: Props) {
       ) : null}
       <SignUpForm
         inviteToken={invite}
+        legalPublicationReady={legalPublicationReady}
         requiresTurnstile={requiresTurnstile}
         turnstileSiteKey={turnstileSiteKey}
       />

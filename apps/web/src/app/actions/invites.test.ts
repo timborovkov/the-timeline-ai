@@ -25,6 +25,8 @@ const fakes = vi.hoisted(() => ({
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
   fakeEnsureSoloTeam: vi.fn(),
+  fakeGetUserLegalAcceptance: vi.fn(),
+  fakeHasCurrentLegalAcceptance: vi.fn(),
   fakeClearPendingInvite: vi.fn(),
   fakeLoggerError: vi.fn(),
   fakeCaptureException: vi.fn(),
@@ -45,8 +47,16 @@ vi.mock('@/lib/db', () => ({
     update: fakes.fakeDbUpdate,
   },
 }));
-vi.mock('@/lib/active-team', () => ({ ACTIVE_TEAM_COOKIE: 'timeline_active_team' }));
+vi.mock('@/lib/active-team', () => ({
+  ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+  activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+  serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+}));
 vi.mock('@/lib/default-team', () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }));
+vi.mock('@/lib/legal', () => ({
+  getUserLegalAcceptance: fakes.fakeGetUserLegalAcceptance,
+  hasCurrentLegalAcceptance: fakes.fakeHasCurrentLegalAcceptance,
+}));
 vi.mock('@/lib/pending-invite', () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }));
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ error: fakes.fakeLoggerError }),
@@ -137,6 +147,12 @@ beforeEach(() => {
   mockSignedIn();
   fakes.fakeEnsureSoloTeam.mockResolvedValue(undefined);
   fakes.fakeClearPendingInvite.mockResolvedValue(undefined);
+  fakes.fakeGetUserLegalAcceptance.mockResolvedValue({
+    legalTermsVersion: 'current',
+    legalPrivacyVersion: 'current',
+    legalAcceptedAt: new Date(),
+  });
+  fakes.fakeHasCurrentLegalAcceptance.mockReturnValue(true);
 });
 
 describe('acceptInviteAction', () => {
@@ -153,6 +169,17 @@ describe('acceptInviteAction', () => {
     await expect(acceptInviteAction(form({ token: '' }))).rejects.toThrow(
       'NEXT_REDIRECT:/app/timeline',
     );
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('requires current legal acceptance before creating team membership', async () => {
+    fakes.fakeHasCurrentLegalAcceptance.mockReturnValue(false);
+
+    await expect(acceptInviteAction(form({ token: TOKEN }))).rejects.toThrow(
+      'NEXT_REDIRECT:/legal/accept?returnTo=%2Faccept-invite%2Finvite-token',
+    );
+
+    expect(fakes.fakeGetUserLegalAcceptance).toHaveBeenCalledWith(USER_ID);
     expect(fakes.fakeTransaction).not.toHaveBeenCalled();
   });
 
@@ -174,7 +201,7 @@ describe('acceptInviteAction', () => {
     expect(fakes.fakeClearPendingInvite).toHaveBeenCalledOnce();
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
   });
@@ -254,9 +281,20 @@ describe('acceptRecipientInviteAction', () => {
     ]);
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
+  });
+
+  it('requires current legal acceptance before accepting an in-product invite', async () => {
+    fakes.fakeHasCurrentLegalAcceptance.mockReturnValue(false);
+
+    await expect(acceptRecipientInviteAction(form({ inviteId: INVITE_ID }))).rejects.toThrow(
+      'NEXT_REDIRECT:/legal/accept?returnTo=%2Fapp',
+    );
+
+    expect(fakes.fakeGetUserLegalAcceptance).toHaveBeenCalledWith(USER_ID);
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
   });
 
   it('revalidates instead of redirecting for invalid, wrong-account, and already-member cases', async () => {

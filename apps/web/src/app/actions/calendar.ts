@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { publicActionError } from '@/lib/public-error';
@@ -92,6 +93,11 @@ export async function createCalendarEventAction(
         reminderMinutes: parsed.data.reminderMinutes ?? null,
         linkedEntityIds: parsed.data.linkedEntityIds,
       });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: got.userId, teamId: got.teamId },
+        'calendar_action_completed',
+        { action: 'create' },
+      );
       revalidatePath('/app/calendar');
       return { ok: true, id: event.id };
     } catch (err) {
@@ -169,6 +175,11 @@ export async function updateCalendarEventAction(
           },
         );
       }
+      trackProductEventBestEffort(
+        { kind: 'user', userId: got.userId, teamId: got.teamId },
+        'calendar_action_completed',
+        { action: 'update' },
+      );
       revalidatePath('/app/calendar');
       revalidatePath(`/app/calendar/${parsed.data.id}`);
       revalidatePath('/app/approvals');
@@ -212,6 +223,11 @@ export async function deleteCalendarEventAction(
             reason: 'A teammate cancelled this calendar event directly.',
           });
         },
+      );
+      trackProductEventBestEffort(
+        { kind: 'user', userId: got.userId, teamId: got.teamId },
+        'calendar_action_completed',
+        { action: 'delete' },
       );
       revalidatePath('/app/calendar');
       revalidatePath('/app/approvals');

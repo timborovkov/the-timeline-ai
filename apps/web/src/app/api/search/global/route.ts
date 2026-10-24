@@ -1,3 +1,4 @@
+import { bucketSearchResultCount } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import {
@@ -18,6 +19,7 @@ import { buildTimelineMoments, timelineMomentAnchorId } from '@timeline/shared/t
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { GLOBAL_SEARCH_SOURCE_VALUES, type GlobalSearchSource } from '@/lib/global-search-sources';
@@ -582,6 +584,16 @@ export async function POST(req: Request): Promise<Response> {
           pinned: pinState[`${result.pinTarget.kind}:${result.pinTarget.key}`] ?? false,
         }
       : result,
+  );
+
+  trackProductEventBestEffort(
+    { kind: 'user', userId: session.user.id, teamId: active.teamId },
+    'search_performed',
+    {
+      surface: 'global',
+      hasFilters: [input.kinds?.length, input.source, input.from, input.to].some(Boolean),
+      resultCountBucket: bucketSearchResultCount(normalizedResults.length),
+    },
   );
 
   return Response.json({
