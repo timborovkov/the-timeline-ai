@@ -181,8 +181,10 @@ PLATFORM_ADMIN_EMAILS=
         month, after billing recovery. Terminal Recall no-shows settle elapsed waiting-room minutes;
         a retry still releases so the same meeting can reserve again. Cancelling a joining/active
         meeting with no transcript chunks settles elapsed waiting-room minutes instead of releasing
-        them. Postmark success is recorded before email settlement. Meeting-finalize billing uses
-        the system actor so a departed creator cannot skip settlement. Free-grant inserts use
+        them. Postmark success is recorded before email settlement. A delivered message whose
+        settlement fails stays reserved for the janitor and is not resent. Reservation expiry locks
+        the billing account before the reservation row. Meeting-finalize billing uses the system
+        actor so a departed creator cannot skip settlement. Free-grant inserts use
         <code>ON CONFLICT DO NOTHING</code> so a unique race cannot abort team-create. The
         post-verify Free-grant backfill prefers oldest restricted Free workspaces and never assigns
         the grant to a paid team. Scheduled join billing denials fail the occurrence without pausing

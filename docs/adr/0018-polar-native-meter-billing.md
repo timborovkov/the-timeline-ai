@@ -188,8 +188,11 @@ credit hides margin and confuses prospects.
    workspace delays the BullMQ job instead of failing it. Janitor storage
    snapshots backfill missed days across the full 31-day lookback, including the
    previous calendar month, from absent storage operation ids. Each day is priced
-   on the plan effective that day, counted in that day's month, and that plan's
-   included discount is not taken from the live balance. Closed document absence intervals are excluded. Paid-plan changes reuse the Polar subscription id in `past_due`,
+   on the plan effective that day and counted in that day's month. A prior month
+   does not draw the live included discount. Same-plan overage is still invoiced.
+   Closed document absence intervals are excluded. Delivered email whose
+   settlement fails stays reserved for the janitor and is not resent. Reservation
+   expiry locks the billing account before the reservation row. Paid-plan changes reuse the Polar subscription id in `past_due`,
    `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
    preview prorates extra members from `member_days` rather than a full month.
    Inbound

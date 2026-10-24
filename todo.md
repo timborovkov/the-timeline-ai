@@ -608,7 +608,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       spend cap freezes the workspace. A positive spend-cap raise restores
       `read_only` / `balance_exhausted`. It does not clear `past_due`. Extra member-days persist denied charges. Terminal Recall no-shows settle
       waiting-room minutes. Cancelling a joining/active meeting with no chunks settles elapsed
-      minutes. Postmark success is recorded before email settlement. Meeting-finalize
+      minutes. Postmark success is recorded before email settlement. A delivered
+      message whose settlement fails stays reserved for the janitor and is not resent.
+      Reservation expiry locks the billing account before the reservation row. Meeting-finalize
       billing uses the system actor. Free-grant inserts do not abort the caller transaction; the
       post-verify backfill prefers oldest restricted Free workspaces. Scheduled join billing denials
       do not pause auto-join as consecutive failures. Document writes require a reservable billing state.
