@@ -59,7 +59,10 @@ credit hides margin and confuses prospects.
    ingested as Polar events and invoiced monthly in arrears on the card on
    file. There is no prepaid wallet, top-up product, or auto-reload.
    `pnpm billing:polar-setup` archives a product named Timeline Top-up and does
-   not create one. The spend cap is the risk control: €0 or metered spend at
+   not create one. A stray `order.paid` for that product, or any other one-time
+   purchase that is not a subscription product, is recorded on the usage ledger
+   and opens an unbilled alert for the platform operator. It does not credit
+   `walletBalanceCents`. The spend cap is the risk control: €0 or metered spend at
    the cap is a hard stop, with owner alerts at 50/75/90/100%. Free workspaces
    hard-stop on native allowances. Comps skip Polar checkout and meter ingest;
    assigning a comp revokes the current Polar subscription, and the comp is
@@ -177,7 +180,8 @@ credit hides margin and confuses prospects.
    Platform-fee overrides are not applied to fixed Polar products. Polar usage ingest claims the outbox row (`pending` → `in_progress`)
    and sends a stable Polar event `id` so settle and the janitor cannot
    double-ingest; a failed ingest returns the row to `pending`. `order.paid`
-   does not credit a local balance. Credentials signup keeps the
+   does not credit a local balance. A retired top-up payment is recorded on the
+   ledger and opened as an unbilled alert instead. Credentials signup keeps the
    workspace restricted until the owner email is verified; unverified owners are
    excluded from the Free-grant backfill; `email_verification`
    mail and `support_request` mail are not metered against that restricted

@@ -1,4 +1,10 @@
-import { billingFreeGrants, teamBillingAccounts, type Db } from '@timeline/db';
+import {
+  billingFreeGrants,
+  billingUnbilledAlerts,
+  billingUsageLedger,
+  teamBillingAccounts,
+  type Db,
+} from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
@@ -10,6 +16,7 @@ import {
   type PendingEnterpriseTerms,
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
+import { TIMELINE_TOPUP_PRODUCT_NAME } from '#src/billing/polar-setup.js';
 import { childLogger } from '#src/logger.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business' | 'enterprise';
@@ -39,6 +46,15 @@ export interface PolarWebhookPayload {
     checkout?: { id?: string };
     order_id?: string;
     orderId?: string;
+    billing_reason?: string;
+    billingReason?: string;
+    product_name?: string;
+    product?: {
+      id?: string;
+      name?: string;
+      is_recurring?: boolean;
+      isRecurring?: boolean;
+    };
   };
 }
 
@@ -47,7 +63,11 @@ export interface PolarWebhookProductIds {
   team?: string;
   business?: string;
   enterprise?: string;
+  /** Retired one-time product id, used only to recognize a stray paid order. */
+  topup?: string;
 }
+
+export const RETIRED_TOPUP_ALERT_REASON_PREFIX = 'retired_topup_paid:';
 
 const log = childLogger('billing:polar-webhook');
 
@@ -391,6 +411,91 @@ async function cancelMatchingSubscription(input: {
   });
 }
 
+/**
+ * A paid one-time order that is not a subscription product. New checkouts for
+ * the retired top-up are gone; an order Polar already collected still has to
+ * be recorded.
+ */
+export function isRetiredPaidTopupOrder(input: {
+  data: PolarWebhookPayload['data'];
+  products: PolarWebhookProductIds;
+}): boolean {
+  const data = input.data;
+  if (!data) return false;
+  const productId = data.product_id ?? data.product?.id;
+  const name = (data.product?.name ?? data.product_name ?? '').trim();
+  if (input.products.topup && productId === input.products.topup) return true;
+  if (name === TIMELINE_TOPUP_PRODUCT_NAME) return true;
+  if (planFromPolarProductId(productId, input.products)) return false;
+  const reason = (data.billing_reason ?? data.billingReason ?? '').trim().toLowerCase();
+  if (reason === 'purchase') return true;
+  const recurring = data.product?.is_recurring ?? data.product?.isRecurring;
+  return recurring === false && Boolean(productId);
+}
+
+function periodYm(date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+async function recordRetiredPaidTopup(input: {
+  db: Db;
+  teamId: string;
+  data: NonNullable<PolarWebhookPayload['data']>;
+}): Promise<void> {
+  const orderId = input.data.id ?? `anon:${input.teamId}`;
+  const cents =
+    typeof input.data.amount === 'number' &&
+    Number.isInteger(input.data.amount) &&
+    input.data.amount > 0
+      ? input.data.amount
+      : 0;
+  const productId = input.data.product_id ?? input.data.product?.id ?? null;
+  const operationId = `polar_topup:${orderId}`;
+  const detail = `Paid retired top-up order ${orderId} for ${String(cents)} cents${
+    productId ? ` (product ${productId})` : ''
+  }. Recorded only. The wallet balance was not credited. Refund the order in Polar.`;
+  await input.db.transaction(async (tx) => {
+    const [ledger] = await tx
+      .insert(billingUsageLedger)
+      .values({
+        teamId: input.teamId,
+        operationId,
+        kind: 'top_up',
+        meterId: 'ai',
+        nativeUnits: '0',
+        customerChargeCents: 0,
+        billable: false,
+        nonBillableReason: 'retired_topup',
+        operationClass: 'retired_topup',
+        source: 'polar_order',
+        metadata: {
+          cents,
+          order_id: orderId,
+          wallet_credited: false,
+          ...(productId ? { product_id: productId } : {}),
+        },
+      })
+      .onConflictDoNothing()
+      .returning({ id: billingUsageLedger.id });
+    await tx
+      .insert(billingUnbilledAlerts)
+      .values({
+        teamId: input.teamId,
+        meterId: 'top_up',
+        periodYm: periodYm(),
+        reason: `${RETIRED_TOPUP_ALERT_REASON_PREFIX}${orderId}`,
+        detail,
+      })
+      .onConflictDoNothing();
+    if (ledger) {
+      log.warn(
+        { teamId: input.teamId, orderId, cents },
+        'retired top-up payment recorded; wallet not credited',
+      );
+    }
+  });
+}
+
 export async function handlePolarWebhookEvent(input: {
   db: Db;
   payload: PolarWebhookPayload;
@@ -449,6 +554,14 @@ export async function handlePolarWebhookEvent(input: {
       subscriptionId: data?.id,
       incomingModifiedAt: polarEventModifiedAt(data),
     });
+  }
+
+  if (
+    type === 'order.paid' &&
+    data &&
+    isRetiredPaidTopupOrder({ data, products: input.products })
+  ) {
+    await recordRetiredPaidTopup({ db: input.db, teamId, data });
   }
 
   return { ok: true };
