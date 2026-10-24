@@ -71,7 +71,10 @@ function applyTeamFilter(points: StoredPoint[], filter: unknown): StoredPoint[] 
   return points.filter((point) => point.payload.team_id === teamClause.match.value);
 }
 
-function memoryQdrant(initial: Record<string, StoredPoint[]>): {
+function memoryQdrant(
+  initial: Record<string, StoredPoint[]>,
+  vectorSize = 4,
+): {
   fetcher: typeof fetch;
   store: Record<string, StoredPoint[]>;
 } {
@@ -93,7 +96,7 @@ function memoryQdrant(initial: Record<string, StoredPoint[]>): {
           JSON.stringify({
             result: {
               points_count: store[collection].length,
-              config: { params: { vectors: { size: 4, distance: 'Cosine' } } },
+              config: { params: { vectors: { size: vectorSize, distance: 'Cosine' } } },
               payload_schema: {
                 team_id: { data_type: 'keyword', params: { is_tenant: true } },
               },
@@ -343,6 +346,24 @@ describe('copyCollectionPoints', () => {
     expect(copied.upserted).toBe(1);
     expect(copied.dryRun).toBe(true);
     expect(store.events_ondisk).toEqual([]);
+  });
+
+  it('detects different vectors even when their aggregate moments match', async () => {
+    const { fetcher } = memoryQdrant(
+      {
+        events: [{ id: 'p1', vector: [0.5, 0, 0.5, 0.5, 0, 0.5], payload }],
+        events_ondisk: [{ id: 'p1', vector: [0.5, 0.5, 0, 0, 0.5, 0.5], payload }],
+      },
+      6,
+    );
+    const source = createQdrantClient({ fetcher, collection: 'events', vectorSize: 6 });
+    const target = createQdrantClient({ fetcher, collection: 'events_ondisk', vectorSize: 6 });
+    await expect(
+      verifyCollectionIdentity(source, target, { teamIds: TEAM_IDS }),
+    ).resolves.toMatchObject({
+      matched: false,
+      vectorMismatches: ['p1'],
+    });
   });
 
   it('skips points that lack a dense vector or payload', async () => {

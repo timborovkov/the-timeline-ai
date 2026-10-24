@@ -29,6 +29,7 @@ function migrateArgs(overrides: Partial<QdrantMigrateArgs> = {}): QdrantMigrateA
     recallK: 5,
     teamIds: [],
     allTeams: false,
+    production: false,
     ...overrides,
   };
 }
@@ -100,6 +101,7 @@ function fakeClient(
     nextOffset: null,
   });
   const client = {
+    createSnapshot: vi.fn().mockResolvedValue({ name: 'events-backup.snapshot', size: 1024 }),
     collectionName: () => name,
     ensureCollection,
     countAllPoints: vi.fn().mockResolvedValue(points),
@@ -126,6 +128,60 @@ function fakeClient(
 }
 
 describe('qdrant-migrate-collection CLI', () => {
+  it('backs up production before creating or writing the target and refuses failed backups', async () => {
+    const source = fakeClient('events');
+    const target = fakeClient('events_ondisk');
+    const env = {
+      NODE_ENV: 'production',
+      QDRANT_URL: 'https://qdrant.example.com',
+      ALLOW_QDRANT_MIGRATE_PRODUCTION: 'I_UNDERSTAND_THIS_MIGRATES_PRODUCTION_QDRANT',
+    };
+    const args = parseArgs([
+      '--source-collection=events',
+      '--target-collection=events_ondisk',
+      '--production',
+      '--create-target',
+      '--copy',
+      '--verify',
+      '--writers-paused',
+      '--all-teams',
+    ]);
+    const snapshot = vi.spyOn(source.client, 'createSnapshot');
+    snapshot.mockRejectedValueOnce(new Error('snapshot storage unavailable'));
+    const createClient = (opts: { collection?: string }) =>
+      opts.collection === 'events' ? source.client : target.client;
+    await expect(
+      runQdrantMigrateCollection(args, { env, createClient, write: vi.fn() }),
+    ).rejects.toThrow('snapshot storage unavailable');
+    expect(target.ensureCollection).not.toHaveBeenCalled();
+    expect(target.upsertPoints).not.toHaveBeenCalled();
+    const write = vi.fn();
+    await runQdrantMigrateCollection(args, { env, createClient, write });
+    expect(snapshot).toHaveBeenCalledTimes(2);
+    expect(target.upsertPoints).toHaveBeenCalled();
+    expect(JSON.parse(write.mock.calls.at(-1)?.[0] as string)).toMatchObject({
+      snapshot: { name: 'events-backup.snapshot', size: 1024 },
+      verify: { matched: true },
+    });
+    const setExitCode = vi.fn();
+    vi.spyOn(source.client, 'countAllPoints').mockResolvedValueOnce(3);
+    await runQdrantMigrateCollection(args, { env, createClient, write, setExitCode });
+    expect(setExitCode).toHaveBeenCalledWith(1);
+    expect(JSON.parse(write.mock.calls.at(-1)?.[0] as string)).toMatchObject({
+      verify: { matched: false, totalCounts: { source: 3, target: 2 } },
+    });
+    snapshot.mockClear();
+    await runQdrantMigrateCollection({ ...args, dryRun: true }, { env, createClient, write });
+    expect(snapshot).not.toHaveBeenCalled();
+    await expect(
+      runQdrantMigrateCollection(
+        { ...args, sourceCollection: 'wrong_source' },
+        { env, createClient, write },
+      ),
+    ).rejects.toThrow(/active QDRANT_COLLECTION/);
+    expect(snapshot).not.toHaveBeenCalled();
+  });
+
   it('parses the copy/verify flow used by the documented cutover', () => {
     expect(
       parseArgs([

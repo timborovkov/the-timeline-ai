@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { QdrantClient, QdrantPayload, QdrantPointRecord } from '#src/qdrant/client.js';
 
 const DEFAULT_COPY_PAGE_SIZE = 64;
@@ -108,18 +110,7 @@ function pointIdKey(id: string | number): string {
 }
 
 function vectorFingerprint(vector: number[]): string {
-  let sum = 0;
-  let weighted = 0;
-  let sumSq = 0;
-  for (let i = 0; i < vector.length; i += 1) {
-    const value = vector[i] ?? 0;
-    sum += value;
-    weighted += value * (i + 1);
-    sumSq += value * value;
-  }
-  return `${String(vector.length)}:${String(vector[0] ?? 0)}:${String(
-    vector[vector.length - 1] ?? 0,
-  )}:${String(sum)}:${String(weighted)}:${String(sumSq)}`;
+  return createHash('sha256').update(JSON.stringify(vector)).digest('hex');
 }
 
 /**

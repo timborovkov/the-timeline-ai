@@ -21,8 +21,9 @@
  *   --dry-run --page-size=64
  *
  * Then switch `QDRANT_COLLECTION=events_ondisk` and restart web + workers.
- * Refuses NODE_ENV=production, Railway production, and non-loopback
- * QDRANT_URL unless ALLOW_QDRANT_MIGRATE_REMOTE is set.
+ * Production requires --production, ALLOW_QDRANT_MIGRATE_PRODUCTION,
+ * paused writers, an all-team copy/verify, and a successful source snapshot.
+ * Other remote targets require ALLOW_QDRANT_MIGRATE_REMOTE.
  */
 import { loadEnvFile } from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -53,6 +54,7 @@ export interface QdrantMigrateArgs {
   userId?: string;
   teamIds: string[];
   allTeams: boolean;
+  production: boolean;
 }
 
 export interface QdrantMigrateDeps {
@@ -85,6 +87,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
   let userId: string | undefined;
   const teamIds: string[] = [];
   let allTeams = false;
+  let production = false;
 
   for (const arg of argv) {
     if (arg === '--') continue;
@@ -99,6 +102,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
     else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--writers-paused') writersPaused = true;
     else if (arg === '--all-teams') allTeams = true;
+    else if (arg === '--production') production = true;
     else if (arg.startsWith('--page-size=')) {
       pageSize = parsePositiveInt(arg.slice('--page-size='.length), '--page-size');
     } else if (arg.startsWith('--recall-sample=')) {
@@ -158,6 +162,7 @@ export function parseArgs(argv = process.argv.slice(2)): QdrantMigrateArgs {
     recallK,
     teamIds: qdrant.normalizeTeamIds(teamIds),
     allTeams,
+    production,
   };
   if (teamId) args.teamId = teamId;
   if (userId) args.userId = userId;
@@ -177,6 +182,7 @@ export function usage(): string {
     'Usage: qdrant-migrate-collection --source-collection=<name> --target-collection=<name>\n' +
     '       [--create-target] [--copy] [--verify] [--writers-paused]\n' +
     '       [--all-teams | --team=<uuid> ...]\n' +
+    '       [--production (requires explicit production acknowledgement and source backup)]\n' +
     '       [--measure --team=<uuid> --user=<uuid>]\n' +
     '       [--dry-run] [--page-size=64] [--recall-sample=32] [--recall-k=10]'
   );
@@ -194,7 +200,10 @@ export async function runQdrantMigrateCollection(
   deps: QdrantMigrateDeps = {},
 ): Promise<void> {
   const env = deps.env ?? process.env;
-  qdrant.assertQdrantMigrateAllowed(env);
+  qdrant.assertQdrantMigrateAllowed(env, args);
+  if (args.sourceCollection === args.targetCollection) {
+    throw new QdrantMigrateUsageError('--source-collection and --target-collection must differ');
+  }
   if (args.copy && !args.dryRun && !args.writersPaused) {
     throw new QdrantMigrateUsageError(
       'Live --copy requires --writers-paused after pausing embed workers so upserts during the copy are not lost',
@@ -204,6 +213,11 @@ export async function runQdrantMigrateCollection(
   const setExitCode = deps.setExitCode ?? ((code: number) => (process.exitCode = code));
   const createClient = deps.createClient ?? qdrant.createQdrantClient;
   const parsedEnv = getEnv();
+  if (args.production && args.sourceCollection !== parsedEnv.QDRANT_COLLECTION) {
+    throw new QdrantMigrateUsageError(
+      'Production --source-collection must match the active QDRANT_COLLECTION',
+    );
+  }
   const quantization = qdrant.qdrantQuantizationFromEnv(parsedEnv);
   const vectorSize = TIMELINE_MODELS.embedding.embeddingDimensions;
   const createBody = qdrant.qdrantCollectionCreateBody(vectorSize, quantization.kind);
@@ -224,7 +238,13 @@ export async function runQdrantMigrateCollection(
   const source = createClient({
     collection: args.sourceCollection,
     requireExisting: true,
+    repairTenantIndex: false,
   });
+
+  if (args.production && !args.dryRun) {
+    report.snapshot = await source.createSnapshot();
+    write(`${JSON.stringify({ mode: 'qdrant_source_backup', snapshot: report.snapshot })}\n`);
+  }
 
   if (args.createTarget) {
     if (args.dryRun) {
@@ -302,8 +322,17 @@ export async function runQdrantMigrateCollection(
         pageSize: args.pageSize,
         teamIds: verifyTeamIds,
       });
-      const matched = counts.matched && identity.matched;
-      report.verify = { ...counts, identity, matched };
+      const totalCounts = args.production
+        ? {
+            source: await source.countAllPoints(),
+            target: await target.countAllPoints(),
+          }
+        : undefined;
+      const coverageMatches =
+        !totalCounts ||
+        (totalCounts.source === counts.sourceCount && totalCounts.target === counts.targetCount);
+      const matched = counts.matched && identity.matched && coverageMatches;
+      report.verify = { ...counts, identity, totalCounts, matched };
       if (!matched) setExitCode(1);
     }
   }

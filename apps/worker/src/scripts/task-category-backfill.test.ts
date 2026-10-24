@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  assertTaskCategoryBackfillCost,
   assertTaskCategoryBackfillModeEnabled,
   closeTaskCategoryBackfillResources,
   enqueueTaskCategoryBackfillBatch,
   loadTaskCategoryBackfillEnv,
   parseMaxQueueAgeSeconds,
+  TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD,
 } from '#src/scripts/task-category-backfill.js';
 
 describe('task category backfill script', () => {
@@ -22,6 +24,46 @@ describe('task category backfill script', () => {
     expect(() => {
       assertTaskCategoryBackfillModeEnabled(true, disabled);
     }).toThrow('Task category backfill execution is disabled by an operational kill switch');
+  });
+
+  it('bounds enqueue spend and allows a dry run without a cost cap', () => {
+    expect(() => {
+      assertTaskCategoryBackfillCost({
+        execute: false,
+        estimatedCostUsd: 10,
+        maxCostUsd: null,
+      });
+    }).not.toThrow();
+    expect(() => {
+      assertTaskCategoryBackfillCost({
+        execute: true,
+        estimatedCostUsd: 0.1,
+        maxCostUsd: null,
+      });
+    }).toThrow('Enqueue requires --max-cost-usd <amount>');
+    expect(() => {
+      assertTaskCategoryBackfillCost({
+        execute: true,
+        estimatedCostUsd: 0.2,
+        maxCostUsd: 0.1,
+      });
+    }).toThrow('Projected cost $0.2 exceeds --max-cost-usd $0.1');
+    expect(() => {
+      assertTaskCategoryBackfillCost({
+        execute: true,
+        estimatedCostUsd: 0.1,
+        maxCostUsd: TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD + 1,
+      });
+    }).toThrow(
+      `--max-cost-usd $${TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD + 1} exceeds the $${TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD} batch ceiling`,
+    );
+    expect(() => {
+      assertTaskCategoryBackfillCost({
+        execute: true,
+        estimatedCostUsd: TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD,
+        maxCostUsd: TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD,
+      });
+    }).not.toThrow();
   });
 
   it('loads an explicit environment file before reading flags or database configuration', () => {

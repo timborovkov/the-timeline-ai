@@ -435,6 +435,37 @@ describe('createQdrantClient', () => {
     expect(calls.some((call) => call.method === 'GET' && call.url.endsWith('/memory'))).toBe(true);
   });
 
+  it('requires a completed, nonempty snapshot before reporting a backup', async () => {
+    const { fetcher } = makeFetcher({ collectionExists: true });
+    const snapshot = { name: 'events-backup.snapshot', size: 1024 };
+    let response: unknown = { result: snapshot };
+    const client = createQdrantClient({
+      fetcher: async (url, init) => {
+        const requestUrl = typeof url === 'string' ? url : new Request(url).url;
+        if (requestUrl.endsWith('/snapshots?wait=true')) {
+          expect(init?.method).toBe('POST');
+          expect(init?.headers).toMatchObject({ 'api-key': 'test-key' });
+          return Response.json(response);
+        }
+        return fetcher(url, init);
+      },
+    });
+    await expect(client.createSnapshot()).resolves.toEqual(snapshot);
+    response = { result: { name: snapshot.name, size: 0 } };
+    await expect(client.createSnapshot()).rejects.toThrow(/snapshot/);
+    response = { result: true };
+    await expect(client.createSnapshot()).rejects.toThrow(/snapshot/);
+  });
+
+  it('inspects a legacy migration source without repairing its index', async () => {
+    const { fetcher, calls } = makeFetcher({ collectionExists: true, teamIndexExists: false });
+    const client = createQdrantClient({ fetcher, requireExisting: true, repairTenantIndex: false });
+    await client.collectionInfo();
+    await client.scrollPoints({ unfiltered: true });
+    expect(calls.every((call) => call.method === 'GET' || call.method === 'POST')).toBe(true);
+    expect(calls.some((call) => call.url.endsWith('/index'))).toBe(false);
+  });
+
   it('search sends quantization rescore params', async () => {
     const { fetcher, calls } = makeFetcher({ collectionExists: true });
     const client = createQdrantClient({ fetcher });

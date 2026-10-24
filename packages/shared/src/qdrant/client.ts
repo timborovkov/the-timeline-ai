@@ -285,6 +285,8 @@ export interface QdrantClient {
    * `GET /collections/{name}/memory` (Qdrant 1.18+). Used by RAM measurement.
    */
   collectionMemory(): Promise<unknown>;
+  /** Operator backup; waits for a completed, nonempty collection snapshot. */
+  createSnapshot(): Promise<{ name: string; size: number }>;
   /** Prometheus text from `/metrics`. */
   metricsText(): Promise<string>;
   /** Test/admin-only: read the collection name this instance writes to. */
@@ -318,6 +320,8 @@ export interface QdrantClientOptions {
    * explicitly (`--create-target` or the documented PUT).
    */
   requireExisting?: boolean;
+  /** Disable automatic index repair when inspecting or backing up a migration source. */
+  repairTenantIndex?: boolean;
 }
 
 interface QdrantHttpError extends Error {
@@ -473,7 +477,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
             )}. Recreate the collection or set QDRANT_COLLECTION to a collection built for the active embedding model before retrying jobs.`,
           );
         }
-        if (!collectionHasTenantPayloadIndex(head.data)) {
+        if (opts.repairTenantIndex !== false && !collectionHasTenantPayloadIndex(head.data)) {
           await ensureTenantPayloadIndex();
         }
         return;
@@ -1029,6 +1033,29 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     return text;
   }
 
+  async function createSnapshot(): Promise<{ name: string; size: number }> {
+    await ensureCollection();
+    const res = await request(
+      'POST',
+      `/collections/${encodeURIComponent(collection)}/snapshots?wait=true`,
+    );
+    const data = res.data as { result?: { name?: unknown; size?: unknown } } | null;
+    const snapshot = data?.result;
+    if (
+      res.status !== 200 ||
+      typeof snapshot?.name !== 'string' ||
+      !snapshot.name.trim() ||
+      typeof snapshot.size !== 'number' ||
+      !Number.isFinite(snapshot.size) ||
+      snapshot.size <= 0
+    ) {
+      throw new Error(
+        `Qdrant snapshot did not complete with a nonempty backup for '${collection}'`,
+      );
+    }
+    return { name: snapshot.name, size: snapshot.size };
+  }
+
   async function scrollPointPayloads(
     filter: Record<string, unknown>,
     payloadFields: string[],
@@ -1117,6 +1144,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
     patchOptimizers,
     collectionInfo,
     collectionMemory,
+    createSnapshot,
     metricsText,
     collectionName: () => collection,
   };
@@ -1129,7 +1157,7 @@ export function createQdrantClient(opts: QdrantClientOptions = {}): QdrantClient
 // per collection — not once per request/job. A reembed of thousands of
 // rows previously paid thousands of redundant HEAD requests; now it pays one.
 //
-// Keyed by `${collection}|${requireExisting ? 1 : 0}` because the two modes
+// Keyed by collection, existence policy, and tenant-index repair policy because those modes
 // produce structurally different clients (auto-create vs hard-error on
 // missing). Tests can pass `fetcher` to bypass the cache entirely (each
 // `createQdrantClient` call with a non-default fetcher returns a fresh
@@ -1145,7 +1173,7 @@ export function getQdrantClient(opts: QdrantClientOptions = {}): QdrantClient {
   if (opts.fetcher) return createQdrantClient(opts);
   const env = getEnv();
   const collection = opts.collection ?? env.QDRANT_COLLECTION;
-  const key = `${collection}|${opts.requireExisting ? 1 : 0}`;
+  const key = `${collection}|${opts.requireExisting ? 1 : 0}|${opts.repairTenantIndex === false ? 0 : 1}`;
   const cached = _clientCache.get(key);
   if (cached) return cached;
   const client = createQdrantClient(opts);

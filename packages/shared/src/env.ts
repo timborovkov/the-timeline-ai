@@ -249,11 +249,18 @@ const baseSchema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
-  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  /**
+   * Emergency stop for task categories. When true, the env transform forces
+   * classification, enqueue, the worker, backfill, and the UI off together.
+   * Individual flags still work when this is false. Historical backfill stays
+   * default-off so a deploy cannot enqueue the backlog.
+   */
+  TASK_CATEGORY_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_BACKFILL_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   CROSS_SOURCE_EVIDENCE_MODE: z.enum(['off', 'shadow', 'enforced']).default('off'),
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
@@ -498,6 +505,15 @@ const schema = baseSchema
   .transform((env) => ({
     ...env,
     LANGSMITH_PROJECT: env.LANGSMITH_PROJECT ?? `timeline-${env.NODE_ENV}`,
+    ...(env.TASK_CATEGORY_DISABLED
+      ? {
+          TASK_CATEGORY_CLASSIFICATION_ENABLED: false as const,
+          TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false as const,
+          TASK_CATEGORY_WORKER_ENABLED: false as const,
+          TASK_CATEGORY_BACKFILL_ENABLED: false as const,
+          TASK_CATEGORY_UI_ENABLED: false as const,
+        }
+      : {}),
   }));
 
 export type Env = z.infer<typeof schema>;
