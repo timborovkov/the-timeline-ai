@@ -719,10 +719,12 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
       </p>
       <p>
         Production smoke tests must cover the unauthenticated <code>401</code> challenge, both
-        well-known metadata documents, browser consent for a real member and team, a read-tool call,
-        the <code>agent:ask</code> scope-upgrade path, token refresh, user revocation, and immediate
-        rejection after team removal. Test the canonical HTTPS origin from each intended host; a
-        local plugin validation does not exercise the deployed OAuth or MCP server.
+        well-known metadata documents, CORS preflight on <code>/oauth/register</code>,
+        <code>/oauth/token</code>, and <code>/oauth/revoke</code>, browser consent for a real member
+        and team, a read-tool call, the <code>agent:ask</code> scope-upgrade path, token refresh,
+        user revocation, and immediate rejection after team removal. Test the canonical HTTPS origin
+        from each intended host; a local plugin validation does not exercise the deployed OAuth or
+        MCP server.
       </p>
       <p>
         Test the remote server in ChatGPT Developer Mode under

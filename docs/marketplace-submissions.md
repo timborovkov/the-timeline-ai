@@ -50,12 +50,12 @@ review requirements may change independently of this repository.
 
 | State | Evidence | Status |
 | --- | --- | --- |
-| Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, tests | Ready on PR branch after merging latest `main` on 2026-10-24 |
+| Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, browser CORS on register/token/revoke, tests | Ready on PR branch after merging latest `main` (including #391) on 2026-10-24 |
 | Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open; refreshed onto current `main` on 2026-10-24; not merged |
 | Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27; plugin source files were not changed in the 2026-10-24 refresh |
 | Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-10-24 after merging latest `main` |
 | Production deployment | Migration `0075_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
-| Production MCP smoke | OAuth discovery, consent, tools, refresh, revocation, role and membership invalidation | Blocked: production still serves the legacy MCP implementation |
+| Production MCP smoke | OAuth discovery, CORS preflight, consent, tools, refresh, revocation, role and membership invalidation | Blocked: production still serves the legacy MCP implementation |
 | OpenAI draft | Portal draft URL and ID | Not created; verified developer identity and production deployment required |
 | OpenAI review | Submission timestamp and review status | Not submitted |
 | OpenAI publication | Visible Plugins Directory URL | Not published |
@@ -126,6 +126,10 @@ Production still returned 404 for that document on 2026-08-27.
      returns 200
    - `GET https://thetimeline.cc/.well-known/oauth-authorization-server` returns
      200
+   - `OPTIONS https://thetimeline.cc/oauth/register`, `/oauth/token`, and
+     `/oauth/revoke` return 204 with `Access-Control-Allow-Origin: *`, methods
+     `POST, OPTIONS`, headers `authorization, content-type, mcp-protocol-version`,
+     and no `Access-Control-Allow-Credentials`
    - unauthenticated `POST https://thetimeline.cc/api/mcp/server` returns `401`
      with a `WWW-Authenticate` resource-metadata challenge
    - current-protocol `initialize`, `tools/list`, and an authorized read tool
@@ -179,19 +183,24 @@ not clear provider identity, account-plan, or production deployment gates.
 
 ### Operator evidence: 2026-10-24
 
-- Merged current `main` into PR #392 and kept mainline billing, task-category
-  default-on, OpenRouter model pins, Qdrant on-disk/int8, and AI SDK 7 behavior.
-  Five content conflicts were resolved in documentation dates, MCP handler
-  tests, and schema-contract tests.
+- Merged current `main` into PR #392, including privacy-safe analytics #391
+  (`3d95c133`). Kept mainline PostHog env and analytics contracts, billing,
+  task-category default-on, OpenRouter model pins, Qdrant on-disk/int8, and AI
+  SDK 7 behavior. The OAuth migration is `0075_mcp_oauth_server` with journal
+  `when` strictly after main's `0073_legal_acceptance_history` and
+  `0074_recall_join_metadata_minimization`.
+- Browser MCP clients: `/oauth/register`, `/oauth/token`, and `/oauth/revoke`
+  now answer `OPTIONS` preflight and attach the same public CORS as discovery
+  (`Access-Control-Allow-Origin: *`, no credentials, explicit allowed headers).
 - Repository MCP/OAuth follow-up on this branch: IPv6 loopback host matching
   (`localhost`, `127.0.0.1`, `::1`, `[::1]`), `invalid_client` mapped to HTTP
   `401`, extra redirect/PKCE-plain/credentialed-URI tests, and AI-apps grant UI
   tests. Plugin source files were not changed.
 - `pnpm validate` passed (Prettier, typecheck, ESLint, Knip).
 - `pnpm run doctor` reported `React Doctor score: 100` and `No issues found!`.
-- `pnpm test` completed all six workspace tasks successfully in 37 minutes 51
-  seconds after the merge.
-- `pnpm test:eval` and `pnpm test:dist-imports` passed on the merged revision.
+- `pnpm test` completed all six workspace tasks successfully after the #391
+  merge and OAuth CORS change (web 2,340 tests).
+- `pnpm test:eval` and `pnpm test:dist-imports` passed on that revision.
 - Local `GET /.well-known/oauth-authorization-server` and
   `GET /.well-known/oauth-protected-resource/api/mcp/server` returned `200` with
   `read` plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
