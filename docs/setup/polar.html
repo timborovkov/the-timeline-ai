@@ -122,7 +122,10 @@ BILLING_CHARGES_ENABLED=false
         <code>refund.created</code> and <code>order.refunded</code> events reconcile against
         reversals already recorded so a partial refund cannot take the whole top-up or debit twice.
         A shortfall freezes the workspace if that credit was already spent. Refunds that arrive
-        before <code>order.paid</code> are stored and applied when the top-up credits. Local usage
+        before <code>order.paid</code> are stored and applied when the top-up credits. A top-up that
+        was already paid still credits the wallet if the subscription was canceled, or the plan
+        moved to Free or Enterprise, before the webhook arrives. That credit does not change the
+        current plan. New top-up checkouts stay limited to PAYG, Team, and Business. Local usage
         settlement is independent of Polar ingest: prepaid wallet and included discount already
         collect locally, including sub-cent rounds, so those units are not sent to Polar meters.
         Only Enterprise usage is ingested to Polar meters. Remaining Polar ingest uses a ledger

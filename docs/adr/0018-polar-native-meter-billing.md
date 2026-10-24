@@ -53,11 +53,13 @@ credit hides margin and confuses prospects.
    `accepted_sources` meter. Extra owned workspaces do not mint a second Free
    grant (`billing_free_grants` + `restricted` state).
 7. Prepaid PAYG collection is a €10 Polar top-up (`POLAR_PRODUCT_ID_TOPUP`)
-   credited to `walletBalanceCents` on wallet-backed plans (PAYG/Team/Business).
-   Enterprise invoices Polar meters without a prepaid wallet. Free workspaces
-   hard-stop on native allowances and cannot buy
-   unusable top-ups. Owners can enable auto-reload: when the wallet is at/below
-   the threshold **and** remaining spend-cap headroom covers the full €10 Polar
+   credited to `walletBalanceCents`. New checkouts are limited to PAYG, Team,
+   and Business. An `order.paid` that already succeeded still credits the
+   wallet after a later plan change, including Free or Enterprise, and does not
+   change that plan. Enterprise invoices Polar meters without spending the
+   prepaid wallet. Free workspaces hard-stop on native allowances and cannot
+   open a new top-up checkout. Owners can enable auto-reload: when the wallet is
+   at/below the threshold **and** remaining spend-cap headroom covers the full €10 Polar
    product, Timeline opens a Polar top-up checkout and emails owners the URL.
    Credit still lands on Polar `order.paid`. Polar subscription webhooks apply
    `shadowBilling` from `BILLING_CHARGES_ENABLED`, map Polar `status`, ignore

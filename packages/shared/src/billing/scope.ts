@@ -1293,9 +1293,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
           .limit(1)
           .for('update');
         if (!account) throw new Error('Missing billing account');
-        if (!planUsesPrepaidWallet(account.planId)) {
-          return { ok: true as const, duplicate: false as const };
-        }
+        // New checkouts are refused off PAYG/Team/Business. An order that
+        // already paid still credits the wallet after a later plan change,
+        // including Free or Enterprise, so the webhook cannot ack and drop it.
+        const walletPlan = planUsesPrepaidWallet(account.planId);
         const [ledgerRow] = await tx
           .insert(billingUsageLedger)
           .values({
@@ -1357,7 +1358,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             0,
           ) - collectedCents;
         const restoredState =
-          remainingDebt <= 0
+          walletPlan && remainingDebt <= 0
             ? restoredPaidBillingStateAfterWalletOrCapRecovery({
                 planId: account.planId,
                 billingState: account.billingState,

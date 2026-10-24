@@ -806,7 +806,79 @@ describe('handlePolarWebhookEvent', () => {
     expect(after.polarSubscriptionId).toBeNull();
   });
 
-  it('does not credit a prepaid top-up onto Enterprise or Free wallets', async () => {
+  it('credits a paid top-up after the subscription is canceled', async () => {
+    await enablePrepaidWallet();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET polar_subscription_id = 'sub_payg', wallet_balance_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.canceled',
+        data: {
+          id: 'sub_payg',
+          status: 'canceled',
+          product_id: 'prod_payg',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const canceled = await billing.getAccount();
+    expect(canceled.planId).toBe('free');
+    expect(canceled.billingState).toBe('restricted');
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_after_cancel',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'order.paid',
+        data: {
+          id: 'ord_after_cancel',
+          product_id: 'prod_topup',
+          amount: 1000,
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+
+    const after = await billing.getAccount();
+    expect(after.planId).toBe('free');
+    expect(after.billingState).toBe('restricted');
+    expect(after.walletBalanceCents).toBe(1000);
+    const ledger = await pg.query<{ kind: string; cents: string }>(
+      `SELECT kind, metadata->>'cents' AS cents
+       FROM billing_usage_ledger
+       WHERE team_id = '${TEAM_ID}' AND operation_id = 'polar_topup:ord_after_cancel'`,
+    );
+    expect(ledger.rows).toEqual([{ kind: 'top_up', cents: '1000' }]);
+  });
+
+  it('credits an already-paid top-up on Enterprise or Free without changing the plan', async () => {
     const billing = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -833,7 +905,10 @@ describe('handlePolarWebhookEvent', () => {
         },
       },
     });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+    const enterprise = await billing.getAccount();
+    expect(enterprise.planId).toBe('enterprise');
+    expect(enterprise.billingState).toBe('enterprise_active');
+    expect(enterprise.walletBalanceCents).toBe(1000);
 
     await pg.exec(`
       UPDATE team_billing_accounts
@@ -854,7 +929,10 @@ describe('handlePolarWebhookEvent', () => {
         },
       },
     });
-    expect((await billing.getAccount()).walletBalanceCents).toBe(0);
+    const free = await billing.getAccount();
+    expect(free.planId).toBe('free');
+    expect(free.billingState).toBe('restricted');
+    expect(free.walletBalanceCents).toBe(2000);
   });
 
   it('rejects a delayed older subscription after a newer one is stored', () => {
