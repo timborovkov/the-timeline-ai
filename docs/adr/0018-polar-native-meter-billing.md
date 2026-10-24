@@ -119,10 +119,12 @@ credit hides margin and confuses prospects.
    billing account and recheck Polar `modified_at` in the same transaction so an
    older event cannot overwrite a newer one. Polar webhook bodies are bounded to
    the integration webhook size limit before signature verify. Settlement that
-   exceeds the paid spend cap still records the full ledger charge and freezes
-   the workspace (`read_only`, spend cap €0). Raising a positive spend cap
-   restores `read_only` or `balance_exhausted`. It does not clear `past_due`.
-   Extra member-days persist
+   exceeds the current UTC period's paid spend cap still records the full ledger
+   charge and freezes the workspace (`read_only`, spend cap €0). A prior month's
+   counters and recovered charge are recorded on that month and are not compared
+   to the live cap, so lowering the cap does not freeze the workspace when an
+   earlier month is backfilled. Raising a positive spend cap restores `read_only`
+   or `balance_exhausted`. It does not clear `past_due`. Extra member-days persist
    the denied charge and freeze instead of skipping the extra seat. Janitor
    member-day ticks retry unsettled `member_days:<team>:<day>:<user>` facts across
    the full 31-day lookback, including the previous calendar month, after billing

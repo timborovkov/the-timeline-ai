@@ -614,8 +614,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       <code>pnpm billing:polar-setup</code> creates the meter without dropping
       other prices.
       Polar webhooks bound the request body before signature verify and lock the billing account
-      before applying Polar `modified_at`. Settlement above the paid
-      spend cap freezes the workspace. A positive spend-cap raise restores
+      before applying Polar `modified_at`. Settlement above the current UTC period's paid
+      spend cap freezes the workspace. A prior month is recorded on that month and does not
+      freeze against the live cap. A positive spend-cap raise restores
       `read_only` / `balance_exhausted`. It does not clear `past_due`. Extra member-days persist denied charges. Terminal Recall no-shows settle
       waiting-room minutes. Cancelling a joining/active meeting with no chunks settles elapsed
       minutes. Postmark success is recorded before email settlement. A delivered
@@ -636,7 +637,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       reported usage settles that attempt, then releases. Transcription chunks use distinct
       operation ids. Ask and web chat save the completed cost before settle and the janitor retries
       a failed settlement. Storage replay uses the plan effective that day, counts that day in its
-      own month, and skips closed document absence intervals. A missed renewal advances by calendar
+      own month, does not apply that month's spend to the live cap, and skips closed document
+      absence intervals. A missed renewal advances by calendar
       months from the subscription anchor. Settled reservations are recognized before a new funding
       check, and billing admission errors stay intact through the LLM wrapper. Enterprise settlement does not freeze on the spend cap. Member-day janitor ticks
       retry unsettled facts across the full 31-day lookback, including the previous calendar month.

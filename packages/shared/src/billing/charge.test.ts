@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   cumulativeChargeDeltaCents,
+  currentPeriodSpendCapExceeded,
   memberDayChargeDelta,
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
@@ -546,6 +547,58 @@ describe('nextIncludedDiscountPeriod', () => {
         periodEndsAt: new Date('2026-08-15T00:00:00Z'),
       }),
     ).toBeNull();
+  });
+});
+
+describe('current-period spend cap', () => {
+  const september = [{ periodYm: '2026-09', chargeCents: 2_000 }];
+  const octoberCounters = [{ periodYm: '2026-10', chargeCents: 900 }];
+
+  it('ignores a prior month even when that month is already over the live cap', () => {
+    expect(
+      currentPeriodSpendCapExceeded({
+        currentPeriodYm: '2026-10',
+        spendCapCents: 1_000,
+        segments: [{ periodYm: '2026-09', chargeCents: 25 }],
+        counterChargeCents: september,
+      }),
+    ).toBe(false);
+  });
+
+  it('freezes only the current-period slice of a span', () => {
+    expect(
+      currentPeriodSpendCapExceeded({
+        currentPeriodYm: '2026-10',
+        spendCapCents: 1_000,
+        segments: [
+          { periodYm: '2026-09', chargeCents: 2_000 },
+          { periodYm: '2026-10', chargeCents: 50 },
+        ],
+        counterChargeCents: octoberCounters,
+      }),
+    ).toBe(false);
+    expect(
+      currentPeriodSpendCapExceeded({
+        currentPeriodYm: '2026-10',
+        spendCapCents: 1_000,
+        segments: [
+          { periodYm: '2026-09', chargeCents: 25 },
+          { periodYm: '2026-10', chargeCents: 200 },
+        ],
+        counterChargeCents: octoberCounters,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not re-check an already-over current period when this settlement adds nothing there', () => {
+    expect(
+      currentPeriodSpendCapExceeded({
+        currentPeriodYm: '2026-10',
+        spendCapCents: 1_000,
+        segments: [{ periodYm: '2026-09', chargeCents: 25 }],
+        counterChargeCents: [{ periodYm: '2026-10', chargeCents: 5_000 }],
+      }),
+    ).toBe(false);
   });
 });
 

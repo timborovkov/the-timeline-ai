@@ -896,6 +896,79 @@ describe('billing scope', () => {
     if (retry.ok) expect(retry.alreadySettled).toBe(true);
   });
 
+  it('does not freeze a lowered cap when a prior month is settled', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 1000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '2026-09', 'storage_gb_month', 10, 2000);
+    `);
+    const settled = await scope.settle({
+      operationId: 'storage_gb:backfill:2026-09-cap',
+      meterId: 'storage_gb_month',
+      nativeUnits: 1,
+      customerChargeCents: 25,
+      usageAt: new Date('2026-09-30T12:00:00Z'),
+      pricingPeriodYm: '2026-09',
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) expect(settled.ledger.customerChargeCents).toBe(25);
+    const after = await scope.getAccount();
+    expect(after.billingState).toBe('payg_active');
+    expect(after.spendCapCents).toBe(1_000);
+    const [counter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(
+        and(
+          eq(billingUsageCounters.teamId, TEAM_ID),
+          eq(billingUsageCounters.meterId, 'storage_gb_month'),
+        ),
+      );
+    expect(counter?.periodYm).toBe('2026-09');
+    expect(counter?.customerChargeCents).toBe(2_025);
+  });
+
+  it('still freezes when the current period exceeds the spend cap', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const currentYm = periodYmUtc();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 1000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '${currentYm}', 'ai', 900, 900);
+    `);
+    const settled = await scope.settle({
+      operationId: 'op-current-cap',
+      meterId: 'ai',
+      nativeUnits: 200,
+      customerChargeCents: 200,
+    });
+    expect(settled.ok).toBe(true);
+    const after = await scope.getAccount();
+    expect(after.billingState).toBe('read_only');
+    expect(after.spendCapCents).toBe(0);
+  });
+
   it('prices a backfilled member-day with that month length', async () => {
     const scope = createBillingScope({
       db,

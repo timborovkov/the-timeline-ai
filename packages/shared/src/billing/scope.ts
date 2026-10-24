@@ -27,6 +27,7 @@ import {
 import {
   cumulativeBillableChargeCents,
   cumulativeChargeDeltaCents,
+  currentPeriodSpendCapExceeded,
   daysInPeriodYm,
   memberDayChargeDelta,
   metersPlusPendingReservations,
@@ -1187,7 +1188,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
             (sum, row) => sum + row.actualChargeCents,
             0,
           );
-          const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
           const historicalDiscount = input.historicalIncludedDiscountCents;
           const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
           const { discountCents, invoiceCents } = splitDiscountAndWallet({
@@ -1253,17 +1253,25 @@ export function createBillingScope(deps: BillingScopeDeps) {
             !enterpriseContract &&
             !comped &&
             discountCents > 0;
-          const periodSpendCents = countersBefore.reduce(
-            (sum, row) => sum + row.customerChargeCents,
-            0,
-          );
           const spendCapExceeded =
             localChargeSpendCapApplies({
               shadowBilling: !applyCharges,
               comped,
               enterpriseContract,
               entitlementsPlanId,
-            }) && periodSpendCents + actualChargeCents > account.spendCapCents;
+            }) &&
+            currentPeriodSpendCapExceeded({
+              currentPeriodYm: periodYm(),
+              spendCapCents: account.spendCapCents,
+              segments: segmentCharges.map((row) => ({
+                periodYm: row.periodYm,
+                chargeCents: row.actualChargeCents,
+              })),
+              counterChargeCents: countersBeforeRows.map((row) => ({
+                periodYm: row.periodYm,
+                chargeCents: row.customerChargeCents,
+              })),
+            });
           const freezeAccount = spendCapExceeded;
 
           const [ledgerRow] = await tx
