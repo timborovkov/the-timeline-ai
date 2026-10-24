@@ -35,7 +35,7 @@ exploit.
 
 ## Development expectations
 
-- Use Node.js 24+, pnpm 11.8+, and `pnpm` only.
+- Use Node.js 24.22.1 (see `.nvmrc`), pnpm 11.8+, and `pnpm` only.
 - Read [AGENTS.md](./AGENTS.md) and the documentation relevant to the changed
   subsystem.
 - Preserve team isolation, item visibility, secret handling, and the privacy

@@ -44,11 +44,14 @@ APIs and migrations may change before a stable release.
 
 ## Quick start
 
-Requirements: Node.js 24+, pnpm 11.8+, and Docker.
+Requirements: Node.js 24.22.1, pnpm 11.8+, and Docker.
 
 ```bash
 git clone https://github.com/timborovkov/the-timeline-ai.git
 cd the-timeline-ai
+nvm install
+nvm use
+corepack enable
 pnpm install
 
 cp .env.example .env

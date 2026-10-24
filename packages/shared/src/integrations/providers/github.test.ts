@@ -3118,6 +3118,7 @@ describe('githubProvider.incrementalSync', () => {
     process.env.GITHUB_APP_ID = '999';
     process.env.GITHUB_APP_PRIVATE_KEY = privateKey
       .export({ format: 'pem', type: 'pkcs1' })
+      .toString()
       .replaceAll('\n', '\\n');
     resetEnvForTests();
     const fetchMock = vi.fn<typeof fetch>((input, init) => {
