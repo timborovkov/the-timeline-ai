@@ -290,7 +290,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'Privacy Policy',
     description: 'How The Timeline processes personal data and team content.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: '2026-10-24', reviewed: '2026-10-24' },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],
@@ -309,7 +309,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     description:
       'The cookies, browser storage, analytics, and related technologies used by The Timeline.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: '2026-10-24', reviewed: '2026-10-24' },
     capability: { kind: 'not-applicable' },
     sitemap: { changeFrequency: 'monthly', priority: 0.4 },
     structuredData: [{ type: 'web-page' }],

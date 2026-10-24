@@ -15,6 +15,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { SIDEBAR_COOKIE_KEY, sidebarExpandedFromCookie } from '@/lib/sidebar-preference';
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';
@@ -49,7 +50,7 @@ export default async function AppLayout({
       .limit(1),
     cookies(),
   ]);
-  if (!legal || !hasCurrentLegalAcceptance(legal)) {
+  if (isLegalPublicationReady() && (!legal || !hasCurrentLegalAcceptance(legal))) {
     redirect('/legal/accept');
   }
 

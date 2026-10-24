@@ -1037,9 +1037,11 @@ status, and private vulnerability-reporting route. It must distinguish controls
 enforced in code from production-account, contract, and certification evidence;
 unverified badges and absolute “nothing leaves our servers” claims are
 prohibited. Privacy and Terms remain the detailed legal surfaces and cross-link
-Trust. `/legal/accept` is an authenticated blocking interstitial: one explicit
-acceptance covers the current Terms and Privacy versions for that person, and
-protected product access does not continue until it succeeds.
+Trust. Once legal publication is ready, `/legal/accept` is an authenticated
+blocking interstitial: one explicit acceptance covers the current Terms and
+Privacy versions for that person, and protected product access does not continue
+until it succeeds. While production publication is withheld, existing signed-in
+users retain product access and `/legal/accept` returns them to the product.
 
 `/cookies` uses the same legal-page reading surface for the exact cookie and
 browser-storage inventory. It separates necessary storage, always-on personless

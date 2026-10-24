@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Analytics setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-08-26</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-24</span></div>
       <blockquote>
         <p>
           PostHog Cloud EU is the only product and website analytics provider. Sentry remains a
@@ -88,6 +88,37 @@ NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
         optional PostHog and campaign-attribution state.
       </p>
 
+      <h3 id="website-traffic">Visitors, pageviews, referrers, and popular pages</h3>
+      <p>
+        Open <a href="https://eu.posthog.com/project/245318/web">PostHog Web analytics</a>. After
+        consent, <code>PublicAnalyticsBoundary</code> emits one manual <code>$pageview</code> per
+        reviewed public pathname visit through the public client, alongside the existing
+        <code>public_page_viewed</code> event. Web analytics counts only <code>$pageview</code>.
+        Client navigation and return visits count; rerenders and query-only changes do not. Sign-in,
+        signup, support forms, private workspace routes, token-bearing paths, and unknown routes are
+        excluded. Collection is not backfilled; consent choices and browser blockers affect
+        coverage.
+      </p>
+      <p>
+        The send hook retains only a reviewed public HTTP(S) origin/path, its host/pathname, and the
+        referring website origin/hostname. It removes query strings, fragments, referrer paths,
+        titles, and SDK person metadata. GeoIP, person profiles, automatic capture, session
+        recording, and browser account/team identification remain disabled. Consent format version 2
+        requires a fresh choice for this metadata; the Privacy Policy version is 2026-10-24. These
+        fields are an explicit browser-pageview exception, not permission to send URL metadata on
+        any other event.
+      </p>
+      <p>
+        The 2026-10-24 production verification of an earlier implementation showed one visitor and
+        four pageviews with recordings disabled. That implementation preceded this consent and
+        pseudonymization contract; it does not verify the merged release. Keep the rollout gaps
+        below open until the new boundary and provider configuration are verified in production. The
+        existing
+        <a href="https://eu.posthog.com/project/245318/dashboard/917254">Launch dashboard</a> also
+        predates the new contract; review its queries against the approved events and pseudonymous
+        actors before using it for a new release readout.
+      </p>
+
       <h3>Pseudonymous product-action analytics</h3>
       <p>
         Explicit server actions, API outcomes, and workers may emit schema-validated product events.
@@ -98,9 +129,11 @@ NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
 
       <h2 id="contract">3. Event contract</h2>
       <p>
-        The typed registry lives in <code>packages/shared/src/analytics/events.ts</code>. Every
-        event has an owner, trigger, data class, exact runtime schema, and retention target. Add the
-        event there before emitting it from web or worker code.
+        The server/worker typed registry lives in
+        <code>packages/shared/src/analytics/events.ts</code>. Each event has an owner, trigger, data
+        class, exact runtime schema, and retention target. Add server events there before emitting
+        them. The separate public-browser event and property allowlists are enforced in
+        <code>apps/web/src/lib/public-browser-analytics.ts</code> under the browser contract above.
       </p>
       <p>
         Allowed properties are stable enums, booleans, bounded counts, coarse durations and sizes,
@@ -108,6 +141,10 @@ NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
         send names, emails, resource IDs, URLs, queries, filenames, titles, prompts, answers,
         transcripts, document text, cookies, authorization values, headers, arbitrary errors,
         secrets, or uploaded/workspace content.
+      </p>
+      <p>
+        Only consented manual browser <code>$pageview</code> events have the reviewed public-path
+        and referrer-origin exception described above. All other schemas retain the URL exclusion.
       </p>
       <p>
         Emit product events only after a successful meaningful action or durable job outcome. Page

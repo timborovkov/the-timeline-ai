@@ -1,5 +1,5 @@
 export const PUBLIC_ANALYTICS_CONSENT_COOKIE = 'tl_analytics_consent';
-const PUBLIC_ANALYTICS_CONSENT_VERSION = 1;
+const PUBLIC_ANALYTICS_CONSENT_VERSION = 2;
 export const PUBLIC_ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 180;
 
 export type PublicAnalyticsConsentChoice = 'accepted' | 'rejected';

@@ -125,6 +125,18 @@ describe('public PostHog runtime', () => {
     );
     expect(posthog.client.capture).toHaveBeenNthCalledWith(
       2,
+      '$pageview',
+      {
+        surface: 'home',
+        $current_url: window.location.origin + '/',
+        $referrer: '',
+        $geoip_disable: true,
+        $process_person_profile: false,
+      },
+      { send_instantly: true },
+    );
+    expect(posthog.client.capture).toHaveBeenNthCalledWith(
+      3,
       'public_cta_clicked',
       {
         cta: 'try_project',
@@ -168,7 +180,7 @@ describe('public PostHog runtime', () => {
       },
     });
     expect(
-      analytics.sanitizePublicPostHogEvent(captureResult('$pageview', result.properties)),
+      analytics.sanitizePublicPostHogEvent(captureResult('$snapshot', result.properties)),
     ).toBeNull();
     expect(
       analytics.sanitizePublicPostHogEvent(
@@ -180,6 +192,68 @@ describe('public PostHog runtime', () => {
         captureResult('public_cta_clicked', { ...result.properties, cta: 'anything' }),
       ),
     ).toBeNull();
+  });
+
+  it('allows Web analytics only with a reviewed public path and origin-only referrer', async () => {
+    const analytics = await import('@/lib/public-browser-analytics');
+    const result = captureResult('$pageview', {
+      surface: 'how_it_works',
+      token: 'ph-test',
+      distinct_id: 'public-browser',
+      $session_id: 'public-session',
+      $current_url: 'https://thetimeline.cc/how-it-works?email=private@example.com#secret',
+      $referrer: 'https://search.example/results?q=private#secret',
+      $referring_domain: 'untrusted.example',
+      $title: 'Private title',
+      $set_once: { email: 'private@example.com' },
+      utm_campaign: 'private campaign',
+    });
+    result.$set = { email: 'private@example.com' };
+    expect(analytics.sanitizePublicPostHogEvent(result)).toEqual({
+      ...result,
+      $set: undefined,
+      $set_once: undefined,
+      $unset: undefined,
+      properties: {
+        surface: 'how_it_works',
+        token: 'ph-test',
+        distinct_id: 'public-browser',
+        $session_id: 'public-session',
+        $geoip_disable: true,
+        $process_person_profile: false,
+        $current_url: 'https://thetimeline.cc/how-it-works',
+        $pathname: '/how-it-works',
+        $host: 'thetimeline.cc',
+        $referrer: 'https://search.example',
+        $referring_domain: 'search.example',
+      },
+    });
+    expect(result.properties.$current_url).toContain('private@example.com');
+    for (const url of [
+      'https://thetimeline.cc/app/documents/private-id',
+      'https://thetimeline.cc/sign-in',
+      'https://thetimeline.cc/accept-invite/secret',
+      'https://thetimeline.cc/unknown',
+      'javascript:void(0)',
+      'not a URL',
+    ]) {
+      expect(
+        analytics.sanitizePublicPostHogEvent(
+          captureResult('$pageview', {
+            ...result.properties,
+            $current_url: url,
+          }),
+        ),
+      ).toBeNull();
+    }
+    expect(
+      analytics.sanitizePublicPostHogEvent(
+        captureResult('$pageview', {
+          ...result.properties,
+          $referrer: 'not a URL',
+        }),
+      )?.properties.$referring_domain,
+    ).toBe('$direct');
   });
 
   it('keeps provider failures best-effort and still clears browser state', async () => {
@@ -280,7 +354,7 @@ describe('public PostHog runtime', () => {
     expect(posthog.client.opt_in_capturing).toHaveBeenLastCalledWith({
       captureEventName: false,
     });
-    expect(posthog.client.capture).toHaveBeenLastCalledWith(
+    expect(posthog.client.capture).toHaveBeenCalledWith(
       'public_page_viewed',
       { surface: 'privacy', $geoip_disable: true, $process_person_profile: false },
       { send_instantly: true },

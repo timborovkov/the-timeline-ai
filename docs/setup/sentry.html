@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Sentry setup</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-22</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-24</span></div>
       <blockquote><p>Optional locally. Strongly recommended before production.</p></blockquote>
       <p class="tldr">
         Hook the web and worker services into Sentry for error tracking. Timeline can also connect
@@ -190,9 +190,35 @@ SENTRY_RELEASE=
         so local production-parity containers exercise the same Sentry paths as Railway.
       </p>
       <h2 id="alerts">4. Production alerting checklist</h2>
+      <p>
+        Production configuration verified on 2026-10-24: web, main worker, and the dedicated
+        document-extract orchestrator report to <code>irmin-dw / the-timeline-ai</code> with
+        <code>SENTRY_ENVIRONMENT=production</code> and a <code>0.1</code> traces sample rate.
+        Browser reporting is configured on web. The extractor receives only its allowed runtime
+        Sentry settings, including the DSN; do not copy the main worker's full variable set or its
+        source-map upload token into the credential-thin service. All three deployments reached
+        <code>SUCCESS</code> after configuration.
+      </p>
+      <p>
+        The existing project alert emails suggested assignees, falling back to recently active
+        members, when an issue becomes high priority. The
+        <a href="https://irmin-dw.sentry.io/monitors/2511365/">production uptime monitor</a>
+        checks <code>https://thetimeline.cc/api/health</code> every minute with a five-second
+        timeout. Three consecutive failures open an issue; one successful check resolves it. The
+        health endpoint verifies Postgres connectivity. Its dedicated
+        <a href="https://irmin-dw.sentry.io/monitors/alerts/1413143/">availability alert</a>
+        uses the same recipient policy for new, resolved, escalated, and regressed issues, with a
+        30-minute action throttle.
+      </p>
+      <p>
+        A synthetic informational message sent through the Node SDK with Railway's production
+        configuration was confirmed in Sentry on 2026-10-24 with the
+        <code>component=monitoring_smoke</code> tag. This verifies the SDK destination and
+        ingestion; it does not simulate a production failure or prove email delivery.
+      </p>
       <ul>
         <li>
-          Set <code>SENTRY_DSN</code> on the web and worker services, and
+          Set <code>SENTRY_DSN</code> on web, main worker, and document-extract services, and
           <code>NEXT_PUBLIC_SENTRY_DSN</code> on the web service for browser errors.
         </li>
         <li>
@@ -209,6 +235,22 @@ SENTRY_RELEASE=
           maps.
         </li>
       </ul>
+
+      <h3 id="railway-tracing">Railway request tracing</h3>
+      <p>
+        Railway tracing and automatic instrumentation are enabled for the production web and main
+        worker services. The
+        <a
+          href="https://railway.com/project/6a13f01d-6931-4fda-8790-b11d3192d5d8/traces?environmentId=351ba0c4-e8f5-41d7-b66d-0912d393c1e6"
+          >Railway Traces view</a
+        >
+        complements Sentry. Verification covered the public health request from edge to web to
+        Postgres, and main-worker PostgreSQL, Redis, and HTTP client spans. Automatic
+        instrumentation does not provide complete BullMQ job spans or trace propagation through
+        every background operation. The extractor uses Sentry for failures; Railway tracing remains
+        disabled there because its strict environment allowlist does not permit the injected
+        OpenTelemetry exporter variables. Do not bypass that allowlist to enable tracing.
+      </p>
 
       <h2 id="native-source">5. Native Sentry source</h2>
       <p>

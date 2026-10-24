@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import LegalAcceptPage from '@/app/legal/accept/page';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -14,8 +17,8 @@ vi.mock('@/lib/auth.config', () => ({
     legalPrivacyVersion?: string | null;
     legalAcceptedAt?: string | null;
   }) =>
-    user.legalTermsVersion === '2026-08-21' &&
-    user.legalPrivacyVersion === '2026-08-21' &&
+    user.legalTermsVersion === TERMS_VERSION &&
+    user.legalPrivacyVersion === PRIVACY_VERSION &&
     Boolean(user.legalAcceptedAt),
 }));
 vi.mock('@/lib/legal', () => ({
@@ -25,16 +28,14 @@ vi.mock('@/lib/legal', () => ({
     legalPrivacyVersion: string;
     legalAcceptedAt: Date | null;
   }) =>
-    legal.legalTermsVersion === '2026-08-21' &&
-    legal.legalPrivacyVersion === '2026-08-21' &&
+    legal.legalTermsVersion === TERMS_VERSION &&
+    legal.legalPrivacyVersion === PRIVACY_VERSION &&
     Boolean(legal.legalAcceptedAt),
 }));
 
-import LegalAcceptPage from '@/app/legal/accept/page';
-
 const currentDbAcceptance = {
-  legalTermsVersion: '2026-08-21',
-  legalPrivacyVersion: '2026-08-21',
+  legalTermsVersion: TERMS_VERSION,
+  legalPrivacyVersion: PRIVACY_VERSION,
   legalAcceptedAt: new Date('2026-08-21T00:00:00.000Z'),
 };
 
@@ -45,6 +46,21 @@ describe('LegalAcceptPage', () => {
       throw new Error(`NEXT_REDIRECT:${path}`);
     });
     fakes.getUserLegalAcceptance.mockResolvedValue(currentDbAcceptance);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('returns to the dashboard when production legal publication is withheld', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('LEGAL_PUBLICATION_READY', 'false');
+    fakes.auth.mockResolvedValue({ user: { id: 'user-1' } });
+    fakes.getUserLegalAcceptance.mockResolvedValue(null);
+
+    await expect(LegalAcceptPage({ searchParams: Promise.resolve({}) })).rejects.toThrow(
+      'NEXT_REDIRECT:/app',
+    );
   });
 
   it('renders the idempotent form when the DB is current but the signed session is stale', async () => {
@@ -67,8 +83,8 @@ describe('LegalAcceptPage', () => {
     fakes.auth.mockResolvedValue({
       user: {
         id: 'user-1',
-        legalTermsVersion: '2026-08-21',
-        legalPrivacyVersion: '2026-08-21',
+        legalTermsVersion: TERMS_VERSION,
+        legalPrivacyVersion: PRIVACY_VERSION,
         legalAcceptedAt: '2026-08-21T00:00:00.000Z',
       },
     });
