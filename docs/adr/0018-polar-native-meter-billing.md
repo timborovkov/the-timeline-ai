@@ -127,7 +127,9 @@ credit hides margin and confuses prospects.
    `worker_settlement_pending` before settle. The janitor drains that marker,
    including an already-expired row, before the TTL sweep, and a retry keeps the
    completed result instead of calling the provider again. Member-day ledger rows stamp `plan_id`; later
-   janitor ticks reuse that day's included-member count after a plan change. Refund
+   janitor ticks reuse that day's included-member count after a plan change. A missed
+   day with no stamp yet uses the plan effective that day from `billing_plan_history`,
+   then the current plan, before the first member-day write. Refund
    reversals persist `wallet_shortfall_cents` before freezing; a spend-cap raise does
    not restore the paid active state while that debt remains. An active Polar
    renewal does not clear that freeze either. Re-accepting a removed

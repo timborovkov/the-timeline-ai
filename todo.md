@@ -604,7 +604,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.
       Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep
       the leftover team unrestricted. Re-accepting a removed member stamps a new `createdAt`.
-      Storage snapshots backfill missed days. Reactivating a reservation resets `createdAt`.
+      Storage snapshots backfill missed days. Missed member-days with no stamp use the
+      plan effective that day before the current plan. Reactivating a reservation resets `createdAt`.
       Restore takes advisory lock 1 then 2. Worker AI concurrency follows
       `costlyWorkerConcurrency` and delays a busy job. Paid-plan changes reuse the Polar
       subscription in non-active paid states. Extra-member plan preview prorates from period
