@@ -141,6 +141,13 @@ credit hides margin and confuses prospects.
    `createdAt`. Interactive search embeddings run under billing ALS.
    The person-level Free grant unassigns when its owner leaves or is demoted, but
    does not restrict the leftover team while another owner's grant remains assigned.
+   A canceled Polar subscription id left on a Free workspace is not a paid-plan
+   signal: restriction and a later claim follow the current Free plan and the
+   remaining grants. Replay included-discount usage counts `pricing_period_ym`
+   when that tag is set, then `polar_ingest_period_ym`, and uses the ledger
+   timestamp only when neither tag is set. Deferred accepted-source, email, and
+   transcription recovery clear their markers only after the Redis enqueue
+   succeeds, so a failed enqueue stays eligible for the next scan.
    Re-accepting a removed member stamps a new membership `createdAt` so gap days
    are not billed as continuous, preserving earlier intervals on `prior_intervals`. Janitor member-days backfill missed calendar days, restore rechecks indexed
    chunks (deleted documents do not count), and accepted-source replay meters

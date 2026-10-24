@@ -428,4 +428,63 @@ describe('billing capacity (not Polar meters)', () => {
       .where(eq(billingFreeGrants.userId, USER_ID));
     expect(leftGrant?.assignedTeamId).toBeNull();
   });
+
+  it('restricts a former paid Free workspace when its grant owner leaves', async () => {
+    await applyOwnedTeamFreeGrant({ db, teamId: TEAM_ID, userId: USER_ID });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET polar_subscription_id = 'sub_former_paid', plan_id = 'free', billing_state = 'free'
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${EXTRA_TEAM_ID}', 'other-owned', 'Other Owned');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${EXTRA_TEAM_ID}', '${USER_ID}', 'owner');
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, spend_cap_cents, polar_subscription_id
+      )
+      VALUES ('${EXTRA_TEAM_ID}', 'free', 'restricted', 0, 'sub_other_former');
+      UPDATE team_members SET removed_at = now()
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
+    `);
+    await releaseFreeGrantIfOwnerLeaves({ db, teamId: TEAM_ID, userId: USER_ID });
+    const left = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await left.getAccount()).billingState).toBe('restricted');
+    expect((await left.getAccount()).polarSubscriptionId).toBe('sub_former_paid');
+    const extra = createBillingScope({
+      db,
+      teamId: EXTRA_TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await extra.getAccount()).billingState).toBe('free');
+  });
+
+  it('keeps a former paid Free workspace active while another owner grant remains', async () => {
+    const otherOwner = '22222222-3333-4444-8555-666666666667';
+    await applyOwnedTeamFreeGrant({ db, teamId: TEAM_ID, userId: USER_ID });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET polar_subscription_id = 'sub_former_paid'
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email, "emailVerified")
+      VALUES ('${otherOwner}', 'grant-owner@example.test', now());
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${otherOwner}', 'owner');
+      INSERT INTO billing_free_grants (user_id, assigned_team_id)
+      VALUES ('${otherOwner}', '${TEAM_ID}');
+    `);
+    await releaseFreeGrantIfOwnerLeaves({ db, teamId: TEAM_ID, userId: USER_ID });
+    const remaining = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    expect((await remaining.getAccount()).billingState).toBe('free');
+  });
 });
