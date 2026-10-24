@@ -15,8 +15,33 @@
         <p>PostHog Cloud EU is the default product analytics and feature flag service.</p>
       </blockquote>
       <p class="tldr">
-        Product analytics are explicit lifecycle events only. The app does not auto-track clicks,
-        page views, session replay, prompts, transcripts, filenames, or uploaded content.
+        PostHog counts public-site visitors, pageviews, referring sites, and popular pages. Product
+        analytics use explicit lifecycle events. Session recording and automatic click capture are
+        disabled; prompts, transcripts, filenames, and uploaded content are excluded.
+      </p>
+
+      <h2 id="website-traffic">Website traffic</h2>
+      <p>
+        Open <a href="https://eu.posthog.com/project/245318/web">PostHog Web analytics</a> for
+        visitors, pageviews, referrers, and popular pages. Collection starts with this deployment;
+        earlier visits are not backfilled. Browser blockers can prevent collection.
+      </p>
+      <p>
+        The root layout mounts <code>WebsiteAnalytics</code>, which reuses the authenticated PostHog
+        client and sends one <code>$pageview</code> per public pathname visit, including client-side
+        navigation. Public paths come from the existing public-document registry, excluding machine
+        documents, plus <code>/sign-in</code> and <code>/sign-up</code>. Workspace pages,
+        invite/verification token paths, and unknown routes do not emit pageviews. Query-only
+        changes and React rerenders do not add pageviews; returning to a public page after another
+        route does.
+      </p>
+      <p>
+        The browser send hook removes query strings, fragments, campaign parameters, search terms,
+        and page titles. Referrers retain only their HTTP(S) origin; private paths are removed from
+        session and initial-person metadata, including both SDK person-property locations. Visitor
+        and session identifiers remain available for counting. Session recording stays disabled, and
+        the hook also rejects recording snapshots. Product-event tracking and team identification
+        continue through the same client.
       </p>
 
       <h2 id="project">1. Project</h2>
@@ -88,8 +113,8 @@ NEXT_PUBLIC_POSTHOG_HOST=https://eu.i.posthog.com
         distinct ID starts with <code>analytics-smoke-</code>. It is a separate event and does not
         enter these product-event charts. Empty product charts are valid until real users perform
         the corresponding actions; the check does not establish end-to-end delivery from every
-        deployed product action. Autocapture, automatic pageviews, and session replay remain
-        disabled.
+        deployed product action. Website traffic is collected separately through explicit
+        <code>$pageview</code> events; automatic click capture and session replay remain disabled.
       </p>
 
       <h2 id="events">2. Events</h2>

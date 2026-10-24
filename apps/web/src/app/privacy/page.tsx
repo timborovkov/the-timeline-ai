@@ -63,7 +63,8 @@ export default function PrivacyPage() {
         <li>Support data submitted through public or signed-in support forms.</li>
         <li>
           Technical and product usage data, such as IP address, request metadata, logs, diagnostics,
-          abuse signals, feature-flag evaluation data, and product analytics events.
+          abuse signals, feature-flag evaluation data, product analytics events, and website
+          pageviews and referring domains.
         </li>
       </ul>
 
@@ -74,7 +75,10 @@ export default function PrivacyPage() {
         <li>Capture, transcribe, extract, embed, search, summarize, and display team content.</li>
         <li>Generate citations, suggestions, notifications, and agent answers.</li>
         <li>Respond to support, billing, security, and legal requests.</li>
-        <li>Understand product usage, improve workflows, and evaluate feature flags.</li>
+        <li>
+          Understand website traffic and product usage, improve workflows, and evaluate feature
+          flags.
+        </li>
         <li>Prevent abuse, enforce terms, and protect users, teams, and the service.</li>
       </ul>
 
@@ -132,7 +136,7 @@ export default function PrivacyPage() {
           </tr>
           <tr>
             <td>PostHog</td>
-            <td>Product analytics and feature flags.</td>
+            <td>Website traffic analytics, product analytics, and feature flags.</td>
           </tr>
           <tr>
             <td>Cloudflare Turnstile</td>
@@ -151,10 +155,17 @@ export default function PrivacyPage() {
 
       <h2>7. Cookies</h2>
       <p>
-        We use essential cookies and similar technologies for authentication, sessions, security,
-        team selection, invite handling, preferences, abuse prevention, product analytics, and
-        feature flags. We do not use a separate cookie consent flow for advertising cookies in the
-        current product.
+        We use cookies and similar technologies for authentication, sessions, security, team
+        selection, invite handling, preferences, abuse prevention, website and product analytics,
+        and feature flags. We do not use a separate cookie consent flow for advertising cookies in
+        the current product.
+      </p>
+      <p>
+        Website analytics count visits to public pages and sign-in/sign-up pages, including
+        navigation between those pages. Analytics URLs exclude query strings and fragments;
+        referrers are limited to their website origin. Private workspace pages and token-bearing
+        invite or verification links are excluded from pageview tracking. We do not enable session
+        recording or automatic click capture in PostHog.
       </p>
 
       <h2>8. Retention</h2>
