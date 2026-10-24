@@ -842,6 +842,92 @@ describe('billing runtime', () => {
     expect(ops).toEqual(expect.arrayContaining(['transcription:job-9:0', 'transcription:job-9:1']));
   });
 
+  it('recovers a completed worker call without calling the provider again', async () => {
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION fail_billing_settlement() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.kind = 'settlement' THEN
+          RAISE EXCEPTION 'settlement down';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_billing_settlement
+      BEFORE INSERT ON billing_usage_ledger
+      FOR EACH ROW EXECUTE FUNCTION fail_billing_settlement();
+    `);
+    const operationId = 'embedding:worker-retry';
+    let calls = 0;
+    const run = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', operationId, model: 'embed-test' }, () => {
+            calls += 1;
+            return Promise.resolve({
+              value: { text: 'kept' },
+              finish: { usage: { cost: 0.04 } },
+            });
+          }),
+        { operationId },
+      );
+    await expect(run()).rejects.toThrow(/billing_usage_ledger/);
+    expect(calls).toBe(1);
+    const [pending] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(pending?.state).toBe('reserved');
+    expect(pending?.metadata).toMatchObject({
+      provider_completed: true,
+      worker_settlement_pending: true,
+      openrouter_usd: 0.04,
+      provider_value: { text: 'kept' },
+      operation_class: 'embedding',
+      model: 'embed-test',
+    });
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET expires_at = NOW() - INTERVAL '1 hour'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+      DROP TRIGGER fail_billing_settlement ON billing_usage_ledger;
+    `);
+    expect(await expireStaleBillingReservations({ db, teamId: TEAM_ID })).toBe(0);
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [settledReservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(settledReservation?.state).toBe('settled');
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.customerChargeCents).toBeGreaterThan(0);
+    expect(ledger?.metadata).toMatchObject({ openrouter_usd: 0.04 });
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET state = 'expired', expires_at = NOW() - INTERVAL '1 hour'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+      DELETE FROM billing_usage_ledger
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+    `);
+    const retried = await run();
+    expect(retried).toEqual({ text: 'kept' });
+    expect(calls).toBe(1);
+    const [afterRetry] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(afterRetry?.state).toBe('settled');
+    expect(afterRetry?.metadata).toMatchObject({
+      provider_completed: true,
+      provider_value: { text: 'kept' },
+    });
+  });
+
   it('retries an Ask settlement saved on the reservation', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,

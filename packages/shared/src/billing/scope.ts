@@ -42,7 +42,10 @@ import {
 } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { cheapestPlanPreview } from '#src/billing/preview.js';
-import { expireStaleBillingReservations } from '#src/billing/reservations.js';
+import {
+  expireStaleBillingReservations,
+  reservationKeepsProviderResult,
+} from '#src/billing/reservations.js';
 import { accountUsesShadowBilling } from '#src/billing/shadow.js';
 import {
   billingStateAllowsReservation,
@@ -55,6 +58,10 @@ import {
   restoredSpendCapCentsAfterShortfallUnfreeze,
   spendCapUtilization,
 } from '#src/billing/status.js';
+import {
+  outstandingWalletShortfallCents,
+  teamOutstandingWalletShortfallCents,
+} from '#src/billing/wallet-shortfall.js';
 import { childLogger } from '#src/logger.js';
 
 export type EnsureMember = (minRole?: TeamRole) => Promise<TeamRole>;
@@ -118,30 +125,6 @@ function reservationWorkerSource(
   if (!metadata) return null;
   const source = metadata.source;
   return typeof source === 'string' && source.length > 0 ? source : null;
-}
-
-function outstandingWalletShortfallCents(metadata: Record<string, unknown>): number {
-  const shortfall = metadata.wallet_shortfall_cents;
-  const collected = metadata.wallet_shortfall_collected_cents;
-  const owed = typeof shortfall === 'number' && Number.isFinite(shortfall) ? shortfall : 0;
-  const paid = typeof collected === 'number' && Number.isFinite(collected) ? collected : 0;
-  return Math.max(0, Math.trunc(owed) - Math.trunc(paid));
-}
-
-async function teamOutstandingWalletShortfallCents(
-  dbOrTx: { select: Db['select'] },
-  teamId: string,
-): Promise<number> {
-  const rows = await dbOrTx
-    .select({ metadata: billingUsageLedger.metadata })
-    .from(billingUsageLedger)
-    .where(
-      and(
-        eq(billingUsageLedger.teamId, teamId),
-        inArray(billingUsageLedger.kind, ['settlement', 'reversal']),
-      ),
-    );
-  return rows.reduce((sum, row) => sum + outstandingWalletShortfallCents(row.metadata), 0);
 }
 
 const POLAR_INGEST_CLAIM_STALE_MS = 15 * 60 * 1000;
@@ -534,8 +517,29 @@ export function createBillingScope(deps: BillingScopeDeps) {
           )
           .limit(1)
           .for('update');
+        const reuseCompletedProviderWork = async (
+          row: typeof billingUsageReservations.$inferSelect,
+        ) => {
+          if (!reservationKeepsProviderResult(row.metadata)) return null;
+          if (row.state === 'reserved') return row;
+          const [revived] = await tx
+            .update(billingUsageReservations)
+            .set({ state: 'reserved', updatedAt: new Date() })
+            .where(
+              and(
+                eq(billingUsageReservations.id, row.id),
+                inArray(billingUsageReservations.state, ['expired', 'released']),
+              ),
+            )
+            .returning();
+          return revived ?? null;
+        };
         if (existingReservation?.state === 'settled') {
           return { kind: 'already_settled' as const, row: existingReservation };
+        }
+        if (existingReservation) {
+          const completed = await reuseCompletedProviderWork(existingReservation);
+          if (completed) return { kind: 'reused' as const, row: completed };
         }
         if (
           existingReservation?.state === 'reserved' &&
@@ -724,6 +728,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
         if (existing.state === 'settled') {
           return { kind: 'already_settled' as const, row: existing };
         }
+        const completed = await reuseCompletedProviderWork(existing);
+        if (completed) return { kind: 'reused' as const, row: completed };
         if (existing.state === 'reserved' && existing.expiresAt.getTime() > Date.now()) {
           return { kind: 'reused' as const, row: existing };
         }

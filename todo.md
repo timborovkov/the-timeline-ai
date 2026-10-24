@@ -619,9 +619,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
       Enterprise is not a prepaid-wallet plan (no top-up/auto-reload, no self-serve
       checkout). `withAiMetering` skips OpenRouter when the durable operation already
-      completed. Member-day ticks reuse the `plan_id` stamped on that day. Refund
-      reversals persist `wallet_shortfall_cents`; a cap raise does not unfreeze while
-      that debt remains. Re-accept appends `prior_intervals`. Denied inbound email
+      completed, and stamps `worker_settlement_pending` so the janitor can settle a
+      finished call before the reservation TTL. Member-day ticks reuse the `plan_id`
+      stamped on that day. Refund reversals persist `wallet_shortfall_cents`; a cap
+      raise or an active Polar renewal does not unfreeze while that debt remains. Re-accept appends `prior_intervals`. Denied inbound email
       enrichment is recoverable via `billing_enrichment_deferred`. Storage-cap
       finalization deletes the rejected object. Captured chat attachments enforce
       document/storage limits. Free in-allowance settlement does not debit the wallet

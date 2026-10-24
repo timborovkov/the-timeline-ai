@@ -6,6 +6,7 @@ import type { PolarRefundAmountKind } from '#src/billing/charge.js';
 import { PLAN_CATALOG, PREPAID_TOPUP_CENTS, type BillingPlanId } from '#src/billing/catalog.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { creditWalletFromPolarOrder, debitWalletFromPolarRefund } from '#src/billing/runtime.js';
+import { teamOutstandingWalletShortfallCents } from '#src/billing/wallet-shortfall.js';
 
 export type PolarPaidPlanId = 'payg' | 'team' | 'business';
 
@@ -112,6 +113,40 @@ export function polarTopupRefundRequest(input: {
   if (amount !== null) return { cents: amount, amountKind: 'incremental' };
   if (refunded !== null) return { cents: refunded, amountKind: 'incremental' };
   return { cents: 0, amountKind: 'incremental' };
+}
+
+const ACTIVE_PAID_BILLING_STATES = new Set<TeamBillingState>([
+  'payg_active',
+  'team_active',
+  'business_active',
+  'enterprise_active',
+]);
+
+/**
+ * Polar "active" means the subscription is in good standing with Polar.
+ * It does not repay a local wallet shortfall. While that debt remains, keep
+ * `read_only` / `balance_exhausted` (or put `read_only` back if an earlier
+ * event already cleared it). `past_due` and `payment_retry` still follow the
+ * incoming Polar status, including an active payment recovery.
+ *
+ * The invoice branch has no wallet. Pass `preserveLocalFreeze` so a spend-cap
+ * freeze (`read_only` / `balance_exhausted`) also survives an active update.
+ * Raising the spend cap remains the recovery for that freeze.
+ */
+export function billingStateForPolarSubscriptionUpsert(input: {
+  incoming: TeamBillingState;
+  existingState: string | null | undefined;
+  outstandingDebtCents: number;
+  preserveLocalFreeze?: boolean;
+}): TeamBillingState {
+  if (!ACTIVE_PAID_BILLING_STATES.has(input.incoming)) return input.incoming;
+  const localFreeze =
+    input.existingState === 'read_only' || input.existingState === 'balance_exhausted'
+      ? input.existingState
+      : null;
+  if (input.outstandingDebtCents > 0) return localFreeze ?? 'read_only';
+  if (input.preserveLocalFreeze && localFreeze) return localFreeze;
+  return input.incoming;
 }
 
 export function billingStateForPolarPlan(plan: PolarPaidPlanId) {
@@ -253,6 +288,14 @@ async function upsertPaidSubscription(input: {
     ) {
       return;
     }
+    const outstandingDebtCents = existing
+      ? await teamOutstandingWalletShortfallCents(tx, input.teamId)
+      : 0;
+    const billingState = billingStateForPolarSubscriptionUpsert({
+      incoming: input.billingState,
+      existingState: existing?.billingState,
+      outstandingDebtCents,
+    });
     const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const resetDiscount = shouldResetIncludedDiscount({
       existing,
@@ -272,7 +315,7 @@ async function upsertPaidSubscription(input: {
       .values({
         teamId: input.teamId,
         planId: input.plan,
-        billingState: input.billingState,
+        billingState,
         polarCustomerId: polarCustomerId(input.data),
         polarSubscriptionId,
         polarProductId: input.data?.product_id ?? null,
@@ -287,7 +330,7 @@ async function upsertPaidSubscription(input: {
         target: [teamBillingAccounts.teamId],
         set: {
           planId: input.plan,
-          billingState: input.billingState,
+          billingState,
           polarCustomerId: polarCustomerId(input.data),
           polarSubscriptionId,
           polarProductId: input.data?.product_id ?? null,

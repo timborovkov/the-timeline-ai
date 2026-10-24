@@ -53,7 +53,10 @@ import {
 } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
-import { expireStaleBillingReservations } from '#src/billing/reservations.js';
+import {
+  expireStaleBillingReservations,
+  reservationKeepsProviderResult,
+} from '#src/billing/reservations.js';
 import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
 import { accountUsesShadowBilling, shadowBillingFromChargesEnabled } from '#src/billing/shadow.js';
 import { childLogger } from '#src/logger.js';
@@ -642,7 +645,13 @@ export async function withAiMetering<T>(
   const providerValue = jsonSafeProviderValue(value);
   await billing.patchReservationMetadata(operationId, {
     provider_completed: true,
+    worker_settlement_pending: true,
     openrouter_usd: usd,
+    operation_class: operationClass,
+    ...(input.model ? { model: input.model } : {}),
+    ...(ctx.source ? { source: ctx.source } : {}),
+    ...(ctx.deliverySurface ? { delivery_surface: ctx.deliverySurface } : {}),
+    ...(ctx.billable === false ? { billable: false } : {}),
     ...(providerValue === undefined ? {} : { provider_value: providerValue }),
   });
   // Keep the reservation if settle fails after OpenRouter work succeeded.
@@ -1006,14 +1015,86 @@ export async function accrueTeamMemberDays(input: {
  * Finish Ask settlements that recorded provider usage and then failed to
  * write the ledger. One row's failure does not stop the rest of the tick.
  */
+async function reviveReservationForSettlement(
+  db: Db,
+  row: typeof billingUsageReservations.$inferSelect,
+): Promise<void> {
+  if (row.state === 'reserved') return;
+  await db
+    .update(billingUsageReservations)
+    .set({ state: 'reserved', updatedAt: new Date() })
+    .where(
+      and(
+        eq(billingUsageReservations.id, row.id),
+        inArray(billingUsageReservations.state, ['expired', 'released']),
+      ),
+    );
+}
+
+async function settleCompletedWorkerAiReservation(
+  db: Db,
+  row: typeof billingUsageReservations.$inferSelect,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  await reviveReservationForSettlement(db, row);
+  const usd =
+    metadataNumber(metadata, 'openrouter_usd') ??
+    metadataNumber(metadata, 'pending_openrouter_usd') ??
+    0;
+  const { providerCostCents, customerChargeExactCents } =
+    customerAiChargeCentsFromOpenRouterUsd(usd);
+  const operationClass =
+    typeof metadata.operation_class === 'string' ? metadata.operation_class : 'worker_ai';
+  const model = typeof metadata.model === 'string' ? metadata.model : undefined;
+  const source = typeof metadata.source === 'string' ? metadata.source : 'worker';
+  const deliverySurface =
+    typeof metadata.delivery_surface === 'string' ? metadata.delivery_surface : undefined;
+  const billing = createBillingScope({
+    db,
+    teamId: row.teamId,
+    userId: BILLING_SYSTEM_USER_ID,
+    ensureMember: () => Promise.resolve('owner'),
+  });
+  await billing.settle({
+    operationId: row.operationId,
+    meterId: 'ai',
+    nativeUnits: customerChargeExactCents,
+    customerChargeCents: Math.round(customerChargeExactCents),
+    providerCostCents,
+    operationClass,
+    provider: 'openrouter',
+    ...(model ? { model } : {}),
+    source,
+    ...(deliverySurface ? { deliverySurface } : {}),
+    billable: metadata.billable !== false,
+    metadata: { openrouter_usd: usd },
+  });
+}
+
+/**
+ * Finish settlements that recorded provider usage and then failed to write
+ * the ledger. Ask rows use `pending_settlement`. Worker AI rows use
+ * `worker_settlement_pending` / `provider_completed` and are drained before
+ * the TTL sweep, including a row that already expired. One row's failure
+ * does not stop the rest of the tick.
+ */
 export async function settlePendingBillingReservations(db: Db): Promise<number> {
   const rows = await db
     .select()
     .from(billingUsageReservations)
     .where(
-      and(
-        eq(billingUsageReservations.state, 'reserved'),
-        sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') = 'true'`,
+      or(
+        and(
+          eq(billingUsageReservations.state, 'reserved'),
+          sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') = 'true'`,
+        ),
+        and(
+          inArray(billingUsageReservations.state, ['reserved', 'expired']),
+          or(
+            sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') = 'true'`,
+            sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') = 'true'`,
+          ),
+        ),
       ),
     );
   let settled = 0;
@@ -1038,6 +1119,18 @@ export async function settlePendingBillingReservations(db: Db): Promise<number> 
         log.warn(
           { err, teamId: row.teamId, operationId: row.operationId },
           'pending email settlement failed',
+        );
+      }
+      continue;
+    }
+    if (reservationKeepsProviderResult(metadata) && metadata.pending_settlement !== true) {
+      try {
+        await settleCompletedWorkerAiReservation(db, row, metadata);
+        settled += 1;
+      } catch (err) {
+        log.warn(
+          { err, teamId: row.teamId, operationId: row.operationId },
+          'pending worker settlement failed',
         );
       }
       continue;

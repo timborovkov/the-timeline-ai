@@ -93,7 +93,11 @@ credit hides margin and confuses prospects.
    this team holds the person-level Free grant, otherwise `restricted`. Paid-plan
    activation writes the catalog default spend cap when the row is still Free;
    later `subscription.updated` / renewal events preserve an administrator-selected
-   paid cap, including €0 as a hard stop. Subscription upserts and cancels lock the
+   paid cap, including €0 as a hard stop. An active subscription update does not
+   clear a `read_only` or `balance_exhausted` freeze while a wallet shortfall is
+   still unpaid, including when an earlier event already restored the paid state.
+   Polar `past_due` and `payment_retry` still follow the incoming subscription
+   status. Subscription upserts and cancels lock the
    billing account and recheck Polar `modified_at` in the same transaction so an
    older event cannot overwrite a newer one. Polar webhook bodies are bounded to
    the integration webhook size limit before signature verify. Settlement that
@@ -119,10 +123,14 @@ credit hides margin and confuses prospects.
    plan: Billing hides Add €10 / auto-reload and refuses self-serve checkout (plan
    changes go through support or the Polar portal). `withAiMetering` skips the
    OpenRouter call when the durable operation is already settled or the reservation
-   is reused with `provider_completed`. Member-day ledger rows stamp `plan_id`; later
+   is reused with `provider_completed`. A successful worker call stamps
+   `worker_settlement_pending` before settle. The janitor drains that marker,
+   including an already-expired row, before the TTL sweep, and a retry keeps the
+   completed result instead of calling the provider again. Member-day ledger rows stamp `plan_id`; later
    janitor ticks reuse that day's included-member count after a plan change. Refund
    reversals persist `wallet_shortfall_cents` before freezing; a spend-cap raise does
-   not restore the paid active state while that debt remains. Re-accepting a removed
+   not restore the paid active state while that debt remains. An active Polar
+   renewal does not clear that freeze either. Re-accepting a removed
    member appends the previous interval to `prior_intervals` and stamps a new
    `createdAt`. Interactive search embeddings run under billing ALS.
    The person-level Free grant unassigns when its owner leaves or is demoted, but
