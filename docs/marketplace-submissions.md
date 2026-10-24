@@ -1,6 +1,6 @@
 # Marketplace submissions
 
-Last updated: 2026-08-27
+Last updated: 2026-10-24
 
 This is the operator runbook and evidence ledger for publishing The Timeline in
 OpenAI's universal Plugins Directory and Anthropic's software directories. It
@@ -27,10 +27,10 @@ review requirements may change independently of this repository.
 
 | State | Evidence | Status |
 | --- | --- | --- |
-| Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, tests | Ready on PR branch |
-| Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open 2026-08-27; not merged |
-| Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27 |
-| Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-08-27 |
+| Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, tests | Ready on PR branch after merging latest `main` on 2026-10-24 |
+| Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open; refreshed onto current `main` on 2026-10-24; not merged |
+| Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27; re-run after the 2026-10-24 main merge |
+| Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-08-27; re-run after the 2026-10-24 main merge |
 | Production deployment | Migration `0073_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
 | Production MCP smoke | OAuth discovery, consent, tools, refresh, revocation, role and membership invalidation | Blocked: production still serves the legacy MCP implementation |
 | OpenAI draft | Portal draft URL and ID | Not created; verified developer identity and production deployment required |
