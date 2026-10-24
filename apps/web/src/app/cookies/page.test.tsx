@@ -54,6 +54,9 @@ describe('Cookies and similar technologies page', () => {
   it('documents the consent-gated browser boundary and separate surface requests', () => {
     const html = renderToStaticMarkup(<CookiesPage />);
 
+    expect(html).toContain('PostHog is the processor for optional public browser analytics');
+    expect(html).toContain('measure visits and selected actions');
+    expect(html).toContain('seven-year product-event retention');
     expect(html).toContain('after a separate affirmative choice');
     expect(html).toContain('zero PostHog browser events');
     expect(html).toContain('personless surface-request totals');

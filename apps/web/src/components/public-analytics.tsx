@@ -147,17 +147,23 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
     <PublicAnalyticsSettingsContext value={preferenceLoaded ? openSettings : undefined}>
       {children}
       {preferenceLoaded && isPublicBrowserAnalyticsConfigured && !consent && surface ? (
-        <AnalyticsChoiceBanner onAccept={acceptAnalytics} onReject={rejectAnalytics} />
+        <AnalyticsChoiceBanner
+          onAccept={acceptAnalytics}
+          onReject={rejectAnalytics}
+          onOpenSettings={openSettings}
+        />
       ) : null}
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="border-border bg-bg sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Analytics preferences</DialogTitle>
             <DialogDescription>
-              Optional PostHog analytics helps us understand visits and selected actions on public
-              pages. It never runs in your private workspace. We separately count personless surface
-              requests in broad page categories. Bots and retries can contribute, so those totals
-              are not visitor or session metrics.
+              PostHog is the processor for optional public analytics. Its purpose is to measure
+              visits and selected actions on public pages, and it never runs in your private
+              workspace. PostHog currently documents seven-year product-event retention, which
+              exceeds Timeline&apos;s 90-day target. We separately count personless surface requests
+              in broad page categories. Bots and retries can contribute, so those totals are not
+              visitor or session metrics.
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-fg-muted" aria-live="polite">
@@ -215,9 +221,11 @@ export function CookieSettingsButton({ className }: { className?: string }) {
 function AnalyticsChoiceBanner({
   onAccept,
   onReject,
+  onOpenSettings,
 }: {
   onAccept: () => void;
   onReject: () => void;
+  onOpenSettings: () => void;
 }) {
   return (
     <aside
@@ -230,16 +238,14 @@ function AnalyticsChoiceBanner({
             Optional public analytics
           </h2>
           <p className="mt-1 text-sm leading-6 text-fg-muted">
-            Choose whether PostHog may measure visits and selected actions on public pages. We still
-            count personless surface requests in broad page categories. Bots and retries can
-            contribute, so those totals are not visitor or session metrics. Rejecting does not
-            affect the site or app.{' '}
-            <Link
-              href="/cookies"
+            Optional analytics helps us understand visits and selected actions on public pages.{' '}
+            <button
+              type="button"
               className="rounded-sm text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              onClick={onOpenSettings}
             >
-              Read the cookies notice
-            </Link>
+              Cookie settings
+            </button>
             .
           </p>
         </div>

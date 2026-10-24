@@ -1044,14 +1044,16 @@ protected product access does not continue until it succeeds.
 `/cookies` uses the same legal-page reading surface for the exact cookie and
 browser-storage inventory. It separates necessary storage, always-on personless
 surface-request counts, optional public browser analytics, pseudonymous product
-analytics, and reliability monitoring. The working consent UI gives Accept
-analytics and Reject equal weight, never initializes PostHog before acceptance,
-and never loads browser analytics inside private workspace routes. Withdrawal
-stops capture and clears the public PostHog and attribution state while keeping
-only the necessary consent-choice record. Every public footer links the notice
-and exposes the persistent Cookie settings control. Public copy calls the
-fixed-stream totals surface requests, not visitors or sessions, and notes that
-bots and retries can contribute.
+analytics, and reliability monitoring. The first-layer banner names the purpose only, offers equal Accept analytics
+and Reject actions, and links Cookie settings. It does not name the vendor.
+Cookie settings and the cookies notice name PostHog as the processor, with
+purpose and documented retention. The working consent UI never initializes
+PostHog before acceptance and never loads browser analytics inside private
+workspace routes. Withdrawal stops capture and clears the public PostHog and
+attribution state while keeping only the necessary consent-choice record. Every
+public footer links the notice and exposes the persistent Cookie settings
+control. Public copy calls the fixed-stream totals surface requests, not
+visitors or sessions, and notes that bots and retries can contribute.
 
 `/help/support` is both a channel router and the private support form. It sends
 account-specific or sensitive requests to the private form/email, reproducible

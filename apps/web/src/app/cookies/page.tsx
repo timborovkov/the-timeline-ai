@@ -182,10 +182,13 @@ function AnalyticsStatusAndTarget() {
     <>
       <h2>2. Optional public browser analytics</h2>
       <p>
-        The source-controlled Cookie settings control records a separate analytics choice. Reading
-        this notice alone does not accept analytics. If this deployment has no reviewed PostHog
-        browser key, the control reports analytics as unavailable and cannot record an acceptance
-        that silently activates later.
+        PostHog is the processor for optional public browser analytics. Its purpose is to measure
+        visits and selected actions on allowlisted public pages after a separate affirmative choice.
+        Pay-as-you-go currently documents seven-year product-event retention, which exceeds
+        Timeline&apos;s 90-day target. The source-controlled Cookie settings control records that
+        choice. Reading this notice alone does not accept analytics. If this deployment has no
+        reviewed PostHog browser key, the control reports analytics as unavailable and cannot record
+        an acceptance that silently activates later.
       </p>
       <p>When optional analytics is configured and accepted:</p>
       <ul>

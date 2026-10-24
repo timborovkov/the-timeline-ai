@@ -166,9 +166,11 @@ The consent UX must implement these behaviors:
 1. Optional analytics is off by default. No optional script, network request,
    storage, or identifier occurs while the choice is unknown.
 2. The first layer offers equally clear **Accept analytics** and **Reject**
-   actions. Neither is preselected or visually disguised.
-3. The explanation distinguishes optional public browser analytics from the
-   always-on personless server surface streams.
+   actions. Neither is preselected or visually disguised. The banner names the
+   purpose only and does not name the vendor. Cookie settings and the cookies
+   notice name PostHog as the processor, with purpose and retention.
+3. Cookie settings and the cookies notice distinguish optional public browser
+   analytics from the always-on personless server surface streams.
 4. Declining has no effect on public content, signup, authentication, invitations,
    or authenticated product capability.
 5. A persistent, easy-to-find privacy-preferences control allows withdrawal.

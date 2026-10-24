@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -63,9 +63,12 @@ describe('PublicAnalyticsBoundary', () => {
     );
     renderBoundary();
 
-    expect(
-      await screen.findByRole('heading', { name: 'Optional public analytics' }),
-    ).not.toBeNull();
+    const bannerHeading = await screen.findByRole('heading', { name: 'Optional public analytics' });
+    const banner = bannerHeading.closest('aside');
+    expect(banner?.textContent).toContain('visits and selected actions on public pages');
+    expect(banner?.textContent).not.toContain('PostHog');
+    expect(screen.getByRole('button', { name: 'Reject' })).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Accept analytics' })).not.toBeNull();
     expect(analytics.capturePageView).not.toHaveBeenCalled();
     expect(analytics.captureCta).not.toHaveBeenCalled();
 
@@ -86,6 +89,26 @@ describe('PublicAnalyticsBoundary', () => {
 
     await user.click(screen.getByRole('button', { name: 'Unmarked action' }));
     expect(analytics.captureCta).toHaveBeenCalledOnce();
+  });
+
+  it('opens Cookie settings from the banner and names PostHog as processor', async () => {
+    const user = userEvent.setup();
+    renderBoundary();
+
+    const bannerHeading = await screen.findByRole('heading', { name: 'Optional public analytics' });
+    const banner = bannerHeading.closest('aside');
+    expect(banner).toBeInstanceOf(HTMLElement);
+    expect(banner?.textContent).not.toContain('PostHog');
+    if (!(banner instanceof HTMLElement)) return;
+
+    await user.click(within(banner).getByRole('button', { name: 'Cookie settings' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.textContent).toContain('PostHog is the processor for optional public analytics');
+    expect(dialog.textContent).toContain('measure visits and selected actions on public pages');
+    expect(dialog.textContent).toContain('seven-year product-event retention');
+    expect(dialog.textContent).toContain("Timeline's 90-day target");
+    expect(dialog.textContent).toContain('cookies and similar technologies notice');
   });
 
   it('withdraws immediately and can later accept again', async () => {
