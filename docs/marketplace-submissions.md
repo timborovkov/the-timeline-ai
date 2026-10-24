@@ -29,8 +29,8 @@ review requirements may change independently of this repository.
 | --- | --- | --- |
 | Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, tests | Ready on PR branch after merging latest `main` on 2026-10-24 |
 | Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open; refreshed onto current `main` on 2026-10-24; not merged |
-| Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27; re-run after the 2026-10-24 main merge |
-| Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-08-27; re-run after the 2026-10-24 main merge |
+| Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27; plugin source files were not changed in the 2026-10-24 refresh |
+| Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-10-24 after merging latest `main` |
 | Production deployment | Migration `0073_mcp_oauth_server.sql`, matching web and worker revisions | Pending |
 | Production MCP smoke | OAuth discovery, consent, tools, refresh, revocation, role and membership invalidation | Blocked: production still serves the legacy MCP implementation |
 | OpenAI draft | Portal draft URL and ID | Not created; verified developer identity and production deployment required |
@@ -146,6 +146,36 @@ MCP descriptor.
 These observations are direct production and portal evidence. Signing in does
 not clear provider identity, account-plan, or production deployment gates.
 
+### Operator evidence: 2026-10-24
+
+- Merged current `main` into PR #392 and kept mainline billing, task-category
+  default-on, OpenRouter model pins, Qdrant on-disk/int8, and AI SDK 7 behavior.
+  Five content conflicts were resolved in documentation dates, MCP handler
+  tests, and schema-contract tests.
+- Repository MCP/OAuth follow-up on this branch: IPv6 loopback host matching
+  (`localhost`, `127.0.0.1`, `::1`, `[::1]`), `invalid_client` mapped to HTTP
+  `401`, extra redirect/PKCE-plain/credentialed-URI tests, and AI-apps grant UI
+  tests. Plugin source files were not changed.
+- `pnpm validate` passed (Prettier, typecheck, ESLint, Knip).
+- `pnpm run doctor` reported `React Doctor score: 100` and `No issues found!`.
+- `pnpm test` completed all six workspace tasks successfully in 37 minutes 51
+  seconds after the merge.
+- `pnpm test:eval` and `pnpm test:dist-imports` passed on the merged revision.
+- Local `GET /.well-known/oauth-authorization-server` and
+  `GET /.well-known/oauth-protected-resource/api/mcp/server` returned `200` with
+  `read` plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
+  revocation advertised.
+- Local unauthenticated `POST /api/mcp/server` returned `401` with
+  `WWW-Authenticate` pointing at the protected-resource metadata document.
+- Browser consent for a local public client showed team selection, explicit
+  `read` and optional owner/admin `agent:ask`, the loopback-HTTP warning, and
+  the granted AI app with a revoke control on Provider accounts.
+
+Plugin validators and isolated Codex/Claude installs were not re-run in this
+refresh because `plugins/timeline` and the marketplace manifests did not change.
+Production still serves the legacy MCP implementation; the 2026-08-27 production
+and portal gates remain open.
+
 ## Local release checks
 
 Run with Node 24 and pnpm 11.8 from the repository root:
@@ -193,6 +223,14 @@ server revision is deployed.
 | --- | --- | --- | --- |
 | 2026-08-27 | Codex CLI | Isolated marketplace add, available-plugin discovery, and install | Passed; `timeline@timeline` version `0.2.0` installed from `plugins/timeline` |
 | 2026-08-27 | Claude Code 2.1.220 | Isolated marketplace add, install, and component inventory | Passed; one `timeline` skill and one `timeline` MCP server discovered |
+
+### Local MCP validation evidence
+
+| Date | Check | Result |
+| --- | --- | --- |
+| 2026-10-24 | `pnpm validate`, `pnpm run doctor`, `pnpm test`, `pnpm test:eval`, `pnpm test:dist-imports` | Passed after merging latest `main` |
+| 2026-10-24 | Local OAuth discovery, unauthenticated MCP `401` challenge, browser consent, and grant revocation UI | Passed against the local web service |
+| 2026-10-24 | Codex/Claude plugin validators and isolated installs | Not re-run; plugin sources unchanged since 2026-08-27 |
 
 ## OpenAI universal Plugins Directory
 
