@@ -461,11 +461,7 @@ export async function applyOwnedTeamFreeGrant(input: {
         updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(teamBillingAccounts.teamId, input.teamId),
-          eq(teamBillingAccounts.planId, 'free'),
-          sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
-        ),
+        and(eq(teamBillingAccounts.teamId, input.teamId), eq(teamBillingAccounts.planId, 'free')),
       );
     await insertRestrictedFreeBillingAccount({ db: input.db, teamId: input.teamId });
     return { ok: false, reason: 'email_unverified' };
@@ -503,11 +499,7 @@ export async function applyOwnedTeamFreeGrant(input: {
       updatedAt: new Date(),
     })
     .where(
-      and(
-        eq(teamBillingAccounts.teamId, input.teamId),
-        eq(teamBillingAccounts.planId, 'free'),
-        sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
-      ),
+      and(eq(teamBillingAccounts.teamId, input.teamId), eq(teamBillingAccounts.planId, 'free')),
     );
   await insertRestrictedFreeBillingAccount({ db: input.db, teamId: input.teamId });
   return { ok: false, reason: 'free_grant_elsewhere' };
@@ -537,7 +529,6 @@ export async function claimOwnedTeamFreeGrantsForVerifiedUser(input: {
         and(
           eq(teamBillingAccounts.planId, 'free'),
           eq(teamBillingAccounts.billingState, 'restricted'),
-          sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
         ),
       ),
     )
@@ -595,11 +586,7 @@ export async function releaseFreeGrantIfOwnerLeaves(input: {
         updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(teamBillingAccounts.teamId, input.teamId),
-          eq(teamBillingAccounts.planId, 'free'),
-          sql`${teamBillingAccounts.polarSubscriptionId} IS NULL`,
-        ),
+        and(eq(teamBillingAccounts.teamId, input.teamId), eq(teamBillingAccounts.planId, 'free')),
       );
   }
 

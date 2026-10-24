@@ -1592,6 +1592,54 @@ describe('writeIntegrationEvents visibility', () => {
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
 
+  it('keeps accepted-source enrichment deferred when Redis enqueue fails', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-enqueue-fail',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:enqueue-fail:1',
+          provider: 'github',
+          externalObjectId: 'repo#enqueue-fail',
+          eventType: 'issue.opened',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Enqueue fails before the deferred marker clears',
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    vi.mocked(enqueueEmbedJob).mockRejectedValueOnce(new Error('redis down'));
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never);
+    expect(flushed).toBe(0);
+    const [kept] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(kept?.sourceMetadata).toMatchObject({
+      billing_enrichment_deferred: true,
+      embedding_error: 'enqueue failed: redis down',
+    });
+    const retried = await flushDeferredAcceptedSourceEnrichment(db as never);
+    expect(retried).toBe(1);
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
   it('does not flush deferred inbound-email rows through accepted-source enrichment', async () => {
     await pg.exec(`
       INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
@@ -1737,6 +1785,32 @@ describe('writeIntegrationEvents visibility', () => {
     });
     const [clearedAudio] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     expect(clearedAudio?.sourceMetadata).toMatchObject({ transcription_deferred: false });
+  });
+
+  it('keeps deferred transcription eligible when enqueue fails', async () => {
+    const eventId = '00000000-0000-4000-8000-000000000098';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_audio_url, source_metadata)
+      VALUES (
+        '${eventId}',
+        '${TEAM_ID}',
+        'email',
+        'audio/${TEAM_ID}/memo-retry.m4a',
+        '{"transcription_deferred": true, "audio_filename": "memo-retry.m4a"}'::jsonb
+      );
+    `);
+    vi.mocked(enqueueTranscribeJob).mockRejectedValueOnce(new Error('redis down'));
+    const flushed = await flushDeferredAudioTranscription(db as never);
+    expect(flushed).toBe(0);
+    const [kept] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(kept?.sourceMetadata).toMatchObject({
+      transcription_deferred: true,
+      transcription_error: 'enqueue failed: redis down',
+    });
+    const retried = await flushDeferredAudioTranscription(db as never);
+    expect(retried).toBe(1);
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(cleared?.sourceMetadata).toMatchObject({ transcription_deferred: false });
   });
 
   it('falls back to team visibility for private integration events without a connector owner', async () => {

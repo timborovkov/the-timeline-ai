@@ -644,7 +644,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       retry unsettled facts across the full 31-day lookback, including the previous calendar month.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.
       Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep
-      the leftover team unrestricted. Re-accepting a removed member stamps a new `createdAt`.
+      the leftover team unrestricted. A retained Polar subscription id does not keep a Free
+      workspace unrestricted. Re-accepting a removed member stamps a new `createdAt`.
+      Replay included discount follows <code>pricing_period_ym</code>, then the ingest period,
+      and uses the ledger time only when neither tag is set. Deferred enrichment clears its
+      marker only after Redis enqueue succeeds.
       Storage snapshots backfill missed days. Missed member-days with no stamp use the
       plan effective that day before the current plan. Reactivating a reservation resets `createdAt`.
       Restore takes advisory lock 1 then 2. Worker AI concurrency follows
@@ -654,7 +658,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       denied email meter is recovered by a janitor transcription flush. Seat claims are blocked
       while billing is paused. Enterprise settlement does not freeze on the spend cap. Interactive search
       embeddings run under billing ALS. The Free grant unassigns when its owner leaves or is
-      demoted. Member-day janitor ticks backfill missed days. Deleted documents are excluded
+      demoted. A retained Polar subscription id does not keep that Free workspace unrestricted.
+      Member-day janitor ticks backfill missed days. Deleted documents are excluded
       from indexed-chunk capacity; restore counts those chunks. Accepted-source replay meters
       existing dedup rows. Web chat settles known compression cost when the answer stream fails.
       `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.

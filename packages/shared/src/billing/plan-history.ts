@@ -45,6 +45,34 @@ async function planIdEffectiveOnDay(input: {
   return input.fallback;
 }
 
+const PERIOD_YM = /^(\d{4})-(\d{2})$/u;
+
+function taggedPeriodYm(value: unknown): string | null {
+  return typeof value === 'string' && PERIOD_YM.test(value) ? value : null;
+}
+
+/**
+ * One settlement belongs to one discount period. `pricing_period_ym` wins,
+ * then `polar_ingest_period_ym`. The ledger timestamp is used only when
+ * neither tag is set, so a backfilled month is not also charged to the
+ * month the row was written.
+ */
+export function settlementMatchesDiscountPeriod(input: {
+  periodYm: string;
+  occurredAt: Date;
+  metadata: Record<string, unknown>;
+}): boolean {
+  const tag =
+    taggedPeriodYm(input.metadata.pricing_period_ym) ??
+    taggedPeriodYm(input.metadata.polar_ingest_period_ym);
+  if (tag) return tag === input.periodYm;
+  const match = PERIOD_YM.exec(input.periodYm);
+  if (!match) return false;
+  const start = new Date(`${input.periodYm}-01T00:00:00.000Z`);
+  const end = new Date(Date.UTC(Number(match[1]), Number(match[2]), 1));
+  return input.occurredAt >= start && input.occurredAt < end;
+}
+
 /**
  * Plan used to price one UTC day. History first, then comp expiry, then the
  * stored plan. A contractual Enterprise account is not a comp, so it stays
@@ -86,9 +114,6 @@ export async function includedDiscountRemainingForReplay(input: {
 }): Promise<number> {
   const budget = PLAN_CATALOG[input.planId].includedUsageDiscountCents;
   if (budget <= 0) return 0;
-  const match = /^(\d{4})-(\d{2})$/u.exec(input.periodYm);
-  const start = match ? new Date(`${input.periodYm}-01T00:00:00.000Z`) : null;
-  const end = match && start ? new Date(Date.UTC(Number(match[1]), Number(match[2]), 1)) : null;
   const rows = await input.db
     .select({
       metadata: billingUsageLedger.metadata,
@@ -100,15 +125,17 @@ export async function includedDiscountRemainingForReplay(input: {
     );
   let used = 0;
   for (const row of rows) {
-    const metadata = row.metadata;
-    const cents = metadata.discount_cents;
+    const cents = row.metadata.discount_cents;
     if (typeof cents !== 'number' || cents <= 0) continue;
-    const tagged =
-      metadata.pricing_period_ym === input.periodYm ||
-      metadata.polar_ingest_period_ym === input.periodYm;
-    const inMonth =
-      start !== null && end !== null && row.occurredAt >= start && row.occurredAt < end;
-    if (tagged || inMonth) used += cents;
+    if (
+      settlementMatchesDiscountPeriod({
+        periodYm: input.periodYm,
+        occurredAt: row.occurredAt,
+        metadata: row.metadata,
+      })
+    ) {
+      used += cents;
+    }
   }
   return Math.max(0, budget - used);
 }

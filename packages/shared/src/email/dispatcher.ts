@@ -1334,45 +1334,51 @@ export async function flushDeferredEmailEnrichment(
           .where(eq(rawEvents.id, row.id));
         continue;
       }
-      const clear = JSON.stringify({
-        [BILLING_ENRICHMENT_DEFERRED]: false,
-        [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
-      });
-      await db
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
-        })
-        .where(eq(rawEvents.id, row.id));
-      await maybeEnqueueExtract(
-        {
-          db,
-          ...(resolved.enqueueExtract
-            ? { extract: { enqueueExtract: resolved.enqueueExtract } }
-            : {}),
-        },
-        row.id,
-        row.teamId,
-      );
-      await maybeEnqueueEmbed(
-        {
-          db,
-          ...(resolved.enqueueEmbed ? { embed: { enqueueEmbed: resolved.enqueueEmbed } } : {}),
-        },
-        row.id,
-        row.teamId,
-      );
-      if (row.contentText?.trim()) {
-        await maybeEnqueueSuggestion(
+      const enqueued = [
+        await maybeEnqueueExtract(
           {
             db,
-            ...(resolved.enqueueSuggestion
-              ? { suggestions: { enqueueSuggestion: resolved.enqueueSuggestion } }
+            ...(resolved.enqueueExtract
+              ? { extract: { enqueueExtract: resolved.enqueueExtract } }
               : {}),
           },
           row.id,
           row.teamId,
+        ),
+        await maybeEnqueueEmbed(
+          {
+            db,
+            ...(resolved.enqueueEmbed ? { embed: { enqueueEmbed: resolved.enqueueEmbed } } : {}),
+          },
+          row.id,
+          row.teamId,
+        ),
+      ];
+      if (row.contentText?.trim()) {
+        enqueued.push(
+          await maybeEnqueueSuggestion(
+            {
+              db,
+              ...(resolved.enqueueSuggestion
+                ? { suggestions: { enqueueSuggestion: resolved.enqueueSuggestion } }
+                : {}),
+            },
+            row.id,
+            row.teamId,
+          ),
         );
+      }
+      if (enqueued.some((ok) => !ok)) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
       }
       const documents = resolved.documents;
       if (documents) {
@@ -1420,6 +1426,16 @@ export async function flushDeferredEmailEnrichment(
           await patchEmailParentAttachments(db, row.id, updated);
         }
       }
+      const clear = JSON.stringify({
+        [BILLING_ENRICHMENT_DEFERRED]: false,
+        [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
       flushed += 1;
       progressed = true;
       if (flushed >= limit) break;
@@ -1438,10 +1454,11 @@ async function maybeEnqueueExtract(
   deps: { db: Db; extract?: ExtractEnqueueDeps },
   rawEventId: string,
   teamId: string,
-): Promise<void> {
-  if (!deps.extract) return;
+): Promise<boolean> {
+  if (!deps.extract) return true;
   try {
     await deps.extract.enqueueExtract({ rawEventId, teamId });
+    return true;
   } catch (err) {
     log.error({ err }, 'extract enqueue failed');
     const failurePatch = JSON.stringify({
@@ -1459,6 +1476,7 @@ async function maybeEnqueueExtract(
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark extract failure');
       });
+    return false;
   }
 }
 
@@ -1466,10 +1484,11 @@ async function maybeEnqueueEmbed(
   deps: { db: Db; embed?: EmbedEnqueueDeps },
   rawEventId: string,
   teamId: string,
-): Promise<void> {
-  if (!deps.embed) return;
+): Promise<boolean> {
+  if (!deps.embed) return true;
   try {
     await deps.embed.enqueueEmbed({ rawEventId, teamId });
+    return true;
   } catch (err) {
     log.error({ err }, 'embed enqueue failed');
     const failurePatch = JSON.stringify({
@@ -1487,6 +1506,7 @@ async function maybeEnqueueEmbed(
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark embed failure');
       });
+    return false;
   }
 }
 
@@ -1494,10 +1514,11 @@ async function maybeEnqueueSuggestion(
   deps: { db: Db; suggestions?: SuggestionEnqueueDeps },
   rawEventId: string,
   teamId: string,
-): Promise<void> {
-  if (!deps.suggestions) return;
+): Promise<boolean> {
+  if (!deps.suggestions) return true;
   try {
     await deps.suggestions.enqueueSuggestion({ rawEventId, teamId });
+    return true;
   } catch (err) {
     log.error({ err }, 'suggestion enqueue failed');
     const failurePatch = JSON.stringify({
@@ -1515,5 +1536,6 @@ async function maybeEnqueueSuggestion(
       .catch((markErr: unknown) => {
         log.error({ err: markErr }, 'failed to mark suggestion failure');
       });
+    return false;
   }
 }

@@ -592,6 +592,40 @@ describe('email dispatcher', () => {
     expect(parent?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
 
+  it('keeps inbound-email enrichment deferred when enqueue fails', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const queues = textQueueDeps();
+    const payload = inboundPayload('deferred-enqueue-fail');
+    await expect(
+      handleInbound({ db: db as never, inboundDomain: 'inbound.test', ...queues }, payload),
+    ).resolves.toMatchObject({ ok: true, inserted: 1 });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    queues.embed.enqueueEmbed.mockRejectedValueOnce(new Error('redis down'));
+    const flushed = await flushDeferredEmailEnrichment(db as never, 50, {
+      enqueueExtract: queues.extract.enqueueExtract,
+      enqueueEmbed: queues.embed.enqueueEmbed,
+      enqueueSuggestion: queues.suggestions.enqueueSuggestion,
+    });
+    expect(flushed).toBe(0);
+    const [kept] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(kept?.sourceMetadata).toMatchObject({
+      billing_enrichment_deferred: true,
+      embedding_error: 'enqueue failed: redis down',
+    });
+    const retried = await flushDeferredEmailEnrichment(db as never, 50, {
+      enqueueExtract: queues.extract.enqueueExtract,
+      enqueueEmbed: queues.embed.enqueueEmbed,
+      enqueueSuggestion: queues.suggestions.enqueueSuggestion,
+    });
+    expect(retried).toBe(1);
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
   it('refuses a captured email attachment when the document cap is reached', async () => {
     await pg.exec(`
       INSERT INTO documents (team_id, name)

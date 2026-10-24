@@ -873,16 +873,6 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
           .where(eq(rawEvents.id, row.id));
         continue;
       }
-      const clear = JSON.stringify({
-        [BILLING_ENRICHMENT_DEFERRED]: false,
-        [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
-      });
-      await db
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
-        })
-        .where(eq(rawEvents.id, row.id));
       const jobs = [
         enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
           enqueueEmbedJob({ scope: 'raw_event', teamId: row.teamId, rawEventId: row.id }),
@@ -895,7 +885,29 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
           ),
         );
       }
-      await Promise.all(jobs);
+      const enqueued = await Promise.all(jobs);
+      if (enqueued.some((ok) => !ok)) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
+      const clear = JSON.stringify({
+        [BILLING_ENRICHMENT_DEFERRED]: false,
+        [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
       flushed += 1;
       progressed = true;
       if (flushed >= limit) break;
@@ -957,16 +969,6 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
           .where(eq(rawEvents.id, row.id));
         continue;
       }
-      const clear = JSON.stringify({
-        [TRANSCRIPTION_DEFERRED]: false,
-        [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
-      });
-      await db
-        .update(rawEvents)
-        .set({
-          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
-        })
-        .where(eq(rawEvents.id, row.id));
       try {
         await enqueueTranscribeJob({
           rawEventId: row.id,
@@ -976,6 +978,7 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         const failurePatch = JSON.stringify({
+          [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
           transcription_failed_at: new Date().toISOString(),
           transcription_error: `enqueue failed: ${message.slice(0, 480)}`,
         });
@@ -987,6 +990,16 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
           .where(eq(rawEvents.id, row.id));
         continue;
       }
+      const clear = JSON.stringify({
+        [TRANSCRIPTION_DEFERRED]: false,
+        [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+      });
+      await db
+        .update(rawEvents)
+        .set({
+          sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${clear}::jsonb`,
+        })
+        .where(eq(rawEvents.id, row.id));
       flushed += 1;
       progressed = true;
       if (flushed >= limit) break;
@@ -1001,9 +1014,10 @@ async function enqueueIntegrationProcessingJob(
   rawEventId: string,
   stage: 'extraction' | 'embedding',
   enqueue: () => Promise<unknown>,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await enqueue();
+    return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const patch = JSON.stringify({
@@ -1016,6 +1030,7 @@ async function enqueueIntegrationProcessingJob(
         sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
       })
       .where(eq(rawEvents.id, rawEventId));
+    return false;
   }
 }
 
