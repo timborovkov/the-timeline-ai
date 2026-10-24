@@ -115,7 +115,8 @@
           Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.19.2</code>.
           Persistent volume at <code>/qdrant/storage</code>. Set the service memory limit to 1 GB
           (see cost considerations). Set <code>QDRANT__SERVICE__API_KEY</code> to a strong random
-          value.
+          value. Set <code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code>
+          so migration backups persist on the same volume.
         </li>
         <li>
           Add RustFS service: New Service → Docker Image → <code>rustfs/rustfs:latest</code>.
@@ -176,8 +177,12 @@
       </p>
       <pre><code>DATABASE_URL=${{ Postgres.DATABASE_URL }}
 REDIS_URL=${{ Redis.REDIS_URL }}
-QDRANT_URL=${{ Qdrant.RAILWAY_PRIVATE_DOMAIN }}:6333
+QDRANT_URL=http://${{ Qdrant.RAILWAY_PRIVATE_DOMAIN }}:6333
 QDRANT_API_KEY=&lt;from Qdrant service vars&gt;
+QDRANT_COLLECTION=events
+QDRANT_QUANTIZATION=scalar
+QDRANT_QUANTIZATION_RESCORE=true
+QDRANT_QUANTIZATION_OVERSAMPLING=2
 S3_ENDPOINT=http://${{ RustFS.RAILWAY_PRIVATE_DOMAIN }}:9000
 S3_PUBLIC_ENDPOINT=https://&lt;rustfs-public-domain&gt;
 S3_ACCESS_KEY_ID=&lt;from RustFS service vars&gt;

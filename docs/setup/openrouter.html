@@ -566,9 +566,10 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         second resync pass), verify counts and point identity, then switch
         <code>QDRANT_COLLECTION</code>. Existing collections are never patched in place. An existing
         target must already have the on-disk + quantization layout; a leftover in-RAM collection
-        with the same name is rejected. The script refuses <code>NODE_ENV=production</code>, Railway
-        production, and any non-loopback <code>QDRANT_URL</code> unless
+        with the same name is rejected. By default the script refuses production. An isolated
+        staging cluster requires
         <code>ALLOW_QDRANT_MIGRATE_REMOTE=I_UNDERSTAND_THIS_TARGETS_AN_ISOLATED_QDRANT</code>.
+        Production uses the separate maintenance procedure below.
       </p>
       <ol>
         <li>
@@ -634,15 +635,51 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         </li>
         <li>
           <strong>Cut over</strong> by setting <code>QDRANT_COLLECTION=events_ondisk</code> on web
-          and workers, then restart. Rollback is flipping the name back. Drop the old collection
-          after a grace period, same as re-embed.
+          and workers, then restart. During maintenance, rollback is switching the name back. After
+          writers resume, reconcile newer writes before rolling back. Retain the old collection
+          through the rollback grace period, same as re-embed.
         </li>
       </ol>
       <p>
         Binary quantization is opt-in (<code>QDRANT_QUANTIZATION=binary</code>) and uses a higher
         default search oversampling (4 vs 2). Keep scalar int8 unless you have measured recall on
-        your corpus. Do not run this against production.
+        your corpus. The optimizer-changing <code>--measure</code> probe is forbidden in production.
       </p>
+      <h3 id="qdrant-production-copy">Production maintenance</h3>
+      <ol>
+        <li>
+          Schedule a maintenance window and stop every Qdrant writer, including web processes that
+          delete vectors and workers that embed them. Keep queues intact. Set
+          <code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code> on the Qdrant
+          service and restart it before proceeding so backups live on its persistent volume.
+        </li>
+        <li>
+          In the operator process, use the real production environment, URL, API key, and active
+          <code>QDRANT_COLLECTION</code>. Keep the acknowledgment out of service variables:
+          <pre><code>ALLOW_QDRANT_MIGRATE_PRODUCTION=I_UNDERSTAND_THIS_MIGRATES_PRODUCTION_QDRANT \
+pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+  --production --source-collection=events --target-collection=events_ondisk \
+  --create-target --copy --verify --writers-paused --all-teams
+</code></pre>
+          Production requires every flag shown, except <code>--create-target</code> when the
+          destination already exists. <code>--dry-run</code> previews without a snapshot or writes.
+          A live run must complete a nonempty source snapshot before writing the destination. The
+          source must match the active collection. Verification checks per-team counts, IDs,
+          vectors, full payloads, and collection-wide totals to catch unassigned points. Stop on any
+          nonzero exit; retain both collections and inspect the report. Before cutover, compare
+          representative searches under the same team and visibility filters. If recall is lower,
+          tune the destination HNSW configuration and repeat the comparison. Raising
+          <code>ef_construct</code> rebuilds its index and increases its default search breadth.
+          Keep source optimizer settings unchanged.
+        </li>
+        <li>
+          After successful verification, set <code>QDRANT_COLLECTION=events_ondisk</code> on web and
+          the full worker service, redeploy them, and check their health and team-scoped retrieval.
+          The credential-thin document extractor does not access Qdrant and must not receive its
+          keys. Keep the original collection and snapshot. Before any later rollback, pause writers
+          and reconcile writes made after cutover; simply switching back would omit those writes.
+        </li>
+      </ol>
     </main>
   </body>
 </html>

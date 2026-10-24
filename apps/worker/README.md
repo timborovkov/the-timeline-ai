@@ -56,8 +56,13 @@ collection without re-embedding. Pause embed writers first; live `--copy` requir
 `--writers-paused`, re-syncs a second pass, and copies per `team_id` (`--all-teams` or `--team`).
 `--all-teams` verify unions source and target tenants; identity compares the canonical full
 payload. Live `--measure` indexes both collections before RAM snapshots; `--dry-run --measure`
-does not PATCH thresholds. It refuses production, Railway production, and
-non-loopback `QDRANT_URL` unless `ALLOW_QDRANT_MIGRATE_REMOTE` is set. After counts and point
+does not PATCH thresholds. Isolated remote clusters require `ALLOW_QDRANT_MIGRATE_REMOTE`.
+Production instead requires `--production --copy --verify --writers-paused --all-teams` and
+`ALLOW_QDRANT_MIGRATE_PRODUCTION=I_UNDERSTAND_THIS_MIGRATES_PRODUCTION_QDRANT` in the operator
+process. It backs up the active source collection before writing the target, checks full vector
+and payload identity plus total point coverage, and forbids the optimizer-changing `--measure`.
+Stop all web/worker vector writers during this maintenance window; retain the source and snapshot.
+After counts and point
 identity match, switch `QDRANT_COLLECTION` and restart web + workers. See
 [docs/setup/openrouter.html](../../docs/setup/openrouter.html#qdrant-storage).
 `resuggest` scans the requested window before applying `--limit`; conversational sources recover
