@@ -193,8 +193,8 @@ export function effectiveBillingPlanId(
  */
 export function historicalPlanIdOnDay(input: {
   storedPlanId: BillingPlanId;
-  arrangement?: BillingArrangement | null;
-  compExpiresAt?: Date | null;
+  arrangement?: BillingArrangement | null | undefined;
+  compExpiresAt?: Date | null | undefined;
   day: string;
 }): BillingPlanId {
   if (input.arrangement !== 'comped') return input.storedPlanId;

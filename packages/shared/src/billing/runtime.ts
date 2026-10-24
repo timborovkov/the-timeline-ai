@@ -502,7 +502,7 @@ export async function snapshotTeamStorageGbMonth(input: {
       db: input.db,
       teamId: input.teamId,
       day,
-      account: account ?? { planId: 'free', billingState: 'free', spendCapCents: 0 },
+      account: account ?? { planId: 'free' },
     });
     const differentPlan = pricingPlanId !== livePlan;
     const priorPeriod = replayPeriodYm !== periodYm();
@@ -651,8 +651,8 @@ async function planEntitlementForMemberDay(input: {
   day: string;
   account: {
     planId: BillingPlanId;
-    arrangement?: 'standard' | 'comped' | null;
-    compExpiresAt?: Date | null;
+    arrangement?: 'standard' | 'comped' | null | undefined;
+    compExpiresAt?: Date | null | undefined;
   };
 }): Promise<{ planId: BillingPlanId; included: number | null }> {
   const [existing] = await input.db
@@ -813,7 +813,7 @@ export async function accrueTeamMemberDays(input: {
       db: input.db,
       teamId: input.teamId,
       day,
-      account: account ?? { planId: 'free', billingState: 'free', spendCapCents: 0 },
+      account: account ?? { planId: 'free' },
     });
     const samePlan = entitlement.planId === commercial.planId;
     const result = await accrueTeamMemberDaysForDay({

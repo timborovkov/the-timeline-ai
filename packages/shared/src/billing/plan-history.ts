@@ -26,7 +26,7 @@ export async function recordBillingPlan(
 }
 
 /** Plan in force at the end of a UTC day. Falls back when no history exists yet. */
-export async function planIdEffectiveOnDay(input: {
+async function planIdEffectiveOnDay(input: {
   db: Db;
   teamId: string;
   day: string;
@@ -56,8 +56,8 @@ export async function billingPlanIdOnDay(input: {
   day: string;
   account: {
     planId: BillingPlanId;
-    arrangement?: BillingArrangement | null;
-    compExpiresAt?: Date | null;
+    arrangement?: BillingArrangement | null | undefined;
+    compExpiresAt?: Date | null | undefined;
   };
 }): Promise<BillingPlanId> {
   const storedPlanId = await planIdEffectiveOnDay({
