@@ -20,7 +20,7 @@ const PUBLIC_ANALYTICS_CTA_VALUES = [
 
 export type PublicAnalyticsCta = (typeof PUBLIC_ANALYTICS_CTA_VALUES)[number];
 
-const PUBLIC_EVENT_NAMES = ['public_page_viewed', 'public_cta_clicked'] as const;
+const PUBLIC_EVENT_NAMES = ['$pageview', 'public_page_viewed', 'public_cta_clicked'] as const;
 const LEGACY_CONVEX_STORAGE_KEYS = ['am_vid', 'am_sid', 'am_st'] as const;
 const REQUIRED_POSTHOG_PROPERTIES = [
   'token',
@@ -50,6 +50,17 @@ export async function capturePublicPageView(surface: PublicSurface): Promise<voi
     client.capture(
       'public_page_viewed',
       { surface, $geoip_disable: true, $process_person_profile: false },
+      { send_instantly: true },
+    );
+    client.capture(
+      '$pageview',
+      {
+        surface,
+        $current_url: window.location.origin + window.location.pathname,
+        $referrer: document.referrer,
+        $geoip_disable: true,
+        $process_person_profile: false,
+      },
       { send_instantly: true },
     );
   } catch {
@@ -156,11 +167,32 @@ export function sanitizePublicPostHogEvent(result: CaptureResult | null): Captur
     properties.cta = cta;
   }
 
+  if (result.event === '$pageview') {
+    const page = parseWebUrl(result.properties.$current_url);
+    if (!page || classifyPublicAnalyticsPath(page.pathname) !== surface) return null;
+    const referrer = parseWebUrl(result.properties.$referrer);
+    properties.$current_url = page.origin + page.pathname;
+    properties.$pathname = page.pathname;
+    properties.$host = page.host;
+    properties.$referrer = referrer?.origin ?? '$direct';
+    properties.$referring_domain = referrer?.hostname ?? '$direct';
+  }
+
   if (typeof properties.distinct_id !== 'string' || typeof properties.token !== 'string') {
     return null;
   }
 
   return { ...result, $set: undefined, $set_once: undefined, $unset: undefined, properties };
+}
+
+function parseWebUrl(value: unknown): URL | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function isPublicAnalyticsCta(value: unknown): value is PublicAnalyticsCta {

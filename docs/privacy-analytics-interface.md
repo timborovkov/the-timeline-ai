@@ -8,7 +8,7 @@
 | Legal research | [GDPR, cookies, and consent audit](./research/gdpr-cookie-consent-audit-2026-08-21.md) |
 | Runtime owner | Analytics implementation branch |
 | Privacy owner | **TBD: product privacy** |
-| Version | 2026-08-21 |
+| Version | 2026-10-24 |
 
 This document is the handoff contract between privacy policy and analytics
 implementation. It defines the required behavior and evidence needed to call
@@ -139,7 +139,7 @@ The schema may use stable enums, booleans, bounded counts, coarse durations,
 content types, and allowlisted route groups. It must not contain:
 
 - names, emails, account IDs, team IDs, or integration identifiers;
-- raw URLs, paths with identifiers, queries, fragments, referrers, or search
+- raw URLs, paths with identifiers, queries, fragments, referrer paths, or search
   text;
 - form values, support content, filenames, prompts, outputs, documents,
   transcripts, or other customer content;
@@ -158,6 +158,23 @@ page content, session recording/replay, DOM capture, frustration signals, and
 client-side feature-flag analytics are prohibited. If a public pageview is
 needed, it must be an explicit allowlisted event emitted only after consent with
 an allowlisted route group rather than the raw URL.
+
+The founder-approved Web analytics exception emits a manual `$pageview` alongside
+`public_page_viewed` after consent. Its purpose is visitors, pageviews, referring
+sites, and popular-page reporting; the runtime owner is public analytics. The
+exact additional properties are `$current_url` (HTTP(S) origin plus a reviewed
+public path), `$pathname` (that path), `$host`, `$referrer` (HTTP(S) origin only
+or `$direct`), and `$referring_domain` (hostname or `$direct`). The send hook
+validates the path against the declared surface and rebuilds these properties;
+it discards titles, queries, fragments, referrer paths, and SDK person metadata.
+GeoIP and person-profile processing remain disabled. This exception does not
+apply to custom public events, server streams, or private routes. Count only
+`$pageview` for Web analytics, so the companion named event does not double its
+pageview total. Automatic pageviews and recording remain prohibited.
+
+Consent format version 2 requires a fresh choice for this expanded metadata;
+version 1 is invalid. The Privacy Policy version is 2026-10-24. Existing legal
+acknowledgment and optional analytics consent remain independent.
 
 ## 5. Consent interface
 

@@ -14,7 +14,7 @@ describe('readConsentedPublicAttributionCookie', () => {
     expect(
       readConsentedPublicAttributionCookie(
         cookies({
-          tl_analytics_consent: `1|accepted|${NOW}`,
+          tl_analytics_consent: `2|accepted|${NOW}`,
           tl_public_attribution: `2|${NOW}|newsletter|email|launch`,
         }),
         NOW,
@@ -24,9 +24,9 @@ describe('readConsentedPublicAttributionCookie', () => {
 
   it.each([
     undefined,
-    `1|rejected|${NOW}`,
-    `2|accepted|${NOW}`,
-    `1|accepted|${NOW - (PUBLIC_ANALYTICS_CONSENT_MAX_AGE_SECONDS + 1) * 1_000}`,
+    `2|rejected|${NOW}`,
+    `1|accepted|${NOW}`,
+    `2|accepted|${NOW - (PUBLIC_ANALYTICS_CONSENT_MAX_AGE_SECONDS + 1) * 1_000}`,
   ])('ignores attribution without current affirmative consent (%s)', (consent) => {
     expect(
       readConsentedPublicAttributionCookie(
@@ -43,7 +43,7 @@ describe('readConsentedPublicAttributionCookie', () => {
     expect(
       readConsentedPublicAttributionCookie(
         cookies({
-          tl_analytics_consent: `1|accepted|${NOW}`,
+          tl_analytics_consent: `2|accepted|${NOW}`,
           tl_public_attribution: `2|${NOW}|John%20Doe|private%20notes|Customer%20Alpha`,
         }),
         NOW,

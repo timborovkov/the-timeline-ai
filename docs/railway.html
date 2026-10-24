@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-10-23</span>
+        <span class="kind">Operations</span><span>Last updated 2026-10-24</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -30,6 +30,7 @@
           <li><a href="#backups">Backups</a></li>
           <li><a href="#webhooks">Webhooks</a></li>
           <li><a href="#deploy-flow">Deploy flow</a></li>
+          <li><a href="#resource-caps">CPU and memory caps</a></li>
           <li><a href="#cost-considerations">Cost considerations</a></li>
         </ul>
       </nav>
@@ -115,9 +116,10 @@
         <li>Add the Redis template. Inject its connection string as <code>REDIS_URL</code>.</li>
         <li>
           Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.19.2</code>.
-          Persistent volume at <code>/qdrant/storage</code>. Set the service memory limit to 1 GB
-          (see cost considerations). Set <code>QDRANT__SERVICE__API_KEY</code> to a strong random
-          value. Set <code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code>
+          Persistent volume at <code>/qdrant/storage</code>. Size the memory limit from startup,
+          search, and ingestion measurements (see <a href="#qdrant-memory">Qdrant memory</a>). Set
+          <code>QDRANT__SERVICE__API_KEY</code> to a strong random value. Set
+          <code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code>
           so migration backups persist on the same volume.
         </li>
         <li>
@@ -625,13 +627,117 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
         <li>Postgres: small instance + storage</li>
         <li>Redis: tiny</li>
         <li>
-          Qdrant: 1 GB RAM is the recommended Railway limit after on-disk vectors + scalar int8
-          quantization (original embeddings stay on the volume). 512 MB is enough for a demo-sized
-          corpus; keep 2 GB until an older in-RAM collection has been copied. Staging/prototypes can
-          use Qdrant Cloud's free 1 GB / 4 GB disk cluster instead of a Railway Qdrant service.
+          Qdrant: production uses an initial 3 GB RAM limit with on-disk vectors, scalar int8
+          quantization, and the old collection retained for rollback. Reassess from measured peaks
+          as the corpus grows; on-disk storage does not prevent filesystem cache growth.
+          Staging/prototypes can use Qdrant Cloud's free 1 GB / 4 GB disk cluster instead of a
+          Railway Qdrant service.
         </li>
         <li>RustFS: minimal compute, most cost is volume size</li>
       </ul>
+      <h3 id="resource-caps">CPU and memory caps</h3>
+      <p>
+        Production limits verified on 2026-10-24, per replica. The seven-day metrics query used
+        60-second samples; the current deployments had only been running since October 23–24, so
+        this is a limited operating history. Sampled peaks can miss shorter bursts. These initial
+        caps leave headroom above observed operation and should be reviewed after larger imports,
+        concurrent jobs, or traffic increases.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Service</th>
+            <th>CPU cap</th>
+            <th>RAM cap</th>
+            <th>Sampled RAM peak</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Web</td>
+            <td>2 vCPU</td>
+            <td>2 GB</td>
+            <td>0.63 GB</td>
+          </tr>
+          <tr>
+            <td>Worker</td>
+            <td>2 vCPU</td>
+            <td>2 GB</td>
+            <td>0.61 GB</td>
+          </tr>
+          <tr>
+            <td>Document extract orchestrator</td>
+            <td>2 vCPU</td>
+            <td>2 GB</td>
+            <td>0.65 GB</td>
+          </tr>
+          <tr>
+            <td>Postgres</td>
+            <td>2 vCPU</td>
+            <td>2 GB</td>
+            <td>0.55 GB</td>
+          </tr>
+          <tr>
+            <td>Qdrant</td>
+            <td>2 vCPU</td>
+            <td>3 GB</td>
+            <td>2.27 GB after restart and probes</td>
+          </tr>
+          <tr>
+            <td>RustFS</td>
+            <td>1 vCPU</td>
+            <td>1 GB</td>
+            <td>0.30 GB</td>
+          </tr>
+          <tr>
+            <td>Redis</td>
+            <td>1 vCPU</td>
+            <td>0.5 GB</td>
+            <td>0.033 GB</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Set both limits in Railway's service settings or with the resource-limits API. Limits apply
+        to the running deployment without rebuilding it. CPU contention can throttle work; exceeding
+        the memory limit can terminate the process. Caps bound resource consumption; billing follows
+        actual usage rather than the configured maximum. See
+        <a href="https://docs.railway.com/deployments/scaling">Railway scaling</a> and
+        <a href="https://docs.railway.com/pricing/understanding-your-bill">billing</a>.
+      </p>
+      <h3 id="qdrant-memory">Qdrant memory</h3>
+      <p>
+        On 2026-10-24, production Qdrant 1.20.0 held 74,170 points in each of
+        <code>events_ondisk</code> (active) and <code>events</code> (rollback). Restarting reduced
+        Railway's memory reading from 3.98 GB to 1.42 GB. Search warmed it to 2.00 GB; a temporary
+        2,048-vector ingestion and indexing probe reached a sampled 2.24 GB. The probe used 32 real
+        embeddings with synthetic variations, forced indexing only in its temporary collection, and
+        verified deletion of every probe point and the collection afterward. These are bounded smoke
+        tests, not a full production reindex or sustained-load capacity benchmark.
+      </p>
+      <p>
+        After searches, collection memory estimates showed about 119 MB of pinned RAM and 474 MB of
+        file cache for the active collection, plus 600 MB of file cache for the rollback collection.
+        Allocator resident memory was about 284 MB after search and peaked near 512 MB during the
+        probe; allocator and collection figures overlap and must not be added together. The restart
+        and cache warming support retained filesystem cache as the main explanation for high idle
+        usage, but kernel-level accounting was unavailable, so the original 3.98 GB was not fully
+        attributed. Qdrant's collection memory endpoint excludes some runtime and filesystem
+        overhead; see
+        <a href="https://qdrant.tech/documentation/ops-monitoring/memory-usage/"
+          >Qdrant memory usage</a
+        >.
+      </p>
+      <p>
+        The initial production limits are 2 vCPU and 3 GB RAM, reduced from 24 vCPU and 24 GB. The
+        seven-day query also contained a pre-restart 18.98 GB sample; the normal-operation cap does
+        not establish capacity for that historical workload. Plan temporary headroom and retest
+        before full reindexing, collection copies, snapshots, or increasing ingestion concurrency.
+        Preserve the rollback collection and snapshots until their retention window ends. Before
+        considering a smaller limit, repeat the measurements after retiring the rollback collection
+        under the maintenance procedure. A memory limit bounds consumption; it does not reserve or
+        bill its full value while unused.
+      </p>
       <p>
         Watch volume sizing — Railway storage is more expensive than the compute. For prod beyond a
         few teams, consider moving RustFS data to a cheaper external S3-compatible store (Backblaze

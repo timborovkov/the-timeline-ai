@@ -6,10 +6,10 @@ import type { Metadata } from 'next';
 import { LegalPage } from '@/components/legal-page';
 import {
   LEGAL_ADDRESS,
-  LEGAL_EFFECTIVE_DATE,
   LEGAL_PROVIDER,
   LEGAL_REGISTRY_CODE,
   PRIVACY_VERSION,
+  PRIVACY_EFFECTIVE_DATE,
   getLegalContactEmail,
 } from '@/lib/legal-versions';
 import { publicMetadata } from '@/lib/public-metadata';
@@ -376,13 +376,16 @@ function PrivacyDisclosureAndSecuritySections() {
         Browser PostHog is limited to eligible public pages after a separate affirmative choice and
         does not run in protected workspace routes. Rejecting or withdrawing results in no PostHog
         browser event, cookie, local-storage value, session identifier, or visitor identifier from
-        that point forward. Autocapture, heatmaps, and session replay remain off. Separate
-        server-to-server surface events continue regardless of the browser choice. Eligible,
-        allowlisted, non-prefetch public navigations share one non-visitor stream identifier;
-        eligible app navigations count only after Auth.js permits the request and share another.
-        Only an allowlisted surface is variable, so these events cannot recognize a returning
-        visitor or account. Sentry error monitoring and Cloudflare Turnstile abuse prevention are
-        separate processing, not PostHog analytics.
+        that point forward. Autocapture, heatmaps, and session replay remain off. Consented
+        pageviews include only reviewed public page paths and referring website origins, without
+        query strings, fragments, page titles, or referrer paths. These support visitors, pageviews,
+        referrers, and popular-page reports. Browser identities are not connected to accounts or
+        teams. Separate server-to-server surface events continue regardless of the browser choice.
+        Eligible, allowlisted, non-prefetch public navigations share one non-visitor stream
+        identifier; eligible app navigations count only after Auth.js permits the request and share
+        another. Only an allowlisted surface is variable, so these events cannot recognize a
+        returning visitor or account. Sentry error monitoring and Cloudflare Turnstile abuse
+        prevention are separate processing, not PostHog analytics.
       </p>
       <p>
         The source includes the public-route consent and withdrawal controls, but browser capture
@@ -566,7 +569,7 @@ export default function PrivacyPage() {
 
   return (
     <LegalPage
-      eyebrow={`Version ${PRIVACY_VERSION} · Effective ${LEGAL_EFFECTIVE_DATE}`}
+      eyebrow={`Version ${PRIVACY_VERSION} · Effective ${PRIVACY_EFFECTIVE_DATE}`}
       title="Privacy Policy"
       description="How The Timeline collects, uses, shares, protects, and retains personal data—including content processed by AI and connected services."
     >

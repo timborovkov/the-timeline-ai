@@ -6,7 +6,7 @@
 | Applies to | Hosted Timeline, public Timeline surfaces, development, support, and vendor operations |
 | Service operator | Nyxone OÜ, Estonian registry code 16172329 |
 | Control owner | **TBD: named security/privacy owner** |
-| Version | 2026-08-27 |
+| Version | 2026-10-24 |
 | Last evidence review | 2026-08-27 |
 | Next scheduled review | **TBD: no later than 2026-11-27** |
 | Evidence memo | [Provider privacy and data-handling research](./research/provider-privacy-audit-2026-08-21.md) |
@@ -485,6 +485,14 @@ and content-free. Names, emails, raw URLs, queries, filenames, form values,
 prompts, outputs, transcripts, documents, cookies, headers, arbitrary errors,
 and uploaded or customer content are prohibited. Public PostHog identities must
 never be identified, aliased, or grouped to an account, user, or team.
+
+The founder-approved exception in section 4 of the analytics interface allows
+manual, consented `$pageview` events with reviewed public paths and referring
+website origins/hostnames for visitor, pageview, referrer, and popular-page
+reports. It never permits queries, fragments, referrer paths, titles, workspace
+routes, GeoIP, or account identity links. Consent format version 2 requires a
+fresh choice; the Privacy Policy version 2026-10-24 discloses this scope. Server
+surface streams and other event schemas keep their stricter field allowlists.
 
 The legacy Convex pageview import is removed from the current source and guarded
 by a regression test. Deployed behavior, logs, token URLs, retained data,

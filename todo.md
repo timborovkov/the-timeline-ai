@@ -599,8 +599,13 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 ## Standing Items
 
 - [ ] Verify backups weekly and run restore drills quarterly.
-- [ ] Monitor Qdrant RAM usage after the on-disk + int8 collection layout and
-      plan a move to sharded or managed Qdrant before it becomes painful. New
+- [ ] Monitor production CPU and RAM against the
+      [per-service caps](docs/railway.html#resource-caps), including Qdrant after the on-disk + int8 layout, and
+      plan a move to sharded or managed Qdrant before it becomes painful. The
+      2026-10-24 restart and search/ingestion probes informed an initial 3 GB
+      production RAM limit (plus a 2 vCPU cap) with the rollback collection retained; remeasure peaks
+      before lowering it or performing full reindexing (see
+      [production memory measurements](docs/railway.html#qdrant-memory)). New
       collections already store original vectors on disk; copy any older in-RAM
       collection with `pnpm --filter @timeline/worker qdrant-migrate-collection`
       (`--writers-paused --all-teams` after pausing all vector writers; production also

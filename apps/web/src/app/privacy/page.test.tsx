@@ -33,6 +33,8 @@ describe('Privacy Policy analytics disclosures', () => {
     expect(html).toContain('Sentry error monitoring');
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('href="/trust"');
+    expect(html).toContain('reviewed public page paths and referring website origins');
+    expect(html).toContain('without query strings, fragments, page titles, or referrer paths');
   });
 
   it('discloses the fixed tracker source while keeping deployment evidence qualified', () => {

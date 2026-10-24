@@ -160,10 +160,11 @@ export function PublicAnalyticsBoundary({ children }: { children: ReactNode }) {
             <DialogDescription>
               PostHog is the processor for optional public analytics. Its purpose is to measure
               visits and selected actions on public pages, and it never runs in your private
-              workspace. PostHog currently documents seven-year product-event retention, which
-              exceeds Timeline&apos;s 90-day target. We separately count personless surface requests
-              in broad page categories. Bots and retries can contribute, so those totals are not
-              visitor or session metrics.
+              workspace. We also measure referring sites and popular pages, using public page paths
+              and referring website origins without query strings or fragments. PostHog currently
+              documents seven-year product-event retention, which exceeds Timeline&apos;s 90-day
+              target. We separately count personless surface requests in broad page categories. Bots
+              and retries can contribute, so those totals are not visitor or session metrics.
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-fg-muted" aria-live="polite">
@@ -238,7 +239,8 @@ function AnalyticsChoiceBanner({
             Optional public analytics
           </h2>
           <p className="mt-1 text-sm leading-6 text-fg-muted">
-            Optional analytics helps us understand visits and selected actions on public pages.{' '}
+            Optional analytics helps us understand visits and selected actions on public pages. It
+            also measures referring sites and popular pages.{' '}
             <button
               type="button"
               className="rounded-sm text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
