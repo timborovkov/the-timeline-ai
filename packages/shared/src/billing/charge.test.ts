@@ -9,6 +9,7 @@ import {
   polarCatalogUnitsForInvoiceCents,
   polarInvoiceNativeUnits,
   polarIngestDisposition,
+  polarIngestDispositionBeforeCoverage,
   polarMemberMonthUnits,
   polarSubscriptionCoversMeter,
   settlementSegmentsForMeter,
@@ -453,6 +454,50 @@ describe('polar subscription price guard', () => {
         subscriptionCoversMeter: true,
       }),
     ).toBe('not_required');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 1,
+        invoiceCents: 0,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: true,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: null,
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+      }),
+    ).toBe('hold');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+      }),
+    ).toBeNull();
     expect(
       polarIngestDisposition({
         eventName: 'timeline_ai_eur_cents',

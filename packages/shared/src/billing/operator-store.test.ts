@@ -8,11 +8,13 @@ import {
   BillingOperatorError,
   assignCompedPlan,
   clearCompedPlan,
+  clearTeamPriceOverride,
   setOperatorSpendCap,
   setTeamPolarDiscount,
   setTeamPriceOverride,
   startEnterpriseCheckout,
 } from '#src/billing/operator-store.js';
+import { resolveTeamCommercialTerms } from '#src/billing/operator.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -465,6 +467,73 @@ describe('billing operator store', () => {
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
     expect(account?.priceOverride ?? null).toBeNull();
+  });
+
+  it('keeps the contracted Enterprise fee when a usage override is replaced or cleared', async () => {
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, price_override
+      ) VALUES (
+        '${TEAM_ID}', 'enterprise', 'enterprise_active',
+        '{"platformFeeCents":250000,"includedActiveMembers":4}'::jsonb
+      );
+    `);
+    const actor = { userId: ADMIN_ID, email: 'ops@example.test' };
+    await setTeamPriceOverride({
+      db,
+      actor,
+      teamId: TEAM_ID,
+      override: { meteredDiscountPercent: 25 },
+      expiresAt: new Date('2099-01-01T00:00:00.000Z'),
+    });
+    const [replaced] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(replaced?.enterprisePlatformFeeCents).toBe(250_000);
+    expect(replaced?.priceOverride).toEqual({ meteredDiscountPercent: 25 });
+
+    await clearTeamPriceOverride({ db, actor, teamId: TEAM_ID });
+    const [cleared] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(cleared?.enterprisePlatformFeeCents).toBe(250_000);
+    expect(cleared?.priceOverride).toBeNull();
+    expect(
+      resolveTeamCommercialTerms({
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        spendCapCents: cleared?.spendCapCents ?? 0,
+        enterprisePlatformFeeCents: cleared?.enterprisePlatformFeeCents ?? null,
+        priceOverride: cleared?.priceOverride ?? null,
+        priceOverrideExpiresAt: cleared?.priceOverrideExpiresAt ?? null,
+      }).platformFeeCents,
+    ).toBe(250_000);
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET enterprise_platform_fee_cents = NULL,
+          price_override = '{"platformFeeCents":180000}'::jsonb
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await clearTeamPriceOverride({ db, actor, teamId: TEAM_ID });
+    const [moved] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(moved?.priceOverride).toBeNull();
+    expect(moved?.enterprisePlatformFeeCents).toBe(180_000);
+    expect(
+      resolveTeamCommercialTerms({
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        spendCapCents: 0,
+        enterprisePlatformFeeCents: moved?.enterprisePlatformFeeCents ?? null,
+        priceOverride: null,
+        priceOverrideExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
+      }).platformFeeCents,
+    ).toBe(180_000);
   });
 
   it('does not copy an expired override into Enterprise checkout', async () => {

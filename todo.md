@@ -600,7 +600,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       a platform operator, plus the six metered prices. Opening that checkout stores
       pending terms for that checkout only. It does not grant Enterprise entitlements, clear the current
       subscription id, or revive an expired price override. Paying that checkout
-      activates its terms. A different checkout keeps its own terms.
+      activates its terms and stores the contracted platform fee apart from the
+      removable usage override. A different checkout keeps its own terms. Spend
+      caps follow the locally metered charge for comps and paid plans even when
+      Polar will not invoice that charge. Standard Free stays on the allowance,
+      and a contractual Enterprise subscription does not freeze on the cap.
       <code>POLAR_PRODUCT_ID_ENTERPRISE</code> is written by
       <code>pnpm billing:polar-setup</code>. Null included members stay unlimited.
       <code>pnpm billing:polar-setup</code> creates the meter without dropping

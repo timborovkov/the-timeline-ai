@@ -227,14 +227,21 @@ PLATFORM_ADMIN_EMAILS=
         enrichment is stamped <code>billing_enrichment_deferred</code> and flushed on the email
         meter, not the accepted-source meter. Deferred accepted-source flush rotates past
         still-blocked rows; a replay after an insert crash meters the existing dedup row. Seat
-        claims are blocked while billing is paused. Standard Enterprise settlement does not freeze
-        on the spend cap. A comped Enterprise workspace still enforces its spend cap. An expired
-        Enterprise comp uses the Free allowance. Enterprise checkout is opened by a platform
-        operator and is not self-serve. It stores pending terms for that checkout id and leaves the
-        current plan in place until the paid subscription webhook for the same checkout. A later
-        checkout does not replace an earlier checkout's terms, including when Polar fails to open
-        the later link. Plan preview applies a metered percentage before included credit. Replayed
-        member-days keep the historical plan's extra-member rate. It does not clear a canceled
+        claims are blocked while billing is paused. The spend cap counts the locally metered charge
+        for Pay as you go, Team, Business, and every comp, including an expired comp whose
+        entitlements are Free. Included credit that zeros the invoice does not skip the cap. Open
+        reservations count toward it. Standard Free stays on the allowance. Standard Enterprise
+        settlement does not freeze on the spend cap. A comped Enterprise workspace still enforces
+        its spend cap. An expired Enterprise comp uses the Free allowance and still enforces the
+        cap. Enterprise checkout is opened by a platform operator and is not self-serve. It stores
+        pending terms for that checkout id and leaves the current plan in place until the paid
+        subscription webhook for the same checkout. A later checkout does not replace an earlier
+        checkout's terms, including when Polar fails to open the later link. Paying that checkout
+        stores the contracted platform fee apart from the usage override. Clearing or replacing the
+        usage override leaves the fee in place. Plan preview applies a metered percentage before
+        included credit. Polar price coverage is read only when a settlement is payable, and that
+        product's priced events are reused for later settlements. Replayed member-days keep the
+        historical plan's extra-member rate. Enterprise checkout does not clear a canceled
         subscription id and does not copy an expired price override into those terms. Platform-fee
         overrides are not saved on Pay as you go, Team, or Business; the Enterprise checkout sends
         that fee to Polar. Clearing a comp refuses while a Polar subscription id remains, then

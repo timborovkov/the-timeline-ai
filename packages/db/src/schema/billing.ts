@@ -121,12 +121,18 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   compReason: text('comp_reason'),
   compExpiresAt: timestamp('comp_expires_at', { withTimezone: true }),
   priceOverride: jsonb('price_override').$type<{
+    /** Legacy checkout fee. New activations store this on `enterprisePlatformFeeCents`. */
     platformFeeCents?: number;
     includedActiveMembers?: number;
     additionalMemberCents?: number;
     meteredDiscountPercent?: number;
   } | null>(),
   priceOverrideExpiresAt: timestamp('price_override_expires_at', { withTimezone: true }),
+  /**
+   * Platform fee Polar charges for a paid Enterprise checkout, in euro cents.
+   * Usage overrides can be cleared or replaced without dropping this fee.
+   */
+  enterprisePlatformFeeCents: integer('enterprise_platform_fee_cents'),
   /**
    * Enterprise checkout terms waiting for the paid subscription.
    * New rows are `{ byCheckoutId: { [checkoutId]: terms } }`. A legacy row is

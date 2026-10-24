@@ -33,6 +33,8 @@ export interface BillingOperatorSnapshot {
   compExpiresAt: string | null;
   priceOverride: TeamPriceOverride | null;
   priceOverrideExpiresAt: string | null;
+  /** Checkout-activated Enterprise platform fee. Null when Polar has no contracted fee. */
+  enterprisePlatformFeeCents: number | null;
   pendingEnterpriseTerms: StoredPendingEnterpriseTerms | null;
   polarDiscountId: string | null;
   polarDiscountExpiresAt: string | null;
@@ -47,6 +49,7 @@ export interface BillingOperatorAccount {
   compExpiresAt?: Date | null;
   priceOverride?: TeamPriceOverride | null;
   priceOverrideExpiresAt?: Date | null;
+  enterprisePlatformFeeCents?: number | null;
   pendingEnterpriseTerms?: StoredPendingEnterpriseTerms | null;
   polarDiscountId?: string | null;
   polarDiscountExpiresAt?: Date | null;
@@ -217,9 +220,10 @@ export function resolveTeamCommercialTerms(
   const planId = effectiveBillingPlanId(account, now);
   const catalog = PLAN_CATALOG[planId];
   const override = activePriceOverride(account, now);
+  const contractedFee = account.enterprisePlatformFeeCents ?? override?.platformFeeCents;
   return {
     planId,
-    platformFeeCents: override?.platformFeeCents ?? catalog.platformFeeCents,
+    platformFeeCents: contractedFee ?? catalog.platformFeeCents,
     includedActiveMembers: override?.includedActiveMembers ?? catalog.includedActiveMembers,
     additionalMemberCents: override?.additionalMemberCents ?? catalog.additionalMemberCents,
     includedUsageDiscountCents: catalog.includedUsageDiscountCents,
@@ -230,6 +234,24 @@ export function resolveTeamCommercialTerms(
 
 export function billingStateForComp(planId: BillingPlanId) {
   return billingStateForPaidPlan(planId) ?? 'free';
+}
+
+/**
+ * The spend cap counts the locally metered charge. Whether Polar will invoice
+ * that charge (included credit, a comp, or the Free allowance) does not decide
+ * it. Standard Free stays on the allowance gate. A contractual Enterprise
+ * subscription is not frozen by the cap. Comps, including an expired comp
+ * whose entitlements are Free, still enforce it.
+ */
+export function localChargeSpendCapApplies(input: {
+  shadowBilling: boolean;
+  comped: boolean;
+  enterpriseContract: boolean;
+  entitlementsPlanId: BillingPlanId;
+}): boolean {
+  if (input.shadowBilling || input.enterpriseContract) return false;
+  if (input.entitlementsPlanId === 'free' && !input.comped) return false;
+  return true;
 }
 
 export function compCostBearingPaused(input: {
@@ -324,6 +346,7 @@ export function billingOperatorSnapshot(account: BillingOperatorAccount): Billin
     priceOverrideExpiresAt: account.priceOverrideExpiresAt
       ? account.priceOverrideExpiresAt.toISOString()
       : null,
+    enterprisePlatformFeeCents: account.enterprisePlatformFeeCents ?? null,
     pendingEnterpriseTerms: account.pendingEnterpriseTerms ?? null,
     polarDiscountId: account.polarDiscountId ?? null,
     polarDiscountExpiresAt: account.polarDiscountExpiresAt

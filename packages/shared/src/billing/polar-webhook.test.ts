@@ -318,8 +318,8 @@ describe('handlePolarWebhookEvent', () => {
     expect(account.polarSubscriptionId).toBe('sub_enterprise');
     expect(account.spendCapCents).toBe(80000);
     expect(account.pendingEnterpriseTerms).toBeNull();
+    expect(account.enterprisePlatformFeeCents).toBe(250000);
     expect(account.priceOverride).toEqual({
-      platformFeeCents: 250000,
       includedActiveMembers: 12,
     });
     expect(account.priceOverrideExpiresAt).toBeNull();
@@ -357,7 +357,8 @@ describe('handlePolarWebhookEvent', () => {
     const account = await billing.getAccount();
     expect(account.planId).toBe('enterprise');
     expect(account.spendCapCents).toBe(40000);
-    expect(account.priceOverride).toEqual({ platformFeeCents: 100000 });
+    expect(account.enterprisePlatformFeeCents).toBe(100000);
+    expect(account.priceOverride).toBeNull();
     expect(account.pendingEnterpriseTerms).toEqual({
       byCheckoutId: {
         chk_later: {
@@ -401,6 +402,7 @@ describe('handlePolarWebhookEvent', () => {
     const account = await billing.getAccount();
     expect(account.planId).toBe('enterprise');
     expect(account.spendCapCents).toBe(2500);
+    expect(account.enterprisePlatformFeeCents).toBeNull();
     expect(account.priceOverride).toBeNull();
     expect(account.pendingEnterpriseTerms).toEqual({
       byCheckoutId: {

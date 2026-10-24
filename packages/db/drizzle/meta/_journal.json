@@ -575,6 +575,13 @@
       "when": 1795655220000,
       "tag": "0081_billing_enterprise_pending",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795655280000,
+      "tag": "0082_billing_enterprise_platform_fee",
+      "breakpoints": true
     }
   ]
 }

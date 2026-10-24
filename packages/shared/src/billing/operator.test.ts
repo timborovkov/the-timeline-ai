@@ -8,6 +8,7 @@ import {
   effectiveBillingPlanId,
   isActiveComp,
   isPlatformAdminEmail,
+  localChargeSpendCapApplies,
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
 import { cheapestPlanPreview } from '#src/billing/preview.js';
@@ -45,6 +46,32 @@ describe('comped plans', () => {
   });
 });
 
+describe('spend cap vs invoice eligibility', () => {
+  const plans = ['free', 'payg', 'team', 'business', 'enterprise'] as const;
+  const arrangements = [
+    { comped: false, enterpriseContract: false },
+    { comped: true, enterpriseContract: false },
+    { comped: false, enterpriseContract: true },
+  ] as const;
+
+  it('applies the cap to the local charge for every plan, comp, and Enterprise contract', () => {
+    for (const entitlementsPlanId of plans) {
+      for (const arrangement of arrangements) {
+        for (const shadowBilling of [false, true]) {
+          const applies = localChargeSpendCapApplies({
+            shadowBilling,
+            comped: arrangement.comped,
+            enterpriseContract: arrangement.enterpriseContract,
+            entitlementsPlanId,
+          });
+          const standardFree = entitlementsPlanId === 'free' && !arrangement.comped;
+          expect(applies).toBe(!shadowBilling && !arrangement.enterpriseContract && !standardFree);
+        }
+      }
+    }
+  });
+});
+
 describe('custom pricing', () => {
   it('applies an unexpired override and ignores a lapsed one', () => {
     const now = new Date('2026-06-01T00:00:00.000Z');
@@ -69,6 +96,23 @@ describe('custom pricing', () => {
         now,
       ).platformFeeCents,
     ).toBe(4_900);
+    expect(
+      resolveTeamCommercialTerms(
+        {
+          planId: 'enterprise',
+          billingState: 'enterprise_active',
+          spendCapCents: 0,
+          enterprisePlatformFeeCents: 250_000,
+          priceOverride: { includedActiveMembers: 12, platformFeeCents: 100 },
+          priceOverrideExpiresAt: new Date('2026-05-01T00:00:00.000Z'),
+        },
+        now,
+      ),
+    ).toMatchObject({
+      platformFeeCents: 250_000,
+      includedActiveMembers: null,
+      meteredDiscountPercent: null,
+    });
     expect(applyMeteredDiscountCents(1_000, 10)).toBe(900);
   });
 

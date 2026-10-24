@@ -35,6 +35,22 @@ import {
 import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { getEnv } from '#src/env.js';
 
+/** Move a legacy JSON fee onto the column before a usage override replaces it. */
+function preservedEnterprisePlatformFee(existing: {
+  enterprisePlatformFeeCents?: number | null;
+  priceOverride?: { platformFeeCents?: number } | null;
+}): { enterprisePlatformFeeCents: number } | undefined {
+  if (
+    existing.enterprisePlatformFeeCents !== null &&
+    existing.enterprisePlatformFeeCents !== undefined
+  ) {
+    return undefined;
+  }
+  const fromOverride = existing.priceOverride?.platformFeeCents;
+  if (fromOverride === undefined) return undefined;
+  return { enterprisePlatformFeeCents: fromOverride };
+}
+
 export class BillingOperatorError extends Error {
   constructor(message: string) {
     super(message);
@@ -303,11 +319,13 @@ export async function setTeamPriceOverride(input: {
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
     const before = billingOperatorSnapshot(existing);
+    const preservedFee = preservedEnterprisePlatformFee(existing);
     const [updated] = await db
       .update(teamBillingAccounts)
       .set({
         priceOverride: override,
         priceOverrideExpiresAt: input.expiresAt,
+        ...(preservedFee ?? {}),
         updatedAt: now,
       })
       .where(eq(teamBillingAccounts.teamId, input.teamId))
@@ -341,11 +359,13 @@ export async function clearTeamPriceOverride(input: {
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
     const before = billingOperatorSnapshot(existing);
+    const preservedFee = preservedEnterprisePlatformFee(existing);
     const [updated] = await db
       .update(teamBillingAccounts)
       .set({
         priceOverride: null,
         priceOverrideExpiresAt: null,
+        ...(preservedFee ?? {}),
         updatedAt: now,
       })
       .where(eq(teamBillingAccounts.teamId, input.teamId))

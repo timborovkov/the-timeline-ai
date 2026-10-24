@@ -240,8 +240,11 @@ async function lockBillingAccount(db: Db, teamId: string) {
   return row;
 }
 
-function enterpriseOverrideFromPending(pending: PendingEnterpriseTerms) {
-  return assertPriceOverride({
+function enterpriseActivationPricing(pending: PendingEnterpriseTerms): {
+  platformFeeCents: number;
+  priceOverride: ReturnType<typeof assertPriceOverride> | null;
+} {
+  const validated = assertPriceOverride({
     platformFeeCents: pending.platformFeeCents,
     ...(pending.includedActiveMembers !== undefined
       ? { includedActiveMembers: pending.includedActiveMembers }
@@ -253,6 +256,25 @@ function enterpriseOverrideFromPending(pending: PendingEnterpriseTerms) {
       ? { meteredDiscountPercent: pending.meteredDiscountPercent }
       : {}),
   });
+  const priceOverride: ReturnType<typeof assertPriceOverride> = {};
+  if (validated.includedActiveMembers !== undefined) {
+    priceOverride.includedActiveMembers = validated.includedActiveMembers;
+  }
+  if (validated.additionalMemberCents !== undefined) {
+    priceOverride.additionalMemberCents = validated.additionalMemberCents;
+  }
+  if (validated.meteredDiscountPercent !== undefined) {
+    priceOverride.meteredDiscountPercent = validated.meteredDiscountPercent;
+  }
+  return {
+    platformFeeCents: validated.platformFeeCents ?? pending.platformFeeCents,
+    priceOverride:
+      priceOverride.includedActiveMembers !== undefined ||
+      priceOverride.additionalMemberCents !== undefined ||
+      priceOverride.meteredDiscountPercent !== undefined
+        ? priceOverride
+        : null,
+  };
 }
 
 async function upsertPaidSubscription(input: {
@@ -286,7 +308,7 @@ async function upsertPaidSubscription(input: {
       input.plan === 'enterprise'
         ? pendingEnterpriseTermsForCheckout(existing?.pendingEnterpriseTerms ?? null, checkoutId)
         : null;
-    const activatedOverride = pending ? enterpriseOverrideFromPending(pending) : null;
+    const activatedPricing = pending ? enterpriseActivationPricing(pending) : null;
     const pendingAfterActivation =
       input.plan === 'enterprise' && pending
         ? pendingEnterpriseTermsAfterActivation(
@@ -342,9 +364,10 @@ async function upsertPaidSubscription(input: {
               existing,
               plan: input.plan,
             }),
-          ...(activatedOverride
+          ...(activatedPricing
             ? {
-                priceOverride: activatedOverride,
+                enterprisePlatformFeeCents: activatedPricing.platformFeeCents,
+                priceOverride: activatedPricing.priceOverride,
                 priceOverrideExpiresAt: null,
               }
             : {}),

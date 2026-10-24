@@ -19,7 +19,11 @@ import {
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
-import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
+import {
+  clearPolarProductCoverageCache,
+  createBillingScope,
+  flushPendingPolarUsageIngest,
+} from '#src/billing/scope.js';
 import { resetEnvForTests } from '#src/env.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -30,6 +34,7 @@ let pg: PGlite;
 let db: Db;
 
 beforeEach(async () => {
+  clearPolarProductCoverageCache();
   pg = new PGlite();
   await applyDbMigrations(pg);
   await pg.exec(`
@@ -1479,6 +1484,253 @@ describe('billing scope', () => {
     });
     expect(settled.ok).toBe(true);
     if (!settled.duplicate) expect(settled.ledger.customerChargeCents).toBe(7);
+  });
+
+  it('enforces the spend cap on the local charge for every plan, comp, and Enterprise combination', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+
+    const cases: {
+      name: string;
+      sql: string;
+      meterId: 'ai' | 'recall_minutes';
+      nativeUnits: number;
+      chargeCents: number;
+      code: 'allow' | 'spend_cap_reached' | 'free_allowance_reached';
+    }[] = [
+      {
+        name: 'standard free in allowance',
+        sql: `plan_id = 'free', billing_state = 'free', arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL, included_discount_remaining_cents = 0, spend_cap_cents = 0`,
+        meterId: 'ai',
+        nativeUnits: 20,
+        chargeCents: 20,
+        code: 'allow',
+      },
+      {
+        name: 'standard free over allowance',
+        sql: `plan_id = 'free', billing_state = 'free', arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL, included_discount_remaining_cents = 0, spend_cap_cents = 100000`,
+        meterId: 'ai',
+        nativeUnits: 600,
+        chargeCents: 600,
+        code: 'free_allowance_reached',
+      },
+      {
+        name: 'payg inside the free floor',
+        sql: `plan_id = 'payg', billing_state = 'payg_active', arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL, included_discount_remaining_cents = 0, spend_cap_cents = 0`,
+        meterId: 'recall_minutes',
+        nativeUnits: 10,
+        chargeCents: 30,
+        code: 'allow',
+      },
+      {
+        name: 'payg overage',
+        sql: `plan_id = 'payg', billing_state = 'payg_active', arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL, included_discount_remaining_cents = 0, spend_cap_cents = 0`,
+        meterId: 'recall_minutes',
+        nativeUnits: 61,
+        chargeCents: 183,
+        code: 'spend_cap_reached',
+      },
+      {
+        name: 'team covered by included credit',
+        sql: `plan_id = 'team', billing_state = 'team_active', arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL, included_discount_remaining_cents = 100000, spend_cap_cents = 0`,
+        meterId: 'ai',
+        nativeUnits: 40,
+        chargeCents: 40,
+        code: 'spend_cap_reached',
+      },
+      {
+        name: 'business covered by included credit',
+        sql: `plan_id = 'business', billing_state = 'business_active', arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL, included_discount_remaining_cents = 100000, spend_cap_cents = 0`,
+        meterId: 'ai',
+        nativeUnits: 40,
+        chargeCents: 40,
+        code: 'spend_cap_reached',
+      },
+      {
+        name: 'contractual enterprise',
+        sql: `plan_id = 'enterprise', billing_state = 'enterprise_active', arrangement = 'standard', comp_reason = NULL, comp_expires_at = NULL, included_discount_remaining_cents = 0, spend_cap_cents = 0`,
+        meterId: 'ai',
+        nativeUnits: 40,
+        chargeCents: 40,
+        code: 'allow',
+      },
+      {
+        name: 'active team comp',
+        sql: `plan_id = 'team', billing_state = 'team_active', arrangement = 'comped', comp_reason = 'internal', comp_expires_at = NULL, included_discount_remaining_cents = 0, spend_cap_cents = 0`,
+        meterId: 'ai',
+        nativeUnits: 40,
+        chargeCents: 40,
+        code: 'spend_cap_reached',
+      },
+      {
+        name: 'active enterprise comp',
+        sql: `plan_id = 'enterprise', billing_state = 'enterprise_active', arrangement = 'comped', comp_reason = 'internal', comp_expires_at = '2099-01-01T00:00:00Z', included_discount_remaining_cents = 0, spend_cap_cents = 0`,
+        meterId: 'ai',
+        nativeUnits: 40,
+        chargeCents: 40,
+        code: 'spend_cap_reached',
+      },
+      {
+        name: 'expired enterprise comp inside the free allowance',
+        sql: `plan_id = 'enterprise', billing_state = 'enterprise_active', arrangement = 'comped', comp_reason = 'internal', comp_expires_at = '2020-01-01T00:00:00Z', included_discount_remaining_cents = 0, spend_cap_cents = 0`,
+        meterId: 'ai',
+        nativeUnits: 20,
+        chargeCents: 20,
+        code: 'spend_cap_reached',
+      },
+      {
+        name: 'expired enterprise comp under a positive cap',
+        sql: `plan_id = 'enterprise', billing_state = 'enterprise_active', arrangement = 'comped', comp_reason = 'internal', comp_expires_at = '2020-01-01T00:00:00Z', included_discount_remaining_cents = 0, spend_cap_cents = 100000`,
+        meterId: 'ai',
+        nativeUnits: 20,
+        chargeCents: 20,
+        code: 'allow',
+      },
+      {
+        name: 'expired enterprise comp over the free allowance',
+        sql: `plan_id = 'enterprise', billing_state = 'enterprise_active', arrangement = 'comped', comp_reason = 'internal', comp_expires_at = '2020-01-01T00:00:00Z', included_discount_remaining_cents = 0, spend_cap_cents = 100000`,
+        meterId: 'ai',
+        nativeUnits: 600,
+        chargeCents: 600,
+        code: 'free_allowance_reached',
+      },
+    ];
+
+    for (const [index, row] of cases.entries()) {
+      await pg.exec(`
+        DELETE FROM billing_usage_ledger WHERE team_id = '${TEAM_ID}';
+        DELETE FROM billing_usage_reservations WHERE team_id = '${TEAM_ID}';
+        DELETE FROM billing_usage_counters WHERE team_id = '${TEAM_ID}';
+        UPDATE team_billing_accounts
+        SET shadow_billing = false, ${row.sql}
+        WHERE team_id = '${TEAM_ID}';
+      `);
+      const reserved = await scope.reserve({
+        operationId: `op-cap-matrix-${String(index)}`,
+        meterId: row.meterId,
+        reservedNativeUnits: row.nativeUnits,
+        reservedChargeCents: row.chargeCents,
+      });
+      expect(reserved.ok, row.name).toBe(row.code === 'allow');
+      if (!reserved.ok) expect(reserved.code, row.name).toBe(row.code);
+    }
+
+    await pg.exec(`
+      DELETE FROM billing_usage_ledger WHERE team_id = '${TEAM_ID}';
+      DELETE FROM billing_usage_reservations WHERE team_id = '${TEAM_ID}';
+      DELETE FROM billing_usage_counters WHERE team_id = '${TEAM_ID}';
+      UPDATE team_billing_accounts
+      SET arrangement = 'comped', plan_id = 'enterprise', billing_state = 'enterprise_active',
+          comp_reason = 'internal', comp_expires_at = '2020-01-01T00:00:00Z',
+          spend_cap_cents = 15, shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const first = await scope.reserve({
+      operationId: 'op-expired-comp-open',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(first.ok).toBe(true);
+    const [open] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, 'op-expired-comp-open'));
+    expect(open?.metadata).toMatchObject({
+      metered_charge_cents: 10,
+      billable_charge_cents: 0,
+      invoice_reserved_cents: 0,
+    });
+    const second = await scope.reserve({
+      operationId: 'op-expired-comp-over',
+      meterId: 'ai',
+      reservedNativeUnits: 10,
+      reservedChargeCents: 10,
+    });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.code).toBe('spend_cap_reached');
+
+    delete process.env.BILLING_CHARGES_ENABLED;
+    resetEnvForTests();
+    const shadow = await scope.reserve({
+      operationId: 'op-shadow-cap',
+      meterId: 'ai',
+      reservedNativeUnits: 40,
+      reservedChargeCents: 40,
+    });
+    expect(shadow.ok).toBe(true);
+    enableLiveCharging();
+  });
+
+  it('skips Polar price lookups for included credit and caches payable coverage', async () => {
+    const provider = createFakeBillingProvider();
+    let lookups = 0;
+    const listPricedEventNames = provider.listPricedEventNames.bind(provider);
+    provider.listPricedEventNames = (productId) => {
+      lookups += 1;
+      return listPricedEventNames(productId);
+    };
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 5000, spend_cap_cents = 100000,
+          polar_customer_id = 'cus_team', polar_subscription_id = 'sub_team',
+          polar_product_id = '${POLAR_PRODUCT_IDS.team}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const covered = await scope.settle({
+      operationId: 'op-included-credit',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+    });
+    expect(covered.ok).toBe(true);
+    expect(lookups).toBe(0);
+    expect(provider.events).toHaveLength(0);
+    if (!covered.duplicate) {
+      expect(covered.ledger.metadata).toMatchObject({
+        invoice_cents: 0,
+        polar_ingest_status: 'not_required',
+      });
+    }
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET included_discount_remaining_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const payable = await scope.settle({
+      operationId: 'op-payable-ai',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+    });
+    expect(payable.ok).toBe(true);
+    expect(lookups).toBe(1);
+    const again = await scope.settle({
+      operationId: 'op-payable-ai-again',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+    });
+    expect(again.ok).toBe(true);
+    expect(lookups).toBe(1);
+    expect(provider.events.length).toBeGreaterThan(0);
   });
 
   it('counts open reservations against a comped Enterprise spend cap', async () => {

@@ -174,7 +174,15 @@ credit hides margin and confuses prospects.
    does not prove the meter is priced; a missing price holds the ledger and alerts.
    Enterprise checkout stores pending terms keyed by Polar checkout id and does
    not replace terms for a checkout that was already opened. The paid subscription
-   webhook activates only that checkout's terms. A percentage discount is applied
+   webhook activates only that checkout's terms. The contracted platform fee is
+   stored on `enterprise_platform_fee_cents`, separate from the removable usage
+   override, so clearing or replacing that override does not zero the next invoice.
+   Spend caps compare the locally metered charge and ignore whether Polar will
+   invoice it. Standard Free stays on the allowance. A contractual Enterprise
+   subscription does not freeze on the cap. Comps, including an expired comp on
+   Free entitlements, still enforce it, and open reservations count. Polar product
+   coverage is fetched only for a payable ingest, outside the account lock, and
+   reused for later settlements of the same product. A percentage discount is applied
    to the gross list charge before included credit, in settlement and in the plan
    preview. Replayed member-days keep the historical plan's extra-member rate.
    Platform-fee overrides are not applied to fixed Polar products. Polar usage ingest claims the outbox row (`pending` → `in_progress`)

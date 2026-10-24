@@ -262,6 +262,16 @@ export function pendingBillableChargeCents(
   return pendingListChargeCents(metadata, fallbackChargeCents);
 }
 
+/** Local metered charge reserved for the spend cap, before invoice eligibility. */
+export function pendingMeteredChargeCents(
+  metadata: Record<string, unknown> | null | undefined,
+  fallbackChargeCents: number,
+): number {
+  const raw = metadata?.metered_charge_cents;
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
+  return pendingBillableChargeCents(metadata, fallbackChargeCents);
+}
+
 export function pendingDiscountReservedCents(
   metadata: Record<string, unknown> | null | undefined,
 ): number {
@@ -434,6 +444,26 @@ export type PolarIngestDisposition = 'ingest' | 'hold' | 'not_required';
  * operator. not_required: shadow, comp, non-billable, or a sub-cent round.
  * A missing customer is a hold, not a silent skip.
  */
+/**
+ * Disposition that does not need the product's priced-event list.
+ * Null means the charge is payable and coverage still has to be read.
+ * A missing customer is a hold and does not need that read.
+ */
+export function polarIngestDispositionBeforeCoverage(input: {
+  eventName: string | null | undefined;
+  polarCustomerId: string | null | undefined;
+  shadowBilling: boolean;
+  comped: boolean;
+  billable: boolean;
+  polarUnits: number;
+  invoiceCents: number;
+}): PolarIngestDisposition | null {
+  if (input.shadowBilling || input.comped || !input.billable) return 'not_required';
+  if (!input.eventName || input.polarUnits <= 0 || input.invoiceCents <= 0) return 'not_required';
+  if (!input.polarCustomerId) return 'hold';
+  return null;
+}
+
 export function polarIngestDisposition(input: {
   eventName: string | null | undefined;
   polarCustomerId: string | null | undefined;
@@ -444,9 +474,9 @@ export function polarIngestDisposition(input: {
   invoiceCents: number;
   subscriptionCoversMeter: boolean;
 }): PolarIngestDisposition {
-  if (input.shadowBilling || input.comped || !input.billable) return 'not_required';
-  if (!input.eventName || input.polarUnits <= 0 || input.invoiceCents <= 0) return 'not_required';
-  if (!input.polarCustomerId || !input.subscriptionCoversMeter) return 'hold';
+  const early = polarIngestDispositionBeforeCoverage(input);
+  if (early) return early;
+  if (!input.subscriptionCoversMeter) return 'hold';
   return 'ingest';
 }
 

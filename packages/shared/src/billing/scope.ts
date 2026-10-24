@@ -31,8 +31,9 @@ import {
   memberDayChargeDelta,
   metersPlusPendingReservations,
   paygOverageCustomerChargeCents,
-  pendingBillableChargeCents,
   pendingDiscountReservedCents,
+  pendingMeteredChargeCents,
+  polarIngestDispositionBeforeCoverage,
   billingMeterIdForPolarEvent,
   polarCatalogUnitsForInvoiceCents,
   polarIngestDisposition,
@@ -51,6 +52,7 @@ import {
   compSuppressesPolarCharges,
   contractualEnterpriseAccount,
   effectiveBillingPlanId,
+  localChargeSpendCapApplies,
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
@@ -241,17 +243,87 @@ async function resolveUnbilledAlerts(db: Db, teamId: string, meterId: string): P
     );
 }
 
+const POLAR_COVERAGE_TTL_MS = 60_000;
+
+interface PolarCoverageCacheEntry {
+  names: readonly string[] | null;
+  expiresAt: number;
+}
+
+const polarCoverageCache = new Map<string, PolarCoverageCacheEntry>();
+const polarCoverageInflight = new Map<string, Promise<readonly string[] | null>>();
+
+/** Test isolation. Product coverage is cached across settlements in one process. */
+export function clearPolarProductCoverageCache(): void {
+  polarCoverageCache.clear();
+  polarCoverageInflight.clear();
+}
+
+function readPolarProductCoverage(productId: string): readonly string[] | null | undefined {
+  const hit = polarCoverageCache.get(productId);
+  if (!hit) return undefined;
+  if (hit.expiresAt <= Date.now()) {
+    polarCoverageCache.delete(productId);
+    return undefined;
+  }
+  return hit.names;
+}
+
+function storePolarProductCoverage(productId: string, names: readonly string[] | null): void {
+  polarCoverageCache.set(productId, {
+    names,
+    expiresAt: Date.now() + POLAR_COVERAGE_TTL_MS,
+  });
+}
+
+async function loadPolarProductCoverage(
+  provider: BillingProvider,
+  productId: string,
+): Promise<readonly string[] | null> {
+  const cached = readPolarProductCoverage(productId);
+  if (cached !== undefined) return cached;
+  const existing = polarCoverageInflight.get(productId);
+  if (existing) return existing;
+  const pending = (async () => {
+    try {
+      const names = await provider.listPricedEventNames(productId);
+      storePolarProductCoverage(productId, names);
+      return names;
+    } catch {
+      storePolarProductCoverage(productId, null);
+      return null;
+    }
+  })();
+  polarCoverageInflight.set(productId, pending);
+  try {
+    return await pending;
+  } finally {
+    polarCoverageInflight.delete(productId);
+  }
+}
+
 async function pricedEventNamesForProduct(
   provider: BillingProvider | undefined,
   productId: string | null | undefined,
 ): Promise<readonly string[] | null> {
   if (!productId) return [];
   if (!provider?.listPricedEventNames) return null;
-  try {
-    return await provider.listPricedEventNames(productId);
-  } catch {
-    return null;
-  }
+  return loadPolarProductCoverage(provider, productId);
+}
+
+/**
+ * Cached coverage for a payable settlement. A product id means the catalog
+ * has not been read yet and the caller must load it outside the account lock.
+ */
+function cachedCoverageForPayableSettlement(
+  provider: BillingProvider | undefined,
+  productId: string | null | undefined,
+): { names: readonly string[] | null } | { productId: string } {
+  if (!productId) return { names: [] };
+  if (!provider?.listPricedEventNames) return { names: null };
+  const cached = readPolarProductCoverage(productId);
+  if (cached === undefined) return { productId };
+  return { names: cached };
 }
 
 async function dispositionForLiveAccount(
@@ -261,6 +333,16 @@ async function dispositionForLiveAccount(
 ): Promise<PolarIngestDisposition> {
   const chargeCents = event.metadata?.charge_cents;
   const invoiceCents = typeof chargeCents === 'number' ? chargeCents : 0;
+  const early = polarIngestDispositionBeforeCoverage({
+    eventName: event.name,
+    polarCustomerId: account.polarCustomerId,
+    shadowBilling: accountUsesShadowBilling(account),
+    comped: compSuppressesPolarCharges(account),
+    billable: true,
+    polarUnits: event.units,
+    invoiceCents,
+  });
+  if (early) return early;
   const pricedEventNames = await pricedEventNamesForProduct(provider, account.polarProductId);
   return polarIngestDisposition({
     eventName: event.name,
@@ -784,6 +866,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const reservationMetadata = {
           ...(input.metadata ?? {}),
           list_charge_cents: input.reservedChargeCents,
+          metered_charge_cents: billableChargeCents,
           billable_charge_cents: invoiceBillableChargeCents,
           discount_reserved_cents: discountCents,
           invoice_reserved_cents: invoiceCents,
@@ -791,18 +874,20 @@ export function createBillingScope(deps: BillingScopeDeps) {
         };
 
         const enforceSpendCap =
-          !accountUsesShadowBilling(locked) &&
-          !enterpriseContract &&
-          (comped || entitlementsPlanId !== 'free') &&
-          invoiceBillableChargeCents > 0;
+          localChargeSpendCapApplies({
+            shadowBilling: accountUsesShadowBilling(locked),
+            comped,
+            enterpriseContract,
+            entitlementsPlanId,
+          }) && billableChargeCents > 0;
         if (enforceSpendCap) {
-          const pendingBillable = pending.reduce(
-            (sum, row) => sum + pendingBillableChargeCents(row.metadata, row.reservedChargeCents),
+          const pendingMetered = pending.reduce(
+            (sum, row) => sum + pendingMeteredChargeCents(row.metadata, row.reservedChargeCents),
             0,
           );
           const periodSpend =
             countersTx.reduce((sum, row) => sum + row.customerChargeCents, 0) +
-            pendingBillable +
+            pendingMetered +
             billableChargeCents;
           if (periodSpend > locked.spendCapCents) {
             return { kind: 'reject' as const, code: 'spend_cap_reached' as const };
@@ -955,318 +1040,353 @@ export function createBillingScope(deps: BillingScopeDeps) {
     }) {
       await ensureMember();
       await ensureAccount();
-      const settled = await db.transaction(async (tx) => {
-        const [account] = await tx
-          .select()
-          .from(teamBillingAccounts)
-          .where(eq(teamBillingAccounts.teamId, teamId))
-          .limit(1)
-          .for('update');
-        if (!account) throw new Error('Missing billing account');
-        const reservation = await tx
-          .select()
-          .from(billingUsageReservations)
-          .where(
-            and(
-              eq(billingUsageReservations.teamId, teamId),
-              eq(billingUsageReservations.operationId, input.operationId),
-            ),
-          )
-          .limit(1)
-          .for('update');
-
-        const startedAt = input.usageAt ?? reservation[0]?.createdAt ?? new Date();
-        const segments =
-          input.pricingPeriodYm && input.meterId !== 'recall_minutes'
-            ? [{ periodYm: input.pricingPeriodYm, nativeUnits: Math.max(0, input.nativeUnits) }]
-            : settlementSegmentsForMeter({
-                meterId: input.meterId,
-                nativeUnits: input.nativeUnits,
-                startedAt,
-              });
-        const primaryYm = segments[0]?.periodYm ?? periodYm(startedAt);
-        const uniquePeriods = [...new Set(segments.map((row) => row.periodYm))];
-        const countersBeforeRows = await tx
-          .select()
-          .from(billingUsageCounters)
-          .where(
-            and(
-              eq(billingUsageCounters.teamId, teamId),
-              inArray(billingUsageCounters.periodYm, uniquePeriods),
-            ),
-          );
-        const metersByPeriod = new Map<
-          string,
-          Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>
-        >();
-        for (const row of countersBeforeRows) {
-          const current = metersByPeriod.get(row.periodYm) ?? {};
-          current[row.meterId] = {
-            nativeUnits: Number(row.nativeUnits),
-            customerChargeCents: row.customerChargeCents,
-          };
-          metersByPeriod.set(row.periodYm, current);
-        }
-        const livePlanId = effectiveBillingPlanId(account);
-        const entitlementsPlanId = input.pricingPlanId ?? livePlanId;
-        const commercial = resolveTeamCommercialTerms(account);
-        const meteredDiscountPercent =
-          input.pricingPlanId && input.pricingPlanId !== livePlanId
-            ? 0
-            : commercial.meteredDiscountPercent;
-        const comped = compSuppressesPolarCharges(account);
-        const enterpriseContract = contractualEnterpriseAccount(account);
-        // member_days ignore the caller's customerChargeCents and recompute from
-        // the commercial extra-member price so a custom rate cannot be bypassed.
-        // A replay passes the historical plan's rate instead of the live price.
-        const memberRateCents =
-          input.pricingAdditionalMemberCents !== undefined
-            ? Math.max(0, input.pricingAdditionalMemberCents ?? 0)
-            : (commercial.additionalMemberCents ?? 0);
-        const segmentCharges = segments.map((segment) => {
-          const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
-          const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
-          const nextNative = previousNative + segment.nativeUnits;
-          const listChargeCents =
-            input.meterId === 'member_days'
-              ? memberDayChargeDelta({
-                  previousNativeUnits: previousNative,
-                  nextNativeUnits: nextNative,
-                  centsPerMemberMonth: memberRateCents,
-                  daysInMonth: daysInPeriodYm(segment.periodYm),
-                })
-              : cumulativeChargeDeltaCents({
-                  meterId: input.meterId,
-                  previousNativeUnits: previousNative,
-                  nextNativeUnits: nextNative,
-                });
-          const billableInput = {
-            planId: entitlementsPlanId,
-            meterId: input.meterId,
-            centsPerMemberMonth: memberRateCents,
-            daysInMonth: daysInPeriodYm(segment.periodYm),
-          };
-          const previousBillableCents = cumulativeBillableChargeCents({
-            ...billableInput,
-            nativeUnits: previousNative,
-          });
-          const nextBillableCents = cumulativeBillableChargeCents({
-            ...billableInput,
-            nativeUnits: nextNative,
-          });
-          const actualChargeCents = Math.max(
-            0,
-            applyMeteredDiscountCents(nextBillableCents, meteredDiscountPercent) -
-              applyMeteredDiscountCents(previousBillableCents, meteredDiscountPercent),
-          );
-          return { ...segment, listChargeCents, actualChargeCents, metersBefore };
-        });
-        const listChargeCents = segmentCharges.reduce((sum, row) => sum + row.listChargeCents, 0);
-        const actualChargeCents = segmentCharges.reduce(
-          (sum, row) => sum + row.actualChargeCents,
-          0,
-        );
-        const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
-        const historicalDiscount = input.historicalIncludedDiscountCents;
-        const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
-        const { discountCents, invoiceCents } = splitDiscountAndWallet({
-          chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,
-          includedDiscountRemainingCents:
-            historicalDiscount ?? account.includedDiscountRemainingCents,
-          meterId: input.meterId,
-        });
-        const eventName = polarEventNameForMeter(input.meterId);
-        const unitsToInvoice = polarCatalogUnitsForInvoiceCents(input.meterId, invoiceCents);
-        const pricedEventNames = await pricedEventNamesForProduct(provider, account.polarProductId);
-        const disposition = polarIngestDisposition({
-          eventName,
-          polarCustomerId: account.polarCustomerId,
-          shadowBilling: accountUsesShadowBilling(account),
-          comped,
-          billable: input.billable !== false,
-          polarUnits: unitsToInvoice,
-          invoiceCents,
-          subscriptionCoversMeter: polarSubscriptionCoversMeter({
-            planId: account.planId,
-            billingState: account.billingState,
-            polarSubscriptionId: account.polarSubscriptionId,
-            polarProductId: account.polarProductId,
-            eventName,
-            products: polarPlanProductsFromEnv(),
-            pricedEventNames,
-          }),
-        });
-        const polarIngestMetadata =
-          disposition === 'not_required' || !eventName
-            ? { polar_ingest_status: 'not_required' as const }
-            : {
-                polar_ingest_status: 'pending' as const,
-                polar_ingest_name: eventName,
-                polar_ingest_units: unitsToInvoice,
-                polar_ingest_customer_id: teamId,
-                polar_ingest_operation_id: input.operationId,
-                polar_ingest_charge_cents: invoiceCents,
-                polar_ingest_meter: input.meterId,
-                polar_ingest_period_ym: primaryYm,
-                ...(disposition === 'hold'
-                  ? { polar_ingest_block: POLAR_INGEST_BLOCK_MISSING_PRICE }
-                  : {}),
-              };
-
-        const applyCharges = !accountUsesShadowBilling(account);
-        const collectDiscount =
-          historicalDiscount === undefined &&
-          applyCharges &&
-          !enterpriseContract &&
-          !comped &&
-          discountCents > 0;
-        const periodSpendCents = countersBefore.reduce(
-          (sum, row) => sum + row.customerChargeCents,
-          0,
-        );
-        const spendCapExceeded =
-          applyCharges &&
-          !enterpriseContract &&
-          (comped || entitlementsPlanId !== 'free') &&
-          periodSpendCents + actualChargeCents > account.spendCapCents;
-        const freezeAccount = spendCapExceeded;
-
-        const [ledgerRow] = await tx
-          .insert(billingUsageLedger)
-          .values({
-            teamId,
-            operationId: input.operationId,
-            kind: 'settlement',
-            meterId: input.meterId,
-            nativeUnits: String(input.nativeUnits),
-            providerCostCents: input.providerCostCents ?? null,
-            customerChargeCents: actualChargeCents,
-            billable: input.billable ?? true,
-            nonBillableReason: input.nonBillableReason ?? null,
-            operationClass: input.operationClass ?? null,
-            provider: input.provider ?? null,
-            model: input.model ?? null,
-            actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
-            source: input.source ?? null,
-            deliverySurface: input.deliverySurface ?? null,
-            reservationId: reservation[0]?.id ?? null,
-            metadata: {
-              ...(input.metadata ?? {}),
-              ...(input.pricingPlanId ? { pricing_plan_id: input.pricingPlanId } : {}),
-              ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
-              list_charge_cents: listChargeCents,
-              discount_cents: discountCents,
-              invoice_cents: invoiceCents,
-              ...(segmentCharges.length > 1
-                ? {
-                    period_segments: segmentCharges.map((row) => ({
-                      period_ym: row.periodYm,
-                      native_units: row.nativeUnits,
-                      customer_charge_cents: row.actualChargeCents,
-                    })),
-                  }
-                : {}),
-              ...polarIngestMetadata,
-            },
-          })
-          .onConflictDoNothing()
-          .returning();
-
-        if (!ledgerRow) {
-          const [existingLedger] = await tx
+      let settled:
+        | {
+            kind: 'done';
+            duplicate: boolean;
+            ledger: typeof billingUsageLedger.$inferSelect | null;
+            planId: BillingPlanId;
+            spendCapCents: number;
+          }
+        | undefined;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const written = await db.transaction(async (tx) => {
+          const [account] = await tx
             .select()
-            .from(billingUsageLedger)
+            .from(teamBillingAccounts)
+            .where(eq(teamBillingAccounts.teamId, teamId))
+            .limit(1)
+            .for('update');
+          if (!account) throw new Error('Missing billing account');
+          const reservation = await tx
+            .select()
+            .from(billingUsageReservations)
             .where(
               and(
-                eq(billingUsageLedger.teamId, teamId),
-                eq(billingUsageLedger.operationId, input.operationId),
+                eq(billingUsageReservations.teamId, teamId),
+                eq(billingUsageReservations.operationId, input.operationId),
               ),
             )
-            .limit(1);
-          return {
-            duplicate: true as const,
-            ledger: existingLedger ?? null,
-            planId: account.planId,
-            spendCapCents: account.spendCapCents,
-          };
-        }
+            .limit(1)
+            .for('update');
 
-        for (const segment of segmentCharges) {
-          await tx
-            .insert(billingUsageCounters)
-            .values({
-              teamId,
-              periodYm: segment.periodYm,
-              meterId: input.meterId,
-              nativeUnits: String(segment.nativeUnits),
-              customerChargeCents: segment.actualChargeCents,
-            })
-            .onConflictDoUpdate({
-              target: [
-                billingUsageCounters.teamId,
-                billingUsageCounters.periodYm,
-                billingUsageCounters.meterId,
-              ],
-              set: {
-                nativeUnits: sql`${billingUsageCounters.nativeUnits} + ${String(segment.nativeUnits)}`,
-                customerChargeCents: sql`${billingUsageCounters.customerChargeCents} + ${segment.actualChargeCents}`,
-                updatedAt: new Date(),
-              },
-            });
-        }
-
-        const walletLockCents =
-          reservation[0]?.state === 'reserved'
-            ? walletLockCentsFromMetadata(reservation[0].metadata)
-            : 0;
-        if (reservation[0]?.state === 'reserved') {
-          await tx
-            .update(billingUsageReservations)
-            .set({ state: 'settled', updatedAt: new Date() })
+          const startedAt = input.usageAt ?? reservation[0]?.createdAt ?? new Date();
+          const segments =
+            input.pricingPeriodYm && input.meterId !== 'recall_minutes'
+              ? [{ periodYm: input.pricingPeriodYm, nativeUnits: Math.max(0, input.nativeUnits) }]
+              : settlementSegmentsForMeter({
+                  meterId: input.meterId,
+                  nativeUnits: input.nativeUnits,
+                  startedAt,
+                });
+          const primaryYm = segments[0]?.periodYm ?? periodYm(startedAt);
+          const uniquePeriods = [...new Set(segments.map((row) => row.periodYm))];
+          const countersBeforeRows = await tx
+            .select()
+            .from(billingUsageCounters)
             .where(
               and(
-                eq(billingUsageReservations.id, reservation[0].id),
-                eq(billingUsageReservations.state, 'reserved'),
+                eq(billingUsageCounters.teamId, teamId),
+                inArray(billingUsageCounters.periodYm, uniquePeriods),
               ),
             );
-        }
-
-        if (walletLockCents > 0 || collectDiscount || freezeAccount) {
-          await tx
-            .update(teamBillingAccounts)
-            .set({
-              ...(walletLockCents > 0
-                ? {
-                    reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
-                  }
-                : {}),
-              ...(collectDiscount
-                ? {
-                    includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
-                  }
-                : {}),
-              ...(freezeAccount ? { billingState: 'read_only' as const, spendCapCents: 0 } : {}),
-              updatedAt: new Date(),
-            })
-            .where(eq(teamBillingAccounts.teamId, teamId));
-        }
-
-        if (disposition === 'hold' && eventName) {
-          await recordMissingSubscriptionPriceAlert(tx as unknown as Db, {
-            teamId,
-            meterId: input.meterId,
-            periodYm: primaryYm,
-            detail: `${eventName} has no matching active subscription price`,
+          const metersByPeriod = new Map<
+            string,
+            Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>
+          >();
+          for (const row of countersBeforeRows) {
+            const current = metersByPeriod.get(row.periodYm) ?? {};
+            current[row.meterId] = {
+              nativeUnits: Number(row.nativeUnits),
+              customerChargeCents: row.customerChargeCents,
+            };
+            metersByPeriod.set(row.periodYm, current);
+          }
+          const livePlanId = effectiveBillingPlanId(account);
+          const entitlementsPlanId = input.pricingPlanId ?? livePlanId;
+          const commercial = resolveTeamCommercialTerms(account);
+          const meteredDiscountPercent =
+            input.pricingPlanId && input.pricingPlanId !== livePlanId
+              ? 0
+              : commercial.meteredDiscountPercent;
+          const comped = compSuppressesPolarCharges(account);
+          const enterpriseContract = contractualEnterpriseAccount(account);
+          // member_days ignore the caller's customerChargeCents and recompute from
+          // the commercial extra-member price so a custom rate cannot be bypassed.
+          // A replay passes the historical plan's rate instead of the live price.
+          const memberRateCents =
+            input.pricingAdditionalMemberCents !== undefined
+              ? Math.max(0, input.pricingAdditionalMemberCents ?? 0)
+              : (commercial.additionalMemberCents ?? 0);
+          const segmentCharges = segments.map((segment) => {
+            const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
+            const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
+            const nextNative = previousNative + segment.nativeUnits;
+            const listChargeCents =
+              input.meterId === 'member_days'
+                ? memberDayChargeDelta({
+                    previousNativeUnits: previousNative,
+                    nextNativeUnits: nextNative,
+                    centsPerMemberMonth: memberRateCents,
+                    daysInMonth: daysInPeriodYm(segment.periodYm),
+                  })
+                : cumulativeChargeDeltaCents({
+                    meterId: input.meterId,
+                    previousNativeUnits: previousNative,
+                    nextNativeUnits: nextNative,
+                  });
+            const billableInput = {
+              planId: entitlementsPlanId,
+              meterId: input.meterId,
+              centsPerMemberMonth: memberRateCents,
+              daysInMonth: daysInPeriodYm(segment.periodYm),
+            };
+            const previousBillableCents = cumulativeBillableChargeCents({
+              ...billableInput,
+              nativeUnits: previousNative,
+            });
+            const nextBillableCents = cumulativeBillableChargeCents({
+              ...billableInput,
+              nativeUnits: nextNative,
+            });
+            const actualChargeCents = Math.max(
+              0,
+              applyMeteredDiscountCents(nextBillableCents, meteredDiscountPercent) -
+                applyMeteredDiscountCents(previousBillableCents, meteredDiscountPercent),
+            );
+            return { ...segment, listChargeCents, actualChargeCents, metersBefore };
           });
-        }
+          const listChargeCents = segmentCharges.reduce((sum, row) => sum + row.listChargeCents, 0);
+          const actualChargeCents = segmentCharges.reduce(
+            (sum, row) => sum + row.actualChargeCents,
+            0,
+          );
+          const countersBefore = countersBeforeRows.filter((row) => row.periodYm === primaryYm);
+          const historicalDiscount = input.historicalIncludedDiscountCents;
+          const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
+          const { discountCents, invoiceCents } = splitDiscountAndWallet({
+            chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,
+            includedDiscountRemainingCents:
+              historicalDiscount ?? account.includedDiscountRemainingCents,
+            meterId: input.meterId,
+          });
+          const eventName = polarEventNameForMeter(input.meterId);
+          const unitsToInvoice = polarCatalogUnitsForInvoiceCents(input.meterId, invoiceCents);
+          const coverageInput = {
+            eventName,
+            polarCustomerId: account.polarCustomerId,
+            shadowBilling: accountUsesShadowBilling(account),
+            comped,
+            billable: input.billable !== false,
+            polarUnits: unitsToInvoice,
+            invoiceCents,
+          };
+          const earlyDisposition = polarIngestDispositionBeforeCoverage(coverageInput);
+          const coverage =
+            earlyDisposition === null
+              ? cachedCoverageForPayableSettlement(provider, account.polarProductId)
+              : { names: null as readonly string[] | null };
+          if ('productId' in coverage) {
+            return { kind: 'lookup' as const, productId: coverage.productId };
+          }
+          const disposition =
+            earlyDisposition ??
+            polarIngestDisposition({
+              ...coverageInput,
+              subscriptionCoversMeter: polarSubscriptionCoversMeter({
+                planId: account.planId,
+                billingState: account.billingState,
+                polarSubscriptionId: account.polarSubscriptionId,
+                polarProductId: account.polarProductId,
+                eventName,
+                products: polarPlanProductsFromEnv(),
+                pricedEventNames: coverage.names,
+              }),
+            });
+          const polarIngestMetadata =
+            disposition === 'not_required' || !eventName
+              ? { polar_ingest_status: 'not_required' as const }
+              : {
+                  polar_ingest_status: 'pending' as const,
+                  polar_ingest_name: eventName,
+                  polar_ingest_units: unitsToInvoice,
+                  polar_ingest_customer_id: teamId,
+                  polar_ingest_operation_id: input.operationId,
+                  polar_ingest_charge_cents: invoiceCents,
+                  polar_ingest_meter: input.meterId,
+                  polar_ingest_period_ym: primaryYm,
+                  ...(disposition === 'hold'
+                    ? { polar_ingest_block: POLAR_INGEST_BLOCK_MISSING_PRICE }
+                    : {}),
+                };
 
-        return {
-          duplicate: false as const,
-          ledger: ledgerRow,
-          planId: account.planId,
-          spendCapCents: freezeAccount ? 0 : account.spendCapCents,
-        };
-      });
+          const applyCharges = !accountUsesShadowBilling(account);
+          const collectDiscount =
+            historicalDiscount === undefined &&
+            applyCharges &&
+            !enterpriseContract &&
+            !comped &&
+            discountCents > 0;
+          const periodSpendCents = countersBefore.reduce(
+            (sum, row) => sum + row.customerChargeCents,
+            0,
+          );
+          const spendCapExceeded =
+            localChargeSpendCapApplies({
+              shadowBilling: !applyCharges,
+              comped,
+              enterpriseContract,
+              entitlementsPlanId,
+            }) && periodSpendCents + actualChargeCents > account.spendCapCents;
+          const freezeAccount = spendCapExceeded;
+
+          const [ledgerRow] = await tx
+            .insert(billingUsageLedger)
+            .values({
+              teamId,
+              operationId: input.operationId,
+              kind: 'settlement',
+              meterId: input.meterId,
+              nativeUnits: String(input.nativeUnits),
+              providerCostCents: input.providerCostCents ?? null,
+              customerChargeCents: actualChargeCents,
+              billable: input.billable ?? true,
+              nonBillableReason: input.nonBillableReason ?? null,
+              operationClass: input.operationClass ?? null,
+              provider: input.provider ?? null,
+              model: input.model ?? null,
+              actorUserId: userId === BILLING_SYSTEM_USER_ID ? null : userId,
+              source: input.source ?? null,
+              deliverySurface: input.deliverySurface ?? null,
+              reservationId: reservation[0]?.id ?? null,
+              metadata: {
+                ...(input.metadata ?? {}),
+                ...(input.pricingPlanId ? { pricing_plan_id: input.pricingPlanId } : {}),
+                ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
+                list_charge_cents: listChargeCents,
+                discount_cents: discountCents,
+                invoice_cents: invoiceCents,
+                ...(segmentCharges.length > 1
+                  ? {
+                      period_segments: segmentCharges.map((row) => ({
+                        period_ym: row.periodYm,
+                        native_units: row.nativeUnits,
+                        customer_charge_cents: row.actualChargeCents,
+                      })),
+                    }
+                  : {}),
+                ...polarIngestMetadata,
+              },
+            })
+            .onConflictDoNothing()
+            .returning();
+
+          if (!ledgerRow) {
+            const [existingLedger] = await tx
+              .select()
+              .from(billingUsageLedger)
+              .where(
+                and(
+                  eq(billingUsageLedger.teamId, teamId),
+                  eq(billingUsageLedger.operationId, input.operationId),
+                ),
+              )
+              .limit(1);
+            return {
+              kind: 'done' as const,
+              duplicate: true as const,
+              ledger: existingLedger ?? null,
+              planId: account.planId,
+              spendCapCents: account.spendCapCents,
+            };
+          }
+
+          for (const segment of segmentCharges) {
+            await tx
+              .insert(billingUsageCounters)
+              .values({
+                teamId,
+                periodYm: segment.periodYm,
+                meterId: input.meterId,
+                nativeUnits: String(segment.nativeUnits),
+                customerChargeCents: segment.actualChargeCents,
+              })
+              .onConflictDoUpdate({
+                target: [
+                  billingUsageCounters.teamId,
+                  billingUsageCounters.periodYm,
+                  billingUsageCounters.meterId,
+                ],
+                set: {
+                  nativeUnits: sql`${billingUsageCounters.nativeUnits} + ${String(segment.nativeUnits)}`,
+                  customerChargeCents: sql`${billingUsageCounters.customerChargeCents} + ${segment.actualChargeCents}`,
+                  updatedAt: new Date(),
+                },
+              });
+          }
+
+          const walletLockCents =
+            reservation[0]?.state === 'reserved'
+              ? walletLockCentsFromMetadata(reservation[0].metadata)
+              : 0;
+          if (reservation[0]?.state === 'reserved') {
+            await tx
+              .update(billingUsageReservations)
+              .set({ state: 'settled', updatedAt: new Date() })
+              .where(
+                and(
+                  eq(billingUsageReservations.id, reservation[0].id),
+                  eq(billingUsageReservations.state, 'reserved'),
+                ),
+              );
+          }
+
+          if (walletLockCents > 0 || collectDiscount || freezeAccount) {
+            await tx
+              .update(teamBillingAccounts)
+              .set({
+                ...(walletLockCents > 0
+                  ? {
+                      reservedBalanceCents: sql`GREATEST(0, ${teamBillingAccounts.reservedBalanceCents} - ${walletLockCents})`,
+                    }
+                  : {}),
+                ...(collectDiscount
+                  ? {
+                      includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
+                    }
+                  : {}),
+                ...(freezeAccount ? { billingState: 'read_only' as const, spendCapCents: 0 } : {}),
+                updatedAt: new Date(),
+              })
+              .where(eq(teamBillingAccounts.teamId, teamId));
+          }
+
+          if (disposition === 'hold' && eventName) {
+            await recordMissingSubscriptionPriceAlert(tx as unknown as Db, {
+              teamId,
+              meterId: input.meterId,
+              periodYm: primaryYm,
+              detail: `${eventName} has no matching active subscription price`,
+            });
+          }
+
+          return {
+            kind: 'done' as const,
+            duplicate: false as const,
+            ledger: ledgerRow,
+            planId: account.planId,
+            spendCapCents: freezeAccount ? 0 : account.spendCapCents,
+          };
+        });
+        if (written.kind === 'lookup') {
+          if (!provider) break;
+          await loadPolarProductCoverage(provider, written.productId);
+          continue;
+        }
+        settled = written;
+        break;
+      }
+      if (!settled) throw new Error('Polar product coverage was not available for settlement');
 
       try {
         if (settled.ledger) {
@@ -1285,6 +1405,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
       if (settled.duplicate) {
         return { ok: true as const, duplicate: true as const };
       }
+      if (!settled.ledger) throw new Error('Missing settlement ledger');
 
       try {
         const ymNow = periodYm();
