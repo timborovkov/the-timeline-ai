@@ -137,8 +137,11 @@ export function pendingEnterpriseTermsAfterActivation(
 ): StoredPendingEnterpriseTerms | null {
   if (!checkoutId) return null;
   const parsed = readPendingEnterpriseTerms(stored);
-  const rest = { ...parsed.byCheckoutId };
-  delete rest[checkoutId];
+  const rest: Record<string, PendingEnterpriseTerms> = {};
+  for (const [id, terms] of Object.entries(parsed.byCheckoutId)) {
+    if (id === checkoutId) continue;
+    rest[id] = terms;
+  }
   if (Object.keys(rest).length === 0) return null;
   return { byCheckoutId: rest };
 }
