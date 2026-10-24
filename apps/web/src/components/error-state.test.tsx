@@ -9,10 +9,12 @@ const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
 
 import { ErrorState } from '@/components/error-state';
+import { resetStaleServerActionReloadGuardForTests } from '@/lib/stale-server-action';
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  resetStaleServerActionReloadGuardForTests();
 });
 
 describe('ErrorState', () => {
@@ -55,5 +57,22 @@ describe('ErrorState', () => {
     await user.keyboard(keys);
 
     expect(reset).toHaveBeenCalledOnce();
+  });
+
+  it('shows a reload affordance for stale server-action errors without reporting them', () => {
+    const error = new Error(
+      'Server Action "408e336cb54bf606304291ef6c2da057f97d0fc0b2" was not found on the server.',
+    );
+    error.name = 'UnrecognizedActionError';
+
+    render(<ErrorState title="Unable to load tasks" error={error} reset={vi.fn()} />);
+
+    expect(fakes.reportCaughtError).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        'Timeline was updated while this tab was open. Reload to pick up the latest app version, then try again.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy();
   });
 });

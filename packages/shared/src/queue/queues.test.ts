@@ -114,8 +114,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.TASK_CATEGORY_DISABLED;
   delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
   delete process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
+  delete process.env.TASK_CATEGORY_BACKFILL_ENABLED;
 });
 
 describe('queue wrappers', () => {
@@ -874,6 +876,59 @@ describe('queue wrappers', () => {
     expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
   });
 
+  it('enqueues new task category jobs when the rollout flags are unset', async () => {
+    delete process.env.TASK_CATEGORY_DISABLED;
+    delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+    delete process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
+    delete process.env.TASK_CATEGORY_BACKFILL_ENABLED;
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'create' as const,
+    };
+
+    await expect(queues.enqueueTaskCategoryJob(data)).resolves.toMatchObject({ enqueued: true });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+  });
+
+  it('does not enqueue historical backfill while that flag stays off', async () => {
+    delete process.env.TASK_CATEGORY_DISABLED;
+    delete process.env.TASK_CATEGORY_BACKFILL_ENABLED;
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    const queues = await importQueues();
+
+    await expect(
+      queues.enqueueTaskCategoryJob({
+        teamId: '22222222-2222-4222-8222-222222222222',
+        taskId: '77777777-7777-4777-8777-777777777777',
+        inputHash: 'packet-hash-v1',
+        trigger: 'backfill',
+      }),
+    ).resolves.toMatchObject({ enqueued: false });
+    expect(fakes.queues).toHaveLength(0);
+  });
+
+  it('does not enqueue task category jobs while the kill switch is on', async () => {
+    process.env.TASK_CATEGORY_DISABLED = 'true';
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    process.env.TASK_CATEGORY_BACKFILL_ENABLED = 'true';
+    const queues = await importQueues();
+
+    await expect(
+      queues.enqueueTaskCategoryJob({
+        teamId: '22222222-2222-4222-8222-222222222222',
+        taskId: '77777777-7777-4777-8777-777777777777',
+        inputHash: 'packet-hash-v1',
+        trigger: 'backfill',
+      }),
+    ).resolves.toMatchObject({ enqueued: false });
+    expect(fakes.queues).toHaveLength(0);
+  });
+
   it('dedupes task category jobs by packet hash and replaces retained terminal jobs', async () => {
     process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
     process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
@@ -1076,7 +1131,7 @@ describe('queue wrappers', () => {
     });
   });
 
-  it('registers repeatable jobs with stable job ids and closes singleton queues', async () => {
+  it('registers job schedulers with stable ids and closes singleton queues', async () => {
     const queues = await importQueues();
 
     await queues.scheduleOverdueScan();
@@ -1085,27 +1140,26 @@ describe('queue wrappers', () => {
     await queues.scheduleMcpHealthPing();
     await queues.scheduleDailyDigest();
 
-    expect(fakes.queues[0]?.addCalls[0]).toMatchObject({
-      name: 'scan',
-      opts: { repeat: { pattern: '0 * * * *' }, jobId: 'overdue-scan-hourly' },
+    expect(fakes.queues[0]?.schedulerCalls[0]).toMatchObject({
+      id: 'overdue-scan-hourly',
+      repeatOpts: { pattern: '0 * * * *' },
+      template: { name: 'scan', data: {} },
     });
-    expect(fakes.queues[1]?.addCalls[0]).toMatchObject({
-      name: 'materialize',
-      opts: { repeat: { pattern: '0 * * * *' }, jobId: 'calendar-recurrence-hourly' },
+    expect(fakes.queues[1]?.schedulerCalls[0]).toMatchObject({
+      id: 'calendar-recurrence-hourly',
+      repeatOpts: { pattern: '0 * * * *' },
+      template: { name: 'materialize', data: {} },
     });
-    expect(fakes.queues[2]?.addCalls[0]).toMatchObject({
-      name: 'sweep',
-      opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'janitor-tick' },
+    expect(fakes.queues[2]?.schedulerCalls[0]).toMatchObject({
+      id: 'janitor-tick',
+      repeatOpts: { pattern: '*/5 * * * *' },
+      template: { name: 'sweep', data: {} },
     });
-    expect(fakes.queues[3]?.addCalls[0]).toMatchObject({
-      name: 'mcp-health-tick',
-      opts: { repeat: { pattern: '*/5 * * * *' }, jobId: 'mcp-health-tick-5min' },
+    expect(fakes.queues[3]?.schedulerCalls[0]).toMatchObject({
+      id: 'mcp-health-tick-5min',
+      repeatOpts: { pattern: '*/5 * * * *' },
+      template: { name: 'mcp-health-tick', data: {} },
     });
-    expect(fakes.queues[4]?.removeRepeatable).toHaveBeenCalledWith(
-      'tick',
-      { pattern: '0 12 * * *' },
-      'daily-digest-1200-utc',
-    );
     expect(fakes.queues[4]?.schedulerCalls[0]).toMatchObject({
       id: 'daily-digest-1200-utc',
       repeatOpts: { pattern: '0 12 * * *' },

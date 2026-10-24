@@ -11,7 +11,7 @@
     <main id="main">
       <h1>Railway deployment</h1>
       <div class="meta">
-        <span class="kind">Operations</span><span>Last updated 2026-08-26</span>
+        <span class="kind">Operations</span><span>Last updated 2026-10-24</span>
       </div>
       <p class="tldr">
         How the Timeline's web + worker + plugin + custom services are arranged on Railway, and what
@@ -112,15 +112,17 @@
         <li>Add Postgres plugin. Connection string injected as <code>DATABASE_URL</code>.</li>
         <li>Add Redis plugin. Connection string injected as <code>REDIS_URL</code>.</li>
         <li>
-          Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.12.4</code>.
-          Persistent volume at <code>/qdrant/storage</code>. Set
-          <code>QDRANT__SERVICE__API_KEY</code> to a strong random value.
+          Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.19.2</code>.
+          Persistent volume at <code>/qdrant/storage</code>. Set the service memory limit to 1 GB
+          (see cost considerations). Set <code>QDRANT__SERVICE__API_KEY</code> to a strong random
+          value. Set <code>QDRANT__STORAGE__SNAPSHOTS_PATH=/qdrant/storage/snapshots</code>
+          so migration backups persist on the same volume.
         </li>
         <li>
           Add RustFS service: New Service → Docker Image → <code>rustfs/rustfs:latest</code>.
-          Persistent volume at <code>/data</code>. Set <code>RUSTFS_ROOT_USER</code> and
-          <code>RUSTFS_ROOT_PASSWORD</code>. Bucket creation: run <code>mc</code> commands once
-          after first deploy (below).
+          Persistent volume at <code>/data</code>. Set <code>RUSTFS_ACCESS_KEY</code> and
+          <code>RUSTFS_SECRET_KEY</code>. Bucket creation: run <code>rc</code> commands once after
+          first deploy (below).
         </li>
         <li>
           Add <code>web</code> service from this repo, pointing at
@@ -175,8 +177,12 @@
       </p>
       <pre><code>DATABASE_URL=${{ Postgres.DATABASE_URL }}
 REDIS_URL=${{ Redis.REDIS_URL }}
-QDRANT_URL=${{ Qdrant.RAILWAY_PRIVATE_DOMAIN }}:6333
+QDRANT_URL=http://${{ Qdrant.RAILWAY_PRIVATE_DOMAIN }}:6333
 QDRANT_API_KEY=&lt;from Qdrant service vars&gt;
+QDRANT_COLLECTION=events
+QDRANT_QUANTIZATION=scalar
+QDRANT_QUANTIZATION_RESCORE=true
+QDRANT_QUANTIZATION_OVERSAMPLING=2
 S3_ENDPOINT=http://${{ RustFS.RAILWAY_PRIVATE_DOMAIN }}:9000
 S3_PUBLIC_ENDPOINT=https://&lt;rustfs-public-domain&gt;
 S3_ACCESS_KEY_ID=&lt;from RustFS service vars&gt;
@@ -393,15 +399,15 @@ LOG_LEVEL=info
 
       <h2 id="rustfs-bucket-initialization">RustFS bucket initialization</h2>
       <p>After first RustFS deploy, create buckets. Run once per environment:</p>
-      <pre><code>mc alias set timeline-prod http://&lt;rustfs-host&gt;:9000 &lt;user&gt; &lt;password&gt;
-mc mb timeline-prod/timeline-audio
-mc mb timeline-prod/timeline-attachments
-mc mb timeline-prod/timeline-exports
-mc mb timeline-prod/timeline-documents
-mc version enable timeline-prod/timeline-audio
-mc version enable timeline-prod/timeline-attachments
-mc version enable timeline-prod/timeline-documents
-mc version enable timeline-prod/timeline-exports
+      <pre><code>rc alias set timeline-prod http://&lt;rustfs-host&gt;:9000 &lt;access-key&gt; &lt;secret-key&gt;
+rc bucket create --ignore-existing timeline-prod/timeline-audio
+rc bucket create --ignore-existing timeline-prod/timeline-attachments
+rc bucket create --ignore-existing timeline-prod/timeline-exports
+rc bucket create --ignore-existing timeline-prod/timeline-documents
+rc bucket version enable timeline-prod/timeline-audio
+rc bucket version enable timeline-prod/timeline-attachments
+rc bucket version enable timeline-prod/timeline-documents
+rc bucket version enable timeline-prod/timeline-exports
 </code></pre>
       <p>
         Versioning on audio, attachments, and documents is non-negotiable. Source-of-truth data;
@@ -572,7 +578,12 @@ rclone sync s3:timeline-attachments backblaze-b2:timeline-backup-attachments
         <li><code>worker</code> service: small instance, most cost is during processing bursts</li>
         <li>Postgres: small instance + storage</li>
         <li>Redis: tiny</li>
-        <li>Qdrant: moderate RAM (vectors live in memory)</li>
+        <li>
+          Qdrant: 1 GB RAM is the recommended Railway limit after on-disk vectors + scalar int8
+          quantization (original embeddings stay on the volume). 512 MB is enough for a demo-sized
+          corpus; keep 2 GB until an older in-RAM collection has been copied. Staging/prototypes can
+          use Qdrant Cloud's free 1 GB / 4 GB disk cluster instead of a Railway Qdrant service.
+        </li>
         <li>RustFS: minimal compute, most cost is volume size</li>
       </ul>
       <p>

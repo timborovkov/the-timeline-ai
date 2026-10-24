@@ -269,8 +269,7 @@ describe('GET /api/timeline', () => {
       }),
     );
     const listEventsInput = fakes.fakeListEventsPage.mock.calls[0]?.[0] as
-      | { limit?: unknown }
-      | undefined;
+      { limit?: unknown } | undefined;
     expect(typeof listEventsInput?.limit).toBe('number');
     expect(fakes.fakeCacheKey).toHaveBeenCalledWith(
       expect.arrayContaining([

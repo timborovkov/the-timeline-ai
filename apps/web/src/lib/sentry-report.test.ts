@@ -24,6 +24,22 @@ describe('Sentry caught-error reporting', () => {
     expect(shouldReportToSentry(new Error('database down'))).toBe(true);
   });
 
+  it('does not report stale server-action deployment mismatches', () => {
+    const err = new Error(
+      'Server Action "408e336cb54bf606304291ef6c2da057f97d0fc0b2" was not found on the server.',
+    );
+    err.name = 'UnrecognizedActionError';
+
+    expect(shouldReportToSentry(err)).toBe(false);
+
+    reportCaughtError(err, {
+      surface: 'render',
+      operation: 'Unable to load tasks',
+    });
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
   it('reports expected Auth.js credentials sign-in failures as handled warning events', () => {
     const err = Object.assign(
       new Error('Read more at https://errors.authjs.dev#credentialssignin'),

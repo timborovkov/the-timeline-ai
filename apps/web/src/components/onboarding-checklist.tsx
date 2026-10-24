@@ -6,6 +6,7 @@ import { useEffect, useRef, type ButtonHTMLAttributes, type RefObject } from 're
 
 import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 
+import { HOME_TEAM_EMAIL_SECTION_ID } from '@/components/home/home-team-email';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { notifyError } from '@/lib/notify';
@@ -382,9 +383,10 @@ function onboardingMeta(key: string): { href: string; cta: string; description: 
       };
     case 'email_forwarding':
       return {
-        href: '/app/sources',
-        cta: 'Open connections',
-        description: 'Forward an email into the archive.',
+        href: `/app#${HOME_TEAM_EMAIL_SECTION_ID}`,
+        cta: 'View team email',
+        description:
+          'Open the copyable team address on Home, then forward a message into the archive.',
       };
     case 'first_document':
       return {

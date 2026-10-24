@@ -169,6 +169,11 @@ export default async function BoardDetailPage({
         defaultLaneId={firstLaneId}
         selectedItemId={selectedServerItemId}
         selectedObjectContext={selectedObjectDetail?.connectedWork ?? null}
+        selectedObjectNotes={selectedObjectDetail?.notes ?? []}
+        selectedObjectRecentChanges={selectedObjectDetail?.recentChanges ?? []}
+        selectedObjectRelationships={selectedObjectDetail?.relationships ?? []}
+        selectedObjectType={selectedObjectDetail?.type ?? null}
+        currentUserId={session.user.id}
         history={history}
         members={memberOptions}
         filters={filters}

@@ -142,6 +142,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.E2E_DETERMINISTIC_CHAT ??= '1';
   env.E2E_DETERMINISTIC_EMBEDDINGS ??= 'true';
   env.E2E_DETERMINISTIC_SLACK_API ??= '1';
+  env.TASK_CATEGORY_DISABLED = 'false';
   env.TASK_CATEGORY_CLASSIFICATION_ENABLED ??= 'true';
   env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED ??= 'true';
   env.TASK_CATEGORY_WORKER_ENABLED ??= 'true';

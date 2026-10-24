@@ -83,7 +83,7 @@ describe('resolveMentions', () => {
         },
       ]);
       const doGenerate = vi.fn().mockResolvedValue({
-        finishReason: 'stop',
+        finishReason: { unified: 'stop', raw: undefined },
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
         content: [{ type: 'text', text: '{"choice":-1}' }],
         warnings: [],

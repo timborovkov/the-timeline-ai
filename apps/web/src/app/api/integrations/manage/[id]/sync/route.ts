@@ -47,10 +47,9 @@ async function enqueueBackfillAndRecordAudit(input: {
 }
 
 export async function POST(
-  req: Request,
+  _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  void req;
   const [session, { id }] = await Promise.all([auth(), ctx.params]);
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { active } = await resolveActiveTeam(session.user.id);

@@ -11,7 +11,7 @@
     <main id="main">
       <h1>The Timeline — Product Brief</h1>
       <div class="meta">
-        <span class="kind">Product brief</span><span>Last updated 2026-08-26</span>
+        <span class="kind">Product brief</span><span>Last updated 2026-10-24</span>
       </div>
       <p class="tldr">
         AI team memory that preserves deliberately routed work and selected provider records as
@@ -639,8 +639,10 @@
           (Backblaze B2 or similar) from Railway cron; periodic restore drills.
         </li>
         <li>
-          <strong>Qdrant scaling.</strong> Vectors live in RAM. Monitor RAM usage from day one; plan
-          to shard or move to managed Qdrant Cloud past a certain team count.
+          <strong>Qdrant scaling.</strong> Original vectors and payload live on disk; search uses
+          int8 quantized vectors in RAM with rescore. Monitor RAM usage from day one; plan to shard
+          or move to managed Qdrant Cloud past a certain team count. The Cloud free tier (1 GB RAM)
+          is enough for prototypes after the on-disk copy, not for production HA.
         </li>
         <li>
           <strong>Entity resolution quality.</strong> "Apple" vs "Apple Inc" vs random Apple in a

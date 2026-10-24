@@ -135,45 +135,43 @@ const coreDocuments = definePublicDocuments('public-core', [
 
 const helpDocuments = definePublicDocuments(
   'help-guides',
-  HELP_PAGES.map(
-    (page, index): PublicDocument => ({
-      canonicalPath: `/help/${page.slug}`,
-      kind: 'guide',
-      title: page.title,
-      description: page.description,
-      indexability: 'index',
-      dates: {
-        modified: page.updatedAt ?? '2026-08-05',
-        reviewed: page.updatedAt ?? LAST_REVIEWED,
-      },
-      capability: { kind: 'current-product' },
-      sitemap: { changeFrequency: 'monthly', priority: 0.7 },
-      structuredData: [
-        { type: 'tech-article' },
-        {
-          type: 'breadcrumbs',
-          items: [
-            { name: 'Help', path: '/help' },
-            { name: page.title, path: `/help/${page.slug}` },
-          ],
-        },
-      ],
-      llms: {
-        section: 'product-guides',
-        order: index,
-        summary: page.description,
-        sections: [
-          ...page.sections.map((section) => ({
-            title: section.title,
-            body: section.body,
-            items: section.items,
-            links: section.resourceLinks,
-          })),
-          ...(page.slug === 'agents' ? AGENT_INSTALL_LLM_SECTIONS : []),
+  HELP_PAGES.map((page, index): PublicDocument => ({
+    canonicalPath: `/help/${page.slug}`,
+    kind: 'guide',
+    title: page.title,
+    description: page.description,
+    indexability: 'index',
+    dates: {
+      modified: page.updatedAt ?? '2026-08-05',
+      reviewed: page.updatedAt ?? LAST_REVIEWED,
+    },
+    capability: { kind: 'current-product' },
+    sitemap: { changeFrequency: 'monthly', priority: 0.7 },
+    structuredData: [
+      { type: 'tech-article' },
+      {
+        type: 'breadcrumbs',
+        items: [
+          { name: 'Help', path: '/help' },
+          { name: page.title, path: `/help/${page.slug}` },
         ],
       },
-    }),
-  ),
+    ],
+    llms: {
+      section: 'product-guides',
+      order: index,
+      summary: page.description,
+      sections: [
+        ...page.sections.map((section) => ({
+          title: section.title,
+          body: section.body,
+          items: section.items,
+          links: section.resourceLinks,
+        })),
+        ...(page.slug === 'agents' ? AGENT_INSTALL_LLM_SECTIONS : []),
+      ],
+    },
+  })),
 );
 
 const publicUtilityDocuments = definePublicDocuments('public-utility', [

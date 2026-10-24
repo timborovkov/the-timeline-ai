@@ -227,13 +227,7 @@ export interface TimelineSourceFacet {
 const RECENT_SOURCE_FACET_EVENT_LIMIT = 2_000;
 
 export type TimelineImpactKind =
-  | 'task'
-  | 'board'
-  | 'object'
-  | 'calendar'
-  | 'document'
-  | 'decision'
-  | 'approval';
+  'task' | 'board' | 'object' | 'calendar' | 'document' | 'decision' | 'approval';
 
 export interface TimelineImpactItem {
   kind: TimelineImpactKind;

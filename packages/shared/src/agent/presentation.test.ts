@@ -16,6 +16,7 @@ describe('agent presentation policy', () => {
     expect(resolveAgentPresentation('telegram')).toBe('external_chat');
     expect(resolveAgentPresentation('slack')).toBe('external_chat');
     expect(resolveAgentPresentation('mcp')).toBe('mcp_agent');
+    expect(resolveAgentPresentation('object_discussion')).toBe('web_rich');
     expect(resolveAgentPresentation('future-provider')).toBe('external_chat');
   });
 
@@ -23,8 +24,8 @@ describe('agent presentation policy', () => {
     const policy = presentationInstructions('mcp_agent');
     const answer = `Launch is ready [ev:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee].`;
 
-    expect(policy.system).toMatch(/external agent/i);
-    expect(policy.system).toContain('Preserve every relevant inline Timeline citation');
+    expect(policy.instructions).toMatch(/external agent/i);
+    expect(policy.instructions).toContain('Preserve every relevant inline Timeline citation');
     expect(policy.maxOutputTokens).toBe(MCP_AGENT_MAX_OUTPUT_TOKENS);
     expect(MCP_AGENT_MAX_OUTPUT_TOKENS).toBe(900);
     expect(MCP_AGENT_MAX_CHARACTERS).toBe(8192);
@@ -48,18 +49,18 @@ describe('agent presentation policy', () => {
   it('gives web chat complete cited-answer guidance without an output cap', () => {
     const policy = presentationInstructions('web_rich');
 
-    expect(policy.system).toContain('complete, source-linked answer');
-    expect(policy.system).toContain('Keep Timeline citations inline');
+    expect(policy.instructions).toContain('complete, source-linked answer');
+    expect(policy.instructions).toContain('Keep Timeline citations inline');
     expect(policy.maxOutputTokens).toBeUndefined();
   });
 
   it('gives external chat a concise default and bounded expansion budget', () => {
     const policy = presentationInstructions('external_chat');
 
-    expect(policy.system).toContain('about 120 words');
-    expect(policy.system).toContain('3–5 bullets');
-    expect(policy.system).toContain('explicitly asks for more detail');
-    expect(policy.system).toContain('Do not add a sources section');
+    expect(policy.instructions).toContain('about 120 words');
+    expect(policy.instructions).toContain('3–5 bullets');
+    expect(policy.instructions).toContain('explicitly asks for more detail');
+    expect(policy.instructions).toContain('Do not add a sources section');
     expect(policy.maxOutputTokens).toBe(EXTERNAL_CHAT_MAX_OUTPUT_TOKENS);
     expect(EXTERNAL_CHAT_MAX_OUTPUT_TOKENS).toBe(900);
     expect(EXTERNAL_CHAT_MAX_CHARACTERS).toBe(4096);

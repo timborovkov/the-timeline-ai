@@ -42,6 +42,7 @@ const fakes = vi.hoisted(() => ({
   fakeAppendChatMessages: vi.fn(),
   fakeCreateUIMessageStream: vi.fn(),
   fakeCreateUIMessageStreamResponse: vi.fn(),
+  fakeToUIMessageStream: vi.fn(),
   fakeLoggerWarn: vi.fn(),
   fakeLoggerInfo: vi.fn(),
   fakeReportCaughtError: vi.fn(),
@@ -91,6 +92,14 @@ vi.mock('@timeline/shared/agent', () => ({
   buildMcpTools: fakes.fakeBuildMcpTools,
   instrumentAgentTools: fakes.fakeInstrumentAgentTools,
   summarizeAgentToolObservations: fakes.fakeSummarizeAgentToolObservations,
+  userApprovalForTools: (tools: Record<string, unknown> = {}) => {
+    const approval = Object.fromEntries(
+      Object.keys(tools)
+        .filter((name) => name.startsWith('execute_'))
+        .map((name) => [name, 'user-approval' as const]),
+    );
+    return Object.keys(approval).length > 0 ? approval : undefined;
+  },
 }));
 vi.mock('@timeline/shared/time', () => ({
   workspaceTimeContext: fakes.fakeWorkspaceTimeContext,
@@ -129,6 +138,7 @@ vi.mock('ai', () => ({
   convertToModelMessages: fakes.fakeConvertToModelMessages,
   createUIMessageStream: fakes.fakeCreateUIMessageStream,
   createUIMessageStreamResponse: fakes.fakeCreateUIMessageStreamResponse,
+  toUIMessageStream: fakes.fakeToUIMessageStream,
   safeValidateUIMessages: fakes.fakeSafeValidateUIMessages,
 }));
 
@@ -276,11 +286,11 @@ beforeEach(() => {
   fakes.fakeStreamChat.mockImplementation(
     (input: {
       onError?: (event: { error: unknown }) => void;
-      onFinish?: (event: Record<string, unknown>) => void;
+      onEnd?: (event: Record<string, unknown>) => void;
     }) => {
       capturedOnError = input.onError ?? null;
-      capturedOnFinish = input.onFinish ?? null;
-      return { toUIMessageStreamResponse: () => streamResponse() };
+      capturedOnFinish = input.onEnd ?? null;
+      return { stream: { kind: 'chat' } };
     },
   );
   fakes.fakeAppendChatMessages.mockResolvedValue(undefined);
@@ -297,9 +307,12 @@ beforeEach(() => {
       return { chunks };
     },
   );
+  fakes.fakeToUIMessageStream.mockImplementation(() => ({ kind: 'ui-stream' }));
   fakes.fakeCreateUIMessageStreamResponse.mockImplementation(
-    ({ stream }: { stream: { chunks: unknown[] } }) =>
-      Response.json({ chunks: stream.chunks }, { status: 200 }),
+    ({ stream }: { stream: { chunks?: unknown[]; kind?: string } }) =>
+      Array.isArray(stream.chunks)
+        ? Response.json({ chunks: stream.chunks }, { status: 200 })
+        : streamResponse(),
   );
 });
 
@@ -406,7 +419,7 @@ describe('POST /api/chat', () => {
     );
     expect(fakes.fakeStreamChat).toHaveBeenCalledWith(
       expect.objectContaining({
-        system: 'system prompt',
+        instructions: 'system prompt',
         messages: [{ role: 'user', content: 'What happened?' }],
         tools: {
           search_timeline: { type: 'native' },
@@ -417,8 +430,7 @@ describe('POST /api/chat', () => {
     );
     expect(fakes.fakeResolveAgentPresentation).toHaveBeenCalledWith('web');
     const streamInput = fakes.fakeStreamChat.mock.calls.at(-1)?.[0] as
-      | { maxOutputTokens?: number }
-      | undefined;
+      { maxOutputTokens?: number } | undefined;
     expect(streamInput).not.toHaveProperty('maxOutputTokens');
     expect(fakes.fakeBuildMcpTools).not.toHaveBeenCalled();
   });
@@ -440,12 +452,11 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeStreamChat).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ system?: string }]
-      | undefined;
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('/app/objects/'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('object_id'));
-    expect(streamCall?.[0].system).toEqual(
+      [{ instructions?: string }] | undefined;
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('/app/objects/'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('object_id'));
+    expect(streamCall?.[0].instructions).toEqual(
       expect.stringContaining('use tools before making claims'),
     );
   });
@@ -482,14 +493,17 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeMergeChatSessionContextTrail).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ system?: string }]
-      | undefined;
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('CURRENT VIEW (priority)'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('Q3 contract'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('EARLIER VIEWS (background)'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('Launch plan'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('query_params'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('notes'));
+      [{ instructions?: string }] | undefined;
+    expect(streamCall?.[0].instructions).toEqual(
+      expect.stringContaining('CURRENT VIEW (priority)'),
+    );
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('Q3 contract'));
+    expect(streamCall?.[0].instructions).toEqual(
+      expect.stringContaining('EARLIER VIEWS (background)'),
+    );
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('Launch plan'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('query_params'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('notes'));
   });
 
   it('adds object tools when dashboard context points at an object', async () => {
@@ -519,8 +533,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       retrieve_workspace_context: { type: 'native' },
       search_timeline: { type: 'native' },
@@ -561,8 +574,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       search_objects: { type: 'native' },
       list_pending_approvals: { type: 'native' },
@@ -596,8 +608,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       list_pending_approvals: { type: 'native' },
       revise_suggestion: { type: 'native' },
@@ -628,8 +639,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       list_pending_approvals: { type: 'native' },
       revise_suggestion: { type: 'native' },
@@ -674,8 +684,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       execute_object_update: { type: 'native' },
     });
@@ -730,9 +739,8 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ system?: string; tools?: Record<string, unknown> }]
-      | undefined;
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+      [{ instructions?: string; tools?: Record<string, unknown> }] | undefined;
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
     expect(streamCall?.[0].tools).toMatchObject({
       get_object: { type: 'native' },
       execute_object_update: { type: 'native' },
@@ -844,8 +852,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       list_team_members: { type: 'native' },
       search_boards: { type: 'native' },
@@ -869,8 +876,7 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeBuildMcpTools).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       search_timeline: { type: 'native' },
       external_tool: { type: 'mcp' },
@@ -911,8 +917,7 @@ describe('POST /api/chat', () => {
       expect.objectContaining({ archived: false, limit: 50 }),
     );
     const calendarCall = fakes.fakeListCalendarEvents.mock.calls.at(0) as unknown as
-      | [{ from: Date; to: Date; limit: number }]
-      | undefined;
+      [{ from: Date; to: Date; limit: number }] | undefined;
     expect(calendarCall?.[0].from).toBeInstanceOf(Date);
     expect(calendarCall?.[0].to).toBeInstanceOf(Date);
     expect(calendarCall?.[0].limit).toBe(50);
@@ -995,8 +1000,7 @@ describe('POST /api/chat', () => {
     });
 
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
-      | [{ schema?: unknown; model?: unknown; prompt?: unknown }]
-      | undefined;
+      [{ schema?: unknown; model?: unknown; prompt?: unknown }] | undefined;
     expect(titleCall?.[0].schema).toBeDefined();
     expect(titleCall?.[0].model).toBeTypeOf('string');
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
@@ -1044,8 +1048,7 @@ describe('POST /api/chat', () => {
       );
     });
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
-      | [{ prompt?: unknown }]
-      | undefined;
+      [{ prompt?: unknown }] | undefined;
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
     expect(titleCall?.[0].prompt).not.toEqual(expect.stringContaining('What changed since then?'));
   });
@@ -1081,8 +1084,7 @@ describe('POST /api/chat', () => {
       );
     });
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
-      | [{ prompt?: unknown }]
-      | undefined;
+      [{ prompt?: unknown }] | undefined;
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What changed since then?'));
   });
 

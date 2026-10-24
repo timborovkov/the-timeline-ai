@@ -97,6 +97,13 @@ export interface TaskPrimaryProjectRow {
   archivedAt: Date | null;
 }
 
+export interface PersonPrimaryCompanyRow {
+  personId: string;
+  companyId: string;
+  companyName: string;
+  archivedAt: Date | null;
+}
+
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
   const value = metadata[key];
   if (typeof value !== 'string' && typeof value !== 'number') return null;
@@ -250,6 +257,7 @@ export interface ObjectDetail extends ObjectRow {
       dueAt: Date | null;
       priority: number | null;
       nextStep: string | null;
+      notes: string | null;
     }[];
     pendingApprovals: {
       suggestionId: string;

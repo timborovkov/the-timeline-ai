@@ -1,11 +1,11 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import {
   NoObjectGeneratedError,
-  stepCountIs,
+  isStepCount,
   type RepairTextFunction,
   type LanguageModel,
   type ModelMessage,
-  type StreamTextOnFinishCallback,
+  type StreamTextOnEndCallback,
   type StreamTextResult,
   type ToolSet,
 } from 'ai';
@@ -25,6 +25,7 @@ import {
   streamText,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
+import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
 
 type GenerateObjectProviderOptions = NonNullable<
   Parameters<typeof generateObject>[0]['providerOptions']
@@ -46,7 +47,7 @@ export const DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS = 8_000;
 export interface ChatStructuredInput<TSchema extends z.ZodType> {
   schema: TSchema;
   prompt: string;
-  system?: string;
+  instructions?: string;
   /** Override the configured extraction model for this call. */
   model?: string;
   /**
@@ -60,7 +61,7 @@ export interface ChatStructuredInput<TSchema extends z.ZodType> {
 }
 
 export interface ChatDeps {
-  /** Inject a pre-built LanguageModel — used by tests with MockLanguageModelV2. */
+  /** Inject a pre-built LanguageModel — used by tests with MockLanguageModelV3. */
   model?: LanguageModel;
   /** Inject fetch for provider-boundary tests. */
   fetch?: typeof globalThis.fetch;
@@ -72,7 +73,7 @@ export interface ChatStructuredResult<TSchema extends z.ZodType> {
   model: string;
 }
 
-type StreamFinishEvent = Parameters<StreamTextOnFinishCallback<ToolSet>>[0];
+type StreamFinishEvent = Parameters<StreamTextOnEndCallback>[0];
 
 export interface StreamChatModelAttribution {
   requestedModelId: string;
@@ -136,12 +137,12 @@ export function streamChatFallbackModelIds(modelId: string): string[] {
 }
 
 export function streamChatModelAttribution(
-  event: Pick<StreamFinishEvent, 'model' | 'response'>,
+  event: Pick<StreamFinishEvent, 'model' | 'finalStep'>,
   requestedModelId = event.model.modelId,
 ): StreamChatModelAttribution {
   return {
     requestedModelId,
-    responseModelId: event.response.modelId,
+    responseModelId: event.finalStep.response.modelId,
     fallbackModelIds: streamChatFallbackModelIds(requestedModelId),
   };
 }
@@ -238,37 +239,60 @@ function shouldFallbackToAlternateModel(err: unknown): boolean {
   );
 }
 
+function parseStructuredRepairText(text: string): unknown {
+  const stripped = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    const start = stripped.search(/[{[]/);
+    const end = Math.max(stripped.lastIndexOf('}'), stripped.lastIndexOf(']'));
+    if (start < 0 || end <= start) return null;
+    try {
+      return JSON.parse(stripped.slice(start, end + 1));
+    } catch {
+      return null;
+    }
+  }
+}
+
+function repairFactShape(value: unknown): unknown {
+  const candidate = Array.isArray(value) ? { facts: value } : value;
+  if (!candidate || typeof candidate !== 'object') return value;
+  const row = candidate as Record<string, unknown>;
+  const facts = Array.isArray(row.facts) ? (row.facts as unknown[]) : null;
+  return {
+    ...row,
+    ...(facts
+      ? {
+          facts: facts.map((fact) => {
+            if (!fact || typeof fact !== 'object') return fact;
+            const factRow = fact as Record<string, unknown>;
+            return {
+              ...factRow,
+              statement: factRow.statement ?? factRow.text,
+              mentions: factRow.mentions ?? factRow.entities,
+            };
+          }),
+        }
+      : {}),
+    action_items: row.action_items ?? row.actionItems,
+    choice: row.choice ?? row.candidate_index ?? row.candidateIndex ?? row.index,
+  };
+}
+
 function repairKnownStructuredOutput(schema: z.ZodType): RepairTextFunction {
   return ({ text }) => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return Promise.resolve(null);
+    const parsed = parseStructuredRepairText(text);
+    if (parsed === null) return Promise.resolve(null);
+    const candidates = [repairFactShape(parsed), normalizeTaskCategoryModelJson(parsed)];
+    for (const candidate of candidates) {
+      if (schema.safeParse(candidate).success) return Promise.resolve(JSON.stringify(candidate));
     }
-    const candidate = Array.isArray(parsed) ? { facts: parsed } : parsed;
-    if (!candidate || typeof candidate !== 'object') return Promise.resolve(null);
-    const row = candidate as Record<string, unknown>;
-    const facts = Array.isArray(row.facts) ? (row.facts as unknown[]) : null;
-    const repaired = {
-      ...row,
-      ...(facts
-        ? {
-            facts: facts.map((fact) => {
-              if (!fact || typeof fact !== 'object') return fact;
-              const factRow = fact as Record<string, unknown>;
-              return {
-                ...factRow,
-                statement: factRow.statement ?? factRow.text,
-                mentions: factRow.mentions ?? factRow.entities,
-              };
-            }),
-          }
-        : {}),
-      action_items: row.action_items ?? row.actionItems,
-      choice: row.choice ?? row.candidate_index ?? row.candidateIndex ?? row.index,
-    };
-    return Promise.resolve(schema.safeParse(repaired).success ? JSON.stringify(repaired) : null);
+    return Promise.resolve(null);
   };
 }
 
@@ -295,7 +319,7 @@ export function buildOpenRouterLanguageModel(
 async function generateStructuredObject<TSchema extends z.ZodType>({
   schema,
   prompt,
-  system,
+  instructions,
   model,
   modelId,
   operation,
@@ -304,7 +328,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
 }: {
   schema: TSchema;
   prompt: string;
-  system: string;
+  instructions: string;
   model: LanguageModel;
   modelId: string;
   operation: 'chat_structured' | 'chat_structured_json_object_fallback';
@@ -313,17 +337,17 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
 }) {
   // generateObject is the right primitive for structured-output extraction;
   // the "use generateText with output" deprecation guidance applies to chat
-  // surfaces where streaming matters. Revisit once ai v6 stabilises.
+  // surfaces where streaming matters. Revisit once that path is stable.
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   return generateObject({
     model,
     schema,
     prompt,
-    system,
+    instructions,
     maxOutputTokens,
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
-    experimental_repairText: repairKnownStructuredOutput(schema),
+    repairText: repairKnownStructuredOutput(schema),
     providerOptions: withLangSmithProviderOptions(openRouterRequireParametersOptions(), {
       name: 'llm.chatStructured',
       model: modelId,
@@ -337,7 +361,7 @@ async function generateStructuredObject<TSchema extends z.ZodType>({
 async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   schema,
   prompt,
-  system,
+  instructions,
   model,
   modelId,
   maxOutputTokens,
@@ -345,7 +369,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
 }: {
   schema: TSchema;
   prompt: string;
-  system: string;
+  instructions: string;
   model: LanguageModel;
   modelId: string;
   maxOutputTokens: number;
@@ -354,7 +378,7 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
   const result = await generateText({
     model,
     prompt,
-    system,
+    instructions,
     maxOutputTokens,
     maxRetries: 0,
     ...(abortSignal ? { abortSignal } : {}),
@@ -404,7 +428,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
         const result = await generateStructuredObject({
           schema: input.schema,
           prompt: input.prompt,
-          system: structuredOutputSystem(input.system),
+          instructions: structuredOutputSystem(input.instructions),
           model,
           modelId: candidateModelId,
           operation: 'chat_structured',
@@ -421,7 +445,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
         const result = await generateJsonObjectFallback({
           schema: input.schema,
           prompt: input.prompt,
-          system: structuredOutputFallbackSystem(input.schema, input.system),
+          instructions: structuredOutputFallbackSystem(input.schema, input.instructions),
           model: fallbackModel,
           modelId: candidateModelId,
           maxOutputTokens,
@@ -454,7 +478,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
 }
 
 export interface StreamChatInput<TTools extends ToolSet> {
-  system: string;
+  instructions: string;
   messages: ModelMessage[];
   tools: TTools;
   /** Override the configured agent model for this call. */
@@ -463,8 +487,10 @@ export interface StreamChatInput<TTools extends ToolSet> {
   maxSteps?: number;
   /** Optional completion-token ceiling for the current presentation surface. */
   maxOutputTokens?: number;
-  /** Forwarded to streamText.onFinish for usage/audit logging. */
-  onFinish?: Parameters<typeof streamText>[0]['onFinish'];
+  /** Forwarded to streamText.onEnd for usage/audit logging. */
+  onEnd?: Parameters<typeof streamText>[0]['onEnd'];
+  /** Forwarded to streamText.toolApproval for in-chat execute_* gates. */
+  toolApproval?: Parameters<typeof streamText>[0]['toolApproval'];
   /** Forwarded to streamText.onError for provider/stream failures. */
   onError?: Parameters<typeof streamText>[0]['onError'];
   /**
@@ -490,7 +516,7 @@ export interface StreamChatInput<TTools extends ToolSet> {
 export function streamChat<TTools extends ToolSet>(
   input: StreamChatInput<TTools>,
   deps: ChatDeps = {},
-): StreamTextResult<TTools, never> {
+): StreamTextResult<TTools, never, never> {
   const modelId = input.model ?? resolveAgentModelId();
   const metadata = { operation: 'llm.streamChat', model: modelId };
   let model: LanguageModel;
@@ -501,10 +527,10 @@ export function streamChat<TTools extends ToolSet>(
   }
   const args: Parameters<typeof streamText>[0] = {
     model,
-    system: input.system,
+    instructions: input.instructions,
     messages: input.messages,
     tools: input.tools,
-    stopWhen: stepCountIs(input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS),
+    stopWhen: isStepCount(input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS),
     providerOptions: withLangSmithProviderOptions(openRouterModelFallbackOptions(modelId), {
       name: 'llm.streamChat',
       model: modelId,
@@ -517,14 +543,15 @@ export function streamChat<TTools extends ToolSet>(
     }),
   };
   if (input.maxOutputTokens !== undefined) args.maxOutputTokens = input.maxOutputTokens;
-  if (input.onFinish) args.onFinish = input.onFinish;
+  if (input.onEnd) args.onEnd = input.onEnd;
+  if (input.toolApproval) args.toolApproval = input.toolApproval;
   if (input.onError) {
     args.onError = (event) => {
       input.onError?.({ ...event, error: callbackSafeTimelineAiError(metadata, event.error) });
     };
   }
   if (input.abortSignal) args.abortSignal = input.abortSignal;
-  return streamText(args) as unknown as StreamTextResult<TTools, never>;
+  return streamText(args) as unknown as StreamTextResult<TTools, never, never>;
 }
 
 function callbackSafeTimelineAiError(

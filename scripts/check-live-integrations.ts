@@ -112,7 +112,7 @@ async function checkOpenRouter(): Promise<LiveIntegrationCanaryResult> {
         status: z.literal('ok'),
         surface: z.literal('openrouter'),
       }),
-      system: 'Return only the requested structured object.',
+      instructions: 'Return only the requested structured object.',
       prompt: 'Run a Timeline live integration canary.',
     });
     if (result.object.status === 'ok' && result.object.surface === 'openrouter') {
