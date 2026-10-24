@@ -17,6 +17,7 @@
     "start": "node dist/index.js",
     "reextract": "NODE_OPTIONS=--conditions=development tsx src/scripts/reextract.ts",
     "reembed": "NODE_OPTIONS=--conditions=development tsx src/scripts/reembed.ts",
+    "qdrant-migrate-collection": "NODE_OPTIONS=--conditions=development tsx src/scripts/qdrant-migrate-collection.ts",
     "resuggest": "NODE_OPTIONS=--conditions=development tsx src/scripts/resuggest.ts",
     "dedupe-approvals": "NODE_OPTIONS=--conditions=development tsx src/scripts/dedupe-approvals.ts",
     "dedupe-calendar-events": "NODE_OPTIONS=--conditions=development tsx src/scripts/dedupe-calendar-events.ts",

@@ -25,7 +25,8 @@ import {
  *
  * Cost notes:
  *   - Vision tokens are 5-10x text tokens on most providers. A 10-page PDF
- *     can run $0.05-$0.20 depending on resolution and model.
+ *     can run a few cents to ~$0.15 depending on resolution and the pinned
+ *     Gemini 3.8 Flash route ($0.825/M prompt and image tokens).
  *   - The 25 MiB document cap upstream is the only structural ceiling
  *     today. Per-team monthly cost tracking is Phase 12.
  */

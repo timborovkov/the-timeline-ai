@@ -114,8 +114,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete process.env.TASK_CATEGORY_DISABLED;
   delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
   delete process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
+  delete process.env.TASK_CATEGORY_BACKFILL_ENABLED;
 });
 
 describe('queue wrappers', () => {
@@ -872,6 +874,59 @@ describe('queue wrappers', () => {
     });
     expect(first).toMatchObject({ enqueued: true });
     expect(duplicate).toMatchObject({ enqueued: false, jobId: first.jobId });
+  });
+
+  it('enqueues new task category jobs when the rollout flags are unset', async () => {
+    delete process.env.TASK_CATEGORY_DISABLED;
+    delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+    delete process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED;
+    delete process.env.TASK_CATEGORY_BACKFILL_ENABLED;
+    const queues = await importQueues();
+    const data = {
+      teamId: '22222222-2222-4222-8222-222222222222',
+      taskId: '77777777-7777-4777-8777-777777777777',
+      inputHash: 'packet-hash-v1',
+      trigger: 'create' as const,
+    };
+
+    await expect(queues.enqueueTaskCategoryJob(data)).resolves.toMatchObject({ enqueued: true });
+    expect(fakes.queues[0]?.addCalls).toHaveLength(1);
+  });
+
+  it('does not enqueue historical backfill while that flag stays off', async () => {
+    delete process.env.TASK_CATEGORY_DISABLED;
+    delete process.env.TASK_CATEGORY_BACKFILL_ENABLED;
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    const queues = await importQueues();
+
+    await expect(
+      queues.enqueueTaskCategoryJob({
+        teamId: '22222222-2222-4222-8222-222222222222',
+        taskId: '77777777-7777-4777-8777-777777777777',
+        inputHash: 'packet-hash-v1',
+        trigger: 'backfill',
+      }),
+    ).resolves.toMatchObject({ enqueued: false });
+    expect(fakes.queues).toHaveLength(0);
+  });
+
+  it('does not enqueue task category jobs while the kill switch is on', async () => {
+    process.env.TASK_CATEGORY_DISABLED = 'true';
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_AUTO_ENQUEUE_ENABLED = 'true';
+    process.env.TASK_CATEGORY_BACKFILL_ENABLED = 'true';
+    const queues = await importQueues();
+
+    await expect(
+      queues.enqueueTaskCategoryJob({
+        teamId: '22222222-2222-4222-8222-222222222222',
+        taskId: '77777777-7777-4777-8777-777777777777',
+        inputHash: 'packet-hash-v1',
+        trigger: 'backfill',
+      }),
+    ).resolves.toMatchObject({ enqueued: false });
+    expect(fakes.queues).toHaveLength(0);
   });
 
   it('dedupes task category jobs by packet hash and replaces retained terminal jobs', async () => {

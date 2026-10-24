@@ -14,6 +14,8 @@ pnpm demo:seed
 
 `demo:seed` runs `dev:seed`, indexes every fixture-version raw event, fact, document
 chunk, and meeting chunk through the production embed worker, then runs `demo:verify`.
+Vector indexing requires all nine original Acme Labs events and their three facts,
+as well as the Northstar and expanded-corpus source sets, and rejects unexpected fixture IDs.
 `demo:seed` is safe to rerun. Use `pnpm demo:reset` when you need the workspace restored
 to the exact canonical fixture after local edits.
 

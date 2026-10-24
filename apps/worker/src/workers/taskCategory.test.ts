@@ -60,10 +60,29 @@ describe('task category worker', () => {
   it('does not register a queue consumer while classification or worker consumption is disabled', () => {
     process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'false';
     process.env.TASK_CATEGORY_WORKER_ENABLED = 'false';
+    delete process.env.TASK_CATEGORY_DISABLED;
     resetEnvForTests();
 
     expect(startTaskCategoryWorker({ db: {} as never })).toBeNull();
     expect(fakes.worker).not.toHaveBeenCalled();
+  });
+
+  it('registers a consumer by default and stays stopped when the kill switch is on', () => {
+    delete process.env.TASK_CATEGORY_DISABLED;
+    delete process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED;
+    delete process.env.TASK_CATEGORY_WORKER_ENABLED;
+    resetEnvForTests();
+
+    expect(startTaskCategoryWorker({ db: {} as never })).not.toBeNull();
+    expect(fakes.worker).toHaveBeenCalledOnce();
+
+    process.env.TASK_CATEGORY_DISABLED = 'true';
+    process.env.TASK_CATEGORY_CLASSIFICATION_ENABLED = 'true';
+    process.env.TASK_CATEGORY_WORKER_ENABLED = 'true';
+    resetEnvForTests();
+
+    expect(startTaskCategoryWorker({ db: {} as never })).toBeNull();
+    expect(fakes.worker).toHaveBeenCalledOnce();
   });
 
   it('skips rows that are no longer pending', async () => {

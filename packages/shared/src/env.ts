@@ -195,6 +195,28 @@ const baseSchema = z.object({
   QDRANT_URL: z.url().optional(),
   QDRANT_API_KEY: z.string().optional(),
   QDRANT_COLLECTION: z.string().default('events'),
+  /**
+   * Quantization used when auto-creating a collection. `scalar` (default)
+   * stores int8 quantized vectors in RAM with original float32 vectors on
+   * disk. `binary` is the more aggressive option; pair it with search
+   * rescore/oversampling. Existing collections are not rewritten — copy
+   * points into a new collection, then switch `QDRANT_COLLECTION`.
+   */
+  QDRANT_QUANTIZATION: z.preprocess(
+    emptyStringAsUnset,
+    z.enum(['scalar', 'binary']).default('scalar'),
+  ),
+  /** Search-time rescore of quantized hits against original vectors. */
+  QDRANT_QUANTIZATION_RESCORE: z.preprocess(booleanString, z.boolean().default(true)),
+  /**
+   * Extra quantized candidates fetched before rescore. Unset uses 2 for
+   * scalar and 4 for binary. Blank values from `.env.example` are unset.
+   * Qdrant 1.19.2 rejects oversampling below 1.
+   */
+  QDRANT_QUANTIZATION_OVERSAMPLING: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce.number().min(1).optional(),
+  ),
 
   // S3 / RustFS (Phase 3+)
   S3_ENDPOINT: z.url().optional(),
@@ -227,11 +249,18 @@ const baseSchema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
-  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  /**
+   * Emergency stop for task categories. When true, the env transform forces
+   * classification, enqueue, the worker, backfill, and the UI off together.
+   * Individual flags still work when this is false. Historical backfill stays
+   * default-off so a deploy cannot enqueue the backlog.
+   */
+  TASK_CATEGORY_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_BACKFILL_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   CROSS_SOURCE_EVIDENCE_MODE: z.enum(['off', 'shadow', 'enforced']).default('off'),
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
@@ -481,6 +510,15 @@ const schema = baseSchema
   .transform((env) => ({
     ...env,
     LANGSMITH_PROJECT: env.LANGSMITH_PROJECT ?? `timeline-${env.NODE_ENV}`,
+    ...(env.TASK_CATEGORY_DISABLED
+      ? {
+          TASK_CATEGORY_CLASSIFICATION_ENABLED: false as const,
+          TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false as const,
+          TASK_CATEGORY_WORKER_ENABLED: false as const,
+          TASK_CATEGORY_BACKFILL_ENABLED: false as const,
+          TASK_CATEGORY_UI_ENABLED: false as const,
+        }
+      : {}),
   }));
 
 export type Env = z.infer<typeof schema>;

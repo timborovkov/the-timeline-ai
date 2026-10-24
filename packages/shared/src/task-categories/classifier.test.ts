@@ -100,4 +100,21 @@ describe('task category classifier', () => {
     expect(chatStructured).toHaveBeenCalledTimes(1);
     expect(buildTaskCategoryBatchPrompt(packets)).toContain('Design the homepage');
   });
+
+  it('rejects a batch that drops a proposal key', async () => {
+    const packets = [
+      { key: '0:0', packet: buildTaskCategoryPacket({ title: 'Design the homepage' }) },
+      { key: '0:1', packet: buildTaskCategoryPacket({ title: 'Implement the API' }) },
+    ];
+    const chatStructured = vi.fn().mockResolvedValue({
+      object: {
+        predictions: [{ key: '0:0', category: 'design', confidence: 0.9 }],
+      },
+      model: 'served-model',
+    });
+
+    await expect(
+      classifyTaskCategories(packets, { chatStructured, modelId: 'requested-model' }),
+    ).rejects.toThrow(/omitted 1 of 2 proposals/);
+  });
 });

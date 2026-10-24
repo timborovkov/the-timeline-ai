@@ -10,7 +10,13 @@ const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ESTIMATED_INPUT_TOKENS_PER_TASK = 220;
 const ESTIMATED_OUTPUT_TOKENS_PER_TASK = 20;
+// Peak weekday OpenRouter rates for TIMELINE_MODELS.taskCategorization
+// (deepseek/deepseek-v4.1-flash-1017: $0.30/M input, $1.20/M output) land
+// near $0.00009 per task. Keep ~2x retry/pricing headroom.
 const ESTIMATED_COST_USD_PER_TASK = 0.0002;
+const TASK_CATEGORY_BACKFILL_MAX_TASKS = 5_000;
+/** 5,000 tasks × $0.0002. Rejects a `--max-cost-usd` typo above one batch. */
+export const TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD = 1;
 
 type TaskCategoryBackfillFlags = Pick<
   ReturnType<typeof getEnv>,
@@ -69,6 +75,28 @@ export async function enqueueTaskCategoryBackfillBatch(
   return { enqueued, failed };
 }
 
+export function assertTaskCategoryBackfillCost(input: {
+  execute: boolean;
+  estimatedCostUsd: number;
+  maxCostUsd: number | null;
+}): void {
+  if (!input.execute) return;
+  if (input.maxCostUsd === null || !Number.isFinite(input.maxCostUsd) || input.maxCostUsd < 0) {
+    throw new Error('Enqueue requires --max-cost-usd <amount>');
+  }
+  const maxCostUsd = Number(input.maxCostUsd.toFixed(6));
+  if (maxCostUsd > TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD) {
+    throw new Error(
+      `--max-cost-usd $${maxCostUsd} exceeds the $${TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD} batch ceiling`,
+    );
+  }
+  if (input.estimatedCostUsd > maxCostUsd) {
+    throw new Error(
+      `Projected cost $${input.estimatedCostUsd} exceeds --max-cost-usd $${maxCostUsd}`,
+    );
+  }
+}
+
 export function assertTaskCategoryBackfillModeEnabled(
   execute: boolean,
   env: TaskCategoryBackfillFlags = getEnv(),
@@ -106,7 +134,7 @@ async function main(): Promise<void> {
   const requestedLimit = Number(argument('--limit') ?? '500');
   const limit = Math.min(
     Math.max(Number.isInteger(requestedLimit) ? requestedLimit : 500, 1),
-    5_000,
+    TASK_CATEGORY_BACKFILL_MAX_TASKS,
   );
   const requestedOffset = Number(argument('--offset') ?? '0');
   const offset = Math.max(Number.isInteger(requestedOffset) ? requestedOffset : 0, 0);
@@ -153,13 +181,12 @@ async function main(): Promise<void> {
     throw new Error('Resolve tasks with multiple primary-project edges before enqueueing backfill');
   }
   const maxCostArgument = argument('--max-cost-usd');
-  const maxCostUsd = Number(maxCostArgument);
-  if (maxCostArgument === null || !Number.isFinite(maxCostUsd) || maxCostUsd < 0) {
-    throw new Error('Enqueue requires --max-cost-usd <amount>');
-  }
-  if (estimatedCostUsd > maxCostUsd) {
-    throw new Error(`Projected cost $${estimatedCostUsd} exceeds --max-cost-usd $${maxCostUsd}`);
-  }
+  const parsedMaxCost = maxCostArgument === null ? null : Number(maxCostArgument);
+  assertTaskCategoryBackfillCost({
+    execute: true,
+    estimatedCostUsd,
+    maxCostUsd: parsedMaxCost !== null && Number.isFinite(parsedMaxCost) ? parsedMaxCost : null,
+  });
   const maxQueueAgeSeconds = parseMaxQueueAgeSeconds(argument('--max-queue-age-seconds'));
   const [oldestWaiting] = await queue.getTaskCategoryQueue().getWaiting(0, 0);
   if (

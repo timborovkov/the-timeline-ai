@@ -36,11 +36,21 @@ function rows(): DemoVectorRows {
   const documentChunks = familyIds(DEMO_VECTOR_ID_FAMILIES.documentChunks);
   const meetingChunks = familyIds(DEMO_VECTOR_ID_FAMILIES.meetingChunks);
   return {
-    rawEvents: [...events.northstar, ...events.corpus].map((id) => ({ id })),
-    facts: [...facts.northstar, ...facts.corpus].map((id, index) => ({
-      id,
-      rawEventId: `event-${String(index % DEMO_VECTOR_SOURCE_MINIMUMS.rawEvents)}`,
-    })),
+    rawEvents: [
+      ...Array.from({ length: 9 }, (_, index) => `90000000-0000-4000-8000-${padded(index + 1)}`),
+      ...events.northstar,
+      ...events.corpus,
+    ].map((id) => ({ id })),
+    facts: [
+      ...Array.from({ length: 3 }, (_, index) => ({
+        id: `c0000000-0000-4000-8000-${padded(index + 1)}`,
+        rawEventId: `90000000-0000-4000-8000-${padded(index + 1)}`,
+      })),
+      ...[...facts.northstar, ...facts.corpus].map((id, index) => ({
+        id,
+        rawEventId: `event-${String(index % DEMO_VECTOR_SOURCE_MINIMUMS.rawEvents)}`,
+      })),
+    ],
     documentChunks: [...documentChunks.northstar, ...documentChunks.corpus].map((id) => ({
       id,
       versionId: `document-version-${id}`,
@@ -124,8 +134,8 @@ describe('demo vector indexing contract', () => {
 
   it('fails closed when Northstar vector ids are missing from a complete-looking corpus', () => {
     const fixtureRows = rows();
-    fixtureRows.rawEvents = fixtureRows.rawEvents.filter((row) =>
-      row.id.startsWith(DEMO_VECTOR_ID_FAMILIES.rawEvents.corpusPrefix),
+    fixtureRows.rawEvents = fixtureRows.rawEvents.filter(
+      (row) => !row.id.startsWith(DEMO_VECTOR_ID_FAMILIES.rawEvents.northstarPrefix),
     );
     expect(() => {
       assertExpectedDemoVectorSources(fixtureRows);
@@ -138,6 +148,45 @@ describe('demo vector indexing contract', () => {
       id: 'aa110001-0000-4000-8000-000000000001',
       rawEventId: 'event-heavy',
     });
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).toThrow(/unexpected facts ids/);
+  });
+
+  it('fails closed when an original Acme Labs event is missing', () => {
+    const fixtureRows = rows();
+    fixtureRows.rawEvents = fixtureRows.rawEvents.filter(
+      ({ id }) => id !== '90000000-0000-4000-8000-000000000009',
+    );
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).toThrow(/missing original Acme Labs rawEvents ids/);
+  });
+
+  it('rejects an unknown original-event id even when the source count is unchanged', () => {
+    const fixtureRows = rows();
+    fixtureRows.rawEvents[0] = { id: '90000000-0000-4000-8000-00000000000a' };
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).toThrow(/unexpected rawEvents ids/);
+  });
+
+  it('fails closed when an original Acme Labs fact is missing', () => {
+    const fixtureRows = rows();
+    fixtureRows.facts = fixtureRows.facts.filter(
+      ({ id }) => id !== 'c0000000-0000-4000-8000-000000000003',
+    );
+    expect(() => {
+      assertExpectedDemoVectorSources(fixtureRows);
+    }).toThrow(/missing original Acme Labs facts ids/);
+  });
+
+  it('rejects an unknown original-fact id even when the source count is unchanged', () => {
+    const fixtureRows = rows();
+    fixtureRows.facts[0] = {
+      id: 'c0000000-0000-4000-8000-000000000004',
+      rawEventId: '90000000-0000-4000-8000-000000000003',
+    };
     expect(() => {
       assertExpectedDemoVectorSources(fixtureRows);
     }).toThrow(/unexpected facts ids/);

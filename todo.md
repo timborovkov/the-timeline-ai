@@ -659,8 +659,14 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 ## Standing Items
 
 - [ ] Verify backups weekly and run restore drills quarterly.
-- [ ] Monitor Qdrant RAM usage and plan a move to sharded or managed Qdrant
-      before it becomes painful.
+- [ ] Monitor Qdrant RAM usage after the on-disk + int8 collection layout and
+      plan a move to sharded or managed Qdrant before it becomes painful. New
+      collections already store original vectors on disk; copy any older in-RAM
+      collection with `pnpm --filter @timeline/worker qdrant-migrate-collection`
+      (`--writers-paused --all-teams` after pausing all vector writers; production also
+      requires the snapshot-backed `--production` maintenance flow in
+      [OpenRouter setup](docs/setup/openrouter.html#qdrant-production-copy)) before lowering the
+      Railway memory limit.
 - [ ] Maintain an OpenRouter spend dashboard with per-feature cost tracking.
 - [ ] Rotate API keys quarterly.
 - [ ] Audit team isolation on every schema, integration, MCP, or data-access
