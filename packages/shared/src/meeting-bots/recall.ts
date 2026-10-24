@@ -192,6 +192,9 @@ export function createRecallProvider(opts: RecallProviderOptions = {}): MeetingB
               : DEFAULT_NO_SHOW_TIMEOUT_SECONDS,
           everyone_left_timeout: { timeout: 2, activate_after: 1 },
           recording_permission_denied_timeout: 30,
+          ...(input.maxRecordingDurationSeconds && input.maxRecordingDurationSeconds > 0
+            ? { in_call_recording_timeout: input.maxRecordingDurationSeconds }
+            : {}),
         },
         metadata: {
           meeting_id: input.meetingId,

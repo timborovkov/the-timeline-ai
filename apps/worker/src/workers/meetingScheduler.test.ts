@@ -27,7 +27,11 @@ vi.mock('@timeline/shared', async () => {
     childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
     meetingBots: {
       ...actual.meetingBots,
-      getMeetingBotProvider: vi.fn(() => ({ name: 'recall', joinMeeting: joinMeetingMock })),
+      getMeetingBotProvider: vi.fn(() => ({
+        name: 'recall',
+        joinMeeting: joinMeetingMock,
+        leaveMeeting: vi.fn().mockResolvedValue(undefined),
+      })),
       resolveTranscriptWebhookUrl: vi.fn(
         () => 'https://timeline.test/api/webhooks/recall/transcript',
       ),
@@ -303,6 +307,31 @@ describe('processMeetingSchedulerTick', () => {
     expect(row?.status).toBe('scheduled');
   });
 
+  it('leaves a due capture scheduled when another live Recall bot is already at the plan cap', async () => {
+    const { meeting } = await insertSavedAndScheduled(db, {
+      url: 'https://meet.google.com/due-second',
+    });
+    await db.insert(meetings).values({
+      teamId: TEAM_ID,
+      createdByUserId: USER_ID,
+      provider: 'recall',
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/already-live',
+      title: 'Live notetaker',
+      status: 'active',
+      defaultVisibility: 'team',
+      metadata: {},
+    });
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.joined).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(row?.status).toBe('scheduled');
+  });
+
   it('does not start pre-materialized rows after auto-join is disabled, paused, or archived', async () => {
     for (const input of [
       { autoJoinEnabled: false },
@@ -359,5 +388,35 @@ describe('processMeetingSchedulerTick', () => {
     expect(savedRow?.consecutiveFailureCount).toBe(3);
     expect(savedRow?.autoJoinEnabled).toBe(false);
     expect(savedRow?.autoJoinPausedAt).toBeInstanceOf(Date);
+  });
+
+  it('does not count billing denials toward saved-meeting consecutive failures', async () => {
+    const { saved, meeting } = await insertSavedAndScheduled(db, { consecutiveFailureCount: 2 });
+    await pg.exec(`
+      INSERT INTO team_billing_accounts (
+        team_id, plan_id, billing_state, spend_cap_cents, wallet_balance_cents, shadow_billing
+      )
+      VALUES ('${TEAM_ID}', 'payg', 'read_only', 0, 0, false)
+      ON CONFLICT (team_id) DO UPDATE SET
+        plan_id = 'payg',
+        billing_state = 'read_only',
+        spend_cap_cents = 0,
+        wallet_balance_cents = 0,
+        shadow_billing = false;
+    `);
+
+    const result = await processMeetingSchedulerTick({ db: db as never });
+
+    expect(result.failed).toBe(1);
+    expect(joinMeetingMock).not.toHaveBeenCalled();
+    const meetingRow = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
+    expect(meetingRow?.status).toBe('failed');
+    expect(meetingRow?.metadata).toMatchObject({ join_error: 'usage_limit_reached' });
+    const savedRow = (
+      await db.select().from(savedMeetings).where(eq(savedMeetings.id, saved.id))
+    )[0];
+    expect(savedRow?.consecutiveFailureCount).toBe(2);
+    expect(savedRow?.autoJoinEnabled).toBe(true);
+    expect(savedRow?.autoJoinPausedReason).toBeNull();
   });
 });

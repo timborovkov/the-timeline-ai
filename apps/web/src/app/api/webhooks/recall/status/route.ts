@@ -1,3 +1,7 @@
+import {
+  releaseRecallMeetingMinutes,
+  settleElapsedRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
@@ -202,6 +206,24 @@ export async function POST(req: Request): Promise<Response> {
   // re-enqueue finalize over a cancelled meeting. Return 200 so Recall
   // stops retrying; the event is a no-op from our perspective.
   if (TERMINAL_STATUSES.has(meeting.status)) {
+    if (
+      meeting.status === 'no_show' ||
+      meeting.status === 'failed' ||
+      meeting.status === 'cancelled'
+    ) {
+      try {
+        await settleElapsedRecallMeetingMinutes(scope.billing, {
+          meetingId: meeting.id,
+          startedAt: meeting.startedAt,
+          endedAt: meeting.endedAt ?? (createdAt ? new Date(createdAt) : new Date()),
+          metadata: meeting.metadata,
+        });
+      } catch (err) {
+        log.error({ err, botId, event: parsed.event }, 'status_handler_error');
+        reportCaughtError(err, { surface: 'api', operation: 'recall_status_handler' });
+        return Response.json({ ok: false, reason: 'handler_error' }, { status: 503 });
+      }
+    }
     log.info(
       { botId, event: parsed.event, currentStatus: meeting.status },
       'ignoring_event_terminal_status',
@@ -261,6 +283,9 @@ export async function POST(req: Request): Promise<Response> {
         endedAt: createdAt ? new Date(createdAt) : new Date(),
       });
       if (noShowOutcome === 'retry_scheduled') {
+        await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
+          () => undefined,
+        );
         try {
           const queue = await requireRedisQueue();
           await queue.enqueueMeetingSchedulerTick();
@@ -271,6 +296,13 @@ export async function POST(req: Request): Promise<Response> {
             operation: 'recall_status_enqueue_no_show_retry',
           });
         }
+      } else if (noShowOutcome === 'terminal') {
+        await settleElapsedRecallMeetingMinutes(scope.billing, {
+          meetingId: meeting.id,
+          startedAt: meeting.startedAt,
+          endedAt: createdAt ? new Date(createdAt) : new Date(),
+          metadata: meeting.metadata,
+        });
       }
     } else if (isFailureEvent) {
       await scope.meetings.handleMeetingFailure({

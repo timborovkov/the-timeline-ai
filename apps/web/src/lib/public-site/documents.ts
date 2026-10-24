@@ -125,6 +125,46 @@ const coreDocuments = definePublicDocuments('public-core', [
       fullSummary: 'Public user guides.',
     },
   },
+  {
+    canonicalPath: '/pricing',
+    kind: 'guide-index',
+    title: 'Pricing',
+    description:
+      'Free, pay as you go, optional Team and Business commitments, and native AI, meeting, email, and storage meters. EUR, excl. VAT.',
+    indexability: 'index',
+    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    capability: { kind: 'current-product' },
+    sitemap: { changeFrequency: 'weekly', priority: 0.9 },
+    structuredData: [
+      { type: 'web-page' },
+      {
+        type: 'breadcrumbs',
+        items: [
+          { name: 'Home', path: '/' },
+          { name: 'Pricing', path: '/pricing' },
+        ],
+      },
+    ],
+    llms: {
+      section: 'primary',
+      order: 15,
+      label: 'Pricing',
+      summary:
+        'Free no-card plan, €0-base pay as you go with native meters, optional Team (€49) and Business (€199) commitments, Enterprise custom.',
+      fullSummary:
+        'Commercial catalog: Free, PAYG, Team, Business, Enterprise with native AI/meeting/email/storage meters.',
+      sections: [
+        {
+          title: 'Commercial journey',
+          body: 'Free → PAYG without a mandatory upgrade cliff. Team and Business are optional commitment discounts, not member-count gates.',
+        },
+        {
+          title: 'Meters',
+          body: 'AI (provider cost × 4), Recall minutes, email units, storage GB-month, accepted sources. Display native units and euro values.',
+        },
+      ],
+    },
+  },
 ] satisfies readonly PublicDocument[]);
 
 const helpDocuments = definePublicDocuments(

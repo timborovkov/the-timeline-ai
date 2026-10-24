@@ -5,6 +5,7 @@ import type * as boards from '#src/boards/index.js';
 
 import * as agent from '#src/agent/index.js';
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
+import { askBillingUserMessage } from '#src/billing/admission.js';
 import {
   artifactRefCitation,
   citationPartToArtifactRef,
@@ -1697,7 +1698,15 @@ async function callTimelineAgent(
     if (!result.ok) {
       return result.error === 'unconfigured' || result.error === 'no_team'
         ? agentToolError('agent_unavailable')
-        : agentToolError('failed');
+        : result.error === 'security_blocked' ||
+            result.error === 'free_allowance_reached' ||
+            result.error === 'usage_limit_reached' ||
+            result.error === 'spend_cap_reached'
+          ? agentToolError('failed', {
+              message: result.error,
+              detail: askBillingUserMessage(result.error),
+            })
+          : agentToolError('failed');
     }
     return {
       output: {

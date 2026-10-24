@@ -25,10 +25,24 @@ function errorKey(err: unknown): string | null {
   return typeof message === 'string' ? message : null;
 }
 
+function isBillingAdmissionError(
+  err: unknown,
+): err is Error & { code: string; name: 'BillingAdmissionError' } {
+  return (
+    err instanceof Error &&
+    err.name === 'BillingAdmissionError' &&
+    typeof (err as { code?: unknown }).code === 'string'
+  );
+}
+
 function classifyPublicError(
   err: unknown,
   options: PublicErrorOptions,
 ): { expected: ExpectedError } | { reference: string } {
+  if (isBillingAdmissionError(err)) {
+    const status = err.code === 'security_blocked' ? 403 : 402;
+    return { expected: { message: err.message, status } };
+  }
   const key = errorKey(err);
   const expected = key ? options.expected?.[key] : undefined;
   if (expected) return { expected };

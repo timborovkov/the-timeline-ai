@@ -449,6 +449,30 @@ describe('processMeetingFinalizeJob', () => {
     expect((row?.metadata as Record<string, unknown>).summary).toBe('original summary');
   });
 
+  it('settles completed-meeting retries after the creator leaves the team', async () => {
+    await seedMeeting(db as never, {
+      status: 'completed',
+      metadata: { summary: 'original summary', finalized_at: '2026-05-25T10:35:00Z' },
+    });
+    await db.insert(meetingUsage).values({
+      teamId: TEAM_ID,
+      meetingId: MEETING_ID,
+      minutes: 12,
+    });
+    await pg.exec(`
+      UPDATE team_members SET removed_at = now()
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
+    `);
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: makeChatStub() as never },
+      ),
+    ).resolves.toMatchObject({ skipped: 'already_completed' });
+  });
+
   it('does not finalize or overwrite a failed meeting', async () => {
     await seedMeeting(db as never, {
       status: 'failed',

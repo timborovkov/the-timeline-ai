@@ -14,6 +14,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { appMetadataForTeam } from '@/lib/app-metadata';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { retryOwnedTeamFreeGrantsAfterSignIn } from '@/lib/email-verification';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -57,6 +58,17 @@ export default async function AppLayout({
   const { active, memberships } = activeTeam;
   const currentUser = currentUsers[0];
   const currentEmail = currentUser?.email ? currentUser.email.toLowerCase() : null;
+  if (currentUser?.emailVerified) {
+    try {
+      await retryOwnedTeamFreeGrantsAfterSignIn({
+        db,
+        userId: session.user.id,
+        emailVerified: currentUser.emailVerified,
+      });
+    } catch (err) {
+      reportCaughtError(err, { surface: 'layout', operation: 'free_grant_claim' });
+    }
+  }
   const recipientInvites = currentEmail
     ? await db
         .select({
@@ -94,7 +106,7 @@ export default async function AppLayout({
   }
 
   const scope = withTeam(db, active.teamId, session.user.id);
-  const [badges, inbox, workspaceTimezone] = await Promise.all([
+  const [badges, inbox, workspaceTimezone, billingSummary] = await Promise.all([
     getNavAttentionSummary(active.teamId, session.user.id).catch((err: unknown) => {
       console.error('[app-shell] failed to load navigation attention badges', err);
       reportCaughtError(err, { surface: 'layout', operation: 'nav_attention_summary' });
@@ -133,6 +145,18 @@ export default async function AppLayout({
         reportCaughtError(err, { surface: 'layout', operation: 'calendar_settings' });
         return DEFAULT_TIMEZONE;
       }),
+    (async () => {
+      try {
+        const role = await scope.requireMembership();
+        const canManage = role === 'owner' || role === 'admin';
+        const dash = await scope.billing.getDashboard({ canManageBilling: canManage });
+        return dash.sidebar;
+      } catch (err) {
+        console.error('[app-shell] failed to load billing summary', err);
+        reportCaughtError(err, { surface: 'layout', operation: 'billing_summary' });
+        return null;
+      }
+    })(),
   ]);
 
   const sidebarInitiallyExpanded = sidebarExpandedFromCookie(
@@ -161,6 +185,7 @@ export default async function AppLayout({
           inbox={inbox}
           workspaceTimezone={workspaceTimezone}
           sidebarInitiallyExpanded={sidebarInitiallyExpanded}
+          billingSummary={billingSummary}
         >
           {children}
           {modal}

@@ -9,7 +9,19 @@ import {
   rawEvents,
   savedMeetings,
 } from '@timeline/db';
-import { childLogger, formatMeetingTranscript, getEnv, llm, queue } from '@timeline/shared';
+import {
+  childLogger,
+  formatMeetingTranscript,
+  getEnv,
+  llm,
+  queue,
+  withTeam,
+} from '@timeline/shared';
+import {
+  BILLING_SYSTEM_USER_ID,
+  recallBillableMinutes,
+  settleRecallMeetingMinutes,
+} from '@timeline/shared/billing';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
 import { sourceMetadataWithConversationArtifacts } from '@timeline/shared/conversational/contact-artifacts';
 import { reconcileLinkArtifactsForRawEvent } from '@timeline/shared/conversational/link-artifacts';
@@ -22,6 +34,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:meeting-finalize');
@@ -618,6 +631,21 @@ async function summarizeTranscript(
   }
 }
 
+async function settleRecallForFinalizedMeeting(input: {
+  db: Db;
+  teamId: string;
+  meetingId: string;
+  minutes: number;
+}): Promise<void> {
+  const billingScope = withTeam(input.db, input.teamId, BILLING_SYSTEM_USER_ID, {
+    skipMembershipCheck: true,
+  });
+  await settleRecallMeetingMinutes(billingScope.billing, {
+    meetingId: input.meetingId,
+    minutes: input.minutes,
+  });
+}
+
 /**
  * Pure processing function. Exported separately from the BullMQ worker so
  * tests can call it directly with an injected DB + LLM stub.
@@ -646,7 +674,8 @@ export async function processMeetingFinalizeJob(
     // Already finalised. A previous attempt may have committed the DB
     // transaction and then died before enqueueing the post-commit pipeline,
     // so recover the consolidated event and enqueue again. Extract/embed are
-    // worker-idempotent.
+    // worker-idempotent. Billing settle is also retried here because a
+    // transient settle failure after completion would otherwise skip forever.
     const rawEventId = await findFinalizedRawEventId(deps.db, meetingId, teamId);
     const calendarEventId = await findMeetingCalendarEventId(deps.db, meetingId, teamId);
     if (rawEventId) {
@@ -664,9 +693,24 @@ export async function processMeetingFinalizeJob(
           : Promise.resolve(),
       ]);
     }
+    const [usage] = await deps.db
+      .select({ minutes: meetingUsage.minutes })
+      .from(meetingUsage)
+      .where(eq(meetingUsage.meetingId, meetingId))
+      .limit(1);
+    await settleRecallForFinalizedMeeting({
+      db: deps.db,
+      teamId,
+      meetingId,
+      minutes: usage?.minutes ?? 0,
+    });
     return { skipped: 'already_completed', meetingId };
   }
   if (['failed', 'cancelled', 'skipped', 'no_show'].includes(meeting.status)) {
+    const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+      skipMembershipCheck: true,
+    });
+    await billingScope.billing.release(`recall:${meetingId}`).catch(() => undefined);
     return { skipped: 'terminal', meetingId };
   }
 
@@ -691,18 +735,23 @@ export async function processMeetingFinalizeJob(
           return { retryChunks: finalChunks };
         }
 
-        // Compute minutes used from the freshest chunk set. Use meeting
-        // duration if available, else fall back to last chunk end_ms.
-        let minutes = 0;
-        if (meeting.startedAt && meeting.endedAt) {
-          minutes = Math.max(
-            1,
-            Math.ceil((meeting.endedAt.getTime() - meeting.startedAt.getTime()) / 60000),
-          );
-        } else if (finalChunks.length > 0) {
-          const last = finalChunks[finalChunks.length - 1];
-          if (last) minutes = Math.max(1, Math.ceil(last.endMs / 60000));
-        }
+        // Compute minutes from join stamp (includes joining time), then
+        // startedAt, then last chunk end_ms. Cap at the reserved duration.
+        const metadata = (meeting.metadata ?? {}) as Record<string, unknown>;
+        const lastChunk = finalChunks[finalChunks.length - 1];
+        const minutes = recallBillableMinutes({
+          joinStartedAt:
+            typeof metadata.reserved_recall_started_at === 'string'
+              ? metadata.reserved_recall_started_at
+              : null,
+          startedAt: meeting.startedAt,
+          endedAt: meeting.endedAt,
+          chunkEndMs: lastChunk?.endMs ?? null,
+          reservedMinutes:
+            typeof metadata.reserved_recall_minutes === 'number'
+              ? metadata.reserved_recall_minutes
+              : null,
+        });
 
         // Patch meeting metadata first, but do NOT flip status yet. Status
         // only moves to 'completed' after the raw_event + backfill succeed so
@@ -913,6 +962,19 @@ export async function processMeetingFinalizeJob(
         },
       );
 
+      try {
+        const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+          skipMembershipCheck: true,
+        });
+        await settleRecallMeetingMinutes(billingScope.billing, {
+          meetingId,
+          minutes: finalized.minutes,
+        });
+      } catch (err) {
+        log.warn({ err, meetingId, teamId }, 'meeting_billing_settle_failed');
+        throw err;
+      }
+
       return {
         meetingId,
         minutes: finalized.minutes,
@@ -932,7 +994,14 @@ export function startMeetingFinalizeWorker(
 ): Worker<queue.MeetingFinalizeJobData> {
   const worker = new Worker<queue.MeetingFinalizeJobData>(
     queue.QUEUE_NAMES.meetingFinalize,
-    async (job: Job<queue.MeetingFinalizeJobData>) => processMeetingFinalizeJob(deps, job.data),
+    async (job: Job<queue.MeetingFinalizeJobData>, token?: string) =>
+      withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'meeting_finalize',
+        () => processMeetingFinalizeJob(deps, job.data),
+        workerBillingJobOptions(job, token),
+      ),
     {
       connection: queue.getRedisConnection(),
       // Single concurrency per process — meeting summarisation is rare

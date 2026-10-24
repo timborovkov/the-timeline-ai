@@ -1,5 +1,12 @@
 import { type Db, meetings, meetingUsage, savedMeetings, teamMeetingSettings } from '@timeline/db';
 import { childLogger, meetingBots, queue, withTeam } from '@timeline/shared';
+import {
+  abortRecallJoinAfterProviderAccept,
+  assertTeamConcurrentRecallCapacity,
+  isBillingAdmissionError,
+  reserveRecallMeetingMinutes,
+  runWithConcurrentRecallJoinLock,
+} from '@timeline/shared/billing';
 import { Worker, type Job } from 'bullmq';
 import { and, asc, eq, exists, gt, gte, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 
@@ -160,56 +167,101 @@ export async function processMeetingSchedulerTick(deps: MeetingSchedulerDeps): P
       failed += 1;
       continue;
     }
-
     try {
-      const claimed = await deps.db
-        .update(meetings)
-        .set({
-          status: 'joining',
-          updatedAt: new Date(),
-          metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"scheduler_claimed":true}'::jsonb`,
-        })
-        .where(
-          and(
-            eq(meetings.id, meeting.id),
-            eq(meetings.teamId, meeting.teamId),
-            eq(meetings.status, 'scheduled'),
-            sql`(
+      const claimed = await runWithConcurrentRecallJoinLock(deps.db, meeting.teamId, async (tx) => {
+        await assertTeamConcurrentRecallCapacity({ db: tx, teamId: meeting.teamId });
+        return tx
+          .update(meetings)
+          .set({
+            status: 'joining',
+            updatedAt: new Date(),
+            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || '{"scheduler_claimed":true}'::jsonb`,
+          })
+          .where(
+            and(
+              eq(meetings.id, meeting.id),
+              eq(meetings.teamId, meeting.teamId),
+              eq(meetings.status, 'scheduled'),
+              sql`(
               COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') <> '1'
               OR ${meetings.scheduledEndAt} IS NULL
               OR ${meetings.scheduledEndAt} > now()
             )`,
-            sql`NOT EXISTS (
+              sql`NOT EXISTS (
               SELECT 1 FROM meetings active
               WHERE active.team_id = ${meetings.teamId}
                 AND active.meeting_url = ${meetings.meetingUrl}
                 AND active.status IN ('joining', 'active')
                 AND active.id <> ${meetings.id}
             )`,
-          ),
-        )
-        .returning({ id: meetings.id });
+            ),
+          )
+          .returning({ id: meetings.id });
+      });
       if (!claimed[0]) {
         failed += await scope.meetings.expireSavedMeetingNoShowRetries(new Date());
         continue;
       }
 
-      const team = await scope.timeline.team();
-      const provider = meetingBots.getMeetingBotProvider(meeting.provider);
-      const join = await provider.joinMeeting({
+      const admission = await reserveRecallMeetingMinutes(scope.billing, {
         meetingId: meeting.id,
-        teamId: meeting.teamId,
-        meetingUrl: meeting.meetingUrl,
-        platform: meeting.platform,
-        botName: meetingBots.meetingBotDisplayName(team?.name),
-        transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
       });
-      await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
-        providerBotId: join.botId,
-        metadata: { provider_join_result: join.raw ?? {} },
-      });
-      joined += 1;
+      if (!admission.ok) {
+        await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+          metadata: {
+            join_failed_at: new Date().toISOString(),
+            join_error: admission.code,
+          },
+        });
+        failed += 1;
+        continue;
+      }
+
+      const provider = meetingBots.getMeetingBotProvider(meeting.provider);
+      let joinedBotId: string | undefined;
+      try {
+        const team = await scope.timeline.team();
+        const join = await provider.joinMeeting({
+          meetingId: meeting.id,
+          teamId: meeting.teamId,
+          meetingUrl: meeting.meetingUrl,
+          platform: meeting.platform,
+          botName: meetingBots.meetingBotDisplayName(team?.name),
+          transcriptWebhookUrl: meetingBots.resolveTranscriptWebhookUrl(),
+          maxRecordingDurationSeconds: admission.reservedMinutes * 60,
+        });
+        joinedBotId = join.botId;
+        await scope.meetings.updateMeetingStatus(meeting.id, 'joining', {
+          providerBotId: join.botId,
+          metadata: {
+            provider_join_result: join.raw ?? {},
+            billing_operation_id: admission.operationId,
+            reserved_recall_minutes: admission.reservedMinutes,
+            reserved_recall_started_at: new Date().toISOString(),
+          },
+        });
+        joined += 1;
+      } catch (err) {
+        log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
+        await abortRecallJoinAfterProviderAccept({
+          billing: scope.billing,
+          operationId: admission.operationId,
+          leaveMeeting: (botId) => provider.leaveMeeting(botId),
+          ...(joinedBotId ? { botId: joinedBotId } : {}),
+        });
+        await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
+          metadata: {
+            join_failed_at: new Date().toISOString(),
+            join_error: err instanceof Error ? err.message.slice(0, 500) : 'unknown',
+          },
+        });
+        await incrementSavedMeetingFailure(deps.db, meeting.savedMeetingId);
+        failed += 1;
+      }
     } catch (err) {
+      if (isBillingAdmissionError(err)) {
+        continue;
+      }
       log.warn({ err, meetingId: meeting.id }, 'scheduled_meeting_join_failed');
       await scope.meetings.updateMeetingStatus(meeting.id, 'failed', {
         metadata: {

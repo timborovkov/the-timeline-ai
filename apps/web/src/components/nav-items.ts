@@ -1,5 +1,6 @@
 import {
   Cable,
+  ChartColumn,
   Clock,
   Files,
   LayoutDashboard,
@@ -96,6 +97,12 @@ const NAV_ITEMS: readonly NavItem[] = [
       '/app/me/connections',
       '/app/me/mcp-servers',
     ],
+  },
+  {
+    href: '/app/usage',
+    label: 'Usage',
+    icon: ChartColumn,
+    group: 'manage',
   },
   {
     href: '/app/team',

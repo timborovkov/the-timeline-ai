@@ -40,3 +40,4 @@ export * from '#src/schema/messaging.js';
 export * from '#src/schema/timeline-moment-presentations.js';
 export * from '#src/schema/task-category-assignments.js';
 export * from '#src/schema/pins.js';
+export * from '#src/schema/billing.js';

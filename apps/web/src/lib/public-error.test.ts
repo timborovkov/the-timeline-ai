@@ -45,6 +45,21 @@ describe('public errors', () => {
     expect(message).not.toContain('postgres');
   });
 
+  it('maps billing admission failures to 402 without reporting internals', () => {
+    fakes.reportCaughtError.mockClear();
+    const err = Object.assign(new Error('Document limit reached for this plan'), {
+      name: 'BillingAdmissionError',
+      code: 'free_allowance_reached',
+    });
+    expect(
+      publicApiError(err, {
+        operation: 'add_custom_mcp_server',
+        fallbackCode: 'add_failed',
+      }),
+    ).toEqual({ error: 'Document limit reached for this plan', status: 402 });
+    expect(fakes.reportCaughtError).not.toHaveBeenCalled();
+  });
+
   it('serializes sanitized API failures with status, reference, and route context', async () => {
     const response = publicApiErrorResponse(
       new Error('postgres://internal'),

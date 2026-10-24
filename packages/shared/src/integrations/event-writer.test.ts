@@ -5,6 +5,7 @@ import {
   artifactClusterAnchors,
   artifactClusters,
   artifactEvidenceAssociations,
+  billingUsageLedger,
   entities,
   factEntities,
   facts,
@@ -22,8 +23,18 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
-import { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob } from '#src/queue/queues.js';
+import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
+import {
+  flushDeferredAcceptedSourceEnrichment,
+  flushDeferredAudioTranscription,
+  writeIntegrationEvents,
+} from '#src/integrations/event-writer.js';
+import {
+  enqueueEmbedJob,
+  enqueueExtractJob,
+  enqueueObjectSummaryJob,
+  enqueueTranscribeJob,
+} from '#src/queue/queues.js';
 import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -31,6 +42,7 @@ import { applyDbMigrations } from '#src/test/pglite.js';
 vi.mock('#src/queue/queues.js', () => ({
   enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+  enqueueTranscribeJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
   enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
   enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
@@ -1525,6 +1537,206 @@ describe('writeIntegrationEvents visibility', () => {
       signal_class: 'pulse',
       event_class: 'artifact',
     });
+  });
+
+  it('defers extract/embed when accepted-source billing admission fails, then flushes later', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-deferred',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+
+    const [eventId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:deferred:1',
+          provider: 'github',
+          externalObjectId: 'repo#deferred',
+          eventType: 'issue.opened',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Deferred enrichment until billing resumes',
+        },
+      ],
+    });
+    if (!eventId) throw new Error('event insert failed');
+
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+    const [deferred] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(deferred?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never);
+    expect(flushed).toBe(1);
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
+  it('does not flush deferred inbound-email rows through accepted-source enrichment', async () => {
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      VALUES (
+        '00000000-0000-4000-8000-eeeeeeeeeee1',
+        '${TEAM_ID}',
+        'email',
+        'deferred inbound email',
+        '{"billing_enrichment_deferred": true, "message_id": "deferred@example.net"}'::jsonb
+      );
+    `);
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never);
+    expect(flushed).toBe(0);
+    const [row] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'email'));
+    expect(row?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
+  });
+
+  it('meters an existing accepted source when a retry hits the dedup conflict', async () => {
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-replay-meter',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const rawEventId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      VALUES (
+        '${rawEventId}',
+        '${TEAM_ID}',
+        'integration',
+        'Committed before metering',
+        '{"provider":"github","dedup_key":"github:replay-meter:1","signal_class":"captured_work"}'::jsonb
+      );
+    `);
+    const ids = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:replay-meter:1',
+          provider: 'github',
+          externalObjectId: 'repo#replay',
+          eventType: 'issue.opened',
+          occurredAt: new Date('2026-05-27T09:00:00Z'),
+          contentText: 'Committed before metering',
+        },
+      ],
+    });
+    expect(ids).toEqual([]);
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledger.some((row) => row.operationId === `accepted_source:${rawEventId}`)).toBe(true);
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId,
+    });
+  });
+
+  it('rotates past still-blocked deferred rows to flush later events', async () => {
+    const blockedTeamId = '22222222-2222-2222-2222-222222222222';
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name) VALUES ('${blockedTeamId}', 'team-blocked', 'Blocked');
+      INSERT INTO team_members (team_id, user_id, role) VALUES ('${blockedTeamId}', '${USER_ID}', 'owner');
+    `);
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: blockedTeamId });
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      SELECT ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid,
+             '${blockedTeamId}', 'integration', 'blocked ' || g,
+             '{"billing_enrichment_deferred": true}'::jsonb
+      FROM generate_series(1, 50) AS g;
+    `);
+
+    const [integration] = await db
+      .insert(integrations)
+      .values({
+        teamId: TEAM_ID,
+        connectedByUserId: USER_ID,
+        provider: 'github',
+        displayName: 'GitHub',
+        externalAccountId: 'acct-flushable',
+        visibilityDefault: 'team',
+      })
+      .returning();
+    if (!integration) throw new Error('integration insert failed');
+    const [flushableId] = await writeIntegrationEvents({
+      db: db as never,
+      integration,
+      events: [
+        {
+          dedupKey: 'github:flushable:1',
+          provider: 'github',
+          externalObjectId: 'repo#flushable',
+          eventType: 'issue.opened',
+          occurredAt: new Date('2026-05-27T10:00:00Z'),
+          contentText: 'Flushable after blocked rows',
+        },
+      ],
+    });
+    if (!flushableId) throw new Error('flushable insert failed');
+    await pg.exec(`
+      UPDATE raw_events
+      SET source_metadata = coalesce(source_metadata, '{}'::jsonb)
+        || '{"billing_enrichment_deferred": true}'::jsonb
+      WHERE id = '${flushableId}';
+    `);
+
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never, 50);
+    expect(flushed).toBeGreaterThanOrEqual(1);
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, flushableId));
+    expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
+  it('flushes deferred email audio transcription when billing can reserve again', async () => {
+    const eventId = '00000000-0000-4000-8000-000000000099';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_audio_url, source_metadata)
+      VALUES (
+        '${eventId}',
+        '${TEAM_ID}',
+        'email',
+        'audio/${TEAM_ID}/memo.m4a',
+        '{"transcription_deferred": true, "audio_filename": "memo.m4a"}'::jsonb
+      );
+    `);
+
+    const flushed = await flushDeferredAudioTranscription(db as never);
+    expect(flushed).toBe(1);
+    expect(enqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: eventId,
+      teamId: TEAM_ID,
+      audioKey: `audio/${TEAM_ID}/memo.m4a`,
+    });
+    const [clearedAudio] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(clearedAudio?.sourceMetadata).toMatchObject({ transcription_deferred: false });
   });
 
   it('falls back to team visibility for private integration events without a connector owner', async () => {

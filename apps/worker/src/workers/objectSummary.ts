@@ -4,6 +4,7 @@ import { generateAndStoreObjectSummary } from '@timeline/shared/objects';
 import { withTeam } from '@timeline/shared/team-scope';
 import { Worker, type Job } from 'bullmq';
 
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
@@ -40,7 +41,14 @@ export function startObjectSummaryWorker(
 ): Worker<queue.ObjectSummaryJobData> {
   const worker = new Worker<queue.ObjectSummaryJobData>(
     queue.QUEUE_NAMES.objectSummary,
-    async (job: Job<queue.ObjectSummaryJobData>) => processObjectSummaryJobForTests(deps, job.data),
+    async (job: Job<queue.ObjectSummaryJobData>, token?: string) =>
+      withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'summary',
+        () => processObjectSummaryJobForTests(deps, job.data),
+        workerBillingJobOptions(job, token),
+      ),
     {
       connection: queue.getRedisConnection(),
       concurrency: 2,

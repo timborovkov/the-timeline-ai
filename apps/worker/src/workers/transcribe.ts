@@ -20,6 +20,7 @@ import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 import ffmpegPath from 'ffmpeg-static';
 
+import { withWorkerAiBilling, workerBillingJobOptions } from '#src/billing-context.js';
 import { captureWorkerException, captureWorkerJobFailure } from '#src/monitoring.js';
 
 const log = childLogger('worker:transcribe');
@@ -49,6 +50,7 @@ export interface TranscribeWorkerIO {
     audio: Buffer;
     format?: llm.AudioFormat;
     language?: string;
+    operationId?: string;
   }): Promise<{ text: string; model: string }>;
   splitAudio(input: { audioKey: string; audio: Buffer }): Promise<Buffer[]>;
   enqueueExtract(input: queue.ExtractJobData): Promise<void>;
@@ -92,6 +94,7 @@ export async function processTranscribeJobForTests(
   deps: TranscribeWorkerDeps,
   data: queue.TranscribeJobData,
   io: TranscribeWorkerIO = defaultIO(),
+  options?: { billingOperationId?: string },
 ): Promise<{ rawEventId: string; model?: string }> {
   const { rawEventId, audioKey } = data;
   const head = await io.headObject({ audioKey });
@@ -127,12 +130,15 @@ export async function processTranscribeJobForTests(
     typeof sourceMetadata.audio_note_text === 'string' ? sourceMetadata.audio_note_text.trim() : '';
   const languageHint = transcriptionLanguageHint(sourceMetadata);
   const transcriptions = [];
-  for (const audio of audioChunks) {
+  for (const [index, audio] of audioChunks.entries()) {
     transcriptions.push(
       await io.transcribeAudio({
         audio,
         ...(format ? { format } : {}),
         ...(languageHint ? { language: languageHint } : {}),
+        ...(options?.billingOperationId
+          ? { operationId: `${options.billingOperationId}:${index}` }
+          : {}),
       }),
     );
   }
@@ -422,7 +428,20 @@ export async function markTranscribeFailureForTests(
 export function startTranscribeWorker(deps: TranscribeWorkerDeps): Worker<queue.TranscribeJobData> {
   const worker = new Worker<queue.TranscribeJobData>(
     queue.QUEUE_NAMES.transcribe,
-    async (job: Job<queue.TranscribeJobData>) => processTranscribeJobForTests(deps, job.data),
+    async (job: Job<queue.TranscribeJobData>, token?: string) =>
+      withWorkerAiBilling(
+        deps.db,
+        job.data.teamId,
+        'transcription',
+        () =>
+          processTranscribeJobForTests(
+            deps,
+            job.data,
+            defaultIO(),
+            job.id ? { billingOperationId: `transcription:${job.id}` } : {},
+          ),
+        workerBillingJobOptions(job, token),
+      ),
     {
       connection: queue.getRedisConnection(),
       // Phase 3: one in-flight transcription per worker process. Bump once

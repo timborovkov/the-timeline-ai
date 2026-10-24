@@ -11,8 +11,10 @@ import {
 } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { reserveRecallMeetingMinutes } from '#src/billing/admission.js';
+import * as billingScopeMod from '#src/billing/scope.js';
 import { detectMeetingPlatform } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -786,6 +788,107 @@ describe('meetings scope', () => {
     await expect(scope.getSavedMeeting(saved.id)).resolves.toMatchObject({
       consecutiveFailureCount: 1,
     });
+  });
+
+  it('settles waiting-room minutes on a terminal no-show', async () => {
+    const team = withTeam(db as never, TEAM_ID, USER_A);
+    const meeting = await team.meetings.createMeeting({
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/wait-room',
+      status: 'joining',
+      metadata: {
+        reserved_recall_started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+        reserved_recall_minutes: 120,
+      },
+    });
+    await team.meetings.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-wait',
+    });
+    expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+      true,
+    );
+    await expect(
+      team.meetings.handleMeetingNoShow({
+        meetingId: meeting.id,
+        providerBotId: 'bot-wait',
+        code: 'timeout_exceeded_waiting_room',
+        endedAt: new Date(),
+      }),
+    ).resolves.toBe('terminal');
+    const dash = await team.billing.getDashboard();
+    expect(dash.meters.recall_minutes?.nativeUnits).toBeGreaterThanOrEqual(1);
+  });
+
+  it('settles elapsed Recall minutes when an active bot fails', async () => {
+    const team = withTeam(db as never, TEAM_ID, USER_A);
+    const meeting = await team.meetings.createMeeting({
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/fail-bot',
+      status: 'joining',
+      metadata: {
+        reserved_recall_started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+        reserved_recall_minutes: 120,
+      },
+    });
+    await team.meetings.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-fail',
+    });
+    expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+      true,
+    );
+    await expect(
+      team.meetings.handleMeetingFailure({
+        meetingId: meeting.id,
+        providerBotId: 'bot-fail',
+        code: 'fatal',
+        failedAt: new Date(),
+      }),
+    ).resolves.toBe('failed');
+    const dash = await team.billing.getDashboard();
+    expect(dash.meters.recall_minutes?.nativeUnits).toBeGreaterThanOrEqual(1);
+  });
+
+  it('propagates Recall settlement failures after a bot fatal', async () => {
+    const originalCreate = billingScopeMod.createBillingScope;
+    const settleError = new Error('settle failed after fatal');
+    const spy = vi.spyOn(billingScopeMod, 'createBillingScope').mockImplementation((deps) => {
+      const scope = originalCreate(deps);
+      return {
+        ...scope,
+        settle: () => Promise.reject(settleError),
+      };
+    });
+    try {
+      const team = withTeam(db as never, TEAM_ID, USER_A);
+      const meeting = await team.meetings.createMeeting({
+        platform: 'meet',
+        meetingUrl: 'https://meet.google.com/fail-settle',
+        status: 'joining',
+        metadata: {
+          reserved_recall_started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+          reserved_recall_minutes: 120,
+        },
+      });
+      await team.meetings.updateMeetingStatus(meeting.id, 'joining', {
+        providerBotId: 'bot-fail-settle',
+      });
+      expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+        true,
+      );
+      await expect(
+        team.meetings.handleMeetingFailure({
+          meetingId: meeting.id,
+          providerBotId: 'bot-fail-settle',
+          code: 'fatal',
+          failedAt: new Date(),
+        }),
+      ).rejects.toThrow('settle failed after fatal');
+      await expect(team.meetings.getMeeting(meeting.id)).resolves.toMatchObject({
+        status: 'failed',
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('applies lifecycle updates and failures only to the current provider bot', async () => {

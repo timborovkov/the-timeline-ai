@@ -1670,21 +1670,31 @@ export function createIntegrationScope(deps: {
   };
 }
 
+function configuredBudgetAppKey(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? '';
+  if (trimmed.length === 0) return undefined;
+  return trimmed;
+}
+
 export function providerBudgetAppKey(provider: NativeProviderName): string {
   const env = getEnv();
   switch (provider) {
     case 'github':
-      return env.GITHUB_APP_ID ?? env.GITHUB_APP_CLIENT_ID ?? 'github';
+      return (
+        configuredBudgetAppKey(env.GITHUB_APP_ID) ??
+        configuredBudgetAppKey(env.GITHUB_APP_CLIENT_ID) ??
+        'github'
+      );
     case 'monday':
-      return env.MONDAY_CLIENT_ID ?? 'monday';
+      return configuredBudgetAppKey(env.MONDAY_CLIENT_ID) ?? 'monday';
     case 'google_drive':
-      return env.GOOGLE_CLIENT_ID ?? 'google_drive';
+      return configuredBudgetAppKey(env.GOOGLE_CLIENT_ID) ?? 'google_drive';
     case 'linear':
-      return env.LINEAR_CLIENT_ID ?? 'linear';
+      return configuredBudgetAppKey(env.LINEAR_CLIENT_ID) ?? 'linear';
     case 'slack':
-      return env.SLACK_CLIENT_ID ?? 'slack';
+      return configuredBudgetAppKey(env.SLACK_CLIENT_ID) ?? 'slack';
     case 'sentry':
-      return env.SENTRY_INTEGRATION_CLIENT_ID ?? 'sentry';
+      return configuredBudgetAppKey(env.SENTRY_INTEGRATION_CLIENT_ID) ?? 'sentry';
   }
 }
 
