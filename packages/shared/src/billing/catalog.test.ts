@@ -14,12 +14,11 @@ import {
   emailChargeCents,
   emailRecipientCount,
   formatEuroFromCents,
+  parseEuroAmountToCents,
   polarEventNameForMeter,
-  planUsesPrepaidWallet,
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   MEETING_MAX_DURATION_MINUTES_BY_PLAN,
-  PREPAID_TOPUP_CENTS,
   recallChargeCents,
   storageChargeCents,
 } from '#src/billing/catalog.js';
@@ -29,6 +28,18 @@ import {
   verifyPolarWebhookSignature,
 } from '#src/billing/polar.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
+
+describe('euro amount parsing', () => {
+  it('parses cents from the decimal string and rejects extra precision', () => {
+    expect(parseEuroAmountToCents('19.99')).toBe(1999);
+    expect(parseEuroAmountToCents('0.10')).toBe(10);
+    expect(parseEuroAmountToCents('10')).toBe(1000);
+    expect(parseEuroAmountToCents(' 8.07 ')).toBe(807);
+    expect(() => parseEuroAmountToCents('1.005')).toThrow(/two decimal places/);
+    expect(() => parseEuroAmountToCents('-1')).toThrow(/non-negative/);
+    expect(() => parseEuroAmountToCents('1e2')).toThrow(/non-negative/);
+  });
+});
 
 describe('billing catalog', () => {
   it('exposes the v1 commercial journey in public order', () => {
@@ -46,18 +57,12 @@ describe('billing catalog', () => {
     expect(ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(250);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.free).toBe(120);
     expect(MEETING_MAX_DURATION_MINUTES_BY_PLAN.payg).toBe(240);
-    expect(planUsesPrepaidWallet('payg')).toBe(true);
-    expect(planUsesPrepaidWallet('team')).toBe(true);
-    expect(planUsesPrepaidWallet('business')).toBe(true);
-    expect(planUsesPrepaidWallet('enterprise')).toBe(false);
-    expect(planUsesPrepaidWallet('free')).toBe(false);
   });
 
   it('prices native meters from the rate card', () => {
     expect(recallChargeCents(10)).toBe(30);
     expect(emailChargeCents(1_000)).toBe(250);
     expect(emailRecipientCount('a@x.test, b@y.test')).toBe(2);
-    expect(PREPAID_TOPUP_CENTS).toBe(1_000);
     expect(BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS).toBe(100);
     expect(storageChargeCents(2)).toBe(50);
     expect(acceptedSourcesChargeCents(2_000)).toBe(100);
@@ -70,7 +75,7 @@ describe('billing catalog', () => {
     expect(providerCostCents).toBe(92);
     expect(customerChargeCents).toBe(368);
     expect(polarEventNameForMeter('ai')).toBe('timeline_ai_eur_cents');
-    expect(polarEventNameForMeter('member_days')).toBeNull();
+    expect(polarEventNameForMeter('member_days')).toBe('timeline_extra_member_days');
   });
 });
 
@@ -205,7 +210,9 @@ describe('paid plan change', () => {
         successUrl: 'https://timeline.test/success',
         portalReturnUrl: 'https://timeline.test/portal',
       }),
-    ).rejects.toThrow(/Enterprise plan changes/);
+    ).rejects.toThrow(
+      /Enterprise checkout is opened by a platform operator\. Plan changes are not self-serve\./,
+    );
     expect(provider.subscriptionUpdates).toHaveLength(0);
   });
 });
@@ -241,6 +248,15 @@ describe('polar webhook signature', () => {
         headers: { ...request.headers, 'webhook-signature': 'v1,AAAA' },
       }),
     ).toBe(false);
+  });
+
+  it('rejects missing webhook signature headers', () => {
+    const now = new Date('2026-08-26T17:00:00.000Z');
+    const timestamp = String(Math.floor(now.getTime() / 1000));
+    const request = signedRequest(timestamp);
+    expect(verifyPolarWebhookSignature({ ...request, now, headers: {} })).toBe(false);
+    const { 'webhook-id': _webhookId, ...withoutId } = request.headers;
+    expect(verifyPolarWebhookSignature({ ...request, now, headers: withoutId })).toBe(false);
   });
 
   it('rejects stale or far-future webhook timestamps', () => {

@@ -11,6 +11,7 @@ import {
   recallChargeCents,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
+import { effectiveBillingPlanId } from '#src/billing/operator.js';
 
 export type BillingReserveFailureCode =
   | 'security_blocked'
@@ -23,7 +24,13 @@ export type AskBillingError = BillingReserveFailureCode;
 
 /** Minimal billing surface used by Ask / Recall admission helpers. */
 export interface BillingAdmissionScope {
-  getAccount(): Promise<{ planId: BillingPlanId }>;
+  getAccount(): Promise<{
+    planId: BillingPlanId;
+    billingState?: string;
+    spendCapCents?: number;
+    arrangement?: 'standard' | 'comped' | null;
+    compExpiresAt?: Date | null;
+  }>;
   getDashboard(): Promise<{ freeRemaining: FreeAllowanceRemaining }>;
   reserve(input: {
     operationId: string;
@@ -253,7 +260,16 @@ export async function reserveRecallMeetingMinutes(
 > {
   const operationId = recallOperationId(input.meetingId);
   const [account, dashboard] = await Promise.all([billing.getAccount(), billing.getDashboard()]);
-  const reservedMinutes = meetingReserveMinutesForPlan(account.planId, dashboard.freeRemaining);
+  const reservedMinutes = meetingReserveMinutesForPlan(
+    effectiveBillingPlanId({
+      planId: account.planId,
+      billingState: account.billingState ?? 'free',
+      spendCapCents: account.spendCapCents ?? 0,
+      ...(account.arrangement !== undefined ? { arrangement: account.arrangement } : {}),
+      ...(account.compExpiresAt !== undefined ? { compExpiresAt: account.compExpiresAt } : {}),
+    }),
+    dashboard.freeRemaining,
+  );
   if (reservedMinutes <= 0) {
     return { ok: false, code: 'free_allowance_reached' };
   }

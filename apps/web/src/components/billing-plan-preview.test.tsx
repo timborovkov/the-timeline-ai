@@ -30,11 +30,7 @@ function preview(input: {
 
 function renderPreview(planPreview: CheapestPlanPreview, currentPlanId: string): string {
   return renderToStaticMarkup(
-    <BillingPlanPreview
-      preview={planPreview}
-      currentPlanId={currentPlanId}
-      activeMemberCount={8}
-    />,
+    <BillingPlanPreview preview={planPreview} currentPlanId={currentPlanId} />,
   );
 }
 
@@ -62,10 +58,9 @@ describe('BillingPlanPreview', () => {
       preview({ recommended: 'team', payg: 10_000, team: 8_000, business: 19_900 }),
       'payg',
     );
-    expect(html).toContain('Cheapest plan this period');
-    expect(html).toContain('Team would be cheaper this period');
-    expect(html).toContain('Timeline never switches plans automatically');
-    expect(html).toContain('8 active members');
+    expect(html).toContain('data-billing-plan-hint');
+    expect(html).toContain('Team would save €20 this month.');
+    expect(html).not.toContain('Cheapest plan this period');
     expect(html).not.toContain('currently the cheapest');
   });
 });

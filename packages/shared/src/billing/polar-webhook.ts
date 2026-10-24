@@ -1,14 +1,27 @@
-import { billingFreeGrants, teamBillingAccounts, type Db } from '@timeline/db';
+import {
+  billingFreeGrants,
+  billingUnbilledAlerts,
+  billingUsageLedger,
+  teamBillingAccounts,
+  type Db,
+} from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 
-import type { PolarRefundAmountKind } from '#src/billing/charge.js';
+import type { BillingProvider } from '#src/billing/provider.js';
 
-import { PLAN_CATALOG, PREPAID_TOPUP_CENTS, type BillingPlanId } from '#src/billing/catalog.js';
+import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
+import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import {
+  assertPriceOverride,
+  pendingEnterpriseTermsAfterActivation,
+  pendingEnterpriseTermsForCheckout,
+  type PendingEnterpriseTerms,
+} from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
-import { creditWalletFromPolarOrder, debitWalletFromPolarRefund } from '#src/billing/runtime.js';
-import { teamOutstandingWalletShortfallCents } from '#src/billing/wallet-shortfall.js';
+import { TIMELINE_TOPUP_PRODUCT_NAME } from '#src/billing/polar-setup.js';
+import { childLogger } from '#src/logger.js';
 
-export type PolarPaidPlanId = 'payg' | 'team' | 'business';
+export type PolarPaidPlanId = 'payg' | 'team' | 'business' | 'enterprise';
 
 export interface PolarWebhookPayload {
   type?: string;
@@ -30,8 +43,20 @@ export interface PolarWebhookPayload {
     customer?: { external_id?: string; id?: string };
     customer_id?: string;
     external_customer_id?: string;
+    checkout_id?: string;
+    checkoutId?: string;
+    checkout?: { id?: string };
     order_id?: string;
     orderId?: string;
+    billing_reason?: string;
+    billingReason?: string;
+    product_name?: string;
+    product?: {
+      id?: string;
+      name?: string;
+      is_recurring?: boolean;
+      isRecurring?: boolean;
+    };
   };
 }
 
@@ -39,8 +64,19 @@ export interface PolarWebhookProductIds {
   payg?: string;
   team?: string;
   business?: string;
+  enterprise?: string;
+  /** Retired one-time product id, used only to recognize a stray paid order. */
   topup?: string;
 }
+
+export const RETIRED_TOPUP_ALERT_REASON_PREFIX = 'retired_topup_paid:';
+
+/** One open alert per extra Polar subscription id. Replay does not insert another. */
+export const DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX = 'duplicate_polar_subscription:';
+
+const REPLACED_SUBSCRIPTION_NOT_LIVE = new Set(['canceled', 'deletion_scheduled']);
+
+const log = childLogger('billing:polar-webhook');
 
 type TeamBillingState = (typeof teamBillingAccounts.$inferSelect)['billingState'];
 
@@ -52,6 +88,7 @@ export function planFromPolarProductId(
   if (products.payg && productId === products.payg) return 'payg';
   if (products.team && productId === products.team) return 'team';
   if (products.business && productId === products.business) return 'business';
+  if (products.enterprise && productId === products.enterprise) return 'enterprise';
   return null;
 }
 
@@ -89,32 +126,6 @@ export function spendCapCentsForPaidActivation(input: {
   return input.existing.spendCapCents;
 }
 
-function positiveRefundCents(value: number | undefined): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null;
-  return Math.round(value);
-}
-
-/**
- * `order.refunded` carries the original order `amount` and the cumulative
- * `refunded_amount`. Individual refund events carry that refund's own amount.
- */
-export function polarTopupRefundRequest(input: {
-  eventType: string;
-  amount?: number;
-  refundedAmount?: number;
-}): { cents: number; amountKind: PolarRefundAmountKind } {
-  const refunded = positiveRefundCents(input.refundedAmount);
-  const amount = positiveRefundCents(input.amount);
-  if (input.eventType === 'order.refunded') {
-    if (refunded !== null) return { cents: refunded, amountKind: 'cumulative' };
-    if (amount !== null) return { cents: amount, amountKind: 'cumulative' };
-    return { cents: 0, amountKind: 'cumulative' };
-  }
-  if (amount !== null) return { cents: amount, amountKind: 'incremental' };
-  if (refunded !== null) return { cents: refunded, amountKind: 'incremental' };
-  return { cents: 0, amountKind: 'incremental' };
-}
-
 const ACTIVE_PAID_BILLING_STATES = new Set<TeamBillingState>([
   'payg_active',
   'team_active',
@@ -124,14 +135,15 @@ const ACTIVE_PAID_BILLING_STATES = new Set<TeamBillingState>([
 
 /**
  * Polar "active" means the subscription is in good standing with Polar.
- * It does not repay a local wallet shortfall. While that debt remains, keep
- * `read_only` / `balance_exhausted` (or put `read_only` back if an earlier
- * event already cleared it). `past_due` and `payment_retry` still follow the
- * incoming Polar status, including an active payment recovery.
+ * `past_due` and `payment_retry` still follow the incoming status, so a later
+ * active event clears a failed-payment pause.
  *
- * The invoice branch has no wallet. Pass `preserveLocalFreeze` so a spend-cap
- * freeze (`read_only` / `balance_exhausted`) also survives an active update.
- * Raising the spend cap remains the recovery for that freeze.
+ * This invoice branch has no wallet. `preserveLocalFreeze` keeps a spend-cap
+ * settlement freeze (`read_only` / `balance_exhausted`) across that active
+ * update. Raising the spend cap remains the recovery. A historical wallet
+ * shortfall row is not a freeze signal here (`outstandingDebtCents` stays 0).
+ * The wallet branch passes the unpaid shortfall instead and does not preserve
+ * a spend-cap-only freeze once that debt is gone.
  */
 export function billingStateForPolarSubscriptionUpsert(input: {
   incoming: TeamBillingState;
@@ -157,6 +169,8 @@ export function billingStateForPolarPlan(plan: PolarPaidPlanId) {
       return 'team_active' as const;
     case 'business':
       return 'business_active' as const;
+    case 'enterprise':
+      return 'enterprise_active' as const;
   }
 }
 
@@ -246,6 +260,14 @@ function polarCustomerId(data: PolarWebhookPayload['data']): string | null {
   return data?.customer?.id ?? data?.customer_id ?? null;
 }
 
+/** Checkout that created this subscription, when Polar includes it. */
+function polarCheckoutId(data: PolarWebhookPayload['data']): string | null {
+  const raw = data?.checkout_id ?? data?.checkoutId ?? data?.checkout?.id ?? null;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function teamIdFromPayload(payload: PolarWebhookPayload): string | null {
   return payload.data?.customer?.external_id ?? payload.data?.external_customer_id ?? null;
 }
@@ -260,6 +282,59 @@ async function lockBillingAccount(db: Db, teamId: string) {
   return row;
 }
 
+function enterpriseActivationPricing(pending: PendingEnterpriseTerms): {
+  platformFeeCents: number;
+  priceOverride: ReturnType<typeof assertPriceOverride> | null;
+} {
+  const validated = assertPriceOverride({
+    platformFeeCents: pending.platformFeeCents,
+    ...(pending.includedActiveMembers !== undefined
+      ? { includedActiveMembers: pending.includedActiveMembers }
+      : {}),
+    ...(pending.additionalMemberCents !== undefined
+      ? { additionalMemberCents: pending.additionalMemberCents }
+      : {}),
+    ...(pending.meteredDiscountPercent !== undefined
+      ? { meteredDiscountPercent: pending.meteredDiscountPercent }
+      : {}),
+  });
+  const priceOverride: ReturnType<typeof assertPriceOverride> = {};
+  if (validated.includedActiveMembers !== undefined) {
+    priceOverride.includedActiveMembers = validated.includedActiveMembers;
+  }
+  if (validated.additionalMemberCents !== undefined) {
+    priceOverride.additionalMemberCents = validated.additionalMemberCents;
+  }
+  if (validated.meteredDiscountPercent !== undefined) {
+    priceOverride.meteredDiscountPercent = validated.meteredDiscountPercent;
+  }
+  return {
+    platformFeeCents: validated.platformFeeCents ?? pending.platformFeeCents,
+    priceOverride:
+      priceOverride.includedActiveMembers !== undefined ||
+      priceOverride.additionalMemberCents !== undefined ||
+      priceOverride.meteredDiscountPercent !== undefined
+        ? priceOverride
+        : null,
+  };
+}
+
+interface DuplicateSubscription {
+  keptSubscriptionId: string;
+  extraSubscriptionId: string;
+}
+
+function liveTrackedSubscriptionId(
+  existing: typeof teamBillingAccounts.$inferSelect | undefined,
+  incomingSubscriptionId: string | null,
+): string | null {
+  if (!existing || !incomingSubscriptionId) return null;
+  const tracked = existing.polarSubscriptionId;
+  if (!tracked || tracked === incomingSubscriptionId) return null;
+  if (REPLACED_SUBSCRIPTION_NOT_LIVE.has(existing.billingState)) return null;
+  return tracked;
+}
+
 async function upsertPaidSubscription(input: {
   db: Db;
   teamId: string;
@@ -267,16 +342,26 @@ async function upsertPaidSubscription(input: {
   billingState: TeamBillingState;
   data: PolarWebhookPayload['data'];
   chargesEnabled: boolean;
-}): Promise<void> {
-  await input.db.transaction(async (tx) => {
+}): Promise<{ applied: boolean; duplicate?: DuplicateSubscription }> {
+  return input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
-    if (
-      existing &&
-      (existing.planId === 'enterprise' || existing.billingState === 'enterprise_active')
-    ) {
-      return;
-    }
+    if (existing?.arrangement === 'comped') return { applied: false };
     const polarSubscriptionId = input.data?.id ?? null;
+    const trackedSubscriptionId = liveTrackedSubscriptionId(existing, polarSubscriptionId);
+    const existingEnterprise =
+      existing?.planId === 'enterprise' || existing?.billingState === 'enterprise_active';
+    if (existingEnterprise && input.plan !== 'enterprise') {
+      if (trackedSubscriptionId && polarSubscriptionId) {
+        return {
+          applied: false,
+          duplicate: {
+            keptSubscriptionId: trackedSubscriptionId,
+            extraSubscriptionId: polarSubscriptionId,
+          },
+        };
+      }
+      return { applied: false };
+    }
     const period = polarSubscriptionPeriod(input.data);
     if (
       !shouldApplyPaidSubscriptionUpdate({
@@ -286,15 +371,35 @@ async function upsertPaidSubscription(input: {
         incomingModifiedAt: polarEventModifiedAt(input.data),
       })
     ) {
-      return;
+      if (trackedSubscriptionId && polarSubscriptionId) {
+        return {
+          applied: false,
+          duplicate: {
+            keptSubscriptionId: trackedSubscriptionId,
+            extraSubscriptionId: polarSubscriptionId,
+          },
+        };
+      }
+      return { applied: false };
     }
-    const outstandingDebtCents = existing
-      ? await teamOutstandingWalletShortfallCents(tx, input.teamId)
-      : 0;
+    const checkoutId = polarCheckoutId(input.data);
+    const pending =
+      input.plan === 'enterprise'
+        ? pendingEnterpriseTermsForCheckout(existing?.pendingEnterpriseTerms ?? null, checkoutId)
+        : null;
+    const activatedPricing = pending ? enterpriseActivationPricing(pending) : null;
+    const pendingAfterActivation =
+      input.plan === 'enterprise' && pending
+        ? pendingEnterpriseTermsAfterActivation(
+            existing?.pendingEnterpriseTerms ?? null,
+            checkoutId,
+          )
+        : undefined;
     const billingState = billingStateForPolarSubscriptionUpsert({
       incoming: input.billingState,
       existingState: existing?.billingState,
-      outstandingDebtCents,
+      outstandingDebtCents: 0,
+      preserveLocalFreeze: true,
     });
     const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
     const resetDiscount = shouldResetIncludedDiscount({
@@ -338,16 +443,73 @@ async function upsertPaidSubscription(input: {
           periodStartedAt,
           ...(periodEndsAt ? { periodEndsAt } : {}),
           ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
-          spendCapCents: spendCapCentsForPaidActivation({
-            existing,
-            plan: input.plan,
-          }),
+          spendCapCents:
+            pending?.spendCapCents ??
+            spendCapCentsForPaidActivation({
+              existing,
+              plan: input.plan,
+            }),
+          ...(input.plan === 'enterprise' ? {} : { enterprisePlatformFeeCents: null }),
+          ...(activatedPricing
+            ? {
+                enterprisePlatformFeeCents: activatedPricing.platformFeeCents,
+                priceOverride: activatedPricing.priceOverride,
+                priceOverrideExpiresAt: null,
+              }
+            : {}),
+          ...(pendingAfterActivation !== undefined
+            ? { pendingEnterpriseTerms: pendingAfterActivation }
+            : {}),
           polarEventModifiedAt: polarEventModifiedAtValue,
           updatedAt: now,
         },
       });
     await recordBillingPlan(tx as unknown as Db, input.teamId, input.plan, now);
+    if (trackedSubscriptionId && polarSubscriptionId) {
+      return {
+        applied: true,
+        duplicate: {
+          keptSubscriptionId: polarSubscriptionId,
+          extraSubscriptionId: trackedSubscriptionId,
+        },
+      };
+    }
+    return { applied: true };
   });
+}
+
+async function reconcileDuplicateSubscription(input: {
+  db: Db;
+  teamId: string;
+  keptSubscriptionId: string;
+  extraSubscriptionId: string;
+  provider: BillingProvider | null;
+}): Promise<void> {
+  let revoked = false;
+  if (input.provider) {
+    try {
+      await input.provider.revokeSubscription(input.extraSubscriptionId);
+      revoked = true;
+    } catch (err) {
+      log.warn(
+        { err, teamId: input.teamId, extraSubscriptionId: input.extraSubscriptionId },
+        'duplicate Polar subscription revoke failed',
+      );
+    }
+  }
+  const detail = revoked
+    ? `Extra Polar subscription ${input.extraSubscriptionId} was revoked after ${input.keptSubscriptionId} stayed the tracked subscription. Refund any duplicate charge.`
+    : `Extra Polar subscription ${input.extraSubscriptionId} is still billing alongside tracked subscription ${input.keptSubscriptionId}. Revoke it in Polar and refund any duplicate charge.`;
+  await input.db
+    .insert(billingUnbilledAlerts)
+    .values({
+      teamId: input.teamId,
+      meterId: 'subscription',
+      periodYm: periodYm(),
+      reason: `${DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX}${input.extraSubscriptionId}`,
+      detail,
+    })
+    .onConflictDoNothing();
 }
 
 async function cancelMatchingSubscription(input: {
@@ -359,7 +521,8 @@ async function cancelMatchingSubscription(input: {
   if (!input.subscriptionId) return;
   await input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
-    if (!existing || existing.polarSubscriptionId !== input.subscriptionId) return;
+    if (!existing || existing.arrangement === 'comped') return;
+    if (existing.polarSubscriptionId !== input.subscriptionId) return;
     if (
       !shouldApplyPaidSubscriptionUpdate({
         existing,
@@ -380,12 +543,18 @@ async function cancelMatchingSubscription(input: {
         ),
       )
       .limit(1);
+    const leavingEnterprise =
+      existing.planId === 'enterprise' || existing.billingState === 'enterprise_active';
     await tx
       .update(teamBillingAccounts)
       .set({
         billingState: grant ? 'free' : 'restricted',
         planId: 'free',
         spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
+        polarSubscriptionId: null,
+        polarProductId: null,
+        enterprisePlatformFeeCents: null,
+        ...(leavingEnterprise ? { priceOverride: null, priceOverrideExpiresAt: null } : {}),
         polarEventModifiedAt:
           input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? new Date(),
         updatedAt: new Date(),
@@ -400,11 +569,98 @@ async function cancelMatchingSubscription(input: {
   });
 }
 
+/**
+ * A paid one-time order that is not a subscription product. New checkouts for
+ * the retired top-up are gone; an order Polar already collected still has to
+ * be recorded.
+ */
+export function isRetiredPaidTopupOrder(input: {
+  data: PolarWebhookPayload['data'];
+  products: PolarWebhookProductIds;
+}): boolean {
+  const data = input.data;
+  if (!data) return false;
+  const productId = data.product_id ?? data.product?.id;
+  const name = (data.product?.name ?? data.product_name ?? '').trim();
+  if (input.products.topup && productId === input.products.topup) return true;
+  if (name === TIMELINE_TOPUP_PRODUCT_NAME) return true;
+  if (planFromPolarProductId(productId, input.products)) return false;
+  const reason = (data.billing_reason ?? data.billingReason ?? '').trim().toLowerCase();
+  if (reason === 'purchase') return true;
+  const recurring = data.product?.is_recurring ?? data.product?.isRecurring;
+  return recurring === false && Boolean(productId);
+}
+
+function periodYm(date = new Date()): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+async function recordRetiredPaidTopup(input: {
+  db: Db;
+  teamId: string;
+  data: NonNullable<PolarWebhookPayload['data']>;
+}): Promise<void> {
+  const orderId = input.data.id ?? `anon:${input.teamId}`;
+  const cents =
+    typeof input.data.amount === 'number' &&
+    Number.isInteger(input.data.amount) &&
+    input.data.amount > 0
+      ? input.data.amount
+      : 0;
+  const productId = input.data.product_id ?? input.data.product?.id ?? null;
+  const operationId = `polar_topup:${orderId}`;
+  const detail = `Paid retired top-up order ${orderId} for ${String(cents)} cents${
+    productId ? ` (product ${productId})` : ''
+  }. Recorded only. The wallet balance was not credited. Refund the order in Polar.`;
+  await input.db.transaction(async (tx) => {
+    const [ledger] = await tx
+      .insert(billingUsageLedger)
+      .values({
+        teamId: input.teamId,
+        operationId,
+        kind: 'top_up',
+        meterId: 'ai',
+        nativeUnits: '0',
+        customerChargeCents: 0,
+        billable: false,
+        nonBillableReason: 'retired_topup',
+        operationClass: 'retired_topup',
+        source: 'polar_order',
+        metadata: {
+          cents,
+          order_id: orderId,
+          wallet_credited: false,
+          ...(productId ? { product_id: productId } : {}),
+        },
+      })
+      .onConflictDoNothing()
+      .returning({ id: billingUsageLedger.id });
+    await tx
+      .insert(billingUnbilledAlerts)
+      .values({
+        teamId: input.teamId,
+        meterId: 'top_up',
+        periodYm: periodYm(),
+        reason: `${RETIRED_TOPUP_ALERT_REASON_PREFIX}${orderId}`,
+        detail,
+      })
+      .onConflictDoNothing();
+    if (ledger) {
+      log.warn(
+        { teamId: input.teamId, orderId, cents },
+        'retired top-up payment recorded; wallet not credited',
+      );
+    }
+  });
+}
+
 export async function handlePolarWebhookEvent(input: {
   db: Db;
   payload: PolarWebhookPayload;
   chargesEnabled: boolean;
   products: PolarWebhookProductIds;
+  /** Revokes an extra live subscription. Missing provider still alerts. */
+  provider?: BillingProvider | null;
 }): Promise<{ ok: true; ignored?: string }> {
   const teamId = teamIdFromPayload(input.payload);
   if (!teamId) return { ok: true, ignored: 'missing_external_customer' };
@@ -428,7 +684,7 @@ export async function handlePolarWebhookEvent(input: {
           incomingModifiedAt: polarEventModifiedAt(data),
         });
       } else if (billingState !== 'ignore') {
-        await upsertPaidSubscription({
+        const result = await upsertPaidSubscription({
           db: input.db,
           teamId,
           plan,
@@ -436,54 +692,27 @@ export async function handlePolarWebhookEvent(input: {
           data,
           chargesEnabled: input.chargesEnabled,
         });
+        if (result.duplicate) {
+          await reconcileDuplicateSubscription({
+            db: input.db,
+            teamId,
+            keptSubscriptionId: result.duplicate.keptSubscriptionId,
+            extraSubscriptionId: result.duplicate.extraSubscriptionId,
+            provider: input.provider ?? null,
+          });
+        }
+        if (result.applied && billingState === 'past_due') {
+          try {
+            await notifySubscriptionPastDue({
+              db: input.db,
+              teamId,
+              planId: plan,
+            });
+          } catch (err) {
+            log.warn({ err, teamId }, 'past_due billing alert failed');
+          }
+        }
       }
-    }
-  }
-
-  if (type === 'order.paid') {
-    const topupProductId = input.products.topup;
-    if (data && topupProductId && data.product_id === topupProductId) {
-      const cents =
-        typeof data.amount === 'number' && data.amount > 0 ? data.amount : PREPAID_TOPUP_CENTS;
-      const orderId = data.id ?? `anon:${teamId}:${String(cents)}`;
-      await creditWalletFromPolarOrder({
-        db: input.db,
-        teamId,
-        orderId,
-        cents,
-      });
-    }
-  }
-
-  if (type === 'order.refunded' || type === 'refund.created' || type === 'refund.updated') {
-    const refundStatus = (data?.status ?? 'succeeded').trim().toLowerCase();
-    if (type !== 'order.refunded' && refundStatus && refundStatus !== 'succeeded') {
-      return { ok: true, ignored: 'refund_not_succeeded' };
-    }
-    const topupProductId = input.products.topup;
-    const isTopupProduct = Boolean(topupProductId && data?.product_id === topupProductId);
-    const orderId =
-      type === 'order.refunded' ? (data?.id ?? null) : (data?.order_id ?? data?.orderId ?? null);
-    const refundId = type === 'order.refunded' ? null : (data?.id ?? null);
-    const refundedAmount = data?.refunded_amount ?? data?.refundedAmount;
-    const request = polarTopupRefundRequest({
-      eventType: type,
-      ...(typeof data?.amount === 'number' ? { amount: data.amount } : {}),
-      ...(typeof refundedAmount === 'number' ? { refundedAmount } : {}),
-    });
-    if (orderId && (isTopupProduct || type !== 'order.refunded' || request.cents > 0)) {
-      const refundKey =
-        type === 'order.refunded'
-          ? `order:${orderId}:${request.cents}`
-          : (refundId ?? `order:${orderId}:${request.cents}`);
-      await debitWalletFromPolarRefund({
-        db: input.db,
-        teamId,
-        orderId,
-        refundKey,
-        cents: request.cents,
-        amountKind: request.amountKind,
-      });
     }
   }
 
@@ -494,6 +723,14 @@ export async function handlePolarWebhookEvent(input: {
       subscriptionId: data?.id,
       incomingModifiedAt: polarEventModifiedAt(data),
     });
+  }
+
+  if (
+    type === 'order.paid' &&
+    data &&
+    isRetiredPaidTopupOrder({ data, products: input.products })
+  ) {
+    await recordRetiredPaidTopup({ db: input.db, teamId, data });
   }
 
   return { ok: true };

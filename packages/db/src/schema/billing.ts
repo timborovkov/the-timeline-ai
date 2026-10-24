@@ -17,7 +17,7 @@ import { teams } from '#src/schema/teams.js';
 import { users } from '#src/schema/users.js';
 
 /**
- * Commercial plan + payment lifecycle (Polar subscriptions / prepaid wallet).
+ * Commercial plan + payment lifecycle (Polar subscriptions, invoiced in arrears).
  * Independent from `team_security_state` — a paid balance never clears a
  * security suspension.
  */
@@ -93,7 +93,11 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   polarProductId: text('polar_product_id'),
   /** Hard monthly overage spend ceiling in euro cents (customer-controlled). */
   spendCapCents: integer('spend_cap_cents').notNull().default(0),
-  /** Prepaid wallet balance in euro cents. */
+  /**
+   * Retired prepaid-wallet columns. New reservations do not debit or credit
+   * them. A historical `wallet_lock_cents` stamp can still unwind
+   * `reserved_balance_cents` on settle, release, or expiry.
+   */
   walletBalanceCents: integer('wallet_balance_cents').notNull().default(0),
   reservedBalanceCents: integer('reserved_balance_cents').notNull().default(0),
   autoReloadEnabled: boolean('auto_reload_enabled').notNull().default(false),
@@ -109,9 +113,119 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
    */
   polarEventModifiedAt: timestamp('polar_event_modified_at', { withTimezone: true }),
   shadowBilling: boolean('shadow_billing').notNull().default(true),
+  /**
+   * `standard` bills through Polar. `comped` skips new Polar charges and
+   * revokes the current subscription.
+   */
+  arrangement: text('arrangement').$type<'standard' | 'comped'>().notNull().default('standard'),
+  compReason: text('comp_reason'),
+  compExpiresAt: timestamp('comp_expires_at', { withTimezone: true }),
+  priceOverride: jsonb('price_override').$type<{
+    /** Legacy checkout fee. New activations store this on `enterprisePlatformFeeCents`. */
+    platformFeeCents?: number;
+    includedActiveMembers?: number;
+    additionalMemberCents?: number;
+    meteredDiscountPercent?: number;
+  } | null>(),
+  priceOverrideExpiresAt: timestamp('price_override_expires_at', { withTimezone: true }),
+  /**
+   * Platform fee Polar charges for a paid Enterprise checkout, in euro cents.
+   * Usage overrides can be cleared or replaced without dropping this fee.
+   */
+  enterprisePlatformFeeCents: integer('enterprise_platform_fee_cents'),
+  /**
+   * Enterprise checkout terms waiting for the paid subscription.
+   * New rows are `{ byCheckoutId: { [checkoutId]: terms } }`. A legacy row is
+   * one unbound terms object. Neither shape changes plan or the live override.
+   */
+  pendingEnterpriseTerms: jsonb('pending_enterprise_terms').$type<
+    | {
+        byCheckoutId: Record<
+          string,
+          {
+            platformFeeCents: number;
+            includedActiveMembers?: number;
+            additionalMemberCents?: number;
+            meteredDiscountPercent?: number;
+            spendCapCents?: number;
+          }
+        >;
+      }
+    | {
+        platformFeeCents: number;
+        includedActiveMembers?: number;
+        additionalMemberCents?: number;
+        meteredDiscountPercent?: number;
+        spendCapCents?: number;
+      }
+    | null
+  >(),
+  polarDiscountId: text('polar_discount_id'),
+  polarDiscountExpiresAt: timestamp('polar_discount_expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Plan effective-at history. Storage replay prices a missed day with the plan
+ * that was in force then, not the live plan.
+ */
+export const billingPlanHistory = pgTable(
+  'billing_plan_history',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    planId: billingPlanId('plan_id').notNull(),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('billing_plan_history_team_effective_idx').on(table.teamId, table.effectiveAt)],
+);
+
+/** Append-only platform-operator history for comp and price overrides. */
+export const billingOperatorAudit = pgTable(
+  'billing_operator_audit',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    actorUserId: uuid('actor_user_id').references(() => users.id, { onDelete: 'set null' }),
+    actorEmail: text('actor_email').notNull(),
+    action: text('action').notNull(),
+    before: jsonb('before').$type<Record<string, unknown>>().notNull(),
+    after: jsonb('after').$type<Record<string, unknown>>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('billing_operator_audit_team_created_idx').on(table.teamId, table.createdAt)],
+);
+
+/**
+ * Payable usage that has no matching active Polar subscription price.
+ * One open row per team, meter, period, and reason. Resolved when a later
+ * ingest sends the meter.
+ */
+export const billingUnbilledAlerts = pgTable(
+  'billing_unbilled_alerts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    meterId: text('meter_id').notNull(),
+    periodYm: text('period_ym').notNull(),
+    reason: text('reason').notNull(),
+    detail: text('detail'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex('billing_unbilled_alerts_open_unq')
+      .on(table.teamId, table.meterId, table.periodYm, table.reason)
+      .where(sql`${table.resolvedAt} IS NULL`),
+  ],
+);
 
 /**
  * One Free commercial grant per verified person. Extra workspaces do not mint
@@ -135,20 +249,6 @@ export const billingFreeGrants = pgTable(
       .on(table.userId)
       .where(sql`${table.revokedAt} IS NULL`),
   ],
-);
-
-/** Plan in force over time, so replayed days keep the terms of that day. */
-export const billingPlanHistory = pgTable(
-  'billing_plan_history',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    teamId: uuid('team_id')
-      .notNull()
-      .references(() => teams.id, { onDelete: 'cascade' }),
-    planId: billingPlanId('plan_id').notNull(),
-    effectiveAt: timestamp('effective_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [index('billing_plan_history_team_effective_idx').on(table.teamId, table.effectiveAt)],
 );
 
 /** Append-only, idempotent usage settlement. */

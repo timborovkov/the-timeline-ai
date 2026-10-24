@@ -107,6 +107,28 @@ export function freeAllowanceRemaining(meters: {
   };
 }
 
+const EXHAUSTED_FREE_ALLOWANCE_LABELS = [
+  ['aiChargeCents', 'AI'],
+  ['recallMinutes', 'Meeting'],
+  ['emailUnits', 'Email'],
+  ['storageGb', 'Storage'],
+  ['acceptedSources', 'Source'],
+] as const satisfies readonly (readonly [keyof FreeAllowanceRemaining, string])[];
+
+/**
+ * Names the Free meters that are already exhausted. Empty when every allowance
+ * still has room. The workspace pause flag stays false until all five are gone.
+ */
+export function exhaustedFreeAllowanceNotice(remaining: FreeAllowanceRemaining): string | null {
+  const names = EXHAUSTED_FREE_ALLOWANCE_LABELS.filter(([key]) => remaining[key] <= 0).map(
+    ([, label]) => label,
+  );
+  if (names.length === 0) return null;
+  if (names.length === 1) return `${names[0]} allowance used up.`;
+  const last = names[names.length - 1];
+  return `${names.slice(0, -1).join(', ')} and ${last} allowances used up.`;
+}
+
 /** True only when every Free native floor is gone — not a single exhausted meter. */
 export function allFreeAllowancesExhausted(remaining: FreeAllowanceRemaining): boolean {
   return (
@@ -166,7 +188,7 @@ export function restoredPaidBillingStateAfterWalletOrCapRecovery(input: {
 
 /**
  * Settlement freeze zeros the spend cap. Restore the catalog default when that
- * default is a positive paid ceiling so a €10 top-up can admit work again.
+ * default is a positive paid ceiling so raising the cap can admit work again.
  * Enterprise (catalog default €0) and an already-positive cap are left alone.
  */
 export function restoredSpendCapCentsAfterShortfallUnfreeze(input: {
@@ -184,9 +206,6 @@ export function costBearingPausedFromAccount(input: {
   shadowBilling: boolean;
   spendCapCents: number;
   meteredSpendCents: number;
-  walletBalanceCents: number;
-  reservedBalanceCents: number;
-  includedDiscountRemainingCents: number;
   freeRemaining: FreeAllowanceRemaining;
 }): boolean {
   if (!billingStateAllowsReservation(input.billingState)) return true;
@@ -195,9 +214,7 @@ export function costBearingPausedFromAccount(input: {
   if (input.shadowBilling || input.billingState === 'enterprise_active') return false;
   if (input.planId === 'payg' && !allFreeGone) return false;
   if (input.spendCapCents <= 0 || input.meteredSpendCents >= input.spendCapCents) return true;
-  const availableWallet = input.walletBalanceCents - input.reservedBalanceCents;
-  if (availableWallet > 0 || input.includedDiscountRemainingCents > 0) return false;
-  return true;
+  return false;
 }
 
 function freeAllowanceNearLimit(remaining: FreeAllowanceRemaining): boolean {
@@ -251,7 +268,7 @@ export function deriveBillingNudge(input: {
     return {
       kind: 'at_cap',
       title: 'Monthly spend cap reached',
-      body: 'New cost-bearing work is paused. Raise the cap, top up, or wait for the next period. Existing data stays readable and exportable.',
+      body: 'New cost-bearing work is paused. Raise the cap or wait for the next period. Existing data stays readable and exportable.',
       href: manage ? billingHref : usageHref,
       ctaLabel: manage ? 'Manage spend cap' : 'View usage',
     };

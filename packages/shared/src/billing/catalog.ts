@@ -243,6 +243,21 @@ export function formatEuroFromCents(cents: number): string {
   }).format(euros);
 }
 
+const EURO_AMOUNT_RE = /^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/u;
+
+/**
+ * Parse a non-negative euro amount into integer cents.
+ * Rejects extra decimal places and binary-float inputs such as 1.005.
+ */
+export function parseEuroAmountToCents(raw: string): number {
+  const value = raw.trim();
+  if (!EURO_AMOUNT_RE.test(value)) {
+    throw new Error('Enter a non-negative euro amount with at most two decimal places.');
+  }
+  const [whole, frac = ''] = value.split('.');
+  return Number(whole) * 100 + Number(frac.padEnd(2, '0'));
+}
+
 /**
  * Convert OpenRouter `usage.cost` (USD, already includes the OpenRouter fee)
  * into Timeline customer AI charge euro cents: FX then ×4. Do not apply an
@@ -283,9 +298,6 @@ export const ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 250;
 /** Worst-case reservation for background LLM (extract, embed, digest, vision). */
 export const BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS = 100;
 
-/** First PAYG prepaid top-up (strategy §3). */
-export const PREPAID_TOPUP_CENTS = 1_000;
-
 /** Reservation TTL for Ask turns (covers long tool loops + presentation pass). */
 export const ASK_AI_RESERVATION_TTL_MS = 30 * 60_000;
 
@@ -311,11 +323,6 @@ export function acceptedSourcesChargeCents(items: number): number {
   return Math.round((items * OVERAGE_RATES.acceptedSourcesCentsPerThousand) / 1000);
 }
 
-/** Wallet-backed plans can spend prepaid top-ups; Free hard-stops on native floors. */
-export function planUsesPrepaidWallet(planId: string): boolean {
-  return planId === 'payg' || planId === 'team' || planId === 'business';
-}
-
 export function polarEventNameForMeter(meter: BillingMeterId): string | null {
   switch (meter) {
     case 'ai':
@@ -329,8 +336,7 @@ export function polarEventNameForMeter(meter: BillingMeterId): string | null {
     case 'accepted_sources':
       return 'timeline_accepted_sources';
     case 'member_days':
-      // Extra seats settle through the prepaid wallet ledger. Not a Polar meter
-      // and not a Polar invoice line — Polar has no native seat meter in v1.
-      return null;
+      // Ingested as member-month fractions against the €2 catalog price.
+      return 'timeline_extra_member_days';
   }
 }

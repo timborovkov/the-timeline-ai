@@ -1,9 +1,10 @@
 'use client';
 
 import {
+  FREE_ALLOWANCES,
+  PLAN_CATALOG,
   formatEuroFromCents,
-  PREPAID_TOPUP_CENTS,
-  planUsesPrepaidWallet,
+  parseEuroAmountToCents,
   type BillingPlanId,
 } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
@@ -11,69 +12,58 @@ import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
 
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
-import type {
-  BillingNudge,
-  FreeAllowanceRemaining,
-  PlanCapacityUsageRow,
-  SpendCapUtilization,
-} from '@timeline/shared/billing/status';
+import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
 
 import {
   startBillingCheckout,
-  startWalletTopUp,
-  updateBillingAutoReload,
+  startBillingPortal,
   updateBillingSpendCap,
 } from '@/app/actions/billing';
+import { BillingCompNotice } from '@/components/billing-comp-notice';
+import { customerBillingState } from '@/components/billing-customer-state';
 import { BillingPlanPreview } from '@/components/billing-plan-preview';
-import { BillingUpgradeNudge } from '@/components/billing-upgrade-nudge';
-import { BillingUsageSummary } from '@/components/billing-usage-summary';
-import { SettingsSection } from '@/components/section-heading';
+import { BillingStateBanner } from '@/components/billing-state-banner';
+
+const PRIMARY_CLASS =
+  'inline-flex min-h-11 cursor-pointer list-none items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg [&::-webkit-details-marker]:hidden';
+const PLAN_BUTTON_CLASS =
+  'inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50';
 
 export interface BillingSettingsPanelProps {
   planId: BillingPlanId;
   planName: string;
   billingState: string;
-  shadowBilling: boolean;
   spendCapCents: number;
-  walletBalanceCents: number;
-  reservedBalanceCents: number;
-  includedDiscountRemainingCents: number;
   meteredSpendCents: number;
-  periodYm: string;
-  meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number }>>;
-  capacityUsage: PlanCapacityUsageRow[];
   utilization: SpendCapUtilization;
   freeRemaining: FreeAllowanceRemaining;
-  nudge: BillingNudge | null;
   costBearingPaused: boolean;
   polarConfigured: boolean;
-  polarTopUpConfigured: boolean;
+  /** False when this plan has no Polar subscription yet, so checkout can save a card. */
+  hasPolarSubscription: boolean;
   canManage: boolean;
-  autoReloadEnabled: boolean;
-  autoReloadThresholdCents: number | null;
-  autoReloadAmountCents: number | null;
   planPreview: CheapestPlanPreview;
-  activeMemberCount: number;
+  comp: {
+    planName: string;
+    expired: boolean;
+    reason: string | null;
+    expiresOn: string | null;
+  } | null;
+  showOperatorLink: boolean;
+  platformFeeCents?: number | null;
 }
 
 interface BillingFormState {
   spendCapDraft: string | null;
-  autoReloadEnabledDraft: boolean | null;
-  autoReloadThresholdDraft: string | null;
   error: string | null;
   message: string | null;
 }
 
 const INITIAL_BILLING_FORM: BillingFormState = {
   spendCapDraft: null,
-  autoReloadEnabledDraft: null,
-  autoReloadThresholdDraft: null,
   error: null,
   message: null,
 };
-
-const PLAN_BUTTON_CLASS =
-  'inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50';
 
 function billingFormReducer(
   state: BillingFormState,
@@ -82,230 +72,79 @@ function billingFormReducer(
   return { ...state, ...patch };
 }
 
-function clearNotices(): Partial<BillingFormState> {
-  return { error: null, message: null };
+function planPriceLabel(planId: BillingPlanId, platformFeeCents?: number | null): string {
+  if (planId === 'enterprise' && (platformFeeCents === null || platformFeeCents === undefined)) {
+    return 'Custom';
+  }
+  const cents = platformFeeCents ?? PLAN_CATALOG[planId].platformFeeCents ?? 0;
+  return `${formatEuroFromCents(cents)} / month`;
 }
 
-function BillingPlanSection(props: {
-  planId: BillingPlanId;
-  planName: string;
-  billingState: string;
-  shadowBilling: boolean;
-  polarConfigured: boolean;
-  canManage: boolean;
-  pending: boolean;
-  onCheckout: (plan: 'payg' | 'team' | 'business') => void;
-}) {
+function nextInvoiceCents(props: BillingSettingsPanelProps): number {
+  if (props.comp) return 0;
+  if (props.planId === 'free') return 0;
+  if (props.planId === 'payg' || props.planId === 'team' || props.planId === 'business') {
+    return props.planPreview.bills[props.planId].totalCents;
+  }
+  return (props.platformFeeCents ?? 0) + props.meteredSpendCents;
+}
+
+function freeAllowancePercent(remaining: FreeAllowanceRemaining): number {
+  const fractions = [
+    1 - remaining.aiChargeCents / FREE_ALLOWANCES.aiChargeCents,
+    1 - remaining.recallMinutes / FREE_ALLOWANCES.recallMinutes,
+    1 - remaining.emailUnits / FREE_ALLOWANCES.emailUnits,
+    1 - remaining.storageGb / FREE_ALLOWANCES.storageGb,
+    1 - remaining.acceptedSources / FREE_ALLOWANCES.acceptedSources,
+  ];
+  return Math.min(100, Math.max(0, Math.round(Math.max(0, ...fractions) * 100)));
+}
+
+function SpendBar({ percent, danger }: { percent: number; danger: boolean }) {
+  const width = Math.max(0, Math.min(100, percent));
   return (
-    <SettingsSection title="Plan">
-      <dl className="grid gap-3 text-sm sm:grid-cols-2">
-        <div>
-          <dt className="text-fg-muted">Current plan</dt>
-          <dd className="mt-1 font-medium text-fg">{props.planName}</dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Billing state</dt>
-          <dd className="mt-1 font-mono text-fg">{props.billingState}</dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Mode</dt>
-          <dd className="mt-1 text-fg">
-            {props.shadowBilling
-              ? 'Shadow billing (usage recorded; Free hard stops still apply)'
-              : 'Live charges enabled'}
-          </dd>
-        </div>
-      </dl>
-      {props.canManage && props.planId !== 'enterprise' ? (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={props.pending || !props.polarConfigured || props.planId === 'payg'}
-            onClick={() => {
-              props.onCheckout('payg');
-            }}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Pay as you go
-          </button>
-          <button
-            type="button"
-            disabled={props.pending || !props.polarConfigured || props.planId === 'team'}
-            onClick={() => {
-              props.onCheckout('team');
-            }}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Team · €49/mo
-          </button>
-          <button
-            type="button"
-            disabled={props.pending || !props.polarConfigured || props.planId === 'business'}
-            onClick={() => {
-              props.onCheckout('business');
-            }}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Business · €199/mo
-          </button>
-        </div>
-      ) : props.canManage ? (
-        <p className="mt-3 text-sm text-fg-muted">
-          Enterprise plan changes go through support or the Polar customer portal, not self-serve
-          checkout.
-        </p>
-      ) : (
-        <p className="mt-3 text-sm text-fg-muted">Only owners and admins can change billing.</p>
-      )}
-      {props.planId === 'enterprise' ? null : !props.polarConfigured ? (
-        <p className="mt-3 text-sm text-fg-muted">
-          Polar checkout is not configured in this environment. Usage still records locally.
-        </p>
-      ) : (
-        <p className="mt-3 text-sm text-fg-muted">
-          Switching paid plans updates your existing Polar subscription. New checkouts are only used
-          when this workspace does not already have one.
-        </p>
-      )}
-      <p className="mt-3 text-sm text-fg-muted">
-        Need procurement or an SLA?{' '}
-        <Link href="/help/support" className="underline decoration-border underline-offset-4">
-          Contact us for Enterprise
-        </Link>
-        .
-      </p>
-    </SettingsSection>
+    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-sm bg-border" aria-hidden="true">
+      <div
+        className={danger ? 'h-full rounded-sm bg-danger' : 'h-full rounded-sm bg-fg-muted'}
+        style={{ width: `${width}%` }}
+      />
+    </div>
   );
 }
 
-function BillingWalletSection(props: {
-  walletPlan: boolean;
-  available: number;
-  reservedBalanceCents: number;
-  includedDiscountRemainingCents: number;
-  canManage: boolean;
-  pending: boolean;
-  polarTopUpConfigured: boolean;
-  spendCapEuros: string;
-  autoReloadEnabled: boolean;
-  autoReloadThresholdEuros: string;
-  onSpendCapDraft: (value: string) => void;
-  onSaveSpendCap: () => void;
-  onBuyTopUp: () => void;
-  onAutoReloadEnabledDraft: (enabled: boolean) => void;
-  onAutoReloadThresholdDraft: (value: string) => void;
-  onSaveAutoReload: () => void;
-}) {
+function ThisMonth(props: BillingSettingsPanelProps) {
+  if (props.planId === 'free') {
+    const percent = freeAllowancePercent(props.freeRemaining);
+    return (
+      <div data-billing-spend>
+        <div className="flex items-baseline justify-between gap-3 text-sm">
+          <span className="text-fg-muted">Allowance</span>
+          <span className="font-mono text-fg">{percent}%</span>
+        </div>
+        <SpendBar percent={percent} danger={percent >= 100} />
+      </div>
+    );
+  }
+  if (props.spendCapCents <= 0) {
+    return (
+      <div className="flex items-baseline justify-between gap-3 text-sm" data-billing-spend>
+        <span className="text-fg-muted">This month</span>
+        <span className="font-mono text-fg">{formatEuroFromCents(props.meteredSpendCents)}</span>
+      </div>
+    );
+  }
+  const percent = props.utilization.percent ?? 0;
   return (
-    <SettingsSection title="Wallet and spend cap">
-      <dl className="grid gap-3 text-sm sm:grid-cols-3">
-        <div>
-          <dt className="text-fg-muted">Wallet</dt>
-          <dd className="mt-1 font-mono text-fg">{formatEuroFromCents(props.available)}</dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Reserved</dt>
-          <dd className="mt-1 font-mono text-fg">
-            {formatEuroFromCents(props.reservedBalanceCents)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-fg-muted">Included discount left</dt>
-          <dd className="mt-1 font-mono text-fg">
-            {formatEuroFromCents(props.includedDiscountRemainingCents)}
-          </dd>
-        </div>
-      </dl>
-      {props.canManage ? (
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <label className="block text-sm">
-            <span className="text-fg-muted">Monthly spend cap (EUR)</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={props.spendCapEuros}
-              onChange={(event) => {
-                props.onSpendCapDraft(event.target.value);
-              }}
-              className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={props.pending}
-            onClick={props.onSaveSpendCap}
-            className="inline-flex min-h-11 items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg disabled:opacity-50"
-          >
-            Save cap
-          </button>
-          {props.walletPlan ? (
-            <button
-              type="button"
-              disabled={props.pending || !props.polarTopUpConfigured}
-              onClick={props.onBuyTopUp}
-              className={PLAN_BUTTON_CLASS}
-            >
-              Add €10
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {props.canManage && props.walletPlan ? (
-        <div className="mt-4 space-y-3">
-          <label className="flex items-center gap-2 text-sm text-fg">
-            <input
-              type="checkbox"
-              checked={props.autoReloadEnabled}
-              onChange={(event) => {
-                props.onAutoReloadEnabledDraft(event.target.checked);
-              }}
-              className="size-4 rounded-sm border-border"
-            />
-            Auto-reload {formatEuroFromCents(PREPAID_TOPUP_CENTS)} when the wallet is low
-          </label>
-          {props.autoReloadEnabled ? (
-            <>
-              <p className="text-sm text-fg-muted">
-                Timeline emails owners a Polar €10 checkout when available wallet is at or below
-                this threshold, and only if remaining spend-cap headroom covers the full €10
-                product. The wallet credits after Polar <code>order.paid</code>, same as Add €10.
-              </p>
-              <label className="block text-sm">
-                <span className="text-fg-muted">Reload when wallet falls below (EUR)</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={props.autoReloadThresholdEuros}
-                  onChange={(event) => {
-                    props.onAutoReloadThresholdDraft(event.target.value);
-                  }}
-                  className="mt-1 block w-40 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg"
-                />
-              </label>
-            </>
-          ) : null}
-          <button
-            type="button"
-            disabled={props.pending}
-            onClick={props.onSaveAutoReload}
-            className={PLAN_BUTTON_CLASS}
-          >
-            Save auto-reload
-          </button>
-        </div>
-      ) : null}
-      <p className="mt-3 text-sm text-fg-muted">
-        At 50 / 75 / 90% we show in-app warnings on Home, Usage, and Billing, and email workspace
-        owners once per threshold each billing period. At 100% new cost-bearing work pauses until
-        you raise the cap or the period resets (owners get a final notice). Free workspaces also
-        email owners when an allowance is near or used up.{' '}
-        <Link href="/pricing" className="underline-offset-4 hover:underline">
-          See pricing
-        </Link>
-      </p>
-    </SettingsSection>
+    <div data-billing-spend>
+      <div className="flex items-baseline justify-between gap-3 text-sm">
+        <span className="text-fg-muted">This month</span>
+        <span className="font-mono text-fg">
+          {formatEuroFromCents(props.meteredSpendCents)} of{' '}
+          {formatEuroFromCents(props.spendCapCents)}
+        </span>
+      </div>
+      <SpendBar percent={percent} danger={percent >= 90} />
+    </div>
   );
 }
 
@@ -314,16 +153,25 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   const [pending, startTransition] = useTransition();
   const [form, updateForm] = useReducer(billingFormReducer, INITIAL_BILLING_FORM);
   const spendCapEuros = form.spendCapDraft ?? String(props.spendCapCents / 100);
-  const autoReloadEnabled = form.autoReloadEnabledDraft ?? props.autoReloadEnabled;
-  const autoReloadThresholdEuros =
-    form.autoReloadThresholdDraft ?? String((props.autoReloadThresholdCents ?? 500) / 100);
-  const { error, message } = form;
-
-  const available = Math.max(0, props.walletBalanceCents - props.reservedBalanceCents);
-  const walletPlan = planUsesPrepaidWallet(props.planId);
+  const paymentFailed = props.billingState === 'past_due' || props.billingState === 'payment_retry';
+  const state = customerBillingState({
+    planId: props.planId,
+    billingState: props.billingState,
+    costBearingPaused: props.costBearingPaused,
+    spendCapCents: props.spendCapCents,
+    meteredSpendCents: props.meteredSpendCents,
+    warnPercent: props.utilization.percent,
+  });
+  const selfServe = props.canManage && props.comp === null && props.planId !== 'enterprise';
+  const showPortal =
+    props.canManage &&
+    props.comp === null &&
+    props.polarConfigured &&
+    props.hasPolarSubscription &&
+    !paymentFailed;
 
   function runCheckout(plan: 'payg' | 'team' | 'business') {
-    updateForm(clearNotices());
+    updateForm({ error: null, message: null });
     startTransition(async () => {
       const result = await startBillingCheckout({ plan });
       if (!result.ok) {
@@ -334,15 +182,31 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
     });
   }
 
+  function openPortal() {
+    updateForm({ error: null, message: null });
+    startTransition(async () => {
+      const result = await startBillingPortal();
+      if (!result.ok) {
+        updateForm({ error: result.error });
+        return;
+      }
+      window.location.href = result.url;
+    });
+  }
+
   function saveSpendCap() {
-    updateForm(clearNotices());
-    const euros = Number(spendCapEuros);
-    if (!Number.isFinite(euros) || euros < 0) {
-      updateForm({ error: 'Enter a non-negative spend cap in euros.' });
+    updateForm({ error: null, message: null });
+    let spendCapCents: number;
+    try {
+      spendCapCents = parseEuroAmountToCents(spendCapEuros);
+    } catch (error) {
+      updateForm({
+        error: error instanceof Error ? error.message : 'Enter a non-negative spend cap in euros.',
+      });
       return;
     }
     startTransition(async () => {
-      const result = await updateBillingSpendCap({ spendCapCents: Math.round(euros * 100) });
+      const result = await updateBillingSpendCap({ spendCapCents });
       if (!result.ok) {
         updateForm({ error: result.error });
         return;
@@ -352,106 +216,168 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
     });
   }
 
-  function buyTopUp() {
-    updateForm(clearNotices());
-    startTransition(async () => {
-      const result = await startWalletTopUp();
-      if (!result.ok) {
-        updateForm({ error: result.error });
-        return;
-      }
-      window.location.href = result.url;
-    });
-  }
-
-  function saveAutoReload() {
-    updateForm(clearNotices());
-    const thresholdEuros = Number(autoReloadThresholdEuros);
-    if (autoReloadEnabled && (!Number.isFinite(thresholdEuros) || thresholdEuros < 0)) {
-      updateForm({ error: 'Enter a non-negative auto-reload threshold in euros.' });
-      return;
-    }
-    startTransition(async () => {
-      const result = await updateBillingAutoReload({
-        enabled: autoReloadEnabled,
-        thresholdCents: Math.round(thresholdEuros * 100),
-        amountCents: PREPAID_TOPUP_CENTS,
-      });
-      if (!result.ok) {
-        updateForm({ error: result.error });
-        return;
-      }
-      updateForm({
-        message: 'Auto-reload updated.',
-        autoReloadEnabledDraft: null,
-        autoReloadThresholdDraft: null,
-      });
-      router.refresh();
-    });
-  }
-
   return (
-    <div className="space-y-5">
-      {props.nudge ? <BillingUpgradeNudge nudge={props.nudge} /> : null}
-
-      <SettingsSection title="Usage overview">
-        <BillingUsageSummary
-          periodYm={props.periodYm}
-          planName={props.planName}
-          planId={props.planId}
-          utilization={props.utilization}
-          freeRemaining={props.freeRemaining}
-          meteredSpendCents={props.meteredSpendCents}
-          meters={props.meters}
-          capacityUsage={props.capacityUsage}
-          costBearingPaused={props.costBearingPaused}
+    <div className="space-y-6">
+      {props.comp ? (
+        <BillingCompNotice
+          planName={props.comp.planName}
+          expired={props.comp.expired}
+          reason={props.comp.reason}
+          expiresOn={props.comp.expiresOn}
         />
-      </SettingsSection>
+      ) : null}
+      {state === 'payment_failed' ? (
+        <BillingStateBanner title="Payment failed.">
+          {props.canManage && props.polarConfigured && props.comp === null ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={openPortal}
+              className="text-sm font-medium text-fg underline-offset-4 hover:underline disabled:opacity-50"
+            >
+              Update payment method
+            </button>
+          ) : null}
+        </BillingStateBanner>
+      ) : null}
+      {state === 'spend_cap' ? (
+        <BillingStateBanner title="Spend cap reached.">
+          {props.canManage && props.comp === null ? (
+            <a
+              href="#billing-spend-cap"
+              className="text-sm font-medium text-fg underline-offset-4 hover:underline"
+            >
+              Raise cap
+            </a>
+          ) : null}
+        </BillingStateBanner>
+      ) : null}
+      {state === 'allowance' ? <BillingStateBanner title="Free allowance used up." /> : null}
 
-      <BillingPlanSection
-        planId={props.planId}
-        planName={props.planName}
-        billingState={props.billingState}
-        shadowBilling={props.shadowBilling}
-        polarConfigured={props.polarConfigured}
-        canManage={props.canManage}
-        pending={pending}
-        onCheckout={runCheckout}
-      />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-fg-muted">Current plan</p>
+          <p className="mt-1 text-lg font-medium text-fg">{props.planName}</p>
+          <p className="mt-1 font-mono text-sm text-fg" data-billing-price>
+            {planPriceLabel(props.planId, props.platformFeeCents)}
+          </p>
+          {props.planId === 'enterprise' && !props.hasPolarSubscription ? (
+            <p className="mt-2 text-sm text-fg-muted" data-enterprise-subscription="pending">
+              Subscription pending
+            </p>
+          ) : null}
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          {showPortal ? (
+            <button type="button" disabled={pending} onClick={openPortal} className={PRIMARY_CLASS}>
+              Manage payment
+            </button>
+          ) : null}
+          {selfServe ? (
+            <details id="change-plan">
+              <summary
+                className={
+                  showPortal || paymentFailed
+                    ? 'cursor-pointer text-sm text-fg-muted'
+                    : PRIMARY_CLASS
+                }
+              >
+                Change plan
+              </summary>
+              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                {(
+                  [
+                    ['payg', 'Pay as you go'],
+                    ['team', 'Team · €49/mo'],
+                    ['business', 'Business · €199/mo'],
+                  ] as const
+                ).map(([plan, label]) => (
+                  <button
+                    key={plan}
+                    type="button"
+                    disabled={
+                      pending ||
+                      !props.polarConfigured ||
+                      (props.planId === plan && props.hasPolarSubscription)
+                    }
+                    onClick={() => {
+                      runCheckout(plan);
+                    }}
+                    className={PLAN_BUTTON_CLASS}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+      </div>
 
-      <BillingPlanPreview
-        preview={props.planPreview}
-        currentPlanId={props.planId}
-        activeMemberCount={props.activeMemberCount}
-      />
+      <ThisMonth {...props} />
 
-      <BillingWalletSection
-        walletPlan={walletPlan}
-        available={available}
-        reservedBalanceCents={props.reservedBalanceCents}
-        includedDiscountRemainingCents={props.includedDiscountRemainingCents}
-        canManage={props.canManage}
-        pending={pending}
-        polarTopUpConfigured={props.polarTopUpConfigured}
-        spendCapEuros={spendCapEuros}
-        autoReloadEnabled={autoReloadEnabled}
-        autoReloadThresholdEuros={autoReloadThresholdEuros}
-        onSpendCapDraft={(value) => {
-          updateForm({ spendCapDraft: value });
-        }}
-        onSaveSpendCap={saveSpendCap}
-        onBuyTopUp={buyTopUp}
-        onAutoReloadEnabledDraft={(enabled) => {
-          updateForm({ autoReloadEnabledDraft: enabled });
-        }}
-        onAutoReloadThresholdDraft={(value) => {
-          updateForm({ autoReloadThresholdDraft: value });
-        }}
-        onSaveAutoReload={saveAutoReload}
-      />
+      <div data-billing-invoice>
+        <p className="text-sm text-fg-muted">Next invoice</p>
+        <p className="mt-1 font-mono text-sm text-fg">
+          {formatEuroFromCents(nextInvoiceCents(props))}
+        </p>
+      </div>
 
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-      {message ? <p className="text-sm text-fg-muted">{message}</p> : null}
+      {props.comp ? null : (
+        <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />
+      )}
+
+      {props.canManage && props.planId !== 'free' ? (
+        <details id="billing-spend-cap">
+          <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
+            Spend cap
+          </summary>
+          <div className="mt-3 flex flex-wrap items-end gap-3">
+            <label className="block text-sm">
+              <span className="text-fg-muted">EUR</span>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={spendCapEuros}
+                disabled={props.comp !== null}
+                onChange={(event) => {
+                  updateForm({ spendCapDraft: event.target.value });
+                }}
+                className="mt-1 block w-32 rounded-sm border border-border bg-bg px-3 py-2 font-mono text-sm text-fg disabled:opacity-60"
+              />
+            </label>
+            {props.comp === null ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={saveSpendCap}
+                className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50"
+              >
+                Save
+              </button>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+
+      <p className="text-sm">
+        <Link href="/pricing" className="text-fg-muted underline-offset-4 hover:underline">
+          Pricing
+        </Link>
+      </p>
+      {props.showOperatorLink ? (
+        <p className="text-sm">
+          <Link
+            href="/app/admin/billing"
+            className="text-fg-muted underline-offset-4 hover:underline"
+          >
+            Operator billing
+          </Link>
+        </p>
+      ) : null}
+      {form.error ? <p className="text-sm text-danger">{form.error}</p> : null}
+      {form.message ? <p className="text-sm text-fg-muted">{form.message}</p> : null}
     </div>
   );
 }

@@ -43,6 +43,7 @@ import type { TimelineMomentLookupPlan } from '#src/timeline-moments/index.js';
 
 import { createAuditScope } from '#src/audit/scope.js';
 import { getBillingContext, runWithBillingContext } from '#src/billing/context.js';
+import { createBillingOperatorScope } from '#src/billing/operator-store.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { createBoardScope } from '#src/boards/index.js';
@@ -4196,6 +4197,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
     mcp: mcpScope,
     onboarding: onboardingScope,
     billing: billingScope,
+    billingOperator: createBillingOperatorScope({ db, teamId }),
     calendar: calendarScope,
     jobRecovery: jobRecoveryScope,
     audit: auditScope,

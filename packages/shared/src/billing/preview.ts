@@ -1,9 +1,13 @@
 import { PLAN_CATALOG, type BillingMeterId, type BillingPlanId } from '#src/billing/catalog.js';
 import {
+  daysInPeriodYm,
   listChargeCentsForMeter,
+  memberDaysChargeCents,
   paygOverageCustomerChargeCents,
+  periodYmUtc,
   type MeterTotals,
 } from '#src/billing/charge.js';
+import { applyMeteredDiscountCents } from '#src/billing/operator.js';
 import { freeAllowanceFloorCents } from '#src/billing/status.js';
 
 export type SelfServePaidPlanId = 'payg' | 'team' | 'business';
@@ -64,6 +68,14 @@ function paygOverageFromMeters(meters: MeterTotals): number {
   return sum;
 }
 
+function memberDayPreviewChargeCents(extraMemberDays: number, centsPerMemberMonth: number): number {
+  return memberDaysChargeCents({
+    extraMemberDays,
+    centsPerMemberMonth,
+    daysInMonth: daysInPeriodYm(periodYmUtc()),
+  });
+}
+
 function extraMemberCentsForPreview(input: {
   extraMembers: number;
   additionalMemberCents: number;
@@ -76,17 +88,24 @@ function extraMemberCentsForPreview(input: {
   const nativeUnits = input.meters?.member_days?.nativeUnits;
   const currentExtra = extraMembers(input.activeMembers, input.includedActiveMembers);
   if (typeof nativeUnits === 'number' && currentExtra > 0) {
-    const currentCharge = listChargeCentsForMeter('member_days', nativeUnits);
-    return Math.round(currentCharge * (input.extraMembers / currentExtra));
+    const scaledDays = nativeUnits * (input.extraMembers / currentExtra);
+    return memberDayPreviewChargeCents(scaledDays, input.additionalMemberCents);
   }
   if (typeof input.billableMemberDays === 'number' && input.activeMembers > 0) {
     const extraDays = (input.billableMemberDays * input.extraMembers) / input.activeMembers;
-    return listChargeCentsForMeter('member_days', extraDays);
+    return memberDayPreviewChargeCents(extraDays, input.additionalMemberCents);
   }
   if (typeof nativeUnits === 'number') {
     return 0;
   }
   return input.extraMembers * input.additionalMemberCents;
+}
+
+export interface PlanCommercialOverride {
+  platformFeeCents?: number | null;
+  includedActiveMembers?: number | null;
+  additionalMemberCents?: number | null;
+  meteredDiscountPercent?: number | null;
 }
 
 function billForPlan(input: {
@@ -96,24 +115,32 @@ function billForPlan(input: {
   meters?: MeterTotals;
   includedActiveMembers?: number | null;
   billableMemberDays?: number;
+  terms?: PlanCommercialOverride;
 }): PlanBillPreview {
   const plan = PLAN_CATALOG[input.planId];
-  const extra = extraMembers(input.activeMembers, plan.includedActiveMembers);
-  const extraMemberCents = extraMemberCentsForPreview({
-    extraMembers: extra,
-    additionalMemberCents: plan.additionalMemberCents ?? 0,
-    activeMembers: input.activeMembers,
-    includedActiveMembers: input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
-    ...(input.meters !== undefined ? { meters: input.meters } : {}),
-    ...(input.billableMemberDays !== undefined
-      ? { billableMemberDays: input.billableMemberDays }
-      : {}),
-  });
+  const includedSeats = input.terms?.includedActiveMembers ?? plan.includedActiveMembers;
+  const extra = extraMembers(input.activeMembers, includedSeats);
+  const extraMemberCents = applyMeteredDiscountCents(
+    extraMemberCentsForPreview({
+      extraMembers: extra,
+      additionalMemberCents: input.terms?.additionalMemberCents ?? plan.additionalMemberCents ?? 0,
+      activeMembers: input.activeMembers,
+      includedActiveMembers: input.includedActiveMembers ?? PLAN_CATALOG.payg.includedActiveMembers,
+      ...(input.meters !== undefined ? { meters: input.meters } : {}),
+      ...(input.billableMemberDays !== undefined
+        ? { billableMemberDays: input.billableMemberDays }
+        : {}),
+    }),
+    input.terms?.meteredDiscountPercent,
+  );
+  // Settlement applies the metered percentage to the gross list charge, then
+  // subtracts included credit. Preview uses that same order.
   const meteredAfterDiscountCents = Math.max(
     0,
-    input.meteredSpendCents - plan.includedUsageDiscountCents,
+    applyMeteredDiscountCents(input.meteredSpendCents, input.terms?.meteredDiscountPercent) -
+      plan.includedUsageDiscountCents,
   );
-  const platformFeeCents = plan.platformFeeCents ?? 0;
+  const platformFeeCents = input.terms?.platformFeeCents ?? plan.platformFeeCents ?? 0;
   return {
     planId: input.planId,
     platformFeeCents,
@@ -138,6 +165,8 @@ export function cheapestPlanPreview(input: {
   includedActiveMembers?: number | null;
   /** All recorded person-days this period (not only current-plan extras). */
   billableMemberDays?: number;
+  /** Per-plan commercial overrides. Other plans stay on the catalog. */
+  planTerms?: Partial<Record<SelfServePaidPlanId, PlanCommercialOverride>>;
 }): CheapestPlanPreview {
   const gross = input.meters
     ? grossListChargeCentsFromMeters(input.meters)
@@ -160,16 +189,19 @@ export function cheapestPlanPreview(input: {
       planId: 'payg',
       meteredSpendCents: paygMetered,
       ...shared,
+      ...(input.planTerms?.payg ? { terms: input.planTerms.payg } : {}),
     }),
     team: billForPlan({
       planId: 'team',
       meteredSpendCents: gross,
       ...shared,
+      ...(input.planTerms?.team ? { terms: input.planTerms.team } : {}),
     }),
     business: billForPlan({
       planId: 'business',
       meteredSpendCents: gross,
       ...shared,
+      ...(input.planTerms?.business ? { terms: input.planTerms.business } : {}),
     }),
   };
   let recommended: SelfServePaidPlanId = 'payg';

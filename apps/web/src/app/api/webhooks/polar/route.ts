@@ -1,4 +1,8 @@
-import { handlePolarWebhookEvent, verifyPolarWebhookSignature } from '@timeline/shared/billing';
+import {
+  createPolarBillingProvider,
+  handlePolarWebhookEvent,
+  verifyPolarWebhookSignature,
+} from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 
 import { db } from '@/lib/db';
@@ -44,8 +48,9 @@ export async function POST(req: Request): Promise<Response> {
       ...(env.POLAR_PRODUCT_ID_PAYG ? { payg: env.POLAR_PRODUCT_ID_PAYG } : {}),
       ...(env.POLAR_PRODUCT_ID_TEAM ? { team: env.POLAR_PRODUCT_ID_TEAM } : {}),
       ...(env.POLAR_PRODUCT_ID_BUSINESS ? { business: env.POLAR_PRODUCT_ID_BUSINESS } : {}),
-      ...(env.POLAR_PRODUCT_ID_TOPUP ? { topup: env.POLAR_PRODUCT_ID_TOPUP } : {}),
+      ...(env.POLAR_PRODUCT_ID_ENTERPRISE ? { enterprise: env.POLAR_PRODUCT_ID_ENTERPRISE } : {}),
     },
+    provider: createPolarBillingProvider(),
   });
   return Response.json(result);
 }

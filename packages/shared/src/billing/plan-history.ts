@@ -2,6 +2,7 @@ import { billingPlanHistory, billingUsageLedger, type Db } from '@timeline/db';
 import { and, desc, eq, lte } from 'drizzle-orm';
 
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import { historicalPlanIdOnDay, type BillingArrangement } from '#src/billing/operator.js';
 
 function isBillingPlanId(value: string): value is BillingPlanId {
   return value in PLAN_CATALOG;
@@ -25,7 +26,7 @@ export async function recordBillingPlan(
 }
 
 /** Plan in force at the end of a UTC day. Falls back when no history exists yet. */
-export async function planIdEffectiveOnDay(input: {
+async function planIdEffectiveOnDay(input: {
   db: Db;
   teamId: string;
   day: string;
@@ -70,6 +71,35 @@ export function settlementMatchesDiscountPeriod(input: {
   const start = new Date(`${input.periodYm}-01T00:00:00.000Z`);
   const end = new Date(Date.UTC(Number(match[1]), Number(match[2]), 1));
   return input.occurredAt >= start && input.occurredAt < end;
+}
+
+/**
+ * Plan used to price one UTC day. History first, then comp expiry, then the
+ * stored plan. A contractual Enterprise account is not a comp, so it stays
+ * Enterprise. An expired comp is Free for days after `compExpiresAt`.
+ */
+export async function billingPlanIdOnDay(input: {
+  db: Db;
+  teamId: string;
+  day: string;
+  account: {
+    planId: BillingPlanId;
+    arrangement?: BillingArrangement | null | undefined;
+    compExpiresAt?: Date | null | undefined;
+  };
+}): Promise<BillingPlanId> {
+  const storedPlanId = await planIdEffectiveOnDay({
+    db: input.db,
+    teamId: input.teamId,
+    day: input.day,
+    fallback: input.account.planId,
+  });
+  return historicalPlanIdOnDay({
+    storedPlanId,
+    arrangement: input.account.arrangement,
+    compExpiresAt: input.account.compExpiresAt,
+    day: input.day,
+  });
 }
 
 /**

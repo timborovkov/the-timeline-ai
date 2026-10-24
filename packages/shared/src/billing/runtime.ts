@@ -15,25 +15,22 @@ import {
 } from '@timeline/db';
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
-import type { BillingReserveFailureCode } from '#src/billing/admission.js';
-
-import { settleAskAiFromOpenRouterUsd } from '#src/billing/admission.js';
-import { maybeTriggerWalletAutoReload } from '#src/billing/auto-reload.js';
+import {
+  settleAskAiFromOpenRouterUsd,
+  type BillingReserveFailureCode,
+} from '#src/billing/admission.js';
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
   type BillingPlanId,
   PLAN_CATALOG,
-  PREPAID_TOPUP_CENTS,
   customerAiChargeCentsFromOpenRouterUsd,
 } from '#src/billing/catalog.js';
 import {
   cumulativeChargeDeltaCents,
-  memberDaysChargeCents,
+  daysInPeriodYm,
+  memberDayChargeDelta,
   nextIncludedDiscountPeriod,
-  reconciledPolarRefundClawbackCents,
-  summedPolarRefundReversals,
-  type PolarRefundAmountKind,
 } from '#src/billing/charge.js';
 import {
   BILLING_SYSTEM_USER_ID,
@@ -47,9 +44,10 @@ import {
   openRouterUsdCostFromFinishEvent,
   type OpenRouterFinishEvent,
 } from '#src/billing/openrouter-usage.js';
+import { effectiveBillingPlanId, resolveTeamCommercialTerms } from '#src/billing/operator.js';
 import {
+  billingPlanIdOnDay,
   includedDiscountRemainingForReplay,
-  planIdEffectiveOnDay,
 } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
@@ -58,7 +56,7 @@ import {
   reservationKeepsProviderResult,
 } from '#src/billing/reservations.js';
 import { createBillingScope, flushPendingPolarUsageIngest } from '#src/billing/scope.js';
-import { accountUsesShadowBilling, shadowBillingFromChargesEnabled } from '#src/billing/shadow.js';
+import { shadowBillingFromChargesEnabled } from '#src/billing/shadow.js';
 import { childLogger } from '#src/logger.js';
 
 const GIB = 1024 ** 3;
@@ -129,220 +127,6 @@ export async function runWorkerBilling<T>(
   );
 }
 
-export async function creditWalletFromPolarOrder(input: {
-  db: Db;
-  teamId: string;
-  orderId: string;
-  cents: number;
-}): Promise<{ duplicate: boolean }> {
-  const billing = billingScope({
-    db: input.db,
-    teamId: input.teamId,
-    userId: BILLING_SYSTEM_USER_ID,
-  });
-  const result = await billing.creditWallet({
-    operationId: `polar_topup:${input.orderId}`,
-    cents: input.cents,
-    source: 'polar_order',
-  });
-  await applyPendingPolarRefundsForOrder({
-    db: input.db,
-    teamId: input.teamId,
-    orderId: input.orderId,
-  });
-  return { duplicate: result.duplicate };
-}
-
-async function applyPendingPolarRefundsForOrder(input: {
-  db: Db;
-  teamId: string;
-  orderId: string;
-}): Promise<void> {
-  const pending = await input.db
-    .select({
-      operationId: billingUsageLedger.operationId,
-      metadata: billingUsageLedger.metadata,
-    })
-    .from(billingUsageLedger)
-    .where(
-      and(
-        eq(billingUsageLedger.teamId, input.teamId),
-        eq(billingUsageLedger.kind, 'adjustment'),
-        sql`${billingUsageLedger.metadata}->>'order_id' = ${input.orderId}`,
-        sql`${billingUsageLedger.metadata}->>'pending' = 'true'`,
-      ),
-    );
-  for (const row of pending) {
-    const prefix = 'polar_refund_pending:';
-    const refundKey = row.operationId.startsWith(prefix)
-      ? row.operationId.slice(prefix.length)
-      : row.operationId;
-    const centsRaw = row.metadata.cents;
-    const cents = typeof centsRaw === 'number' && centsRaw > 0 ? centsRaw : 0;
-    const storedKind = row.metadata.amount_kind;
-    const amountKind: PolarRefundAmountKind =
-      storedKind === 'cumulative' || storedKind === 'incremental'
-        ? storedKind
-        : refundKey.startsWith('order:')
-          ? 'cumulative'
-          : 'incremental';
-    await debitWalletFromPolarRefund({
-      db: input.db,
-      teamId: input.teamId,
-      orderId: input.orderId,
-      refundKey,
-      cents,
-      amountKind,
-    });
-    await input.db
-      .update(billingUsageLedger)
-      .set({
-        metadata: sql`${billingUsageLedger.metadata} || ${JSON.stringify({ pending: false })}::jsonb`,
-      })
-      .where(
-        and(
-          eq(billingUsageLedger.teamId, input.teamId),
-          eq(billingUsageLedger.operationId, row.operationId),
-        ),
-      );
-  }
-}
-
-export async function debitWalletFromPolarRefund(input: {
-  db: Db;
-  teamId: string;
-  orderId: string;
-  refundKey: string;
-  cents: number;
-  amountKind?: PolarRefundAmountKind;
-}): Promise<{ duplicate: boolean; reversed: boolean; shortfallCents: number }> {
-  const amountKind = input.amountKind ?? 'incremental';
-  const reportedCents = input.cents > 0 ? input.cents : 0;
-  return input.db.transaction(async (tx) => {
-    await tx
-      .select({ teamId: teamBillingAccounts.teamId })
-      .from(teamBillingAccounts)
-      .where(eq(teamBillingAccounts.teamId, input.teamId))
-      .limit(1)
-      .for('update');
-    const [original] = await tx
-      .select({
-        metadata: billingUsageLedger.metadata,
-      })
-      .from(billingUsageLedger)
-      .where(
-        and(
-          eq(billingUsageLedger.teamId, input.teamId),
-          eq(billingUsageLedger.operationId, `polar_topup:${input.orderId}`),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    if (!original) {
-      await tx
-        .insert(billingUsageLedger)
-        .values({
-          teamId: input.teamId,
-          operationId: `polar_refund_pending:${input.refundKey}`,
-          kind: 'adjustment',
-          meterId: 'ai',
-          nativeUnits: '0',
-          customerChargeCents: 0,
-          billable: false,
-          nonBillableReason: 'polar_refund_pending',
-          operationClass: 'wallet_refund',
-          source: 'polar_refund',
-          metadata: {
-            pending: true,
-            order_id: input.orderId,
-            cents: reportedCents > 0 ? reportedCents : PREPAID_TOPUP_CENTS,
-            amount_kind: amountKind,
-          },
-        })
-        .onConflictDoNothing();
-      return { duplicate: false, reversed: false, shortfallCents: 0 };
-    }
-    const originalCentsRaw = original.metadata.cents;
-    const originalCents =
-      typeof originalCentsRaw === 'number' && originalCentsRaw > 0
-        ? originalCentsRaw
-        : PREPAID_TOPUP_CENTS;
-    const refundOperationId = `polar_refund:${input.refundKey}`;
-    const priorReversals = await tx
-      .select({
-        operationId: billingUsageLedger.operationId,
-        metadata: billingUsageLedger.metadata,
-      })
-      .from(billingUsageLedger)
-      .where(
-        and(
-          eq(billingUsageLedger.teamId, input.teamId),
-          eq(billingUsageLedger.kind, 'reversal'),
-          sql`${billingUsageLedger.metadata}->>'order_id' = ${input.orderId}`,
-        ),
-      );
-    const prior = summedPolarRefundReversals(priorReversals, refundOperationId);
-    if (prior.duplicate) {
-      return { duplicate: true, reversed: false, shortfallCents: 0 };
-    }
-    const debitCents = reconciledPolarRefundClawbackCents({
-      originalCents,
-      alreadyDebitedCents: prior.alreadyDebitedCents,
-      incrementalReportedCents: prior.incrementalReportedCents,
-      cumulativeReportedCents: prior.cumulativeReportedCents,
-      incomingKind: amountKind,
-      incomingReportedCents: reportedCents,
-    });
-    const refundMetadata = {
-      order_id: input.orderId,
-      cents: debitCents,
-      reported_cents: reportedCents > 0 ? reportedCents : debitCents,
-      amount_kind: amountKind,
-    };
-    if (debitCents <= 0) {
-      if (reportedCents <= 0) {
-        return { duplicate: true, reversed: false, shortfallCents: 0 };
-      }
-      // Remember a paired event that clawed nothing so a later partial refund
-      // still adds its own amount on top of the cumulative total.
-      await tx
-        .insert(billingUsageLedger)
-        .values({
-          teamId: input.teamId,
-          operationId: refundOperationId,
-          kind: 'reversal',
-          meterId: 'ai',
-          nativeUnits: '0',
-          customerChargeCents: 0,
-          billable: false,
-          nonBillableReason: 'wallet_refund',
-          operationClass: 'wallet_refund',
-          source: 'polar_refund',
-          metadata: refundMetadata,
-        })
-        .onConflictDoNothing();
-      return { duplicate: false, reversed: false, shortfallCents: 0 };
-    }
-    const billing = billingScope({
-      db: tx as unknown as Db,
-      teamId: input.teamId,
-      userId: BILLING_SYSTEM_USER_ID,
-    });
-    const result = await billing.debitWallet({
-      operationId: refundOperationId,
-      cents: debitCents,
-      source: 'polar_refund',
-      freezeOnShortfall: true,
-      metadata: refundMetadata,
-    });
-    return {
-      duplicate: result.duplicate,
-      reversed: !result.duplicate,
-      shortfallCents: result.shortfallCents,
-    };
-  });
-}
-
 export async function settleTeamMeter(input: {
   db: Db;
   teamId: string;
@@ -359,6 +143,8 @@ export async function settleTeamMeter(input: {
   persistWhenDenied?: boolean;
   /** Price a replayed day on the plan in force then, not the live plan. */
   pricingPlanId?: BillingPlanId;
+  /** Extra-member price of that historical plan. Null means the plan has no seat price. */
+  pricingAdditionalMemberCents?: number | null;
   historicalIncludedDiscountCents?: number;
   pricingPeriodYm?: string;
   usageAt?: Date;
@@ -375,6 +161,9 @@ export async function settleTeamMeter(input: {
     ...(input.source ? { source: input.source } : {}),
     ...(input.billable !== undefined ? { billable: input.billable } : {}),
     ...(input.pricingPlanId ? { pricingPlanId: input.pricingPlanId } : {}),
+    ...(input.pricingAdditionalMemberCents !== undefined
+      ? { pricingAdditionalMemberCents: input.pricingAdditionalMemberCents }
+      : {}),
     ...(input.historicalIncludedDiscountCents !== undefined
       ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
       : {}),
@@ -693,7 +482,7 @@ export async function snapshotTeamStorageGbMonth(input: {
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
-  const livePlan = account?.planId ?? 'free';
+  const livePlan = account ? effectiveBillingPlanId(account) : 'free';
   let lastGb = 0;
   let settled = false;
   for (const day of days) {
@@ -709,11 +498,11 @@ export async function snapshotTeamStorageGbMonth(input: {
       'storage_gb_month',
       replayPeriodYm,
     );
-    const pricingPlanId = await planIdEffectiveOnDay({
+    const pricingPlanId = await billingPlanIdOnDay({
       db: input.db,
       teamId: input.teamId,
       day,
-      fallback: livePlan,
+      account: account ?? { planId: 'free' },
     });
     const differentPlan = pricingPlanId !== livePlan;
     const priorPeriod = replayPeriodYm !== periodYm();
@@ -860,8 +649,12 @@ async function planEntitlementForMemberDay(input: {
   db: Db;
   teamId: string;
   day: string;
-  currentPlanId: BillingPlanId;
-}): Promise<{ planId: BillingPlanId; included: number }> {
+  account: {
+    planId: BillingPlanId;
+    arrangement?: 'standard' | 'comped' | null | undefined;
+    compExpiresAt?: Date | null | undefined;
+  };
+}): Promise<{ planId: BillingPlanId; included: number | null }> {
   const [existing] = await input.db
     .select({ planId: billingMemberDayLedger.planId })
     .from(billingMemberDayLedger)
@@ -874,17 +667,17 @@ async function planEntitlementForMemberDay(input: {
     .limit(1);
   const stampedPlanId =
     existing?.planId && isBillingPlanId(existing.planId) ? existing.planId : null;
-  // A missed day has no stamp yet. Price it on the plan in force that day,
-  // the same way storage backfill does, before the first member-day write.
+  // A missed day has no stamp yet. One helper applies plan history, comp
+  // expiry, and a contractual Enterprise plan before the first write.
   const planId =
     stampedPlanId ??
-    (await planIdEffectiveOnDay({
+    (await billingPlanIdOnDay({
       db: input.db,
       teamId: input.teamId,
       day: input.day,
-      fallback: input.currentPlanId,
+      account: input.account,
     }));
-  return { planId, included: PLAN_CATALOG[planId].includedActiveMembers ?? 0 };
+  return { planId, included: PLAN_CATALOG[planId].includedActiveMembers };
 }
 
 async function accrueTeamMemberDaysForDay(input: {
@@ -892,7 +685,9 @@ async function accrueTeamMemberDaysForDay(input: {
   teamId: string;
   day: string;
   planId: BillingPlanId;
-  included: number;
+  livePlanId: BillingPlanId;
+  included: number | null;
+  additionalMemberCents: number | null;
   members: { userId: string; role: string }[];
 }): Promise<{ extraMembers: number; chargeCents: number }> {
   const { day, planId, included } = input;
@@ -911,8 +706,13 @@ async function accrueTeamMemberDaysForDay(input: {
       .onConflictDoNothing();
   }
 
-  const additionalMemberCents = PLAN_CATALOG[planId].additionalMemberCents;
-  if (planId === 'free' || additionalMemberCents === null) {
+  const additionalMemberCents = input.additionalMemberCents;
+  if (
+    planId === 'free' ||
+    included === null ||
+    additionalMemberCents === null ||
+    additionalMemberCents <= 0
+  ) {
     return { extraMembers: 0, chargeCents: 0 };
   }
   const billableRows = await input.db
@@ -932,20 +732,16 @@ async function accrueTeamMemberDaysForDay(input: {
   }
   const period = day.slice(0, 7);
   let previousNative = await currentMeterNativeUnits(input.db, input.teamId, 'member_days', period);
-  const daysInMonth = daysInUtcMonth(new Date(`${day}T00:00:00.000Z`));
+  const daysInMonth = daysInPeriodYm(period);
   let chargeCents = 0;
   for (const extra of extraRows) {
-    const nextChargeCents =
-      memberDaysChargeCents({
-        extraMemberDays: previousNative + 1,
-        centsPerMemberMonth: additionalMemberCents,
-        daysInMonth,
-      }) -
-      memberDaysChargeCents({
-        extraMemberDays: previousNative,
-        centsPerMemberMonth: additionalMemberCents,
-        daysInMonth,
-      });
+    const nextChargeCents = memberDayChargeDelta({
+      previousNativeUnits: previousNative,
+      nextNativeUnits: previousNative + 1,
+      centsPerMemberMonth: additionalMemberCents,
+      daysInMonth,
+    });
+    const replayDifferentPlan = planId !== input.livePlanId;
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
@@ -959,6 +755,12 @@ async function accrueTeamMemberDaysForDay(input: {
       persistWhenDenied: true,
       usageAt: new Date(`${day}T12:00:00.000Z`),
       pricingPeriodYm: period,
+      ...(replayDifferentPlan
+        ? {
+            pricingPlanId: planId,
+            pricingAdditionalMemberCents: additionalMemberCents,
+          }
+        : {}),
     });
     if (result.ok && !result.duplicate) {
       previousNative += 1;
@@ -974,11 +776,17 @@ export async function accrueTeamMemberDays(input: {
   day?: string;
 }): Promise<{ extraMembers: number; chargeCents: number }> {
   const [account] = await input.db
-    .select({ planId: teamBillingAccounts.planId })
+    .select()
     .from(teamBillingAccounts)
     .where(eq(teamBillingAccounts.teamId, input.teamId))
     .limit(1);
-  const planId: BillingPlanId = account?.planId ?? 'free';
+  const commercial = account
+    ? resolveTeamCommercialTerms(account)
+    : resolveTeamCommercialTerms({
+        planId: 'free',
+        billingState: 'free',
+        spendCapCents: 0,
+      });
   const days = input.day ? [input.day] : memberDayBackfillRange();
   if (days.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
@@ -1005,14 +813,23 @@ export async function accrueTeamMemberDays(input: {
       db: input.db,
       teamId: input.teamId,
       day,
-      currentPlanId: planId,
+      account: account ?? { planId: 'free' },
     });
+    const samePlan = entitlement.planId === commercial.planId;
     const result = await accrueTeamMemberDaysForDay({
       db: input.db,
       teamId: input.teamId,
       day,
       planId: entitlement.planId,
-      included: entitlement.included,
+      livePlanId: commercial.planId,
+      included:
+        samePlan && commercial.includedActiveMembers !== null
+          ? commercial.includedActiveMembers
+          : entitlement.included,
+      additionalMemberCents:
+        samePlan && commercial.additionalMemberCents !== null
+          ? commercial.additionalMemberCents
+          : (PLAN_CATALOG[entitlement.planId].additionalMemberCents ?? null),
       members,
     });
     extraMembers = result.extraMembers;
@@ -1202,28 +1019,6 @@ export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number
       await resetIncludedDiscountIfPeriodElapsed({ db, teamId: team.id });
       await snapshotTeamStorageGbMonth({ db, teamId: team.id });
       await accrueTeamMemberDays({ db, teamId: team.id });
-      const [account] = await db
-        .select()
-        .from(teamBillingAccounts)
-        .where(eq(teamBillingAccounts.teamId, team.id))
-        .limit(1);
-      if (account) {
-        const counters = await db
-          .select()
-          .from(billingUsageCounters)
-          .where(
-            and(
-              eq(billingUsageCounters.teamId, team.id),
-              eq(billingUsageCounters.periodYm, periodYm()),
-            ),
-          );
-        await maybeTriggerWalletAutoReload({
-          db,
-          teamId: team.id,
-          account: { ...account, shadowBilling: accountUsesShadowBilling(account) },
-          meteredSpendCents: counters.reduce((sum, row) => sum + row.customerChargeCents, 0),
-        });
-      }
     } catch {
       // Keep the janitor tick alive if one workspace's ledger fails.
     }
@@ -1259,7 +1054,7 @@ export async function resetIncludedDiscountIfPeriodElapsed(input: {
       periodEndsAt: account.periodEndsAt,
     });
     if (!next) return false;
-    const included = PLAN_CATALOG[account.planId].includedUsageDiscountCents;
+    const included = PLAN_CATALOG[effectiveBillingPlanId(account)].includedUsageDiscountCents;
     const [updated] = await tx
       .update(teamBillingAccounts)
       .set({

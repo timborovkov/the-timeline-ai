@@ -5,32 +5,35 @@ import {
 } from '@timeline/shared/billing/catalog';
 import Link from 'next/link';
 
-import type {
-  FreeAllowanceRemaining,
-  PlanCapacityKind,
-  PlanCapacityUsageRow,
-  SpendCapUtilization,
-} from '@timeline/shared/billing/status';
+import type { PlanCapacityKind, PlanCapacityUsageRow } from '@timeline/shared/billing/status';
 
 import { cn } from '@/lib/utils';
 
 const METER_LABELS: Record<BillingMeterId, string> = {
   ai: 'AI',
   recall_minutes: 'Meeting minutes',
-  email_units: 'Email units',
-  storage_gb_month: 'Storage (GB-month)',
+  email_units: 'Email',
+  storage_gb_month: 'Storage',
   accepted_sources: 'Accepted sources',
-  member_days: 'Member-days',
+  member_days: 'Extra members',
 };
 
-function ProgressBar({ percent, danger }: { percent: number; danger?: boolean }) {
-  const width = Math.max(0, Math.min(100, percent));
+const ALLOWANCE_METERS = [
+  'ai',
+  'recall_minutes',
+  'email_units',
+  'storage_gb_month',
+  'accepted_sources',
+] as const satisfies readonly BillingMeterId[];
+
+function AllowanceBar({ used, allowance }: { used: number; allowance: number }) {
+  const scale = Math.max(used, allowance, 1);
+  const included = (Math.min(Math.max(used, 0), allowance) / scale) * 100;
+  const over = (Math.max(0, used - allowance) / scale) * 100;
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-sm bg-border" aria-hidden="true">
-      <div
-        className={cn('h-full rounded-sm', danger ? 'bg-danger' : 'bg-fg-muted')}
-        style={{ width: `${width}%` }}
-      />
+    <div className="mt-1.5 flex h-1 w-full overflow-hidden rounded-sm bg-border" aria-hidden="true">
+      <div className="h-full bg-fg-muted" style={{ width: `${included}%` }} />
+      <div className="h-full bg-fg" style={{ width: `${over}%` }} />
     </div>
   );
 }
@@ -55,226 +58,152 @@ function formatCapacityValue(row: PlanCapacityUsageRow): string {
   return `${formatCapacityNumber(row.kind, row.used)} of ${formatCapacityNumber(row.kind, row.limit)}`;
 }
 
-function capacityPercent(row: PlanCapacityUsageRow): number | null {
-  if (row.limit === null) return null;
-  if (row.limit <= 0) return row.used > 0 ? 100 : 0;
-  return (row.used / row.limit) * 100;
+function allowanceLimit(meter: BillingMeterId): number | null {
+  switch (meter) {
+    case 'ai':
+      return FREE_ALLOWANCES.aiChargeCents;
+    case 'recall_minutes':
+      return FREE_ALLOWANCES.recallMinutes;
+    case 'email_units':
+      return FREE_ALLOWANCES.emailUnits;
+    case 'storage_gb_month':
+      return FREE_ALLOWANCES.storageGb;
+    case 'accepted_sources':
+      return FREE_ALLOWANCES.acceptedSources;
+    case 'member_days':
+      return null;
+  }
 }
 
-function isCapacityExhausted(row: PlanCapacityUsageRow): boolean {
-  if (row.limit === null) return false;
-  if (row.limit <= 0) return row.used > 0;
-  return row.used >= row.limit;
+function amountLabel(meter: BillingMeterId, nativeUnits: number): string {
+  if (meter === 'ai') return formatEuroFromCents(nativeUnits);
+  if (meter === 'recall_minutes') return `${nativeUnits.toLocaleString('en-IE')} min`;
+  if (meter === 'storage_gb_month') {
+    const rounded = nativeUnits >= 10 ? nativeUnits.toFixed(0) : nativeUnits.toFixed(2);
+    return `${Number(rounded).toLocaleString('en-IE')} GB`;
+  }
+  return nativeUnits.toLocaleString('en-IE');
+}
+
+function meterHint(input: {
+  meter: BillingMeterId;
+  includedActiveMembers?: number | null;
+  additionalMemberCents?: number | null;
+}): string | undefined {
+  if (input.meter !== 'member_days') return undefined;
+  const parts: string[] = [];
+  if (input.includedActiveMembers !== null && input.includedActiveMembers !== undefined) {
+    parts.push(`${input.includedActiveMembers.toLocaleString('en-IE')} included`);
+  }
+  if (input.additionalMemberCents !== null && input.additionalMemberCents !== undefined) {
+    parts.push(`${formatEuroFromCents(input.additionalMemberCents)} each`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined;
 }
 
 export function BillingUsageSummary({
-  periodYm,
-  planName,
-  utilization,
-  freeRemaining,
   planId,
-  meteredSpendCents,
   meters,
   capacityUsage,
-  costBearingPaused,
+  includedActiveMembers,
+  additionalMemberCents,
   className,
 }: {
-  periodYm: string;
-  planName: string;
   planId: string;
-  utilization: SpendCapUtilization;
-  freeRemaining: FreeAllowanceRemaining;
-  meteredSpendCents: number;
   meters: Partial<Record<string, { nativeUnits: number; customerChargeCents: number }>>;
   capacityUsage: PlanCapacityUsageRow[];
-  costBearingPaused: boolean;
+  includedActiveMembers?: number | null;
+  additionalMemberCents?: number | null;
   className?: string;
 }) {
-  const capPercent = utilization.percent ?? 0;
-  const showCap = utilization.spendCapCents > 0;
+  const rows = (Object.keys(METER_LABELS) as BillingMeterId[])
+    .map((meter) => {
+      const row = meters[meter];
+      const nativeUnits = row?.nativeUnits ?? 0;
+      const customerChargeCents = row?.customerChargeCents ?? 0;
+      const active = nativeUnits > 0 || customerChargeCents > 0;
+      const showOnFree =
+        planId === 'free' && (ALLOWANCE_METERS as readonly string[]).includes(meter);
+      if (!active && !showOnFree) return null;
+      return {
+        meter,
+        nativeUnits,
+        customerChargeCents,
+        allowance: allowanceLimit(meter),
+      };
+    })
+    .filter((row) => row !== null);
 
   return (
-    <div className={cn('space-y-5', className)}>
-      {costBearingPaused ? (
-        <p
-          data-billing-paused
-          className="border border-border bg-surface-2 px-4 py-3 text-sm leading-6 text-fg-muted"
-        >
-          Cost-bearing work is paused for this workspace. Reading, deletion, billing management, and
-          export remain available.
+    <div className={cn('space-y-4', className)}>
+      {rows.length === 0 ? (
+        <p className="text-sm text-fg-muted">
+          No usage this month.{' '}
+          <Link href="/pricing" className="underline-offset-4 hover:underline">
+            Pricing
+          </Link>
         </p>
-      ) : null}
-
-      <div className="grid gap-3 text-sm sm:grid-cols-3">
-        <div className="border border-border bg-bg px-4 py-3">
-          <p className="text-fg-muted">Plan</p>
-          <p className="mt-1 font-medium text-fg">{planName}</p>
-          <p className="mt-1 font-mono text-xs text-fg-dim">{periodYm}</p>
-        </div>
-        <div className="border border-border bg-bg px-4 py-3">
-          <p className="text-fg-muted">Metered this period</p>
-          <p className="mt-1 font-mono text-lg text-fg">{formatEuroFromCents(meteredSpendCents)}</p>
-        </div>
-        <div className="border border-border bg-bg px-4 py-3">
-          <p className="text-fg-muted">{showCap ? 'Spend cap' : 'Free AI allowance'}</p>
-          <p className="mt-1 font-mono text-lg text-fg">
-            {showCap
-              ? formatEuroFromCents(utilization.spendCapCents)
-              : formatEuroFromCents(FREE_ALLOWANCES.aiChargeCents)}
-          </p>
-        </div>
-      </div>
-
-      {showCap ? (
-        <div className="space-y-2">
-          <div className="flex items-baseline justify-between gap-3 text-sm">
-            <span className="text-fg-muted">Cap utilization</span>
-            <span className="font-mono text-fg">{capPercent}%</span>
+      ) : (
+        <div className="border border-border text-sm">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 px-3 py-2 text-fg-muted">
+            <span>Meter</span>
+            <span>Amount</span>
+            <span className="text-right">Cost</span>
           </div>
-          <ProgressBar percent={capPercent} danger={capPercent >= 90} />
-        </div>
-      ) : null}
-
-      {planId === 'free' ? (
-        <div className="space-y-3 border border-border bg-bg p-4">
-          <p className="text-sm font-medium text-fg">Free allowance remaining</p>
-          <ul className="grid gap-3 text-sm sm:grid-cols-2">
-            <li>
-              <div className="flex justify-between gap-2 text-fg-muted">
-                <span>AI</span>
-                <span className="font-mono text-fg">
-                  {formatEuroFromCents(freeRemaining.aiChargeCents)}
-                </span>
-              </div>
-              <ProgressBar
-                percent={
-                  ((FREE_ALLOWANCES.aiChargeCents - freeRemaining.aiChargeCents) /
-                    FREE_ALLOWANCES.aiChargeCents) *
-                  100
-                }
-                danger={freeRemaining.aiChargeCents <= 0}
-              />
-            </li>
-            <li>
-              <div className="flex justify-between gap-2 text-fg-muted">
-                <span>Meetings</span>
-                <span className="font-mono text-fg">{freeRemaining.recallMinutes} min</span>
-              </div>
-              <ProgressBar
-                percent={
-                  ((FREE_ALLOWANCES.recallMinutes - freeRemaining.recallMinutes) /
-                    FREE_ALLOWANCES.recallMinutes) *
-                  100
-                }
-                danger={freeRemaining.recallMinutes <= 0}
-              />
-            </li>
-            <li>
-              <div className="flex justify-between gap-2 text-fg-muted">
-                <span>Email</span>
-                <span className="font-mono text-fg">
-                  {freeRemaining.emailUnits.toLocaleString()}
-                </span>
-              </div>
-              <ProgressBar
-                percent={
-                  ((FREE_ALLOWANCES.emailUnits - freeRemaining.emailUnits) /
-                    FREE_ALLOWANCES.emailUnits) *
-                  100
-                }
-                danger={freeRemaining.emailUnits <= 0}
-              />
-            </li>
-            <li>
-              <div className="flex justify-between gap-2 text-fg-muted">
-                <span>Accepted sources</span>
-                <span className="font-mono text-fg">
-                  {freeRemaining.acceptedSources.toLocaleString()}
-                </span>
-              </div>
-              <ProgressBar
-                percent={
-                  ((FREE_ALLOWANCES.acceptedSources - freeRemaining.acceptedSources) /
-                    FREE_ALLOWANCES.acceptedSources) *
-                  100
-                }
-                danger={freeRemaining.acceptedSources <= 0}
-              />
-            </li>
-            <li>
-              <div className="flex justify-between gap-2 text-fg-muted">
-                <span>Storage</span>
-                <span className="font-mono text-fg">{freeRemaining.storageGb} GB</span>
-              </div>
-              <ProgressBar
-                percent={
-                  ((FREE_ALLOWANCES.storageGb - freeRemaining.storageGb) /
-                    FREE_ALLOWANCES.storageGb) *
-                  100
-                }
-                danger={freeRemaining.storageGb <= 0}
-              />
-            </li>
-          </ul>
-        </div>
-      ) : null}
-
-      {capacityUsage.length > 0 ? (
-        <details data-billing-capacity className="border border-border bg-bg">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-fg-muted hover:text-fg">
-            Infrastructure limits
-          </summary>
-          <div className="space-y-3 border-t border-border px-4 py-3">
-            <p className="text-sm text-fg-muted">
-              Plan capacity ceilings, not billed usage. They keep the service healthy. Hitting one
-              pauses that action until the next period, a bot ends, or you change plan.
-            </p>
-            <ul className="grid gap-3 text-sm sm:grid-cols-2">
-              {capacityUsage.map((row) => {
-                const percent = capacityPercent(row);
-                const exhausted = isCapacityExhausted(row);
-                return (
-                  <li key={row.kind} data-capacity-kind={row.kind}>
-                    <div className="flex justify-between gap-2 text-fg-muted">
-                      <span>{row.label}</span>
-                      <span className="font-mono text-fg">{formatCapacityValue(row)}</span>
-                    </div>
-                    {percent === null ? null : <ProgressBar percent={percent} danger={exhausted} />}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </details>
-      ) : null}
-
-      <div>
-        <p className="mb-2 text-sm font-medium text-fg">Meters this period</p>
-        {Object.keys(meters).length === 0 ? (
-          <p className="text-sm text-fg-muted">
-            No metered usage recorded yet this month.{' '}
-            <Link href="/pricing" className="underline-offset-4 hover:underline">
-              See pricing
-            </Link>
-          </p>
-        ) : (
-          <ul className="divide-y divide-border border border-border text-sm">
-            {Object.entries(meters).map(([meter, row]) => {
-              if (!row) return null;
-              const label = meter in METER_LABELS ? METER_LABELS[meter as BillingMeterId] : meter;
+          <ul>
+            {rows.map((row) => {
+              const hint = meterHint({
+                meter: row.meter,
+                includedActiveMembers,
+                additionalMemberCents,
+              });
               return (
-                <li key={meter} className="flex items-center justify-between gap-4 px-3 py-2.5">
-                  <span className="text-fg">{label}</span>
+                <li
+                  key={row.meter}
+                  data-billing-meter={row.meter}
+                  {...(row.meter === 'member_days' ? { 'data-billing-extra-members': '' } : {})}
+                  className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-t border-border px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="text-fg" {...(hint ? { title: hint } : {})}>
+                      {METER_LABELS[row.meter]}
+                    </p>
+                    {row.allowance === null ? null : (
+                      <AllowanceBar used={row.nativeUnits} allowance={row.allowance} />
+                    )}
+                  </div>
                   <span className="font-mono text-fg-muted">
-                    {row.nativeUnits.toLocaleString()} ·{' '}
+                    {amountLabel(row.meter, row.nativeUnits)}
+                  </span>
+                  <span className="text-right font-mono text-fg">
                     {formatEuroFromCents(row.customerChargeCents)}
                   </span>
                 </li>
               );
             })}
           </ul>
-        )}
-      </div>
+        </div>
+      )}
+
+      {capacityUsage.length > 0 ? (
+        <details data-billing-capacity className="border border-border">
+          <summary className="cursor-pointer px-3 py-2 text-sm text-fg-muted hover:text-fg">
+            Infrastructure limits
+          </summary>
+          <ul className="border-t border-border">
+            {capacityUsage.map((row) => (
+              <li
+                key={row.kind}
+                data-capacity-kind={row.kind}
+                className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+              >
+                <span className="text-fg-muted">{row.label}</span>
+                <span className="font-mono text-fg">{formatCapacityValue(row)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </div>
   );
 }

@@ -3,16 +3,22 @@ import { describe, expect, it } from 'vitest';
 import {
   cumulativeChargeDeltaCents,
   currentPeriodSpendCapExceeded,
+  memberDayChargeDelta,
   memberDaysChargeCents,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
-  reconciledPolarRefundClawbackCents,
+  polarCatalogUnitsForInvoiceCents,
+  polarInvoiceNativeUnits,
+  polarIngestDisposition,
+  polarIngestDispositionBeforeCoverage,
+  polarMemberMonthUnits,
+  polarSubscriptionCoversMeter,
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
   splitDurationNativeUnitsByUtcMonth,
-  summedPolarRefundReversals,
 } from '#src/billing/charge.js';
+import { applyMeteredDiscountCents } from '#src/billing/operator.js';
 import {
   allFreeAllowancesExhausted,
   costBearingPausedFromAccount,
@@ -21,26 +27,26 @@ import {
 } from '#src/billing/status.js';
 
 describe('billing charge split', () => {
-  it('covers Team/Business included discount before the wallet', () => {
+  it('covers Team/Business included discount before the Polar invoice', () => {
     expect(splitDiscountAndWallet({ chargeCents: 80, includedDiscountRemainingCents: 60 })).toEqual(
-      { discountCents: 60, walletCents: 20 },
+      { discountCents: 60, invoiceCents: 20 },
     );
     expect(splitDiscountAndWallet({ chargeCents: 40, includedDiscountRemainingCents: 60 })).toEqual(
-      { discountCents: 40, walletCents: 0 },
+      { discountCents: 40, invoiceCents: 0 },
     );
   });
 
-  it('keeps extra member-days on the wallet instead of the included-usage discount', () => {
+  it('keeps extra member-days on the spend cap instead of the included-usage discount', () => {
     expect(
       splitDiscountAndWallet({
         chargeCents: 80,
         includedDiscountRemainingCents: 60,
         meterId: 'member_days',
       }),
-    ).toEqual({ discountCents: 0, walletCents: 80 });
+    ).toEqual({ discountCents: 0, invoiceCents: 80 });
   });
 
-  it('keeps the PAYG Free floor off the wallet', () => {
+  it('keeps the PAYG Free floor off the Polar invoice', () => {
     expect(
       paygOverageCustomerChargeCents({
         planId: 'payg',
@@ -131,62 +137,44 @@ describe('billing charge split', () => {
   });
 });
 
-describe('prepaid refund clawback', () => {
-  it('debits only the cumulative refunded total above reversals already recorded', () => {
-    expect(
-      reconciledPolarRefundClawbackCents({
-        originalCents: 1000,
-        alreadyDebitedCents: 0,
-        incrementalReportedCents: 0,
-        cumulativeReportedCents: 0,
-        incomingKind: 'cumulative',
-        incomingReportedCents: 200,
-      }),
-    ).toBe(200);
-    expect(
-      reconciledPolarRefundClawbackCents({
-        originalCents: 1000,
-        alreadyDebitedCents: 200,
-        incrementalReportedCents: 200,
-        cumulativeReportedCents: 0,
-        incomingKind: 'cumulative',
-        incomingReportedCents: 200,
-      }),
-    ).toBe(0);
-    expect(
-      reconciledPolarRefundClawbackCents({
-        originalCents: 1000,
-        alreadyDebitedCents: 200,
-        incrementalReportedCents: 0,
-        cumulativeReportedCents: 200,
-        incomingKind: 'incremental',
-        incomingReportedCents: 200,
-      }),
-    ).toBe(0);
-    expect(
-      reconciledPolarRefundClawbackCents({
-        originalCents: 1000,
-        alreadyDebitedCents: 200,
-        incrementalReportedCents: 200,
-        cumulativeReportedCents: 200,
-        incomingKind: 'incremental',
-        incomingReportedCents: 300,
-      }),
-    ).toBe(300);
+describe('polarMemberMonthUnits', () => {
+  it('scales payable cents onto the €2 catalog member-month price', () => {
+    expect(polarMemberMonthUnits(200)).toBe(1);
+    expect(polarMemberMonthUnits(6)).toBe(0.03);
+    expect(polarMemberMonthUnits(16)).toBe(0.08);
+    expect(polarMemberMonthUnits(0)).toBe(0);
+    expect(polarMemberMonthUnits(-4)).toBe(0);
   });
+});
 
-  it('treats a repeated refund operation as already recorded', () => {
+describe('memberDayChargeDelta', () => {
+  it('uses the commercial member-month price for one extra day', () => {
     expect(
-      summedPolarRefundReversals(
-        [
-          {
-            operationId: 'polar_refund:order:ord_1:200',
-            metadata: { cents: 200, reported_cents: 200, amount_kind: 'cumulative' },
-          },
-        ],
-        'polar_refund:order:ord_1:200',
-      ).duplicate,
-    ).toBe(true);
+      memberDayChargeDelta({
+        previousNativeUnits: 0,
+        nextNativeUnits: 1,
+        centsPerMemberMonth: 400,
+        daysInMonth: 31,
+      }),
+    ).toBe(13);
+    expect(
+      memberDayChargeDelta({
+        previousNativeUnits: 30,
+        nextNativeUnits: 31,
+        centsPerMemberMonth: 400,
+        daysInMonth: 31,
+      }),
+    ).toBeGreaterThan(0);
+    let charged = 0;
+    for (let day = 1; day <= 31; day += 1) {
+      charged += memberDayChargeDelta({
+        previousNativeUnits: day - 1,
+        nextNativeUnits: day,
+        centsPerMemberMonth: 400,
+        daysInMonth: 31,
+      });
+    }
+    expect(charged).toBe(400);
   });
 });
 
@@ -211,7 +199,7 @@ describe('memberDaysChargeCents', () => {
 });
 
 describe('shouldIngestPolarMeteredUsage', () => {
-  it('skips Polar ingest when the prepaid wallet or included discount collected', () => {
+  it('ingests the customer-payable remainder for subscription plans', () => {
     expect(
       shouldIngestPolarMeteredUsage({
         eventName: 'timeline_recall_minutes',
@@ -219,11 +207,19 @@ describe('shouldIngestPolarMeteredUsage', () => {
         shadowBilling: false,
         billable: true,
         polarUnits: 10,
-        walletCents: 30,
-        discountCents: 0,
-        enterpriseContract: true,
+        invoiceCents: 30,
       }),
-    ).toBe(false);
+    ).toBe(true);
+    expect(polarInvoiceNativeUnits({ polarUnits: 10, chargeCents: 100, invoiceCents: 40 })).toBe(4);
+    expect(polarInvoiceNativeUnits({ polarUnits: 10, chargeCents: 30, invoiceCents: 10 })).toBe(
+      3.333333,
+    );
+    expect(
+      polarInvoiceNativeUnits({ polarUnits: 10, chargeCents: 30, invoiceCents: 10 }),
+    ).toBeLessThanOrEqual(10 / 3);
+  });
+
+  it('skips ingest when included discount covers the charge or the round is sub-cent', () => {
     expect(
       shouldIngestPolarMeteredUsage({
         eventName: 'timeline_ai_eur_cents',
@@ -231,41 +227,290 @@ describe('shouldIngestPolarMeteredUsage', () => {
         shadowBilling: false,
         billable: true,
         polarUnits: 80,
-        walletCents: 0,
-        discountCents: 80,
-        enterpriseContract: true,
+        invoiceCents: 0,
       }),
     ).toBe(false);
-  });
-
-  it('skips Polar ingest for wallet-backed plans even when the local charge rounds to zero', () => {
     expect(
       shouldIngestPolarMeteredUsage({
         eventName: 'timeline_email_units',
         polarCustomerId: 'cus_1',
-        shadowBilling: false,
+        shadowBilling: true,
         billable: true,
         polarUnits: 1,
-        walletCents: 0,
-        discountCents: 0,
-        enterpriseContract: false,
+        invoiceCents: 1,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('polar catalog units and cumulative discounts', () => {
+  it('turns one invoiced cent into the fractional units that price it', () => {
+    expect(polarCatalogUnitsForInvoiceCents('email_units', 1)).toBe(4);
+    expect(polarCatalogUnitsForInvoiceCents('accepted_sources', 1)).toBe(20);
+    expect(polarCatalogUnitsForInvoiceCents('ai', 40)).toBe(40);
+    expect(polarCatalogUnitsForInvoiceCents('email_units', 0)).toBe(0);
+  });
+
+  it('keeps a 50% discount when each settlement is only one cent', () => {
+    let charged = 0;
+    for (let next = 1; next <= 100; next += 1) {
+      charged += Math.max(
+        0,
+        applyMeteredDiscountCents(next, 50) - applyMeteredDiscountCents(next - 1, 50),
+      );
+    }
+    expect(charged).toBe(50);
+    expect(applyMeteredDiscountCents(1, 50)).toBe(1);
+  });
+});
+
+describe('polar subscription price guard', () => {
+  const products = {
+    payg: 'prod_payg',
+    team: 'prod_team',
+    business: 'prod_business',
+    enterprise: 'prod_enterprise',
+  };
+  const pricedEventNames = [
+    'timeline_ai_eur_cents',
+    'timeline_recall_minutes',
+    'timeline_email_units',
+    'timeline_storage_gb_month',
+    'timeline_accepted_sources',
+    'timeline_extra_member_days',
+  ];
+
+  it('ingests only when the active subscription product prices the meter', () => {
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_ai_eur_cents',
+        products,
+        pricedEventNames,
+      }),
+    ).toBe(true);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'past_due',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_extra_member_days',
+        products,
+        pricedEventNames,
+      }),
+    ).toBe(true);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        polarSubscriptionId: 'sub_ent',
+        polarProductId: 'prod_enterprise',
+        eventName: 'timeline_recall_minutes',
+        products,
+        pricedEventNames,
+      }),
+    ).toBe(true);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'enterprise',
+        billingState: 'read_only',
+        polarSubscriptionId: 'sub_ent',
+        polarProductId: 'prod_enterprise',
+        eventName: 'timeline_extra_member_days',
+        products,
+        pricedEventNames,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not treat a matching product id as a priced meter', () => {
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_ai_eur_cents',
+        products,
+        pricedEventNames: ['timeline_extra_member_days'],
+      }),
+    ).toBe(false);
+    expect(
+      polarSubscriptionCoversMeter({
+        planId: 'team',
+        billingState: 'team_active',
+        polarSubscriptionId: 'sub_team',
+        polarProductId: 'prod_team',
+        eventName: 'timeline_ai_eur_cents',
+        products,
+        pricedEventNames: null,
       }),
     ).toBe(false);
   });
 
-  it('ingests Polar meters for Enterprise when Polar is the sole collector', () => {
-    expect(
-      shouldIngestPolarMeteredUsage({
+  it('holds a payable charge when the subscription price does not match', () => {
+    const uncovered = [
+      { planId: 'free', billingState: 'free', productId: null, subscriptionId: null },
+      {
+        planId: 'team',
+        billingState: 'team_active',
+        productId: 'prod_payg',
+        subscriptionId: 'sub',
+      },
+      { planId: 'team', billingState: 'canceled', productId: 'prod_team', subscriptionId: 'sub' },
+      {
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        productId: null,
+        subscriptionId: null,
+      },
+      {
+        planId: 'enterprise',
+        billingState: 'enterprise_active',
+        productId: 'prod_enterprise',
+        subscriptionId: 'sub',
+        products: {
+          payg: 'prod_payg',
+          team: 'prod_team',
+          business: 'prod_business',
+        },
+      },
+    ] as const;
+    for (const row of uncovered) {
+      const covers = polarSubscriptionCoversMeter({
+        planId: row.planId,
+        billingState: row.billingState,
+        polarSubscriptionId: row.subscriptionId,
+        polarProductId: row.productId,
         eventName: 'timeline_ai_eur_cents',
-        polarCustomerId: 'cus_enterprise',
+        products: 'products' in row ? row.products : products,
+        pricedEventNames,
+      });
+      expect(covers, row.planId).toBe(false);
+      expect(
+        polarIngestDisposition({
+          eventName: 'timeline_ai_eur_cents',
+          polarCustomerId: 'cus_1',
+          shadowBilling: false,
+          comped: false,
+          billable: true,
+          polarUnits: 10,
+          invoiceCents: 10,
+          subscriptionCoversMeter: covers,
+        }),
+      ).toBe('hold');
+    }
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: null,
         shadowBilling: false,
+        comped: false,
         billable: true,
-        polarUnits: 80,
-        walletCents: 0,
-        discountCents: 0,
-        enterpriseContract: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: true,
       }),
-    ).toBe(true);
+    ).toBe('hold');
+  });
+
+  it('does not alert shadow, comps, or sub-cent rounds', () => {
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: null,
+        shadowBilling: true,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: false,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: true,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: false,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 1,
+        invoiceCents: 0,
+        subscriptionCoversMeter: true,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 1,
+        invoiceCents: 0,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: true,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+      }),
+    ).toBe('not_required');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: null,
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+      }),
+    ).toBe('hold');
+    expect(
+      polarIngestDispositionBeforeCoverage({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+      }),
+    ).toBeNull();
+    expect(
+      polarIngestDisposition({
+        eventName: 'timeline_ai_eur_cents',
+        polarCustomerId: 'cus_1',
+        shadowBilling: false,
+        comped: false,
+        billable: true,
+        polarUnits: 10,
+        invoiceCents: 10,
+        subscriptionCoversMeter: true,
+      }),
+    ).toBe('ingest');
   });
 });
 
@@ -409,16 +654,13 @@ describe('costBearingPausedFromAccount', () => {
         shadowBilling: true,
         spendCapCents: 0,
         meteredSpendCents: 50,
-        walletBalanceCents: 0,
-        reservedBalanceCents: 0,
-        includedDiscountRemainingCents: 0,
         freeRemaining: { ...freeRemaining, acceptedSources: 0 },
       }),
     ).toBe(false);
     expect(allFreeAllowancesExhausted({ ...freeRemaining, acceptedSources: 0 })).toBe(false);
   });
 
-  it('pauses PAYG only when wallet, discount, and Free floor are gone', () => {
+  it('does not pause PAYG while the Free floor or spend cap remains', () => {
     expect(
       costBearingPausedFromAccount({
         planId: 'payg',
@@ -426,12 +668,36 @@ describe('costBearingPausedFromAccount', () => {
         shadowBilling: false,
         spendCapCents: 2500,
         meteredSpendCents: 10,
-        walletBalanceCents: 0,
-        reservedBalanceCents: 0,
-        includedDiscountRemainingCents: 0,
         freeRemaining,
       }),
     ).toBe(false);
+    const exhausted = {
+      aiChargeCents: 0,
+      recallMinutes: 0,
+      emailUnits: 0,
+      storageGb: 0,
+      acceptedSources: 0,
+    };
+    expect(
+      costBearingPausedFromAccount({
+        planId: 'payg',
+        billingState: 'payg_active',
+        shadowBilling: false,
+        spendCapCents: 2500,
+        meteredSpendCents: 10,
+        freeRemaining: exhausted,
+      }),
+    ).toBe(false);
+    expect(
+      costBearingPausedFromAccount({
+        planId: 'payg',
+        billingState: 'past_due',
+        shadowBilling: false,
+        spendCapCents: 2500,
+        meteredSpendCents: 10,
+        freeRemaining: exhausted,
+      }),
+    ).toBe(true);
   });
 
   it('treats a paid spend cap of 0 as a hard stop', () => {
@@ -442,9 +708,6 @@ describe('costBearingPausedFromAccount', () => {
         shadowBilling: false,
         spendCapCents: 0,
         meteredSpendCents: 0,
-        walletBalanceCents: 5_000,
-        reservedBalanceCents: 0,
-        includedDiscountRemainingCents: 6_000,
         freeRemaining,
       }),
     ).toBe(true);

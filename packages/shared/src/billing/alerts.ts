@@ -93,8 +93,8 @@ function detailLineForKind(
     case 'free_near_limit':
     case 'free_exhausted':
       return `Remaining Free floor — AI ${formatEuroFromCents(input.freeRemaining.aiChargeCents)}, meetings ${String(input.freeRemaining.recallMinutes)} min, email ${String(input.freeRemaining.emailUnits)}, storage ${String(input.freeRemaining.storageGb)} GB, sources ${String(input.freeRemaining.acceptedSources)}.`;
-    case 'wallet_auto_reload':
-      return '';
+    case 'subscription_past_due':
+      return 'The subscription payment failed. New cost-bearing work is paused until the card on file succeeds.';
   }
 }
 
@@ -205,5 +205,93 @@ export async function notifyBillingUsageAlerts(input: {
     }
   }
 
+  return { sent, skipped };
+}
+
+/**
+ * Email owners when a Polar subscription enters past_due. Dedupe is once per
+ * owner per UTC month so webhook retries do not send a second notice.
+ */
+export async function notifySubscriptionPastDue(input: {
+  db: Db;
+  teamId: string;
+  planId: BillingPlanId;
+}): Promise<{ sent: number; skipped: number }> {
+  const [team] = await input.db
+    .select({ name: teams.name })
+    .from(teams)
+    .where(eq(teams.id, input.teamId))
+    .limit(1);
+  const teamName = team?.name ?? 'your workspace';
+  const owners = await input.db
+    .select({
+      userId: users.id,
+      email: users.email,
+      name: users.name,
+    })
+    .from(teamMembers)
+    .innerJoin(users, eq(users.id, teamMembers.userId))
+    .where(
+      and(
+        eq(teamMembers.teamId, input.teamId),
+        eq(teamMembers.role, 'owner'),
+        isNull(teamMembers.removedAt),
+      ),
+    );
+  const base = appBaseUrl();
+  const usageUrl = `${base}/app/usage`;
+  const billingUrl = `${base}/app/team?section=billing`;
+  const ym = periodYm();
+  const planName = PLAN_CATALOG[input.planId].name;
+  const kind = 'subscription_past_due' as const;
+  const detailLine = detailLineForKind(kind, {
+    meteredSpendCents: 0,
+    spendCapCents: 0,
+    freeRemaining: {
+      aiChargeCents: 0,
+      recallMinutes: 0,
+      emailUnits: 0,
+      storageGb: 0,
+      acceptedSources: 0,
+    },
+  });
+  let sent = 0;
+  let skipped = 0;
+  for (const owner of owners) {
+    if (!owner.email) {
+      skipped += 1;
+      continue;
+    }
+    const dedupeKey = `billing-alert|${input.teamId}|${ym}|${kind}|${owner.userId}`;
+    try {
+      const result = await sendMessage(
+        'billing_usage_alert',
+        {
+          to: owner.email,
+          ownerName: owner.name,
+          teamName,
+          kind,
+          periodYm: ym,
+          planName,
+          detailLine,
+          usageUrl,
+          billingUrl,
+        },
+        {
+          db: input.db,
+          teamId: input.teamId,
+          userId: owner.userId,
+          dedupeKey,
+          metadata: { billing_alert_kind: kind, period_ym: ym },
+        },
+      );
+      if (result.skipped) skipped += 1;
+      else if (result.ok) sent += 1;
+      else skipped += 1;
+    } catch (err) {
+      skipped += 1;
+      log.warn({ err, teamId: input.teamId }, 'past_due billing alert threw');
+    }
+  }
   return { sent, skipped };
 }

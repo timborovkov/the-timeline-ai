@@ -184,6 +184,7 @@ describe('withTeam namespaced port', () => {
     expect(scope.integrations).toBeDefined();
     expect(scope.mcp).toBeDefined();
     expect(scope.billing).toBeDefined();
+    expect(scope.billingOperator).toBeDefined();
 
     expect(scope).not.toHaveProperty('listEvents');
     expect(scope).not.toHaveProperty('getEventWithFacts');
