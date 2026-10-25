@@ -1,7 +1,4 @@
-import {
-  releaseRecallMeetingMinutes,
-  settleElapsedRecallMeetingMinutes,
-} from '@timeline/shared/billing';
+import { settleElapsedRecallMeetingMinutes } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
@@ -292,9 +289,6 @@ export async function POST(req: Request): Promise<Response> {
         endedAt: createdAt ? new Date(createdAt) : new Date(),
       });
       if (noShowOutcome === 'retry_scheduled') {
-        await releaseRecallMeetingMinutes(scope.billing, { meetingId: meeting.id }).catch(
-          () => undefined,
-        );
         try {
           const queue = await requireRedisQueue();
           await queue.enqueueMeetingSchedulerTick();

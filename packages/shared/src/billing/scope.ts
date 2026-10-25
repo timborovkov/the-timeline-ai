@@ -1540,12 +1540,13 @@ export function createBillingScope(deps: BillingScopeDeps) {
               eq(billingUsageReservations.teamId, teamId),
               eq(billingUsageReservations.operationId, operationId),
               eq(billingUsageReservations.state, 'reserved'),
+              sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') <> 'true'`,
             ),
           )
           .returning();
         if (!reservation) {
           const [existing] = await tx
-            .select({ id: billingUsageReservations.id })
+            .select({ metadata: billingUsageReservations.metadata })
             .from(billingUsageReservations)
             .where(
               and(
@@ -1591,6 +1592,27 @@ export function createBillingScope(deps: BillingScopeDeps) {
             eq(billingUsageReservations.state, 'reserved'),
           ),
         );
+    },
+
+    async reservedNativeUnits(
+      meterId: BillingMeterId,
+      exceptOperationId?: string,
+    ): Promise<number> {
+      await ensureMember();
+      const rows = await db
+        .select({ units: billingUsageReservations.reservedNativeUnits })
+        .from(billingUsageReservations)
+        .where(
+          and(
+            eq(billingUsageReservations.teamId, teamId),
+            eq(billingUsageReservations.meterId, meterId),
+            eq(billingUsageReservations.state, 'reserved'),
+            exceptOperationId
+              ? sql`${billingUsageReservations.operationId} <> ${exceptOperationId}`
+              : sql`true`,
+          ),
+        );
+      return rows.reduce((sum, row) => sum + Number(row.units), 0);
     },
   };
 }

@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingUsageReservations, type Db } from '@timeline/db';
+import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,6 +8,7 @@ import {
   abortRecallJoinAfterProviderAccept,
   askOperationId,
   meetingReserveMinutesForPlan,
+  recallAttemptOperationId,
   recallBillableMinutes,
   recallOperationId,
   reserveAskAi,
@@ -17,6 +18,7 @@ import {
   settleRecallMeetingMinutes,
 } from '#src/billing/admission.js';
 import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS, FREE_ALLOWANCES } from '#src/billing/catalog.js';
+import { settlePendingBillingReservations } from '#src/billing/runtime.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
@@ -249,6 +251,71 @@ describe('billing admission helpers', () => {
       }),
     );
     expect(billing.release).not.toHaveBeenCalled();
+  });
+
+  it('keeps Recall minutes when settlement fails and maintenance retries them', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const meetingId = 'cccccccc-dddd-4eee-8fff-000000000010';
+    expect((await reserveRecallMeetingMinutes(billing, { meetingId })).ok).toBe(true);
+    const realSettle = billing.settle.bind(billing);
+    let calls = 0;
+    billing.settle = (input) => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new Error('db timeout'));
+      return realSettle(input);
+    };
+    await expect(
+      settleElapsedRecallMeetingMinutes(billing, {
+        meetingId,
+        joinStartedAt: '2026-08-26T12:00:00.000Z',
+        endedAt: new Date('2026-08-26T12:04:00.000Z'),
+        reservedMinutes: 120,
+        source: 'meeting_cancel',
+      }),
+    ).rejects.toThrow('db timeout');
+    const [pending] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, recallOperationId(meetingId)));
+    expect(pending?.state).toBe('reserved');
+    expect(pending?.metadata).toMatchObject({
+      pending_settlement: true,
+      pending_meter: 'recall_minutes',
+      pending_recall_minutes: 4,
+      pending_source: 'meeting_cancel',
+      meeting_id: meetingId,
+    });
+    const kept = await billing.release(recallOperationId(meetingId));
+    expect(kept.alreadyFinal).toBe(true);
+    expect(
+      pending &&
+        (
+          await db
+            .select()
+            .from(billingUsageReservations)
+            .where(eq(billingUsageReservations.id, pending.id))
+        )[0]?.state,
+    ).toBe('reserved');
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [settled] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, recallOperationId(meetingId)));
+    expect(settled?.state).toBe('settled');
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, recallOperationId(meetingId)));
+    expect(Number(ledger?.nativeUnits)).toBe(4);
+  });
+
+  it('builds an attempt operation id that leaves the canonical Recall id free', () => {
+    expect(recallAttemptOperationId('meet-1', 'bot/1')).toBe('recall:meet-1:attempt:bot1');
   });
 });
 

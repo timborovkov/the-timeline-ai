@@ -21,6 +21,7 @@ import { bucketAnalyticsCount, bucketMeetingDuration } from '@timeline/shared/an
 import {
   BILLING_SYSTEM_USER_ID,
   recallBillableMinutes,
+  settleElapsedRecallMeetingMinutes,
   settleRecallMeetingMinutes,
 } from '@timeline/shared/billing';
 import { buildCalendarSourcePayloadMetadata } from '@timeline/shared/calendar';
@@ -707,11 +708,24 @@ export async function processMeetingFinalizeJob(
     });
     return { skipped: 'already_completed', meetingId };
   }
-  if (['failed', 'cancelled', 'skipped', 'no_show'].includes(meeting.status)) {
+  if (meeting.status === 'skipped') {
     const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
       skipMembershipCheck: true,
     });
     await billingScope.billing.release(`recall:${meetingId}`).catch(() => undefined);
+    return { skipped: 'terminal', meetingId };
+  }
+  if (['failed', 'cancelled', 'no_show'].includes(meeting.status)) {
+    const billingScope = withTeam(deps.db, teamId, BILLING_SYSTEM_USER_ID, {
+      skipMembershipCheck: true,
+    });
+    await settleElapsedRecallMeetingMinutes(billingScope.billing, {
+      meetingId,
+      startedAt: meeting.startedAt,
+      endedAt: meeting.endedAt ?? new Date(),
+      metadata: meeting.metadata,
+      source: 'meeting_finalize_terminal',
+    });
     return { skipped: 'terminal', meetingId };
   }
 

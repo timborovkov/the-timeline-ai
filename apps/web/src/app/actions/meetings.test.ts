@@ -31,6 +31,7 @@ const fakes = vi.hoisted(() => ({
   fakeClaimMeetingJoinUnderRecallCap: vi.fn(),
   fakeSettleElapsedRecall: vi.fn(),
   fakeReleaseRecall: vi.fn(),
+  fakeStampRecall: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -78,6 +79,7 @@ vi.mock('@timeline/shared/billing', () => ({
   }),
   settleElapsedRecallMeetingMinutes: fakes.fakeSettleElapsedRecall,
   releaseRecallMeetingMinutes: fakes.fakeReleaseRecall,
+  stampPendingRecallSettlement: fakes.fakeStampRecall,
 }));
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -122,6 +124,7 @@ beforeEach(() => {
   });
   fakes.fakeSettleElapsedRecall.mockResolvedValue(undefined);
   fakes.fakeReleaseRecall.mockResolvedValue(undefined);
+  fakes.fakeStampRecall.mockResolvedValue(4);
 });
 
 describe('scheduleMeetingBotAction', () => {
@@ -332,6 +335,13 @@ describe('cancelMeetingBotAction', () => {
     const result = await cancelMeetingBotAction(MEETING_ID);
 
     expect(result).toEqual({ ok: true, meetingId: MEETING_ID });
+    expect(fakes.fakeStampRecall.mock.invocationCallOrder[0]).toBeLessThan(
+      fakes.fakeMeetings.updateMeetingStatus.mock.invocationCallOrder[0] ??
+        Number.POSITIVE_INFINITY,
+    );
+    expect(fakes.fakeMeetings.updateMeetingStatus.mock.invocationCallOrder[0]).toBeLessThan(
+      fakes.fakeSettleElapsedRecall.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
     expect(fakes.fakeSettleElapsedRecall.mock.calls[0]?.[1]).toMatchObject({
       meetingId: MEETING_ID,
       startedAt,
@@ -339,6 +349,46 @@ describe('cancelMeetingBotAction', () => {
       source: 'meeting_cancel',
     });
     expect(fakes.fakeReleaseRecall).not.toHaveBeenCalled();
+  });
+
+  it('does not report success when cancellation usage cannot be recorded', async () => {
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'joining',
+      provider: 'recall',
+      providerBotId: null,
+      startedAt: new Date('2026-08-27T08:00:00Z'),
+      metadata: { reserved_recall_started_at: '2026-08-27T07:58:00Z' },
+    });
+    fakes.fakeStampRecall.mockRejectedValue(new Error('db down'));
+
+    await expect(cancelMeetingBotAction(MEETING_ID)).resolves.toEqual({
+      ok: false,
+      error: 'Could not record meeting usage before cancelling.',
+    });
+    expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeSettleElapsedRecall).not.toHaveBeenCalled();
+  });
+
+  it('reports a pending retry when cancellation settlement fails after the stamp', async () => {
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'joining',
+      provider: 'recall',
+      providerBotId: null,
+      startedAt: new Date('2026-08-27T08:00:00Z'),
+      metadata: { reserved_recall_started_at: '2026-08-27T07:58:00Z' },
+    });
+    fakes.fakeSettleElapsedRecall.mockRejectedValue(new Error('settle failed'));
+
+    await expect(cancelMeetingBotAction(MEETING_ID)).resolves.toEqual({
+      ok: false,
+      error: 'The notetaker was cancelled. Usage recording will retry.',
+    });
+    expect(fakes.fakeStampRecall).toHaveBeenCalled();
+    expect(fakes.fakeMeetings.updateMeetingStatus).toHaveBeenCalled();
   });
 });
 

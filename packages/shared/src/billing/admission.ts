@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
 
+import { billingUsageReservations, type Db } from '@timeline/db';
+import { and, eq, sql } from 'drizzle-orm';
+
 import type { FreeAllowanceRemaining } from '#src/billing/status.js';
 
 import {
@@ -12,6 +15,9 @@ import {
   type BillingPlanId,
 } from '#src/billing/catalog.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
+
+type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type DbOrTx = Db | DbTx;
 
 export type BillingReserveFailureCode =
   | 'security_blocked'
@@ -62,6 +68,11 @@ export interface BillingAdmissionScope {
     alreadyFinal?: boolean;
   }>;
   patchReservationMetadata(operationId: string, metadata: Record<string, unknown>): Promise<void>;
+  /** In-flight reserved units for one meter. `exceptOperationId` is this call's own lock. */
+  reservedNativeUnits(
+    meterId: 'ai' | 'recall_minutes',
+    exceptOperationId?: string,
+  ): Promise<number>;
 }
 
 export function askOperationId(deliverySurface: string, turnId: string = randomUUID()): string {
@@ -70,6 +81,39 @@ export function askOperationId(deliverySurface: string, turnId: string = randomU
 
 export function recallOperationId(meetingId: string): string {
   return `recall:${meetingId}`;
+}
+
+const RECALL_OPERATION_MEETING =
+  /^recall:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?::attempt:.+)?$/i;
+
+export function meetingIdFromRecallOperationId(operationId: string): string | null {
+  return RECALL_OPERATION_MEETING.exec(operationId)?.[1] ?? null;
+}
+
+export function isRecallAttemptOperationId(operationId: string): boolean {
+  return /^recall:[0-9a-f-]{36}:attempt:/i.test(operationId);
+}
+
+/** One bot attempt. The canonical `recall:{meetingId}` id stays free for the next join. */
+export function recallAttemptOperationId(meetingId: string, attemptKey: string): string {
+  const safe = attemptKey.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 120);
+  return `recall:${meetingId}:attempt:${safe.length > 0 ? safe : '1'}`;
+}
+
+export function pendingRecallSettlementPatch(input: {
+  meetingId: string;
+  minutes: number;
+  endedAt: Date;
+  source: string;
+}): Record<string, unknown> {
+  return {
+    pending_settlement: true,
+    pending_meter: 'recall_minutes',
+    pending_recall_minutes: input.minutes,
+    pending_ended_at: input.endedAt.toISOString(),
+    pending_source: input.source,
+    meeting_id: input.meetingId,
+  };
 }
 
 export function mapAskBillingError(code: BillingReserveFailureCode): AskBillingError {
@@ -259,7 +303,11 @@ export async function reserveRecallMeetingMinutes(
   | { ok: false; code: BillingReserveFailureCode }
 > {
   const operationId = recallOperationId(input.meetingId);
-  const [account, dashboard] = await Promise.all([billing.getAccount(), billing.getDashboard()]);
+  const [account, dashboard, pendingRecallMinutes] = await Promise.all([
+    billing.getAccount(),
+    billing.getDashboard(),
+    billing.reservedNativeUnits('recall_minutes', operationId),
+  ]);
   const reservedMinutes = meetingReserveMinutesForPlan(
     effectiveBillingPlanId({
       planId: account.planId,
@@ -268,7 +316,10 @@ export async function reserveRecallMeetingMinutes(
       ...(account.arrangement !== undefined ? { arrangement: account.arrangement } : {}),
       ...(account.compExpiresAt !== undefined ? { compExpiresAt: account.compExpiresAt } : {}),
     }),
-    dashboard.freeRemaining,
+    {
+      ...dashboard.freeRemaining,
+      recallMinutes: Math.max(0, dashboard.freeRemaining.recallMinutes - pendingRecallMinutes),
+    },
   );
   if (reservedMinutes <= 0) {
     return { ok: false, code: 'free_allowance_reached' };
@@ -292,12 +343,12 @@ export async function reserveRecallMeetingMinutes(
 
 export async function settleRecallMeetingMinutes(
   billing: BillingAdmissionScope,
-  input: { meetingId: string; minutes: number; source?: string },
+  input: { meetingId: string; minutes: number; source?: string; operationId?: string },
 ): Promise<void> {
   const minutes = Math.max(0, Math.trunc(input.minutes));
   const customerChargeCents = recallChargeCents(minutes);
   await billing.settle({
-    operationId: recallOperationId(input.meetingId),
+    operationId: input.operationId ?? recallOperationId(input.meetingId),
     meterId: 'recall_minutes',
     nativeUnits: minutes,
     customerChargeCents,
@@ -325,11 +376,181 @@ function joinStartedAtFromMetadata(metadata: unknown): string | null {
   return typeof raw === 'string' && raw.trim() !== '' ? raw : null;
 }
 
+export function recallBillableMinutesFromRecord(input: {
+  startedAt?: Date | null;
+  endedAt?: Date | null;
+  metadata?: unknown;
+  joinStartedAt?: Date | string | null;
+  reservedMinutes?: number | null;
+}): number {
+  return recallBillableMinutes({
+    joinStartedAt: input.joinStartedAt ?? joinStartedAtFromMetadata(input.metadata),
+    startedAt: input.startedAt ?? null,
+    endedAt: input.endedAt ?? null,
+    reservedMinutes: input.reservedMinutes ?? reservedMinutesFromMetadata(input.metadata),
+  });
+}
+
+/**
+ * Write the elapsed minutes onto the open reservation before settle. A later
+ * database error leaves that marker for maintenance.
+ */
+export async function stampPendingRecallSettlement(
+  billing: BillingAdmissionScope,
+  input: {
+    meetingId: string;
+    startedAt?: Date | null;
+    endedAt?: Date | null;
+    metadata?: unknown;
+    source: string;
+    operationId?: string;
+  },
+): Promise<number> {
+  const endedAt = input.endedAt ?? new Date();
+  const minutes = recallBillableMinutesFromRecord({
+    ...(input.startedAt !== undefined && input.startedAt !== null
+      ? { startedAt: input.startedAt }
+      : {}),
+    endedAt,
+    metadata: input.metadata,
+  });
+  if (minutes <= 0) return 0;
+  await billing.patchReservationMetadata(
+    input.operationId ?? recallOperationId(input.meetingId),
+    pendingRecallSettlementPatch({
+      meetingId: input.meetingId,
+      minutes,
+      endedAt,
+      source: input.source,
+    }),
+  );
+  return minutes;
+}
+
+/** Same stamp, inside the caller's transaction, before a meeting status commit. */
+export async function stampReservedRecallSettlement(
+  db: DbOrTx,
+  input: {
+    teamId: string;
+    operationId: string;
+    meetingId: string;
+    minutes: number;
+    endedAt: Date;
+    source: string;
+  },
+): Promise<boolean> {
+  if (input.minutes <= 0) return false;
+  const patch = JSON.stringify(
+    pendingRecallSettlementPatch({
+      meetingId: input.meetingId,
+      minutes: input.minutes,
+      endedAt: input.endedAt,
+      source: input.source,
+    }),
+  );
+  const updated = await db
+    .update(billingUsageReservations)
+    .set({
+      metadata: sql`COALESCE(${billingUsageReservations.metadata}, '{}'::jsonb) || ${patch}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(billingUsageReservations.teamId, input.teamId),
+        eq(billingUsageReservations.operationId, input.operationId),
+        eq(billingUsageReservations.state, 'reserved'),
+      ),
+    )
+    .returning({ id: billingUsageReservations.id });
+  return updated.length > 0;
+}
+
+/**
+ * Move the open canonical reservation onto an attempt id and store its minutes.
+ * The next join can reserve `recall:{meetingId}` without erasing this charge.
+ */
+export async function reassignReservedRecallAttempt(
+  db: DbOrTx,
+  input: {
+    teamId: string;
+    meetingId: string;
+    attemptKey: string;
+    minutes: number;
+    endedAt: Date;
+    source: string;
+  },
+): Promise<{ operationId: string; reassigned: boolean }> {
+  const operationId = recallAttemptOperationId(input.meetingId, input.attemptKey);
+  const [existingAttempt] = await db
+    .select({ state: billingUsageReservations.state })
+    .from(billingUsageReservations)
+    .where(
+      and(
+        eq(billingUsageReservations.teamId, input.teamId),
+        eq(billingUsageReservations.operationId, operationId),
+      ),
+    )
+    .limit(1);
+  if (existingAttempt) {
+    return { operationId, reassigned: existingAttempt.state === 'reserved' };
+  }
+  const [canonical] = await db
+    .select({
+      reservedNativeUnits: billingUsageReservations.reservedNativeUnits,
+      reservedChargeCents: billingUsageReservations.reservedChargeCents,
+      metadata: billingUsageReservations.metadata,
+    })
+    .from(billingUsageReservations)
+    .where(
+      and(
+        eq(billingUsageReservations.teamId, input.teamId),
+        eq(billingUsageReservations.operationId, recallOperationId(input.meetingId)),
+        eq(billingUsageReservations.state, 'reserved'),
+      ),
+    )
+    .limit(1);
+  if (!canonical) return { operationId, reassigned: false };
+  const oldUnits = Number(canonical.reservedNativeUnits);
+  const nextUnits = input.minutes;
+  const scaled = (amount: number) =>
+    oldUnits > 0 ? Math.min(amount, Math.round((amount * nextUnits) / oldUnits)) : amount;
+  const cap = canonical.metadata.cap_eligible_reserved_cents;
+  const patch = JSON.stringify({
+    ...pendingRecallSettlementPatch({
+      meetingId: input.meetingId,
+      minutes: input.minutes,
+      endedAt: input.endedAt,
+      source: input.source,
+    }),
+    ...(typeof cap === 'number' && Number.isFinite(cap)
+      ? { cap_eligible_reserved_cents: scaled(cap) }
+      : {}),
+  });
+  const updated = await db
+    .update(billingUsageReservations)
+    .set({
+      operationId,
+      reservedNativeUnits: String(nextUnits),
+      reservedChargeCents: scaled(canonical.reservedChargeCents),
+      metadata: sql`COALESCE(${billingUsageReservations.metadata}, '{}'::jsonb) || ${patch}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(billingUsageReservations.teamId, input.teamId),
+        eq(billingUsageReservations.operationId, recallOperationId(input.meetingId)),
+        eq(billingUsageReservations.state, 'reserved'),
+      ),
+    )
+    .returning({ id: billingUsageReservations.id });
+  return { operationId, reassigned: updated.length > 0 };
+}
+
 /**
  * Terminal no-show / waiting-room time is billable. Settle elapsed joining +
  * in-call minutes when any elapsed; otherwise release the unused reservation.
- * Retry no-shows must keep calling `releaseRecallMeetingMinutes` so the same
- * `recall:{meetingId}` operation can lock again.
+ * A retry no-show settles under `recall:{meetingId}:attempt:{botId}` first so
+ * the canonical id can lock again.
  */
 export async function settleElapsedRecallMeetingMinutes(
   billing: BillingAdmissionScope,
@@ -341,21 +562,29 @@ export async function settleElapsedRecallMeetingMinutes(
     reservedMinutes?: number | null;
     metadata?: unknown;
     source?: string;
+    operationId?: string;
   },
 ): Promise<void> {
-  const minutes = recallBillableMinutes({
-    joinStartedAt: input.joinStartedAt ?? joinStartedAtFromMetadata(input.metadata),
-    startedAt: input.startedAt ?? null,
-    endedAt: input.endedAt ?? null,
-    reservedMinutes: input.reservedMinutes ?? reservedMinutesFromMetadata(input.metadata),
-  });
+  const minutes = recallBillableMinutesFromRecord(input);
   if (minutes <= 0) {
     await releaseRecallMeetingMinutes(billing, { meetingId: input.meetingId });
     return;
   }
+  const endedAt = input.endedAt ?? new Date();
+  const operationId = input.operationId ?? recallOperationId(input.meetingId);
+  await billing.patchReservationMetadata(
+    operationId,
+    pendingRecallSettlementPatch({
+      meetingId: input.meetingId,
+      minutes,
+      endedAt,
+      source: input.source ?? 'meeting_no_show',
+    }),
+  );
   await settleRecallMeetingMinutes(billing, {
     meetingId: input.meetingId,
     minutes,
     source: input.source ?? 'meeting_no_show',
+    operationId,
   });
 }

@@ -191,71 +191,74 @@ PLATFORM_ADMIN_EMAILS=
         skipping the extra seat. Janitor member-day ticks retry unsettled facts across the full
         31-day lookback, including the previous calendar month, after billing recovery. A missed day
         with no member-day row yet uses the plan effective that day, then the current plan. Terminal
-        Recall no-shows settle elapsed waiting-room minutes; a retry still releases so the same
-        meeting can reserve again. Cancelling a joining/active meeting with no transcript chunks
-        settles elapsed waiting-room minutes instead of releasing them. Postmark success is recorded
-        before email settlement. A delivered message whose settlement fails stays reserved for the
-        janitor and is not resent. Reserve, settle, release, and reservation expiry lock the billing
-        account before the reservation row. Meeting-finalize billing uses the system actor so a
-        departed creator cannot skip settlement. Free-grant inserts use
-        <code>ON CONFLICT DO NOTHING</code> so a unique race cannot abort team-create. The
-        post-verify Free-grant backfill prefers oldest restricted Free workspaces and never assigns
-        the grant to a paid team. Scheduled join billing denials fail the occurrence without pausing
-        auto-join as consecutive failures. Document uploads are blocked in every non-reservable
-        billing state. <code>order.paid</code> does not credit a local balance. A stray paid order
-        for the retired Timeline Top-up, or any other one-time purchase that is not a subscription
-        product, is recorded on the usage ledger and opens an unbilled alert. The wallet balance
-        stays unchanged. Included invoice discount is collected locally and is not ingested. Polar
-        receives the customer-payable remainder, with native units scaled by that remainder,
-        including sub-cent rounds that stay local when invoice cents are 0. PAYG, Team, Business,
-        and Enterprise meter events are ingested when charges are live, the workspace is not comped,
-        and the active subscription product matches that plan and prices the meter. Otherwise the
-        charge stays local and an operator alert is opened. Comps are not ingested. Polar ingest
-        uses a ledger outbox that claims a row before ingesting, Polar receives a stable event id,
-        and a failed ingest does not undo a committed charge. Janitor included-discount resets lock
-        the billing account so they cannot overwrite a newer Polar plan or period, and a missed
-        renewal advances by calendar months from the subscription anchor. Ask streams that abort
-        after work starts settle at least the reserved customer charge. Failed structured-output
-        attempts still contribute OpenRouter <code>usage.cost</code>. Recall minutes that cross a
-        UTC month are attributed to each month they span. Document create serializes capacity under
-        advisory lock key 1; restore takes key 1 then key 2 so restored chunks serialize with
-        extraction writes. Worker AI reservations count against plan
-        <code>costlyWorkerConcurrency</code> and delay the job when busy. Background AI metering
-        keeps the reservation when settle fails after a successful provider call and reuses the
-        BullMQ job id. A thrown call that already reported OpenRouter usage stores that attempt on
-        the reservation before settle and keeps it until the ledger row commits. A retry records the
-        saved attempt before calling the provider again. Each transcription chunk gets its own
-        operation id. Every other metered model call appends its stage and a digest of the model,
-        prompt, schema, and input to the worker operation id, so a later call in that job does not
-        replay an earlier result. A retry of the same call still reuses its settlement. Aborting a
-        Recall join after the bot is accepted keeps the reservation when leave fails so the janitor
-        can retry. Terminal Recall settlement errors propagate so the status webhook can 503 and
-        retry. Re-accepting a removed member stamps a new membership <code>createdAt</code> and
-        appends the previous interval to <code>prior_intervals</code>. A leftover Free team stays
-        unrestricted while another owner's grant remains assigned. Storage snapshots backfill missed
-        days across the 31-day lookback, price each day on the plan in force then, and count that
-        day in its own month. Replay included discount uses the subscription renewal window that
-        contains the usage day. A short month keeps those stored bounds, and later windows use the
-        later boundary day so a 31st renewal clamped in February resumes on the 31st. Live
-        settlements stamp <code>usage_at</code> from the reservation time, and replay uses that
-        instant instead of the 15th of the ingest month. A month tag with no instant still falls on
-        the 15th so a backfill is not placed on the day it was written. The ledger time is used only
-        when neither a usage instant nor a period tag is set. The janitor rechecks
-        <code>cancel_effective_at</code> under the account lock before a scheduled downgrade. A Free
-        plan-history row is stored at account creation, and the first paid history row is backfilled
-        with that baseline. A prior month is recorded on that month and is not compared to the live
-        spend cap. Only a positive charge in the current UTC period can freeze on that cap.
-        Member-days and storage days with no stamp yet share one helper: plan history, then comp
-        expiry (Free after <code>comp_expires_at</code>), while a contractual Enterprise plan stays
-        Enterprise. A day before expiry keeps the comped plan's price. An existing member-day stamp
-        still wins. Restoring a document keeps the closed absence interval so those days are not
-        billed again. Slack/Telegram/MCP Ask and web chat save the completed cost before settle and
-        keep the reservation when settlement fails so the janitor can retry it. Paid-plan changes
-        reuse the Polar subscription in non-active paid states. Extra-member plan preview prorates
-        from period member-days, including person-days when the current plan has no extras. Inbound
-        email audio skipped for a denied email meter stays deferred until the parent email is no
-        longer billing-deferred, so an exhausted email allowance cannot be bypassed while AI
-        allowance remains. Denied inbound-email parent enrichment is stamped
+        Recall no-shows settle elapsed waiting-room minutes. A retry settles the first attempt under
+        <code>recall:{meetingId}:attempt:{botId}</code>, keeps only those elapsed minutes reserved,
+        and then the next join reserves the canonical id. Cancelling a joining/active meeting with
+        no transcript chunks stamps pending Recall minutes before the meeting is cancelled, and
+        maintenance retries that marker if settle fails. Finalize settles failed, cancelled, and
+        no-show reservations. Postmark success is recorded before email settlement. A delivered
+        message whose settlement fails stays reserved for the janitor and is not resent. Reserve,
+        settle, release, and reservation expiry lock the billing account before the reservation row.
+        Meeting-finalize billing uses the system actor so a departed creator cannot skip settlement.
+        Free-grant inserts use <code>ON CONFLICT DO NOTHING</code> so a unique race cannot abort
+        team-create. The post-verify Free-grant backfill prefers oldest restricted Free workspaces
+        and never assigns the grant to a paid team. Scheduled join billing denials fail the
+        occurrence without pausing auto-join as consecutive failures. Document uploads are blocked
+        in every non-reservable billing state. <code>order.paid</code> does not credit a local
+        balance. A stray paid order for the retired Timeline Top-up, or any other one-time purchase
+        that is not a subscription product, is recorded on the usage ledger and opens an unbilled
+        alert. The wallet balance stays unchanged. Included invoice discount is collected locally
+        and is not ingested. Polar receives the customer-payable remainder, with native units scaled
+        by that remainder, including sub-cent rounds that stay local when invoice cents are 0. PAYG,
+        Team, Business, and Enterprise meter events are ingested when charges are live, the
+        workspace is not comped, and the active subscription product matches that plan and prices
+        the meter. Otherwise the charge stays local and an operator alert is opened. Comps are not
+        ingested. Polar ingest uses a ledger outbox that claims a row before ingesting, Polar
+        receives a stable event id, and a failed ingest does not undo a committed charge. Janitor
+        included-discount resets lock the billing account so they cannot overwrite a newer Polar
+        plan or period, and a missed renewal advances by calendar months from the subscription
+        anchor. Ask streams that abort after work starts settle at least the reserved customer
+        charge. Failed structured-output attempts still contribute OpenRouter
+        <code>usage.cost</code>. Recall minutes that cross a UTC month are attributed to each month
+        they span. Document create serializes capacity under advisory lock key 1; restore takes key
+        1 then key 2 so restored chunks serialize with extraction writes. Worker AI reservations
+        count against plan <code>costlyWorkerConcurrency</code> and delay the job when busy.
+        Background AI metering keeps the reservation when settle fails after a successful provider
+        call and reuses the BullMQ job id. A thrown call that already reported OpenRouter usage
+        stores that attempt on the reservation before settle and keeps it until the ledger row
+        commits. A retry records the saved attempt before calling the provider again. Each
+        transcription chunk gets its own operation id. Every other metered model call appends its
+        stage and a digest of the model, prompt, schema, and input to the worker operation id, so a
+        later call in that job does not replay an earlier result. A retry of the same call still
+        reuses its settlement. Aborting a Recall join after the bot is accepted keeps the
+        reservation when leave fails so the janitor can retry. Terminal Recall settlement errors
+        propagate so the status webhook can 503 and retry. Re-accepting a removed member stamps a
+        new membership <code>createdAt</code> and appends the previous interval to
+        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
+        grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
+        price each day on the plan in force then, and count that day in its own month. Replay
+        included discount uses the subscription renewal window that contains the usage day. A short
+        month keeps those stored bounds, and later windows use the later boundary day so a 31st
+        renewal clamped in February resumes on the 31st. Live settlements stamp
+        <code>usage_at</code> from the reservation time, and replay uses that instant instead of the
+        15th of the ingest month. A month tag with no instant still falls on the 15th so a backfill
+        is not placed on the day it was written. The ledger time is used only when neither a usage
+        instant nor a period tag is set. The janitor rechecks <code>cancel_effective_at</code> under
+        the account lock before a scheduled downgrade. A Free plan-history row is stored at account
+        creation, and the first paid history row is backfilled with that baseline. A prior month is
+        recorded on that month and is not compared to the live spend cap. Only a positive charge in
+        the current UTC period can freeze on that cap. Member-days and storage days with no stamp
+        yet share one helper: plan history, then comp expiry (Free after
+        <code>comp_expires_at</code>), while a contractual Enterprise plan stays Enterprise. A day
+        before expiry keeps the comped plan's price. An existing member-day stamp still wins.
+        Restoring a document keeps the closed absence interval so those days are not billed again.
+        Slack/Telegram/MCP Ask and web chat save the completed cost before settle and keep the
+        reservation when settlement fails so the janitor can retry it. Paid-plan changes reuse the
+        Polar subscription in non-active paid states. Extra-member plan preview prorates from period
+        member-days, including person-days when the current plan has no extras. Inbound email audio
+        skipped for a denied email meter stays deferred until the parent email is no longer
+        billing-deferred, so an exhausted email allowance cannot be bypassed while AI allowance
+        remains. Denied inbound-email parent enrichment is stamped
         <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
         accepted-source meter. That marker stays set until every pending attachment has been read,
         stored, queued for extract, and linked on the parent. Deferred accepted-source flush rotates

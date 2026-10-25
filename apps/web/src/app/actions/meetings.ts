@@ -6,6 +6,7 @@ import {
   recallBillingUserMessage,
   reserveRecallMeetingMinutes,
   settleElapsedRecallMeetingMinutes,
+  stampPendingRecallSettlement,
 } from '@timeline/shared/billing';
 import { childLogger } from '@timeline/shared/logger';
 import * as meetingBots from '@timeline/shared/meeting-bots';
@@ -604,16 +605,48 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
         }
       }
     } else {
+      const endedAt = new Date();
+      try {
+        await stampPendingRecallSettlement(scope.billing, {
+          meetingId,
+          startedAt: meeting.startedAt,
+          endedAt,
+          metadata: meeting.metadata,
+          source: 'meeting_cancel',
+        });
+      } catch (err) {
+        log.warn({ err, meetingId }, 'recall_cancel_settlement_stamp_failed');
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'recall_cancel_settlement_stamp',
+        });
+        return {
+          ok: false,
+          error: 'Could not record meeting usage before cancelling.',
+        };
+      }
       await scope.meetings.updateMeetingStatus(meetingId, 'cancelled', {
-        metadata: { cancelled_at: new Date().toISOString(), capture_status: 'cancelled' },
+        metadata: { cancelled_at: endedAt.toISOString(), capture_status: 'cancelled' },
       });
-      await settleElapsedRecallMeetingMinutes(scope.billing, {
-        meetingId,
-        startedAt: meeting.startedAt,
-        endedAt: new Date(),
-        metadata: meeting.metadata,
-        source: 'meeting_cancel',
-      }).catch(() => undefined);
+      try {
+        await settleElapsedRecallMeetingMinutes(scope.billing, {
+          meetingId,
+          startedAt: meeting.startedAt,
+          endedAt,
+          metadata: meeting.metadata,
+          source: 'meeting_cancel',
+        });
+      } catch (err) {
+        log.warn({ err, meetingId }, 'recall_cancel_settlement_pending');
+        reportCaughtError(err, {
+          surface: 'server_action',
+          operation: 'recall_cancel_settlement',
+        });
+        return {
+          ok: false,
+          error: 'The notetaker was cancelled. Usage recording will retry.',
+        };
+      }
     }
     revalidatePath('/app/meetings');
     revalidatePath(`/app/meetings/${meetingId}`);

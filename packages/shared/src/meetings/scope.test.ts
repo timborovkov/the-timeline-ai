@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import { Temporal } from '@js-temporal/polyfill';
 import {
+  billingUsageLedger,
+  billingUsageReservations,
   calendarEvents,
   meetingCaptureConfirmations,
   meetings,
@@ -13,7 +15,8 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { reserveRecallMeetingMinutes } from '#src/billing/admission.js';
+import { recallAttemptOperationId, reserveRecallMeetingMinutes } from '#src/billing/admission.js';
+import { settlePendingBillingReservations } from '#src/billing/runtime.js';
 import * as billingScopeMod from '#src/billing/scope.js';
 import { detectMeetingPlatform, lookupMeetingByBotId } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
@@ -1124,6 +1127,190 @@ describe('meetings scope', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  it('settles the first no-show attempt before a retry can reserve again', async () => {
+    const team = withTeam(db as never, TEAM_ID, USER_A);
+    const scope = team.meetings;
+    const saved = await scope.createSavedMeeting({
+      title: 'Bill the first wait',
+      meetingUrl: 'https://meet.google.com/bill-first-wait',
+      permissionConfirmed: true,
+      scheduleConfig: {
+        weekdays: [new Date().getUTCDay()],
+        times: ['23:59'],
+        timezone: 'UTC',
+        joinOffsetMinutes: 2,
+      },
+      autoJoinEnabled: true,
+    });
+    const now = Date.now();
+    const startedAt = new Date(now - 5 * 60_000).toISOString();
+    const meeting = await scope.createMeeting({
+      platform: 'meet',
+      meetingUrl: saved.meetingUrl,
+      title: saved.title,
+      savedMeetingId: saved.id,
+      status: 'joining',
+      scheduledStartAt: new Date(now - 5 * 60_000),
+      scheduledEndAt: new Date(now + 25 * 60_000),
+      metadata: {
+        source: 'saved_meeting',
+        capture_status: 'joining',
+        reserved_recall_started_at: startedAt,
+        reserved_recall_minutes: 120,
+      },
+    });
+    await scope.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-first-bill',
+    });
+    expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+      true,
+    );
+
+    await expect(
+      scope.handleMeetingNoShow({
+        meetingId: meeting.id,
+        providerBotId: 'bot-first-bill',
+        code: 'timeout_exceeded_waiting_room',
+        endedAt: new Date(),
+      }),
+    ).resolves.toBe('retry_scheduled');
+
+    const attemptId = recallAttemptOperationId(meeting.id, 'bot-first-bill');
+    const [attemptLedger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, attemptId));
+    expect(Number(attemptLedger?.nativeUnits)).toBeGreaterThanOrEqual(1);
+    const retried = await scope.getMeeting(meeting.id);
+    expect(retried?.metadata).not.toHaveProperty('reserved_recall_started_at');
+    expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+      true,
+    );
+    await scope.updateMeetingStatus(meeting.id, 'joining', {
+      providerBotId: 'bot-second-bill',
+      metadata: { reserved_recall_started_at: new Date().toISOString() },
+    });
+    const [stillThere] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, attemptId));
+    expect(Number(stillThere?.nativeUnits)).toBe(Number(attemptLedger?.nativeUnits));
+  });
+
+  it('keeps a no-show attempt reserved when its settlement fails', async () => {
+    const originalCreate = billingScopeMod.createBillingScope;
+    const spy = vi.spyOn(billingScopeMod, 'createBillingScope').mockImplementation((deps) => {
+      const scope = originalCreate(deps);
+      return {
+        ...scope,
+        settle: () => Promise.reject(new Error('settle failed after retry')),
+      };
+    });
+    let attemptId = '';
+    try {
+      const team = withTeam(db as never, TEAM_ID, USER_A);
+      const scope = team.meetings;
+      const saved = await scope.createSavedMeeting({
+        title: 'Retry after settle failure',
+        meetingUrl: 'https://meet.google.com/retry-settle-fail',
+        permissionConfirmed: true,
+        scheduleConfig: {
+          weekdays: [new Date().getUTCDay()],
+          times: ['23:59'],
+          timezone: 'UTC',
+          joinOffsetMinutes: 2,
+        },
+        autoJoinEnabled: true,
+      });
+      const now = Date.now();
+      const meeting = await scope.createMeeting({
+        platform: 'meet',
+        meetingUrl: saved.meetingUrl,
+        title: saved.title,
+        savedMeetingId: saved.id,
+        status: 'joining',
+        scheduledStartAt: new Date(now - 5 * 60_000),
+        scheduledEndAt: new Date(now + 25 * 60_000),
+        metadata: {
+          reserved_recall_started_at: new Date(now - 5 * 60_000).toISOString(),
+          reserved_recall_minutes: 120,
+        },
+      });
+      await scope.updateMeetingStatus(meeting.id, 'joining', {
+        providerBotId: 'bot-retry-settle',
+      });
+      expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+        true,
+      );
+      await expect(
+        scope.handleMeetingNoShow({
+          meetingId: meeting.id,
+          providerBotId: 'bot-retry-settle',
+          code: 'timeout_exceeded_waiting_room',
+          endedAt: new Date(),
+        }),
+      ).resolves.toBe('retry_scheduled');
+      attemptId = recallAttemptOperationId(meeting.id, 'bot-retry-settle');
+      const [attempt] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.operationId, attemptId));
+      expect(attempt?.state).toBe('reserved');
+      expect(attempt?.metadata).toMatchObject({
+        pending_settlement: true,
+        pending_meter: 'recall_minutes',
+        pending_source: 'meeting_no_show_retry',
+      });
+      expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+        true,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await settlePendingBillingReservations(db as never)).toBe(1);
+    const [settled] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, attemptId));
+    expect(settled?.state).toBe('settled');
+  });
+
+  it('stamps cancellation usage before the meeting is cancelled', async () => {
+    const team = withTeam(db as never, TEAM_ID, USER_A);
+    const meeting = await team.meetings.createMeeting({
+      platform: 'meet',
+      meetingUrl: 'https://meet.google.com/cancel-bill',
+      status: 'joining',
+      metadata: {
+        reserved_recall_started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+        reserved_recall_minutes: 120,
+      },
+    });
+    expect((await reserveRecallMeetingMinutes(team.billing, { meetingId: meeting.id })).ok).toBe(
+      true,
+    );
+    await expect(
+      team.meetings.cancelMeetingCapture(meeting.id, { allowPartialProcessing: true }),
+    ).resolves.toEqual({ outcome: 'cancelled' });
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, `recall:${meeting.id}`));
+    expect(reservation?.state).toBe('reserved');
+    expect(reservation?.metadata).toMatchObject({
+      pending_settlement: true,
+      pending_meter: 'recall_minutes',
+      pending_source: 'meeting_cancel',
+      meeting_id: meeting.id,
+    });
+    const minutes = reservation?.metadata.pending_recall_minutes;
+    expect(typeof minutes).toBe('number');
+    expect(typeof minutes === 'number' ? minutes : 0).toBeGreaterThanOrEqual(1);
+    await expect(team.meetings.getMeeting(meeting.id)).resolves.toMatchObject({
+      status: 'cancelled',
+    });
   });
 
   it('applies lifecycle updates and failures only to the current provider bot', async () => {

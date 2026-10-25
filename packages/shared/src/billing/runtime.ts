@@ -26,6 +26,7 @@ import {
   type BillingPlanId,
   PLAN_CATALOG,
   customerAiChargeCentsFromOpenRouterUsd,
+  recallChargeCents,
 } from '#src/billing/catalog.js';
 import {
   cumulativeChargeDeltaCents,
@@ -1174,6 +1175,35 @@ export async function settlePendingBillingReservations(db: Db): Promise<number> 
         settled += 1;
         continue;
       }
+    }
+    if (metadata.pending_meter === 'recall_minutes') {
+      const minutes = Math.max(
+        0,
+        Math.trunc(metadataNumber(metadata, 'pending_recall_minutes') ?? 0),
+      );
+      const meetingId =
+        typeof metadata.meeting_id === 'string' ? metadata.meeting_id : row.operationId;
+      const source =
+        typeof metadata.pending_source === 'string' ? metadata.pending_source : 'meeting_recall';
+      try {
+        await billing.settle({
+          operationId: row.operationId,
+          meterId: 'recall_minutes',
+          nativeUnits: minutes,
+          customerChargeCents: recallChargeCents(minutes),
+          operationClass: 'meeting_bot',
+          provider: 'recall',
+          source,
+          metadata: { meeting_id: meetingId },
+        });
+        settled += 1;
+      } catch (err) {
+        log.warn(
+          { err, teamId: row.teamId, operationId: row.operationId },
+          'pending recall settlement failed',
+        );
+      }
+      continue;
     }
     if (metadata.pending_meter === 'email_units') {
       const units = metadataNumber(metadata, 'pending_email_units') ?? 0;

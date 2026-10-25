@@ -37,6 +37,7 @@ const fakes = vi.hoisted(() => ({
   fakeWithTeam: vi.fn(),
   fakeBillingSettle: vi.fn(),
   fakeBillingRelease: vi.fn(),
+  fakeBillingPatch: vi.fn(),
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));
@@ -69,6 +70,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       billing: {
         settle: fakes.fakeBillingSettle,
         release: fakes.fakeBillingRelease,
+        patchReservationMetadata: fakes.fakeBillingPatch,
       },
     };
   },
@@ -170,6 +172,7 @@ beforeEach(() => {
   fakes.fakeUpdateStatusForBot.mockResolvedValue(true);
   fakes.fakeBillingSettle.mockResolvedValue({ ok: true, duplicate: false });
   fakes.fakeBillingRelease.mockResolvedValue({ ok: true });
+  fakes.fakeBillingPatch.mockResolvedValue(undefined);
 });
 
 afterEach(() => {

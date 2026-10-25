@@ -30,11 +30,17 @@ import {
 } from 'drizzle-orm';
 
 import {
+  recallBillableMinutesFromRecord,
+  recallOperationId,
+  reassignReservedRecallAttempt,
   releaseRecallMeetingMinutes,
   settleElapsedRecallMeetingMinutes,
+  settleRecallMeetingMinutes,
+  stampReservedRecallSettlement,
 } from '#src/billing/admission.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { currentExtractionModelVersion } from '#src/extraction-model-version.js';
+import { childLogger } from '#src/logger.js';
 import { participantNames } from '#src/meetings/participants.js';
 import { decodeCursor } from '#src/pagination.js';
 import { validateVisibilityUserIds } from '#src/visibility.js';
@@ -44,6 +50,8 @@ import { validateVisibilityUserIds } from '#src/visibility.js';
 // through a single chokepoint. Each transcript chunk insert creates an
 // audit raw_event row in the same transaction so existing pipelines
 // (extract / embed / visibility / timeline) light up unchanged.
+
+const log = childLogger('meetings');
 
 type Visibility = 'private' | 'team' | 'specific_users';
 type MeetingPlatform = 'meet' | 'teams' | 'zoom';
@@ -1643,31 +1651,61 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
               isNull(savedMeetings.archivedAt),
             ),
           );
-        const retried = await tx
-          .update(meetings)
-          .set({
-            status: 'scheduled',
-            providerBotId: null,
-            startedAt: null,
-            endedAt: null,
-            updatedAt: now,
-            metadata: sql`COALESCE(${meetings.metadata}, '{}'::jsonb) || ${retryMetadataPatch}::jsonb`,
-          })
-          .where(
-            and(
-              eq(meetings.id, input.meetingId),
-              eq(meetings.teamId, teamId),
-              eq(meetings.providerBotId, input.providerBotId),
-              notInArray(meetings.status, TERMINAL_MEETING_STATUSES),
-              isNotNull(meetings.scheduledStartAt),
-              lte(meetings.scheduledStartAt, now),
-              or(isNull(meetings.scheduledEndAt), gt(meetings.scheduledEndAt, now)),
-              sql`COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') = '0'`,
-              exists(retryableSavedMeeting),
-            ),
-          )
-          .returning({ id: meetings.id });
-        if (retried[0]) return 'retry_scheduled' as const;
+        const retryWhere = and(
+          eq(meetings.id, input.meetingId),
+          eq(meetings.teamId, teamId),
+          eq(meetings.providerBotId, input.providerBotId),
+          notInArray(meetings.status, TERMINAL_MEETING_STATUSES),
+          isNotNull(meetings.scheduledStartAt),
+          lte(meetings.scheduledStartAt, now),
+          or(isNull(meetings.scheduledEndAt), gt(meetings.scheduledEndAt, now)),
+          sql`COALESCE(${meetings.metadata} ->> 'no_show_retry_count', '0') = '0'`,
+          exists(retryableSavedMeeting),
+        );
+        const [prior] = await tx
+          .select({ startedAt: meetings.startedAt, metadata: meetings.metadata })
+          .from(meetings)
+          .where(retryWhere)
+          .for('update')
+          .limit(1);
+        if (prior) {
+          const minutes = recallBillableMinutesFromRecord({
+            startedAt: prior.startedAt,
+            endedAt: input.endedAt,
+            metadata: prior.metadata,
+          });
+          const retried = await tx
+            .update(meetings)
+            .set({
+              status: 'scheduled',
+              providerBotId: null,
+              startedAt: null,
+              endedAt: null,
+              updatedAt: now,
+              metadata: sql`(COALESCE(${meetings.metadata}, '{}'::jsonb) - 'reserved_recall_started_at') || ${retryMetadataPatch}::jsonb`,
+            })
+            .where(retryWhere)
+            .returning({ id: meetings.id });
+          if (retried[0]) {
+            const moved =
+              minutes > 0
+                ? await reassignReservedRecallAttempt(tx, {
+                    teamId,
+                    meetingId: input.meetingId,
+                    attemptKey: input.providerBotId,
+                    minutes,
+                    endedAt: input.endedAt,
+                    source: 'meeting_no_show_retry',
+                  })
+                : null;
+            return {
+              kind: 'retry_scheduled' as const,
+              releaseCanonical: minutes <= 0,
+              attempt:
+                moved?.reassigned === true ? { operationId: moved.operationId, minutes } : null,
+            };
+          }
+        }
 
         const terminal = await tx
           .update(meetings)
@@ -1687,7 +1725,7 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
           )
           .returning({ savedMeetingId: meetings.savedMeetingId });
         const terminalMeeting = terminal[0];
-        if (!terminalMeeting) return 'ignored' as const;
+        if (!terminalMeeting) return { kind: 'ignored' as const };
         if (terminalMeeting.savedMeetingId) {
           await recordSavedMeetingJoinFailureInternal(
             tx,
@@ -1695,14 +1733,32 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
             'no_show',
           );
         }
-        return 'terminal' as const;
+        return { kind: 'terminal' as const };
       });
-      if (outcome === 'retry_scheduled') {
-        await releaseRecallReservation(input.meetingId);
-      } else if (outcome === 'terminal') {
+      if (outcome.kind === 'retry_scheduled') {
+        if (outcome.attempt) {
+          try {
+            await settleRecallMeetingMinutes(recallBillingScope(), {
+              meetingId: input.meetingId,
+              minutes: outcome.attempt.minutes,
+              operationId: outcome.attempt.operationId,
+              source: 'meeting_no_show_retry',
+            });
+          } catch (err) {
+            log.warn(
+              { err, meetingId: input.meetingId, operationId: outcome.attempt.operationId },
+              'recall_attempt_settlement_pending',
+            );
+          }
+        } else if (outcome.releaseCanonical) {
+          await releaseRecallReservation(input.meetingId);
+        }
+        return 'retry_scheduled';
+      }
+      if (outcome.kind === 'terminal') {
         await settleElapsedRecallReservation(input.meetingId, input.endedAt);
       }
-      return outcome;
+      return outcome.kind;
     },
 
     async handleMeetingFailure(input: {
@@ -1821,7 +1877,12 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${meetingId}, 0))`);
 
         const meetingRows = await tx
-          .select({ status: meetings.status, providerBotId: meetings.providerBotId })
+          .select({
+            status: meetings.status,
+            providerBotId: meetings.providerBotId,
+            startedAt: meetings.startedAt,
+            metadata: meetings.metadata,
+          })
           .from(meetings)
           .where(and(eq(meetings.id, meetingId), eq(meetings.teamId, teamId), meetingVisibility))
           .for('update')
@@ -1849,6 +1910,24 @@ export function createMeetingScope(deps: MeetingScopeDeps) {
 
         const now = new Date();
         const nextStatus: MeetingStatus = hasPartialCapture ? 'processing' : 'cancelled';
+        const capturedMeeting = meetingRows[0];
+        if (!hasPartialCapture && capturedMeeting) {
+          const minutes = recallBillableMinutesFromRecord({
+            startedAt: capturedMeeting.startedAt,
+            endedAt: now,
+            metadata: capturedMeeting.metadata,
+          });
+          if (minutes > 0) {
+            await stampReservedRecallSettlement(tx, {
+              teamId,
+              operationId: recallOperationId(meetingId),
+              meetingId,
+              minutes,
+              endedAt: now,
+              source: 'meeting_cancel',
+            });
+          }
+        }
         const providerLeavePending = Boolean(meetingRows[0]?.providerBotId);
         const metadataPatch = JSON.stringify(
           hasPartialCapture

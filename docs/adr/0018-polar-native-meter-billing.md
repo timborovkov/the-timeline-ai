@@ -152,9 +152,14 @@ credit hides margin and confuses prospects.
    member-day ticks retry unsettled `member_days:<team>:<day>:<user>` facts across
    the full 31-day lookback, including the previous calendar month, after billing
    recovery instead of advancing past denied days. Terminal Recall
-   no-shows settle elapsed waiting-room minutes; retry no-shows still release so
-   the same meeting can reserve again. Cancelling a joining/active meeting with no
-   transcript chunks settles elapsed waiting-room minutes instead of releasing them.
+   no-shows settle elapsed waiting-room minutes. A retry no-show settles the first
+   attempt under `recall:{meetingId}:attempt:{botId}`, keeps only those elapsed
+   minutes reserved, and clears `reserved_recall_started_at` before the next join
+   reserves the canonical id.
+   Cancelling a joining/active meeting with no transcript chunks stamps pending
+   Recall minutes before the meeting becomes `cancelled`; maintenance retries that
+   marker if settle fails. Finalize settles `failed`, `cancelled`, and `no_show`
+   reservations instead of releasing them.
    An active bot `failed`/`fatal` path settles elapsed minutes the same way.
    Settlement errors on those terminal paths propagate so Recall webhooks can 503
    and retry; aborting a join after Recall accepted keeps the reservation when

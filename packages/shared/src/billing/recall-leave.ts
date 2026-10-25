@@ -1,7 +1,12 @@
 import { billingUsageReservations, meetings, type Db } from '@timeline/db';
 import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
-import { settleElapsedRecallMeetingMinutes } from '#src/billing/admission.js';
+import {
+  isRecallAttemptOperationId,
+  meetingIdFromRecallOperationId,
+  settleElapsedRecallMeetingMinutes,
+  settleRecallMeetingMinutes,
+} from '#src/billing/admission.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { childLogger } from '#src/logger.js';
@@ -70,16 +75,42 @@ async function leavePendingRecallReservations(db: Db): Promise<number> {
       continue;
     }
     left += 1;
-    const meetingId = row.operationId.startsWith('recall:')
-      ? row.operationId.slice('recall:'.length)
-      : null;
+    const meetingId = meetingIdFromRecallOperationId(row.operationId);
     const billing = createBillingScope({
       db,
       teamId: row.teamId,
       userId: BILLING_SYSTEM_USER_ID,
       ensureMember: () => Promise.resolve('owner'),
     });
+    const metadata = row.metadata;
+    if (isRecallAttemptOperationId(row.operationId)) {
+      const rawMinutes = metadata.pending_recall_minutes;
+      const minutes =
+        typeof rawMinutes === 'number' && Number.isFinite(rawMinutes)
+          ? Math.max(0, Math.trunc(rawMinutes))
+          : 0;
+      if (minutes > 0 && meetingId) {
+        try {
+          await settleRecallMeetingMinutes(billing, {
+            meetingId,
+            minutes,
+            operationId: row.operationId,
+            source:
+              typeof metadata.pending_source === 'string'
+                ? metadata.pending_source
+                : 'meeting_no_show_retry',
+          });
+        } catch (err) {
+          log.warn(
+            { err, operationId: row.operationId },
+            'pending recall attempt settlement failed',
+          );
+        }
+      }
+      continue;
+    }
     if (!meetingId) {
+      if (metadata.pending_settlement === true) continue;
       await billing.release(row.operationId).catch(() => undefined);
       continue;
     }
