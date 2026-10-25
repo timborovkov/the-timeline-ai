@@ -65,19 +65,19 @@ PLATFORM_ADMIN_EMAILS=
       <p>
         <code>PLATFORM_ADMIN_EMAILS</code> is a comma-separated allowlist for
         <code>/app/admin/billing</code> and <code>pnpm billing:operator</code>. It is not a team
-        role. Comped workspaces keep metering and the spend cap, skip Polar checkout and meter
-        ingest, and show a one-line comp banner on the team billing page. Customer billing shows the
-        plan, this month's spend against the cap, and the next invoice; usage is a meter table.
-        Pricing detail lives on <code>/pricing</code>. Members only see a cap or allowance notice.
-        Assigning a comp revokes the team's current Polar subscription immediately so the platform
-        fee stops. If that subscription exists and Polar is not configured, the comp is refused and
-        nothing is saved. An open Enterprise checkout is expired before the comp is saved. A
-        checkout that is still payable, or one that already started payment, blocks the comp. A
-        subscription webhook that still arrives for a comped workspace revokes that subscription,
-        stores its id until the revoke succeeds, and leaves the comp in place. Price overrides
-        (platform fee, included members, per-member price, metered discount percent) and a per-team
-        Polar discount id are optional and can expire. Every change is appended to
-        <code>billing_operator_audit</code>.
+        role. The address must match a Timeline user whose email is already verified. Comped
+        workspaces keep metering and the spend cap, skip Polar checkout and meter ingest, and show a
+        one-line comp banner on the team billing page. Customer billing shows the plan, this month's
+        spend against the cap, and the next invoice; usage is a meter table. Pricing detail lives on
+        <code>/pricing</code>. Members only see a cap or allowance notice. Assigning a comp revokes
+        the team's current Polar subscription immediately so the platform fee stops. If that
+        subscription exists and Polar is not configured, the comp is refused and nothing is saved.
+        An open Enterprise checkout is expired before the comp is saved. A checkout that is still
+        payable, or one that already started payment, blocks the comp. A subscription webhook that
+        still arrives for a comped workspace revokes that subscription, stores its id until the
+        revoke succeeds, and leaves the comp in place. Price overrides (platform fee, included
+        members, per-member price, metered discount percent) and a per-team Polar discount id are
+        optional and can expire. Every change is appended to <code>billing_operator_audit</code>.
       </p>
 
       <h2>Products and meters (v1)</h2>
@@ -223,61 +223,64 @@ PLATFORM_ADMIN_EMAILS=
         <code>costlyWorkerConcurrency</code> and delay the job when busy. Background AI metering
         keeps the reservation when settle fails after a successful provider call and reuses the
         BullMQ job id. A thrown call that already reported OpenRouter usage settles that attempt,
-        then releases the reservation. Each transcription chunk gets its own operation id. Aborting
-        a Recall join after the bot is accepted keeps the reservation when leave fails so the
-        janitor can retry. Terminal Recall settlement errors propagate so the status webhook can 503
-        and retry. Re-accepting a removed member stamps a new membership <code>createdAt</code> and
-        appends the previous interval to <code>prior_intervals</code>. A leftover Free team stays
-        unrestricted while another owner's grant remains assigned. Storage snapshots backfill missed
-        days across the 31-day lookback, price each day on the plan in force then, and count that
-        day in its own month. Replay included discount counts <code>pricing_period_ym</code> when
-        that tag is set, then <code>polar_ingest_period_ym</code>, and uses the ledger time only
-        when neither tag is set. A prior month is recorded on that month and is not compared to the
-        live spend cap. Only a positive charge in the current UTC period can freeze on that cap.
-        Member-days and storage days with no stamp yet share one helper: plan history, then comp
-        expiry (Free after <code>comp_expires_at</code>), while a contractual Enterprise plan stays
-        Enterprise. A day before expiry keeps the comped plan's price. An existing member-day stamp
-        still wins. Restoring a document keeps the closed absence interval so those days are not
-        billed again. Slack/Telegram/MCP Ask and web chat save the completed cost before settle and
-        keep the reservation when settlement fails so the janitor can retry it. Paid-plan changes
-        reuse the Polar subscription in non-active paid states. Extra-member plan preview prorates
-        from period member-days, including person-days when the current plan has no extras. Inbound
-        email audio skipped for a denied email meter is flushed by the janitor when billing can
-        reserve again. Denied inbound-email parent enrichment is stamped
+        then releases the reservation. Each transcription chunk gets its own operation id. Each
+        embedding call appends a stable digest of its input to that worker operation id, so a split
+        batch does not replay the first half's cached vectors. Aborting a Recall join after the bot
+        is accepted keeps the reservation when leave fails so the janitor can retry. Terminal Recall
+        settlement errors propagate so the status webhook can 503 and retry. Re-accepting a removed
+        member stamps a new membership <code>createdAt</code> and appends the previous interval to
+        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
+        grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
+        price each day on the plan in force then, and count that day in its own month. Replay
+        included discount counts <code>pricing_period_ym</code> when that tag is set, then
+        <code>polar_ingest_period_ym</code>, and uses the ledger time only when neither tag is set.
+        A prior month is recorded on that month and is not compared to the live spend cap. Only a
+        positive charge in the current UTC period can freeze on that cap. Member-days and storage
+        days with no stamp yet share one helper: plan history, then comp expiry (Free after
+        <code>comp_expires_at</code>), while a contractual Enterprise plan stays Enterprise. A day
+        before expiry keeps the comped plan's price. An existing member-day stamp still wins.
+        Restoring a document keeps the closed absence interval so those days are not billed again.
+        Slack/Telegram/MCP Ask and web chat save the completed cost before settle and keep the
+        reservation when settlement fails so the janitor can retry it. Paid-plan changes reuse the
+        Polar subscription in non-active paid states. Extra-member plan preview prorates from period
+        member-days, including person-days when the current plan has no extras. Inbound email audio
+        skipped for a denied email meter is flushed by the janitor when billing can reserve again.
+        Denied inbound-email parent enrichment is stamped
         <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
-        accepted-source meter. Deferred accepted-source flush rotates past still-blocked rows; a
-        replay after an insert crash meters the existing dedup row. Seat claims are blocked while
-        billing is paused. The spend cap counts the locally metered charge for Pay as you go, Team,
-        Business, and every comp, including an expired comp whose entitlements are Free. Included
-        credit that zeros the invoice does not skip the cap. Open reservations count toward it.
-        Standard Free stays on the allowance. Standard Enterprise settlement does not freeze on the
-        spend cap. A comped Enterprise workspace still enforces its spend cap. An expired Enterprise
-        comp uses the Free allowance and still enforces the cap. Enterprise checkout is opened by a
-        platform operator and is not self-serve. A team has one outstanding checkout. An earlier
-        session is expired when Polar reports it expired, failed, or missing. Polar has no merchant
-        expire endpoint, so a session that stays open, or one that already started payment, blocks
-        another link. The new link stores only its own pending terms and leaves the current plan in
-        place until the paid subscription webhook for that checkout. If a second live subscription
-        activates, Timeline revokes the extra Polar subscription, or opens an unbilled alert when
-        the revoke fails, and names that subscription id so a duplicate charge can be refunded.
-        Paying that checkout stores the contracted platform fee apart from the usage override.
-        Clearing or replacing the usage override leaves the fee in place. That fee is used only
-        while the effective plan is Enterprise. A confirmed subscription cancel clears the Polar
-        subscription id and the contracted fee once the cancellation has taken effect, and an
-        Enterprise cancel also clears the usage override. A period-end cancel leaves both in place
-        until <code>subscription.revoked</code> or <code>cancel_effective_at</code>. Plan preview
-        applies a metered percentage to usage and to extra-member cents before included credit.
-        Recall reservations, capacity, and included-discount refills follow the effective plan, so
-        an expired comp uses the Free minute cap rather than the stored comp plan. Polar price
-        coverage is read only when a settlement is payable, and that product's priced events are
-        reused for later settlements. Replayed member-days keep the historical plan's extra-member
-        rate. Enterprise checkout does not clear a canceled subscription id and does not copy an
-        expired price override into those terms. Platform-fee overrides are not saved on Pay as you
-        go, Team, or Business; the Enterprise checkout sends that fee to Polar. Clearing a comp
-        refuses while a Polar subscription id remains, then restores unrestricted Free only when
-        this workspace holds the Free grant. Background AI metering skips OpenRouter when the
-        durable operation is already settled or the reservation is reused with
-        <code>provider_completed</code>. A successful worker call stamps
+        accepted-source meter. That marker stays set until every pending attachment has been read,
+        stored, queued for extract, and linked on the parent. Deferred accepted-source flush rotates
+        past still-blocked rows; a replay after an insert crash meters the existing dedup row. Seat
+        claims are blocked while billing is paused. The spend cap counts the locally metered charge
+        for Pay as you go, Team, Business, and every comp, including an expired comp whose
+        entitlements are Free. Included credit that zeros the invoice does not skip the cap. Open
+        reservations count toward it. Standard Free stays on the allowance. Standard Enterprise
+        settlement does not freeze on the spend cap. A comped Enterprise workspace still enforces
+        its spend cap. An expired Enterprise comp uses the Free allowance and still enforces the
+        cap. Enterprise checkout is opened by a platform operator and is not self-serve. A team has
+        one outstanding checkout. An earlier session is expired when Polar reports it expired,
+        failed, or missing. Polar has no merchant expire endpoint, so a session that stays open, or
+        one that already started payment, blocks another link. The new link stores only its own
+        pending terms and leaves the current plan in place until the paid subscription webhook for
+        that checkout. If a second live subscription activates, Timeline revokes the extra Polar
+        subscription, or opens an unbilled alert when the revoke fails, and names that subscription
+        id so a duplicate charge can be refunded. Paying that checkout stores the contracted
+        platform fee apart from the usage override. Clearing or replacing the usage override leaves
+        the fee in place. That fee is used only while the effective plan is Enterprise. A confirmed
+        subscription cancel clears the Polar subscription id and the contracted fee once the
+        cancellation has taken effect, and an Enterprise cancel also clears the usage override. A
+        period-end cancel leaves both in place until <code>subscription.revoked</code> or
+        <code>cancel_effective_at</code>. Plan preview applies a metered percentage to usage and to
+        extra-member cents before included credit. Recall reservations, capacity, and
+        included-discount refills follow the effective plan, so an expired comp uses the Free minute
+        cap rather than the stored comp plan. Polar price coverage is read only when a settlement is
+        payable, and that product's priced events are reused for later settlements. Replayed
+        member-days keep the historical plan's extra-member rate. Enterprise checkout does not clear
+        a canceled subscription id and does not copy an expired price override into those terms.
+        Platform-fee overrides are not saved on Pay as you go, Team, or Business; the Enterprise
+        checkout sends that fee to Polar. Clearing a comp refuses while a Polar subscription id
+        remains, then restores unrestricted Free only when this workspace holds the Free grant.
+        Background AI metering skips OpenRouter when the durable operation is already settled or the
+        reservation is reused with <code>provider_completed</code>. A successful worker call stamps
         <code>worker_settlement_pending</code> before settle. The janitor drains that marker,
         including an already-expired row, before the reservation TTL, and a retry keeps the
         completed result. Member-day ledger rows stamp <code>plan_id</code>; later ticks reuse that
