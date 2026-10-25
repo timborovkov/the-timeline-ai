@@ -202,7 +202,7 @@ not clear provider identity, account-plan, or production deployment gates.
 - `pnpm validate` passed (Prettier, typecheck, ESLint, Knip).
 - `pnpm run doctor` reported `React Doctor score: 100` and `No issues found!`.
 - `pnpm test` completed all six workspace tasks successfully after merging
-  #433/#434 (web 2,349 tests).
+  #435/#437 (web 2,362 tests).
 - `pnpm test:eval` and `pnpm test:dist-imports` passed on that revision.
 - Local `GET /.well-known/oauth-authorization-server` and
   `GET /.well-known/oauth-protected-resource/api/mcp/server` returned `200` with
