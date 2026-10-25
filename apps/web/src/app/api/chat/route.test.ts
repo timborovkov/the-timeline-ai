@@ -1440,8 +1440,7 @@ describe('POST /api/chat', () => {
       expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalled();
     });
     const failedStreamSettle = vi.mocked(settleAskAiFromOpenRouterUsd).mock.calls[0]?.[1] as
-      | { openRouterUsd?: number }
-      | undefined;
+      { openRouterUsd?: number } | undefined;
     expect(failedStreamSettle?.openRouterUsd).toBeCloseTo(0.09, 8);
     expect(releaseBillingReservation).not.toHaveBeenCalled();
     await capturedOnFinish?.({
@@ -1474,8 +1473,7 @@ describe('POST /api/chat', () => {
     });
     expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledTimes(1);
     const finishedStreamSettle = vi.mocked(settleAskAiFromOpenRouterUsd).mock.calls[0]?.[1] as
-      | { openRouterUsd?: number }
-      | undefined;
+      { openRouterUsd?: number } | undefined;
     expect(finishedStreamSettle?.openRouterUsd).toBeCloseTo(0.07, 8);
     expect(releaseBillingReservation).not.toHaveBeenCalled();
   });
