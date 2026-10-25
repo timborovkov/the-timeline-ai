@@ -118,7 +118,8 @@ describe('billing scope', () => {
 
     const after = await scope.getDashboard();
     expect(after.meters.ai?.customerChargeCents).toBe(42);
-    expect(after.meteredSpendCents).toBe(42);
+    expect(after.meters.ai?.nativeUnits).toBe(42);
+    expect(after.meteredSpendCents).toBe(0);
     expect(provider.events).toHaveLength(0);
   });
 
@@ -955,8 +956,10 @@ describe('billing scope', () => {
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
           included_discount_remaining_cents = 0, spend_cap_cents = 1000
       WHERE team_id = '${TEAM_ID}';
-      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
-      VALUES ('${TEAM_ID}', '${currentYm}', 'ai', 900, 900);
+      INSERT INTO billing_usage_counters (
+        team_id, period_ym, meter_id, native_units, customer_charge_cents, cap_eligible_charge_cents
+      )
+      VALUES ('${TEAM_ID}', '${currentYm}', 'ai', 900, 900, 900);
     `);
     const settled = await scope.settle({
       operationId: 'op-current-cap',
@@ -968,6 +971,58 @@ describe('billing scope', () => {
     const after = await scope.getAccount();
     expect(after.billingState).toBe('read_only');
     expect(after.spendCapCents).toBe(0);
+  });
+
+  it('keeps standard Free allowance out of a PAYG spend cap and on the native floor', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'free', billing_state = 'free',
+          arrangement = 'standard', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'ai:free-allowance',
+      meterId: 'ai',
+      nativeUnits: 500,
+      customerChargeCents: 500,
+    });
+    expect(settled.ok).toBe(true);
+    const [freeCounter] = await db
+      .select()
+      .from(billingUsageCounters)
+      .where(and(eq(billingUsageCounters.teamId, TEAM_ID), eq(billingUsageCounters.meterId, 'ai')));
+    expect(Number(freeCounter?.nativeUnits)).toBe(500);
+    expect(freeCounter?.customerChargeCents).toBe(500);
+    expect(freeCounter?.capEligibleChargeCents).toBe(0);
+    if (!settled.duplicate)
+      expect(settled.ledger.metadata).toMatchObject({ cap_eligible_cents: 0 });
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active', spend_cap_cents = 500
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'ask:after-free-upgrade',
+      meterId: 'ai',
+      reservedNativeUnits: 250,
+      reservedChargeCents: 250,
+    });
+    expect(reserved.ok).toBe(true);
+    if (reserved.ok) {
+      expect(reserved.reservation.metadata).toMatchObject({
+        metered_charge_cents: 250,
+        cap_eligible_reserved_cents: 250,
+      });
+    }
   });
 
   it('prices a backfilled member-day with that month length', async () => {

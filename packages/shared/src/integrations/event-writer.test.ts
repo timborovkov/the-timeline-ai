@@ -1763,6 +1763,54 @@ describe('writeIntegrationEvents visibility', () => {
     expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
   });
 
+  it('keeps deferred email audio while the parent email is still billing-deferred', async () => {
+    const parentId = '00000000-0000-4000-8000-0000000000a1';
+    const childId = '00000000-0000-4000-8000-0000000000a2';
+    const periodYm = new Date().toISOString().slice(0, 7);
+    await pg.exec(`
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES ('${TEAM_ID}', '${periodYm}', 'email_units', 500, 0);
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      VALUES (
+        '${parentId}',
+        '${TEAM_ID}',
+        'email',
+        'Voice memo past the email allowance',
+        '{"billing_enrichment_deferred": true, "message_id": "<audio@example.net>"}'::jsonb
+      );
+      INSERT INTO raw_events (id, team_id, source, content_audio_url, source_metadata)
+      VALUES (
+        '${childId}',
+        '${TEAM_ID}',
+        'email',
+        'audio/${TEAM_ID}/blocked.m4a',
+        '{"transcription_deferred": true, "parent_event_id": "${parentId}", "audio_filename": "blocked.m4a"}'::jsonb
+      );
+    `);
+
+    const flushed = await flushDeferredAudioTranscription(db as never);
+    expect(flushed).toBe(0);
+    expect(enqueueTranscribeJob).not.toHaveBeenCalled();
+    const [kept] = await db.select().from(rawEvents).where(eq(rawEvents.id, childId));
+    expect(kept?.sourceMetadata).toMatchObject({ transcription_deferred: true });
+
+    await pg.exec(`
+      UPDATE raw_events
+      SET source_metadata = COALESCE(source_metadata, '{}'::jsonb)
+        || '{"billing_enrichment_deferred": false}'::jsonb
+      WHERE id = '${parentId}';
+    `);
+    const admitted = await flushDeferredAudioTranscription(db as never);
+    expect(admitted).toBe(1);
+    expect(enqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: childId,
+      teamId: TEAM_ID,
+      audioKey: `audio/${TEAM_ID}/blocked.m4a`,
+    });
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, childId));
+    expect(cleared?.sourceMetadata).toMatchObject({ transcription_deferred: false });
+  });
+
   it('flushes deferred email audio transcription when billing can reserve again', async () => {
     const eventId = '00000000-0000-4000-8000-000000000099';
     await pg.exec(`

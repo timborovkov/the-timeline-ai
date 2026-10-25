@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  capEligibleCustomerChargeCents,
   cumulativeChargeDeltaCents,
   currentPeriodSpendCapExceeded,
   memberDayChargeDelta,
@@ -8,6 +9,7 @@ import {
   includedDiscountWindowContaining,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
+  pendingCapEligibleChargeCents,
   polarCatalogUnitsForInvoiceCents,
   polarInvoiceNativeUnits,
   polarIngestDisposition,
@@ -1034,5 +1036,39 @@ describe('shortfall freeze recovery', () => {
     expect(
       restoredSpendCapCentsAfterShortfallUnfreeze({ planId: 'enterprise', spendCapCents: 0 }),
     ).toBeNull();
+  });
+});
+
+describe('cap-eligible spend', () => {
+  it('omits standard Free allowance use and keeps comps and paid charges', () => {
+    expect(
+      capEligibleCustomerChargeCents({
+        entitlementsPlanId: 'free',
+        comped: false,
+        enterpriseContract: false,
+        chargeCents: 500,
+      }),
+    ).toBe(0);
+    expect(
+      capEligibleCustomerChargeCents({
+        entitlementsPlanId: 'free',
+        comped: true,
+        enterpriseContract: false,
+        chargeCents: 500,
+      }),
+    ).toBe(500);
+    expect(
+      capEligibleCustomerChargeCents({
+        entitlementsPlanId: 'payg',
+        comped: false,
+        enterpriseContract: false,
+        chargeCents: 250,
+      }),
+    ).toBe(250);
+  });
+
+  it('reads an explicit in-flight cap amount and falls back to the metered charge', () => {
+    expect(pendingCapEligibleChargeCents({ cap_eligible_reserved_cents: 0 }, 500)).toBe(0);
+    expect(pendingCapEligibleChargeCents({ metered_charge_cents: 40 }, 0)).toBe(40);
   });
 });

@@ -272,6 +272,30 @@ export function pendingMeteredChargeCents(
   return pendingBillableChargeCents(metadata, fallbackChargeCents);
 }
 
+/**
+ * Standard Free allowance use is not spend-cap eligible. A comp, including an
+ * expired comp whose entitlements are Free, and every paid plan still count.
+ */
+export function capEligibleCustomerChargeCents(input: {
+  entitlementsPlanId: BillingPlanId;
+  comped: boolean;
+  enterpriseContract: boolean;
+  chargeCents: number;
+}): number {
+  if (input.entitlementsPlanId === 'free' && !input.comped && !input.enterpriseContract) return 0;
+  return Math.max(0, input.chargeCents);
+}
+
+/** In-flight cap spend. Older reservations fall back to the metered charge. */
+export function pendingCapEligibleChargeCents(
+  metadata: Record<string, unknown> | null | undefined,
+  fallbackChargeCents: number,
+): number {
+  const raw = metadata?.cap_eligible_reserved_cents;
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
+  return pendingMeteredChargeCents(metadata, fallbackChargeCents);
+}
+
 export function pendingDiscountReservedCents(
   metadata: Record<string, unknown> | null | undefined,
 ): number {

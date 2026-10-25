@@ -331,7 +331,13 @@ export const billingUsageCounters = pgTable(
     periodYm: text('period_ym').notNull(),
     meterId: billingMeterId('meter_id').notNull(),
     nativeUnits: numeric('native_units', { precision: 20, scale: 6 }).notNull().default('0'),
+    /** List or post-floor charge, including standard Free allowance use. */
     customerChargeCents: integer('customer_charge_cents').notNull().default(0),
+    /**
+     * Paid spend counted by the spend cap. Standard Free allowance use stays
+     * on `nativeUnits` and `customerChargeCents` and adds nothing here.
+     */
+    capEligibleChargeCents: integer('cap_eligible_charge_cents').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

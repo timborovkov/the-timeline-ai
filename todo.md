@@ -772,6 +772,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       existing dedup rows. Web chat settles known compression cost when the answer stream fails.
       Completed Ask tool rounds accumulate per step and settle when a later model step errors.
       Live settlements stamp <code>usage_at</code>, and a renewal replay uses that instant instead of the month midpoint.
+      Deferred email audio stays deferred while its parent email is still billing-deferred.
+      Standard Free allowance use stays on native-unit counters and is omitted from the spend cap.
       `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
       Enterprise has no self-serve checkout. `withAiMetering` skips OpenRouter when the durable operation already
       completed, and stamps `worker_settlement_pending` so the janitor can settle a

@@ -128,6 +128,7 @@ describe('drizzle journal order', () => {
       '0082_billing_enterprise_platform_fee',
       '0085_billing_cancel_effective_at',
       '0086_billing_plan_history_baseline',
+      '0087_billing_cap_eligible_spend',
     ]) {
       expect(byTag.get(tag), tag).toBeGreaterThan(mainBoundary);
     }
@@ -165,6 +166,9 @@ describe('drizzle journal order', () => {
       expect(billing).toContain('enterprise_platform_fee_cents');
       expect(billing).toContain('cancel_effective_at');
       expect(await columnNames(pg, 'billing_free_grants')).toContain('user_id');
+      expect(await columnNames(pg, 'billing_usage_counters')).toContain(
+        'cap_eligible_charge_cents',
+      );
       expect(await columnNames(pg, 'legal_acceptances')).toContain('terms_version');
       const tables = await pg.query<{ tablename: string }>(
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'billing_plan_history'`,

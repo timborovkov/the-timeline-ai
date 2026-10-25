@@ -264,9 +264,10 @@ export function billingStateForComp(planId: BillingPlanId) {
 /**
  * The spend cap counts the locally metered charge. Whether Polar will invoice
  * that charge (included credit, a comp, or the Free allowance) does not decide
- * it. Standard Free stays on the allowance gate. A contractual Enterprise
- * subscription is not frozen by the cap. Comps, including an expired comp
- * whose entitlements are Free, still enforce it.
+ * it. Standard Free allowance list prices are omitted from the cap total and
+ * stay on the native-unit counters. A contractual Enterprise subscription is
+ * not frozen by the cap. Comps, including an expired comp whose entitlements
+ * are Free, still enforce it.
  */
 export function localChargeSpendCapApplies(input: {
   shadowBilling: boolean;

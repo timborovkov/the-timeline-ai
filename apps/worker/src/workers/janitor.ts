@@ -421,8 +421,8 @@ export function startJanitorWorker(deps: { db: Db }): Worker<queue.JanitorJobDat
       try {
         await runBillingMaintenanceTick(deps.db);
         await flushDeferredAcceptedSourceEnrichment(deps.db);
-        await flushDeferredAudioTranscription(deps.db);
         await flushDeferredEmailEnrichment(deps.db);
+        await flushDeferredAudioTranscription(deps.db);
       } catch (err: unknown) {
         log.warn({ err }, 'janitor: billing maintenance tick failed');
       }

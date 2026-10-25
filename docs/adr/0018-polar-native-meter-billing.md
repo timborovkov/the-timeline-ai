@@ -63,7 +63,10 @@ credit hides margin and confuses prospects.
    purchase that is not a subscription product, is recorded on the usage ledger
    and opens an unbilled alert for the platform operator. It does not credit
    `walletBalanceCents`. The spend cap is the risk control: €0 or metered spend at
-   the cap is a hard stop, with owner alerts at 50/75/90/100%. Free workspaces
+   the cap is a hard stop, with owner alerts at 50/75/90/100%. Standard Free
+   allowance use stays on native-unit counters for the PAYG included floor and
+   is omitted from that cap, so a mid-month upgrade does not treat it as paid
+   spend. Free workspaces
    hard-stop on native allowances. Comps skip Polar checkout and meter ingest;
    assigning a comp revokes the current Polar subscription, and the comp is
    refused when that subscription exists and Polar is not configured. An open
@@ -275,8 +278,10 @@ credit hides margin and confuses prospects.
    `payment_retry`, `read_only`, and `grace`, not only active states. Period plan
    preview prorates extra members from `member_days` rather than a full month.
    Inbound
-   email audio skipped for a denied email meter is stamped `transcription_deferred`
-   and the janitor flushes transcription when billing can reserve again. Denied inbound-email
+   email audio skipped for a denied email meter is stamped `transcription_deferred`.
+   The janitor flushes that audio only after the parent email is no longer
+   `billing_enrichment_deferred`, so an exhausted email allowance cannot be
+   bypassed while AI allowance remains. Denied inbound-email
    parent enrichment stamps `billing_enrichment_deferred`; the janitor retries `email_units`
    then extract/embed/suggestions (and captured documents) separately from accepted-source
    flush. That marker stays until every pending attachment has been read, stored, queued for

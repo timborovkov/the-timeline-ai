@@ -25,6 +25,7 @@ import {
   polarEventNameForMeter,
 } from '#src/billing/catalog.js';
 import {
+  capEligibleCustomerChargeCents,
   cumulativeBillableChargeCents,
   cumulativeChargeDeltaCents,
   currentPeriodSpendCapExceeded,
@@ -32,8 +33,8 @@ import {
   memberDayChargeDelta,
   metersPlusPendingReservations,
   paygOverageCustomerChargeCents,
+  pendingCapEligibleChargeCents,
   pendingDiscountReservedCents,
-  pendingMeteredChargeCents,
   polarIngestDispositionBeforeCoverage,
   billingMeterIdForPolarEvent,
   polarCatalogUnitsForInvoiceCents,
@@ -484,7 +485,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           },
         ]),
       ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
-      const meteredSpendCents = counters.reduce((sum, row) => sum + row.customerChargeCents, 0);
+      const meteredSpendCents = counters.reduce((sum, row) => sum + row.capEligibleChargeCents, 0);
       const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
       const freeRemaining = freeAllowanceRemaining(byMeter);
       const canManageBilling = options?.canManageBilling ?? false;
@@ -901,6 +902,12 @@ export function createBillingScope(deps: BillingScopeDeps) {
           discount_reserved_cents: discountCents,
           invoice_reserved_cents: invoiceCents,
           wallet_lock_cents: walletLockCents,
+          cap_eligible_reserved_cents: capEligibleCustomerChargeCents({
+            entitlementsPlanId,
+            comped,
+            enterpriseContract,
+            chargeCents: billableChargeCents,
+          }),
         };
 
         const enforceSpendCap =
@@ -912,13 +919,19 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }) && billableChargeCents > 0;
         if (enforceSpendCap) {
           const pendingMetered = pending.reduce(
-            (sum, row) => sum + pendingMeteredChargeCents(row.metadata, row.reservedChargeCents),
+            (sum, row) =>
+              sum + pendingCapEligibleChargeCents(row.metadata, row.reservedChargeCents),
             0,
           );
           const periodSpend =
-            countersTx.reduce((sum, row) => sum + row.customerChargeCents, 0) +
+            countersTx.reduce((sum, row) => sum + row.capEligibleChargeCents, 0) +
             pendingMetered +
-            billableChargeCents;
+            capEligibleCustomerChargeCents({
+              entitlementsPlanId,
+              comped,
+              enterpriseContract,
+              chargeCents: billableChargeCents,
+            });
           if (periodSpend > locked.spendCapCents) {
             return { kind: 'reject' as const, code: 'spend_cap_reached' as const };
           }
@@ -1189,7 +1202,19 @@ export function createBillingScope(deps: BillingScopeDeps) {
               applyMeteredDiscountCents(nextBillableCents, meteredDiscountPercent) -
                 applyMeteredDiscountCents(previousBillableCents, meteredDiscountPercent),
             );
-            return { ...segment, listChargeCents, actualChargeCents, metersBefore };
+            const capEligibleChargeCents = capEligibleCustomerChargeCents({
+              entitlementsPlanId,
+              comped,
+              enterpriseContract,
+              chargeCents: actualChargeCents,
+            });
+            return {
+              ...segment,
+              listChargeCents,
+              actualChargeCents,
+              capEligibleChargeCents,
+              metersBefore,
+            };
           });
           const listChargeCents = segmentCharges.reduce((sum, row) => sum + row.listChargeCents, 0);
           const actualChargeCents = segmentCharges.reduce(
@@ -1273,11 +1298,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
               spendCapCents: account.spendCapCents,
               segments: segmentCharges.map((row) => ({
                 periodYm: row.periodYm,
-                chargeCents: row.actualChargeCents,
+                chargeCents: row.capEligibleChargeCents,
               })),
               counterChargeCents: countersBeforeRows.map((row) => ({
                 periodYm: row.periodYm,
-                chargeCents: row.customerChargeCents,
+                chargeCents: row.capEligibleChargeCents,
               })),
             });
           const freezeAccount = spendCapExceeded;
@@ -1309,6 +1334,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 list_charge_cents: listChargeCents,
                 discount_cents: discountCents,
                 invoice_cents: invoiceCents,
+                cap_eligible_cents: segmentCharges.reduce(
+                  (sum, row) => sum + row.capEligibleChargeCents,
+                  0,
+                ),
                 ...(segmentCharges.length > 1
                   ? {
                       period_segments: segmentCharges.map((row) => ({
@@ -1353,6 +1382,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 meterId: input.meterId,
                 nativeUnits: String(segment.nativeUnits),
                 customerChargeCents: segment.actualChargeCents,
+                capEligibleChargeCents: segment.capEligibleChargeCents,
               })
               .onConflictDoUpdate({
                 target: [
@@ -1363,6 +1393,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 set: {
                   nativeUnits: sql`${billingUsageCounters.nativeUnits} + ${String(segment.nativeUnits)}`,
                   customerChargeCents: sql`${billingUsageCounters.customerChargeCents} + ${segment.actualChargeCents}`,
+                  capEligibleChargeCents: sql`${billingUsageCounters.capEligibleChargeCents} + ${segment.capEligibleChargeCents}`,
                   updatedAt: new Date(),
                 },
               });
@@ -1468,7 +1499,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           ]),
         );
         const meteredSpendCents = countersAfter.reduce(
-          (sum, row) => sum + row.customerChargeCents,
+          (sum, row) => sum + row.capEligibleChargeCents,
           0,
         );
         await notifyBillingUsageAlerts({

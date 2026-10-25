@@ -917,6 +917,39 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
   return flushed;
 }
 
+const PARENT_EVENT_ID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+function metadataRecord(metadata: unknown): Record<string, unknown> {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return {};
+  return metadata as Record<string, unknown>;
+}
+
+function metadataFlagIsTrue(metadata: unknown, key: string): boolean {
+  const value = metadataRecord(metadata)[key];
+  return value === true || value === 'true';
+}
+
+/**
+ * Email audio is a child of the inbound message. Releasing it while that
+ * parent is still `billing_enrichment_deferred` spends AI allowance without
+ * an admitted email unit.
+ */
+async function deferredEmailParentBlocksAudio(
+  db: Db,
+  teamId: string,
+  metadata: unknown,
+): Promise<boolean> {
+  const parentId = metadataRecord(metadata).parent_event_id;
+  if (typeof parentId !== 'string' || !PARENT_EVENT_ID_UUID.test(parentId)) return false;
+  const [parent] = await db
+    .select({ teamId: rawEvents.teamId, sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(eq(rawEvents.id, parentId))
+    .limit(1);
+  if (parent?.teamId !== teamId) return false;
+  return metadataFlagIsTrue(parent.sourceMetadata, BILLING_ENRICHMENT_DEFERRED);
+}
+
 export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promise<number> {
   let flushed = 0;
   const maxScan = Math.max(limit * 20, 200);
@@ -948,6 +981,18 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
       scanned += 1;
       const audioKey = row.contentAudioUrl;
       if (!audioKey) {
+        continue;
+      }
+      if (await deferredEmailParentBlocksAudio(db, row.teamId, row.sourceMetadata)) {
+        const stamp = JSON.stringify({
+          [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
         continue;
       }
       const billing = createBillingScope({
