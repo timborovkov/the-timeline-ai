@@ -19,6 +19,7 @@ import {
   settleAskAiFromOpenRouterUsd,
   type BillingReserveFailureCode,
 } from '#src/billing/admission.js';
+import { scopedAiOperationId } from '#src/billing/ai-call.js';
 import {
   BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   type BillingMeterId,
@@ -351,13 +352,49 @@ function reservationMetadataRecord(
  * Wrap a provider AI call: reserve worst-case, run, settle exact OpenRouter USD.
  * No-ops when no billing ALS is set (tests, unmetered internal paths).
  */
+function aiMeteringOperationId(
+  ctx: BillingAlsContext,
+  input: {
+    operationClass: string;
+    operationId?: string;
+    stage?: string;
+    callMaterial?: readonly string[];
+  },
+): string {
+  if (input.operationId) return input.operationId;
+  if (!ctx.operationId) return `ai:${input.operationClass}:${randomUUID()}`;
+  const material = input.callMaterial;
+  if (!material || material.length === 0) {
+    throw new Error(
+      `AI metering under job ${ctx.operationId} requires callMaterial so another call in the job cannot replay this result`,
+    );
+  }
+  return scopedAiOperationId({
+    parentOperationId: ctx.operationId,
+    stage: input.stage ?? input.operationClass,
+    material,
+  });
+}
+
 export async function withAiMetering<T>(
   input: {
     operationClass?: string;
     model?: string;
     reservedChargeCents?: number;
-    /** Stable id for this call. Overrides the job-wide context id. */
+    /**
+     * Full cache key for this call. Use only when the id already distinguishes
+     * the call from every other call in the job (a transcription chunk, for
+     * example). Omit it to derive job id + stage + callMaterial.
+     */
     operationId?: string;
+    /** Short name of this step inside the job. Defaults to operationClass. */
+    stage?: string;
+    /**
+     * Stable inputs for this call: model, prompt, schema, and payload.
+     * Required when the billing context has a job operation id and this call
+     * does not pass its own operationId.
+     */
+    callMaterial?: readonly string[];
   },
   fn: () => Promise<{ value: T; finish?: OpenRouterFinishEvent }>,
 ): Promise<T> {
@@ -366,8 +403,12 @@ export async function withAiMetering<T>(
     return (await fn()).value;
   }
   const operationClass = input.operationClass ?? ctx.operationClass;
-  const operationId =
-    input.operationId ?? ctx.operationId ?? `ai:${operationClass}:${randomUUID()}`;
+  const operationId = aiMeteringOperationId(ctx, {
+    operationClass,
+    ...(input.operationId ? { operationId: input.operationId } : {}),
+    ...(input.stage ? { stage: input.stage } : {}),
+    ...(input.callMaterial ? { callMaterial: input.callMaterial } : {}),
+  });
   const reservedChargeCents =
     input.reservedChargeCents ?? BACKGROUND_AI_RESERVE_CUSTOMER_CHARGE_CENTS;
   const billing = billingScope(ctx);

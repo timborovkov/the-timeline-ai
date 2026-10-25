@@ -89,7 +89,9 @@ describe('embedding billing operation ids', () => {
     ).map((row) => row.operationId);
     expect(operationIds).toHaveLength(2);
     expect(
-      operationIds.every((operationId) => operationId.startsWith('embedding:job-split:input:')),
+      operationIds.every((operationId) =>
+        operationId.startsWith('embedding:job-split:embed_many:'),
+      ),
     ).toBe(true);
     expect(new Set(operationIds).size).toBe(2);
   });

@@ -223,19 +223,20 @@ PLATFORM_ADMIN_EMAILS=
         <code>costlyWorkerConcurrency</code> and delay the job when busy. Background AI metering
         keeps the reservation when settle fails after a successful provider call and reuses the
         BullMQ job id. A thrown call that already reported OpenRouter usage settles that attempt,
-        then releases the reservation. Each transcription chunk gets its own operation id. Each
-        embedding call appends a stable digest of its input to that worker operation id, so a split
-        batch does not replay the first half's cached vectors. Aborting a Recall join after the bot
-        is accepted keeps the reservation when leave fails so the janitor can retry. Terminal Recall
-        settlement errors propagate so the status webhook can 503 and retry. Re-accepting a removed
-        member stamps a new membership <code>createdAt</code> and appends the previous interval to
-        <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
-        grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
-        price each day on the plan in force then, and count that day in its own month. Replay
-        included discount counts <code>pricing_period_ym</code> when that tag is set, then
-        <code>polar_ingest_period_ym</code>, and uses the ledger time only when neither tag is set.
-        A prior month is recorded on that month and is not compared to the live spend cap. Only a
-        positive charge in the current UTC period can freeze on that cap. Member-days and storage
+        then releases the reservation. Each transcription chunk gets its own operation id. Every
+        other metered model call appends its stage and a digest of the model, prompt, schema, and
+        input to the worker operation id, so a later call in that job does not replay an earlier
+        result. A retry of the same call still reuses its settlement. Aborting a Recall join after
+        the bot is accepted keeps the reservation when leave fails so the janitor can retry.
+        Terminal Recall settlement errors propagate so the status webhook can 503 and retry.
+        Re-accepting a removed member stamps a new membership <code>createdAt</code> and appends the
+        previous interval to <code>prior_intervals</code>. A leftover Free team stays unrestricted
+        while another owner's grant remains assigned. Storage snapshots backfill missed days across
+        the 31-day lookback, price each day on the plan in force then, and count that day in its own
+        month. Replay included discount counts <code>pricing_period_ym</code> when that tag is set,
+        then <code>polar_ingest_period_ym</code>, and uses the ledger time only when neither tag is
+        set. A prior month is recorded on that month and is not compared to the live spend cap. Only
+        a positive charge in the current UTC period can freeze on that cap. Member-days and storage
         days with no stamp yet share one helper: plan history, then comp expiry (Free after
         <code>comp_expires_at</code>), while a contractual Enterprise plan stays Enterprise. A day
         before expiry keeps the comped plan's price. An existing member-day stamp still wins.

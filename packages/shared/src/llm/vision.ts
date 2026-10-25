@@ -1,6 +1,7 @@
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible';
 import { type FilePart, type LanguageModel } from 'ai';
 
+import { digestAiBytes } from '#src/billing/ai-call.js';
 import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
@@ -163,50 +164,68 @@ export async function extractTextFromMedia(
     { operation: 'llm.extractTextFromMedia', model: modelId },
     async () => {
       const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
-      return withAiMetering({ operationClass: 'vision', model: modelId }, async () => {
-        const generated = await generateText({
-          model,
-          instructions: SYSTEM_PROMPT,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                ...mediaParts,
-                {
-                  type: 'text',
-                  text: 'Extract readable text, suggest a concise title, and write a neutral visual description. Follow the section format in the system prompt.',
-                },
-              ],
-            },
+      const maxOutputTokens = input.maxOutputTokens ?? 8000;
+      return withAiMetering(
+        {
+          operationClass: 'vision',
+          model: modelId,
+          stage: 'vision',
+          callMaterial: [
+            modelId,
+            mediaType,
+            input.filename ?? '',
+            String(maxOutputTokens),
+            digestAiBytes(input.body),
+            String(pageImages.length),
+            ...pageImages.map((image) => digestAiBytes(image)),
+            SYSTEM_PROMPT,
           ],
-          maxOutputTokens: input.maxOutputTokens ?? 8000,
-          providerOptions: withLangSmithProviderOptions(openRouterPrivateProviderOptions(), {
-            name: 'llm.extractTextFromMedia',
-            model: modelId,
-            processInputs: sanitizeAiSdkInputs,
-            processChildLLMRunInputs: sanitizeAiSdkInputs,
-            metadata: {
-              operation: 'extract_text_from_media',
-              media_type: mediaType,
-              input_bytes: input.body.byteLength,
-              page_image_count: pageImages.length,
-              has_filename: Boolean(input.filename),
-              max_output_tokens: input.maxOutputTokens ?? 8000,
-            },
-          }),
-        });
-        // Cache a plain string. GenerateTextResult.text is a prototype getter,
-        // so JSON.stringify of the SDK instance drops it and a later billing
-        // retry replays an empty document.
-        return {
-          value: { text: generated.text },
-          finish: openRouterFinishFromAiResult({
-            usage: generated.usage,
-            providerMetadata: generated.finalStep.providerMetadata,
-            totalUsage: generated.usage,
-          }),
-        };
-      });
+        },
+        async () => {
+          const generated = await generateText({
+            model,
+            instructions: SYSTEM_PROMPT,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  ...mediaParts,
+                  {
+                    type: 'text',
+                    text: 'Extract readable text, suggest a concise title, and write a neutral visual description. Follow the section format in the system prompt.',
+                  },
+                ],
+              },
+            ],
+            maxOutputTokens,
+            providerOptions: withLangSmithProviderOptions(openRouterPrivateProviderOptions(), {
+              name: 'llm.extractTextFromMedia',
+              model: modelId,
+              processInputs: sanitizeAiSdkInputs,
+              processChildLLMRunInputs: sanitizeAiSdkInputs,
+              metadata: {
+                operation: 'extract_text_from_media',
+                media_type: mediaType,
+                input_bytes: input.body.byteLength,
+                page_image_count: pageImages.length,
+                has_filename: Boolean(input.filename),
+                max_output_tokens: input.maxOutputTokens ?? 8000,
+              },
+            }),
+          });
+          // Cache a plain string. GenerateTextResult.text is a prototype getter,
+          // so JSON.stringify of the SDK instance drops it and a later billing
+          // retry replays an empty document.
+          return {
+            value: { text: generated.text },
+            finish: openRouterFinishFromAiResult({
+              usage: generated.usage,
+              providerMetadata: generated.finalStep.providerMetadata,
+              totalUsage: generated.usage,
+            }),
+          };
+        },
+      );
     },
   );
 

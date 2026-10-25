@@ -126,6 +126,31 @@ function structuredOutputSystem(system?: string): string {
   return system.toLowerCase().includes('json') ? system : `${system}\n\n${jsonInstruction}`;
 }
 
+function structuredSchemaFingerprint(schema: z.ZodType): string {
+  try {
+    return JSON.stringify(z.toJSONSchema(schema));
+  } catch (err) {
+    const name = err instanceof Error ? err.name : 'invalid';
+    return `schema:${name}:${schema.description ?? ''}`;
+  }
+}
+
+function structuredCallMaterial(input: {
+  modelId: string;
+  maxOutputTokens: number;
+  instructions?: string;
+  prompt: string;
+  schema: z.ZodType;
+}): string[] {
+  return [
+    input.modelId,
+    String(input.maxOutputTokens),
+    input.instructions ?? '',
+    input.prompt,
+    structuredSchemaFingerprint(input.schema),
+  ];
+}
+
 function structuredOutputFallbackSystem(schema: z.ZodType, system?: string): string {
   const jsonSchema = JSON.stringify(z.toJSONSchema(schema));
   return `${structuredOutputSystem(system)}
@@ -445,103 +470,119 @@ export async function chatStructured<TSchema extends z.ZodType>(
   const modelId = input.model ?? resolveDefaultModelId();
   const maxOutputTokens = input.maxOutputTokens ?? DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS;
   return wrapAiFailure({ operation: 'llm.chatStructured', model: modelId }, async () => {
-    return withAiMetering({ operationClass: 'chat_structured', model: modelId }, async () => {
-      let accumulatedUsd = 0;
-      const captureFinish = (
-        event: ReturnType<typeof openRouterFinishFromAiResult> | undefined,
-      ) => {
-        if (!event) return;
-        accumulatedUsd += openRouterUsdCostFromFinishEvent(event);
-      };
-      const finishEvent = () =>
-        accumulatedUsd > 0 ? openRouterFinishFromUsdCost(accumulatedUsd) : undefined;
-      const fail = (err: unknown): never => {
-        if (accumulatedUsd > 0 && err && typeof err === 'object') {
-          Object.assign(err, { openRouterUsd: accumulatedUsd });
-        }
-        throw err;
-      };
-      const runModel = async (candidateModelId: string): Promise<ChatStructuredResult<TSchema>> => {
-        const model = deps.model ?? buildOpenRouterLanguageModel(candidateModelId, deps);
-        try {
-          const result = await generateStructuredObject({
-            schema: input.schema,
-            prompt: input.prompt,
-            instructions: structuredOutputSystem(input.instructions),
-            model,
-            modelId: candidateModelId,
-            operation: 'chat_structured',
-            maxOutputTokens,
-            ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-          });
-          captureFinish(
-            openRouterFinishFromAiResult({
-              usage: result.usage,
-              providerMetadata: result.providerMetadata,
-              totalUsage: result.usage,
-            }),
-          );
-          const object: z.infer<TSchema> = input.schema.parse(result.object);
-          return { object, model: candidateModelId };
-        } catch (err) {
-          captureFinish(openRouterFinishFromCaughtError(err));
-          if (deps.model || !shouldFallbackToJsonObject(err)) return fail(err);
-          const fallbackModel = buildOpenRouterLanguageModel(candidateModelId, deps, {
-            supportsStructuredOutputs: false,
-          });
-          const result = await generateJsonObjectFallback({
-            schema: input.schema,
-            prompt: input.prompt,
-            instructions: structuredOutputFallbackSystem(input.schema, input.instructions),
-            model: fallbackModel,
-            modelId: candidateModelId,
-            maxOutputTokens,
-            ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
-          }).catch((fallbackErr: unknown) => {
-            captureFinish(openRouterFinishFromCaughtError(fallbackErr));
-            return fail(
-              new AggregateError(
-                [err, fallbackErr],
-                'llm.chatStructured failed with json_schema and json_object response formats',
-              ),
+    return withAiMetering(
+      {
+        operationClass: 'chat_structured',
+        model: modelId,
+        stage: 'chat_structured',
+        callMaterial: structuredCallMaterial({
+          modelId,
+          maxOutputTokens,
+          prompt: input.prompt,
+          schema: input.schema,
+          ...(input.instructions ? { instructions: input.instructions } : {}),
+        }),
+      },
+      async () => {
+        let accumulatedUsd = 0;
+        const captureFinish = (
+          event: ReturnType<typeof openRouterFinishFromAiResult> | undefined,
+        ) => {
+          if (!event) return;
+          accumulatedUsd += openRouterUsdCostFromFinishEvent(event);
+        };
+        const finishEvent = () =>
+          accumulatedUsd > 0 ? openRouterFinishFromUsdCost(accumulatedUsd) : undefined;
+        const fail = (err: unknown): never => {
+          if (accumulatedUsd > 0 && err && typeof err === 'object') {
+            Object.assign(err, { openRouterUsd: accumulatedUsd });
+          }
+          throw err;
+        };
+        const runModel = async (
+          candidateModelId: string,
+        ): Promise<ChatStructuredResult<TSchema>> => {
+          const model = deps.model ?? buildOpenRouterLanguageModel(candidateModelId, deps);
+          try {
+            const result = await generateStructuredObject({
+              schema: input.schema,
+              prompt: input.prompt,
+              instructions: structuredOutputSystem(input.instructions),
+              model,
+              modelId: candidateModelId,
+              operation: 'chat_structured',
+              maxOutputTokens,
+              ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+            });
+            captureFinish(
+              openRouterFinishFromAiResult({
+                usage: result.usage,
+                providerMetadata: result.providerMetadata,
+                totalUsage: result.usage,
+              }),
             );
-          });
-          captureFinish(
-            openRouterFinishFromAiResult({
-              usage: result.usage,
-              providerMetadata: result.providerMetadata,
-              totalUsage: result.totalUsage,
-            }),
-          );
-          return { object: result.object, model: candidateModelId };
-        }
-      };
+            const object: z.infer<TSchema> = input.schema.parse(result.object);
+            return { object, model: candidateModelId };
+          } catch (err) {
+            captureFinish(openRouterFinishFromCaughtError(err));
+            if (deps.model || !shouldFallbackToJsonObject(err)) return fail(err);
+            const fallbackModel = buildOpenRouterLanguageModel(candidateModelId, deps, {
+              supportsStructuredOutputs: false,
+            });
+            const result = await generateJsonObjectFallback({
+              schema: input.schema,
+              prompt: input.prompt,
+              instructions: structuredOutputFallbackSystem(input.schema, input.instructions),
+              model: fallbackModel,
+              modelId: candidateModelId,
+              maxOutputTokens,
+              ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
+            }).catch((fallbackErr: unknown) => {
+              captureFinish(openRouterFinishFromCaughtError(fallbackErr));
+              return fail(
+                new AggregateError(
+                  [err, fallbackErr],
+                  'llm.chatStructured failed with json_schema and json_object response formats',
+                ),
+              );
+            });
+            captureFinish(
+              openRouterFinishFromAiResult({
+                usage: result.usage,
+                providerMetadata: result.providerMetadata,
+                totalUsage: result.totalUsage,
+              }),
+            );
+            return { object: result.object, model: candidateModelId };
+          }
+        };
 
-      try {
-        const value = await runModel(modelId);
-        const finish = finishEvent();
-        const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
-        return finish ? { value: titled, finish } : { value: titled };
-      } catch (err) {
-        const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
-        if (deps.model || fallbackModelId === modelId || !shouldFallbackToAlternateModel(err)) {
-          return fail(err);
-        }
         try {
-          const value = await runModel(fallbackModelId);
+          const value = await runModel(modelId);
           const finish = finishEvent();
           const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
           return finish ? { value: titled, finish } : { value: titled };
-        } catch (fallbackErr: unknown) {
-          return fail(
-            new AggregateError(
-              [err, fallbackErr],
-              'llm.chatStructured failed with primary and fallback structured models',
-            ),
-          );
+        } catch (err) {
+          const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
+          if (deps.model || fallbackModelId === modelId || !shouldFallbackToAlternateModel(err)) {
+            return fail(err);
+          }
+          try {
+            const value = await runModel(fallbackModelId);
+            const finish = finishEvent();
+            const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
+            return finish ? { value: titled, finish } : { value: titled };
+          } catch (fallbackErr: unknown) {
+            return fail(
+              new AggregateError(
+                [err, fallbackErr],
+                'llm.chatStructured failed with primary and fallback structured models',
+              ),
+            );
+          }
         }
-      }
-    });
+      },
+    );
   });
 }
 

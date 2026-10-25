@@ -12,6 +12,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reserveAskAi } from '#src/billing/admission.js';
+import { scopedAiOperationId } from '#src/billing/ai-call.js';
 import {
   daysInPeriodYm,
   memberDayChargeDelta,
@@ -114,7 +115,7 @@ describe('billing runtime', () => {
           TEAM_ID,
           'embedding',
           () =>
-            withAiMetering({ operationClass: 'embedding' }, () =>
+            withAiMetering({ operationClass: 'embedding', callMaterial: ['durable-call'] }, () =>
               Promise.resolve({
                 value: 3,
                 finish: { usage: { cost: 0.01 } },
@@ -128,7 +129,13 @@ describe('billing runtime', () => {
         .from(billingUsageReservations)
         .where(eq(billingUsageReservations.teamId, TEAM_ID));
       expect(row?.state).toBe('reserved');
-      expect(row?.operationId).toBe('embedding:job-durable');
+      expect(row?.operationId).toBe(
+        scopedAiOperationId({
+          parentOperationId: 'embedding:job-durable',
+          stage: 'embedding',
+          material: ['durable-call'],
+        }),
+      );
     } finally {
       spy.mockRestore();
     }
@@ -156,7 +163,7 @@ describe('billing runtime', () => {
         TEAM_ID,
         'embedding',
         () =>
-          withAiMetering({ operationClass: 'embedding' }, () => {
+          withAiMetering({ operationClass: 'embedding', callMaterial: ['skip-provider'] }, () => {
             providerCalls += 1;
             return Promise.resolve({
               value: { text: 'cached-embedding' },
@@ -1103,6 +1110,72 @@ describe('billing runtime', () => {
       .from(billingUsageReservations)
       .where(eq(billingUsageReservations.operationId, operationId));
     expect(reservation?.state).toBe('released');
+  });
+
+  it('refuses a job operation id that has no per-call material', async () => {
+    await expect(
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'chat_structured',
+        () =>
+          withAiMetering({ operationClass: 'chat_structured' }, () =>
+            Promise.resolve({
+              value: { kind: 'extract' },
+              finish: { usage: { cost: 0 } },
+            }),
+          ),
+        { operationId: 'suggestions:job-shared' },
+      ),
+    ).rejects.toThrow(/callMaterial/);
+  });
+
+  it('does not replay one call in a job as the result of a different call', async () => {
+    let calls = 0;
+    const run = (material: string) =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'chat_structured',
+        () =>
+          withAiMetering(
+            {
+              operationClass: 'chat_structured',
+              stage: 'chat_structured',
+              callMaterial: [material],
+            },
+            () => {
+              calls += 1;
+              return Promise.resolve({
+                value: { kind: material },
+                finish: { usage: { cost: 0.01 } },
+              });
+            },
+          ),
+        { operationId: 'suggestions:job-shared' },
+      );
+
+    const extracted = await run('extract');
+    const classified = await run('classify');
+    const replayed = await run('extract');
+
+    expect(extracted).toEqual({ kind: 'extract' });
+    expect(classified).toEqual({ kind: 'classify' });
+    expect(replayed).toEqual(extracted);
+    expect(calls).toBe(2);
+    const operationIds = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    ).map((row) => row.operationId);
+    expect(operationIds).toHaveLength(2);
+    expect(
+      operationIds.every((operationId) =>
+        operationId.startsWith('suggestions:job-shared:chat_structured:'),
+      ),
+    ).toBe(true);
+    expect(new Set(operationIds).size).toBe(2);
   });
 
   it('calls the provider again for a different transcription chunk id', async () => {

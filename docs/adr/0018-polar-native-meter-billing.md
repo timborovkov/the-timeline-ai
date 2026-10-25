@@ -270,8 +270,11 @@ credit hides margin and confuses prospects.
    extract, and linked on the parent. A failed read, store, extract enqueue, or parent link
    leaves it set. Metered vision, transcription, embedding, and structured-chat callbacks cache
    plain JSON values, because `withAiMetering` replays `provider_value` through `JSON.stringify`.
-   Embedding calls under a worker job id append a stable digest of that call's input, so a
-   split batch does not replay the first half's vectors. Cancelling a meeting that already
+   A worker job id is only the parent. Each metered model call appends its stage and a digest of
+   the model, prompt, schema, and input, so extraction and classification in one suggestion job
+   cannot replay each other. A retry of that same call reuses the settlement. Transcription chunks
+   that already pass a per-chunk id keep it. Ask tool rounds settle on one Ask reservation and do
+   not use this provider-result cache. Cancelling a meeting that already
    has transcript chunks leaves it `processing` for finalize; only an empty capture is marked
    cancelled.
    Deferred accepted-source flush

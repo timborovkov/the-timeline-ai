@@ -1,5 +1,6 @@
 import { type TranscriptionModel } from 'ai';
 
+import { digestAiBytes } from '#src/billing/ai-call.js';
 import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
@@ -183,6 +184,13 @@ export async function transcribeAudio(
       {
         operationClass: 'transcription',
         model: modelId,
+        stage: 'transcription',
+        callMaterial: [
+          modelId,
+          input.format ?? '',
+          input.language ?? '',
+          digestAiBytes(input.audio),
+        ],
         ...(input.operationId ? { operationId: input.operationId } : {}),
       },
       async () => {
