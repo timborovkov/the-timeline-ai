@@ -67,8 +67,11 @@
         counted failure, Timeline pauses that integration: scheduled ticks stop, the row shows a
         short Paused notice, and one owner is notified once. Access-revoked and auth pauses offer
         Reconnect; connectivity and permanent pauses offer Resume. Reconnecting the provider account
-        or Resume clears the health clock. Resume also queues a backfill. Telegram capture, Slack
-        capture, Recall meeting bots, and custom MCP servers are not on this scheduled sync path.
+        or Resume clears the health clock. Resume also queues a backfill, and a retry re-queues that
+        backfill if the pause was already cleared. Slack auth errors such as
+        <code>token_revoked</code>, <code>invalid_auth</code>, and
+        <code>account_inactive</code> count as access-revoked. Telegram capture, Slack capture,
+        Recall meeting bots, and custom MCP servers are not on this scheduled sync path.
       </p>
 
       <h2 id="google-drive">Google Drive</h2>

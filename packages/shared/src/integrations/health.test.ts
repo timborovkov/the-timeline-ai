@@ -5,6 +5,7 @@ import {
   classifyIntegrationHealthFailure,
   formatHealthPauseNotice,
   healthPauseAction,
+  healthPauseNotificationDedupeKey,
   highestCountedHealthKind,
   integrationHealthPauseAfterMs,
 } from '#src/integrations/health.js';
@@ -53,6 +54,24 @@ describe('integration health classification', () => {
       counted: false,
       reason: 'transient',
     });
+  });
+
+  it('counts Slack auth error codes so revoked workspaces pause', () => {
+    expect(
+      classifyIntegrationHealthFailure('Slack conversations.history failed: token_revoked'),
+    ).toEqual({ counted: true, kind: 'access_revoked' });
+    expect(
+      classifyIntegrationHealthFailure('Slack conversations.history failed: invalid_auth'),
+    ).toEqual({ counted: true, kind: 'access_revoked' });
+    expect(
+      classifyIntegrationHealthFailure('Slack conversations.list failed: account_inactive'),
+    ).toEqual({ counted: true, kind: 'access_revoked' });
+    expect(
+      classifyIntegrationHealthFailure('Slack conversations.history failed: not_authed'),
+    ).toEqual({ counted: true, kind: 'access_revoked' });
+    expect(
+      classifyIntegrationHealthFailure('Slack conversations.history failed: token_expired'),
+    ).toEqual({ counted: true, kind: 'auth' });
   });
 
   it('counts expired tokens as auth and gone resources as permanent', () => {
@@ -110,5 +129,13 @@ describe('integration health pause copy', () => {
       label: 'Resume',
     });
     expect(integrationHealthPauseAfterMs(72)).toBe(72 * 60 * 60 * 1000);
+    expect(
+      healthPauseNotificationDedupeKey(
+        '33333333-3333-4333-8333-333333333333',
+        new Date('2026-06-28T12:00:00.000Z'),
+      ),
+    ).toBe(
+      'integration_health_pause:33333333-3333-4333-8333-333333333333:2026-06-28T12:00:00.000Z',
+    );
   });
 });

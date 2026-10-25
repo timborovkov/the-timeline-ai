@@ -24,11 +24,11 @@ export type IntegrationHealthClassification =
 const RATE_LIMIT_RE =
   /\b(?:429|github_rate_limited|provider_rate_limited|secondary rate limit|api rate limit exceeded|rate limit(?:ing|ed)?)\b/i;
 const ACCESS_REVOKED_RE =
-  /\b(?:401|403|404)\b|bad credentials|resource not accessible|not found|removed installation|installation (?:was )?deleted|access (?:was )?revoked|repository not found|bad_credentials/i;
+  /\b(?:401|403|404)\b|bad credentials|resource not accessible|not found|removed installation|installation (?:was )?deleted|access (?:was )?revoked|repository not found|bad_credentials|\b(?:token_revoked|invalid_auth|account_inactive|not_authed)\b/i;
 const CONNECTIVITY_RE =
   /\b(?:ECONNREFUSED|ETIMEDOUT|ENETUNREACH|EAI_AGAIN|ENOTFOUND|ECONNRESET|UND_ERR|UND_ERR_CONNECT_TIMEOUT|network_failure|socket hang up|connect timeout|fetch failed)\b/i;
 const AUTH_RE =
-  /\b(?:reconnect|expired|unauthorized|forbidden|invalid_grant|invalid_token|no tokens)\b/i;
+  /\b(?:reconnect|expired|unauthorized|forbidden|invalid_grant|invalid_token|no tokens|token_expired)\b/i;
 const PERMANENT_RE =
   /\b(?:410|451)\b|permanently(?:\s+\w+)?(?:\s+deleted)?|account suspended|application has been blocked|this app has been blocked/i;
 const TRANSIENT_RE = /\b(?:408|500|502|503|504|temporarily overloaded|try again later)\b/i;
@@ -133,4 +133,8 @@ export function integrationHealthPauseAfterMs(
   hours = DEFAULT_INTEGRATION_HEALTH_PAUSE_AFTER_HOURS,
 ): number {
   return Math.max(1, hours) * 60 * 60 * 1000;
+}
+
+export function healthPauseNotificationDedupeKey(integrationId: string, pausedAt: Date): string {
+  return `integration_health_pause:${integrationId}:${pausedAt.toISOString()}`;
 }

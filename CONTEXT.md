@@ -333,12 +333,13 @@ attention only after it persists. Native team sync also tracks a connection-heal
 clock for counted connectivity, auth, access-revoked, and permanent errors.
 After a sustained window (default 72 hours, at least two counted failures), the
 integration pauses scheduled sync, shows a minimal Paused notice with Reconnect
-or Resume, and notifies one owner once. Rate limits and transient 5xx do not
-advance that clock. Durable connection attention may trigger email
-when it first appears or changes category, but routine transient sync failures
-should avoid noisy mail. Product surfaces should show connection attention where
-users can notice it quickly, then send them to the integration view for details
-and action.
+or Resume, and notifies one owner once per pause incident. Rate limits and
+transient 5xx do not advance that clock. Resume is team-scoped and retries
+remain recoverable if backfill enqueue fails after the pause is cleared.
+Durable connection attention may trigger email when it first appears or
+changes category, but routine transient sync failures should avoid noisy mail.
+Product surfaces should show connection attention where users can notice it
+quickly, then send them to the integration view for details and action.
 _Avoid_: Raw integration error, generic failure
 
 **Artifact Cluster**:

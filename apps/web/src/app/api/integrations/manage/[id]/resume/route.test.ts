@@ -5,10 +5,11 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
   getIntegration: vi.fn(),
+  resumeIntegrationHealth: vi.fn(),
+  completeHealthResumeBackfill: vi.fn(),
   recordAudit: vi.fn(),
   requireRedisQueue: vi.fn(),
   enqueueIntegrationSyncJob: vi.fn(),
-  adminResumeIntegrationHealth: vi.fn(),
   loggerInfo: vi.fn(),
 }));
 
@@ -16,9 +17,6 @@ vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
 vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
-vi.mock('@timeline/shared/integrations', () => ({
-  adminResumeIntegrationHealth: fakes.adminResumeIntegrationHealth,
-}));
 vi.mock('@timeline/shared/logger', () => ({
   childLogger: () => ({ info: fakes.loggerInfo, warn: vi.fn(), error: vi.fn() }),
 }));
@@ -27,6 +25,8 @@ vi.mock('@timeline/shared/team-scope', () => ({
     requireMembership: fakes.requireMembership,
     integrations: {
       getIntegration: fakes.getIntegration,
+      resumeIntegrationHealth: fakes.resumeIntegrationHealth,
+      completeHealthResumeBackfill: fakes.completeHealthResumeBackfill,
       recordAudit: fakes.recordAudit,
     },
   }),
@@ -55,18 +55,20 @@ beforeEach(() => {
     providerConnectionId: CONNECTION_ID,
     lastError: 'GitHub GET /repos/acme/app: 403 forbidden',
   });
-  fakes.recordAudit.mockResolvedValue(undefined);
-  fakes.requireRedisQueue.mockResolvedValue({
-    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
-  });
-  fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
-  fakes.adminResumeIntegrationHealth.mockResolvedValue({
+  fakes.resumeIntegrationHealth.mockResolvedValue({
     resumed: true,
+    backfillPending: true,
     previousKind: 'access_revoked',
     previousError: 'GitHub GET /repos/acme/app: 403 forbidden',
     firstFailedAt: new Date('2026-06-25T12:00:00.000Z'),
     pausedAt: new Date('2026-06-28T12:00:00.000Z'),
   });
+  fakes.completeHealthResumeBackfill.mockResolvedValue(undefined);
+  fakes.recordAudit.mockResolvedValue(undefined);
+  fakes.requireRedisQueue.mockResolvedValue({
+    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+  });
+  fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
 });
 
 describe('/api/integrations/manage/[id]/resume', () => {
@@ -80,23 +82,12 @@ describe('/api/integrations/manage/[id]/resume', () => {
     expect(forbidden.status).toBe(403);
   });
 
-  it('resumes a health-paused integration, audits the cause, and enqueues backfill', async () => {
+  it('resumes a health-paused integration, audits the backfill, and enqueues catch-up', async () => {
     const response = await POST(new Request('https://timeline.test'), params());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true, resumed: true });
-    expect(fakes.adminResumeIntegrationHealth).toHaveBeenCalledWith({}, INTEGRATION_ID);
-    expect(fakes.recordAudit).toHaveBeenCalledWith(
-      'sync_resumed:health',
-      expect.objectContaining({
-        actor: USER_ID,
-        provider: 'github',
-        previousKind: 'access_revoked',
-        cause: 'GitHub GET /repos/acme/app: 403 forbidden',
-        providerConnectionId: CONNECTION_ID,
-      }),
-      INTEGRATION_ID,
-    );
+    expect(fakes.resumeIntegrationHealth).toHaveBeenCalledWith(INTEGRATION_ID);
     expect(fakes.loggerInfo).toHaveBeenCalledWith(
       expect.objectContaining({
         integrationId: INTEGRATION_ID,
@@ -111,11 +102,18 @@ describe('/api/integrations/manage/[id]/resume', () => {
       teamId: TEAM_ID,
       triggeredBy: USER_ID,
     });
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'backfill_requested',
+      { actor: USER_ID, reason: 'health_resume' },
+      INTEGRATION_ID,
+    );
+    expect(fakes.completeHealthResumeBackfill).toHaveBeenCalledWith(INTEGRATION_ID);
   });
 
-  it('does not enqueue backfill when the integration is not health-paused', async () => {
-    fakes.adminResumeIntegrationHealth.mockResolvedValueOnce({
+  it('does not enqueue backfill when the integration is not paused and has no pending catch-up', async () => {
+    fakes.resumeIntegrationHealth.mockResolvedValueOnce({
       resumed: false,
+      backfillPending: false,
       previousKind: null,
       previousError: null,
       firstFailedAt: null,
@@ -128,5 +126,39 @@ describe('/api/integrations/manage/[id]/resume', () => {
     await expect(response.json()).resolves.toEqual({ ok: true, resumed: false });
     expect(fakes.requireRedisQueue).not.toHaveBeenCalled();
     expect(fakes.recordAudit).not.toHaveBeenCalled();
+    expect(fakes.completeHealthResumeBackfill).not.toHaveBeenCalled();
+  });
+
+  it('re-enqueues backfill when pause was already cleared but catch-up is still pending', async () => {
+    fakes.resumeIntegrationHealth.mockResolvedValueOnce({
+      resumed: false,
+      backfillPending: true,
+      previousKind: 'connectivity',
+      previousError: 'fetch failed ETIMEDOUT',
+      firstFailedAt: new Date('2026-06-25T12:00:00.000Z'),
+      pausedAt: new Date('2026-06-28T12:00:00.000Z'),
+    });
+
+    const response = await POST(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, resumed: true });
+    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
+      kind: 'backfill',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: USER_ID,
+    });
+    expect(fakes.completeHealthResumeBackfill).toHaveBeenCalledWith(INTEGRATION_ID);
+  });
+
+  it('leaves pending catch-up in place when enqueue fails so a retry can recover', async () => {
+    fakes.enqueueIntegrationSyncJob.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(POST(new Request('https://timeline.test'), params())).rejects.toThrow(
+      'redis down',
+    );
+    expect(fakes.resumeIntegrationHealth).toHaveBeenCalledWith(INTEGRATION_ID);
+    expect(fakes.completeHealthResumeBackfill).not.toHaveBeenCalled();
   });
 });

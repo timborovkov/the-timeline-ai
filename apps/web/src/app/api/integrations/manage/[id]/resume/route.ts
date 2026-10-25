@@ -1,4 +1,3 @@
-import * as integrationsLib from '@timeline/shared/integrations';
 import { childLogger } from '@timeline/shared/logger';
 import { withTeam } from '@timeline/shared/team-scope';
 import { NextResponse } from 'next/server';
@@ -33,39 +32,24 @@ export async function POST(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  const resumed = await integrationsLib.adminResumeIntegrationHealth(db, integration.id);
-  if (!resumed.resumed) {
+  const result = await scope.integrations.resumeIntegrationHealth(id);
+  if (!result.resumed && !result.backfillPending) {
     return NextResponse.json({ ok: true, resumed: false });
   }
-  const cause = healthCause(resumed.previousError);
+  const cause = healthCause(result.previousError);
   log.info(
     {
       integrationId: integration.id,
       teamId: active.teamId,
       provider: integration.provider,
       providerConnectionId: integration.providerConnectionId,
-      previousKind: resumed.previousKind,
+      previousKind: result.previousKind,
       actor: session.user.id,
     },
-    `integration health resumed previousKind=${resumed.previousKind ?? 'unknown'} integrationId=${integration.id} provider=${integration.provider} providerConnectionId=${integration.providerConnectionId ?? 'none'} cause=${cause} actor=${session.user.id}`,
+    `integration health resumed previousKind=${result.previousKind ?? 'unknown'} integrationId=${integration.id} provider=${integration.provider} providerConnectionId=${integration.providerConnectionId ?? 'none'} cause=${cause} actor=${session.user.id}`,
   );
-  // react-doctor-disable-next-line react-doctor/async-parallel -- Redis enqueue depends on the queue client; backfill audit only after enqueue commits.
-  const [redisQueue] = await Promise.all([
-    requireRedisQueue(),
-    scope.integrations.recordAudit(
-      'sync_resumed:health',
-      {
-        actor: session.user.id,
-        provider: integration.provider,
-        previousKind: resumed.previousKind,
-        firstFailedAt: resumed.firstFailedAt?.toISOString() ?? null,
-        pausedAt: resumed.pausedAt?.toISOString() ?? null,
-        cause,
-        providerConnectionId: integration.providerConnectionId,
-      },
-      integration.id,
-    ),
-  ]);
+  // react-doctor-disable-next-line react-doctor/async-parallel -- Redis enqueue depends on the queue client; backfill audit and pending-clear only after enqueue commits.
+  const redisQueue = await requireRedisQueue();
   await redisQueue.enqueueIntegrationSyncJob({
     kind: 'backfill',
     integrationId: integration.id,
@@ -77,5 +61,6 @@ export async function POST(
     { actor: session.user.id, reason: 'health_resume' },
     integration.id,
   );
+  await scope.integrations.completeHealthResumeBackfill(id);
   return NextResponse.json({ ok: true, resumed: true });
 }
