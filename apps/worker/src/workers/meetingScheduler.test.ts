@@ -153,7 +153,15 @@ describe('processMeetingSchedulerTick', () => {
     const row = (await db.select().from(meetings).where(eq(meetings.id, meeting.id)))[0];
     expect(row?.status).toBe('joining');
     expect(row?.providerBotId).toBe('bot-1');
-    expect(row?.metadata).toEqual({ source: 'test', scheduler_claimed: true });
+    expect(row?.metadata).toMatchObject({
+      source: 'test',
+      scheduler_claimed: true,
+      billing_operation_id: `recall:${meeting.id}`,
+      reserved_recall_minutes: 60,
+    });
+    const startedAt = (row?.metadata as { reserved_recall_started_at?: unknown } | null)
+      ?.reserved_recall_started_at;
+    expect(typeof startedAt).toBe('string');
   });
 
   it('retries and confirms a durable provider leave request', async () => {
