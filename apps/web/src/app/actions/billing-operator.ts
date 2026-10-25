@@ -19,6 +19,7 @@ import { redirect } from 'next/navigation';
 
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 
 async function actor() {
   const session = await auth();
@@ -92,85 +93,97 @@ function run(teamId: string, work: () => Promise<void>): Promise<void> {
 }
 
 export async function assignCompedPlanAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  const plan = formString(formData.get('plan'));
-  if (!isBillingPlanId(plan)) {
-    back(teamId, 'Choose a plan.');
-  }
-  await run(teamId, async () => {
-    const provider = createPolarBillingProvider();
-    await assignCompedPlan({
-      db,
-      actor: await actor(),
-      teamId,
-      entitlementsPlanId: plan,
-      spendCapCents: eurosToCents(formData.get('spendCapEuros'), 'Spend cap'),
-      reason: formString(formData.get('reason')),
-      expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
-      ...(provider
-        ? {
-            cancelPolarSubscription: (subscriptionId: string) =>
-              provider.revokeSubscription(subscriptionId),
-            expireCheckout: (checkoutId: string) => provider.expireCheckout(checkoutId),
-          }
-        : {}),
+  return runSentryServerAction('assign_comped_plan', async () => {
+    const teamId = teamIdFrom(formData);
+    const plan = formString(formData.get('plan'));
+    if (!isBillingPlanId(plan)) {
+      back(teamId, 'Choose a plan.');
+    }
+    await run(teamId, async () => {
+      const provider = createPolarBillingProvider();
+      await assignCompedPlan({
+        db,
+        actor: await actor(),
+        teamId,
+        entitlementsPlanId: plan,
+        spendCapCents: eurosToCents(formData.get('spendCapEuros'), 'Spend cap'),
+        reason: formString(formData.get('reason')),
+        expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
+        ...(provider
+          ? {
+              cancelPolarSubscription: (subscriptionId: string) =>
+                provider.revokeSubscription(subscriptionId),
+              expireCheckout: (checkoutId: string) => provider.expireCheckout(checkoutId),
+            }
+          : {}),
+      });
     });
   });
 }
 
 export async function clearCompedPlanAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  await run(teamId, async () => {
-    await clearCompedPlan({ db, actor: await actor(), teamId });
+  return runSentryServerAction('clear_comped_plan', async () => {
+    const teamId = teamIdFrom(formData);
+    await run(teamId, async () => {
+      await clearCompedPlan({ db, actor: await actor(), teamId });
+    });
   });
 }
 
 export async function setPriceOverrideAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  await run(teamId, async () => {
-    const platformFeeCents = optionalEurosToCents(formData.get('platformFeeEuros'));
-    const includedActiveMembers = optionalInt(formData.get('includedMembers'));
-    const additionalMemberCents = optionalEurosToCents(formData.get('memberEuros'));
-    const meteredDiscountPercent = optionalInt(formData.get('meteredDiscountPercent'));
-    await setTeamPriceOverride({
-      db,
-      actor: await actor(),
-      teamId,
-      override: {
-        ...(platformFeeCents !== undefined ? { platformFeeCents } : {}),
-        ...(includedActiveMembers !== undefined ? { includedActiveMembers } : {}),
-        ...(additionalMemberCents !== undefined ? { additionalMemberCents } : {}),
-        ...(meteredDiscountPercent !== undefined ? { meteredDiscountPercent } : {}),
-      },
-      expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
+  return runSentryServerAction('set_price_override', async () => {
+    const teamId = teamIdFrom(formData);
+    await run(teamId, async () => {
+      const platformFeeCents = optionalEurosToCents(formData.get('platformFeeEuros'));
+      const includedActiveMembers = optionalInt(formData.get('includedMembers'));
+      const additionalMemberCents = optionalEurosToCents(formData.get('memberEuros'));
+      const meteredDiscountPercent = optionalInt(formData.get('meteredDiscountPercent'));
+      await setTeamPriceOverride({
+        db,
+        actor: await actor(),
+        teamId,
+        override: {
+          ...(platformFeeCents !== undefined ? { platformFeeCents } : {}),
+          ...(includedActiveMembers !== undefined ? { includedActiveMembers } : {}),
+          ...(additionalMemberCents !== undefined ? { additionalMemberCents } : {}),
+          ...(meteredDiscountPercent !== undefined ? { meteredDiscountPercent } : {}),
+        },
+        expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
+      });
     });
   });
 }
 
 export async function clearPriceOverrideAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  await run(teamId, async () => {
-    await clearTeamPriceOverride({ db, actor: await actor(), teamId });
+  return runSentryServerAction('clear_price_override', async () => {
+    const teamId = teamIdFrom(formData);
+    await run(teamId, async () => {
+      await clearTeamPriceOverride({ db, actor: await actor(), teamId });
+    });
   });
 }
 
 export async function setPolarDiscountAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  await run(teamId, async () => {
-    await setTeamPolarDiscount({
-      db,
-      actor: await actor(),
-      teamId,
-      polarDiscountId: formString(formData.get('polarDiscountId')),
-      expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
+  return runSentryServerAction('set_polar_discount', async () => {
+    const teamId = teamIdFrom(formData);
+    await run(teamId, async () => {
+      await setTeamPolarDiscount({
+        db,
+        actor: await actor(),
+        teamId,
+        polarDiscountId: formString(formData.get('polarDiscountId')),
+        expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
+      });
     });
   });
 }
 
 export async function clearPolarDiscountAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  await run(teamId, async () => {
-    await clearTeamPolarDiscount({ db, actor: await actor(), teamId });
+  return runSentryServerAction('clear_polar_discount', async () => {
+    const teamId = teamIdFrom(formData);
+    await run(teamId, async () => {
+      await clearTeamPolarDiscount({ db, actor: await actor(), teamId });
+    });
   });
 }
 
@@ -205,30 +218,34 @@ async function prepareEnterpriseCheckout(teamId: string, formData: FormData): Pr
 }
 
 export async function startEnterpriseCheckoutAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  const checkoutUrl = await prepareEnterpriseCheckout(teamId, formData).catch(
-    (error: unknown): string => {
-      if (isNextRedirect(error)) throw error;
-      const message = error instanceof Error ? error.message : 'Operator change failed.';
-      back(teamId, message);
-    },
-  );
-  const params = new URLSearchParams({
-    team: teamId,
-    notice: 'saved',
-    checkout: checkoutUrl,
+  return runSentryServerAction('start_enterprise_checkout', async () => {
+    const teamId = teamIdFrom(formData);
+    const checkoutUrl = await prepareEnterpriseCheckout(teamId, formData).catch(
+      (error: unknown): string => {
+        if (isNextRedirect(error)) throw error;
+        const message = error instanceof Error ? error.message : 'Operator change failed.';
+        back(teamId, message);
+      },
+    );
+    const params = new URLSearchParams({
+      team: teamId,
+      notice: 'saved',
+      checkout: checkoutUrl,
+    });
+    redirect(`/app/admin/billing?${params.toString()}`);
   });
-  redirect(`/app/admin/billing?${params.toString()}`);
 }
 
 export async function setOperatorSpendCapAction(formData: FormData): Promise<void> {
-  const teamId = teamIdFrom(formData);
-  await run(teamId, async () => {
-    await setOperatorSpendCap({
-      db,
-      actor: await actor(),
-      teamId,
-      spendCapCents: eurosToCents(formData.get('spendCapEuros'), 'Spend cap'),
+  return runSentryServerAction('set_operator_spend_cap', async () => {
+    const teamId = teamIdFrom(formData);
+    await run(teamId, async () => {
+      await setOperatorSpendCap({
+        db,
+        actor: await actor(),
+        teamId,
+        spendCapCents: eurosToCents(formData.get('spendCapEuros'), 'Spend cap'),
+      });
     });
   });
 }

@@ -120,6 +120,8 @@ beforeEach(() => {
     platform: 'meet',
     meetingUrl: 'https://meet.google.com/abc-defg-hij',
   });
+  fakes.fakeSettleElapsedRecall.mockResolvedValue(undefined);
+  fakes.fakeReleaseRecall.mockResolvedValue(undefined);
 });
 
 describe('scheduleMeetingBotAction', () => {
@@ -141,6 +143,13 @@ describe('scheduleMeetingBotAction', () => {
     );
     expect(fakes.fakeMeetings.updateMeetingStatus).toHaveBeenCalledWith(MEETING_ID, 'joining', {
       providerBotId: 'bot-1',
+      metadata: {
+        billing_operation_id: 'recall:test',
+        reserved_recall_minutes: 60,
+        reserved_recall_started_at: expect.stringMatching(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
+        ) as string,
+      },
     });
   });
 });

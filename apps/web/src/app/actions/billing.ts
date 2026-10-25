@@ -15,6 +15,7 @@ import { redirect } from 'next/navigation';
 import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { runSentryServerAction } from '@/lib/sentry-action';
 
 async function requireBillingAdmin() {
   const session = await auth();
@@ -36,99 +37,105 @@ export async function startBillingCheckout(input: {
   plan: 'payg' | 'team' | 'business';
   discountCode?: string;
 }): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  const gate = await requireBillingAdmin();
-  if (!gate.ok) return gate;
-  if (!isPolarBillingConfigured()) {
-    return { ok: false, error: 'Polar billing is not configured.' };
-  }
-  const productId = polarProductIdForPlan(input.plan);
-  if (!productId) return { ok: false, error: 'Missing Polar product id for plan.' };
+  return runSentryServerAction('start_billing_checkout', async () => {
+    const gate = await requireBillingAdmin();
+    if (!gate.ok) return gate;
+    if (!isPolarBillingConfigured()) {
+      return { ok: false, error: 'Polar billing is not configured.' };
+    }
+    const productId = polarProductIdForPlan(input.plan);
+    if (!productId) return { ok: false, error: 'Missing Polar product id for plan.' };
 
-  const provider = createPolarBillingProvider();
-  if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
+    const provider = createPolarBillingProvider();
+    if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
 
-  const env = getEnv();
-  const account = await gate.scope.billing.getAccount();
-  if (compSuppressesPolarCharges(account)) {
-    return {
-      ok: false,
-      error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
-    };
-  }
-  if (account.planId === 'enterprise') {
-    return {
-      ok: false,
-      error:
-        'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
-    };
-  }
-  const discount = checkoutDiscountId({
-    account,
-    submittedCode: input.discountCode,
-    envDiscountId: env.POLAR_DISCOUNT_ID,
-    envDiscountCode: env.POLAR_DISCOUNT_CODE,
+    const env = getEnv();
+    const account = await gate.scope.billing.getAccount();
+    if (compSuppressesPolarCharges(account)) {
+      return {
+        ok: false,
+        error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
+      };
+    }
+    if (account.planId === 'enterprise') {
+      return {
+        ok: false,
+        error:
+          'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
+      };
+    }
+    const discount = checkoutDiscountId({
+      account,
+      submittedCode: input.discountCode,
+      envDiscountId: env.POLAR_DISCOUNT_ID,
+      envDiscountCode: env.POLAR_DISCOUNT_CODE,
+    });
+    if (discount.error) return { ok: false, error: discount.error };
+    await provider.ensureCustomer({
+      externalId: gate.active.teamId,
+      email: gate.email,
+      name: gate.active.teamName,
+    });
+    const checkout = await createPlanChangeSession({
+      provider,
+      account,
+      productId,
+      externalCustomerId: gate.active.teamId,
+      customerEmail: gate.email,
+      successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
+      portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
+      ...(discount.discountId ? { discountId: discount.discountId } : {}),
+    });
+    return { ok: true, url: checkout.url };
   });
-  if (discount.error) return { ok: false, error: discount.error };
-  await provider.ensureCustomer({
-    externalId: gate.active.teamId,
-    email: gate.email,
-    name: gate.active.teamName,
-  });
-  const checkout = await createPlanChangeSession({
-    provider,
-    account,
-    productId,
-    externalCustomerId: gate.active.teamId,
-    customerEmail: gate.email,
-    successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
-    portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-    ...(discount.discountId ? { discountId: discount.discountId } : {}),
-  });
-  return { ok: true, url: checkout.url };
 }
 
 export async function updateBillingSpendCap(input: {
   spendCapCents: number;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  const gate = await requireBillingAdmin();
-  if (!gate.ok) return gate;
-  try {
-    await gate.scope.billing.setSpendCap(input.spendCapCents);
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : 'Failed to update spend cap.',
-    };
-  }
+  return runSentryServerAction('update_billing_spend_cap', async () => {
+    const gate = await requireBillingAdmin();
+    if (!gate.ok) return gate;
+    try {
+      await gate.scope.billing.setSpendCap(input.spendCapCents);
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Failed to update spend cap.',
+      };
+    }
+  });
 }
 
 export async function startBillingPortal(): Promise<
   { ok: true; url: string } | { ok: false; error: string }
 > {
-  const gate = await requireBillingAdmin();
-  if (!gate.ok) return gate;
-  if (!isPolarBillingConfigured()) {
-    return { ok: false, error: 'Polar billing is not configured.' };
-  }
-  const provider = createPolarBillingProvider();
-  if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
-  const account = await gate.scope.billing.getAccount();
-  if (compSuppressesPolarCharges(account)) {
-    return {
-      ok: false,
-      error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
-    };
-  }
-  const env = getEnv();
-  await provider.ensureCustomer({
-    externalId: gate.active.teamId,
-    email: gate.email,
-    name: gate.active.teamName,
+  return runSentryServerAction('start_billing_portal', async () => {
+    const gate = await requireBillingAdmin();
+    if (!gate.ok) return gate;
+    if (!isPolarBillingConfigured()) {
+      return { ok: false, error: 'Polar billing is not configured.' };
+    }
+    const provider = createPolarBillingProvider();
+    if (!provider) return { ok: false, error: 'Polar provider unavailable.' };
+    const account = await gate.scope.billing.getAccount();
+    if (compSuppressesPolarCharges(account)) {
+      return {
+        ok: false,
+        error: 'This workspace is on a comped internal plan. Polar checkout is turned off.',
+      };
+    }
+    const env = getEnv();
+    await provider.ensureCustomer({
+      externalId: gate.active.teamId,
+      email: gate.email,
+      name: gate.active.teamName,
+    });
+    const portal = await provider.createCustomerPortalSession({
+      externalCustomerId: gate.active.teamId,
+      returnUrl: `${env.AUTH_URL}/app/team?section=billing`,
+    });
+    return { ok: true, url: portal.url };
   });
-  const portal = await provider.createCustomerPortalSession({
-    externalCustomerId: gate.active.teamId,
-    returnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-  });
-  return { ok: true, url: portal.url };
 }

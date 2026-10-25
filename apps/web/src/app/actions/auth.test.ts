@@ -120,13 +120,14 @@ function createSignupTransaction() {
       return {
         values: vi.fn((values: unknown) => {
           insertedValues.push(values);
-          if (index === 0) {
-            return { returning: vi.fn().mockResolvedValue([{ id: USER_ID }]) };
-          }
-          if (index === 1) {
-            return { returning: vi.fn().mockResolvedValue([{ id: TEAM_ID }]) };
-          }
-          return Promise.resolve();
+          return {
+            returning: vi
+              .fn()
+              .mockResolvedValue(
+                index === 0 ? [{ id: USER_ID }] : index === 1 ? [{ id: TEAM_ID }] : [],
+              ),
+            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+          };
         }),
       };
     }),
@@ -211,6 +212,13 @@ describe('signUpAction legal acceptance', () => {
       name: 'Legal User',
       email: 'legal-user@example.test',
       passwordHash: 'password-hash',
+    });
+    expect(transaction.insertedValues).toContainEqual({
+      teamId: TEAM_ID,
+      planId: 'free',
+      billingState: 'restricted',
+      spendCapCents: 0,
+      shadowBilling: true,
     });
     expect(fakes.cookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
