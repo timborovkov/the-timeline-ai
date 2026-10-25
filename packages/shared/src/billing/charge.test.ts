@@ -553,6 +553,137 @@ describe('includedDiscountWindowContaining', () => {
       endsAt: new Date('2026-03-15T00:00:00.000Z'),
     });
   });
+
+  it('keeps a clamped stored window and restores 31st, 30th, and 29th anchors', () => {
+    const periodStartedAt = new Date('2026-02-28T05:06:07.008Z');
+    const periodEndsAt = new Date('2026-03-31T05:06:07.008Z');
+    expect(
+      includedDiscountWindowContaining({
+        usageAt: new Date('2026-03-29T12:00:00.000Z'),
+        periodStartedAt,
+        periodEndsAt,
+      }),
+    ).toEqual({ startedAt: periodStartedAt, endsAt: periodEndsAt });
+    expect(
+      includedDiscountWindowContaining({
+        usageAt: new Date('2026-04-15T12:00:00.000Z'),
+        periodStartedAt,
+        periodEndsAt,
+      }),
+    ).toEqual({
+      startedAt: new Date('2026-03-31T05:06:07.008Z'),
+      endsAt: new Date('2026-04-30T05:06:07.008Z'),
+    });
+    expect(
+      includedDiscountWindowContaining({
+        usageAt: new Date('2026-01-31T12:00:00.000Z'),
+        periodStartedAt,
+        periodEndsAt,
+      }),
+    ).toEqual({
+      startedAt: new Date('2026-01-31T05:06:07.008Z'),
+      endsAt: new Date('2026-02-28T05:06:07.008Z'),
+    });
+
+    const cases = [
+      {
+        usageAt: '2024-03-15T12:00:00.000Z',
+        periodStartedAt: '2024-01-31T00:00:00.000Z',
+        periodEndsAt: '2024-02-29T00:00:00.000Z',
+        startedAt: '2024-02-29T00:00:00.000Z',
+        endsAt: '2024-03-31T00:00:00.000Z',
+      },
+      {
+        usageAt: '2025-03-15T12:00:00.000Z',
+        periodStartedAt: '2025-01-31T00:00:00.000Z',
+        periodEndsAt: '2025-02-28T00:00:00.000Z',
+        startedAt: '2025-02-28T00:00:00.000Z',
+        endsAt: '2025-03-31T00:00:00.000Z',
+      },
+      {
+        usageAt: '2024-03-15T12:00:00.000Z',
+        periodStartedAt: '2024-01-30T00:00:00.000Z',
+        periodEndsAt: '2024-02-29T00:00:00.000Z',
+        startedAt: '2024-02-29T00:00:00.000Z',
+        endsAt: '2024-03-30T00:00:00.000Z',
+      },
+      {
+        usageAt: '2025-03-15T12:00:00.000Z',
+        periodStartedAt: '2025-01-30T00:00:00.000Z',
+        periodEndsAt: '2025-02-28T00:00:00.000Z',
+        startedAt: '2025-02-28T00:00:00.000Z',
+        endsAt: '2025-03-30T00:00:00.000Z',
+      },
+      {
+        usageAt: '2024-03-15T12:00:00.000Z',
+        periodStartedAt: '2024-01-29T00:00:00.000Z',
+        periodEndsAt: '2024-02-29T00:00:00.000Z',
+        startedAt: '2024-02-29T00:00:00.000Z',
+        endsAt: '2024-03-29T00:00:00.000Z',
+      },
+      {
+        usageAt: '2025-02-15T12:00:00.000Z',
+        periodStartedAt: '2025-01-29T00:00:00.000Z',
+        periodEndsAt: '2025-02-28T00:00:00.000Z',
+        startedAt: '2025-01-29T00:00:00.000Z',
+        endsAt: '2025-02-28T00:00:00.000Z',
+      },
+      {
+        usageAt: '2025-03-15T12:00:00.000Z',
+        periodStartedAt: '2025-01-29T00:00:00.000Z',
+        periodEndsAt: '2025-02-28T00:00:00.000Z',
+        startedAt: '2025-02-28T00:00:00.000Z',
+        endsAt: '2025-03-29T00:00:00.000Z',
+      },
+      {
+        usageAt: '2026-05-15T12:00:00.000Z',
+        periodStartedAt: '2026-03-31T00:00:00.000Z',
+        periodEndsAt: '2026-04-30T00:00:00.000Z',
+        startedAt: '2026-04-30T00:00:00.000Z',
+        endsAt: '2026-05-31T00:00:00.000Z',
+      },
+      {
+        usageAt: '2026-07-15T12:00:00.000Z',
+        periodStartedAt: '2026-05-31T00:00:00.000Z',
+        periodEndsAt: '2026-06-30T00:00:00.000Z',
+        startedAt: '2026-06-30T00:00:00.000Z',
+        endsAt: '2026-07-31T00:00:00.000Z',
+      },
+      {
+        usageAt: '2026-04-15T12:00:00.000Z',
+        periodStartedAt: '2026-03-30T00:00:00.000Z',
+        periodEndsAt: '2026-04-30T00:00:00.000Z',
+        startedAt: '2026-03-30T00:00:00.000Z',
+        endsAt: '2026-04-30T00:00:00.000Z',
+      },
+      {
+        usageAt: '2026-04-15T12:00:00.000Z',
+        periodStartedAt: '2026-03-29T00:00:00.000Z',
+        periodEndsAt: '2026-04-29T00:00:00.000Z',
+        startedAt: '2026-03-29T00:00:00.000Z',
+        endsAt: '2026-04-29T00:00:00.000Z',
+      },
+      {
+        usageAt: '2024-02-15T12:00:00.000Z',
+        periodStartedAt: '2025-03-31T00:00:00.000Z',
+        periodEndsAt: '2025-04-30T00:00:00.000Z',
+        startedAt: '2024-01-31T00:00:00.000Z',
+        endsAt: '2024-02-29T00:00:00.000Z',
+      },
+    ];
+    for (const row of cases) {
+      expect(
+        includedDiscountWindowContaining({
+          usageAt: new Date(row.usageAt),
+          periodStartedAt: new Date(row.periodStartedAt),
+          periodEndsAt: new Date(row.periodEndsAt),
+        }),
+      ).toEqual({
+        startedAt: new Date(row.startedAt),
+        endsAt: new Date(row.endsAt),
+      });
+    }
+  });
 });
 
 describe('nextIncludedDiscountPeriod', () => {
@@ -588,6 +719,116 @@ describe('nextIncludedDiscountPeriod', () => {
         periodEndsAt: new Date('2026-08-15T00:00:00Z'),
       }),
     ).toBeNull();
+  });
+
+  it('carries 31st, 30th, and 29th anchors across February and other short months', () => {
+    const periodStartedAt = new Date('2026-02-28T05:06:07.008Z');
+    const periodEndsAt = new Date('2026-03-31T05:06:07.008Z');
+    expect(
+      nextIncludedDiscountPeriod({
+        now: new Date('2026-03-29T12:00:00.000Z'),
+        periodStartedAt,
+        periodEndsAt,
+      }),
+    ).toBeNull();
+    expect(
+      nextIncludedDiscountPeriod({
+        now: new Date('2026-04-01T00:00:00.000Z'),
+        periodStartedAt,
+        periodEndsAt,
+      }),
+    ).toEqual({
+      periodStartedAt: periodEndsAt,
+      periodEndsAt: new Date('2026-04-30T05:06:07.008Z'),
+    });
+    expect(
+      nextIncludedDiscountPeriod({
+        now: new Date('2026-05-01T00:00:00.000Z'),
+        periodStartedAt,
+        periodEndsAt,
+      }),
+    ).toEqual({
+      periodStartedAt: new Date('2026-04-30T05:06:07.008Z'),
+      periodEndsAt: new Date('2026-05-31T05:06:07.008Z'),
+    });
+
+    const cases = [
+      {
+        now: '2024-03-01T00:00:00.000Z',
+        periodStartedAt: '2024-01-31T00:00:00.000Z',
+        periodEndsAt: '2024-02-29T00:00:00.000Z',
+        nextStartedAt: '2024-02-29T00:00:00.000Z',
+        nextEndsAt: '2024-03-31T00:00:00.000Z',
+      },
+      {
+        now: '2025-03-01T00:00:00.000Z',
+        periodStartedAt: '2025-01-31T00:00:00.000Z',
+        periodEndsAt: '2025-02-28T00:00:00.000Z',
+        nextStartedAt: '2025-02-28T00:00:00.000Z',
+        nextEndsAt: '2025-03-31T00:00:00.000Z',
+      },
+      {
+        now: '2024-03-01T00:00:00.000Z',
+        periodStartedAt: '2024-01-30T00:00:00.000Z',
+        periodEndsAt: '2024-02-29T00:00:00.000Z',
+        nextStartedAt: '2024-02-29T00:00:00.000Z',
+        nextEndsAt: '2024-03-30T00:00:00.000Z',
+      },
+      {
+        now: '2025-03-01T00:00:00.000Z',
+        periodStartedAt: '2025-01-30T00:00:00.000Z',
+        periodEndsAt: '2025-02-28T00:00:00.000Z',
+        nextStartedAt: '2025-02-28T00:00:00.000Z',
+        nextEndsAt: '2025-03-30T00:00:00.000Z',
+      },
+      {
+        now: '2024-03-01T00:00:00.000Z',
+        periodStartedAt: '2024-01-29T00:00:00.000Z',
+        periodEndsAt: '2024-02-29T00:00:00.000Z',
+        nextStartedAt: '2024-02-29T00:00:00.000Z',
+        nextEndsAt: '2024-03-29T00:00:00.000Z',
+      },
+      {
+        now: '2025-03-01T00:00:00.000Z',
+        periodStartedAt: '2025-01-29T00:00:00.000Z',
+        periodEndsAt: '2025-02-28T00:00:00.000Z',
+        nextStartedAt: '2025-02-28T00:00:00.000Z',
+        nextEndsAt: '2025-03-29T00:00:00.000Z',
+      },
+      {
+        now: '2026-05-01T00:00:00.000Z',
+        periodStartedAt: '2026-03-31T00:00:00.000Z',
+        periodEndsAt: '2026-04-30T00:00:00.000Z',
+        nextStartedAt: '2026-04-30T00:00:00.000Z',
+        nextEndsAt: '2026-05-31T00:00:00.000Z',
+      },
+      {
+        now: '2026-07-01T00:00:00.000Z',
+        periodStartedAt: '2026-05-31T00:00:00.000Z',
+        periodEndsAt: '2026-06-30T00:00:00.000Z',
+        nextStartedAt: '2026-06-30T00:00:00.000Z',
+        nextEndsAt: '2026-07-31T00:00:00.000Z',
+      },
+      {
+        now: '2025-04-15T00:00:00.000Z',
+        periodStartedAt: '2024-01-31T00:00:00.000Z',
+        periodEndsAt: '2024-02-29T00:00:00.000Z',
+        nextStartedAt: '2025-03-31T00:00:00.000Z',
+        nextEndsAt: '2025-04-30T00:00:00.000Z',
+      },
+    ];
+    for (const row of cases) {
+      expect(
+        nextIncludedDiscountPeriod({
+          now: new Date(row.now),
+          periodStartedAt: new Date(row.periodStartedAt),
+          periodEndsAt: new Date(row.periodEndsAt),
+        }),
+      ).toEqual({
+        periodStartedAt: new Date(row.nextStartedAt),
+        periodEndsAt: new Date(row.nextEndsAt),
+      });
+    }
   });
 });
 

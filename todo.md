@@ -708,7 +708,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       a failed settlement. Storage replay uses the plan effective that day, counts that day in its
       own month, does not apply that month's spend to the live cap, and skips closed document
       absence intervals. A missed renewal advances by calendar
-      months from the subscription anchor. Settled reservations are recognized before a new funding
+      months from the subscription anchor. A short month keeps the stored bounds, and the anchor
+      day is the later boundary day. Settled reservations are recognized before a new funding
       check, and billing admission errors stay intact through the LLM wrapper. Enterprise settlement does not freeze on the spend cap. Member-day janitor ticks
       retry unsettled facts across the full 31-day lookback, including the previous calendar month.
       Aborting a Recall join after provider accept keeps the reservation when leave fails.

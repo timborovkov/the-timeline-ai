@@ -598,9 +598,46 @@ function addUtcMonths(anchor: Date, months: number, anchorDay: number): Date {
 }
 
 /**
- * Subscription window that contains `usageAt`. Steps by the stored renewal
- * span and anchor day, including windows before the current one. With no
- * stored bounds, the window is the UTC calendar month.
+ * A short month stores a clamped boundary. The renewal day is the later of the
+ * two stored days, so February 28–March 31 keeps the 31st for every other month.
+ */
+function renewalSeries(
+  periodStartedAt: Date,
+  periodEndsAt: Date,
+): {
+  anchorDay: number;
+  span: number;
+  reference: Date;
+  referenceOffset: number;
+} {
+  const startDay = periodStartedAt.getUTCDate();
+  const endDay = periodEndsAt.getUTCDate();
+  const span = Math.max(1, utcMonthIndex(periodEndsAt) - utcMonthIndex(periodStartedAt));
+  const endHoldsAnchor = endDay > startDay;
+  return {
+    anchorDay: Math.max(startDay, endDay),
+    span,
+    reference: endHoldsAnchor ? periodEndsAt : periodStartedAt,
+    referenceOffset: endHoldsAnchor ? span : 0,
+  };
+}
+
+function renewalBoundary(
+  series: {
+    anchorDay: number;
+    reference: Date;
+    referenceOffset: number;
+  },
+  monthsFromStart: number,
+): Date {
+  return addUtcMonths(series.reference, monthsFromStart - series.referenceOffset, series.anchorDay);
+}
+
+/**
+ * Subscription window that contains `usageAt`. The stored bounds are kept as
+ * written. Other windows step by that span from the unclamped renewal day,
+ * including windows before the current one. With no stored bounds, the window
+ * is the UTC calendar month.
  */
 export function includedDiscountWindowContaining(input: {
   usageAt: Date;
@@ -609,18 +646,25 @@ export function includedDiscountWindowContaining(input: {
 }): { startedAt: Date; endsAt: Date } {
   const { usageAt, periodStartedAt, periodEndsAt } = input;
   if (periodStartedAt && periodEndsAt && periodEndsAt.getTime() > periodStartedAt.getTime()) {
-    const anchorDay = periodStartedAt.getUTCDate();
-    const span = Math.max(1, utcMonthIndex(periodEndsAt) - utcMonthIndex(periodStartedAt));
-    let steps = Math.floor((utcMonthIndex(usageAt) - utcMonthIndex(periodStartedAt)) / span) * span;
+    if (
+      usageAt.getTime() >= periodStartedAt.getTime() &&
+      usageAt.getTime() < periodEndsAt.getTime()
+    ) {
+      return { startedAt: periodStartedAt, endsAt: periodEndsAt };
+    }
+    const series = renewalSeries(periodStartedAt, periodEndsAt);
+    let steps =
+      Math.floor((utcMonthIndex(usageAt) - utcMonthIndex(periodStartedAt)) / series.span) *
+      series.span;
     for (let guard = 0; guard < 36; guard += 1) {
-      const startedAt = addUtcMonths(periodStartedAt, steps, anchorDay);
-      const endsAt = addUtcMonths(periodStartedAt, steps + span, anchorDay);
+      const startedAt = renewalBoundary(series, steps);
+      const endsAt = renewalBoundary(series, steps + series.span);
       if (usageAt.getTime() < startedAt.getTime()) {
-        steps -= span;
+        steps -= series.span;
         continue;
       }
       if (usageAt.getTime() >= endsAt.getTime()) {
-        steps += span;
+        steps += series.span;
         continue;
       }
       return { startedAt, endsAt };
@@ -632,9 +676,10 @@ export function includedDiscountWindowContaining(input: {
 }
 
 /**
- * Advance a closed subscription window by its calendar-month span, using the
- * original anchor day. A February window therefore renews on the same day in
- * March, not one short month later. Returns null while the window is open.
+ * Advance a closed subscription window by its calendar-month span. The next
+ * window starts at the stored end. Later bounds use the unclamped renewal day,
+ * so a February clamp does not move March back to the 28th. Returns null while
+ * the window is open.
  */
 export function nextIncludedDiscountPeriod(input: {
   now: Date;
@@ -643,18 +688,14 @@ export function nextIncludedDiscountPeriod(input: {
 }): { periodStartedAt: Date; periodEndsAt: Date } | null {
   if (input.periodEndsAt && input.periodEndsAt > input.now) return null;
   if (input.periodStartedAt && input.periodEndsAt) {
-    const anchorDay = input.periodStartedAt.getUTCDate();
-    const span = Math.max(
-      1,
-      utcMonthIndex(input.periodEndsAt) - utcMonthIndex(input.periodStartedAt),
-    );
-    let steps = span;
-    let periodStart = addUtcMonths(input.periodStartedAt, steps - span, anchorDay);
-    let periodEnd = addUtcMonths(input.periodStartedAt, steps, anchorDay);
-    while (periodEnd <= input.now && steps < span + 1200) {
-      steps += span;
-      periodStart = addUtcMonths(input.periodStartedAt, steps - span, anchorDay);
-      periodEnd = addUtcMonths(input.periodStartedAt, steps, anchorDay);
+    const series = renewalSeries(input.periodStartedAt, input.periodEndsAt);
+    let steps = series.span;
+    let periodStart = input.periodEndsAt;
+    let periodEnd = renewalBoundary(series, steps + series.span);
+    while (periodEnd <= input.now && steps < series.span + 1200) {
+      steps += series.span;
+      periodStart = renewalBoundary(series, steps);
+      periodEnd = renewalBoundary(series, steps + series.span);
     }
     return { periodStartedAt: periodStart, periodEndsAt: periodEnd };
   }

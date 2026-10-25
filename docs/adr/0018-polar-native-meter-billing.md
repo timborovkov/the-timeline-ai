@@ -251,7 +251,9 @@ credit hides margin and confuses prospects.
    compatible adapter reports only token counts on `usage`.
    Janitor included-discount resets lock the billing account and refuse to
    overwrite a newer Polar plan or period. A missed renewal advances by calendar
-   months from the subscription anchor day. Client-aborted Ask streams settle at
+   months from the subscription anchor day. A short month keeps the stored
+   period bounds. The anchor day is the later of those two boundary days, so a
+   31st renewal clamped to 28 February resumes on the 31st. Client-aborted Ask streams settle at
    least the reserved customer charge instead of releasing after work starts.
    `WORKER_MODE=document-extract` allows the non-secret `BILLING_CHARGES_ENABLED`
    toggle so extract AI metering can run live. `withAiMetering` keeps the reservation
