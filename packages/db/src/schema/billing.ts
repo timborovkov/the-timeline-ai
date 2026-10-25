@@ -108,6 +108,11 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   periodStartedAt: timestamp('period_started_at', { withTimezone: true }),
   periodEndsAt: timestamp('period_ends_at', { withTimezone: true }),
   /**
+   * When a Polar period-end cancel stops paid access. The paid plan stays in
+   * force until this timestamp, or until `subscription.revoked` arrives first.
+   */
+  cancelEffectiveAt: timestamp('cancel_effective_at', { withTimezone: true }),
+  /**
    * Polar subscription `modified_at` last applied to this row. Wallet, spend-cap,
    * and shadow writes bump `updated_at` and must not hide newer Polar events.
    */

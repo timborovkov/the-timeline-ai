@@ -111,7 +111,13 @@ credit hides margin and confuses prospects.
    charges immediately even when a row still snapshots `shadowBilling = true`;
    `false` is a kill switch that shadows every reservation and settlement.
    A canceled paid plan becomes `free` if
-   this team holds the person-level Free grant, otherwise `restricted`. Paid-plan
+   this team holds the person-level Free grant, otherwise `restricted`.
+   `subscription.canceled` keeps that paid plan while `cancel_at_period_end` is
+   set or `ends_at` is still in the future, and stores `cancel_effective_at`.
+   Access ends on `subscription.revoked` or when that timestamp has passed. The
+   janitor applies elapsed `cancel_effective_at` rows before the included-discount
+   refill. An active webhook that sets `cancel_at_period_end` false, or sends
+   `ends_at` null, clears the schedule. Paid-plan
    activation writes the catalog default spend cap when the row is still Free;
    later `subscription.updated` / renewal events preserve an administrator-selected
    paid cap, including €0 as a hard stop. An active subscription update does not
@@ -231,8 +237,10 @@ credit hides margin and confuses prospects.
    workspace restricted until the owner email is verified; unverified owners are
    excluded from the Free-grant backfill; `email_verification`
    mail and `support_request` mail are not metered against that restricted
-   workspace. OpenRouter
+   workspace.    OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
+   Embedding calls read that cost from the raw response body, because the
+   compatible adapter reports only token counts on `usage`.
    Janitor included-discount resets lock the billing account and refuse to
    overwrite a newer Polar plan or period. A missed renewal advances by calendar
    months from the subscription anchor day. Client-aborted Ask streams settle at

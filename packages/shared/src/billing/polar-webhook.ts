@@ -5,7 +5,7 @@ import {
   teamBillingAccounts,
   type Db,
 } from '@timeline/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lte, ne } from 'drizzle-orm';
 
 import type { BillingProvider } from '#src/billing/provider.js';
 
@@ -36,6 +36,12 @@ export interface PolarWebhookPayload {
     current_period_end?: string | number;
     currentPeriodStart?: string | number;
     currentPeriodEnd?: string | number;
+    /** True while Polar will revoke access at the end of the paid period. */
+    cancel_at_period_end?: boolean;
+    cancelAtPeriodEnd?: boolean;
+    /** When Polar will revoke access. Absent on a subscription that renews. */
+    ends_at?: string | number | null;
+    endsAt?: string | number | null;
     modified_at?: string | number;
     updated_at?: string | number;
     modifiedAt?: string | number;
@@ -114,6 +120,71 @@ export function polarSubscriptionPeriod(data: PolarWebhookPayload['data']): {
     periodStartedAt: parsePolarTimestamp(data?.current_period_start ?? data?.currentPeriodStart),
     periodEndsAt: parsePolarTimestamp(data?.current_period_end ?? data?.currentPeriodEnd),
   };
+}
+
+function polarCancelAtPeriodEnd(data: PolarWebhookPayload['data']): boolean | null {
+  if (!data) return null;
+  if (typeof data.cancel_at_period_end === 'boolean') return data.cancel_at_period_end;
+  if (typeof data.cancelAtPeriodEnd === 'boolean') return data.cancelAtPeriodEnd;
+  return null;
+}
+
+/**
+ * When this cancel stops paid access. `ends_at` is Polar's revocation time.
+ * `current_period_end` counts only when Polar set `cancel_at_period_end`,
+ * because a renewing subscription also has a period end.
+ */
+export function polarScheduledCancellationEnd(data: PolarWebhookPayload['data']): Date | null {
+  const explicit = parsePolarTimestamp(data?.ends_at ?? data?.endsAt);
+  if (explicit) return explicit;
+  if (polarCancelAtPeriodEnd(data) !== true) return null;
+  return parsePolarTimestamp(data?.current_period_end ?? data?.currentPeriodEnd);
+}
+
+function polarCancellationWasRequested(input: {
+  type: string;
+  data: PolarWebhookPayload['data'];
+}): boolean {
+  if (input.type === 'subscription.canceled' || input.type === 'subscription.revoked') return true;
+  const status = (input.data?.status ?? '').trim().toLowerCase();
+  if (status === 'canceled' || status === 'revoked') return true;
+  if (polarCancelAtPeriodEnd(input.data) === true) return true;
+  return parsePolarTimestamp(input.data?.ends_at ?? input.data?.endsAt) !== null;
+}
+
+/** Paid access continues through a period-end cancel that has not taken effect. */
+export function polarCancellationKeepsPaidAccess(input: {
+  type: string;
+  data: PolarWebhookPayload['data'];
+  now?: Date;
+}): boolean {
+  const status = (input.data?.status ?? '').trim().toLowerCase();
+  if (input.type === 'subscription.revoked' || status === 'revoked') return false;
+  if (!polarCancellationWasRequested(input)) return false;
+  const now = input.now ?? new Date();
+  const end = polarScheduledCancellationEnd(input.data);
+  if (end) return end.getTime() > now.getTime();
+  return polarCancelAtPeriodEnd(input.data) === true;
+}
+
+function polarCancellationEndsPaidAccess(input: {
+  type: string;
+  data: PolarWebhookPayload['data'];
+  now?: Date;
+}): boolean {
+  const status = (input.data?.status ?? '').trim().toLowerCase();
+  if (input.type === 'subscription.revoked' || status === 'revoked') return true;
+  if (!polarCancellationWasRequested(input)) return false;
+  return !polarCancellationKeepsPaidAccess(input);
+}
+
+/** An explicit active subscription with the cancel cleared. Omitted fields do not. */
+function polarPayloadClearsScheduledCancel(data: PolarWebhookPayload['data']): boolean {
+  if (polarCancelAtPeriodEnd(data) === false) return true;
+  if (!data || !('ends_at' in data || 'endsAt' in data)) return false;
+  if (polarScheduledCancellationEnd(data) !== null) return false;
+  const status = (data.status ?? 'active').trim().toLowerCase();
+  return status === 'active' || status === 'trialing';
 }
 
 export function spendCapCentsForPaidActivation(input: {
@@ -350,6 +421,8 @@ async function upsertPaidSubscription(input: {
   billingState: TeamBillingState;
   data: PolarWebhookPayload['data'];
   chargesEnabled: boolean;
+  /** `null` clears a scheduled period-end cancel. Omit to leave the stored end. */
+  cancelEffectiveAt?: Date | null;
 }): Promise<{
   applied: boolean;
   duplicate?: DuplicateSubscription;
@@ -428,6 +501,8 @@ async function upsertPaidSubscription(input: {
     const periodEndsAt = period.periodEndsAt ?? existing?.periodEndsAt ?? null;
     const polarEventModifiedAtValue =
       polarEventModifiedAt(input.data) ?? existing?.polarEventModifiedAt ?? now;
+    const scheduledCancel =
+      input.cancelEffectiveAt !== undefined ? { cancelEffectiveAt: input.cancelEffectiveAt } : {};
 
     await tx
       .insert(teamBillingAccounts)
@@ -442,6 +517,7 @@ async function upsertPaidSubscription(input: {
         includedDiscountRemainingCents: included,
         periodStartedAt,
         ...(periodEndsAt ? { periodEndsAt } : {}),
+        ...scheduledCancel,
         polarEventModifiedAt: polarEventModifiedAtValue,
         shadowBilling: !input.chargesEnabled,
       })
@@ -456,6 +532,7 @@ async function upsertPaidSubscription(input: {
           shadowBilling: !input.chargesEnabled,
           periodStartedAt,
           ...(periodEndsAt ? { periodEndsAt } : {}),
+          ...scheduledCancel,
           ...(resetDiscount ? { includedDiscountRemainingCents: included } : {}),
           spendCapCents:
             pending?.spendCapCents ??
@@ -623,6 +700,46 @@ async function reconcileDuplicateSubscription(input: {
     .onConflictDoNothing();
 }
 
+async function keepPaidSubscriptionUntilCancellation(input: {
+  db: Db;
+  teamId: string;
+  subscriptionId: string | undefined;
+  data: PolarWebhookPayload['data'];
+  incomingModifiedAt: Date | null;
+}): Promise<void> {
+  if (!input.subscriptionId) return;
+  const end = polarScheduledCancellationEnd(input.data);
+  await input.db.transaction(async (tx) => {
+    const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
+    if (!existing || existing.arrangement === 'comped') return;
+    if (existing.polarSubscriptionId !== input.subscriptionId) return;
+    if (
+      !shouldApplyPaidSubscriptionUpdate({
+        existing,
+        incomingSubscriptionId: input.subscriptionId,
+        incomingPeriodStartedAt: existing.periodStartedAt,
+        incomingModifiedAt: input.incomingModifiedAt,
+      })
+    ) {
+      return;
+    }
+    await tx
+      .update(teamBillingAccounts)
+      .set({
+        ...(end ? { cancelEffectiveAt: end, periodEndsAt: end } : {}),
+        polarEventModifiedAt:
+          input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(teamBillingAccounts.teamId, input.teamId),
+          eq(teamBillingAccounts.polarSubscriptionId, input.subscriptionId),
+        ),
+      );
+  });
+}
+
 async function cancelMatchingSubscription(input: {
   db: Db;
   teamId: string;
@@ -664,6 +781,7 @@ async function cancelMatchingSubscription(input: {
         spendCapCents: grant ? PLAN_CATALOG.free.defaultSpendCapCents : 0,
         polarSubscriptionId: null,
         polarProductId: null,
+        cancelEffectiveAt: null,
         enterprisePlatformFeeCents: null,
         ...(leavingEnterprise ? { priceOverride: null, priceOverrideExpiresAt: null } : {}),
         polarEventModifiedAt:
@@ -678,6 +796,39 @@ async function cancelMatchingSubscription(input: {
       );
     await recordBillingPlan(tx as unknown as Db, input.teamId, 'free');
   });
+}
+
+/** Downgrade paid plans whose period-end cancel has arrived, without waiting for a later webhook. */
+export async function applyElapsedScheduledCancellations(
+  db: Db,
+  now = new Date(),
+): Promise<number> {
+  const due = await db
+    .select({
+      teamId: teamBillingAccounts.teamId,
+      polarSubscriptionId: teamBillingAccounts.polarSubscriptionId,
+    })
+    .from(teamBillingAccounts)
+    .where(
+      and(
+        isNotNull(teamBillingAccounts.cancelEffectiveAt),
+        lte(teamBillingAccounts.cancelEffectiveAt, now),
+        isNotNull(teamBillingAccounts.polarSubscriptionId),
+        ne(teamBillingAccounts.arrangement, 'comped'),
+      ),
+    );
+  let applied = 0;
+  for (const row of due) {
+    if (!row.polarSubscriptionId) continue;
+    await cancelMatchingSubscription({
+      db,
+      teamId: row.teamId,
+      subscriptionId: row.polarSubscriptionId,
+      incomingModifiedAt: null,
+    });
+    applied += 1;
+  }
+  return applied;
 }
 
 /**
@@ -779,6 +930,8 @@ export async function handlePolarWebhookEvent(input: {
   const type = input.payload.type ?? '';
   const data = input.payload.data;
   const plan = planFromPolarProductId(data?.product_id, input.products);
+  const now = new Date();
+  const cancellation = { type, data, now };
 
   if (
     type === 'subscription.created' ||
@@ -787,14 +940,27 @@ export async function handlePolarWebhookEvent(input: {
   ) {
     if (plan) {
       const billingState = billingStateFromPolarSubscriptionStatus(plan, data?.status);
-      if (billingState === 'canceled') {
+      if (polarCancellationEndsPaidAccess(cancellation)) {
         await cancelMatchingSubscription({
           db: input.db,
           teamId,
           subscriptionId: data?.id,
           incomingModifiedAt: polarEventModifiedAt(data),
         });
+      } else if (billingState === 'canceled') {
+        await keepPaidSubscriptionUntilCancellation({
+          db: input.db,
+          teamId,
+          subscriptionId: data?.id,
+          data,
+          incomingModifiedAt: polarEventModifiedAt(data),
+        });
       } else if (billingState !== 'ignore') {
+        const scheduledEnd = polarCancellationKeepsPaidAccess(cancellation)
+          ? (polarScheduledCancellationEnd(data) ?? undefined)
+          : polarPayloadClearsScheduledCancel(data)
+            ? null
+            : undefined;
         const result = await upsertPaidSubscription({
           db: input.db,
           teamId,
@@ -802,6 +968,7 @@ export async function handlePolarWebhookEvent(input: {
           billingState,
           data,
           chargesEnabled: input.chargesEnabled,
+          ...(scheduledEnd !== undefined ? { cancelEffectiveAt: scheduledEnd } : {}),
         });
         if (result.compedIncoming) {
           await reconcileCompedIncomingSubscription({
@@ -837,12 +1004,22 @@ export async function handlePolarWebhookEvent(input: {
   }
 
   if (type === 'subscription.canceled' || type === 'subscription.revoked') {
-    await cancelMatchingSubscription({
-      db: input.db,
-      teamId,
-      subscriptionId: data?.id,
-      incomingModifiedAt: polarEventModifiedAt(data),
-    });
+    if (polarCancellationEndsPaidAccess(cancellation)) {
+      await cancelMatchingSubscription({
+        db: input.db,
+        teamId,
+        subscriptionId: data?.id,
+        incomingModifiedAt: polarEventModifiedAt(data),
+      });
+    } else {
+      await keepPaidSubscriptionUntilCancellation({
+        db: input.db,
+        teamId,
+        subscriptionId: data?.id,
+        data,
+        incomingModifiedAt: polarEventModifiedAt(data),
+      });
+    }
   }
 
   if (

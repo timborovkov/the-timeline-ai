@@ -49,6 +49,7 @@ import {
   billingPlanIdOnDay,
   includedDiscountRemainingForReplay,
 } from '#src/billing/plan-history.js';
+import { applyElapsedScheduledCancellations } from '#src/billing/polar-webhook.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
 import {
@@ -1013,6 +1014,7 @@ export async function runBillingMaintenanceTick(db: Db): Promise<{ teams: number
   if (polarProvider) {
     await flushPendingPolarUsageIngest({ db, provider: polarProvider });
   }
+  await applyElapsedScheduledCancellations(db);
   const rows = await db.select({ id: teams.id }).from(teams);
   for (const team of rows) {
     try {

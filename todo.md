@@ -644,8 +644,11 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       included credit. Replayed member-days keep the historical plan's extra-member rate. Comped plans are not overwritten. Clearing a comp refuses
       while a Polar subscription id remains, then chooses Free or restricted from the grant.
       Live charging follows `BILLING_CHARGES_ENABLED` without waiting for webhooks.
-      Stale Polar activations are ignored against `polar_event_modified_at`; canceled paid
-      plans become restricted unless the team holds the Free grant. `order.paid` does not
+      Stale Polar activations are ignored against `polar_event_modified_at`; a cancel that
+      has taken effect makes a paid plan restricted unless the team holds the Free grant.
+      A period-end cancel keeps the paid plan until `subscription.revoked` or
+      `cancel_effective_at`. Embedding meter cost is read from the raw OpenRouter response
+      body. `order.paid` does not
       credit a local balance. Polar usage ingest retries from a claimed ledger outbox
       after local settlement. A paid spend cap of €0 is a hard stop and is preserved across Polar
       subscription updates. Extra member-days skip included
@@ -724,7 +727,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       does not clear a local `read_only` or `balance_exhausted` spend-cap freeze;
       raising the spend cap still restores it. `past_due` still clears when Polar
       reports a newer active status. A confirmed subscription cancel clears the Polar subscription
-      id and the contracted Enterprise fee. Plan preview discounts extra-member cents. Recall
+      id and the contracted Enterprise fee once access has ended. A period-end cancel waits
+      for <code>subscription.revoked</code> or <code>cancel_effective_at</code>. Plan preview discounts extra-member cents. Recall
       reservations and included-discount refills follow the effective plan after a comp expires.
       Member-day ticks reuse the `plan_id` stamped on that day. A missed day with no stamp uses one helper for plan history, comp expiry, and Enterprise contracts: Free after `comp_expires_at`, and the comped plan's price before that. Storage replay uses the same helper. Re-accept appends `prior_intervals`. Denied inbound email
       enrichment is recoverable via `billing_enrichment_deferred`. Storage-cap

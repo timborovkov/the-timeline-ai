@@ -8,6 +8,7 @@ import {
   billingStateFromPolarSubscriptionStatus,
   COMPED_INCOMING_SUBSCRIPTION_ALERT_REASON_PREFIX,
   DUPLICATE_SUBSCRIPTION_ALERT_REASON_PREFIX,
+  applyElapsedScheduledCancellations,
   handlePolarWebhookEvent,
   RETIRED_TOPUP_ALERT_REASON_PREFIX,
   isRetiredPaidTopupOrder,
@@ -968,6 +969,218 @@ describe('handlePolarWebhookEvent', () => {
     const ignoredStale = await billing.getAccount();
     expect(ignoredStale.billingState).toBe('restricted');
     expect(ignoredStale.planId).toBe('free');
+  });
+
+  it('keeps paid access until a period-end cancel takes effect', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_period',
+          status: 'active',
+          product_id: 'prod_business',
+          current_period_end: '2099-02-01T00:00:00.000Z',
+          modified_at: '2099-01-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.canceled',
+        data: {
+          id: 'sub_period',
+          status: 'active',
+          product_id: 'prod_business',
+          cancel_at_period_end: true,
+          ends_at: '2099-02-01T00:00:00.000Z',
+          current_period_end: '2099-02-01T00:00:00.000Z',
+          modified_at: '2099-01-02T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const scheduled = await billing.getAccount();
+    expect(scheduled.planId).toBe('business');
+    expect(scheduled.billingState).toBe('business_active');
+    expect(scheduled.polarSubscriptionId).toBe('sub_period');
+    expect(scheduled.cancelEffectiveAt?.toISOString()).toBe('2099-02-01T00:00:00.000Z');
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_period',
+          status: 'canceled',
+          product_id: 'prod_business',
+          cancel_at_period_end: true,
+          ends_at: '2099-02-01T00:00:00.000Z',
+          modified_at: '2099-01-03T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const stillPaid = await billing.getAccount();
+    expect(stillPaid.planId).toBe('business');
+    expect(stillPaid.polarSubscriptionId).toBe('sub_period');
+
+    expect(await applyElapsedScheduledCancellations(db, new Date('2099-01-15T00:00:00.000Z'))).toBe(
+      0,
+    );
+    expect((await billing.getAccount()).planId).toBe('business');
+
+    expect(await applyElapsedScheduledCancellations(db, new Date('2099-02-01T00:00:00.000Z'))).toBe(
+      1,
+    );
+    const ended = await billing.getAccount();
+    expect(ended.planId).toBe('free');
+    expect(ended.billingState).toBe('restricted');
+    expect(ended.polarSubscriptionId).toBeNull();
+    expect(ended.cancelEffectiveAt).toBeNull();
+  });
+
+  it('downgrades on subscription.revoked while a period-end cancel is still scheduled', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_revoke',
+          status: 'active',
+          product_id: 'prod_team',
+          modified_at: '2099-03-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.canceled',
+        data: {
+          id: 'sub_revoke',
+          status: 'active',
+          cancel_at_period_end: true,
+          current_period_end: '2099-04-01T00:00:00.000Z',
+          modified_at: '2099-03-02T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).planId).toBe('team');
+    expect((await billing.getAccount()).cancelEffectiveAt?.toISOString()).toBe(
+      '2099-04-01T00:00:00.000Z',
+    );
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.revoked',
+        data: {
+          id: 'sub_revoke',
+          status: 'revoked',
+          ends_at: '2099-04-01T00:00:00.000Z',
+          modified_at: '2099-03-03T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const revoked = await billing.getAccount();
+    expect(revoked.planId).toBe('free');
+    expect(revoked.billingState).toBe('restricted');
+    expect(revoked.polarSubscriptionId).toBeNull();
+    expect(revoked.cancelEffectiveAt).toBeNull();
+  });
+
+  it('clears a scheduled cancel when Polar reports the subscription active again', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_keep',
+          status: 'active',
+          product_id: 'prod_payg',
+          modified_at: '2099-05-01T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.canceled',
+        data: {
+          id: 'sub_keep',
+          cancel_at_period_end: true,
+          ends_at: '2099-06-01T00:00:00.000Z',
+          modified_at: '2099-05-02T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    expect((await billing.getAccount()).cancelEffectiveAt).not.toBeNull();
+
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_keep',
+          status: 'active',
+          product_id: 'prod_payg',
+          cancel_at_period_end: false,
+          ends_at: null,
+          modified_at: '2099-05-03T00:00:00.000Z',
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const resumed = await billing.getAccount();
+    expect(resumed.planId).toBe('payg');
+    expect(resumed.billingState).toBe('payg_active');
+    expect(resumed.polarSubscriptionId).toBe('sub_keep');
+    expect(resumed.cancelEffectiveAt).toBeNull();
   });
 
   it('drops a canceled Enterprise contract before a later self-serve plan', async () => {

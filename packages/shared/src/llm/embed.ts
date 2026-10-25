@@ -6,7 +6,10 @@ import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
-import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
+import {
+  openRouterFinishFromAiResult,
+  openRouterUsdCostFromFinishEvent,
+} from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
@@ -180,6 +183,46 @@ function deterministicEmbeddingVector(text: string): number[] {
   return vector;
 }
 
+function embeddingResponseBody(body: unknown): Record<string, unknown> | null {
+  if (isJsonObject(body)) return body;
+  if (typeof body !== 'string') return null;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return isJsonObject(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** OpenRouter reports `usage.cost` on the raw body. The compatible adapter keeps only `{ tokens }`. */
+function embeddingBodyCost(body: unknown): number {
+  const usage = embeddingResponseBody(body)?.usage;
+  if (!isJsonObject(usage)) return 0;
+  const cost = usage.cost;
+  return typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : 0;
+}
+
+function embeddingMeterFinish(input: {
+  usage: unknown;
+  providerMetadata: unknown;
+  bodies: readonly unknown[];
+}) {
+  const finish = openRouterFinishFromAiResult({
+    usage: input.usage,
+    providerMetadata: input.providerMetadata,
+    totalUsage: undefined,
+  });
+  if (openRouterUsdCostFromFinishEvent(finish) > 0) return finish;
+  const cost = input.bodies.reduce<number>((sum, body) => sum + embeddingBodyCost(body), 0);
+  if (cost <= 0) return finish;
+  const usage = isJsonObject(input.usage) ? input.usage : {};
+  return openRouterFinishFromAiResult({
+    usage: { ...usage, raw: { cost } },
+    providerMetadata: input.providerMetadata,
+    totalUsage: undefined,
+  });
+}
+
 function assertEmbeddingCount(inputCount: number, outputCount: number): void {
   if (outputCount !== inputCount) {
     throw new Error(
@@ -228,10 +271,10 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
       const result = await aiEmbed({ model, value: text, maxRetries: deps.maxRetries ?? 2 });
       return {
         value: { vector: Array.from(result.embedding), model: modelId },
-        finish: openRouterFinishFromAiResult({
+        finish: embeddingMeterFinish({
           usage: result.usage,
           providerMetadata: result.providerMetadata,
-          totalUsage: undefined,
+          bodies: [result.response?.body],
         }),
       };
     });
@@ -267,10 +310,10 @@ export async function embedMany(
           vectors: result.embeddings.map((embedding) => Array.from(embedding)),
           model: modelId,
         },
-        finish: openRouterFinishFromAiResult({
+        finish: embeddingMeterFinish({
           usage: result.usage,
           providerMetadata: result.providerMetadata,
-          totalUsage: undefined,
+          bodies: (result.responses ?? []).map((response) => response?.body),
         }),
       };
     });
