@@ -1437,11 +1437,12 @@ describe('POST /api/chat', () => {
       },
     });
     await vi.waitFor(() => {
-      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ openRouterUsd: expect.closeTo(0.09, 8) }),
-      );
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalled();
     });
+    const failedStreamSettle = vi.mocked(settleAskAiFromOpenRouterUsd).mock.calls[0]?.[1] as
+      | { openRouterUsd?: number }
+      | undefined;
+    expect(failedStreamSettle?.openRouterUsd).toBeCloseTo(0.09, 8);
     expect(releaseBillingReservation).not.toHaveBeenCalled();
     await capturedOnFinish?.({
       providerMetadata: { openrouter: { usage: { cost: 0.04 } } },
@@ -1472,10 +1473,10 @@ describe('POST /api/chat', () => {
       response: { modelId: 'agent-model' },
     });
     expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledTimes(1);
-    expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ openRouterUsd: expect.closeTo(0.07, 8) }),
-    );
+    const finishedStreamSettle = vi.mocked(settleAskAiFromOpenRouterUsd).mock.calls[0]?.[1] as
+      | { openRouterUsd?: number }
+      | undefined;
+    expect(finishedStreamSettle?.openRouterUsd).toBeCloseTo(0.07, 8);
     expect(releaseBillingReservation).not.toHaveBeenCalled();
   });
 

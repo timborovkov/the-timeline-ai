@@ -1527,7 +1527,7 @@ describe('streamChat', () => {
           lookup: tool({
             description: 'Look up a fact.',
             inputSchema: z.object({}),
-            execute: async () => 'ok',
+            execute: () => Promise.resolve('ok'),
           }),
         },
         onStepEnd: (step) => {
@@ -1543,7 +1543,11 @@ describe('streamChat', () => {
       { model },
     );
 
-    await result.text.catch(() => undefined);
+    try {
+      await result.text;
+    } catch {
+      // The failed step rejects after onError and onEnd have already run.
+    }
     expect(sequence).toEqual(['step', 'step', 'error', 'end']);
     expect(stepCosts).toEqual([0.11, 0.13]);
     // The finish payload repeats only the last step's provider cost, and it
