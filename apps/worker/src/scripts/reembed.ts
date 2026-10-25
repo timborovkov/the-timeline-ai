@@ -120,6 +120,7 @@ async function enqueueEvents(args: Args, budget: number): Promise<PhaseResult> {
       eq(rawEvents.teamId, args.teamId),
       eq(rawEvents.visibility, 'team'),
       isNotNull(rawEvents.contentText),
+      sql`COALESCE(${rawEvents.sourceMetadata} ->> 'billing_enrichment_deferred', '') <> 'true'`,
     ];
     if (cursor) {
       const cursorClause = or(

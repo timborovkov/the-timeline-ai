@@ -840,7 +840,11 @@ async function collectRawEventCandidates(
   for (const row of rows) {
     const meta = objectMeta(row.sourceMetadata);
     const label = rawEventLabel(row);
+    const billingDeferred = metadataFlagIsTrue(meta, 'billing_enrichment_deferred');
+    const transcriptionDeferred =
+      billingDeferred || metadataFlagIsTrue(meta, 'transcription_deferred');
     if (
+      !transcriptionDeferred &&
       row.contentAudioUrl &&
       !row.contentText &&
       (meta.transcription_failed_at ||
@@ -857,6 +861,7 @@ async function collectRawEventCandidates(
       );
     }
     if (
+      !billingDeferred &&
       row.visibility === 'team' &&
       row.contentText &&
       (meta.extraction_failed_at || meta.reconcile_giveup_extract)
@@ -869,6 +874,7 @@ async function collectRawEventCandidates(
       );
     }
     if (
+      !billingDeferred &&
       row.visibility === 'team' &&
       row.contentText &&
       (meta.embedding_failed_at ||
@@ -905,6 +911,7 @@ async function collectRawEventCandidates(
         sql`${rawEvents.sourceMetadata} ->> 'extraction_model_version' IS NULL`,
         sql`${rawEvents.sourceMetadata} ->> 'extraction_failed_at' IS NULL`,
         sql`${rawEvents.sourceMetadata} ->> 'reconcile_giveup_extract' IS NULL`,
+        notBillingEnrichmentDeferred(),
         notExists(
           db
             .select({ one: sql`1` })
@@ -949,6 +956,7 @@ async function countStuckExtraction(
         sql`${rawEvents.sourceMetadata} ->> 'extraction_model_version' IS NULL`,
         sql`${rawEvents.sourceMetadata} ->> 'extraction_failed_at' IS NULL`,
         sql`${rawEvents.sourceMetadata} ->> 'reconcile_giveup_extract' IS NULL`,
+        notBillingEnrichmentDeferred(),
         notExists(
           db
             .select({ one: sql`1` })
@@ -1416,18 +1424,27 @@ async function prepareRetryParsed(
 ): Promise<RetryPlan> {
   if (parsed.kind === 'transcription' && parsed.artifactKind === 'raw_event') {
     const rows = await db
-      .select({ audioKey: rawEvents.contentAudioUrl })
+      .select({ audioKey: rawEvents.contentAudioUrl, sourceMetadata: rawEvents.sourceMetadata })
       .from(rawEvents)
       .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.id, parsed.artifactId)))
       .limit(1);
-    const audioKey = rows[0]?.audioKey;
-    if (!audioKey) throw new Error('not_retryable');
+    const row = rows[0];
+    const audioKey = row?.audioKey;
+    if (!row || !audioKey) throw new Error('not_retryable');
+    const meta = objectMeta(row.sourceMetadata);
+    if (
+      metadataFlagIsTrue(meta, 'billing_enrichment_deferred') ||
+      metadataFlagIsTrue(meta, 'transcription_deferred')
+    ) {
+      throw new Error('not_retryable');
+    }
     return {
       clear: () => clearRawEventStage(db, parsed.artifactId, 'transcription'),
       enqueue: () => q.enqueueTranscribeJob({ rawEventId: parsed.artifactId, teamId, audioKey }),
     };
   }
   if (parsed.kind === 'extraction' && parsed.artifactKind === 'raw_event') {
+    await assertRawEventEnrichmentAdmitted(db, teamId, parsed.artifactId);
     return {
       clear: () => clearRawEventStage(db, parsed.artifactId, 'extraction'),
       enqueue: () => q.enqueueExtractJob({ rawEventId: parsed.artifactId, teamId }),
@@ -1522,6 +1539,7 @@ async function prepareRetryEmbedding(
   q: Required<RecoveryQueues>,
 ): Promise<RetryPlan> {
   if (parsed.artifactKind === 'raw_event') {
+    await assertRawEventEnrichmentAdmitted(db, teamId, parsed.artifactId);
     return {
       clear: () => clearRawEventStage(db, parsed.artifactId, 'embedding'),
       enqueue: () => q.enqueueEmbedJob({ rawEventId: parsed.artifactId, teamId }),
@@ -1875,6 +1893,25 @@ function activeRawEvent() {
   return sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`;
 }
 
+function notBillingEnrichmentDeferred() {
+  return sql`COALESCE(${rawEvents.sourceMetadata} ->> 'billing_enrichment_deferred', '') <> 'true'`;
+}
+
+async function assertRawEventEnrichmentAdmitted(
+  db: Db,
+  teamId: string,
+  rawEventId: string,
+): Promise<void> {
+  const rows = await db
+    .select({ sourceMetadata: rawEvents.sourceMetadata })
+    .from(rawEvents)
+    .where(and(eq(rawEvents.teamId, teamId), eq(rawEvents.id, rawEventId)))
+    .limit(1);
+  if (metadataFlagIsTrue(objectMeta(rows[0]?.sourceMetadata), 'billing_enrichment_deferred')) {
+    throw new Error('not_retryable');
+  }
+}
+
 async function visibleRawEventLabelsByIds(
   db: Db,
   teamId: string,
@@ -2162,6 +2199,11 @@ function rawEventLabel(row: { source: string; occurredAt: Date }): string {
 
 function objectMeta(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+function metadataFlagIsTrue(meta: Record<string, unknown>, key: string): boolean {
+  const value = meta[key];
+  return value === true || value === 'true';
 }
 
 function uniqueStrings(values: string[]): string[] {

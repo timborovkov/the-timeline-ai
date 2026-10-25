@@ -289,7 +289,10 @@ credit hides margin and confuses prospects.
    has transcript chunks leaves it `processing` for finalize; only an empty capture is marked
    cancelled.
    Deferred accepted-source flush
-   rotates past still-blocked rows. Document restore rechecks storage,
+   rotates past still-blocked rows. Orphan reconcile, job recovery, visibility
+   promotion, planner replay, and the reextract/reembed/resuggest scripts leave
+   `billing_enrichment_deferred` and `transcription_deferred` rows for those
+   flushes. Document restore rechecks storage,
    document, and indexed-chunk capacity under advisory lock key 1 then key 2
    (chunk admission reuses key 2). Storage-cap finalization deletes the uploaded
    object when admission fails. Captured Slack/Telegram/email attachments assert
@@ -297,7 +300,7 @@ credit hides margin and confuses prospects.
    live charging is enabled. Janitor Recall leave retries run before reservation
    expiry, and expiry skips rows with `pending_recall_leave_bot_id`.
    Failed structured-output attempts still contribute OpenRouter `usage.cost` to
-   settlement. Duration meters such as Recall minutes split native units across
+   settlement, including a `json_object` fallback whose JSON fails the schema. Duration meters such as Recall minutes split native units across
    the UTC months they span. Plan preview prorates extra seats from recorded
    person-days when the current plan has no extras.
 8. After successful `settle`, workspace **owners** get transactional email for

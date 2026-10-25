@@ -215,6 +215,7 @@ async function main(): Promise<void> {
       eq(rawEvents.visibility, 'team'),
       isNotNull(rawEvents.contentText),
       sql`COALESCE(${rawEvents.sourceMetadata} ->> 'deleted', 'false') <> 'true'`,
+      sql`COALESCE(${rawEvents.sourceMetadata} ->> 'billing_enrichment_deferred', '') <> 'true'`,
     ];
     if (since) conditions.push(sql`${rawEvents.occurredAt} >= ${since.toISOString()}::timestamptz`);
     if (until) conditions.push(sql`${rawEvents.occurredAt} <= ${until.toISOString()}::timestamptz`);

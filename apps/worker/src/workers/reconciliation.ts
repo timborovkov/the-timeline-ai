@@ -474,6 +474,7 @@ async function filterPlannerReplayRawEventIds(
 
 function plannerReplayWhereFilters(input: PlannerReplayFilters) {
   return [
+    sql`COALESCE(${rawEvents.sourceMetadata} ->> 'billing_enrichment_deferred', '') <> 'true'`,
     ...(input.mode === 'all'
       ? []
       : [

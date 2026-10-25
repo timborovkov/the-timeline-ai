@@ -742,7 +742,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       for <code>subscription.revoked</code> or <code>cancel_effective_at</code>. Plan preview discounts extra-member cents. Recall
       reservations and included-discount refills follow the effective plan after a comp expires.
       Member-day ticks reuse the `plan_id` stamped on that day. A missed day with no stamp uses one helper for plan history, comp expiry, and Enterprise contracts: Free after `comp_expires_at`, and the comped plan's price before that. Storage replay uses the same helper. Re-accept appends `prior_intervals`. Denied inbound email
-      enrichment is recoverable via `billing_enrichment_deferred`, which stays set until each pending attachment is stored and linked. Metered AI callbacks cache plain JSON values. Each model call in a worker job bills its own stage and input digest. A partial meeting cancel stays `processing`. Storage-cap
+      enrichment is recoverable via `billing_enrichment_deferred`, which stays set until each pending attachment is stored and linked. Orphan reconcile, job recovery, and operator replay leave that marker and `transcription_deferred` for the janitor flushes. A schema-invalid `json_object` fallback still settles its OpenRouter cost. Metered AI callbacks cache plain JSON values. Each model call in a worker job bills its own stage and input digest. A partial meeting cancel stays `processing`. Storage-cap
       finalization deletes the rejected object. Captured chat attachments enforce
       document/storage limits. Free in-allowance usage is not invoiced under
       live charging. Recall leave retries run before reservation expiry.

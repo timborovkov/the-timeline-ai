@@ -103,8 +103,9 @@ class JsonObjectFallbackParseError extends Error {
   constructor(
     cause: unknown,
     usage?: { usage?: unknown; providerMetadata?: unknown; totalUsage?: unknown },
+    message = 'llm.chatStructured json_object fallback returned invalid JSON',
   ) {
-    super('llm.chatStructured json_object fallback returned invalid JSON', { cause });
+    super(message, { cause });
     this.name = 'JsonObjectFallbackParseError';
     if (usage?.usage !== undefined) this.usage = usage.usage;
     if (usage?.providerMetadata !== undefined) this.providerMetadata = usage.providerMetadata;
@@ -435,23 +436,32 @@ async function generateJsonObjectFallback<TSchema extends z.ZodType>({
     error: new Error('json_object fallback validation') as never,
   });
   const candidateText = repaired ?? result.text;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(candidateText);
-  } catch (err) {
-    throw new JsonObjectFallbackParseError(err, {
-      usage: result.usage,
-      providerMetadata: result.finalStep.providerMetadata,
-      totalUsage: result.usage,
-    });
-  }
-  const object: z.infer<TSchema> = schema.parse(parsed);
-  return {
-    object,
+  const usage = {
     usage: result.usage,
     providerMetadata: result.finalStep.providerMetadata,
     totalUsage: result.usage,
   };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(candidateText);
+  } catch (err) {
+    throw new JsonObjectFallbackParseError(err, usage);
+  }
+  try {
+    const object: z.infer<TSchema> = schema.parse(parsed);
+    return {
+      object,
+      usage: result.usage,
+      providerMetadata: result.finalStep.providerMetadata,
+      totalUsage: result.usage,
+    };
+  } catch (err) {
+    throw new JsonObjectFallbackParseError(
+      err,
+      usage,
+      'llm.chatStructured json_object fallback returned JSON that failed schema validation',
+    );
+  }
 }
 
 /**

@@ -560,6 +560,47 @@ describe('processReconciliationJob', () => {
     expect(allReplay.calls.map((call) => call.data.rawEventId)).toEqual([alreadyProcessed]);
   });
 
+  it('does not replay suggestions for billing-deferred raw events', async () => {
+    const deferred = await seedEmailRawEvent({
+      messageId: 'billing-deferred-replay',
+      occurredAt: new Date('2026-06-21T12:00:00.000Z'),
+    });
+    await (db as never as Db)
+      .update(rawEvents)
+      .set({
+        sourceMetadata: {
+          message_id: 'billing-deferred-replay',
+          billing_enrichment_deferred: true,
+        },
+      })
+      .where(eq(rawEvents.id, deferred));
+    const admitted = await seedEmailRawEvent({
+      messageId: 'billing-admitted-replay',
+      occurredAt: new Date('2026-06-20T12:00:00.000Z'),
+    });
+    const replay = suggestionReplayRecorder();
+
+    const result = expectScopedResult(
+      await processReconciliationJob(
+        db as never,
+        {
+          kind: 'scope_reconcile',
+          teamId: TEAM_ID,
+          scope: 'team',
+          triggeredBy: USER_ID,
+          reason: 'admin_dashboard',
+          plannerReplayLimit: 1,
+          plannerReplayMode: 'all',
+          plannerReplaySource: 'email',
+        },
+        { enqueueSuggestionJob: replay.enqueueSuggestionJob },
+      ),
+    );
+
+    expect(result).toMatchObject({ plannerReplayEnqueued: 1 });
+    expect(replay.calls.map((call) => call.data.rawEventId)).toEqual([admitted]);
+  });
+
   it('does not double-count object-scoped outputs that also belong to the object cluster', async () => {
     const { objectId, clusterId } = await seedObjectAndCluster();
     const [seedRun] = await (db as never as Db)

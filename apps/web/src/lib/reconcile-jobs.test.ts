@@ -79,4 +79,21 @@ describe('reconcileOrphanedJobs', () => {
     expect(serializedWheres).toContain('embedding_skipped_at');
     expect(serializedWheres).toContain('visibility');
   });
+
+  it('leaves billing-deferred rows to the billing flush', async () => {
+    await reconcileOrphanedJobs({ now: new Date('2026-06-03T12:00:00.000Z') });
+
+    const serialized = fakes.whereArgs.map((where) => JSON.stringify(where));
+    const deadLetter = serialized.find((where) => where.includes('reconcile_giveup_transcribe'));
+    const transcribe = serialized.find((where) => where.includes('content_audio_url'));
+    const extract = serialized.find((where) => where.includes('extraction_skipped_at'));
+    const embed = serialized.find((where) => where.includes('embedding_skipped_at'));
+    expect(deadLetter).not.toContain('billing_enrichment_deferred');
+    expect(transcribe).toContain('billing_enrichment_deferred');
+    expect(transcribe).toContain('transcription_deferred');
+    expect(extract).toContain('billing_enrichment_deferred');
+    expect(extract).not.toContain('transcription_deferred');
+    expect(embed).toContain('billing_enrichment_deferred');
+    expect(embed).not.toContain('transcription_deferred');
+  });
 });

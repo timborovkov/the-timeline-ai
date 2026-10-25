@@ -1516,6 +1516,36 @@ describe('withTeam namespaced port', () => {
     expect(row?.visibility).toBe('team');
   });
 
+  it('does not embed a billing-deferred event when it becomes team-visible', async () => {
+    const enqueueRawEventEmbed = vi.fn().mockResolvedValue(undefined);
+    const ownerScope = withTeam(db as never, TEAM_A, USER_A, { enqueueRawEventEmbed });
+    const deferred = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'deferred parent',
+      visibility: 'private',
+      sourceMetadata: { billing_enrichment_deferred: true },
+    });
+    const admitted = await ownerScope.timeline.createEvent({
+      authorUserId: null,
+      visibilityOwnerUserId: USER_A,
+      source: 'email',
+      contentText: 'admitted parent',
+      visibility: 'private',
+      sourceMetadata: { billing_enrichment_deferred: false },
+    });
+
+    await ownerScope.timeline.setEventVisibility(deferred.id, { visibility: 'team' });
+    await ownerScope.timeline.setEventVisibility(admitted.id, { visibility: 'team' });
+
+    expect(enqueueRawEventEmbed).toHaveBeenCalledTimes(1);
+    expect(enqueueRawEventEmbed).toHaveBeenCalledWith({
+      teamId: TEAM_A,
+      rawEventId: admitted.id,
+    });
+  });
+
   it('audits source-owned private event detail reads against the visibility owner', async () => {
     const ownerScope = withTeam(db as never, TEAM_A, USER_A);
     const event = await ownerScope.timeline.createEvent({

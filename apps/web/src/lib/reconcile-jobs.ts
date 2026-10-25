@@ -50,6 +50,15 @@ function attemptsBelowCap(stage: 'transcribe' | 'extract' | 'embed') {
 }
 
 /**
+ * Billing-deferred rows are not lost jobs. Accepted-source and transcription
+ * flushes admit them, then enqueue. A missing key or a cleared `false` stays
+ * eligible; only the text `'true'` marker is held back.
+ */
+function sourceMetadataFlagIsNotTrue(key: string) {
+  return sql`COALESCE(${rawEvents.sourceMetadata} ->> ${key}, '') <> 'true'`;
+}
+
+/**
  * Bump the per-stage attempt counter for a single row. Done in one UPDATE so
  * a crash between enqueue and bump means we re-try (safer than over-counting).
  * When the counter reaches the cap, we also stamp `reconcile_giveup_<stage>`
@@ -132,6 +141,8 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
           isNotNull(rawEvents.contentAudioUrl),
           isNull(rawEvents.contentText),
           lt(rawEvents.createdAt, staleCutoff),
+          sourceMetadataFlagIsNotTrue('billing_enrichment_deferred'),
+          sourceMetadataFlagIsNotTrue('transcription_deferred'),
           attemptsBelowCap('transcribe'),
         ),
       )
@@ -168,6 +179,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
           eq(rawEvents.visibility, 'team'),
           lt(rawEvents.createdAt, staleCutoff),
           sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'extraction_skipped_at')`,
+          sourceMetadataFlagIsNotTrue('billing_enrichment_deferred'),
           notExists(
             db
               .select({ one: sql`1` })
@@ -212,6 +224,7 @@ export async function reconcileOrphanedJobs(opts: { now?: Date } = {}): Promise<
           lt(rawEvents.createdAt, staleCutoff),
           sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedded_at')`,
           sql`NOT (COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) ? 'embedding_skipped_at')`,
+          sourceMetadataFlagIsNotTrue('billing_enrichment_deferred'),
           attemptsBelowCap('embed'),
         ),
       )

@@ -1056,6 +1056,102 @@ describe('chatStructured', () => {
     ]);
   });
 
+  it('bills a schema-invalid json_object fallback when a later model succeeds', async () => {
+    const requests: unknown[] = [];
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const parsed: unknown = JSON.parse(init.body);
+      requests.push(parsed);
+      const request = z
+        .object({
+          model: z.string(),
+          response_format: z.object({ type: z.string() }),
+        })
+        .parse(parsed);
+      if (
+        request.model === TIMELINE_MODELS.extraction.id &&
+        request.response_format.type === 'json_schema'
+      ) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'chatcmpl-schema-cost-primary',
+              object: 'chat.completion',
+              created: 0,
+              model: TIMELINE_MODELS.extraction.id,
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: 'I cannot produce structured JSON.' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.04 },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      if (request.model === TIMELINE_MODELS.extraction.id) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'chatcmpl-schema-cost-fallback',
+              object: 'chat.completion',
+              created: 0,
+              model: TIMELINE_MODELS.extraction.id,
+              choices: [
+                {
+                  index: 0,
+                  message: {
+                    role: 'assistant',
+                    content: JSON.stringify({ facts: [{ text: 42 }] }),
+                  },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.03 },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-schema-cost-recovery',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.structuredFallback.id,
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: JSON.stringify({ facts: [] }) },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, cost: 0.05 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    const result = await chatStructured(
+      {
+        schema: extractionResultSchema,
+        prompt: 'Extract facts from: Heading out for lunch.',
+        instructions: EXTRACTION_SYSTEM_PROMPT,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.object).toEqual({ facts: [] });
+    expect(result.model).toBe(TIMELINE_MODELS.structuredFallback.id);
+    expect(result.openRouterUsd).toBeCloseTo(0.12);
+    expect(requests).toHaveLength(3);
+  });
+
   it('retries the structured fallback model when json_object fallback returns invalid JSON text', async () => {
     const requests: unknown[] = [];
     const fetchStub: typeof fetch = (_url, init) => {

@@ -163,6 +163,12 @@ async function enqueueRawEventEmbed(input: { teamId: string; rawEventId: string 
   await enqueueEmbedJob({ scope: 'raw_event', teamId: input.teamId, rawEventId: input.rawEventId });
 }
 
+function billingEnrichmentDeferred(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const value = (metadata as Record<string, unknown>).billing_enrichment_deferred;
+  return value === true || value === 'true';
+}
+
 async function normalizeRawEventEvidence(input: {
   db: Db;
   teamId: string;
@@ -2920,13 +2926,18 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           await invalidateObjectSummariesForRawEvent(db, core, id, {
             trigger: 'raw_event_visibility_hidden',
           });
-        } else if (existing.visibility !== 'team' && updated.visibility === 'team') {
+        } else if (
+          existing.visibility !== 'team' &&
+          updated.visibility === 'team' &&
+          !billingEnrichmentDeferred(updated.sourceMetadata)
+        ) {
           await (deps.enqueueRawEventEmbed ?? enqueueRawEventEmbed)({
             teamId,
             rawEventId: id,
           }).catch(() => {
-            // The row is already visible in Postgres; janitor/retry paths can
-            // reconcile the embedding if Redis is temporarily unavailable.
+            // The row is already visible in Postgres; the accepted-source flush
+            // embeds it after admission. A Redis miss on an already-admitted
+            // row is recovered by the orphan reconciler.
           });
           await invalidateObjectSummariesForRawEvent(
             db,

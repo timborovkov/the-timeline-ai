@@ -10,7 +10,10 @@ import type { LanguageModel } from 'ai';
 
 import { runWorkerBilling } from '#src/billing/runtime.js';
 import { resetEnvForTests } from '#src/env.js';
+import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
+import { extractionResultSchema } from '#src/extract/schema.js';
 import { chatStructured } from '#src/llm/chat.js';
+import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
@@ -98,5 +101,85 @@ describe('structured billing operation ids', () => {
       ),
     ).toBe(true);
     expect(new Set(operationIds).size).toBe(2);
+  });
+
+  it('settles OpenRouter cost when json_object fallback JSON fails the schema', async () => {
+    process.env.AUTH_SECRET = 'a'.repeat(32);
+    process.env.DATABASE_URL = 'postgres://x:y@localhost:5432/x';
+    process.env.OPENROUTER_API_KEY = 'sk-test-key';
+    process.env.OPENROUTER_BASE_URL = 'https://example.test/v1';
+    resetEnvForTests();
+    const fetchStub: typeof fetch = (_url, init) => {
+      if (typeof init?.body !== 'string') throw new Error('expected request body');
+      const request = z
+        .object({
+          model: z.string(),
+          response_format: z.object({ type: z.string() }),
+        })
+        .parse(JSON.parse(init.body));
+      if (request.response_format.type === 'json_schema') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: { message: 'Provider rejected json_schema for this route' },
+            }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: `chatcmpl-schema-invalid-${request.model}`,
+            object: 'chat.completion',
+            created: 0,
+            model: request.model,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content: JSON.stringify({ facts: [{ text: 42 }] }),
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: {
+              prompt_tokens: 1,
+              completion_tokens: 1,
+              total_tokens: 2,
+              cost: request.model === TIMELINE_MODELS.extraction.id ? 0.03 : 0.04,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    await expect(
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'suggestions',
+        () =>
+          chatStructured(
+            {
+              schema: extractionResultSchema,
+              prompt: 'Extract facts from: Heading out for lunch.',
+              instructions: EXTRACTION_SYSTEM_PROMPT,
+            },
+            { fetch: fetchStub },
+          ),
+        { operationId: 'suggestions:schema-invalid-fallback' },
+      ),
+    ).rejects.toThrow('llm.chatStructured failed');
+
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const attempt = ledger.find((row) => row.operationId.includes(':failed:'));
+    expect(attempt?.customerChargeCents).toBeGreaterThan(0);
+    expect(attempt?.metadata).toMatchObject({ openrouter_usd: 0.07 });
   });
 });
