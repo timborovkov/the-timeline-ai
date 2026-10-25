@@ -555,7 +555,13 @@ async function upsertPaidSubscription(input: {
           updatedAt: now,
         },
       });
-    await recordBillingPlan(tx as unknown as Db, input.teamId, input.plan, now);
+    await recordBillingPlan(
+      tx as unknown as Db,
+      input.teamId,
+      input.plan,
+      now,
+      existing ? { planId: existing.planId, effectiveAt: existing.createdAt } : undefined,
+    );
     if (trackedSubscriptionId && polarSubscriptionId) {
       return {
         applied: true,
@@ -745,12 +751,23 @@ async function cancelMatchingSubscription(input: {
   teamId: string;
   subscriptionId: string | undefined;
   incomingModifiedAt: Date | null;
-}): Promise<void> {
-  if (!input.subscriptionId) return;
-  await input.db.transaction(async (tx) => {
+  /**
+   * Maintenance sweep only. A webhook cancel still downgrades when Polar has
+   * already ended access, even if the stored schedule is missing or future.
+   */
+  dueBy?: Date;
+}): Promise<boolean> {
+  if (!input.subscriptionId) return false;
+  return input.db.transaction(async (tx) => {
     const existing = await lockBillingAccount(tx as unknown as Db, input.teamId);
-    if (!existing || existing.arrangement === 'comped') return;
-    if (existing.polarSubscriptionId !== input.subscriptionId) return;
+    if (!existing || existing.arrangement === 'comped') return false;
+    if (existing.polarSubscriptionId !== input.subscriptionId) return false;
+    if (
+      input.dueBy &&
+      (!existing.cancelEffectiveAt || existing.cancelEffectiveAt.getTime() > input.dueBy.getTime())
+    ) {
+      return false;
+    }
     if (
       !shouldApplyPaidSubscriptionUpdate({
         existing,
@@ -759,7 +776,7 @@ async function cancelMatchingSubscription(input: {
         incomingModifiedAt: input.incomingModifiedAt,
       })
     ) {
-      return;
+      return false;
     }
     const [grant] = await tx
       .select({ id: billingFreeGrants.id })
@@ -773,7 +790,8 @@ async function cancelMatchingSubscription(input: {
       .limit(1);
     const leavingEnterprise =
       existing.planId === 'enterprise' || existing.billingState === 'enterprise_active';
-    await tx
+    const downgradedAt = new Date();
+    const [downgraded] = await tx
       .update(teamBillingAccounts)
       .set({
         billingState: grant ? 'free' : 'restricted',
@@ -785,16 +803,28 @@ async function cancelMatchingSubscription(input: {
         enterprisePlatformFeeCents: null,
         ...(leavingEnterprise ? { priceOverride: null, priceOverrideExpiresAt: null } : {}),
         polarEventModifiedAt:
-          input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? new Date(),
-        updatedAt: new Date(),
+          input.incomingModifiedAt ?? existing.polarEventModifiedAt ?? downgradedAt,
+        updatedAt: downgradedAt,
       })
       .where(
         and(
           eq(teamBillingAccounts.teamId, input.teamId),
           eq(teamBillingAccounts.polarSubscriptionId, input.subscriptionId),
+          ...(input.dueBy
+            ? [
+                isNotNull(teamBillingAccounts.cancelEffectiveAt),
+                lte(teamBillingAccounts.cancelEffectiveAt, input.dueBy),
+              ]
+            : []),
         ),
-      );
-    await recordBillingPlan(tx as unknown as Db, input.teamId, 'free');
+      )
+      .returning({ teamId: teamBillingAccounts.teamId });
+    if (!downgraded) return false;
+    await recordBillingPlan(tx as unknown as Db, input.teamId, 'free', downgradedAt, {
+      planId: existing.planId,
+      effectiveAt: existing.createdAt,
+    });
+    return true;
   });
 }
 
@@ -802,6 +832,10 @@ async function cancelMatchingSubscription(input: {
 export async function applyElapsedScheduledCancellations(
   db: Db,
   now = new Date(),
+  hooks?: {
+    /** Test seam for a webhook that commits after the due-row read and before the lock. */
+    afterSelect?: () => Promise<void>;
+  },
 ): Promise<number> {
   const due = await db
     .select({
@@ -817,16 +851,18 @@ export async function applyElapsedScheduledCancellations(
         ne(teamBillingAccounts.arrangement, 'comped'),
       ),
     );
+  if (hooks?.afterSelect) await hooks.afterSelect();
   let applied = 0;
   for (const row of due) {
     if (!row.polarSubscriptionId) continue;
-    await cancelMatchingSubscription({
+    const downgraded = await cancelMatchingSubscription({
       db,
       teamId: row.teamId,
       subscriptionId: row.polarSubscriptionId,
       incomingModifiedAt: null,
+      dueBy: now,
     });
-    applied += 1;
+    if (downgraded) applied += 1;
   }
   return applied;
 }

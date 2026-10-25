@@ -117,6 +117,7 @@ describe('drizzle journal order', () => {
       '0080_billing_replay_corrections',
       '0082_billing_enterprise_platform_fee',
       '0085_billing_cancel_effective_at',
+      '0086_billing_plan_history_baseline',
     ]) {
       expect(byTag.get(tag), tag).toBeGreaterThan(mainBoundary);
     }

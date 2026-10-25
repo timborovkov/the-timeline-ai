@@ -398,6 +398,8 @@ describe('billing runtime', () => {
       SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 0,
           spend_cap_cents = 0, shadow_billing = false
       WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'payg', clock_timestamp() + INTERVAL '1 millisecond');
       INSERT INTO users (id, email) VALUES
         ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
         ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
@@ -791,6 +793,8 @@ describe('billing runtime', () => {
       SET plan_id = 'payg', billing_state = 'past_due', wallet_balance_cents = 5000,
           spend_cap_cents = 2500, shadow_billing = false
       WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'payg', clock_timestamp() + INTERVAL '1 millisecond');
       INSERT INTO users (id, email) VALUES
         ('21111111-2222-4333-8444-555555555555', 'm2@example.test'),
         ('31111111-2222-4333-8444-555555555555', 'm3@example.test'),
@@ -848,6 +852,8 @@ describe('billing runtime', () => {
       UPDATE team_billing_accounts
       SET plan_id = 'payg', billing_state = 'payg_active', wallet_balance_cents = 5000
       WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'payg', clock_timestamp() + INTERVAL '1 millisecond');
       UPDATE team_members SET created_at = '${twoDaysAgo}T00:00:00Z'
       WHERE team_id = '${TEAM_ID}' AND user_id = '${USER_ID}';
       INSERT INTO users (id, email) VALUES

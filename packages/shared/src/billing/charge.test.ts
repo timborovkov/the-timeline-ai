@@ -5,6 +5,7 @@ import {
   currentPeriodSpendCapExceeded,
   memberDayChargeDelta,
   memberDaysChargeCents,
+  includedDiscountWindowContaining,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
   polarCatalogUnitsForInvoiceCents,
@@ -511,6 +512,46 @@ describe('polar subscription price guard', () => {
         subscriptionCoversMeter: true,
       }),
     ).toBe('ingest');
+  });
+});
+
+describe('includedDiscountWindowContaining', () => {
+  it('places a usage day in the renewal window that contains it', () => {
+    const bounds = {
+      periodStartedAt: new Date('2026-09-15T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-10-15T00:00:00.000Z'),
+    };
+    expect(
+      includedDiscountWindowContaining({
+        ...bounds,
+        usageAt: new Date('2026-10-02T12:00:00.000Z'),
+      }),
+    ).toEqual({
+      startedAt: new Date('2026-09-15T00:00:00.000Z'),
+      endsAt: new Date('2026-10-15T00:00:00.000Z'),
+    });
+    expect(
+      includedDiscountWindowContaining({
+        ...bounds,
+        usageAt: new Date('2026-10-20T12:00:00.000Z'),
+      }),
+    ).toEqual({
+      startedAt: new Date('2026-10-15T00:00:00.000Z'),
+      endsAt: new Date('2026-11-15T00:00:00.000Z'),
+    });
+  });
+
+  it('keeps the February anchor when the usage day is in the next month', () => {
+    expect(
+      includedDiscountWindowContaining({
+        usageAt: new Date('2026-03-01T12:00:00.000Z'),
+        periodStartedAt: new Date('2026-02-15T00:00:00.000Z'),
+        periodEndsAt: new Date('2026-03-15T00:00:00.000Z'),
+      }),
+    ).toEqual({
+      startedAt: new Date('2026-02-15T00:00:00.000Z'),
+      endsAt: new Date('2026-03-15T00:00:00.000Z'),
+    });
   });
 });
 

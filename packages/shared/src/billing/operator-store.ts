@@ -129,7 +129,10 @@ async function lockAccount(tx: Db, teamId: string) {
     })
     .onConflictDoNothing()
     .returning();
-  if (created) return created;
+  if (created) {
+    await recordBillingPlan(tx, teamId, 'free', created.createdAt);
+    return created;
+  }
   const [again] = await tx
     .select()
     .from(teamBillingAccounts)
@@ -241,7 +244,10 @@ export async function assignCompedPlan(input: {
       .where(eq(teamBillingAccounts.teamId, input.teamId))
       .returning();
     if (!updated) throw new BillingOperatorError('Failed to assign the comp.');
-    await recordBillingPlan(db, input.teamId, input.entitlementsPlanId, now);
+    await recordBillingPlan(db, input.teamId, input.entitlementsPlanId, now, {
+      planId: existing.planId,
+      effectiveAt: existing.createdAt,
+    });
     await writeAudit({
       tx: db,
       teamId: input.teamId,
@@ -320,7 +326,10 @@ export async function clearCompedPlan(input: {
       .where(eq(teamBillingAccounts.teamId, input.teamId))
       .returning();
     if (!updated) throw new BillingOperatorError('Failed to clear the comp.');
-    await recordBillingPlan(db, input.teamId, 'free', now);
+    await recordBillingPlan(db, input.teamId, 'free', now, {
+      planId: existing.planId,
+      effectiveAt: existing.createdAt,
+    });
     await writeAudit({
       tx: db,
       teamId: input.teamId,

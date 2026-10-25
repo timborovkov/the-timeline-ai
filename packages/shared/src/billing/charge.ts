@@ -598,6 +598,40 @@ function addUtcMonths(anchor: Date, months: number, anchorDay: number): Date {
 }
 
 /**
+ * Subscription window that contains `usageAt`. Steps by the stored renewal
+ * span and anchor day, including windows before the current one. With no
+ * stored bounds, the window is the UTC calendar month.
+ */
+export function includedDiscountWindowContaining(input: {
+  usageAt: Date;
+  periodStartedAt: Date | null;
+  periodEndsAt: Date | null;
+}): { startedAt: Date; endsAt: Date } {
+  const { usageAt, periodStartedAt, periodEndsAt } = input;
+  if (periodStartedAt && periodEndsAt && periodEndsAt.getTime() > periodStartedAt.getTime()) {
+    const anchorDay = periodStartedAt.getUTCDate();
+    const span = Math.max(1, utcMonthIndex(periodEndsAt) - utcMonthIndex(periodStartedAt));
+    let steps = Math.floor((utcMonthIndex(usageAt) - utcMonthIndex(periodStartedAt)) / span) * span;
+    for (let guard = 0; guard < 36; guard += 1) {
+      const startedAt = addUtcMonths(periodStartedAt, steps, anchorDay);
+      const endsAt = addUtcMonths(periodStartedAt, steps + span, anchorDay);
+      if (usageAt.getTime() < startedAt.getTime()) {
+        steps -= span;
+        continue;
+      }
+      if (usageAt.getTime() >= endsAt.getTime()) {
+        steps += span;
+        continue;
+      }
+      return { startedAt, endsAt };
+    }
+  }
+  const startedAt = new Date(Date.UTC(usageAt.getUTCFullYear(), usageAt.getUTCMonth(), 1));
+  const endsAt = new Date(Date.UTC(usageAt.getUTCFullYear(), usageAt.getUTCMonth() + 1, 1));
+  return { startedAt, endsAt };
+}
+
+/**
  * Advance a closed subscription window by its calendar-month span, using the
  * original anchor day. A February window therefore renews on the same day in
  * March, not one short month later. Returns null while the window is open.

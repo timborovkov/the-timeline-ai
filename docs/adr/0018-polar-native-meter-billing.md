@@ -116,8 +116,16 @@ credit hides margin and confuses prospects.
    set or `ends_at` is still in the future, and stores `cancel_effective_at`.
    Access ends on `subscription.revoked` or when that timestamp has passed. The
    janitor applies elapsed `cancel_effective_at` rows before the included-discount
-   refill. An active webhook that sets `cancel_at_period_end` false, or sends
-   `ends_at` null, clears the schedule. Paid-plan
+   refill. That sweep rechecks the stored timestamp under the billing-account
+   lock and skips the downgrade when an uncancel has cleared it or moved it
+   into the future. An active webhook that sets `cancel_at_period_end` false, or sends
+   `ends_at` null, clears the schedule. A Free plan-history row is written when
+   the billing account is created. The first later transition records the
+   outgoing plan when history is empty. Accounts whose earliest stored row is
+   a paid plan receive a Free row at account creation, or one millisecond
+   before that paid row when creation is not earlier. Replay included discount
+   uses the subscription renewal window that contains the usage day. A calendar
+   month remains the window only when the account has no stored renewal bounds. Paid-plan
    activation writes the catalog default spend cap when the row is still Free;
    later `subscription.updated` / renewal events preserve an administrator-selected
    paid cap, including €0 as a hard stop. An active subscription update does not
@@ -254,8 +262,9 @@ credit hides margin and confuses prospects.
    workspace delays the BullMQ job instead of failing it. Janitor storage
    snapshots backfill missed days across the full 31-day lookback, including the
    previous calendar month, from absent storage operation ids. Each day is priced
-   on the plan effective that day and counted in that day's month. A prior month
-   does not draw the live included discount. Same-plan overage is still invoiced.
+   on the plan effective that day and counted in that day's month. Included
+   discount for that day comes from the renewal window that contains it when that
+   window or the plan differs from the live one. Same-plan overage is still invoiced.
    Closed document absence intervals are excluded. Delivered email whose
    settlement fails stays reserved for the janitor and is not resent. Reservation
    expiry locks the billing account before the reservation row. Paid-plan changes reuse the Polar subscription id in `past_due`,

@@ -30,6 +30,7 @@ import {
 import {
   cumulativeChargeDeltaCents,
   daysInPeriodYm,
+  includedDiscountWindowContaining,
   memberDayChargeDelta,
   nextIncludedDiscountPeriod,
 } from '#src/billing/charge.js';
@@ -534,6 +535,18 @@ export async function snapshotTeamStorageGbMonth(input: {
     const gbMonthSlice = gb / daysInUtcMonth(new Date(`${day}T00:00:00.000Z`));
     const replayPeriodYm = day.slice(0, 7);
     const usageAt = new Date(`${day}T12:00:00.000Z`);
+    const periodStartedAt = account?.periodStartedAt ?? null;
+    const periodEndsAt = account?.periodEndsAt ?? null;
+    const usageWindow = includedDiscountWindowContaining({
+      usageAt,
+      periodStartedAt,
+      periodEndsAt,
+    });
+    const liveWindow = includedDiscountWindowContaining({
+      usageAt: new Date(),
+      periodStartedAt,
+      periodEndsAt,
+    });
     const previous = await currentMeterNativeUnits(
       input.db,
       input.teamId,
@@ -547,14 +560,16 @@ export async function snapshotTeamStorageGbMonth(input: {
       account: account ?? { planId: 'free' },
     });
     const differentPlan = pricingPlanId !== livePlan;
-    const priorPeriod = replayPeriodYm !== periodYm();
+    const sameDiscountWindow = usageWindow.startedAt.getTime() === liveWindow.startedAt.getTime();
     const historicalIncludedDiscountCents =
-      differentPlan || priorPeriod
+      differentPlan || !sameDiscountWindow
         ? await includedDiscountRemainingForReplay({
             db: input.db,
             teamId: input.teamId,
             planId: pricingPlanId,
-            periodYm: replayPeriodYm,
+            usageAt,
+            periodStartedAt,
+            periodEndsAt,
           })
         : undefined;
     const result = await settleTeamMeter({

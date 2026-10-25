@@ -56,6 +56,7 @@ import {
   localChargeSpendCapApplies,
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
+import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
 import {
   expireStaleBillingReservations,
@@ -443,7 +444,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
       })
       .onConflictDoNothing()
       .returning();
-    if (created) return created;
+    if (created) {
+      await recordBillingPlan(db, teamId, 'free', created.createdAt);
+      return created;
+    }
     const again = await db
       .select()
       .from(teamBillingAccounts)
@@ -1297,6 +1301,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 ...(input.metadata ?? {}),
                 ...(input.pricingPlanId ? { pricing_plan_id: input.pricingPlanId } : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
+                ...(input.usageAt ? { usage_at: input.usageAt.toISOString() } : {}),
                 list_charge_cents: listChargeCents,
                 discount_cents: discountCents,
                 invoice_cents: invoiceCents,

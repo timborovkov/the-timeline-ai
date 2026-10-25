@@ -1,10 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingUsageLedger, type Db } from '@timeline/db';
+import { billingPlanHistory, billingUsageLedger, teamBillingAccounts, type Db } from '@timeline/db';
+import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  backfillFreePlanBaselines,
+  billingPlanIdOnDay,
   includedDiscountRemainingForReplay,
+  recordBillingPlan,
   settlementMatchesDiscountPeriod,
 } from '#src/billing/plan-history.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
@@ -121,7 +125,9 @@ describe('included discount remaining for replay', () => {
         db,
         teamId: TEAM_ID,
         planId: 'team',
-        periodYm: '2026-09',
+        usageAt: new Date('2026-09-15T12:00:00.000Z'),
+        periodStartedAt: null,
+        periodEndsAt: null,
       }),
     ).resolves.toBe(5_900);
     await expect(
@@ -129,8 +135,137 @@ describe('included discount remaining for replay', () => {
         db,
         teamId: TEAM_ID,
         planId: 'team',
-        periodYm: '2026-10',
+        usageAt: new Date('2026-10-15T12:00:00.000Z'),
+        periodStartedAt: null,
+        periodEndsAt: null,
       }),
     ).resolves.toBe(5_950);
+  });
+
+  it('shares one renewal window across the calendar months it spans', async () => {
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: `storage_gb:${TEAM_ID}:2026-09-20`,
+      kind: 'settlement',
+      meterId: 'storage_gb_month',
+      nativeUnits: '1',
+      customerChargeCents: 25,
+      metadata: {
+        discount_cents: 100,
+        pricing_period_ym: '2026-09',
+        usage_at: '2026-09-20T12:00:00.000Z',
+      },
+      occurredAt: new Date('2026-10-15T12:00:00.000Z'),
+    });
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: `storage_gb:${TEAM_ID}:2026-10-02`,
+      kind: 'settlement',
+      meterId: 'storage_gb_month',
+      nativeUnits: '1',
+      customerChargeCents: 25,
+      metadata: { discount_cents: 50, pricing_period_ym: '2026-10' },
+      occurredAt: new Date('2026-10-16T12:00:00.000Z'),
+    });
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: `storage_gb:${TEAM_ID}:2026-10-20`,
+      kind: 'settlement',
+      meterId: 'storage_gb_month',
+      nativeUnits: '1',
+      customerChargeCents: 25,
+      metadata: { discount_cents: 25, pricing_period_ym: '2026-10' },
+      occurredAt: new Date('2026-10-20T12:00:00.000Z'),
+    });
+    const bounds = {
+      periodStartedAt: new Date('2026-09-15T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-10-15T00:00:00.000Z'),
+    };
+    await expect(
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: new Date('2026-09-20T12:00:00.000Z'),
+        ...bounds,
+      }),
+    ).resolves.toBe(5_850);
+    await expect(
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: new Date('2026-10-20T12:00:00.000Z'),
+        ...bounds,
+      }),
+    ).resolves.toBe(5_975);
+  });
+});
+
+describe('free plan baseline', () => {
+  let pg: PGlite;
+  let db: Db;
+
+  beforeEach(async () => {
+    pg = new PGlite();
+    await applyDbMigrations(pg);
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${TEAM_ID}', 'plan-baseline', 'Plan Baseline');
+    `);
+    db = drizzle(pg) as unknown as Db;
+  });
+
+  afterEach(async () => {
+    await pg.close();
+  });
+
+  async function planOn(day: string) {
+    return billingPlanIdOnDay({
+      db,
+      teamId: TEAM_ID,
+      day,
+      account: { planId: 'team' },
+    });
+  }
+
+  it('keeps days before the first upgrade on the outgoing Free plan', async () => {
+    await db.insert(teamBillingAccounts).values({
+      teamId: TEAM_ID,
+      planId: 'team',
+      billingState: 'team_active',
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    });
+    await recordBillingPlan(db, TEAM_ID, 'team', new Date('2026-09-01T00:00:00.000Z'), {
+      planId: 'free',
+      effectiveAt: new Date('2026-08-01T00:00:00.000Z'),
+    });
+    await expect(planOn('2026-08-15')).resolves.toBe('free');
+    await expect(planOn('2026-09-02')).resolves.toBe('team');
+  });
+
+  it('backfills a Free row before an existing paid history row', async () => {
+    await db.insert(teamBillingAccounts).values({
+      teamId: TEAM_ID,
+      planId: 'team',
+      billingState: 'team_active',
+      createdAt: new Date('2026-08-01T00:00:00.000Z'),
+    });
+    await db.insert(billingPlanHistory).values({
+      teamId: TEAM_ID,
+      planId: 'team',
+      effectiveAt: new Date('2026-09-01T00:00:00.000Z'),
+    });
+    await expect(planOn('2026-08-15')).resolves.toBe('team');
+    await expect(backfillFreePlanBaselines(db)).resolves.toBe(1);
+    await expect(backfillFreePlanBaselines(db)).resolves.toBe(0);
+    await expect(planOn('2026-08-15')).resolves.toBe('free');
+    await expect(planOn('2026-09-02')).resolves.toBe('team');
+    const rows = await db
+      .select({ planId: billingPlanHistory.planId })
+      .from(billingPlanHistory)
+      .where(eq(billingPlanHistory.teamId, TEAM_ID))
+      .orderBy(asc(billingPlanHistory.effectiveAt));
+    expect(rows.map((row) => row.planId)).toEqual(['free', 'team']);
   });
 });

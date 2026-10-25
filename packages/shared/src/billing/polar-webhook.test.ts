@@ -1183,6 +1183,79 @@ describe('handlePolarWebhookEvent', () => {
     expect(resumed.cancelEffectiveAt).toBeNull();
   });
 
+  it('does not downgrade when an uncancel lands before the sweep locks the account', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'payg', billing_state = 'payg_active',
+          polar_subscription_id = 'sub_resume',
+          cancel_effective_at = '2099-06-01T00:00:00.000Z',
+          polar_event_modified_at = '2099-05-02T00:00:00.000Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const applied = await applyElapsedScheduledCancellations(
+      db,
+      new Date('2099-06-02T00:00:00.000Z'),
+      {
+        afterSelect: async () => {
+          await pg.exec(`
+            UPDATE team_billing_accounts
+            SET cancel_effective_at = NULL,
+                polar_event_modified_at = '2099-06-02T00:00:00.000Z'
+            WHERE team_id = '${TEAM_ID}';
+          `);
+        },
+      },
+    );
+    expect(applied).toBe(0);
+    const kept = await billing.getAccount();
+    expect(kept.planId).toBe('payg');
+    expect(kept.billingState).toBe('payg_active');
+    expect(kept.polarSubscriptionId).toBe('sub_resume');
+    expect(kept.cancelEffectiveAt).toBeNull();
+  });
+
+  it('does not downgrade when the locked cancel is no longer due', async () => {
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'team', billing_state = 'team_active',
+          polar_subscription_id = 'sub_later',
+          cancel_effective_at = '2099-07-01T00:00:00.000Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const applied = await applyElapsedScheduledCancellations(
+      db,
+      new Date('2099-07-02T00:00:00.000Z'),
+      {
+        afterSelect: async () => {
+          await pg.exec(`
+            UPDATE team_billing_accounts
+            SET cancel_effective_at = '2099-08-01T00:00:00.000Z'
+            WHERE team_id = '${TEAM_ID}';
+          `);
+        },
+      },
+    );
+    expect(applied).toBe(0);
+    const kept = await billing.getAccount();
+    expect(kept.planId).toBe('team');
+    expect(kept.polarSubscriptionId).toBe('sub_later');
+    expect(kept.cancelEffectiveAt?.toISOString()).toBe('2099-08-01T00:00:00.000Z');
+  });
+
   it('drops a canceled Enterprise contract before a later self-serve plan', async () => {
     const billing = createBillingScope({
       db,

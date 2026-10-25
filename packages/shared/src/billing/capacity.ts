@@ -21,6 +21,7 @@ import { CAPACITY_BY_PLAN, PLAN_CATALOG, type BillingPlanId } from '#src/billing
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
 import { BillingAdmissionError } from '#src/billing/errors.js';
 import { effectiveBillingPlanId } from '#src/billing/operator.js';
+import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { billingStateAllowsReservation, type PlanCapacityUsageRow } from '#src/billing/status.js';
@@ -95,7 +96,7 @@ export async function insertRestrictedFreeBillingAccount(input: {
   db: Pick<Db, 'insert' | 'update' | 'select'>;
   teamId: string;
 }): Promise<void> {
-  await input.db
+  const [created] = await input.db
     .insert(teamBillingAccounts)
     .values({
       teamId: input.teamId,
@@ -104,7 +105,10 @@ export async function insertRestrictedFreeBillingAccount(input: {
       spendCapCents: 0,
       shadowBilling: true,
     })
-    .onConflictDoNothing();
+    .onConflictDoNothing()
+    .returning();
+  if (!created) return;
+  await recordBillingPlan(input.db as Db, input.teamId, 'free', created.createdAt);
 }
 
 /**

@@ -233,20 +233,23 @@ PLATFORM_ADMIN_EMAILS=
         previous interval to <code>prior_intervals</code>. A leftover Free team stays unrestricted
         while another owner's grant remains assigned. Storage snapshots backfill missed days across
         the 31-day lookback, price each day on the plan in force then, and count that day in its own
-        month. Replay included discount counts <code>pricing_period_ym</code> when that tag is set,
-        then <code>polar_ingest_period_ym</code>, and uses the ledger time only when neither tag is
-        set. A prior month is recorded on that month and is not compared to the live spend cap. Only
-        a positive charge in the current UTC period can freeze on that cap. Member-days and storage
-        days with no stamp yet share one helper: plan history, then comp expiry (Free after
-        <code>comp_expires_at</code>), while a contractual Enterprise plan stays Enterprise. A day
-        before expiry keeps the comped plan's price. An existing member-day stamp still wins.
-        Restoring a document keeps the closed absence interval so those days are not billed again.
-        Slack/Telegram/MCP Ask and web chat save the completed cost before settle and keep the
-        reservation when settlement fails so the janitor can retry it. Paid-plan changes reuse the
-        Polar subscription in non-active paid states. Extra-member plan preview prorates from period
-        member-days, including person-days when the current plan has no extras. Inbound email audio
-        skipped for a denied email meter is flushed by the janitor when billing can reserve again.
-        Denied inbound-email parent enrichment is stamped
+        month. Replay included discount uses the subscription renewal window that contains the usage
+        day. Calendar-month tags still place an untimed row, and the ledger time is used only when
+        neither a usage instant nor a period tag is set. The janitor rechecks
+        <code>cancel_effective_at</code> under the account lock before a scheduled downgrade. A Free
+        plan-history row is stored at account creation, and the first paid history row is backfilled
+        with that baseline. A prior month is recorded on that month and is not compared to the live
+        spend cap. Only a positive charge in the current UTC period can freeze on that cap.
+        Member-days and storage days with no stamp yet share one helper: plan history, then comp
+        expiry (Free after <code>comp_expires_at</code>), while a contractual Enterprise plan stays
+        Enterprise. A day before expiry keeps the comped plan's price. An existing member-day stamp
+        still wins. Restoring a document keeps the closed absence interval so those days are not
+        billed again. Slack/Telegram/MCP Ask and web chat save the completed cost before settle and
+        keep the reservation when settlement fails so the janitor can retry it. Paid-plan changes
+        reuse the Polar subscription in non-active paid states. Extra-member plan preview prorates
+        from period member-days, including person-days when the current plan has no extras. Inbound
+        email audio skipped for a denied email meter is flushed by the janitor when billing can
+        reserve again. Denied inbound-email parent enrichment is stamped
         <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
         accepted-source meter. That marker stays set until every pending attachment has been read,
         stored, queued for extract, and linked on the parent. Deferred accepted-source flush rotates
