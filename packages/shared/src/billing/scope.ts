@@ -60,6 +60,7 @@ import { recordBillingPlan } from '#src/billing/plan-history.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
 import {
   expireStaleBillingReservations,
+  failedAttemptSettlementMetadata,
   reservationKeepsProviderResult,
 } from '#src/billing/reservations.js';
 import { accountUsesShadowBilling } from '#src/billing/shadow.js';
@@ -987,6 +988,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }
         }
 
+        const preservedFailedAttempts = failedAttemptSettlementMetadata(existing.metadata);
         const [reactivated] = await tx
           .update(billingUsageReservations)
           .set({
@@ -995,7 +997,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
             reservedChargeCents: invoiceCents,
             state: 'reserved',
             expiresAt,
-            metadata: reservationMetadata,
+            metadata: preservedFailedAttempts
+              ? { ...reservationMetadata, ...preservedFailedAttempts }
+              : reservationMetadata,
             createdAt: new Date(),
             updatedAt: new Date(),
           })
@@ -1301,7 +1305,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 ...(input.metadata ?? {}),
                 ...(input.pricingPlanId ? { pricing_plan_id: input.pricingPlanId } : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
-                ...(input.usageAt ? { usage_at: input.usageAt.toISOString() } : {}),
+                usage_at: startedAt.toISOString(),
                 list_charge_cents: listChargeCents,
                 discount_cents: discountCents,
                 invoice_cents: invoiceCents,

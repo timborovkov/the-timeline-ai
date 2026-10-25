@@ -194,8 +194,10 @@ function calendarMonthWindow(window: { startedAt: Date; endsAt: Date }): boolean
 
 /**
  * When the usage happened. `usage_at` wins, then a day embedded in the
- * operation id. A month tag is the 15th of that month so the row is not placed
- * on the day it was written. Untagged rows use the ledger time.
+ * operation id. Live settlements stamp `usage_at`, so a month tag does not
+ * move them to the 15th. A month tag with no instant is the 15th of that
+ * month so a backfill is not placed on the day it was written. Untagged rows
+ * use the ledger time.
  */
 function settlementUsageInstant(row: {
   operationId: string;

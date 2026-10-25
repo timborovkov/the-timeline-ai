@@ -1118,6 +1118,111 @@ describe('billing runtime', () => {
     expect(reservation?.state).toBe('released');
   });
 
+  it('recovers a failed provider attempt when settlement cannot commit', async () => {
+    await pg.exec(`
+      CREATE OR REPLACE FUNCTION fail_billing_settlement() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.kind = 'settlement' THEN
+          RAISE EXCEPTION 'settlement down';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+      CREATE TRIGGER fail_billing_settlement
+      BEFORE INSERT ON billing_usage_ledger
+      FOR EACH ROW EXECUTE FUNCTION fail_billing_settlement();
+    `);
+    const operationId = 'embedding:failed-attempt-retry';
+    let calls = 0;
+    const fail = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', operationId, model: 'embed-test' }, () => {
+            calls += 1;
+            return Promise.reject(Object.assign(new Error('bad json'), { openRouterUsd: 0.03 }));
+          }),
+        { operationId },
+      );
+    await expect(fail()).rejects.toThrow('bad json');
+    expect(calls).toBe(1);
+    const [pending] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(pending?.state).toBe('reserved');
+    expect(pending?.metadata).toMatchObject({
+      pending_failed_attempt_settlement: true,
+      pending_failed_attempts: [
+        {
+          operation_id: `${operationId}:failed:1`,
+          operation_class: 'embedding',
+          model: 'embed-test',
+          openrouter_usd: 0.03,
+        },
+      ],
+    });
+    const usageAt = /"usage_at":"([^"]+)"/.exec(JSON.stringify(pending?.metadata))?.[1] ?? '';
+    expect(usageAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    const ledgerBefore = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(ledgerBefore).toHaveLength(0);
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET expires_at = NOW() - INTERVAL '1 hour'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+    `);
+    expect(await expireStaleBillingReservations({ db, teamId: TEAM_ID })).toBe(0);
+    await expect(fail()).rejects.toThrow(/billing_usage_ledger/);
+    expect(calls).toBe(1);
+    await pg.exec('DROP TRIGGER fail_billing_settlement ON billing_usage_ledger;');
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [attemptLedger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `${operationId}:failed:1`));
+    expect(attemptLedger?.metadata).toMatchObject({
+      failed_attempt_for: operationId,
+      usage_at: usageAt,
+    });
+    const ledgerUsd = attemptLedger?.metadata.openrouter_usd;
+    expect(typeof ledgerUsd).toBe('number');
+    if (typeof ledgerUsd === 'number') expect(ledgerUsd).toBeCloseTo(0.03);
+    const [released] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.operationId, operationId));
+    expect(released?.state).toBe('released');
+    const recovered = await runWorkerBilling(
+      db,
+      TEAM_ID,
+      'embedding',
+      () =>
+        withAiMetering({ operationClass: 'embedding', operationId, model: 'embed-test' }, () => {
+          calls += 1;
+          return Promise.resolve({
+            value: { text: 'second' },
+            finish: { usage: { cost: 0.01 } },
+          });
+        }),
+      { operationId },
+    );
+    expect(recovered).toEqual({ text: 'second' });
+    expect(calls).toBe(2);
+    const operationIds = (
+      await db
+        .select({ operationId: billingUsageLedger.operationId })
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, TEAM_ID))
+    ).map((row) => row.operationId);
+    expect(operationIds).toEqual(expect.arrayContaining([operationId, `${operationId}:failed:1`]));
+    expect(operationIds).not.toContain(`${operationId}:failed:2`);
+  });
+
   it('refuses a job operation id that has no per-call material', async () => {
     await expect(
       runWorkerBilling(

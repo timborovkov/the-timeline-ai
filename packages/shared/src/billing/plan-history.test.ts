@@ -200,6 +200,52 @@ describe('included discount remaining for replay', () => {
       }),
     ).resolves.toBe(5_975);
   });
+
+  it('keeps a stamped live settlement in the renewal window that contains usage_at', async () => {
+    const renewal = {
+      periodStartedAt: new Date('2026-10-10T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-11-10T00:00:00.000Z'),
+    };
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:live-before-renewal',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '40',
+      customerChargeCents: 40,
+      metadata: {
+        discount_cents: 100,
+        polar_ingest_period_ym: '2026-10',
+        usage_at: '2026-10-05T08:15:00.000Z',
+      },
+      occurredAt: new Date('2026-10-25T13:00:00.000Z'),
+    });
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:untimed-october',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '20',
+      customerChargeCents: 20,
+      metadata: {
+        discount_cents: 50,
+        polar_ingest_period_ym: '2026-10',
+      },
+      occurredAt: new Date('2026-10-25T13:00:00.000Z'),
+    });
+
+    const remaining = (usageAt: string) =>
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: new Date(usageAt),
+        ...renewal,
+      });
+
+    await expect(remaining('2026-10-05T08:15:00.000Z')).resolves.toBe(5_900);
+    await expect(remaining('2026-10-20T12:00:00.000Z')).resolves.toBe(5_950);
+  });
 });
 
 describe('free plan baseline', () => {

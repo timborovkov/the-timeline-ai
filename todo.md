@@ -741,7 +741,8 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       attempts still contribute OpenRouter `usage.cost`. Recall minutes that span UTC months
       split across those periods. Background AI metering keeps the reservation if settle fails
       after a successful provider call and reuses the BullMQ job id. A thrown call that already
-      reported usage settles that attempt, then releases. Transcription chunks use distinct
+      reported usage stores that attempt before settle and releases only after the ledger row
+      commits. Transcription chunks use distinct
       operation ids. Ask and web chat save the completed cost before settle and the janitor retries
       a failed settlement. Storage replay uses the plan effective that day, counts that day in its
       own month, does not apply that month's spend to the live cap, and skips closed document
@@ -770,6 +771,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       from indexed-chunk capacity; restore counts those chunks. Accepted-source replay meters
       existing dedup rows. Web chat settles known compression cost when the answer stream fails.
       Completed Ask tool rounds accumulate per step and settle when a later model step errors.
+      Live settlements stamp <code>usage_at</code>, and a renewal replay uses that instant instead of the month midpoint.
       `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
       Enterprise has no self-serve checkout. `withAiMetering` skips OpenRouter when the durable operation already
       completed, and stamps `worker_settlement_pending` so the janitor can settle a

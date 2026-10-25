@@ -124,8 +124,10 @@ credit hides margin and confuses prospects.
    outgoing plan when history is empty. Accounts whose earliest stored row is
    a paid plan receive a Free row at account creation, or one millisecond
    before that paid row when creation is not earlier. Replay included discount
-   uses the subscription renewal window that contains the usage day. A calendar
-   month remains the window only when the account has no stored renewal bounds. Paid-plan
+   uses the subscription renewal window that contains the usage day. Live
+   settlements stamp `usage_at`, and replay uses that instant. A month tag
+   with no instant stays on the 15th so a backfill is not placed on the write
+   day. A calendar month remains the window only when the account has no stored renewal bounds. Paid-plan
    activation writes the catalog default spend cap when the row is still Free;
    later `subscription.updated` / renewal events preserve an administrator-selected
    paid cap, including €0 as a hard stop. An active subscription update does not
@@ -153,8 +155,8 @@ credit hides margin and confuses prospects.
    An active bot `failed`/`fatal` path settles elapsed minutes the same way.
    Settlement errors on those terminal paths propagate so Recall webhooks can 503
    and retry; aborting a join after Recall accepted keeps the reservation when
-   leave fails so the janitor can retry leave. Slack/Telegram/MCP Ask and web chat record the completed OpenRouter cost on the reservation before settle and keep that reservation when settlement fails, so the janitor can retry it. A provider call that throws after OpenRouter reported usage settles that cost under `<operation>:failed:<n>` and then releases the work reservation. Worker AI metering reuses the BullMQ job id as the durable operation id, and each transcription chunk appends its index. Web chat also settles known compression cost when the
-   answer stream fails. Completed Ask tool rounds accumulate per step and settle when a later model step errors, on web and on Slack/Telegram Ask. Seat claims are blocked while billing is paused.
+   leave fails so the janitor can retry leave. Slack/Telegram/MCP Ask and web chat record the completed OpenRouter cost on the reservation before settle and keep that reservation when settlement fails, so the janitor can retry it. Worker AI metering reuses the BullMQ job id as the durable operation id, and each transcription chunk appends its index. Web chat also settles known compression cost when the
+   answer stream fails. Completed Ask tool rounds accumulate per step and settle when a later model step errors, on web and on Slack/Telegram Ask. Live settlements stamp `usage_at` from the reservation time, and a renewal replay uses that instant instead of the 15th of `polar_ingest_period_ym`. A provider call that throws after OpenRouter reported usage stores that attempt on the reservation before settle. The marker stays until that attempt's ledger row commits, and a retry records it before calling the provider again. Seat claims are blocked while billing is paused.
    Enterprise settlement does not freeze on the spend cap. Enterprise plan
    changes go through support or the Polar portal. `withAiMetering` skips the
    OpenRouter call when the durable operation is already settled or the reservation

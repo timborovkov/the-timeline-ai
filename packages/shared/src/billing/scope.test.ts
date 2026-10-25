@@ -17,6 +17,7 @@ import {
   polarMemberMonthUnits,
 } from '#src/billing/charge.js';
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
+import { includedDiscountRemainingForReplay } from '#src/billing/plan-history.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
 import { expireStaleBillingReservations } from '#src/billing/reservations.js';
 import {
@@ -1804,6 +1805,127 @@ describe('billing scope', () => {
     expect(again.ok).toBe(true);
     expect(lookups).toBe(1);
     expect(provider.events.length).toBeGreaterThan(0);
+  });
+
+  it('stamps a payable settlement with the reservation instant instead of the month midpoint', async () => {
+    const provider = createFakeBillingProvider();
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+      provider,
+    });
+    await scope.getAccount();
+    enableCoveredPolar('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 10, spend_cap_cents = 100000,
+          polar_customer_id = 'cus_team', polar_subscription_id = 'sub_team',
+          polar_product_id = '${POLAR_PRODUCT_IDS.team}',
+          period_started_at = '2026-10-10T00:00:00Z', period_ends_at = '2026-11-10T00:00:00Z'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const operationId = 'ai:live-mid-month';
+    const reserved = await scope.reserve({
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: 40,
+      reservedChargeCents: 40,
+    });
+    expect(reserved.ok).toBe(true);
+    await pg.exec(`
+      UPDATE billing_usage_reservations
+      SET created_at = '2026-10-05T08:15:00Z'
+      WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
+    `);
+    const settled = await scope.settle({
+      operationId,
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+      operationClass: 'embedding',
+      provider: 'openrouter',
+    });
+    expect(settled.ok).toBe(true);
+    expect(settled.duplicate).toBe(false);
+    if (settled.duplicate) return;
+    expect(settled.ledger.metadata).toMatchObject({
+      usage_at: '2026-10-05T08:15:00.000Z',
+      polar_ingest_period_ym: '2026-10',
+      discount_cents: 10,
+    });
+    const renewal = {
+      periodStartedAt: new Date('2026-10-10T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-11-10T00:00:00.000Z'),
+    };
+    await expect(
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: new Date('2026-10-05T08:15:00.000Z'),
+        ...renewal,
+      }),
+    ).resolves.toBe(5_990);
+    await expect(
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: new Date('2026-10-20T12:00:00.000Z'),
+        ...renewal,
+      }),
+    ).resolves.toBe(6_000);
+  });
+
+  it('keeps an unsettled failed attempt when a released reservation is reused', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    const operationId = 'embedding:preserve-failed';
+    const reserved = await scope.reserve({
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+    });
+    expect(reserved.ok).toBe(true);
+    await scope.patchReservationMetadata(operationId, {
+      pending_failed_attempt_settlement: true,
+      pending_failed_attempts: [
+        {
+          operation_id: `${operationId}:failed:1`,
+          openrouter_usd: 0.02,
+          usage_at: '2026-10-05T08:15:00.000Z',
+          operation_class: 'embedding',
+          billable: true,
+        },
+      ],
+    });
+    await scope.release(operationId);
+    const again = await scope.reserve({
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 1,
+    });
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.reservation.metadata).toMatchObject({
+      pending_failed_attempt_settlement: true,
+    });
+    const attempts = again.reservation.metadata.pending_failed_attempts;
+    expect(Array.isArray(attempts)).toBe(true);
+    expect(Array.isArray(attempts) ? attempts[0] : undefined).toMatchObject({
+      operation_id: `${operationId}:failed:1`,
+      usage_at: '2026-10-05T08:15:00.000Z',
+    });
   });
 
   it('counts open reservations against a comped Enterprise spend cap', async () => {

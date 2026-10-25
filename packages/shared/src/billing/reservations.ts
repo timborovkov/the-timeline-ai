@@ -14,6 +14,24 @@ export function reservationKeepsProviderResult(
   return metadata.worker_settlement_pending === true || metadata.provider_completed === true;
 }
 
+/**
+ * Failed provider usage saved before its ledger insert. Reusing a released
+ * reservation must keep this until that attempt's settlement commits.
+ */
+export function failedAttemptSettlementMetadata(
+  metadata: unknown,
+): { pending_failed_attempts: unknown[]; pending_failed_attempt_settlement: true } | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const record = metadata as Record<string, unknown>;
+  const attempts = record.pending_failed_attempts;
+  if (record.pending_failed_attempt_settlement !== true) return null;
+  if (!Array.isArray(attempts) || attempts.length === 0) return null;
+  return {
+    pending_failed_attempts: attempts,
+    pending_failed_attempt_settlement: true,
+  };
+}
+
 export async function expireStaleBillingReservations(input: {
   db: Db;
   teamId?: string;
@@ -26,6 +44,7 @@ export async function expireStaleBillingReservations(input: {
       sql`coalesce(${billingUsageReservations.metadata}->>'pending_settlement', '') <> 'true'`,
       sql`coalesce(${billingUsageReservations.metadata}->>'worker_settlement_pending', '') <> 'true'`,
       sql`coalesce(${billingUsageReservations.metadata}->>'provider_completed', '') <> 'true'`,
+      sql`coalesce(${billingUsageReservations.metadata}->>'pending_failed_attempt_settlement', '') <> 'true'`,
       ...(input.teamId ? [eq(billingUsageReservations.teamId, input.teamId)] : []),
     );
     // Lock billing accounts before reservation rows. Reserve, settle, and
