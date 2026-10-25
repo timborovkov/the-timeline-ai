@@ -274,14 +274,25 @@ export function RenameTeamForm({ currentName, teamId }: { currentName: string; t
   );
 }
 
+export function InboundEmailPlaceholderNotice() {
+  return (
+    <p className="text-sm text-fg-muted">
+      This team&apos;s inbound address is still a placeholder (@inbound.invalid). Mail sent here
+      will not be captured until inbound email is configured.
+    </p>
+  );
+}
+
 export function InboundEmailWhitelistForm({
   inboundEmail,
   enabled,
   senders,
+  placeholderInbound = false,
 }: {
   inboundEmail: string | null;
   enabled: boolean;
   senders: string[];
+  placeholderInbound?: boolean;
 }) {
   const [state, action] = useActionState<InboundEmailWhitelistState, FormData>(
     updateInboundEmailWhitelistAction,
@@ -301,6 +312,7 @@ export function InboundEmailWhitelistForm({
         copyLabel="Copy team email"
         description="Forward, CC, or BCC mail to this address to capture it on the timeline."
       />
+      {placeholderInbound ? <InboundEmailPlaceholderNotice /> : null}
       <label className="flex min-h-9 items-center gap-2 text-sm">
         <input
           type="checkbox"

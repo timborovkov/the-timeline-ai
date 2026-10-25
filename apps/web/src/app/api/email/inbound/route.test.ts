@@ -8,6 +8,12 @@ const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
   handleInbound: vi.fn(),
+  log: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
   queue: {
     enqueueExtractJob: vi.fn(),
     enqueueDocumentExtractJob: vi.fn(),
@@ -23,7 +29,7 @@ vi.mock('@/lib/queue', () => ({
 }));
 
 vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  childLogger: () => fakes.log,
 }));
 
 vi.mock('@timeline/shared/email', async () => {
@@ -84,10 +90,35 @@ describe('POST /api/email/inbound', () => {
     delete process.env.POSTMARK_WEBHOOK_SECRET;
     resetEnvForTests();
     expect((await POST(inboundRequest())).status).toBe(503);
+    expect(fakes.log.warn).toHaveBeenCalledWith(
+      { missing: ['POSTMARK_WEBHOOK_SECRET'] },
+      'inbound webhook disabled',
+    );
+    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('postmark-secret');
 
     process.env.POSTMARK_WEBHOOK_SECRET = 'postmark-secret';
     resetEnvForTests();
     expect((await POST(inboundRequest('wrong'))).status).toBe(401);
+    expect(fakes.log.warn).toHaveBeenCalledWith(
+      { clientIp: 'unknown' },
+      'inbound webhook unauthorized',
+    );
+    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('wrong');
+    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('Basic ');
+    expect(fakes.handleInbound).not.toHaveBeenCalled();
+  });
+
+  it('logs invalid JSON without retrying ingest', async () => {
+    const response = await POST(
+      new Request('https://timeline.test/api/email/inbound', {
+        method: 'POST',
+        headers: { authorization: auth(), 'content-type': 'application/json' },
+        body: '{',
+      }),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: false, reason: 'invalid_json' });
+    expect(fakes.log.warn).toHaveBeenCalledWith('inbound email dropped: invalid_json');
     expect(fakes.handleInbound).not.toHaveBeenCalled();
   });
 

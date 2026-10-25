@@ -46,6 +46,11 @@ export async function POST(req: Request): Promise<Response> {
     !env.POSTMARK_WEBHOOK_SECRET ||
     (!env.INBOUND_EMAIL_DOMAIN && !env.POSTMARK_INBOUND_ADDRESS)
   ) {
+    const missing = [
+      !env.POSTMARK_WEBHOOK_SECRET && 'POSTMARK_WEBHOOK_SECRET',
+      !env.INBOUND_EMAIL_DOMAIN && !env.POSTMARK_INBOUND_ADDRESS && 'INBOUND_EMAIL_DOMAIN',
+    ].filter((value): value is string => Boolean(value));
+    log.warn({ missing }, 'inbound webhook disabled');
     return Response.json({ ok: false, reason: 'webhook_disabled' }, { status: 503 });
   }
 
@@ -84,6 +89,7 @@ export async function POST(req: Request): Promise<Response> {
         );
       }
     }
+    log.warn({ clientIp: clientIp ?? 'unknown' }, 'inbound webhook unauthorized');
     return Response.json({ ok: false, reason: 'forbidden' }, { status: 401 });
   }
 
@@ -91,6 +97,7 @@ export async function POST(req: Request): Promise<Response> {
   try {
     payload = await req.json();
   } catch {
+    log.warn('inbound email dropped: invalid_json');
     return Response.json({ ok: false, reason: 'invalid_json' }, { status: 200 });
   }
 

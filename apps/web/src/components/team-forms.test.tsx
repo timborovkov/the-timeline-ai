@@ -93,6 +93,20 @@ describe('InboundEmailWhitelistForm', () => {
     expect(screen.getByLabelText<HTMLTextAreaElement>('Allowed senders').value).toBe(
       'ada@example.com, vendor@example.net',
     );
+    expect(screen.queryByText(/placeholder \(@inbound\.invalid\)/)).toBeNull();
+  });
+
+  it('flags a leftover @inbound.invalid placeholder address', () => {
+    render(
+      <InboundEmailWhitelistForm
+        inboundEmail={null}
+        enabled={false}
+        senders={[]}
+        placeholderInbound
+      />,
+    );
+
+    expect(screen.getByText(/placeholder \(@inbound\.invalid\)/)).toBeTruthy();
   });
 
   it('shows unconfigured, success, error, and pending states clearly', () => {
