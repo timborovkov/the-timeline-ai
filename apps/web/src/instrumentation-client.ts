@@ -15,6 +15,7 @@ if (dsn) {
   Sentry.init({
     dsn,
     tracesSampleRate,
+    tunnel: '/sentry-tunnel',
     dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
     beforeSend: scrubSentryEvent,
     beforeSendSpan: scrubSentrySpanEvent,

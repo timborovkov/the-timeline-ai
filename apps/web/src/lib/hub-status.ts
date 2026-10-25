@@ -58,13 +58,32 @@ export function attentionCount(...counts: number[]): number {
   return counts.reduce((sum, count) => sum + Math.max(0, count), 0);
 }
 
+export function isPlaceholderInboundEmail(inboundEmail: string | null | undefined): boolean {
+  return Boolean(inboundEmail?.toLowerCase().endsWith('@inbound.invalid'));
+}
+
+/**
+ * Warn only when the stored placeholder is also the address users would send
+ * to. A configured POSTMARK_INBOUND_ADDRESS hash mailbox is a real capture
+ * path even if the team row still holds `@inbound.invalid`.
+ */
+export function shouldWarnPlaceholderInboundEmail(
+  storedInboundEmail: string | null | undefined,
+  displayedInboundEmail: string | null,
+): boolean {
+  return (
+    isPlaceholderInboundEmail(storedInboundEmail) &&
+    (displayedInboundEmail === null || isPlaceholderInboundEmail(displayedInboundEmail))
+  );
+}
+
 export function displayInboundEmail(
   team: { slug: string; inboundEmail: string | null } | null,
   postmarkInboundAddress: string | undefined,
 ): string | null {
   if (!team) return null;
   const configuredAddress =
-    team.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid') ? team.inboundEmail : null;
+    team.inboundEmail && !isPlaceholderInboundEmail(team.inboundEmail) ? team.inboundEmail : null;
   return configuredAddress ?? composePostmarkHashAddress(team.slug, postmarkInboundAddress);
 }
 

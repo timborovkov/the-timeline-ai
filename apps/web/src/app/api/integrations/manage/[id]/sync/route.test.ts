@@ -52,6 +52,8 @@ beforeEach(() => {
     teamId: TEAM_ID,
     provider: 'monday',
     externalAccountId: 'acct-1',
+    healthPausedAt: null,
+    healthPauseKind: null,
   });
   fakes.recordAudit.mockResolvedValue(undefined);
   fakes.requireRedisQueue.mockResolvedValue({
@@ -114,6 +116,37 @@ describe('/api/integrations/manage/[id]/sync', () => {
         reason: 'daily_limit_exceeded',
         scope: 'daily',
         retryAt: retryAt.toISOString(),
+      },
+      INTEGRATION_ID,
+    );
+  });
+
+  it('rejects manual sync while the integration is health-paused', async () => {
+    fakes.getIntegration.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      provider: 'monday',
+      externalAccountId: 'acct-1',
+      healthPausedAt: new Date('2026-06-28T12:00:00.000Z'),
+      healthPauseKind: 'connectivity',
+    });
+
+    const response = await POST(new Request('https://timeline.test'), params());
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: 'health_paused',
+      pauseKind: 'connectivity',
+    });
+    expect(fakes.requireRedisQueue).not.toHaveBeenCalled();
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.recordAudit).toHaveBeenCalledWith(
+      'backfill_skipped:health',
+      {
+        actor: USER_ID,
+        provider: 'monday',
+        pauseKind: 'connectivity',
+        pausedAt: '2026-06-28T12:00:00.000Z',
       },
       INTEGRATION_ID,
     );

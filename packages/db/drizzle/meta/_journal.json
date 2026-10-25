@@ -530,84 +530,98 @@
     {
       "idx": 75,
       "version": "7",
-      "when": 1795654820000,
-      "tag": "0073_billing_foundation",
+      "when": 1795654860000,
+      "tag": "0075_mcp_oauth_server",
       "breakpoints": true
     },
     {
       "idx": 76,
       "version": "7",
-      "when": 1795654840000,
-      "tag": "0074_billing_usage_alert_intent",
+      "when": 1795654920000,
+      "tag": "0076_integration_health_pause",
       "breakpoints": true
     },
     {
       "idx": 77,
       "version": "7",
-      "when": 1795654860000,
-      "tag": "0075_billing_free_grant_backfill",
+      "when": 1795654980000,
+      "tag": "0073_billing_foundation",
       "breakpoints": true
     },
     {
       "idx": 78,
       "version": "7",
-      "when": 1795654920000,
-      "tag": "0076_billing_polar_clock_and_unverified_grants",
+      "when": 1795655000000,
+      "tag": "0074_billing_usage_alert_intent",
       "breakpoints": true
     },
     {
       "idx": 79,
       "version": "7",
-      "when": 1795654980000,
-      "tag": "0077_billing_member_day_plan_and_membership_intervals",
+      "when": 1795655020000,
+      "tag": "0075_billing_free_grant_backfill",
       "breakpoints": true
     },
     {
       "idx": 80,
       "version": "7",
-      "when": 1795655160000,
-      "tag": "0080_billing_replay_corrections",
+      "when": 1795655080000,
+      "tag": "0076_billing_polar_clock_and_unverified_grants",
       "breakpoints": true
     },
     {
       "idx": 81,
       "version": "7",
-      "when": 1795655170000,
-      "tag": "0078_billing_operator_controls",
+      "when": 1795655140000,
+      "tag": "0077_billing_member_day_plan_and_membership_intervals",
       "breakpoints": true
     },
     {
       "idx": 82,
       "version": "7",
-      "when": 1795655180000,
-      "tag": "0079_billing_unbilled_alerts",
+      "when": 1795655320000,
+      "tag": "0080_billing_replay_corrections",
       "breakpoints": true
     },
     {
       "idx": 83,
       "version": "7",
-      "when": 1795655220000,
-      "tag": "0081_billing_enterprise_pending",
+      "when": 1795655330000,
+      "tag": "0078_billing_operator_controls",
       "breakpoints": true
     },
     {
       "idx": 84,
       "version": "7",
-      "when": 1795655280000,
-      "tag": "0082_billing_enterprise_platform_fee",
+      "when": 1795655340000,
+      "tag": "0079_billing_unbilled_alerts",
       "breakpoints": true
     },
     {
       "idx": 85,
       "version": "7",
-      "when": 1795655460000,
-      "tag": "0085_billing_cancel_effective_at",
+      "when": 1795655380000,
+      "tag": "0081_billing_enterprise_pending",
       "breakpoints": true
     },
     {
       "idx": 86,
       "version": "7",
-      "when": 1795655520000,
+      "when": 1795655440000,
+      "tag": "0082_billing_enterprise_platform_fee",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795655620000,
+      "tag": "0085_billing_cancel_effective_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1795655680000,
       "tag": "0086_billing_plan_history_baseline",
       "breakpoints": true
     }

@@ -14,8 +14,8 @@ import { describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../drizzle');
-/** origin/main `0074_recall_join_metadata_minimization`, applied by #391. */
-const MAIN_LAST_WHEN = 1_795_654_800_000;
+/** origin/main `0076_integration_health_pause`, applied by #438. */
+const MAIN_LAST_WHEN = 1_795_654_920_000;
 
 interface JournalEntry {
   idx: number;
@@ -89,11 +89,21 @@ describe('drizzle journal order', () => {
     });
     expect(entries[74]).toMatchObject({
       idx: 74,
-      when: MAIN_LAST_WHEN,
+      when: 1_795_654_800_000,
       tag: '0074_recall_join_metadata_minimization',
     });
     expect(entries[75]).toMatchObject({
       idx: 75,
+      when: 1_795_654_860_000,
+      tag: '0075_mcp_oauth_server',
+    });
+    expect(entries[76]).toMatchObject({
+      idx: 76,
+      when: MAIN_LAST_WHEN,
+      tag: '0076_integration_health_pause',
+    });
+    expect(entries[77]).toMatchObject({
+      idx: 77,
       tag: '0073_billing_foundation',
     });
     expect(
@@ -103,7 +113,7 @@ describe('drizzle journal order', () => {
     const freeGrantIndex = entries.findIndex(
       (entry) => entry.tag === '0075_billing_free_grant_backfill',
     );
-    expect(foundationIndex).toBeGreaterThan(74);
+    expect(foundationIndex).toBeGreaterThan(76);
     expect(freeGrantIndex).toBeGreaterThan(foundationIndex);
 
     const byTag = new Map(entries.map((entry) => [entry.tag, entry.when]));
@@ -136,8 +146,8 @@ describe('drizzle journal order', () => {
     try {
       const entries = readJournal();
       const shared = entries.filter((entry) => entry.when <= MAIN_LAST_WHEN);
-      expect(shared.at(-2)?.tag).toBe('0073_legal_acceptance_history');
-      expect(shared.at(-1)?.tag).toBe('0074_recall_join_metadata_minimization');
+      expect(shared.at(-2)?.tag).toBe('0075_mcp_oauth_server');
+      expect(shared.at(-1)?.tag).toBe('0076_integration_health_pause');
       await drizzleMigrate(
         pg,
         shared.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
@@ -169,19 +179,12 @@ describe('drizzle journal order', () => {
     const pg = new PGlite();
     try {
       const entries = readJournal();
-      const sharedPrefix = entries.filter((entry) => entry.idx <= 72);
-      const walletBeforeOperator = [
-        ...sharedPrefix.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
-        { when: 1_795_654_740_000, sql: readSql('0073_billing_foundation') },
-        { when: 1_795_654_800_000, sql: readSql('0074_billing_usage_alert_intent') },
-        { when: 1_795_654_860_000, sql: readSql('0075_billing_free_grant_backfill') },
-        { when: 1_795_654_920_000, sql: readSql('0076_billing_polar_clock_and_unverified_grants') },
-        {
-          when: 1_795_654_980_000,
-          sql: readSql('0077_billing_member_day_plan_and_membership_intervals'),
-        },
-        { when: 1_795_655_160_000, sql: readSql('0080_billing_replay_corrections') },
-      ];
+      const replayIndex = entries.findIndex(
+        (entry) => entry.tag === '0080_billing_replay_corrections',
+      );
+      const walletBeforeOperator = entries
+        .slice(0, replayIndex + 1)
+        .map((entry) => ({ when: entry.when, sql: readSql(entry.tag) }));
       await drizzleMigrate(pg, walletBeforeOperator);
       expect(await columnNames(pg, 'team_billing_accounts')).not.toContain('price_override');
 

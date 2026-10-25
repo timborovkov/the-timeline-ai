@@ -123,6 +123,10 @@ describe('database schema contracts', () => {
           'reconciliation_projection_outbox',
           'monday_conversation_tombstones',
           'monday_conversation_tombstone_invalidations',
+          'mcp_outbound_oauth_clients',
+          'mcp_outbound_oauth_codes',
+          'mcp_outbound_oauth_grants',
+          'mcp_outbound_oauth_tokens',
           'task_category_filter_versions',
           'task_category_project_invalidations',
           'task_project_source_locks',
@@ -136,6 +140,10 @@ describe('database schema contracts', () => {
       'artifact_evidence_associations',
       'entities',
       'legal_acceptances',
+      'mcp_outbound_oauth_clients',
+      'mcp_outbound_oauth_codes',
+      'mcp_outbound_oauth_grants',
+      'mcp_outbound_oauth_tokens',
       'monday_conversation_tombstone_invalidations',
       'monday_conversation_tombstones',
       'raw_events',
@@ -148,6 +156,78 @@ describe('database schema contracts', () => {
       'teams',
       'user_pins',
     ]);
+  });
+
+  it('enforces public-client auth and one active MCP OAuth grant per user/team/client', async () => {
+    await expect(
+      pg.exec(`
+        INSERT INTO mcp_outbound_oauth_clients
+          (client_id, client_name, redirect_uris, token_endpoint_auth_method)
+        VALUES
+          ('invalid-client', 'Invalid client', '["https://example.test/callback"]'::jsonb, 'client_secret_post')
+      `),
+    ).rejects.toThrow();
+
+    await pg.exec(`
+      INSERT INTO mcp_outbound_oauth_clients (client_id, client_name, redirect_uris)
+      VALUES ('valid-client', 'Valid client', '["https://example.test/callback"]'::jsonb);
+      INSERT INTO mcp_outbound_oauth_grants
+        (client_id, team_id, user_id, membership_authorization_epoch, scopes, resource)
+      VALUES
+        (
+          'valid-client',
+          '${TEAM_ID}',
+          '${OWNER_ID}',
+          (SELECT authorization_epoch FROM team_members WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'),
+          '["read"]'::jsonb,
+          'https://thetimeline.cc/api/mcp/server'
+        );
+    `);
+
+    await expect(
+      pg.exec(`
+        INSERT INTO mcp_outbound_oauth_grants
+          (client_id, team_id, user_id, membership_authorization_epoch, scopes, resource)
+        VALUES
+          (
+            'valid-client',
+            '${TEAM_ID}',
+            '${OWNER_ID}',
+            (SELECT authorization_epoch FROM team_members WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'),
+            '["read"]'::jsonb,
+            'https://thetimeline.cc/api/mcp/server'
+          )
+      `),
+    ).rejects.toThrow();
+  });
+
+  it('rotates the team-member authorization epoch on role and removal changes', async () => {
+    const readEpoch = async () => {
+      const result = await pg.query<{ authorization_epoch: string }>(`
+        SELECT authorization_epoch
+        FROM team_members
+        WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'
+      `);
+      return result.rows[0]?.authorization_epoch;
+    };
+
+    const initial = await readEpoch();
+    await pg.exec(`
+      UPDATE team_members
+      SET role = 'admin'
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'
+    `);
+    const afterRole = await readEpoch();
+    await pg.exec(`
+      UPDATE team_members
+      SET removed_at = now()
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'
+    `);
+    const afterRemoval = await readEpoch();
+
+    expect(initial).toBeTruthy();
+    expect(afterRole).not.toBe(initial);
+    expect(afterRemoval).not.toBe(afterRole);
   });
 
   it('backfills legal snapshots and preserves one acceptance event per document-version pair', async () => {
@@ -307,6 +387,59 @@ describe('database schema contracts', () => {
     } finally {
       await migrationPg.close();
     }
+  });
+
+  it('accepts access_revoked attention and paired health pause columns', async () => {
+    const integrationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    await pg.exec(`
+      INSERT INTO integrations (id, team_id, provider, display_name)
+      VALUES ('${integrationId}', '${TEAM_ID}', 'github', 'GitHub health');
+      INSERT INTO connection_attention (
+        team_id, integration_id, category, summary
+      ) VALUES (
+        '${TEAM_ID}',
+        '${integrationId}',
+        'access_revoked',
+        'GitHub access was revoked.'
+      );
+      UPDATE integrations
+      SET
+        health_consecutive_failures = 2,
+        health_first_failed_at = '2026-06-25T12:00:00Z',
+        health_paused_at = '2026-06-28T12:00:00Z',
+        health_pause_kind = 'access_revoked'
+      WHERE id = '${integrationId}';
+    `);
+
+    await expect(
+      pg.exec(`
+        UPDATE integrations
+        SET health_paused_at = '2026-06-28T12:00:00Z', health_pause_kind = 'unknown'
+        WHERE id = '${integrationId}'
+      `),
+    ).rejects.toThrow(/integrations_health_pause_kind_chk/);
+    await expect(
+      pg.exec(`
+        UPDATE integrations
+        SET health_paused_at = '2026-06-28T12:00:00Z', health_pause_kind = NULL
+        WHERE id = '${integrationId}'
+      `),
+    ).rejects.toThrow(/integrations_health_pause_kind_chk/);
+
+    const rows = await pg.query<{
+      category: string;
+      health_pause_kind: string | null;
+    }>(`
+      SELECT
+        (SELECT category::text FROM connection_attention WHERE integration_id = '${integrationId}') AS category,
+        health_pause_kind
+      FROM integrations
+      WHERE id = '${integrationId}'
+    `);
+    expect(rows.rows[0]).toEqual({
+      category: 'access_revoked',
+      health_pause_kind: 'access_revoked',
+    });
   });
 
   describe('canonical shared-link migration', () => {

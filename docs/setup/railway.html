@@ -203,6 +203,28 @@
         origin before Auth.js runs.
       </p>
       <p>
+        Production security and rate-limit buckets trust only <code>X-Real-IP</code>. Keep Railway's
+        public proxy as the only web ingress and verify that it overwrites or removes any
+        caller-supplied <code>X-Real-IP</code> before forwarding the request. Never expose the web
+        service through a path that preserves a client-provided value. If the trusted header is
+        missing or invalid, production requests deliberately share the <code>unknown</code> bucket
+        instead of trusting spoofable forwarding headers.
+      </p>
+      <p>
+        A self-hosted production deployment has the same contract: place a trusted reverse proxy in
+        front of the web service, strip incoming <code>X-Real-IP</code>, and set a validated client
+        address yourself. <code>CF-Connecting-IP</code> and <code>X-Forwarded-For</code> are
+        accepted only during local development and are not production fallbacks.
+      </p>
+      <p>
+        Add <code>OPENAI_APPS_CHALLENGE_TOKEN</code> to the web service only when OpenAI's
+        app-submission portal supplies a domain-verification token. Preserve the exact plain-text
+        value: the web route returns it verbatim at <code>/.well-known/openai-apps-challenge</code>.
+        This variable is optional, is not an OAuth credential, and is not needed by the worker or
+        document extractor. Leave it unset outside the portal verification flow, or remove it once
+        the portal no longer requires it.
+      </p>
+      <p>
         For production abuse controls, also set <code>TURNSTILE_SITE_KEY</code>,
         <code>TURNSTILE_SECRET_KEY</code>, and <code>SUPPORT_EMAIL</code>. Turnstile is only
         rendered on anonymous public forms: email/password registration and

@@ -114,6 +114,59 @@ export interface HandleInboundResult {
 }
 
 /**
+ * Log-safe recipient summary: domains plus team slugs (MailboxHash / inbound
+ * local-part). Never includes a full address or message body.
+ */
+export function inboundRecipientLogHints(
+  recipients: readonly string[],
+  mailboxHash = '',
+  inboundDomain?: string,
+): { domains: string[]; slugs: string[] } {
+  const domains: string[] = [];
+  const slugs: string[] = [];
+  const seenDomains = new Set<string>();
+  const seenSlugs = new Set<string>();
+
+  const addDomain = (value: string) => {
+    const domain = value.trim().toLowerCase();
+    if (!domain || seenDomains.has(domain)) return;
+    seenDomains.add(domain);
+    domains.push(domain);
+  };
+  const addSlug = (value: string) => {
+    const slug = value.trim().toLowerCase();
+    if (!slug || seenSlugs.has(slug)) return;
+    seenSlugs.add(slug);
+    slugs.push(slug);
+  };
+
+  const hash = mailboxHash.trim().toLowerCase();
+  if (hash) addSlug(hash);
+
+  const configuredDomain = inboundDomain?.trim().toLowerCase();
+  const domainSuffix = configuredDomain ? `@${configuredDomain}` : undefined;
+  for (const recipient of recipients) {
+    const normalized = recipient.trim().toLowerCase();
+    const at = normalized.lastIndexOf('@');
+    if (at <= 0 || at === normalized.length - 1) continue;
+    addDomain(normalized.slice(at + 1));
+    const local = normalized.slice(0, at);
+    if (!domainSuffix || normalized.endsWith(domainSuffix)) addSlug(local);
+  }
+  return { domains, slugs };
+}
+
+function inboundDropMessage(
+  reason: string,
+  hints?: { domains: string[]; slugs: string[] },
+): string {
+  if (!hints) return `inbound email dropped: ${reason}`;
+  const domain = hints.domains.join(',') || 'none';
+  const slug = hints.slugs.join(',') || 'none';
+  return `inbound email dropped: ${reason} domain=${domain} slug=${slug}`;
+}
+
+/**
  * Entry point: parse a Postmark inbound payload, resolve which teams the
  * mail was addressed to, and write one raw_event per match. Never throws —
  * any failure is logged and surfaced as `{ ok: false, reason }`. The route
@@ -157,11 +210,15 @@ export async function handleInbound(
     }
   }
   if (recipients.length === 0 && !hashSlug) {
+    log.info('inbound email dropped: no_recipients');
     return { ok: false, inserted: 0, reason: 'no_recipients' };
   }
   if (matchedTeams.length === 0) {
-    // Common case: a bot scraped the address from somewhere and sent garbage.
-    // Don't log every one — Postmark's dashboard already records the delivery.
+    const hints = inboundRecipientLogHints(recipients, hashSlug, deps.inboundDomain);
+    log.info(
+      { recipientDomains: hints.domains, slugs: hints.slugs },
+      inboundDropMessage('no_matching_team', hints),
+    );
     return { ok: false, inserted: 0, reason: 'no_matching_team' };
   }
 
@@ -681,6 +738,7 @@ async function ingestForTeam(
   }
 
   if (createResult.deduplicated) {
+    log.debug({ teamId: team.id }, 'inbound email dropped: dedup hit');
     // Postmark retry path. The parent raw_event already exists, but we
     // cannot assume the original delivery completed every downstream
     // step — the handler may have crashed AFTER inserting the parent and

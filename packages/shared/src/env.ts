@@ -260,6 +260,7 @@ const baseSchema = z.object({
   AUTH_URL: z.url().default('http://localhost:3000'),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
+  OPENAI_APPS_CHALLENGE_TOKEN: z.preprocess(emptyStringAsUnset, z.string().max(512).optional()),
 
   // Database
   DATABASE_URL: z.url(),
@@ -553,6 +554,19 @@ const baseSchema = z.object({
   MONDAY_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
   SENTRY_INTEGRATION_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
   SENTRY_INTEGRATION_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /**
+   * Counted connectivity/auth/access_revoked/permanent failures pause native
+   * sync after this many hours (default 72). Minimum 1 hour.
+   */
+  INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(24 * 30)
+      .default(72),
+  ),
   // HMAC secret for Google Drive push-channel tokens. The Drive watch
   // registration sets channel_token = HMAC-SHA256(secret, integration.id)
   // so the /api/webhooks/google-drive handler can verify the inbound

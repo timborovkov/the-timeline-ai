@@ -1,5 +1,6 @@
 'use client';
 
+import { formatHealthPauseNotice, healthPauseAction } from '@timeline/shared/integrations/health';
 import { Plug } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useActionState, useId, useState } from 'react';
@@ -26,6 +27,11 @@ interface ConnectedRow {
   lastSyncedAt: string | null;
   lastError: string | null;
   syncPause: { retryAt: string; reason: string; scope: string | null } | null;
+  healthPause: {
+    kind: 'access_revoked' | 'connectivity' | 'auth' | 'permanent';
+    pausedAt: string;
+    firstFailedAt: string | null;
+  } | null;
   attention: ConnectedAttention[];
   visibilityDefault: 'team' | 'private' | 'specific_users';
   visibilityDefaultUserIds: string[] | null;
@@ -34,7 +40,12 @@ interface ConnectedRow {
 interface ConnectedAttention {
   id: string;
   category:
-    'needs_reconnect' | 'needs_new_owner' | 'access_changed' | 'sync_error' | 'webhook_degraded';
+    | 'needs_reconnect'
+    | 'needs_new_owner'
+    | 'access_changed'
+    | 'sync_error'
+    | 'webhook_degraded'
+    | 'access_revoked';
   summary: string;
   lastSeenAt: string;
 }
@@ -69,6 +80,8 @@ function attentionTitle(category: ConnectedAttention['category']): string {
       return 'Sync needs attention';
     case 'webhook_degraded':
       return 'Webhook delivery degraded';
+    case 'access_revoked':
+      return 'Access revoked';
   }
 }
 
@@ -77,7 +90,8 @@ function hasBlockingAttention(attention: ConnectedAttention[]): boolean {
     (item) =>
       item.category === 'needs_reconnect' ||
       item.category === 'needs_new_owner' ||
-      item.category === 'access_changed',
+      item.category === 'access_changed' ||
+      item.category === 'access_revoked',
   );
 }
 
@@ -88,7 +102,11 @@ function hasOnlyWebhookDegradedAttention(attention: ConnectedAttention[]): boole
 function blockingAttentionAction(
   attention: ConnectedAttention[],
 ): { href: string; label: string } | null {
-  if (attention.some((item) => item.category === 'needs_reconnect')) {
+  if (
+    attention.some(
+      (item) => item.category === 'needs_reconnect' || item.category === 'access_revoked',
+    )
+  ) {
     return { href: '/app/me/connections', label: 'Reconnect account' };
   }
   if (attention.some((item) => item.category === 'needs_new_owner')) {
@@ -142,13 +160,24 @@ export function ConnectedIntegrations({
     );
   }
 
-  async function call(method: 'sync' | 'disconnect', id: string) {
+  async function call(method: 'sync' | 'disconnect' | 'resume', id: string) {
     setBusy(`${method}:${id}`);
     const result = await notifyAction({
       id: `integration:${id}:${method}`,
-      loading: method === 'sync' ? 'Syncing…' : 'Disconnecting…',
-      success: method === 'sync' ? 'Sync started' : 'Integration disconnected',
-      error: method === 'sync' ? 'Couldn’t sync integration' : 'Couldn’t disconnect integration',
+      loading:
+        method === 'sync' ? 'Syncing…' : method === 'resume' ? 'Resuming…' : 'Disconnecting…',
+      success:
+        method === 'sync'
+          ? 'Sync started'
+          : method === 'resume'
+            ? 'Sync resumed'
+            : 'Integration disconnected',
+      error:
+        method === 'sync'
+          ? 'Couldn’t sync integration'
+          : method === 'resume'
+            ? 'Couldn’t resume integration'
+            : 'Couldn’t disconnect integration',
       run: async () => {
         const res = await fetch(`/api/integrations/manage/${id}/${method}`, { method: 'POST' });
         if (!res.ok) {
@@ -175,10 +204,24 @@ export function ConnectedIntegrations({
     <>
       {visibleConnected.map((c) => {
         const pause = syncPauseText(c.syncPause);
+        const healthPause = c.healthPause
+          ? {
+              notice: formatHealthPauseNotice({
+                provider: c.provider,
+                kind: c.healthPause.kind,
+                firstFailedAt: c.healthPause.firstFailedAt,
+                providerLabel: providerLabel(c.provider),
+              }),
+              action: healthPauseAction(c.healthPause.kind),
+            }
+          : null;
         const attention = dedupeAttention(c.attention);
         const needsReplacement =
           attention.length === 0 && needsReplacementFromLastError(c.lastError);
         const blockingAction =
+          (healthPause?.action.action === 'reconnect' && healthPause.action.href
+            ? { href: healthPause.action.href, label: healthPause.action.label }
+            : null) ??
           blockingAttentionAction(attention) ??
           (needsReplacement
             ? { href: '#available-shared-sources', label: 'Choose replacement' }
@@ -187,6 +230,7 @@ export function ConnectedIntegrations({
           busy !== null ||
           !c.enabled ||
           Boolean(c.syncPause) ||
+          Boolean(c.healthPause) ||
           hasBlockingAttention(attention) ||
           needsReplacement;
         return (
@@ -209,6 +253,18 @@ export function ConnectedIntegrations({
                   {blockingAction ? (
                     <Button asChild size="sm" variant="outline">
                       <a href={blockingAction.href}>{blockingAction.label}</a>
+                    </Button>
+                  ) : healthPause?.action.action === 'resume' ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => {
+                        void call('resume', c.id);
+                      }}
+                    >
+                      {busy === `resume:${c.id}` ? 'Resuming…' : 'Resume'}
                     </Button>
                   ) : (
                     <Button
@@ -249,12 +305,15 @@ export function ConnectedIntegrations({
               {attention.length > 0 ? (
                 <IntegrationAttentionPanel attention={attention} details={c.lastError} />
               ) : null}
+              {healthPause ? (
+                <output className="block text-sm text-danger">{healthPause.notice}</output>
+              ) : null}
               {pause ? (
                 <output className="block text-sm text-fg-muted">
                   {pause.reason} <RelativeTimestamp value={pause.retryAt} />.
                 </output>
               ) : null}
-              {c.lastError && !pause && c.attention.length === 0 ? (
+              {c.lastError && !pause && !healthPause && c.attention.length === 0 ? (
                 <InlineError
                   message={connectionErrorMessage(c.lastError)}
                   details={c.lastError}

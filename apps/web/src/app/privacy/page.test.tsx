@@ -55,4 +55,19 @@ describe('Privacy Policy analytics disclosures', () => {
     expect(html).toContain('hosted deployment design');
     expect(html).toContain('public exposure still require deployment');
   });
+
+  it('discloses member-authorized MCP and AI-app data sharing', () => {
+    const html = renderToStaticMarkup(<PrivacyPage />);
+
+    expect(html).toContain('Authorized-app data');
+    expect(html).toContain('one selected team');
+    expect(html).toContain('authorizing member&#x27;s private content');
+    expect(html).toContain('content shared specifically with that member');
+    expect(html).toContain('agent:ask');
+    expect(html).toContain('external side effects');
+    expect(html).toContain('own terms and privacy policy');
+    expect(html).toContain('does not delete copies the app already received');
+    expect(html).toContain('digests instead of plaintext');
+    expect(html).toContain('records do not allow the app to regain access');
+  });
 });

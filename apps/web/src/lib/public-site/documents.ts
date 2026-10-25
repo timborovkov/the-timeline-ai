@@ -6,6 +6,7 @@ import { SOLUTION_PUBLIC_DOCUMENTS } from '@/components/marketing/solutions/publ
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
   TIMELINE_AGENT_INSTALL_STEPS,
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
   TIMELINE_SKILL_INSTALL_PROMPT,
@@ -23,18 +24,23 @@ const AGENT_INSTALL_LLM_SECTIONS = [
     codeBlock: { content: TIMELINE_PLUGIN_INSTALL_PROMPT, language: 'text' },
   },
   {
+    title: 'Claude Code install commands',
+    body: 'Run both commands in a terminal, then restart Claude Code and start a new conversation.',
+    codeBlock: { content: TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND, language: 'bash' },
+  },
+  {
     title: 'Copy-ready skill-only prompt',
-    body: 'Use this narrower prompt when Timeline MCP is already connected or for a separately licensed customer-controlled deployment.',
+    body: 'Use this narrower prompt when Timeline MCP is already connected or self-hosted.',
     codeBlock: { content: TIMELINE_SKILL_INSTALL_PROMPT, language: 'text' },
   },
   {
     title: 'Copy-ready MCP command',
-    body: 'Run this command after TIMELINE_MCP_KEY is available in the environment that will launch Codex.',
+    body: 'Run this URL-only command, then complete Timeline sign-in, team selection, and OAuth consent in the browser.',
     codeBlock: { content: TIMELINE_MCP_COMMAND, language: 'bash' },
   },
   {
     title: 'Install and connect',
-    body: 'Complete these steps before asking Timeline-backed questions in Codex.',
+    body: 'Complete these steps before asking Timeline-backed questions in Codex or Claude Code.',
     items: TIMELINE_AGENT_INSTALL_STEPS.map((step) => `${step.title}: ${step.body}`),
   },
   ...TIMELINE_AGENT_ACCESS_FAQS.map((item) => ({
@@ -362,7 +368,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'llms-full.txt',
     description: 'Expanded Markdown summary of the public product and help content.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: '2026-08-26', reviewed: '2026-08-26' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],
@@ -378,7 +384,7 @@ const publicUtilityDocuments = definePublicDocuments('public-utility', [
     title: 'sitemap.xml',
     description: 'Machine-readable sitemap for public indexable pages.',
     indexability: 'index',
-    dates: { modified: '2026-08-21', reviewed: '2026-08-21' },
+    dates: { modified: '2026-08-26', reviewed: '2026-08-26' },
     capability: { kind: 'not-applicable' },
     sitemap: false,
     structuredData: [],

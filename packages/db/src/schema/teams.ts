@@ -53,6 +53,7 @@ export const teamMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: teamRole('role').notNull().default('member'),
+    authorizationEpoch: uuid('authorization_epoch').defaultRandom().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     priorIntervals: jsonb('prior_intervals')
       .$type<TeamMemberPriorInterval[]>()

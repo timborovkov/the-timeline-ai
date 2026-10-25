@@ -62,6 +62,26 @@ export async function POST(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (integration.healthPausedAt) {
+    await scope.integrations.recordAudit(
+      'backfill_skipped:health',
+      {
+        actor: session.user.id,
+        provider: integration.provider,
+        pauseKind: integration.healthPauseKind,
+        pausedAt: integration.healthPausedAt.toISOString(),
+      },
+      integration.id,
+    );
+    return NextResponse.json(
+      {
+        error: 'health_paused',
+        pauseKind: integration.healthPauseKind,
+        pausedAt: integration.healthPausedAt.toISOString(),
+      },
+      { status: 409 },
+    );
+  }
   const integrationPause = await integrationsLib.adminLoadIntegrationSyncPause(db, integration.id);
   if (integrationPause) {
     await scope.integrations.recordAudit(

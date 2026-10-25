@@ -320,9 +320,9 @@ credit hides margin and confuses prospects.
   `billing_usage_alert` (migration `0074_billing_usage_alert_intent`).
 - Drizzle runs a migration only when its journal timestamp is greater than the
   newest stored migration timestamp. Main's journal entries through
-  `0074_recall_join_metadata_minimization` (`1795654800000`) keep their existing
+  `0076_integration_health_pause` (`1795654920000`) keep their existing
   indexes. Billing migrations are appended after that prefix with strictly
-  increasing timestamps, so a database that already applied #391 runs
+  increasing timestamps, so a database that already applied #438 runs
   `0073_billing_foundation` before `0075_billing_free_grant_backfill`.
   `0078_billing_operator_controls` and `0079_billing_unbilled_alerts` stay later
   than `0080_billing_replay_corrections`, so a database that already stored

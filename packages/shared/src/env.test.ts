@@ -364,6 +364,17 @@ describe('getEnv', () => {
     });
   });
 
+  it('defaults INTEGRATION_HEALTH_PAUSE_AFTER_HOURS to 72 and rejects zero', () => {
+    setBaseEnv({ INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: undefined });
+    expect(getEnv().INTEGRATION_HEALTH_PAUSE_AFTER_HOURS).toBe(72);
+
+    setBaseEnv({ INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: '1' });
+    expect(getEnv().INTEGRATION_HEALTH_PAUSE_AFTER_HOURS).toBe(1);
+
+    setBaseEnv({ INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: '0' });
+    expect(() => getEnv()).toThrow(/INTEGRATION_HEALTH_PAUSE_AFTER_HOURS/);
+  });
+
   it('treats blank integration OAuth credentials from .env.example as unset', () => {
     setBaseEnv({
       GITHUB_APP_ID: '',

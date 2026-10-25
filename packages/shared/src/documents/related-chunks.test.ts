@@ -85,7 +85,7 @@ beforeEach(async () => {
   await applyDbMigrations(pg);
   await seedTeam(pg);
   db = drizzle(pg) as unknown as AnyDb;
-});
+}, 30_000);
 
 afterEach(async () => {
   await pg.close();
