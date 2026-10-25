@@ -526,6 +526,62 @@ describe('askAgent', () => {
     expect(settled.rows[0]?.metadata?.openrouter_usd).toBe(0.25);
   });
 
+  it('settles completed tool-round cost when a later model step fails', async () => {
+    let call = 0;
+    const model = new MockLanguageModelV3({
+      doStream: (() => {
+        call += 1;
+        if (call > 2) return Promise.reject(new Error('later step failed'));
+        const cost = call === 1 ? 0.11 : 0.13;
+        return Promise.resolve({
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                type: 'tool-call',
+                toolCallId: `call-fail-${call}`,
+                toolName: 'list_team_members',
+                input: '{}',
+              });
+              controller.enqueue({
+                type: 'finish',
+                finishReason: { unified: 'tool-calls', raw: undefined },
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                providerMetadata: { openrouter: { usage: { cost } } },
+              });
+              controller.close();
+            },
+          }),
+        });
+      }) as never,
+    });
+
+    await expect(
+      askAgent(
+        {
+          db: db as never,
+          teamId: TEAM_ID,
+          userId: USER_ID,
+          deliverySurface: 'telegram',
+          question: 'Who is on the team?',
+        },
+        { model },
+      ),
+    ).resolves.toEqual({ ok: false, error: 'failed' });
+
+    const settled = await pg.query<{ state: string; metadata: { openrouter_usd?: number } | null }>(
+      `
+        SELECT r.state, l.metadata
+        FROM billing_usage_reservations r
+        LEFT JOIN billing_usage_ledger l
+          ON l.team_id = r.team_id AND l.operation_id = r.operation_id
+        WHERE r.team_id = '${TEAM_ID}'
+      `,
+    );
+    expect(settled.rows).toHaveLength(1);
+    expect(settled.rows[0]?.state).toBe('settled');
+    expect(settled.rows[0]?.metadata?.openrouter_usd).toBeCloseTo(0.24);
+  });
+
   it('releases an empty answer that recorded no provider cost', async () => {
     await expect(
       askAgent(

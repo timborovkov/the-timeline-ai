@@ -6,6 +6,7 @@ import {
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS,
   mapAskBillingError,
   openRouterUsdCostFromFinishEvent,
+  openRouterUsdForCompletedStream,
   releaseBillingReservation,
   reserveAskAi,
   settleAskAiFromOpenRouterUsd,
@@ -768,9 +769,21 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   let openRouterUsd = 0;
+  let streamedOpenRouterUsd = 0;
   let billingFinalized = false;
+  const applyCompletedStreamCost = (
+    finishEvent?: Parameters<typeof openRouterUsdForCompletedStream>[0]['finishEvent'],
+  ) => {
+    openRouterUsd += openRouterUsdForCompletedStream(
+      finishEvent
+        ? { stepUsd: streamedOpenRouterUsd, finishEvent }
+        : { stepUsd: streamedOpenRouterUsd },
+    );
+    streamedOpenRouterUsd = 0;
+  };
   const settleChatBilling = async (responseModelId?: string, opts?: { conservative?: boolean }) => {
     if (billingFinalized) return;
+    applyCompletedStreamCost();
     billingFinalized = true;
     try {
       await settleAskAiFromOpenRouterUsd(scope.billing, {
@@ -875,12 +888,15 @@ export async function POST(req: Request): Promise<Response> {
     // tokens nobody will see. Without this, a user navigating away mid-
     // stream still runs the model to completion.
     abortSignal: req.signal,
+    onStepEnd: (step) => {
+      streamedOpenRouterUsd += openRouterUsdCostFromFinishEvent(step);
+    },
     onError: (e) => {
       if (isAiStreamAbort(e.error)) {
         void settleChatBilling(undefined, { conservative: true });
         return;
       }
-      if (openRouterUsd > 0) {
+      if (openRouterUsd + streamedOpenRouterUsd > 0) {
         void settleChatBilling();
       } else {
         void releaseChatBilling();
@@ -898,7 +914,7 @@ export async function POST(req: Request): Promise<Response> {
     },
     onEnd: async (e) => {
       const modelAttribution = llm.streamChatModelAttribution(e, modelId);
-      openRouterUsd += openRouterUsdCostFromFinishEvent(e);
+      applyCompletedStreamCost(e);
       if (shouldTitleSession && sessionId) {
         try {
           openRouterUsd += await titleChatSession({ scope, sessionId, titleSourceMessage });

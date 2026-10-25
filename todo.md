@@ -731,6 +731,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Member-day janitor ticks backfill missed days. Deleted documents are excluded
       from indexed-chunk capacity; restore counts those chunks. Accepted-source replay meters
       existing dedup rows. Web chat settles known compression cost when the answer stream fails.
+      Completed Ask tool rounds accumulate per step and settle when a later model step errors.
       `BILLING_CHARGES_ENABLED=false` shadows every reservation and settlement.
       Enterprise has no self-serve checkout. `withAiMetering` skips OpenRouter when the durable operation already
       completed, and stamps `worker_settlement_pending` so the janitor can settle a

@@ -31,7 +31,11 @@ import {
   type AskBillingError,
 } from '#src/billing/admission.js';
 import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS } from '#src/billing/catalog.js';
-import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
+import {
+  openRouterUsdCostFromFinishEvent,
+  openRouterUsdForCompletedStream,
+  type OpenRouterFinishEvent,
+} from '#src/billing/openrouter-usage.js';
 import { getEnv } from '#src/env.js';
 import {
   DEFAULT_AGENT_MAX_STEPS,
@@ -409,9 +413,19 @@ export async function askAgent(
   }
 
   let openRouterUsd = 0;
+  let streamedOpenRouterUsd = 0;
   let billingFinalized = false;
+  const applyCompletedStreamCost = (finishEvent?: OpenRouterFinishEvent) => {
+    openRouterUsd += openRouterUsdForCompletedStream(
+      finishEvent
+        ? { stepUsd: streamedOpenRouterUsd, finishEvent }
+        : { stepUsd: streamedOpenRouterUsd },
+    );
+    streamedOpenRouterUsd = 0;
+  };
   const settleBilling = async (model?: string, opts?: { conservative?: boolean }) => {
     if (billingFinalized) return;
+    applyCompletedStreamCost();
     billingFinalized = true;
     try {
       await settleAskAiFromOpenRouterUsd(scope.billing, {
@@ -446,7 +460,7 @@ export async function askAgent(
     });
   };
   const settleOrReleaseEmptyAnswer = async () => {
-    if (openRouterUsd > 0) {
+    if (openRouterUsd + streamedOpenRouterUsd > 0) {
       await settleBilling();
       return;
     }
@@ -462,9 +476,12 @@ export async function askAgent(
         ...(toolApproval ? { toolApproval } : {}),
         maxSteps: input.maxSteps ?? DEFAULT_AGENT_MAX_STEPS,
         ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
+        onStepEnd: (step) => {
+          streamedOpenRouterUsd += openRouterUsdCostFromFinishEvent(step);
+        },
         onEnd: (event) => {
           Object.assign(draftModelAttribution, streamChatModelAttribution(event));
-          openRouterUsd += openRouterUsdCostFromFinishEvent(event);
+          applyCompletedStreamCost(event);
         },
       },
       deps,
@@ -494,9 +511,12 @@ export async function askAgent(
             maxSteps: 1,
             maxOutputTokens: presentationPolicy.maxOutputTokens,
             ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
+            onStepEnd: (step) => {
+              streamedOpenRouterUsd += openRouterUsdCostFromFinishEvent(step);
+            },
             onEnd: (event) => {
               Object.assign(presentationModelAttribution, streamChatModelAttribution(event));
-              openRouterUsd += openRouterUsdCostFromFinishEvent(event);
+              applyCompletedStreamCost(event);
             },
           },
           deps,
@@ -580,7 +600,7 @@ export async function askAgent(
     };
   } catch (err) {
     const aborted = isAskAbortError(err);
-    if (aborted || openRouterUsd > 0) {
+    if (aborted || openRouterUsd + streamedOpenRouterUsd > 0) {
       await settleBilling(undefined, { conservative: aborted });
     } else {
       await releaseBilling();

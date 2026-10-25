@@ -608,6 +608,11 @@ export interface StreamChatInput<TTools extends ToolSet> {
   maxOutputTokens?: number;
   /** Forwarded to streamText.onEnd for usage/audit logging. */
   onEnd?: Parameters<typeof streamText>[0]['onEnd'];
+  /**
+   * Forwarded to streamText.onStepEnd. Each completed model call reports its
+   * own usage here, including when a later step errors before `onEnd`.
+   */
+  onStepEnd?: Parameters<typeof streamText>[0]['onStepEnd'];
   /** Forwarded to streamText.toolApproval for in-chat execute_* gates. */
   toolApproval?: Parameters<typeof streamText>[0]['toolApproval'];
   /** Forwarded to streamText.onError for provider/stream failures. */
@@ -663,6 +668,7 @@ export function streamChat<TTools extends ToolSet>(
   };
   if (input.maxOutputTokens !== undefined) args.maxOutputTokens = input.maxOutputTokens;
   if (input.onEnd) args.onEnd = input.onEnd;
+  if (input.onStepEnd) args.onStepEnd = input.onStepEnd;
   if (input.toolApproval) args.toolApproval = input.toolApproval;
   if (input.onError) {
     args.onError = (event) => {

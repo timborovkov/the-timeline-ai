@@ -154,7 +154,7 @@ credit hides margin and confuses prospects.
    Settlement errors on those terminal paths propagate so Recall webhooks can 503
    and retry; aborting a join after Recall accepted keeps the reservation when
    leave fails so the janitor can retry leave. Slack/Telegram/MCP Ask and web chat record the completed OpenRouter cost on the reservation before settle and keep that reservation when settlement fails, so the janitor can retry it. A provider call that throws after OpenRouter reported usage settles that cost under `<operation>:failed:<n>` and then releases the work reservation. Worker AI metering reuses the BullMQ job id as the durable operation id, and each transcription chunk appends its index. Web chat also settles known compression cost when the
-   answer stream fails. Seat claims are blocked while billing is paused.
+   answer stream fails. Completed Ask tool rounds accumulate per step and settle when a later model step errors, on web and on Slack/Telegram Ask. Seat claims are blocked while billing is paused.
    Enterprise settlement does not freeze on the spend cap. Enterprise plan
    changes go through support or the Polar portal. `withAiMetering` skips the
    OpenRouter call when the durable operation is already settled or the reservation

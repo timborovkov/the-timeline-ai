@@ -303,10 +303,11 @@ PLATFORM_ADMIN_EMAILS=
         unrestricted. Deferred enrichment and transcription clear their markers only after Redis
         enqueue succeeds. Member-day janitor ticks backfill missed days. Deleted documents are
         excluded from indexed-chunk capacity; restore counts those chunks. Web chat settles known
-        compression cost when the answer stream fails. <code>BILLING_CHARGES_ENABLED=false</code> is
-        a process-wide shadow kill switch. Set <code>BILLING_CHARGES_ENABLED</code> on
-        <code>document-extract-orchestrator</code> as well as web/worker; it is a non-secret
-        allowlisted toggle, not an extra credential.
+        compression cost when the answer stream fails. Completed Ask tool rounds accumulate per step
+        and settle when a later model step errors, on web and on Slack/Telegram Ask.
+        <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide shadow kill switch. Set
+        <code>BILLING_CHARGES_ENABLED</code> on <code>document-extract-orchestrator</code> as well
+        as web/worker; it is a non-secret allowlisted toggle, not an extra credential.
       </p>
 
       <h2>Public and app surfaces</h2>

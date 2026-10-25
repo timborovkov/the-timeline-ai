@@ -5,6 +5,7 @@ import {
   openRouterFinishFromCaughtError,
   openRouterFinishFromUsdCost,
   openRouterUsdCostFromFinishEvent,
+  openRouterUsdForCompletedStream,
 } from '#src/billing/openrouter-usage.js';
 
 describe('openRouterUsdCostFromFinishEvent', () => {
@@ -67,6 +68,23 @@ describe('openRouterUsdCostFromFinishEvent', () => {
       usage: { raw: { cost: 0.01 } },
     });
     expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromCaughtError(err) ?? {})).toBe(0.05);
+  });
+
+  it('keeps the larger of per-step cost and a last-step finish payload', () => {
+    expect(
+      openRouterUsdForCompletedStream({
+        stepUsd: 0.07,
+        finishEvent: { providerMetadata: { openrouter: { usage: { cost: 0.04 } } } },
+      }),
+    ).toBeCloseTo(0.07);
+    expect(
+      openRouterUsdForCompletedStream({
+        stepUsd: 0.03,
+        finishEvent: { totalUsage: { raw: { cost: 0.1 } } },
+      }),
+    ).toBeCloseTo(0.1);
+    expect(openRouterUsdForCompletedStream({ stepUsd: 0.05 })).toBeCloseTo(0.05);
+    expect(openRouterUsdForCompletedStream({ stepUsd: 0 })).toBe(0);
   });
 
   it('walks AggregateError causes for nested usage', () => {

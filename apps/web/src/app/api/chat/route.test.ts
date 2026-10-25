@@ -47,6 +47,7 @@ const fakes = vi.hoisted(() => ({
   fakeLoggerInfo: vi.fn(),
   fakeReportCaughtError: vi.fn(),
   fakeReportHandledEvent: vi.fn(),
+  fakeOpenRouterUsdCost: vi.fn((_event: unknown) => 0),
 }));
 
 vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
@@ -136,7 +137,12 @@ vi.mock('@timeline/shared/billing', () => ({
   askOperationId: () => 'ask:web:test',
   ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS: 250,
   mapAskBillingError: (code: string) => code,
-  openRouterUsdCostFromFinishEvent: () => 0,
+  openRouterUsdCostFromFinishEvent: fakes.fakeOpenRouterUsdCost,
+  openRouterUsdForCompletedStream: (input: { stepUsd: number; finishEvent?: unknown }) => {
+    const stepUsd = Number.isFinite(input.stepUsd) && input.stepUsd > 0 ? input.stepUsd : 0;
+    const finishUsd = input.finishEvent ? fakes.fakeOpenRouterUsdCost(input.finishEvent) : 0;
+    return Math.max(stepUsd, finishUsd);
+  },
   releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
   reserveAskAi: vi.fn().mockResolvedValue({ ok: true }),
   settleAskAiFromOpenRouterUsd: vi.fn().mockResolvedValue(undefined),
@@ -170,6 +176,7 @@ const followUpMessage = {
 };
 let capturedOnFinish: ((event: Record<string, unknown>) => void | Promise<void>) | null = null;
 let capturedOnError: ((event: { error: unknown }) => void) | null = null;
+let capturedOnStepEnd: ((step: Record<string, unknown>) => void) | null = null;
 
 function request(
   body: unknown,
@@ -211,6 +218,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   capturedOnFinish = null;
   capturedOnError = null;
+  capturedOnStepEnd = null;
+  fakes.fakeOpenRouterUsdCost.mockReset();
+  fakes.fakeOpenRouterUsdCost.mockImplementation(() => 0);
   delete process.env.E2E_DETERMINISTIC_CHAT;
   fakes.fakeAuth.mockResolvedValue({
     user: { id: USER_ID, name: 'Tim', email: 'tim@example.test' },
@@ -306,9 +316,11 @@ beforeEach(() => {
     (input: {
       onError?: (event: { error: unknown }) => void;
       onEnd?: (event: Record<string, unknown>) => void | Promise<void>;
+      onStepEnd?: (step: Record<string, unknown>) => void;
     }) => {
       capturedOnError = input.onError ?? null;
       capturedOnFinish = input.onEnd ?? null;
+      capturedOnStepEnd = input.onStepEnd ?? null;
       return { stream: { kind: 'chat' } };
     },
   );
@@ -1395,6 +1407,76 @@ describe('POST /api/chat', () => {
         aiCauseName: 'AI_APICallError',
       },
     });
+  });
+
+  it('settles completed tool-round usage when a later model step errors', async () => {
+    fakes.fakeCompressMessagesForContext.mockResolvedValueOnce({
+      compressed: true,
+      messages: [{ role: 'user', content: 'What happened?' }],
+      openRouterUsd: 0.02,
+    });
+    fakes.fakeOpenRouterUsdCost.mockImplementation((event: unknown) => {
+      const row = event as {
+        providerMetadata?: { openrouter?: { usage?: { cost?: number } } };
+        usage?: { raw?: { cost?: number } };
+      };
+      return row.providerMetadata?.openrouter?.usage?.cost ?? row.usage?.raw?.cost ?? 0;
+    });
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+    expect(response.status).toBe(200);
+    expect(capturedOnStepEnd).toBeTypeOf('function');
+    capturedOnStepEnd?.({ providerMetadata: { openrouter: { usage: { cost: 0.03 } } } });
+    capturedOnStepEnd?.({ usage: { raw: { cost: 0.04 } } });
+    capturedOnError?.({
+      error: {
+        timelineAi: true,
+        operation: 'llm.streamChat',
+        model: 'agent-model',
+        causeName: 'AI_APICallError',
+        causeMessage: 'OpenRouter 503',
+      },
+    });
+    await vi.waitFor(() => {
+      expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ openRouterUsd: expect.closeTo(0.09, 8) }),
+      );
+    });
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
+    await capturedOnFinish?.({
+      providerMetadata: { openrouter: { usage: { cost: 0.04 } } },
+      text: '',
+      finishReason: 'error',
+    });
+    expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledTimes(1);
+  });
+
+  it('bills each completed step once when the finish payload repeats the last step', async () => {
+    fakes.fakeOpenRouterUsdCost.mockImplementation((event: unknown) => {
+      const row = event as {
+        providerMetadata?: { openrouter?: { usage?: { cost?: number } } };
+        usage?: { raw?: { cost?: number } };
+      };
+      return row.providerMetadata?.openrouter?.usage?.cost ?? row.usage?.raw?.cost ?? 0;
+    });
+    const response = await POST(request(validBody({ sessionId: SESSION_ID })));
+    expect(response.status).toBe(200);
+    capturedOnStepEnd?.({ providerMetadata: { openrouter: { usage: { cost: 0.03 } } } });
+    capturedOnStepEnd?.({ providerMetadata: { openrouter: { usage: { cost: 0.04 } } } });
+    await capturedOnFinish?.({
+      text: 'Answer',
+      finishReason: 'stop',
+      providerMetadata: { openrouter: { usage: { cost: 0.04 } } },
+      usage: { inputTokens: 10, outputTokens: 5 },
+      model: { modelId: 'agent-model' },
+      response: { modelId: 'agent-model' },
+    });
+    expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledTimes(1);
+    expect(settleAskAiFromOpenRouterUsd).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ openRouterUsd: expect.closeTo(0.07, 8) }),
+    );
+    expect(releaseBillingReservation).not.toHaveBeenCalled();
   });
 
   it('releases the Ask reservation when the client aborts before work starts', async () => {

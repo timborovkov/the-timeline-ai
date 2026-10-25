@@ -1,9 +1,9 @@
+import { tool, type LanguageModel, type StreamTextOnErrorCallback } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
-import type { LanguageModel, StreamTextOnErrorCallback } from 'ai';
-
+import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';
 import { resetEnvForTests } from '#src/env.js';
 import { EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
 import { extractionResultSchema } from '#src/extract/schema.js';
@@ -1482,5 +1482,73 @@ describe('streamChat', () => {
       causeName: 'Error',
     });
     expect(event?.error).not.toHaveProperty('cause');
+  });
+
+  it('reports completed step usage when a later model step fails', async () => {
+    let call = 0;
+    const sequence: string[] = [];
+    const stepCosts: number[] = [];
+    let finishCost = -1;
+    const onError = vi.fn<StreamTextOnErrorCallback>(() => {
+      sequence.push('error');
+    });
+    const model = new MockLanguageModelV3({
+      doStream: (() => {
+        call += 1;
+        if (call > 2) return Promise.reject(new Error('later step failed'));
+        const cost = call === 1 ? 0.11 : 0.13;
+        return Promise.resolve({
+          stream: new ReadableStream({
+            start(controller) {
+              controller.enqueue({
+                type: 'tool-call',
+                toolCallId: `call-${call}`,
+                toolName: 'lookup',
+                input: '{}',
+              });
+              controller.enqueue({
+                type: 'finish',
+                finishReason: { unified: 'tool-calls', raw: undefined },
+                usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+                providerMetadata: { openrouter: { usage: { cost } } },
+              });
+              controller.close();
+            },
+          }),
+        });
+      }) as never,
+    });
+
+    const result = streamChat(
+      {
+        instructions: 'sys',
+        messages: [{ role: 'user', content: 'hi' }],
+        tools: {
+          lookup: tool({
+            description: 'Look up a fact.',
+            inputSchema: z.object({}),
+            execute: async () => 'ok',
+          }),
+        },
+        onStepEnd: (step) => {
+          sequence.push('step');
+          stepCosts.push(openRouterUsdCostFromFinishEvent(step));
+        },
+        onEnd: (event) => {
+          sequence.push('end');
+          finishCost = openRouterUsdCostFromFinishEvent(event);
+        },
+        onError,
+      },
+      { model },
+    );
+
+    await result.text.catch(() => undefined);
+    expect(sequence).toEqual(['step', 'step', 'error', 'end']);
+    expect(stepCosts).toEqual([0.11, 0.13]);
+    // The finish payload repeats only the last step's provider cost, and it
+    // arrives after onError. Callers that bill from onEnd alone miss the
+    // earlier tool round and finalize before this callback.
+    expect(finishCost).toBeCloseTo(0.13);
   });
 });

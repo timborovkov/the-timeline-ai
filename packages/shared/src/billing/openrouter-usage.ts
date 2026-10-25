@@ -127,3 +127,19 @@ export function openRouterUsdCostFromFinishEvent(event: OpenRouterFinishEvent): 
     0,
   );
 }
+
+/**
+ * Bill a multi-step stream once.
+ *
+ * Completed steps carry their own OpenRouter cost. The finish event repeats
+ * that work, and its provider metadata is only the last step, so a later
+ * step error never gets a combined finish payload. Keep the larger figure.
+ */
+export function openRouterUsdForCompletedStream(input: {
+  stepUsd: number;
+  finishEvent?: OpenRouterFinishEvent;
+}): number {
+  const stepUsd = Number.isFinite(input.stepUsd) && input.stepUsd > 0 ? input.stepUsd : 0;
+  const finishUsd = input.finishEvent ? openRouterUsdCostFromFinishEvent(input.finishEvent) : 0;
+  return Math.max(stepUsd, finishUsd);
+}
