@@ -6,6 +6,7 @@ import { embed as aiEmbed, embedMany as aiEmbedMany, type EmbeddingModel } from 
 
 import type * as Cl100kBaseTokenizer from 'gpt-tokenizer/encoding/cl100k_base';
 
+import { getBillingContext } from '#src/billing/context.js';
 import {
   openRouterFinishFromAiResult,
   openRouterUsdCostFromFinishEvent,
@@ -49,6 +50,26 @@ export interface EmbedDeps {
 
 function resolveModelId(): string {
   return TIMELINE_MODELS.embedding.id;
+}
+
+/**
+ * A worker job shares one billing operation id. Split embedding batches must
+ * not reuse that id, or the second half replays the first half's cached
+ * vectors. The digest is stable for the same input, so a retry of one
+ * sub-batch still reuses its own settlement.
+ */
+function embeddingBillingOperationId(texts: readonly string[]): string | undefined {
+  const parent = getBillingContext()?.operationId;
+  if (!parent) return undefined;
+  const hash = createHash('sha256');
+  hash.update(String(texts.length));
+  for (const text of texts) {
+    hash.update('\0');
+    hash.update(String(text.length));
+    hash.update('\0');
+    hash.update(text);
+  }
+  return `${parent}:input:${hash.digest('hex')}`;
 }
 
 function embeddingInputTokenBudget(): number {
@@ -267,17 +288,25 @@ export async function embed(input: EmbedInput, deps: EmbedDeps = {}): Promise<Em
       return { vector: deterministicEmbeddingVector(text), model: modelId };
     }
     const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
-    return withAiMetering({ operationClass: 'embedding', model: modelId }, async () => {
-      const result = await aiEmbed({ model, value: text, maxRetries: deps.maxRetries ?? 2 });
-      return {
-        value: { vector: Array.from(result.embedding), model: modelId },
-        finish: embeddingMeterFinish({
-          usage: result.usage,
-          providerMetadata: result.providerMetadata,
-          bodies: [result.response?.body],
-        }),
-      };
-    });
+    const operationId = embeddingBillingOperationId([text]);
+    return withAiMetering(
+      {
+        operationClass: 'embedding',
+        model: modelId,
+        ...(operationId ? { operationId } : {}),
+      },
+      async () => {
+        const result = await aiEmbed({ model, value: text, maxRetries: deps.maxRetries ?? 2 });
+        return {
+          value: { vector: Array.from(result.embedding), model: modelId },
+          finish: embeddingMeterFinish({
+            usage: result.usage,
+            providerMetadata: result.providerMetadata,
+            bodies: [result.response?.body],
+          }),
+        };
+      },
+    );
   });
 }
 
@@ -295,27 +324,35 @@ export async function embedMany(
       return { vectors: texts.map(deterministicEmbeddingVector), model: modelId };
     }
     const model = deps.model ?? buildDefaultModel(modelId, deps.fetch);
-    return withAiMetering({ operationClass: 'embedding', model: modelId }, async () => {
-      const result = await aiEmbedMany({
-        model,
-        values: texts,
-        maxRetries: deps.maxRetries ?? 2,
-      });
-      assertEmbeddingCount(texts.length, result.embeddings.length);
-      result.embeddings.forEach((embedding, index) => {
-        assertEmbeddingVector(embedding, index);
-      });
-      return {
-        value: {
-          vectors: result.embeddings.map((embedding) => Array.from(embedding)),
-          model: modelId,
-        },
-        finish: embeddingMeterFinish({
-          usage: result.usage,
-          providerMetadata: result.providerMetadata,
-          bodies: (result.responses ?? []).map((response) => response?.body),
-        }),
-      };
-    });
+    const operationId = embeddingBillingOperationId(texts);
+    return withAiMetering(
+      {
+        operationClass: 'embedding',
+        model: modelId,
+        ...(operationId ? { operationId } : {}),
+      },
+      async () => {
+        const result = await aiEmbedMany({
+          model,
+          values: texts,
+          maxRetries: deps.maxRetries ?? 2,
+        });
+        assertEmbeddingCount(texts.length, result.embeddings.length);
+        result.embeddings.forEach((embedding, index) => {
+          assertEmbeddingVector(embedding, index);
+        });
+        return {
+          value: {
+            vectors: result.embeddings.map((embedding) => Array.from(embedding)),
+            model: modelId,
+          },
+          finish: embeddingMeterFinish({
+            usage: result.usage,
+            providerMetadata: result.providerMetadata,
+            bodies: (result.responses ?? []).map((response) => response?.body),
+          }),
+        };
+      },
+    );
   });
 }

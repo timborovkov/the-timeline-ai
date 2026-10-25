@@ -472,6 +472,15 @@ export async function skipScheduledMeetingAction(meetingId: string): Promise<Res
   });
 }
 
+function isPartialMeetingCapture(metadata: unknown): boolean {
+  return (
+    metadata !== null &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    (metadata as { partial_capture?: unknown }).partial_capture === true
+  );
+}
+
 export async function cancelMeetingBotAction(meetingId: string): Promise<Result> {
   return runSentryServerAction('cancel_meeting_bot', async () => {
     if (!UUID_RE.test(meetingId)) return { ok: false, error: 'Invalid meeting id' };
@@ -562,15 +571,37 @@ export async function cancelMeetingBotAction(meetingId: string): Promise<Result>
         };
       }
     }
-    if (cancellation?.outcome === 'processing' && finalizeQueue) {
-      try {
-        await finalizeQueue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
-      } catch (err) {
-        log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');
-        reportCaughtError(err, {
-          surface: 'server_action',
-          operation: 'partial_cancel_finalize_enqueue',
-        });
+    const partialCapture =
+      cancellation?.outcome === 'processing' ||
+      isPartialMeetingCapture(meeting.metadata) ||
+      (transcriptAlreadyClosed && meeting.status === 'processing');
+    if (partialCapture) {
+      // A partial transcript must stay `processing`. The janitor only
+      // re-enqueues finalize for that status, and finalize skips cancelled
+      // meetings. Redis being down, or a later leave retry, is not a reason
+      // to drop the capture.
+      let queue = finalizeQueue;
+      if (!queue) {
+        try {
+          queue = await requireRedisQueue();
+        } catch (err) {
+          log.warn({ err, meetingId }, 'partial_cancel_finalize_queue_unavailable');
+          reportCaughtError(err, {
+            surface: 'server_action',
+            operation: 'partial_cancel_finalize_queue_unavailable',
+          });
+        }
+      }
+      if (queue) {
+        try {
+          await queue.enqueueMeetingFinalizeJob({ meetingId, teamId: meeting.teamId });
+        } catch (err) {
+          log.warn({ err, meetingId }, 'partial_cancel_finalize_enqueue_failed');
+          reportCaughtError(err, {
+            surface: 'server_action',
+            operation: 'partial_cancel_finalize_enqueue',
+          });
+        }
       }
     } else {
       await scope.meetings.updateMeetingStatus(meetingId, 'cancelled', {

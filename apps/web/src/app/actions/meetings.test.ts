@@ -220,9 +220,13 @@ describe('cancelMeetingBotAction', () => {
     expect(fakes.fakeMeetings.cancelMeetingCapture).toHaveBeenNthCalledWith(2, MEETING_ID, {
       allowPartialProcessing: true,
     });
+    expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeSettleElapsedRecall).not.toHaveBeenCalled();
   });
 
   it('retries a provider leave after local transcript acceptance was already closed', async () => {
+    const enqueueMeetingFinalizeJob = vi.fn().mockResolvedValue(undefined);
+    fakes.fakeRequireRedisQueue.mockResolvedValue({ enqueueMeetingFinalizeJob });
     fakes.fakeMeetings.getMeeting.mockResolvedValue({
       id: MEETING_ID,
       teamId: TEAM_ID,
@@ -232,6 +236,7 @@ describe('cancelMeetingBotAction', () => {
       metadata: {
         transcript_closed_at: '2026-08-28T00:00:00.000Z',
         provider_leave_pending: true,
+        partial_capture: true,
       },
     });
 
@@ -245,6 +250,35 @@ describe('cancelMeetingBotAction', () => {
       MEETING_ID,
       'bot-1',
     );
+    expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
+    expect(enqueueMeetingFinalizeJob).toHaveBeenCalledWith({
+      meetingId: MEETING_ID,
+      teamId: TEAM_ID,
+    });
+  });
+
+  it('keeps a partial capture processing when a leave retry cannot enqueue finalize', async () => {
+    fakes.fakeRequireRedisQueue.mockRejectedValue(new Error('redis unavailable'));
+    fakes.fakeMeetings.getMeeting.mockResolvedValue({
+      id: MEETING_ID,
+      teamId: TEAM_ID,
+      status: 'processing',
+      provider: 'recall',
+      providerBotId: 'bot-1',
+      metadata: {
+        transcript_closed_at: '2026-08-28T00:00:00.000Z',
+        provider_leave_pending: true,
+        partial_capture: true,
+      },
+    });
+
+    await expect(cancelMeetingBotAction(MEETING_ID)).resolves.toEqual({
+      ok: true,
+      meetingId: MEETING_ID,
+    });
+    expect(fakes.fakeMeetings.cancelMeetingCapture).not.toHaveBeenCalled();
+    expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
+    expect(fakes.fakeSettleElapsedRecall).not.toHaveBeenCalled();
   });
 
   it('atomically moves a partial capture to processing before enqueueing finalization', async () => {
@@ -275,6 +309,7 @@ describe('cancelMeetingBotAction', () => {
       meetingId: MEETING_ID,
       teamId: TEAM_ID,
     });
+    expect(fakes.fakeMeetings.updateMeetingStatus).not.toHaveBeenCalled();
   });
 
   it('settles elapsed Recall minutes when cancelling without transcript chunks', async () => {

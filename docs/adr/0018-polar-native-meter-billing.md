@@ -266,7 +266,15 @@ credit hides margin and confuses prospects.
    and the janitor flushes transcription when billing can reserve again. Denied inbound-email
    parent enrichment stamps `billing_enrichment_deferred`; the janitor retries `email_units`
    then extract/embed/suggestions (and captured documents) separately from accepted-source
-   flush. Deferred accepted-source flush
+   flush. That marker stays until every pending attachment has been read, stored, queued for
+   extract, and linked on the parent. A failed read, store, extract enqueue, or parent link
+   leaves it set. Metered vision, transcription, embedding, and structured-chat callbacks cache
+   plain JSON values, because `withAiMetering` replays `provider_value` through `JSON.stringify`.
+   Embedding calls under a worker job id append a stable digest of that call's input, so a
+   split batch does not replay the first half's vectors. Cancelling a meeting that already
+   has transcript chunks leaves it `processing` for finalize; only an empty capture is marked
+   cancelled.
+   Deferred accepted-source flush
    rotates past still-blocked rows. Document restore rechecks storage,
    document, and indexed-chunk capacity under advisory lock key 1 then key 2
    (chunk admission reuses key 2). Storage-cap finalization deletes the uploaded
