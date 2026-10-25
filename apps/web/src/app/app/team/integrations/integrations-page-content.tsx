@@ -227,6 +227,14 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
     lastSyncedAt: c.lastSyncedAt ? c.lastSyncedAt.toISOString() : null,
     lastError: c.lastError,
     syncPause: syncPauseByIntegrationId.get(c.id) ?? null,
+    healthPause:
+      c.healthPausedAt && integrationsLib.isIntegrationHealthPauseKind(c.healthPauseKind)
+        ? {
+            kind: c.healthPauseKind,
+            pausedAt: c.healthPausedAt.toISOString(),
+            firstFailedAt: c.healthFirstFailedAt ? c.healthFirstFailedAt.toISOString() : null,
+          }
+        : null,
     attention: attentionByIntegrationId.get(c.id) ?? [],
     visibilityDefault: c.visibilityDefault,
     visibilityDefaultUserIds: c.visibilityDefaultUserIds,
@@ -422,7 +430,7 @@ function McpEndpointSection() {
 }
 
 function needsAttention(row: ConnectedIntegrationUiRow) {
-  return row.attention.length > 0 || Boolean(row.lastError);
+  return row.attention.length > 0 || Boolean(row.lastError) || Boolean(row.healthPause);
 }
 
 function needsSharedSourceRecovery(row: ConnectedIntegrationUiRow) {

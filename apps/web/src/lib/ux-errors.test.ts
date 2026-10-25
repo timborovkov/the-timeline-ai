@@ -48,6 +48,7 @@ describe('UX error messages', () => {
       ),
     ).toContain('temporary error');
     expect(connectionErrorMessage('not_found')).toContain('no longer exists');
+    expect(connectionErrorMessage('health_paused')).toContain('Reconnect or resume');
     expect(connectionErrorMessage(undefined, 500)).toBe('Connection failed (500).');
   });
 });

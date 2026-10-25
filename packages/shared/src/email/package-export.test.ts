@@ -7,6 +7,7 @@ describe('@timeline/shared development package exports', () => {
   it.each([
     ['@timeline/shared', '../index.ts'],
     ['@timeline/shared/email', './index.ts'],
+    ['@timeline/shared/integrations/health', '../integrations/health.ts'],
     ['@timeline/shared/integrations/registry', '../integrations/registry.ts'],
     ['@timeline/shared/logger', '../logger.ts'],
     ['@timeline/shared/rate-limit', '../rate-limit/index.ts'],

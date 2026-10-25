@@ -389,6 +389,59 @@ describe('database schema contracts', () => {
     }
   });
 
+  it('accepts access_revoked attention and paired health pause columns', async () => {
+    const integrationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    await pg.exec(`
+      INSERT INTO integrations (id, team_id, provider, display_name)
+      VALUES ('${integrationId}', '${TEAM_ID}', 'github', 'GitHub health');
+      INSERT INTO connection_attention (
+        team_id, integration_id, category, summary
+      ) VALUES (
+        '${TEAM_ID}',
+        '${integrationId}',
+        'access_revoked',
+        'GitHub access was revoked.'
+      );
+      UPDATE integrations
+      SET
+        health_consecutive_failures = 2,
+        health_first_failed_at = '2026-06-25T12:00:00Z',
+        health_paused_at = '2026-06-28T12:00:00Z',
+        health_pause_kind = 'access_revoked'
+      WHERE id = '${integrationId}';
+    `);
+
+    await expect(
+      pg.exec(`
+        UPDATE integrations
+        SET health_paused_at = '2026-06-28T12:00:00Z', health_pause_kind = 'unknown'
+        WHERE id = '${integrationId}'
+      `),
+    ).rejects.toThrow(/integrations_health_pause_kind_chk/);
+    await expect(
+      pg.exec(`
+        UPDATE integrations
+        SET health_paused_at = '2026-06-28T12:00:00Z', health_pause_kind = NULL
+        WHERE id = '${integrationId}'
+      `),
+    ).rejects.toThrow(/integrations_health_pause_kind_chk/);
+
+    const rows = await pg.query<{
+      category: string;
+      health_pause_kind: string | null;
+    }>(`
+      SELECT
+        (SELECT category::text FROM connection_attention WHERE integration_id = '${integrationId}') AS category,
+        health_pause_kind
+      FROM integrations
+      WHERE id = '${integrationId}'
+    `);
+    expect(rows.rows[0]).toEqual({
+      category: 'access_revoked',
+      health_pause_kind: 'access_revoked',
+    });
+  });
+
   describe('canonical shared-link migration', () => {
     let migrationPg: PGlite;
 

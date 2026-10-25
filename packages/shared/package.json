@@ -23,6 +23,12 @@
       "import": "./dist/integrations/index.js",
       "default": "./dist/integrations/index.js"
     },
+    "./integrations/health": {
+      "types": "./src/integrations/health.ts",
+      "development": "./src/integrations/health.ts",
+      "import": "./dist/integrations/health.js",
+      "default": "./dist/integrations/health.js"
+    },
     "./integrations/registry": {
       "types": "./src/integrations/registry.ts",
       "development": "./src/integrations/registry.ts",

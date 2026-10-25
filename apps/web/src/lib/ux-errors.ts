@@ -94,6 +94,8 @@ export function connectionErrorMessage(error: string | undefined, status?: numbe
       return 'Choose a team before managing connections.';
     case 'disconnect_failed':
       return 'Could not disconnect this connection. Try again, then check the server logs if it keeps failing.';
+    case 'health_paused':
+      return 'This connection is paused. Reconnect or resume it before syncing.';
     case 'request_failed':
       return `Connection request failed${status ? ` (${String(status)})` : ''}. Try again in a moment.`;
     default:

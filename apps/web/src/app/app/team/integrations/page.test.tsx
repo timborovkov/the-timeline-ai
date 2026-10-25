@@ -43,6 +43,7 @@ const baseConnectedRow = {
   lastSyncedAt: '2026-06-29T10:00:00.000Z',
   lastError: null,
   syncPause: null,
+  healthPause: null,
   visibilityDefault: 'team' as const,
   visibilityDefaultUserIds: null,
 };
@@ -233,6 +234,30 @@ describe('IntegrationsPageView', () => {
     expect(screen.getByRole('link', { name: 'Choose replacement' }).getAttribute('href')).toBe(
       '#available-shared-sources',
     );
+  });
+
+  it('places health-paused integrations in Needs attention with a Paused notice', () => {
+    const pageModel = model();
+    pageModel.connectedRows = [
+      {
+        ...baseConnectedRow,
+        id: 'integration-paused',
+        displayName: 'GitHub — paused',
+        lastError: null,
+        attention: [],
+        healthPause: {
+          kind: 'connectivity',
+          pausedAt: '2026-06-28T12:00:00.000Z',
+          firstFailedAt: '2026-06-25T12:00:00.000Z',
+        },
+      },
+    ];
+
+    render(<IntegrationsPageView params={{}} active={{ teamName: 'Acme' }} model={pageModel} />);
+
+    expect(screen.getByRole('heading', { name: 'Needs attention' })).toBeTruthy();
+    expect(screen.getByText(/Paused: GitHub hasn't responded/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Resume' })).toBeTruthy();
   });
 
   it('toasts MCP OAuth success instead of a page banner', () => {

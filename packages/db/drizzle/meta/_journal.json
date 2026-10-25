@@ -533,6 +533,13 @@
       "when": 1795654860000,
       "tag": "0075_mcp_oauth_server",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795654920000,
+      "tag": "0076_integration_health_pause",
+      "breakpoints": true
     }
   ]
 }

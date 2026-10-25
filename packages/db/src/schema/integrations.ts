@@ -50,6 +50,7 @@ export const connectionAttentionCategory = pgEnum('connection_attention_category
   'access_changed',
   'sync_error',
   'webhook_degraded',
+  'access_revoked',
 ]);
 
 export const providerConnections = pgTable(
@@ -114,6 +115,11 @@ export const integrations = pgTable(
     enabled: boolean('enabled').notNull().default(true),
     lastError: text('last_error'),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    healthConsecutiveFailures: integer('health_consecutive_failures').notNull().default(0),
+    healthFirstFailedAt: timestamp('health_first_failed_at', { withTimezone: true }),
+    healthPausedAt: timestamp('health_paused_at', { withTimezone: true }),
+    healthPauseKind: text('health_pause_kind'),
+    healthOwnerNotifiedAt: timestamp('health_owner_notified_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -123,6 +129,17 @@ export const integrations = pgTable(
     uniqueIndex('integrations_team_provider_account_unq')
       .on(table.teamId, table.provider, table.externalAccountId)
       .where(sql`${table.externalAccountId} IS NOT NULL`),
+    index('integrations_health_paused_idx')
+      .on(table.healthPausedAt)
+      .where(sql`${table.healthPausedAt} IS NOT NULL`),
+    check(
+      'integrations_health_consecutive_failures_chk',
+      sql`${table.healthConsecutiveFailures} >= 0`,
+    ),
+    check(
+      'integrations_health_pause_kind_chk',
+      sql`(${table.healthPausedAt} IS NULL AND ${table.healthPauseKind} IS NULL) OR (${table.healthPausedAt} IS NOT NULL AND ${table.healthPauseKind} IS NOT NULL AND ${table.healthPauseKind} IN ('access_revoked', 'connectivity', 'auth', 'permanent'))`,
+    ),
   ],
 );
 

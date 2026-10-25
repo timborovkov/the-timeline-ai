@@ -335,14 +335,9 @@ function isNativeSyncProvider(
   return integrationsLib.isNativeProviderId(provider);
 }
 
-function isAuthOrAccessFailure(message: string): boolean {
-  if (message.includes('github_rate_limited') || message.includes('provider_rate_limited')) {
-    return false;
-  }
-  return (
-    /\b(?:401|403|404)\b/.test(message) ||
-    /\b(?:reconnect|expired|unauthorized|forbidden)\b/i.test(message)
-  );
+function countedHealthKind(message: string): integrationsLib.IntegrationHealthPauseKind | null {
+  const classified = integrationsLib.classifyIntegrationHealthFailure(message);
+  return classified.counted ? classified.kind : null;
 }
 
 function syncPartialFailures(
@@ -367,7 +362,63 @@ function summarizeSyncPartialFailures(failures: integrationsLib.SyncPartialFailu
 }
 
 function isAuthOrAccessPartialFailure(failure: integrationsLib.SyncPartialFailure): boolean {
-  return isAuthOrAccessFailure(summarizeSyncPartialFailures([failure]));
+  const kind = countedHealthKind(summarizeSyncPartialFailures([failure]));
+  return kind === 'access_revoked' || kind === 'auth';
+}
+
+function healthCause(error: string): string {
+  return error.replace(/\s+/g, ' ').slice(0, 200);
+}
+
+async function recordCountedHealthFailure(input: {
+  db: Db;
+  integration: integrationsLib.IntegrationRow;
+  kind: integrationsLib.IntegrationHealthPauseKind;
+  error: string;
+}): Promise<{ newlyPaused: boolean }> {
+  const attentionCategory = integrationsLib.attentionCategoryForHealthKind(input.kind);
+  if (attentionCategory) {
+    await integrationsLib.adminRecordConnectionAttention(input.db, input.integration.teamId, {
+      providerConnectionId: input.integration.providerConnectionId,
+      integrationId: input.integration.id,
+      category: attentionCategory,
+      summary: input.error.slice(0, 500),
+    });
+  }
+  const health = await integrationsLib.adminRecordCountedHealthFailure(
+    input.db,
+    input.integration.id,
+    { kind: input.kind, error: input.error.slice(0, 500) },
+  );
+  if (health.newlyPaused) {
+    const cause = healthCause(input.error);
+    await integrationsLib.adminRecordAudit(
+      input.db,
+      input.integration.teamId,
+      'sync_paused:health',
+      {
+        provider: input.integration.provider,
+        pauseKind: health.pauseKind,
+        consecutiveFailures: health.consecutiveFailures,
+        firstFailedAt: health.firstFailedAt.toISOString(),
+        cause,
+        providerConnectionId: input.integration.providerConnectionId,
+      },
+      { integrationId: input.integration.id },
+    );
+    log.warn(
+      {
+        integrationId: input.integration.id,
+        teamId: input.integration.teamId,
+        provider: input.integration.provider,
+        providerConnectionId: input.integration.providerConnectionId,
+        pauseKind: health.pauseKind,
+        consecutiveFailures: health.consecutiveFailures,
+      },
+      `integration health paused after sustained ${health.pauseKind} failures integrationId=${input.integration.id} provider=${input.integration.provider} providerConnectionId=${input.integration.providerConnectionId ?? 'none'} cause=${cause}`,
+    );
+  }
+  return { newlyPaused: health.newlyPaused };
 }
 
 function providerRateLimitPause(err: unknown): {
@@ -548,6 +599,18 @@ export async function runOneIntegration(
       log.debug({ integrationId }, 'integration disabled — skipping');
       return;
     }
+    if (integration.healthPausedAt) {
+      log.info(
+        {
+          integrationId,
+          provider: integration.provider,
+          pauseKind: integration.healthPauseKind,
+          providerConnectionId: integration.providerConnectionId,
+        },
+        `integration health paused (${integration.healthPauseKind ?? 'unknown'}) — skipping sync integrationId=${integrationId} provider=${integration.provider} providerConnectionId=${integration.providerConnectionId ?? 'none'}`,
+      );
+      return;
+    }
     if (integration.provider === 'mcp') {
       // MCP servers are queried on-demand by the agent — no scheduled
       // sync. We skip cleanly so a future "MCP poll" extension is
@@ -600,11 +663,11 @@ export async function runOneIntegration(
     if (!tokens) {
       const msg = 'No tokens — reconnect required';
       await integrationsLib.adminRecordError(db, integrationId, msg);
-      await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
-        providerConnectionId: integration.providerConnectionId,
-        integrationId,
-        category: 'needs_reconnect',
-        summary: msg,
+      await recordCountedHealthFailure({
+        db,
+        integration,
+        kind: 'auth',
+        error: msg,
       });
       return;
     }
@@ -846,7 +909,20 @@ export async function runOneIntegration(
             ? summarizeSyncPartialFailures(transientPartialFailures)
             : null;
         await integrationsLib.adminRecordError(db, integrationId, partialSummary);
-        if (authSummary) {
+        const countedKind = integrationsLib.highestCountedHealthKind(
+          partialFailures.map((failure) => failure.error),
+        );
+        if (countedKind) {
+          const countedSummary = summarizeSyncPartialFailures(
+            partialFailures.filter((failure) => countedHealthKind(failure.error) === countedKind),
+          );
+          await recordCountedHealthFailure({
+            db,
+            integration,
+            kind: countedKind,
+            error: countedSummary || partialSummary,
+          });
+        } else if (authSummary) {
           await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
             providerConnectionId: integration.providerConnectionId,
             integrationId,
@@ -871,11 +947,14 @@ export async function runOneIntegration(
         }
       } else if (clearsIntegrationHealth) {
         await integrationsLib.adminResetTransientSyncFailures(db, integrationId);
+        await integrationsLib.adminResetIntegrationHealth(db, integrationId);
         await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
           providerConnectionId: integration.providerConnectionId,
           integrationId,
           categories:
-            missingRequiredScopes.length > 0 ? ['sync_error'] : ['needs_reconnect', 'sync_error'],
+            missingRequiredScopes.length > 0
+              ? ['sync_error']
+              : ['needs_reconnect', 'access_revoked', 'sync_error'],
         });
       }
       for (const continuation of continuations) {
@@ -956,27 +1035,36 @@ export async function runOneIntegration(
         cursors: [...cursorCheckpoints.values()],
         continuations: errorContinuations,
       });
-      if (isAuthOrAccessFailure(msg)) {
+      const countedKind = countedHealthKind(msg);
+      if (countedKind) {
+        const health = await recordCountedHealthFailure({
+          db,
+          integration,
+          kind: countedKind,
+          error: msg,
+        });
+        await integrationsLib.adminRecordAudit(
+          db,
+          integration.teamId,
+          `sync_failed:${kind}`,
+          { provider: integration.provider, error: msg, healthKind: countedKind },
+          { integrationId },
+        );
+        if (health.newlyPaused) return;
+        throw err;
+      }
+      const transient = await integrationsLib.adminRecordTransientSyncFailure(
+        db,
+        integrationId,
+        msg.slice(0, 500),
+      );
+      if (transient.shouldCreateAttention) {
         await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
           providerConnectionId: integration.providerConnectionId,
           integrationId,
-          category: 'needs_reconnect',
+          category: 'sync_error',
           summary: msg.slice(0, 500),
         });
-      } else {
-        const transient = await integrationsLib.adminRecordTransientSyncFailure(
-          db,
-          integrationId,
-          msg.slice(0, 500),
-        );
-        if (transient.shouldCreateAttention) {
-          await integrationsLib.adminRecordConnectionAttention(db, integration.teamId, {
-            providerConnectionId: integration.providerConnectionId,
-            integrationId,
-            category: 'sync_error',
-            summary: msg.slice(0, 500),
-          });
-        }
       }
       await integrationsLib.adminRecordAudit(
         db,
@@ -1144,6 +1232,18 @@ export async function handleTick(db: Db): Promise<void> {
   for (const i of all) {
     if (!isNativeSyncProvider(i.provider)) continue;
     const provider = i.provider;
+    if (i.healthPausedAt) {
+      log.info(
+        {
+          integrationId: i.id,
+          provider,
+          pauseKind: i.healthPauseKind,
+          providerConnectionId: i.providerConnectionId,
+        },
+        `integration health paused — not enqueueing tick integrationId=${i.id} provider=${provider} providerConnectionId=${i.providerConnectionId ?? 'none'} pauseKind=${i.healthPauseKind ?? 'unknown'}`,
+      );
+      continue;
+    }
     const pause = await integrationsLib.adminLoadIntegrationSyncPause(db, i.id);
     if (pause) {
       log.info(

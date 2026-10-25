@@ -27,6 +27,47 @@ async function resolveScope(userId: string) {
   return { active, scope: withTeam(db, active.teamId, userId) };
 }
 
+function integrationStubFromConnection(
+  connection: {
+    id: string;
+    ownerUserId: string;
+    provider: integrationsLib.IntegrationProviderName;
+    displayName: string;
+    externalAccountId: string | null;
+    scopes: string[] | null;
+    lastError: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  },
+  teamId: string,
+): integrationsLib.IntegrationRow {
+  return {
+    id: connection.id,
+    teamId,
+    connectedByUserId: connection.ownerUserId,
+    providerConnectionId: connection.id,
+    provider: connection.provider,
+    displayName: connection.displayName,
+    externalAccountId: connection.externalAccountId,
+    scopes: connection.scopes,
+    authSecretCiphertext: null,
+    authSecretIv: null,
+    authSecretTag: null,
+    visibilityDefault: 'team',
+    visibilityDefaultUserIds: null,
+    enabled: true,
+    lastError: connection.lastError,
+    lastSyncedAt: null,
+    healthConsecutiveFailures: 0,
+    healthFirstFailedAt: null,
+    healthPausedAt: null,
+    healthPauseKind: null,
+    healthOwnerNotifiedAt: null,
+    createdAt: connection.createdAt,
+    updatedAt: connection.updatedAt,
+  };
+}
+
 function serializeConnection(connection: {
   id: string;
   ownerUserId: string;
@@ -71,26 +112,7 @@ export async function GET(
   let resources;
   try {
     resources = await provider.listSyncableResources(
-      {
-        id: connection.id,
-        teamId: resolved.active.teamId,
-        connectedByUserId: connection.ownerUserId,
-        providerConnectionId: connection.id,
-        provider: connection.provider,
-        displayName: connection.displayName,
-        externalAccountId: connection.externalAccountId,
-        scopes: connection.scopes,
-        authSecretCiphertext: null,
-        authSecretIv: null,
-        authSecretTag: null,
-        visibilityDefault: 'team',
-        visibilityDefaultUserIds: null,
-        enabled: true,
-        lastError: connection.lastError,
-        lastSyncedAt: null,
-        createdAt: connection.createdAt,
-        updatedAt: connection.updatedAt,
-      },
+      integrationStubFromConnection(connection, resolved.active.teamId),
       tokens,
       {
         persistTokens: (fresh) =>
@@ -144,26 +166,7 @@ export async function PUT(
   if (!tokens) return NextResponse.json({ error: 'no_tokens' }, { status: 400 });
   const provider = integrationsLib.getProvider(connection.provider);
   const available = await provider.listSyncableResources(
-    {
-      id: connection.id,
-      teamId: resolved.active.teamId,
-      connectedByUserId: connection.ownerUserId,
-      providerConnectionId: connection.id,
-      provider: connection.provider,
-      displayName: connection.displayName,
-      externalAccountId: connection.externalAccountId,
-      scopes: connection.scopes,
-      authSecretCiphertext: null,
-      authSecretIv: null,
-      authSecretTag: null,
-      visibilityDefault: 'team',
-      visibilityDefaultUserIds: null,
-      enabled: true,
-      lastError: connection.lastError,
-      lastSyncedAt: null,
-      createdAt: connection.createdAt,
-      updatedAt: connection.updatedAt,
-    },
+    integrationStubFromConnection(connection, resolved.active.teamId),
     tokens,
     {
       persistTokens: (fresh) =>
