@@ -62,6 +62,21 @@ export function isPlaceholderInboundEmail(inboundEmail: string | null | undefine
   return Boolean(inboundEmail?.toLowerCase().endsWith('@inbound.invalid'));
 }
 
+/**
+ * Warn only when the stored placeholder is also the address users would send
+ * to. A configured POSTMARK_INBOUND_ADDRESS hash mailbox is a real capture
+ * path even if the team row still holds `@inbound.invalid`.
+ */
+export function shouldWarnPlaceholderInboundEmail(
+  storedInboundEmail: string | null | undefined,
+  displayedInboundEmail: string | null,
+): boolean {
+  return (
+    isPlaceholderInboundEmail(storedInboundEmail) &&
+    (displayedInboundEmail === null || isPlaceholderInboundEmail(displayedInboundEmail))
+  );
+}
+
 export function displayInboundEmail(
   team: { slug: string; inboundEmail: string | null } | null,
   postmarkInboundAddress: string | undefined,

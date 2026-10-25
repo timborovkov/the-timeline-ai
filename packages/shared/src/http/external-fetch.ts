@@ -229,13 +229,13 @@ async function externalFetchAttempt(
   options: ExternalFetchOptions,
 ): Promise<Response> {
   const addresses = await resolveExternalAddresses(url.hostname, options);
-  // Happy Eyeballs is unnecessary once we have a validated address set; leaving
-  // it on is what made Node call lookup({ all: true }) against a callback that
-  // only implemented the single-address signature.
+  // Keep Happy Eyeballs so a dead validated address can fail over to another
+  // in the same SSRF-checked set. createPinnedAddressLookup already answers
+  // lookup({ all: true }) with only those addresses.
   const dispatcher = new Agent({
     connect: {
       lookup: createPinnedAddressLookup(addresses),
-      autoSelectFamily: false,
+      autoSelectFamily: true,
     },
   });
   const controller = new AbortController();

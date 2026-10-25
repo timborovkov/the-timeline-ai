@@ -89,13 +89,14 @@ describe('telegram bot startup', () => {
     });
   });
 
-  it('logs webhook already registered when getWebhookInfo matches the target URL', async () => {
+  it('re-applies the webhook secret when the URL is already registered', async () => {
     const logs: string[] = [];
     const warns: string[] = [];
     const postTelegram = vi.fn<TelegramBotApiPost>((_token, method) => {
       if (method === 'getWebhookInfo') {
         return Promise.resolve({ url: 'https://app.test/api/telegram/webhook' });
       }
+      if (method === 'setWebhook') return Promise.resolve(true);
       if (method === 'setMyCommands') return Promise.resolve(true);
       return Promise.reject(new Error(`unexpected ${method}`));
     });
@@ -103,7 +104,7 @@ describe('telegram bot startup', () => {
       {
         nodeEnv: 'production',
         botToken: 'token',
-        webhookSecret: 'secret',
+        webhookSecret: 'rotated-secret',
         authUrl: 'https://app.test',
       },
       { log: (message) => logs.push(message), warn: (message) => warns.push(message) },
@@ -112,7 +113,41 @@ describe('telegram bot startup', () => {
     await Promise.all([work.commands, work.webhook]);
     expect(logs).toContain('[telegram-webhook] webhook already registered');
     expect(warns).toEqual([]);
-    expect(postTelegram.mock.calls.some(([, method]) => method === 'setWebhook')).toBe(false);
+    expect(postTelegram).toHaveBeenCalledWith('token', 'setWebhook', {
+      url: 'https://app.test/api/telegram/webhook',
+      secret_token: 'rotated-secret',
+      allowed_updates: ['message', 'edited_message', 'callback_query'],
+      drop_pending_updates: false,
+    });
+  });
+
+  it('still re-applies setWebhook after getWebhookInfo already matches the target URL', async () => {
+    const postTelegram = vi.fn<TelegramBotApiPost>((_token, method) => {
+      if (method === 'getWebhookInfo') {
+        return Promise.resolve({ url: 'https://app.test/api/telegram/webhook' });
+      }
+      if (method === 'setWebhook') return Promise.resolve(true);
+      return Promise.reject(new Error(`unexpected ${method}`));
+    });
+    const result = await registerTelegramWebhook(
+      {
+        botToken: 'token',
+        webhookSecret: 'rotated-secret',
+        authUrl: 'https://app.test',
+      },
+      postTelegram,
+    );
+    expect(result).toEqual({
+      status: 'already-registered',
+      detail: 'webhook already registered',
+    });
+    expect(postTelegram).toHaveBeenCalledWith(
+      'token',
+      'setWebhook',
+      expect.objectContaining({
+        secret_token: 'rotated-secret',
+      }),
+    );
   });
 
   it('retries setWebhook with backoff then succeeds', async () => {

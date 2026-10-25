@@ -39,7 +39,7 @@ import { resolveActiveTeam } from '@/lib/active-team';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { displayMemberLabel } from '@/lib/display-labels';
-import { displayInboundEmail, isPlaceholderInboundEmail } from '@/lib/hub-status';
+import { displayInboundEmail, shouldWarnPlaceholderInboundEmail } from '@/lib/hub-status';
 
 export const metadata: Metadata = {
   title: 'Team settings',
@@ -105,7 +105,10 @@ export default async function TeamSettingsPage({
     { slug: active.teamSlug, inboundEmail: inboundEmailSettings.inboundEmail },
     process.env.POSTMARK_INBOUND_ADDRESS,
   );
-  const placeholderInbound = isPlaceholderInboundEmail(inboundEmailSettings.inboundEmail);
+  const placeholderInbound = shouldWarnPlaceholderInboundEmail(
+    inboundEmailSettings.inboundEmail,
+    inboundEmail,
+  );
   if (isAdmin) {
     await db
       .update(teamExports)

@@ -40,6 +40,37 @@ describe('sentry tunnel', () => {
     expect(sentryIngestTargetFromDsn(undefined)).toBeNull();
   });
 
+  it('rejects an oversized envelope without Content-Length while streaming', async () => {
+    const chunk = new Uint8Array(4 * 1024 * 1024);
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 8) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk);
+      },
+    });
+    const fetchImpl = vi.fn<typeof fetch>(() =>
+      Promise.resolve(new Response(null, { status: 200 })),
+    );
+    const response = await forwardSentryTunnelEnvelope({
+      dsn: DSN,
+      req: new Request('https://timeline.test/sentry-tunnel', {
+        method: 'POST',
+        body: stream,
+        duplex: 'half',
+      } as RequestInit & { duplex: 'half' }),
+      fetchImpl,
+    });
+    expect(response.status).toBe(413);
+    await expect(response.json()).resolves.toMatchObject({ reason: 'payload_too_large' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(pulls).toBeLessThanOrEqual(4);
+  });
+
   it('forwards the envelope only to the configured ingest host', async () => {
     const fetchImpl = vi.fn<typeof fetch>((input) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

@@ -11,6 +11,7 @@ import {
   homeOpenObjectTotal,
   homeWorkNeedingAttentionCount,
   isPlaceholderInboundEmail,
+  shouldWarnPlaceholderInboundEmail,
   workAttentionCount,
 } from '@/lib/hub-status';
 
@@ -175,6 +176,21 @@ describe('hub status helpers', () => {
     expect(
       displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }, undefined),
     ).toBeNull();
+    expect(
+      shouldWarnPlaceholderInboundEmail(
+        'acme@inbound.invalid',
+        displayInboundEmail(
+          { slug: 'acme', inboundEmail: 'acme@inbound.invalid' },
+          'mailbox@inbound.postmarkapp.com',
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      shouldWarnPlaceholderInboundEmail(
+        'acme@inbound.invalid',
+        displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }, undefined),
+      ),
+    ).toBe(true);
   });
 
   it('prefers a configured team inbound domain', () => {

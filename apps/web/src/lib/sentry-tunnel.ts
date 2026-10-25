@@ -9,6 +9,8 @@
  * response.
  */
 
+import { readCappedBinaryBody } from '@/lib/request-body';
+
 const SENTRY_TUNNEL_MAX_BODY_BYTES = 10 * 1024 * 1024;
 const SENTRY_TUNNEL_TIMEOUT_MS = 10_000;
 
@@ -37,18 +39,6 @@ export function sentryIngestTargetFromDsn(dsn: string | undefined): SentryIngest
   return { url: url.toString(), host: parsed.host, projectId };
 }
 
-async function readCappedRequestBody(
-  req: Request,
-  maxBytes = SENTRY_TUNNEL_MAX_BODY_BYTES,
-): Promise<{ ok: true; body: Uint8Array } | { ok: false; reason: 'too_large' }> {
-  const declared = Number(req.headers.get('content-length'));
-  if (Number.isFinite(declared) && declared > maxBytes) return { ok: false, reason: 'too_large' };
-  if (!req.body) return { ok: true, body: new Uint8Array() };
-  const body = new Uint8Array(await req.arrayBuffer());
-  if (body.byteLength > maxBytes) return { ok: false, reason: 'too_large' };
-  return { ok: true, body };
-}
-
 export async function forwardSentryTunnelEnvelope(input: {
   dsn: string | undefined;
   req: Request;
@@ -58,8 +48,8 @@ export async function forwardSentryTunnelEnvelope(input: {
   if (!target) {
     return Response.json({ ok: false, reason: 'tunnel_disabled' }, { status: 503 });
   }
-  const capped = await readCappedRequestBody(input.req);
-  if (!capped.ok) {
+  const capped = await readCappedBinaryBody(input.req, SENTRY_TUNNEL_MAX_BODY_BYTES);
+  if (capped.tooLarge) {
     return Response.json({ ok: false, reason: 'payload_too_large' }, { status: 413 });
   }
   const fetchImpl = input.fetchImpl ?? fetch;

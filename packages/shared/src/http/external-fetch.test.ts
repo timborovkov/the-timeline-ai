@@ -1,14 +1,39 @@
 import { createServer, type RequestListener, type Server } from 'node:http';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExternalHttpError } from '#src/http/external-fetch.js';
+import type * as Undici from 'undici';
 
 import {
   createPinnedAddressLookup,
   externalFetch,
   resolveExternalAddresses,
 } from '#src/http/external-fetch.js';
+
+const capturedAgentOptions = vi.hoisted(() => [] as unknown[]);
+
+vi.mock('undici', async (importOriginal) => {
+  const actual = await importOriginal<typeof Undici>();
+  class Agent extends actual.Agent {
+    constructor(options?: ConstructorParameters<typeof actual.Agent>[0]) {
+      capturedAgentOptions.push(options);
+      super(options);
+    }
+  }
+  return { ...actual, Agent };
+});
+
+function lastAgentConnect(): { autoSelectFamily?: unknown; lookup?: unknown } | undefined {
+  const last = capturedAgentOptions.at(-1);
+  if (!last || typeof last !== 'object' || !('connect' in last)) return undefined;
+  const connect = last.connect;
+  if (!connect || typeof connect !== 'object') return undefined;
+  return {
+    autoSelectFamily: 'autoSelectFamily' in connect ? connect.autoSelectFamily : undefined,
+    lookup: 'lookup' in connect ? connect.lookup : undefined,
+  };
+}
 
 /**
  * The outbound HTTP boundary must reject private DNS results, pin the address
@@ -19,6 +44,7 @@ import {
 const servers: Server[] = [];
 
 afterEach(async () => {
+  capturedAgentOptions.length = 0;
   await Promise.all(
     servers.splice(0).map(
       (server) =>
@@ -129,6 +155,28 @@ describe('external HTTP boundary', () => {
     );
     expect(await response.text()).toBe('pinned');
     expect(lookups).toBe(1);
+    expect(lastAgentConnect()?.autoSelectFamily).toBe(true);
+  });
+
+  it('keeps Happy Eyeballs fallback across the validated address set', async () => {
+    const port = await listen((_request, response) => {
+      response.end('fallback');
+    });
+    const response = await externalFetch(
+      `http://pinned.test:${String(port)}`,
+      {},
+      {
+        allowPrivateNetworkInDevelopment: true,
+        lookup: () =>
+          Promise.resolve([
+            { address: '127.0.0.2', family: 4 },
+            { address: '127.0.0.1', family: 4 },
+          ]),
+      },
+    );
+    expect(await response.text()).toBe('fallback');
+    expect(lastAgentConnect()?.autoSelectFamily).toBe(true);
+    expect(typeof lastAgentConnect()?.lookup).toBe('function');
   });
 
   it('aborts a response that exceeds the streaming byte cap', async () => {

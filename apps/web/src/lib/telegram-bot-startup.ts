@@ -166,23 +166,22 @@ export async function registerTelegramWebhook(
   const { botToken, webhookSecret, authUrl } = input;
   const targetUrl = webhookTargetUrl(authUrl);
 
+  let alreadyPresent = false;
   try {
     const before = await callTelegramWithRetry<WebhookInfo>(
       postTelegram,
       botToken,
       'getWebhookInfo',
     );
-    if (before.url === targetUrl) {
-      return {
-        status: 'already-registered',
-        detail: 'webhook already registered',
-      };
-    }
+    alreadyPresent = before.url === targetUrl;
   } catch {
     // Fall through to setWebhook; getWebhookInfo failing is not proof the
     // webhook is missing, but we still try to register.
   }
 
+  // Always re-apply secret_token. setWebhook is idempotent, and skipping it
+  // when the URL already matches leaves a rotated TELEGRAM_WEBHOOK_SECRET
+  // unpublished so inbound updates 401.
   try {
     await callTelegramWithRetry(postTelegram, botToken, 'setWebhook', {
       url: targetUrl,
@@ -191,21 +190,6 @@ export async function registerTelegramWebhook(
       drop_pending_updates: false,
     });
   } catch (err) {
-    try {
-      const afterFail = await callTelegramWithRetry<WebhookInfo>(
-        postTelegram,
-        botToken,
-        'getWebhookInfo',
-      );
-      if (afterFail.url === targetUrl) {
-        return {
-          status: 'already-registered',
-          detail: 'webhook already registered',
-        };
-      }
-    } catch {
-      // Keep the original setWebhook error.
-    }
     return {
       status: 'error',
       detail: `setWebhook failed: ${formatTelegramStartupError(err)}. The bot may still work if the webhook was registered earlier.`,
@@ -226,6 +210,12 @@ export async function registerTelegramWebhook(
     return {
       status: 'error',
       detail: `verification mismatch: expected ${targetUrl}, got ${after.url ?? '(none)'}`,
+    };
+  }
+  if (alreadyPresent) {
+    return {
+      status: 'already-registered',
+      detail: 'webhook already registered',
     };
   }
   return {
