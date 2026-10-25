@@ -2,8 +2,10 @@ import { lookup as dnsLookup } from 'node:dns/promises';
 
 import { Agent, fetch as undiciFetch } from 'undici';
 
+import type { LookupAddress, LookupOptions } from 'node:dns';
 import type { LookupFunction } from 'node:net';
 
+import { formatErrorCause } from '#src/http/error-cause.js';
 import { validateMcpUrl, validatePublicIpAddress } from '#src/mcp/auth.js';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -25,7 +27,9 @@ export class ExternalHttpError extends Error {
     message: string,
     options?: ErrorOptions,
   ) {
-    super(message, options);
+    const causeText =
+      options?.cause === undefined ? '' : ` [cause: ${formatErrorCause(options.cause)}]`;
+    super(`${message} code=${code}${causeText}`, options);
     this.name = 'ExternalHttpError';
   }
 }
@@ -99,32 +103,66 @@ export async function resolveExternalAddresses(
   return addresses;
 }
 
-function pinnedLookup(addresses: ResolvedAddress[]): LookupFunction {
+/**
+ * Pin undici/Node to addresses we already resolved and SSRF-checked.
+ *
+ * Node 22+ Happy Eyeballs (`autoSelectFamily`) calls this lookup as
+ * `lookup(host, { all: true }, cb)` and expects `LookupAddress[]`. Older
+ * `net.connect` / undici paths still use the two-arg form
+ * `lookup(host, cb)` or `{ all: false, family }`. The previous implementation
+ * only handled the three-arg `{ all: false }` signature: when Node passed
+ * `all: true` or omitted `options`, the callback either received the wrong
+ * shape or was undefined, so the request failed in 1–2ms without opening TCP.
+ */
+type PinnedLookupCallback = (
+  error: NodeJS.ErrnoException | null,
+  address?: string | LookupAddress[],
+  family?: number,
+) => void;
+
+export function createPinnedAddressLookup(addresses: ResolvedAddress[]): LookupFunction {
   let nextIndex = 0;
-  return (
-    _hostname: string,
-    options,
-    callback: (
-      error: NodeJS.ErrnoException | null,
-      address: string | ResolvedAddress[],
-      family?: number,
-    ) => void,
-  ): void => {
-    if (options.all) {
-      callback(null, addresses);
-      return;
+  function lookup(hostname: string, options: unknown, callback?: unknown): void {
+    const cb = (typeof options === 'function' ? options : callback) as
+      PinnedLookupCallback | undefined;
+    const opts = (
+      typeof options === 'function' || options === undefined || options === null ? {} : options
+    ) as LookupOptions;
+    if (typeof cb !== 'function') return;
+
+    try {
+      const family = opts.family === 4 || opts.family === 6 ? opts.family : undefined;
+      const filtered = family ? addresses.filter((row) => row.family === family) : addresses;
+      const usable = filtered.length > 0 ? filtered : addresses;
+      if (usable.length === 0) {
+        const error = Object.assign(new Error(`No validated address available for ${hostname}`), {
+          code: 'ENOTFOUND',
+        }) as NodeJS.ErrnoException;
+        cb(error);
+        return;
+      }
+      if (opts.all) {
+        cb(
+          null,
+          usable.map((row) => ({ address: row.address, family: row.family })),
+        );
+        return;
+      }
+      const selected = usable[nextIndex % usable.length];
+      nextIndex += 1;
+      if (!selected) {
+        const error = Object.assign(new Error(`No validated address available for ${hostname}`), {
+          code: 'ENOTFOUND',
+        }) as NodeJS.ErrnoException;
+        cb(error, '');
+        return;
+      }
+      cb(null, selected.address, selected.family);
+    } catch (cause) {
+      cb(cause instanceof Error ? cause : new Error(String(cause)));
     }
-    const selected = addresses[nextIndex % addresses.length];
-    nextIndex += 1;
-    if (!selected) {
-      callback(
-        Object.assign(new Error('No validated address available'), { code: 'ENOTFOUND' }),
-        '',
-      );
-      return;
-    }
-    callback(null, selected.address, selected.family);
-  };
+  }
+  return lookup;
 }
 
 async function readBoundedBody(
@@ -191,7 +229,15 @@ async function externalFetchAttempt(
   options: ExternalFetchOptions,
 ): Promise<Response> {
   const addresses = await resolveExternalAddresses(url.hostname, options);
-  const dispatcher = new Agent({ connect: { lookup: pinnedLookup(addresses) } });
+  // Keep Happy Eyeballs so a dead validated address can fail over to another
+  // in the same SSRF-checked set. createPinnedAddressLookup already answers
+  // lookup({ all: true }) with only those addresses.
+  const dispatcher = new Agent({
+    connect: {
+      lookup: createPinnedAddressLookup(addresses),
+      autoSelectFamily: true,
+    },
+  });
   const controller = new AbortController();
   const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const maxBytes = Math.max(1, options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES);
