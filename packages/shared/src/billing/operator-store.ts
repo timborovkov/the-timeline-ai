@@ -80,13 +80,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 async function requirePlatformAdmin(db: Db, actor: BillingOperatorActor): Promise<void> {
   const [user] = await db
-    .select({ email: users.email })
+    .select({ email: users.email, emailVerified: users.emailVerified })
     .from(users)
     .where(eq(users.id, actor.userId))
     .limit(1);
   const email = user?.email ?? '';
   if (email.toLowerCase() !== actor.email.trim().toLowerCase()) {
     throw new BillingOperatorError('Operator identity does not match a Timeline user.');
+  }
+  if (!user?.emailVerified) {
+    throw new BillingOperatorError('Platform admin email must be verified.');
   }
   if (!isPlatformAdminEmail(email, getEnv().PLATFORM_ADMIN_EMAILS)) {
     throw new BillingOperatorError('Only platform admins can change billing overrides.');
@@ -735,10 +738,17 @@ export async function startEnterpriseCheckout(input: {
     await requirePlatformAdmin(db, input.actor);
     const existing = await lockAccount(db, input.teamId);
     assertEnterpriseCheckoutAllowed(existing);
+    const expiredCheckoutIds = new Set(prepared.outstandingCheckoutIds);
+    const keptTerms: Record<string, PendingEnterpriseTerms> = {};
+    for (const [id, terms] of Object.entries(
+      readPendingEnterpriseTerms(existing.pendingEnterpriseTerms).byCheckoutId,
+    )) {
+      if (expiredCheckoutIds.has(id)) continue;
+      keptTerms[id] = terms;
+    }
+    keptTerms[checkout.id] = prepared.terms;
     const pendingEnterpriseTerms: StoredPendingEnterpriseTerms = {
-      byCheckoutId: {
-        [checkout.id]: prepared.terms,
-      },
+      byCheckoutId: keptTerms,
     };
     const before = billingOperatorSnapshot(existing);
     const [updated] = await db

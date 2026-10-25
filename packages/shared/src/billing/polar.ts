@@ -265,19 +265,29 @@ export function verifyPolarWebhookSignature(input: {
   });
 }
 
-export function polarProductIdForPlan(
-  plan: 'payg' | 'team' | 'business' | 'enterprise',
-): string | undefined {
+const SELF_SERVE_CHECKOUT_PLANS = ['payg', 'team', 'business'] as const;
+
+export type SelfServeCheckoutPlan = (typeof SELF_SERVE_CHECKOUT_PLANS)[number];
+
+/** Runtime allowlist for owner/admin checkout. Enterprise stays on the operator path. */
+export function selfServeCheckoutPlan(plan: string): SelfServeCheckoutPlan | undefined {
+  for (const candidate of SELF_SERVE_CHECKOUT_PLANS) {
+    if (plan === candidate) return candidate;
+  }
+  return undefined;
+}
+
+export function polarProductIdForPlan(plan: string): string | undefined {
+  const selfServe = selfServeCheckoutPlan(plan);
+  if (!selfServe) return undefined;
   const env = getEnv();
-  switch (plan) {
+  switch (selfServe) {
     case 'payg':
       return env.POLAR_PRODUCT_ID_PAYG;
     case 'team':
       return env.POLAR_PRODUCT_ID_TEAM;
     case 'business':
       return env.POLAR_PRODUCT_ID_BUSINESS;
-    case 'enterprise':
-      return env.POLAR_PRODUCT_ID_ENTERPRISE;
   }
 }
 

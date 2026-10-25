@@ -7,6 +7,7 @@ import {
   createPolarBillingProvider,
   isPolarBillingConfigured,
   polarProductIdForPlan,
+  selfServeCheckoutPlan,
 } from '@timeline/shared/billing';
 import { getEnv } from '@timeline/shared/env';
 import { withTeam } from '@timeline/shared/team-scope';
@@ -34,16 +35,24 @@ async function requireBillingAdmin() {
 }
 
 export async function startBillingCheckout(input: {
-  plan: 'payg' | 'team' | 'business';
+  plan: string;
   discountCode?: string;
 }): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   return runSentryServerAction('start_billing_checkout', async () => {
     const gate = await requireBillingAdmin();
     if (!gate.ok) return gate;
+    const plan = selfServeCheckoutPlan(input.plan);
+    if (!plan) {
+      return {
+        ok: false,
+        error:
+          'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
+      };
+    }
     if (!isPolarBillingConfigured()) {
       return { ok: false, error: 'Polar billing is not configured.' };
     }
-    const productId = polarProductIdForPlan(input.plan);
+    const productId = polarProductIdForPlan(plan);
     if (!productId) return { ok: false, error: 'Missing Polar product id for plan.' };
 
     const provider = createPolarBillingProvider();

@@ -24,10 +24,13 @@ import {
 } from '#src/billing/catalog.js';
 import {
   createPlanChangeSession,
+  polarProductIdForPlan,
   polarSubscriptionIdForPlanChange,
+  selfServeCheckoutPlan,
   verifyPolarWebhookSignature,
 } from '#src/billing/polar.js';
 import { createFakeBillingProvider } from '#src/billing/provider.js';
+import { resetEnvForTests } from '#src/env.js';
 
 describe('euro amount parsing', () => {
   it('parses cents from the decimal string and rejects extra precision', () => {
@@ -192,6 +195,29 @@ describe('paid plan change', () => {
       portalReturnUrl: 'https://timeline.test/portal',
     });
     expect(result.url).toContain('/portal/fake');
+  });
+
+  it('refuses an Enterprise product id on the self-serve checkout allowlist', () => {
+    process.env.POLAR_PRODUCT_ID_PAYG = 'prod_payg';
+    process.env.POLAR_PRODUCT_ID_TEAM = 'prod_team';
+    process.env.POLAR_PRODUCT_ID_BUSINESS = 'prod_business';
+    process.env.POLAR_PRODUCT_ID_ENTERPRISE = 'prod_enterprise';
+    resetEnvForTests();
+    try {
+      expect(selfServeCheckoutPlan('payg')).toBe('payg');
+      expect(selfServeCheckoutPlan('team')).toBe('team');
+      expect(selfServeCheckoutPlan('business')).toBe('business');
+      expect(selfServeCheckoutPlan('enterprise')).toBeUndefined();
+      expect(selfServeCheckoutPlan('free')).toBeUndefined();
+      expect(polarProductIdForPlan('business')).toBe('prod_business');
+      expect(polarProductIdForPlan('enterprise')).toBeUndefined();
+    } finally {
+      delete process.env.POLAR_PRODUCT_ID_PAYG;
+      delete process.env.POLAR_PRODUCT_ID_TEAM;
+      delete process.env.POLAR_PRODUCT_ID_BUSINESS;
+      delete process.env.POLAR_PRODUCT_ID_ENTERPRISE;
+      resetEnvForTests();
+    }
   });
 
   it('refuses self-serve checkout for Enterprise contracts', async () => {

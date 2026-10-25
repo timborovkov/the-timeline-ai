@@ -171,7 +171,7 @@ describe('database schema contracts', () => {
         )
       `);
 
-      await applyMigrationFile(migrationPg, '0083_legal_acceptance_history.sql');
+      await applyMigrationFile(migrationPg, '0073_legal_acceptance_history.sql');
 
       const backfilled = await migrationPg.query<{
         terms_version: string;
@@ -275,7 +275,7 @@ describe('database schema contracts', () => {
   it('removes historical Recall response and error content without deleting sibling metadata', async () => {
     const migrationPg = new PGlite();
     try {
-      await applyMigrations(migrationPg, { throughFile: '0083_legal_acceptance_history.sql' });
+      await applyMigrations(migrationPg, { throughFile: '0073_legal_acceptance_history.sql' });
       await seedBase(migrationPg);
       const meetingId = '99999999-9999-4999-8999-999999999974';
       await migrationPg.query(
@@ -294,7 +294,7 @@ describe('database schema contracts', () => {
         ],
       );
 
-      await applyMigrationFile(migrationPg, '0084_recall_join_metadata_minimization.sql');
+      await applyMigrationFile(migrationPg, '0074_recall_join_metadata_minimization.sql');
 
       const rows = await migrationPg.query<{ metadata: Record<string, unknown> }>(
         `SELECT metadata FROM meetings WHERE id = $1`,

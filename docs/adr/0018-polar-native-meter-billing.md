@@ -293,3 +293,22 @@ credit hides margin and confuses prospects.
   transferable customer credits.
 - Usage-alert email requires Postmark + `message_intent` value
   `billing_usage_alert` (migration `0074_billing_usage_alert_intent`).
+- Drizzle runs a migration only when its journal timestamp is greater than the
+  newest stored migration timestamp. Main's journal entries through
+  `0074_recall_join_metadata_minimization` (`1795654800000`) keep their existing
+  indexes. Billing migrations are appended after that prefix with strictly
+  increasing timestamps, so a database that already applied #391 runs
+  `0073_billing_foundation` before `0075_billing_free_grant_backfill`.
+  `0078_billing_operator_controls` and `0079_billing_unbilled_alerts` stay later
+  than `0080_billing_replay_corrections`, so a database that already stored
+  replay corrections still receives `price_override` before
+  `0082_billing_enterprise_platform_fee`.
+- Self-serve checkout accepts only `payg`, `team`, and `business` at runtime.
+  Enterprise checkout stays on the operator path. Overlapping operator links
+  keep each checkout id's pending terms. Platform-admin actions require the
+  allowlisted address to be a verified email on the Timeline user.
+- Object-summary billing operation ids include the BullMQ job timestamp. A
+  refresh is a new job and a new operation id. A retry of that same job reuses
+  the id.
+- An Ask that records provider cost and then returns an empty answer settles
+  that cost. An empty answer with no recorded cost releases the reservation.

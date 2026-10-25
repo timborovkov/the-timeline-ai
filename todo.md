@@ -659,8 +659,19 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Timeline Enterprise Polar product: a per-team custom platform fee opened by
       a platform operator, plus the six metered prices. Opening that checkout stores
       pending terms for that checkout only and retires any earlier outstanding checkout
-      Polar will expire. A checkout Polar leaves open is not replaced. It does not grant Enterprise entitlements, clear the current
-      subscription id, or revive an expired price override. Paying that checkout
+      Polar will expire. A checkout Polar leaves open is not replaced. A second link
+      that is created before the first one is saved keeps both checkout ids.
+      Self-serve checkout accepts only payg, team, and business at runtime.
+      Platform-admin actions require a verified email on the allowlisted user.
+      Main's journal entries through the Recall migration stay in place, and
+      billing migrations are appended after them with strictly increasing
+      timestamps, so a database that already applied #391 runs the billing
+      foundation before the free-grant backfill and still runs operator
+      controls before the Enterprise platform-fee migration. Object-summary
+      billing ids include the job timestamp, so a refresh is a new operation
+      and a retry of that job reuses it. An empty Ask settles recorded provider
+      cost. Opening that Enterprise checkout does not grant entitlements, clear
+      the current subscription id, or revive an expired price override. Paying that checkout
       activates its terms and stores the contracted platform fee apart from the
       removable usage override. A second live subscription is revoked or alerted,
       and is not dropped. Spend

@@ -32,10 +32,10 @@ beforeEach(async () => {
   await pg.exec(`
     INSERT INTO teams (id, slug, name)
     VALUES ('${TEAM_ID}', 'tim-labs', 'Tim Labs');
-    INSERT INTO users (id, email)
+    INSERT INTO users (id, email, "emailVerified")
     VALUES
-      ('${ADMIN_ID}', 'ops@example.test'),
-      ('${OWNER_ID}', 'owner@example.test');
+      ('${ADMIN_ID}', 'ops@example.test', '2026-01-01T00:00:00Z'),
+      ('${OWNER_ID}', 'owner@example.test', '2026-01-01T00:00:00Z');
   `);
   db = drizzle(pg) as unknown as Db;
   process.env.PLATFORM_ADMIN_EMAILS = 'ops@example.test';
@@ -49,6 +49,21 @@ afterEach(async () => {
 });
 
 describe('billing operator store', () => {
+  it('rejects an allowlisted platform admin until their email is verified', async () => {
+    await pg.exec(`UPDATE users SET "emailVerified" = NULL WHERE id = '${ADMIN_ID}'`);
+    await expect(
+      assignCompedPlan({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        entitlementsPlanId: 'team',
+        spendCapCents: 2_500,
+        reason: 'unverified admin',
+        expiresAt: null,
+      }),
+    ).rejects.toThrow('Platform admin email must be verified.');
+  });
+
   it('rejects a team owner who is not on the platform allowlist', async () => {
     await expect(
       assignCompedPlan({
@@ -745,6 +760,65 @@ describe('billing operator store', () => {
         priceOverrideExpiresAt: new Date('2020-01-01T00:00:00.000Z'),
       }).platformFeeCents,
     ).toBe(180_000);
+  });
+
+  it('keeps every concurrent Enterprise checkout id when the links overlap', async () => {
+    await pg.exec(`
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
+    `);
+    const outer = createFakeBillingProvider();
+    let interleaved = false;
+    outer.createCheckoutSession = (input) => {
+      outer.checkouts.push(input);
+      if (!interleaved) {
+        interleaved = true;
+        const inner = createFakeBillingProvider();
+        inner.createCheckoutSession = (innerInput) => {
+          inner.checkouts.push(innerInput);
+          return Promise.resolve({
+            id: 'chk_inner',
+            url: 'https://sandbox.polar.sh/checkout/inner',
+          });
+        };
+        return startEnterpriseCheckout({
+          db,
+          actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+          teamId: TEAM_ID,
+          platformFeeCents: 100_000,
+          productId: 'prod_enterprise',
+          successUrl: 'https://thetimeline.cc/app/team?section=billing',
+          provider: inner,
+        }).then(() => ({
+          id: 'chk_outer',
+          url: 'https://sandbox.polar.sh/checkout/outer',
+        }));
+      }
+      return Promise.resolve({
+        id: 'chk_outer_again',
+        url: 'https://sandbox.polar.sh/checkout/outer-again',
+      });
+    };
+    const opened = await startEnterpriseCheckout({
+      db,
+      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+      teamId: TEAM_ID,
+      platformFeeCents: 250_000,
+      productId: 'prod_enterprise',
+      successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      provider: outer,
+    });
+    expect(opened.url).toContain('https://sandbox.polar.sh/checkout/outer');
+    const [account] = await db
+      .select()
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.pendingEnterpriseTerms).toEqual({
+      byCheckoutId: {
+        chk_inner: { platformFeeCents: 100_000 },
+        chk_outer: { platformFeeCents: 250_000 },
+      },
+    });
   });
 
   it('does not copy an expired override into Enterprise checkout', async () => {

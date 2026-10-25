@@ -445,6 +445,13 @@ export async function askAgent(
       );
     });
   };
+  const settleOrReleaseEmptyAnswer = async () => {
+    if (openRouterUsd > 0) {
+      await settleBilling();
+      return;
+    }
+    await releaseBilling();
+  };
 
   try {
     const result = streamChat(
@@ -465,7 +472,7 @@ export async function askAgent(
     // Direct-chat providers consume the final text after all tool rounds.
     const draft = (await result.text).trim();
     if (draft.length === 0) {
-      await releaseBilling();
+      await settleOrReleaseEmptyAnswer();
       return { ok: false, error: 'failed' };
     }
     let text = draft;
@@ -529,12 +536,12 @@ export async function askAgent(
     deps.onTurnObservability?.(observability);
     const trimmed = text.trim();
     if (trimmed.length === 0) {
-      await releaseBilling();
+      await settleOrReleaseEmptyAnswer();
       return { ok: false, error: 'failed' };
     }
     presented ??= formatAgentAnswerForPresentation(trimmed, presentation);
     if (presented.text.length === 0) {
-      await releaseBilling();
+      await settleOrReleaseEmptyAnswer();
       return { ok: false, error: 'failed' };
     }
     await settleBilling(modelAttribution.responseModelId ?? modelAttribution.requestedModelId);

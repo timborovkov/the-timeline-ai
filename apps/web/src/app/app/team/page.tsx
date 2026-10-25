@@ -192,7 +192,12 @@ export default async function TeamSettingsPage({
   const userInfo =
     userIds.length > 0
       ? await db
-          .select({ id: users.id, name: users.name, email: users.email })
+          .select({
+            id: users.id,
+            name: users.name,
+            email: users.email,
+            emailVerified: users.emailVerified,
+          })
           .from(users)
           .where(inArray(users.id, userIds))
       : [];
@@ -214,6 +219,10 @@ export default async function TeamSettingsPage({
     : 'free';
   const comp = billingDashboard ? describeTeamComp(billingDashboard.account) : null;
   const commercial = billingDashboard ? resolveTeamCommercialTerms(billingDashboard.account) : null;
+  const currentSettingsUser = userMap.get(session.user.id);
+  const showOperatorLink =
+    Boolean(currentSettingsUser?.emailVerified) &&
+    isPlatformAdminEmail(currentSettingsUser?.email ?? '', getEnv().PLATFORM_ADMIN_EMAILS);
 
   return (
     <div className="space-y-4">
@@ -324,10 +333,7 @@ export default async function TeamSettingsPage({
               canManage={isAdmin}
               planPreview={billingDashboard.planPreview}
               comp={comp}
-              showOperatorLink={isPlatformAdminEmail(
-                session.user.email ?? '',
-                getEnv().PLATFORM_ADMIN_EMAILS,
-              )}
+              showOperatorLink={showOperatorLink}
               platformFeeCents={commercial?.platformFeeCents}
             />
           ) : null}

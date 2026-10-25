@@ -1,3 +1,4 @@
+import { users } from '@timeline/db';
 import { isPlatformAdminEmail, polarCheckoutUrl } from '@timeline/shared/billing/operator';
 import {
   findOperatorTeams,
@@ -6,6 +7,7 @@ import {
   readOperatorBillingAccount,
 } from '@timeline/shared/billing/operator-store';
 import { getEnv } from '@timeline/shared/env';
+import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 
 import { BillingOperatorTeamPanel } from '@/components/billing-operator-forms';
@@ -24,11 +26,18 @@ export default async function BillingOperatorPage({
 }) {
   const session = await auth();
   if (!session?.user.id || !session.user.email) redirect('/sign-in');
-  if (!isPlatformAdminEmail(session.user.email, getEnv().PLATFORM_ADMIN_EMAILS)) notFound();
+  const [operatorUser] = await db
+    .select({ email: users.email, emailVerified: users.emailVerified })
+    .from(users)
+    .where(eq(users.id, session.user.id))
+    .limit(1);
+  if (!operatorUser?.emailVerified || !operatorUser.email) notFound();
+  if (operatorUser.email.toLowerCase() !== session.user.email.toLowerCase()) notFound();
+  if (!isPlatformAdminEmail(operatorUser.email, getEnv().PLATFORM_ADMIN_EMAILS)) notFound();
 
   const query = await searchParams;
   const teamQuery = query.team?.trim() ?? '';
-  const actor = { userId: session.user.id, email: session.user.email };
+  const actor = { userId: session.user.id, email: operatorUser.email };
   const matches = teamQuery ? await findOperatorTeams({ db, actor, query: teamQuery }) : [];
   const selected =
     matches.find((team) => team.id === teamQuery || team.slug === teamQuery) ??
