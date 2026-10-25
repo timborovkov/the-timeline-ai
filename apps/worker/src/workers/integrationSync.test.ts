@@ -52,6 +52,8 @@ const fakes = vi.hoisted(() => {
     adminReconcileExpiringWebhookSubscriptions: vi.fn(),
     adminResolveConnectionAttention: vi.fn(),
     adminRecordTransientSyncFailure: vi.fn(),
+    adminRecordCountedHealthFailure: vi.fn(),
+    adminResetIntegrationHealth: vi.fn(),
     writeIntegrationEvents: vi.fn(),
     getProvider: vi.fn(),
     incrementalSync: vi.fn(),
@@ -108,6 +110,8 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminReconcileExpiringWebhookSubscriptions: fakes.adminReconcileExpiringWebhookSubscriptions,
       adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
       adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
+      adminRecordCountedHealthFailure: fakes.adminRecordCountedHealthFailure,
+      adminResetIntegrationHealth: fakes.adminResetIntegrationHealth,
       writeIntegrationEvents: fakes.writeIntegrationEvents,
       getProvider: fakes.getProvider,
     },
@@ -284,6 +288,14 @@ beforeEach(() => {
     count: 1,
     shouldCreateAttention: false,
   });
+  fakes.adminRecordCountedHealthFailure.mockResolvedValue({
+    consecutiveFailures: 1,
+    firstFailedAt: new Date('2026-06-25T12:00:00.000Z'),
+    paused: false,
+    newlyPaused: false,
+    pauseKind: 'access_revoked',
+  });
+  fakes.adminResetIntegrationHealth.mockResolvedValue(undefined);
   fakes.incrementalSync.mockResolvedValue(undefined);
   fakes.getProvider.mockReturnValue({ incrementalSync: fakes.incrementalSync });
   fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
@@ -304,6 +316,21 @@ describe('handleTick provider reconciliation cadence', () => {
       expect.anything(),
     );
     expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue health-paused integrations from the background tick', async () => {
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
+      {
+        ...integration,
+        healthPausedAt: new Date('2026-06-28T12:00:00.000Z'),
+        healthPauseKind: 'access_revoked',
+      },
+    ]);
+
+    await handleTick({} as never);
+
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.adminLoadIntegrationSyncPause).not.toHaveBeenCalled();
   });
 
   it('does not enqueue paused integrations from the background tick', async () => {
@@ -1321,7 +1348,7 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
-  it('classifies provider auth and access failures as reconnect-needed attention', async () => {
+  it('classifies GitHub 403 access failures as access_revoked attention', async () => {
     fakes.incrementalSync.mockRejectedValueOnce(
       new Error('GitHub GET /repos/acme/app: 403 forbidden'),
     );
@@ -1336,8 +1363,74 @@ describe('runOneIntegration attention classification', () => {
       expect.objectContaining({
         providerConnectionId: CONNECTION_ID,
         integrationId: INTEGRATION_ID,
-        category: 'needs_reconnect',
+        category: 'access_revoked',
       }),
+    );
+    expect(fakes.adminRecordCountedHealthFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      expect.objectContaining({
+        kind: 'access_revoked',
+        error: 'GitHub GET /repos/acme/app: 403 forbidden',
+      }),
+    );
+  });
+
+  it('skips sync for health-paused integrations', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      healthPausedAt: new Date('2026-06-28T12:00:00.000Z'),
+      healthPauseKind: 'connectivity',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminDecryptIntegrationTokens).not.toHaveBeenCalled();
+  });
+
+  it('does not throw to BullMQ when counted failures newly pause the connection', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(
+      new Error('GitHub GET /repos/acme/app: 403 forbidden'),
+    );
+    fakes.adminRecordCountedHealthFailure.mockResolvedValueOnce({
+      consecutiveFailures: 2,
+      firstFailedAt: new Date('2026-06-25T12:00:00.000Z'),
+      paused: true,
+      newlyPaused: true,
+      pauseKind: 'access_revoked',
+    });
+
+    await expect(
+      runOneIntegration({} as never, INTEGRATION_ID, 'incremental'),
+    ).resolves.toBeUndefined();
+
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_paused:health',
+      expect.objectContaining({
+        provider: 'github',
+        pauseKind: 'access_revoked',
+        cause: 'GitHub GET /repos/acme/app: 403 forbidden',
+        providerConnectionId: CONNECTION_ID,
+      }),
+      { integrationId: INTEGRATION_ID },
+    );
+  });
+
+  it('does not count rate limits or 5xx toward the health pause clock', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(new Error('GitHub GET /repos/acme/app: 503'));
+
+    await expect(runOneIntegration({} as never, INTEGRATION_ID, 'incremental')).rejects.toThrow(
+      '503',
+    );
+
+    expect(fakes.adminRecordCountedHealthFailure).not.toHaveBeenCalled();
+    expect(fakes.adminRecordTransientSyncFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      'GitHub GET /repos/acme/app: 503',
     );
   });
 
@@ -1959,10 +2052,14 @@ describe('runOneIntegration attention classification', () => {
       expect.anything(),
       INTEGRATION_ID,
     );
+    expect(fakes.adminResetIntegrationHealth).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+    );
     expect(fakes.adminResolveConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
       providerConnectionId: CONNECTION_ID,
       integrationId: INTEGRATION_ID,
-      categories: ['needs_reconnect', 'sync_error'],
+      categories: ['needs_reconnect', 'access_revoked', 'sync_error'],
     });
   });
 

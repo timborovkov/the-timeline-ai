@@ -269,6 +269,35 @@ const checks = [
     },
   },
   {
+    name: '@timeline/shared integration health',
+    run: async () => {
+      const health = await import('@timeline/shared/integrations/health');
+      const notice = health.formatHealthPauseNotice({
+        provider: 'github',
+        kind: 'access_revoked',
+      });
+      if (notice !== 'Paused: GitHub access was revoked.') {
+        throw new Error('Unexpected health pause notice');
+      }
+      if ('adminRecordCountedHealthFailure' in health) {
+        throw new Error('integrations/health must not export Node scope helpers');
+      }
+      const { readFileSync } = await import('node:fs');
+      const source = readFileSync(
+        new URL('../packages/shared/dist/integrations/health.js', import.meta.url),
+        'utf8',
+      );
+      if (
+        source.includes('scope.js') ||
+        source.includes('env.js') ||
+        source.includes('node:fs') ||
+        source.includes('drizzle-orm')
+      ) {
+        throw new Error('integrations/health compiled output pulled Node integration scope');
+      }
+    },
+  },
+  {
     name: '@timeline/shared messaging format',
     run: async () => {
       const format = await import('@timeline/shared/messaging/format');

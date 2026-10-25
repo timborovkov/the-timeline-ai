@@ -1,4 +1,5 @@
 export * from '#src/integrations/types.js';
+export * from '#src/integrations/health.js';
 export * from '#src/integrations/scope.js';
 export * from '#src/integrations/event-writer.js';
 export {

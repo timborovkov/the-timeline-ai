@@ -526,6 +526,13 @@
       "when": 1795654800000,
       "tag": "0074_recall_join_metadata_minimization",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795654860000,
+      "tag": "0075_integration_health_pause",
+      "breakpoints": true
     }
   ]
 }
