@@ -58,16 +58,21 @@ describe('McpShareUi', () => {
     render(<McpShareUi keys={[]} mcpUrl={MCP_URL} />);
 
     expect(screen.getByText('Team-visible only')).toBeTruthy();
-    expect(screen.getByText('Private and specific-user events stay out.')).toBeTruthy();
+    expect(screen.getByText('Manual-client keys never inherit private access.')).toBeTruthy();
     expect(screen.getByText('No active keys')).toBeTruthy();
     expect(screen.getByText(/Create a retrieval key, with optional access/)).toBeTruthy();
     expect(screen.getByText(/Bearer <create a key first>/)).toBeTruthy();
     expect(screen.getByText(/Generated JSON contains the bearer key/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy command' })).toBeTruthy();
-    expect(screen.getByText(/IFS= read -r -s TIMELINE_MCP_KEY/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Copy OAuth command' })).toBeTruthy();
+    expect(screen.getByText(`codex mcp add timeline --url "${MCP_URL}"`)).toBeTruthy();
     expect(
-      screen.getByRole('heading', { name: 'Codex CLI (bash or zsh)' }).parentElement?.textContent,
-    ).toMatch(/relaunch codex from that terminal/i);
+      screen.getByText(/Settings -> Apps -> Advanced Settings -> Developer Mode/),
+    ).toBeTruthy();
+    expect(screen.getByText(/OpenAI universal Plugins Directory/)).toBeTruthy();
+    expect(screen.getByText(/With MCP/)).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { name: 'Agent plugins and OAuth' }).parentElement?.textContent,
+    ).toMatch(/browser sign-in and consent/i);
     expect(
       screen
         .getByRole('link', {
@@ -75,14 +80,22 @@ describe('McpShareUi', () => {
         })
         .getAttribute('href'),
     ).toBe('/help/agents');
-    const skillsLink = screen.getByRole('link', {
-      name: 'Plugin source on GitHub',
+    const codexInstallLink = screen.getByRole('link', {
+      name: 'Install in Codex',
     });
-    expect(skillsLink.getAttribute('href')).toBe(
-      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin',
+    expect(codexInstallLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex',
     );
-    expect(skillsLink.getAttribute('target')).toBe('_blank');
-    expect(skillsLink.getAttribute('rel')).toBe('noreferrer');
+    expect(codexInstallLink.getAttribute('target')).toBe('_blank');
+    expect(codexInstallLink.getAttribute('rel')).toBe('noreferrer');
+    const claudeInstallLink = screen.getByRole('link', {
+      name: 'Install in Claude Code',
+    });
+    expect(claudeInstallLink.getAttribute('href')).toBe(
+      'https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code',
+    );
+    expect(claudeInstallLink.getAttribute('target')).toBe('_blank');
+    expect(claudeInstallLink.getAttribute('rel')).toBe('noreferrer');
 
     await user.click(screen.getByRole('button', { name: 'New key' }));
     await user.type(screen.getByPlaceholderText('Claude Desktop · personal mac'), 'Claude Desktop');
@@ -98,12 +111,10 @@ describe('McpShareUi', () => {
     expect(routerRefresh).toHaveBeenCalledOnce();
 
     expect(await screen.findByText(/New key: keep this open/)).toBeTruthy();
-    expect(screen.getByText(/copy and run the command above first/i)).toBeTruthy();
-    expect(screen.getByText(/dismiss it only after Codex is connected/i)).toBeTruthy();
+    expect(screen.getByText(/copy the generated JSON above/i)).toBeTruthy();
+    expect(screen.getByText(/dismiss it only after that client is connected/i)).toBeTruthy();
     expect(screen.getByText('tl_mcp_live_secret_123')).toBeTruthy();
     expect(screen.queryByText(/export TIMELINE_MCP_KEY="tl_mcp_live_secret_123"/)).toBeNull();
-    expect(screen.getByText(/IFS= read -r -s TIMELINE_MCP_KEY/)).toBeTruthy();
-    expect(screen.getByText(new RegExp(`codex mcp add timeline --url "${MCP_URL}"`))).toBeTruthy();
     expect(screen.getByText(/"Authorization": "Bearer tl_mcp_live_secret_123"/)).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: 'Connected — dismiss key' }));
@@ -175,7 +186,7 @@ describe('McpShareUi', () => {
       name: /Allow Timeline agent/,
     });
     expect(allowAgent.checked).toBe(false);
-    expect(screen.getByText(/paid agent turns/)).toBeTruthy();
+    expect(allowAgent.parentElement?.textContent).toMatch(/paid agent turns/);
 
     await user.type(screen.getByRole('textbox', { name: 'Label' }), 'Operator');
     await user.click(allowAgent);

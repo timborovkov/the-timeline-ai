@@ -93,6 +93,11 @@ function PrivacyOverviewSections({ legalContactEmail }: { legalContactEmail: Leg
           stored encrypted, not as readable plaintext.
         </li>
         <li>
+          <strong>Authorized-app data:</strong> OAuth client identity and callback metadata, the
+          selected team and approved scopes, credential digests and prefixes, issue and expiry
+          times, revocation state, and security audit records for MCP hosts a member authorizes.
+        </li>
+        <li>
           <strong>Service and device data:</strong> IP address, user agent, timestamps, request and
           response metadata, job status, security signals, diagnostics, personless surface-request
           events, and explicit pseudonymous product lifecycle events. If you allow optional public
@@ -332,6 +337,27 @@ function PrivacyAiAndProviderSections() {
         services. Disconnecting a source stops future access but does not automatically erase
         records already captured into Timeline.
       </p>
+      <p>
+        A member may also authorize ChatGPT, Claude, Codex, or another MCP-compatible client to
+        request data from one selected team. The <strong>read</strong> scope can return team-visible
+        content, the authorizing member&apos;s private content, and content shared specifically with
+        that member, but only where the member can access it at the time of the request.
+      </p>
+      <p>
+        The separate <strong>agent:ask</strong> scope can be approved only by a current team owner
+        or admin. It lets the client ask the Timeline agent using team-visible context, create
+        team-visible proposals for review, and use enabled team tools. Those tools may act on
+        third-party services and can have external side effects. This scope does not give the client
+        general team-administration access.
+      </p>
+      <p>
+        The authorized app receives the content returned in response to its requests and may process
+        or retain it under the app operator&apos;s own terms and privacy policy. Revoking access
+        stops future Timeline requests, but it does not delete copies the app already received.
+        Timeline uses PKCE for this authorization flow, stores digests instead of plaintext
+        authorization codes and access or refresh tokens, and never sends your Timeline password to
+        the app.
+      </p>
     </>
   );
 }
@@ -464,6 +490,19 @@ function PrivacyRetentionSections() {
           <tr>
             <td>AI prompt and response content at inference providers</td>
             <td>{PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.privacyRetentionDetail}</td>
+          </tr>
+          <tr>
+            <td>Authorized MCP-app grant and token digests</td>
+            <td>
+              Revoking an authorized app immediately marks its grant and credentials inactive.
+              Expired authorization-code digests are eligible for deletion after their ten-minute
+              validity window. Access- and refresh-token digests remain until the associated
+              refresh-token expiry, up to 30 days from that token pair&apos;s issue, so attempted
+              reuse can still be detected. Revoked grant records are eligible for deletion after 31
+              days and only after their code and token rows have been removed. Public-client
+              registration metadata and security audit records may be retained after revocation;
+              those retained records do not allow the app to regain access.
+            </td>
           </tr>
           <tr>
             <td>Operational, security, support, and email records</td>

@@ -157,6 +157,14 @@ function TermsContentAndAiSections() {
         selection, credentials, and charges on those services.
       </p>
       <p>
+        A member may authorize ChatGPT, Claude, Codex, or another MCP-compatible client to request
+        data from one selected team. The default <strong>read</strong> scope follows that
+        member&apos;s current membership and visibility. The optional <strong>agent:ask</strong>{' '}
+        scope requires a current owner or admin, can create proposals for human review, and may use
+        enabled team tools with external side effects. Revoking the app stops future Timeline
+        requests; it does not delete copies the app already received under its own terms.
+      </p>
+      <p>
         Tools made available to an agent may cause external side effects, including creating or
         changing records outside Timeline. Review scopes and approval settings before enabling a
         tool. Disconnecting a source does not automatically delete evidence already captured into

@@ -528,6 +528,13 @@
       "breakpoints": true
     },
     {
+      "idx": 75,
+      "version": "7",
+      "when": 1795654860000,
+      "tag": "0075_mcp_oauth_server",
+      "breakpoints": true
+    },
+    {
       "idx": 76,
       "version": "7",
       "when": 1795654920000,
