@@ -1472,6 +1472,56 @@ describe('billing runtime', () => {
     expect(Number(ledger?.nativeUnits)).toBe(2);
   });
 
+  it('settles pending Recall and failed attempts when current admission is closed', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const ym = periodYm();
+    const recallOperationId = 'recall:meet-closed:attempt:bot1';
+    const failedOperationId = 'embedding:closed-admission';
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'restricted', shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_usage_counters (team_id, period_ym, meter_id, native_units, customer_charge_cents)
+      VALUES
+        ('${TEAM_ID}', '${ym}', 'recall_minutes', 60, 0),
+        ('${TEAM_ID}', '${ym}', 'ai', 500, 500);
+      INSERT INTO billing_usage_reservations (
+        team_id, operation_id, meter_id, reserved_native_units, reserved_charge_cents,
+        state, expires_at, metadata
+      ) VALUES (
+        '${TEAM_ID}', '${recallOperationId}', 'recall_minutes', 60, 180,
+        'reserved', NOW() + INTERVAL '1 hour',
+        '{"pending_settlement":true,"pending_meter":"recall_minutes","pending_recall_minutes":10,"meeting_id":"meet-closed","pending_source":"meeting_recall"}'::jsonb
+      ), (
+        '${TEAM_ID}', '${failedOperationId}', 'ai', 1, 1,
+        'reserved', NOW() + INTERVAL '1 hour',
+        '{"pending_failed_attempt_settlement":true,"pending_failed_attempts":[{"operation_id":"${failedOperationId}:failed:1","openrouter_usd":0.02,"usage_at":"2026-08-10T12:00:00.000Z","operation_class":"embedding"}]}'::jsonb
+      );
+    `);
+    expect(await settlePendingBillingReservations(db)).toBe(2);
+    const [recallLedger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, recallOperationId));
+    expect(Number(recallLedger?.nativeUnits)).toBe(10);
+    const [attemptLedger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `${failedOperationId}:failed:1`));
+    expect(attemptLedger?.metadata).toMatchObject({
+      failed_attempt_for: failedOperationId,
+      openrouter_usd: 0.02,
+    });
+  });
+
   it('does not expire an Ask reservation that still needs settlement', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,
@@ -1554,6 +1604,145 @@ describe('billing runtime', () => {
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
     expect(account?.included).toBe(400);
+  });
+
+  it('records a missed Team storage day after a downgrade to Free', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const yesterday = utcDayOffset(-1);
+    const today = utcDay();
+    const bytes = 50 * 1024 ** 3;
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free', shadow_billing = false,
+          included_discount_remaining_cents = 0, spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${yesterday}T00:00:00Z'),
+        ('${TEAM_ID}', 'free', '${today}T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000061', '${TEAM_ID}', 'team-day.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000062',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000061',
+        1,
+        'team/docs/team-day.bin',
+        ${bytes},
+        '${yesterday}T00:00:00Z'
+      );
+    `);
+    const missed = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: yesterday });
+    expect(missed.settled).toBe(true);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${yesterday}`));
+    expect(Number(ledger?.nativeUnits)).toBeGreaterThan(1);
+    expect(ledger?.reservationId).toBeNull();
+    expect(ledger?.metadata).toMatchObject({
+      pricing_plan_id: 'team',
+      pricing_period_ym: yesterday.slice(0, 7),
+    });
+    const live = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: today });
+    expect(live.settled).toBe(false);
+    const todayRows = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${today}`));
+    expect(todayRows).toHaveLength(0);
+  });
+
+  it('records a missed Team storage day while Free admission is restricted', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const yesterday = utcDayOffset(-1);
+    const today = utcDay();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'restricted', shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${yesterday}T00:00:00Z'),
+        ('${TEAM_ID}', 'free', '${today}T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000081', '${TEAM_ID}', 'restricted.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000082',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000081',
+        1,
+        'team/docs/restricted.bin',
+        ${50 * 1024 ** 3},
+        '${yesterday}T00:00:00Z'
+      );
+    `);
+    const missed = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: yesterday });
+    expect(missed.settled).toBe(true);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, `storage_gb:${TEAM_ID}:${yesterday}`));
+    expect(ledger?.metadata).toMatchObject({ pricing_plan_id: 'team' });
+    expect(Number(ledger?.nativeUnits)).toBeGreaterThan(1);
+  });
+
+  it('does not recover missed storage for a suspended workspace', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const yesterday = utcDayOffset(-1);
+    const today = utcDay();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free', security_state = 'suspended',
+          shadow_billing = false
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at) VALUES
+        ('${TEAM_ID}', 'team', '${yesterday}T00:00:00Z'),
+        ('${TEAM_ID}', 'free', '${today}T00:00:00Z');
+      INSERT INTO documents (id, team_id, name)
+      VALUES ('cccccccc-dddd-4eee-8fff-000000000071', '${TEAM_ID}', 'suspended.bin');
+      INSERT INTO document_versions (id, team_id, document_id, version, object_key, byte_size, created_at)
+      VALUES (
+        'cccccccc-dddd-4eee-8fff-000000000072',
+        '${TEAM_ID}',
+        'cccccccc-dddd-4eee-8fff-000000000071',
+        1,
+        'team/docs/suspended.bin',
+        ${50 * 1024 ** 3},
+        '${yesterday}T00:00:00Z'
+      );
+    `);
+    const missed = await snapshotTeamStorageGbMonth({ db, teamId: TEAM_ID, day: yesterday });
+    expect(missed.settled).toBe(false);
+    const rows = await db
+      .select({ operationId: billingUsageLedger.operationId })
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(rows).toHaveLength(0);
   });
 
   it('invoices same-plan PAYG storage recovered in a prior month', async () => {

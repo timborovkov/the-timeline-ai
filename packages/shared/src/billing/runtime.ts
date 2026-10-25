@@ -143,8 +143,19 @@ export async function settleTeamMeter(input: {
   provider?: string;
   source?: string;
   billable?: boolean;
-  /** Extra member-days already happened; persist the charge even if reserve would deny. */
+  /**
+   * Extra member-days already happened. Skip the allowance reserve, and still
+   * refuse paused billing states so the janitor retries after billing recovers.
+   */
   persistWhenDenied?: boolean;
+  /**
+   * Usage already happened on an earlier day, plan, or period. Keep the
+   * suspended/terminated block and skip today's allowance, spend cap, and
+   * billing-state admission. Pending Recall, email, Ask, worker, and
+   * failed-attempt drains already settle their reservation and do not reserve
+   * again. Member-days stay on `persistWhenDenied`.
+   */
+  recoverHistorical?: boolean;
   /** Price a replayed day on the plan in force then, not the live plan. */
   pricingPlanId?: BillingPlanId;
   /** Extra-member price of that historical plan. Null means the plan has no seat price. */
@@ -174,17 +185,18 @@ export async function settleTeamMeter(input: {
     ...(input.pricingPeriodYm ? { pricingPeriodYm: input.pricingPeriodYm } : {}),
     ...(input.usageAt ? { usageAt: input.usageAt } : {}),
   };
-  if (input.persistWhenDenied) {
+  if (input.recoverHistorical || input.persistWhenDenied) {
     const account = await billing.getAccount();
     if (account.securityState === 'suspended' || account.securityState === 'terminated') {
       return { ok: false, code: 'security_blocked' };
     }
     if (
-      account.billingState === 'past_due' ||
-      account.billingState === 'payment_retry' ||
-      account.billingState === 'canceled' ||
-      account.billingState === 'deletion_scheduled' ||
-      account.billingState === 'restricted'
+      !input.recoverHistorical &&
+      (account.billingState === 'past_due' ||
+        account.billingState === 'payment_retry' ||
+        account.billingState === 'canceled' ||
+        account.billingState === 'deletion_scheduled' ||
+        account.billingState === 'restricted')
     ) {
       return { ok: false, code: 'usage_limit_reached' };
     }
@@ -731,6 +743,12 @@ export async function snapshotTeamStorageGbMonth(input: {
             periodEndsAt,
           })
         : undefined;
+    const recoverHistorical = storageDayRecoversWithoutLiveAdmission({
+      day,
+      pricingPlanId,
+      livePlanId: livePlan,
+      pricingPeriodYm: replayPeriodYm,
+    });
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
@@ -746,6 +764,7 @@ export async function snapshotTeamStorageGbMonth(input: {
       source: 'janitor',
       usageAt,
       pricingPeriodYm: replayPeriodYm,
+      ...(recoverHistorical ? { recoverHistorical: true } : {}),
       ...(differentPlan ? { pricingPlanId } : {}),
       ...(historicalIncludedDiscountCents !== undefined ? { historicalIncludedDiscountCents } : {}),
     });
@@ -794,6 +813,21 @@ function lookbackDays(): string[] {
 
 function storageSnapshotBackfillRange(): string[] {
   return lookbackDays();
+}
+
+/**
+ * A missed day, another plan, or another month is usage that already happened.
+ * Today's snapshot on the live plan still reserves against current admission.
+ */
+function storageDayRecoversWithoutLiveAdmission(input: {
+  day: string;
+  pricingPlanId: BillingPlanId;
+  livePlanId: BillingPlanId;
+  pricingPeriodYm: string;
+}): boolean {
+  if (input.day < utcDay()) return true;
+  if (input.pricingPlanId !== input.livePlanId) return true;
+  return input.pricingPeriodYm !== utcDay().slice(0, 7);
 }
 
 function addUtcDays(day: string, days: number): string {

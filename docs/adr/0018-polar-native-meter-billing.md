@@ -274,7 +274,11 @@ credit hides margin and confuses prospects.
    workspace delays the BullMQ job instead of failing it. Janitor storage
    snapshots backfill missed days across the full 31-day lookback, including the
    previous calendar month, from absent storage operation ids. Each day is priced
-   on the plan effective that day and counted in that day's month. Included
+   on the plan effective that day and counted in that day's month. A missed day,
+   a day on another plan, or a day in another month settles without reserving
+   against today's allowance, spend cap, or billing state. Suspended and
+   terminated workspaces still block that recovery. Today's snapshot on the live
+   plan still reserves. Included
    discount for that day comes from the renewal window that contains it when that
    window or the plan differs from the live one. Same-plan overage is still invoiced.
    Closed document absence intervals are excluded. Delivered email whose

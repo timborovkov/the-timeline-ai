@@ -757,7 +757,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       workspace unrestricted. Re-accepting a removed member stamps a new `createdAt`.
       Replay included discount follows the subscription renewal window that contains the usage day. A Free plan-history baseline is stored at account creation and backfilled ahead of the first paid row. The janitor rechecks <code>cancel_effective_at</code> under the account lock before downgrading. Deferred enrichment clears its
       marker only after Redis enqueue succeeds.
-      Storage snapshots backfill missed days. Missed member-days with no stamp use the
+      Storage snapshots backfill missed days. A missed storage day, or one priced on another plan or month, settles without today's allowance or billing-state admission. Suspended and terminated workspaces still block that recovery. Today's live-plan snapshot still reserves. Missed member-days with no stamp use the
       plan effective that day before the current plan. Reactivating a reservation resets `createdAt`.
       Restore takes advisory lock 1 then 2. Worker AI concurrency follows
       `costlyWorkerConcurrency` and delays a busy job. Paid-plan changes reuse the Polar
