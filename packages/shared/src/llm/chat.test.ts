@@ -146,6 +146,10 @@ describe('chatStructured', () => {
     );
     expect(result.object).toEqual({ name: 'Apple', type: 'company' });
     expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
+    expect(JSON.parse(JSON.stringify(result))).toEqual({
+      object: { name: 'Apple', type: 'company' },
+      model: TIMELINE_MODELS.extraction.id,
+    });
   });
 
   it('uses the predefined extraction model catalog entry', async () => {

@@ -943,7 +943,11 @@ async function createEmailDocumentAttachment(
   },
 ): Promise<{ documentId: string; versionId: string }> {
   const existing = await db
-    .select({ documentId: documents.id, versionId: documents.currentVersionId })
+    .select({
+      documentId: documents.id,
+      versionId: documents.currentVersionId,
+      metadata: documents.metadata,
+    })
     .from(documents)
     .where(
       and(
@@ -954,8 +958,13 @@ async function createEmailDocumentAttachment(
       ),
     )
     .limit(1);
-  if (existing[0]?.versionId) {
-    return { documentId: existing[0].documentId, versionId: existing[0].versionId };
+  const stored = existing[0];
+  if (stored?.versionId) {
+    return completeEmailDocumentAttachment(db, documentDeps, input, {
+      documentId: stored.documentId,
+      versionId: stored.versionId,
+      metadata: stored.metadata,
+    });
   }
 
   const created = await db.transaction(async (tx) => {
@@ -1011,25 +1020,99 @@ async function createEmailDocumentAttachment(
       .update(documents)
       .set({ currentVersionId: version.id })
       .where(eq(documents.id, doc.id));
-    return { documentId: doc.id, key, versionId: version.id };
+    return { documentId: doc.id, objectKey: key, versionId: version.id };
   });
-  await documentDeps.upload({
-    key: created.key,
-    body: input.attachment.body,
-    contentType: input.attachment.contentType,
+  return completeEmailDocumentAttachment(db, documentDeps, input, {
+    documentId: created.documentId,
+    versionId: created.versionId,
+    objectKey: created.objectKey,
+    metadata: null,
   });
-  await documentDeps.enqueueExtract({
-    documentVersionId: created.versionId,
-    teamId: input.teamId,
-  });
-  return { documentId: created.documentId, versionId: created.versionId };
+}
+
+/**
+ * Upload and extract enqueue are separate from the document row insert. A
+ * retry must finish whichever of those steps did not stick before the caller
+ * treats the attachment as captured. Flags live on document metadata so a
+ * later retry does not upload again once the bytes are stored.
+ */
+async function completeEmailDocumentAttachment(
+  db: Db,
+  documentDeps: EmailDocumentDeps,
+  input: {
+    teamId: string;
+    attachment: DecodedAttachment;
+  },
+  stored: {
+    documentId: string;
+    versionId: string;
+    objectKey?: string;
+    metadata: unknown;
+  },
+): Promise<{ documentId: string; versionId: string }> {
+  const flags = emailDocumentStoredFlags(stored.metadata);
+  if (!flags.bytesStored) {
+    const objectKey = stored.objectKey ?? (await emailDocumentObjectKey(db, stored.versionId));
+    await documentDeps.upload({
+      key: objectKey,
+      body: input.attachment.body,
+      contentType: input.attachment.contentType,
+    });
+    await markEmailDocumentStored(db, stored.documentId, { bytes_stored: true });
+  }
+  if (!flags.extractEnqueued) {
+    await documentDeps.enqueueExtract({
+      documentVersionId: stored.versionId,
+      teamId: input.teamId,
+    });
+    await markEmailDocumentStored(db, stored.documentId, { extract_enqueued: true });
+  }
+  return { documentId: stored.documentId, versionId: stored.versionId };
+}
+
+function emailDocumentStoredFlags(metadata: unknown): {
+  bytesStored: boolean;
+  extractEnqueued: boolean;
+} {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return { bytesStored: false, extractEnqueued: false };
+  }
+  const record = metadata as Record<string, unknown>;
+  return {
+    bytesStored: record.bytes_stored === true,
+    extractEnqueued: record.extract_enqueued === true,
+  };
+}
+
+async function emailDocumentObjectKey(db: Db, versionId: string): Promise<string> {
+  const [version] = await db
+    .select({ objectKey: documentVersions.objectKey })
+    .from(documentVersions)
+    .where(eq(documentVersions.id, versionId))
+    .limit(1);
+  if (!version) throw new Error('email_document_version_missing');
+  return version.objectKey;
+}
+
+async function markEmailDocumentStored(
+  db: Db,
+  documentId: string,
+  patch: { bytes_stored?: true; extract_enqueued?: true },
+): Promise<void> {
+  const stamp = JSON.stringify(patch);
+  await db
+    .update(documents)
+    .set({
+      metadata: sql`COALESCE(${documents.metadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+    })
+    .where(eq(documents.id, documentId));
 }
 
 async function patchEmailParentAttachments(
   db: Db,
   parentRawEventId: string,
   records: AttachmentRecordForDocument[],
-): Promise<void> {
+): Promise<boolean> {
   const current = await db
     .select({ sourceMetadata: rawEvents.sourceMetadata })
     .from(rawEvents)
@@ -1045,15 +1128,18 @@ async function patchEmailParentAttachments(
       : [];
   const merged = mergeAttachmentRecords(existing, records);
   const patch = JSON.stringify({ attachments: merged });
-  await db
-    .update(rawEvents)
-    .set({
-      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
-    })
-    .where(eq(rawEvents.id, parentRawEventId))
-    .catch((err: unknown) => {
-      log.error({ err }, 'failed to update parent document attachments[]');
-    });
+  try {
+    await db
+      .update(rawEvents)
+      .set({
+        sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${patch}::jsonb`,
+      })
+      .where(eq(rawEvents.id, parentRawEventId));
+  } catch (err) {
+    log.error({ err }, 'failed to update parent document attachments[]');
+    return false;
+  }
+  return true;
 }
 
 function mergeAttachmentRecords(
@@ -1383,6 +1469,7 @@ export async function flushDeferredEmailEnrichment(
       const documents = resolved.documents;
       const pending = pendingEmailDocumentRecords(row.sourceMetadata);
       let attachmentRecoveryIncomplete = !documents && pending.length > 0;
+      let attachmentsLinked = true;
       if (documents) {
         const updated: AttachmentRecordForDocument[] = [];
         for (const record of pending) {
@@ -1400,7 +1487,7 @@ export async function flushDeferredEmailEnrichment(
             }
           }
           if (!body) {
-            if (record.key) attachmentRecoveryIncomplete = true;
+            attachmentRecoveryIncomplete = true;
             continue;
           }
           try {
@@ -1429,10 +1516,10 @@ export async function flushDeferredEmailEnrichment(
           }
         }
         if (updated.length > 0) {
-          await patchEmailParentAttachments(db, row.id, updated);
+          attachmentsLinked = await patchEmailParentAttachments(db, row.id, updated);
         }
       }
-      if (attachmentRecoveryIncomplete) {
+      if (attachmentRecoveryIncomplete || !attachmentsLinked) {
         const stamp = JSON.stringify({
           [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
         });

@@ -138,6 +138,10 @@ describe('transcribeAudio', () => {
       { model: makeMockModel('hello world') },
     );
     expect(result).toEqual({ text: 'hello world', model: TIMELINE_MODELS.transcription.id });
+    expect(JSON.parse(JSON.stringify(result))).toEqual({
+      text: 'hello world',
+      model: TIMELINE_MODELS.transcription.id,
+    });
   });
 
   it('uses the predefined transcription model catalog entry', async () => {

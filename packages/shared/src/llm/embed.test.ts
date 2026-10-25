@@ -23,7 +23,7 @@ vi.mock('#src/billing/runtime.js', () => ({
   ): Promise<unknown> => {
     const result = await fn();
     embeddingFinishes.push(result.finish);
-    return result.value;
+    return JSON.parse(JSON.stringify(result.value)) as unknown;
   },
 }));
 
@@ -68,6 +68,10 @@ describe('llm.embed', () => {
     const result = await embed({ text: 'hello' }, { model: makeMockModel([[0.1, 0.2, 0.3, 0.4]]) });
     expect(result.vector).toEqual([0.1, 0.2, 0.3, 0.4]);
     expect(result.model).toBe(TIMELINE_MODELS.embedding.id);
+    expect(JSON.parse(JSON.stringify(result))).toMatchObject({
+      vector: [0.1, 0.2, 0.3, 0.4],
+      model: TIMELINE_MODELS.embedding.id,
+    });
   });
 
   it('uses the predefined embedding model catalog entry', async () => {
