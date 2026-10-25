@@ -781,16 +781,14 @@ describe('meetings scope', () => {
     const timezone = 'Europe/Helsinki';
     const now = Temporal.Now.instant().toZonedDateTimeISO(timezone);
     // Midday is outside the DST spring/fall gap, so wall-clock 12:00 maps to one instant.
-    const target = now
-      .add({ days: now.hour >= 12 ? 1 : 0 })
-      .with({
-        hour: 12,
-        minute: 0,
-        second: 0,
-        millisecond: 0,
-        microsecond: 0,
-        nanosecond: 0,
-      });
+    const target = now.add({ days: now.hour >= 12 ? 1 : 0 }).with({
+      hour: 12,
+      minute: 0,
+      second: 0,
+      millisecond: 0,
+      microsecond: 0,
+      nanosecond: 0,
+    });
     const time = `${String(target.hour).padStart(2, '0')}:${String(target.minute).padStart(2, '0')}`;
 
     const saved = await scope.createSavedMeeting({
