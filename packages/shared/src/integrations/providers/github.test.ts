@@ -2,10 +2,15 @@ import { generateKeyPairSync } from 'node:crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
+vi.mock('#src/http/external-fetch.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof ExternalFetch>();
+  return {
+    ...actual,
+    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  };
+});
 
+import type * as ExternalFetch from '#src/http/external-fetch.js';
 import type { SyncContext } from '#src/integrations/index.js';
 
 import { resetEnvForTests } from '#src/env.js';
@@ -3118,6 +3123,7 @@ describe('githubProvider.incrementalSync', () => {
     process.env.GITHUB_APP_ID = '999';
     process.env.GITHUB_APP_PRIVATE_KEY = privateKey
       .export({ format: 'pem', type: 'pkcs1' })
+      .toString()
       .replaceAll('\n', '\\n');
     resetEnvForTests();
     const fetchMock = vi.fn<typeof fetch>((input, init) => {

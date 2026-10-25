@@ -372,7 +372,7 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 
 ### Non-obvious env / startup gotchas
 
-- **Node must be >=24.** This Cloud Agent image ships an older Node on `/exec-daemon` ahead of nvm on `PATH`. Prefer the nvm Node 24 binary (see `~/.bashrc` PATH override). Use `pnpm` via Corepack on that Node (`packageManager` pins `pnpm@11.8.0`).
+- **Use the exact Node version in `.nvmrc`.** Keep `engines.node` and every Docker stage aligned with that pin. This Cloud Agent image may put an older Node on `/exec-daemon` ahead of nvm on `PATH`; run `nvm install && nvm use` and verify `node --version` before checks. Use `pnpm` via Corepack on that Node (`packageManager` pins `pnpm@11.8.0`).
 - **Root `.env` is not auto-loaded by the worker or by `drizzle-kit`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `pnpm db:migrate`, `pnpm demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
 - **The root `pnpm dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `pnpm --filter @timeline/web dev` and `pnpm --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.

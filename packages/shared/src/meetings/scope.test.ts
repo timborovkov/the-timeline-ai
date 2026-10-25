@@ -779,9 +779,9 @@ describe('meetings scope', () => {
   it('materializes saved meeting schedules in the configured timezone', async () => {
     const scope = withTeam(db as never, TEAM_ID, USER_A).meetings;
     const timezone = 'Europe/Helsinki';
-    // Civil noon two days out stays off DST fall-back overlaps (02:00–04:00)
-    // and midnight weekday wrap, so the local clock time maps to one instant.
-    const target = Temporal.Now.zonedDateTimeISO(timezone).add({ days: 2 }).with({
+    const now = Temporal.Now.instant().toZonedDateTimeISO(timezone);
+    // Midday is outside the DST spring/fall gap, so wall-clock 12:00 maps to one instant.
+    const target = now.add({ days: now.hour >= 12 ? 1 : 0 }).with({
       hour: 12,
       minute: 0,
       second: 0,

@@ -50,7 +50,7 @@ review requirements may change independently of this repository.
 
 | State | Evidence | Status |
 | --- | --- | --- |
-| Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, browser CORS on register/token/revoke, tests | Ready on PR branch after merging latest `main` (including #391, #433, #434) on 2026-10-24 |
+| Repository implementation | OAuth, MCP SDK v2 transport, Codex package, Claude package, browser CORS on register/token/revoke, tests | Ready on PR branch after merging latest `main` (including #391, #433, #434, #435, #437) |
 | Pull request | [GitHub PR #392](https://github.com/timborovkov/the-timeline-ai/pull/392), creation head `f77fcaad` | Open; refreshed onto current `main` on 2026-10-24; not merged |
 | Local package validation | Codex plugin/skill validators, strict Claude validators, and isolated installs | Passed 2026-08-27; plugin source files were not changed in the 2026-10-24 refresh |
 | Local MCP validation | Handler, route, OAuth, database, eval, distribution-import, and full repository tests | Passed 2026-10-24 after merging latest `main` |
@@ -187,10 +187,11 @@ not clear provider identity, account-plan, or production deployment gates.
   (`3d95c133`), consented PostHog traffic #433 (`f11bf97a`), and the dashboard
   legal-publication redirect fix #434 (`02cecd64`). Kept mainline PostHog env
   and analytics contracts, billing, task-category default-on, OpenRouter model
-  pins, Qdrant on-disk/int8, and AI SDK 7 behavior. The OAuth migration remains
-  `0075_mcp_oauth_server` with journal `when` strictly after main's
-  `0073_legal_acceptance_history` and `0074_recall_join_metadata_minimization`
-  (main added no later SQL).
+  pins, Qdrant on-disk/int8, and AI SDK 7 behavior. Later refresh also merged
+  Node pin #435 (`f762eece`) and production-log causes #437 (`0955a3a9`). The
+  OAuth migration remains `0075_mcp_oauth_server` with journal `when` strictly
+  after main's `0073_legal_acceptance_history` and
+  `0074_recall_join_metadata_minimization` (main added no later SQL).
 - Browser MCP clients: `/oauth/register`, `/oauth/token`, and `/oauth/revoke`
   now answer `OPTIONS` preflight and attach the same public CORS as discovery
   (`Access-Control-Allow-Origin: *`, no credentials, explicit allowed headers).

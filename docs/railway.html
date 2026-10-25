@@ -355,6 +355,13 @@ LOG_LEVEL=info
         build time in each Railway service.
       </p>
       <p>
+        App runtimes are pinned to Node.js <code>24.22.1</code> through the root
+        <code>package.json</code> (<code>engines.node</code>) and <code>.nvmrc</code>; portable
+        Dockerfiles use <code>node:24.22.1-alpine</code>. Remove any conflicting
+        <code>RAILPACK_NODE_VERSION</code> override and rebuild and redeploy each app service to
+        replace an older runtime. Changing a version pin does not patch an already running service.
+      </p>
+      <p>
         Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
         Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
         labels such as <code>staging</code>; Node.js and the app env schema only accept
