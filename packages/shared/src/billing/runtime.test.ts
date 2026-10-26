@@ -1409,6 +1409,70 @@ describe('billing runtime', () => {
     });
   });
 
+  it('settles a recovered worker call against the window the reservation started in', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const ended = new Date(Date.now() - 60 * 60 * 1000);
+    const started = new Date(ended);
+    started.setUTCMonth(started.getUTCMonth() - 1);
+    const usageAt = new Date(started.getTime() + 24 * 60 * 60 * 1000);
+    const operationId = 'embedding:recovered-after-renewal';
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:old-window-spent',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '6000',
+      customerChargeCents: 6_000,
+      metadata: { discount_cents: 6_000, usage_at: usageAt.toISOString() },
+      occurredAt: new Date(),
+    });
+    await db.insert(billingUsageReservations).values({
+      teamId: TEAM_ID,
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: '100',
+      reservedChargeCents: 100,
+      state: 'reserved',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      metadata: {
+        provider_completed: true,
+        worker_settlement_pending: true,
+        openrouter_usd: 0.03,
+        operation_class: 'embedding',
+        source: 'worker',
+      },
+      createdAt: usageAt,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000,
+          period_started_at = '${started.toISOString()}',
+          period_ends_at = '${ended.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.metadata).toMatchObject({ discount_cents: 0 });
+    expect(ledger?.customerChargeCents).toBeGreaterThan(0);
+    const [account] = await db
+      .select({ included: teamBillingAccounts.includedDiscountRemainingCents })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.included).toBe(6_000);
+  });
+
   it('retries an Ask settlement saved on the reservation', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,

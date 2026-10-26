@@ -57,7 +57,11 @@ import {
   localChargeSpendCapApplies,
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
-import { recordBillingPlan, rollIncludedDiscountIfElapsed } from '#src/billing/plan-history.js';
+import {
+  includedDiscountCentsBeforeCurrentWindow,
+  recordBillingPlan,
+  rollIncludedDiscountIfElapsed,
+} from '#src/billing/plan-history.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
 import {
   expireStaleBillingReservations,
@@ -1082,7 +1086,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
        * Live settlement omits this and uses the current commercial rate.
        */
       pricingAdditionalMemberCents?: number | null;
-      /** Included-discount pool for that day. Skips the live balance when set. */
+      /**
+       * Included-discount pool for this settlement. When omitted, usage before
+       * the current window uses that window's remaining discount. A caller
+       * passes this to force a pool, including zero.
+       */
       historicalIncludedDiscountCents?: number;
       pricingPeriodYm?: string;
       /** When the usage happened. Backfills use this instead of reservation time. */
@@ -1101,6 +1109,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         | undefined;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const written = await db.transaction(async (tx) => {
+          const now = new Date();
           const [lockedAccount] = await tx
             .select()
             .from(teamBillingAccounts)
@@ -1108,7 +1117,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .limit(1)
             .for('update');
           if (!lockedAccount) throw new Error('Missing billing account');
-          const rolled = await rollIncludedDiscountIfElapsed(tx, lockedAccount, new Date());
+          const rolled = await rollIncludedDiscountIfElapsed(tx, lockedAccount, now);
           const account = rolled.account;
           const reservation = await tx
             .select()
@@ -1122,7 +1131,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             .limit(1)
             .for('update');
 
-          const startedAt = input.usageAt ?? reservation[0]?.createdAt ?? new Date();
+          const startedAt = input.usageAt ?? reservation[0]?.createdAt ?? now;
           const segments =
             input.pricingPeriodYm && input.meterId !== 'recall_minutes'
               ? [{ periodYm: input.pricingPeriodYm, nativeUnits: Math.max(0, input.nativeUnits) }]
@@ -1225,7 +1234,17 @@ export function createBillingScope(deps: BillingScopeDeps) {
             (sum, row) => sum + row.actualChargeCents,
             0,
           );
-          const historicalDiscount = input.historicalIncludedDiscountCents;
+          const historicalDiscount = await includedDiscountCentsBeforeCurrentWindow({
+            db: tx,
+            teamId,
+            account,
+            usageAt: startedAt,
+            now,
+            ...(input.pricingPlanId ? { pricingPlanId: input.pricingPlanId } : {}),
+            ...(input.historicalIncludedDiscountCents !== undefined
+              ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
+              : {}),
+          });
           const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
           const { discountCents, invoiceCents } = splitDiscountAndWallet({
             chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,

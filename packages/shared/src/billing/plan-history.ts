@@ -110,7 +110,7 @@ export async function backfillFreePlanBaselines(db: Db): Promise<number> {
 
 /** Plan in force at the end of a UTC day. Falls back when no history exists yet. */
 async function planIdEffectiveOnDay(input: {
-  db: Db;
+  db: Pick<Db, 'select'>;
   teamId: string;
   day: string;
   fallback: BillingPlanId;
@@ -162,7 +162,7 @@ export function settlementMatchesDiscountPeriod(input: {
  * Enterprise. An expired comp is Free for days after `compExpiresAt`.
  */
 export async function billingPlanIdOnDay(input: {
-  db: Db;
+  db: Pick<Db, 'select'>;
   teamId: string;
   day: string;
   account: {
@@ -309,7 +309,7 @@ export async function rollIncludedDiscountIfElapsed(
  * contains `usageAt`, after discount cents already recorded in that window.
  */
 export async function includedDiscountRemainingForReplay(input: {
-  db: Db;
+  db: Pick<Db, 'select'>;
   teamId: string;
   planId: BillingPlanId;
   usageAt: Date;
@@ -340,4 +340,53 @@ export async function includedDiscountRemainingForReplay(input: {
     if (settlementInDiscountWindow(row, window)) used += cents;
   }
   return Math.max(0, budget - used);
+}
+
+/**
+ * Discount pool for one settlement. An explicit historical pool wins. Usage
+ * before the current window uses that earlier window's remaining catalog
+ * discount, so a recovered reservation does not draw the refilled balance.
+ * Usage inside the current window returns undefined and the caller keeps the
+ * live balance.
+ */
+export async function includedDiscountCentsBeforeCurrentWindow(input: {
+  db: Pick<Db, 'select'>;
+  teamId: string;
+  account: {
+    planId: BillingPlanId;
+    arrangement?: BillingArrangement | null | undefined;
+    compExpiresAt?: Date | null | undefined;
+    periodStartedAt: Date | null;
+    periodEndsAt: Date | null;
+  };
+  usageAt: Date;
+  now: Date;
+  pricingPlanId?: BillingPlanId;
+  historicalIncludedDiscountCents?: number;
+}): Promise<number | undefined> {
+  if (input.historicalIncludedDiscountCents !== undefined) {
+    return input.historicalIncludedDiscountCents;
+  }
+  const current = includedDiscountWindowContaining({
+    usageAt: input.now,
+    periodStartedAt: input.account.periodStartedAt,
+    periodEndsAt: input.account.periodEndsAt,
+  });
+  if (input.usageAt.getTime() >= current.startedAt.getTime()) return undefined;
+  const planId =
+    input.pricingPlanId ??
+    (await billingPlanIdOnDay({
+      db: input.db,
+      teamId: input.teamId,
+      day: input.usageAt.toISOString().slice(0, 10),
+      account: input.account,
+    }));
+  return includedDiscountRemainingForReplay({
+    db: input.db,
+    teamId: input.teamId,
+    planId,
+    usageAt: input.usageAt,
+    periodStartedAt: input.account.periodStartedAt,
+    periodEndsAt: input.account.periodEndsAt,
+  });
 }
