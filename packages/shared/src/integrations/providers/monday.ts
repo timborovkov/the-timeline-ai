@@ -3,6 +3,12 @@ import { Buffer } from 'node:buffer';
 import { getEnv } from '#src/env.js';
 import { externalFetch as fetch } from '#src/http/external-fetch.js';
 import {
+  adoptMondayAccountBudget,
+  observeMondayRemaining,
+  reserveMondayCall,
+} from '#src/integrations/monday-budget.js';
+import {
+  attachSyncContinuations,
   type IntegrationEvent,
   type IntegrationProvider,
   type ObjectMapping,
@@ -41,8 +47,11 @@ const SCOPES = [
   'webhooks:write',
 ];
 const BOARD_PAGE_LIMIT = 100;
-const ITEM_PAGE_LIMIT = 100;
+const ITEM_PAGE_LIMIT = 20;
 const CONVERSATION_PAGE_LIMIT = 100;
+const UPDATE_PAGES_PER_RUN = 10;
+const BACKFILL_CONVERSATION_EVENT_BUDGET = 100;
+const BACKFILL_SUBITEM_EVENT_BUDGET = 20;
 // postgres.js rejects a statement at 65,534 bind parameters. The raw_events
 // insert built by writeIntegrationEvents has nine parameterized columns per
 // event. Reserve bind headroom for writer changes rather than running right at
@@ -59,6 +68,8 @@ const DOC_PAGE_LIMIT = 100;
 const BLOCK_PAGE_LIMIT = 100;
 const ITEM_PAGE_CURSOR_TTL_MS = 60 * 60 * 1000;
 const DOC_RECONCILIATION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const ACTIVITY_PAGE_LIMIT = 100;
+const ACTIVITY_OVERLAP_MS = 5 * 60_000;
 const MONDAY_WEBHOOK_EVENTS = [
   'create_item',
   'change_column_value',
@@ -77,10 +88,15 @@ const MONDAY_WEBHOOK_EVENTS = [
 
 interface MondayTokens {
   access_token: string;
+  account_id?: string;
   refresh_token?: string;
   token_type?: string;
   scope?: string;
   expires_at?: number;
+}
+
+function accountTokens(tokens: MondayTokens, externalAccountId?: string | null): MondayTokens {
+  return externalAccountId ? { ...tokens, account_id: externalAccountId } : tokens;
 }
 
 interface MondayIdentity {
@@ -211,6 +227,15 @@ interface MondayDoc {
 interface MondayCursor {
   activity_since?: string | undefined;
   activity_after_id?: string | undefined;
+  activity_seen_ids?: string[] | undefined;
+  activity_recent_logs?: { id: string; at: string }[] | undefined;
+  activity_scan_kind?: 'backfill' | 'recovery' | undefined;
+  activity_scan_from?: string | undefined;
+  activity_scan_to?: string | undefined;
+  activity_scan_page?: number | undefined;
+  activity_page_seen_ids?: string[] | undefined;
+  activity_backfill_complete?: boolean | undefined;
+  item_backfill_complete?: boolean | undefined;
   item_since?: string | undefined;
   item_page_cursor?: string | undefined;
   item_page_cursor_created_at?: string | undefined;
@@ -247,6 +272,7 @@ function isMondayStatusColumnType(type: string | null | undefined): boolean {
 
 interface MondayConversationCursor {
   update_boundary?: MondayUpdateBoundary;
+  update_page_hint?: number;
   reply_next_pages?: Record<string, number>;
   legacy_update_page?: true;
 }
@@ -353,8 +379,19 @@ const ITEM_SHELL_FIELDS = `
   }
 `;
 
+const TARGETED_ITEM_FIELDS = `
+  id name updated_at url
+  group { id title }
+  creator { id name }
+  parent_item { id name board { ${ITEM_BOARD_FIELDS} } }
+  column_values {
+    id text type value
+    ... on PeopleValue { persons_and_teams { id kind } }
+  }
+`;
+
 const TARGETED_UPDATE_ITEM_FIELDS = `
-  ${ITEM_SHELL_FIELDS}
+  ${TARGETED_ITEM_FIELDS}
   updates(ids: $updateIds) { ${CONVERSATION_FIELDS} }
 `;
 
@@ -392,6 +429,9 @@ async function gql<T>(
   query: string,
   variables: Record<string, unknown> = {},
 ): Promise<T> {
+  if (process.env.NODE_ENV !== 'test') {
+    await reserveMondayCall(tokens.account_id, tokens.access_token);
+  }
   const res = await fetch(GRAPHQL_URL, {
     method: 'POST',
     headers: {
@@ -402,6 +442,9 @@ async function gql<T>(
     body: JSON.stringify({ query, variables }),
   });
   const text = await res.text();
+  if (process.env.NODE_ENV !== 'test') {
+    await observeMondayRemaining(tokens.account_id, tokens.access_token, res.headers);
+  }
   const httpRateLimit = mondayRateLimitError(res, text);
   if (httpRateLimit) throw httpRateLimit;
   if (!res.ok) throw new Error(`Monday GraphQL ${String(res.status)}: ${text}`);
@@ -545,9 +588,11 @@ function tokenFromBody(body: Record<string, unknown>, previous?: MondayTokens): 
     stringValue(body.refresh_token) ?? stringValue(body.refreshToken) ?? previous?.refresh_token;
   const tokenType = stringValue(body.token_type) ?? previous?.token_type;
   const scope = stringValue(body.scope) ?? previous?.scope;
+  const accountId = stringValue(body.account_id) ?? previous?.account_id;
   const expiresAt = tokenExpiry(body);
   return {
     access_token: access,
+    ...(accountId ? { account_id: accountId } : {}),
     ...(refreshToken ? { refresh_token: refreshToken } : {}),
     ...(tokenType ? { token_type: tokenType } : {}),
     ...(scope ? { scope } : {}),
@@ -590,6 +635,10 @@ async function ensureAccessToken(
 }
 
 function dateValue(value: unknown, fallback = new Date()): Date {
+  if (typeof value === 'string' && /^\d{17}$/.test(value)) {
+    const millis = Math.round(Number(value) / 10_000);
+    return new Date(millis);
+  }
   const date = typeof value === 'string' || typeof value === 'number' ? new Date(value) : fallback;
   return Number.isNaN(date.getTime()) ? fallback : date;
 }
@@ -1517,7 +1566,7 @@ async function fetchItemWithBoard(
     }`
     : `query ($itemIds: [ID!]) {
       items(ids: $itemIds) {
-        ${ITEM_SHELL_FIELDS}
+        ${TARGETED_ITEM_FIELDS}
         board {
           ${BOARD_FIELDS}
         }
@@ -1597,16 +1646,18 @@ function mondayConversationCursor(value: unknown): MondayConversationCursor {
         )
       : {};
   const updateBoundary = mondayUpdateBoundary(input.update_boundary);
+  const updatePageHint = positiveConversationPage(input.update_page_hint, 1);
   const legacyUpdatePage = positiveConversationPage(input.update_next_page, 2);
   return {
     ...(updateBoundary ? { update_boundary: updateBoundary } : {}),
+    ...(updatePageHint ? { update_page_hint: updatePageHint } : {}),
     ...(Object.keys(replyNextPages).length > 0 ? { reply_next_pages: replyNextPages } : {}),
     ...(legacyUpdatePage ? { legacy_update_page: true } : {}),
   };
 }
 
 function hasMondayConversationCursor(cursor: MondayConversationCursor): boolean {
-  if (cursor.update_boundary || cursor.legacy_update_page) return true;
+  if (cursor.update_boundary || cursor.update_page_hint || cursor.legacy_update_page) return true;
   return Object.keys(cursor.reply_next_pages ?? {}).length > 0;
 }
 
@@ -1755,26 +1806,33 @@ async function hydrateItemConversations(
   let updateBoundary: MondayUpdateBoundary | undefined = includeUpdatePages
     ? undefined
     : updateBoundaryBefore;
+  let updatePageHint: number | undefined = includeUpdatePages ? undefined : cursor.update_page_hint;
   if (!includeUpdatePages) {
     const updates = item.updates ?? [];
     if (!(await hydrateReplies(updates))) {
       continuations.push(...updates.map((update) => ({ itemId: item.id, updateId: update.id })));
     }
   } else {
-    let page = 1;
+    let page =
+      updateBoundaryBefore && cursor.update_page_hint
+        ? Math.max(1, cursor.update_page_hint - 1)
+        : 1;
     let updates = item.updates;
     let boundaryCrossed = !updateBoundaryBefore;
     let lastCoveredBoundary = updateBoundaryBefore;
+    let pagesRead = 0;
     for (;;) {
       // A shell has no conversation payload yet. Do not ask Monday for a
       // 100-update page when this writer cannot persist that page whole; the
       // exact item continuation below will hydrate it in a fresh safe budget.
       if (updates === undefined && remaining < CONVERSATION_PAGE_LIMIT) {
         updateBoundary = lastCoveredBoundary;
+        updatePageHint = page;
         continuations.push({ itemId: item.id });
         break;
       }
       const providerPage = updates ?? (await fetchItemUpdatesPage(tokens, item.id, page));
+      pagesRead++;
       if (providerPage.length === 0) break;
       let pageUpdates = providerPage;
       if (!boundaryCrossed && updateBoundaryBefore) {
@@ -1794,6 +1852,12 @@ async function hydrateItemConversations(
       if (pageUpdates.length === 0) {
         if (providerPage.length < CONVERSATION_PAGE_LIMIT) break;
         page += 1;
+        if (pagesRead >= UPDATE_PAGES_PER_RUN) {
+          updateBoundary = lastCoveredBoundary;
+          updatePageHint = page;
+          continuations.push({ itemId: item.id });
+          break;
+        }
         updates = undefined;
         continue;
       }
@@ -1807,6 +1871,7 @@ async function hydrateItemConversations(
         );
         if (providerPage.length === CONVERSATION_PAGE_LIMIT) {
           updateBoundary = mondayUpdateBoundaryForPage(pageUpdates);
+          updatePageHint = page + 1;
           continuations.push({ itemId: item.id });
         }
         break;
@@ -1816,6 +1881,13 @@ async function hydrateItemConversations(
       page += 1;
       if (remaining === 0) {
         updateBoundary = lastCoveredBoundary;
+        updatePageHint = page;
+        continuations.push({ itemId: item.id });
+        break;
+      }
+      if (pagesRead >= UPDATE_PAGES_PER_RUN) {
+        updateBoundary = lastCoveredBoundary;
+        updatePageHint = page;
         continuations.push({ itemId: item.id });
         break;
       }
@@ -1825,6 +1897,7 @@ async function hydrateItemConversations(
 
   const nextCursor: MondayConversationCursor = {
     ...(updateBoundary ? { update_boundary: updateBoundary } : {}),
+    ...(updatePageHint ? { update_page_hint: updatePageHint } : {}),
     ...(Object.keys(replyNextPages).length > 0 ? { reply_next_pages: replyNextPages } : {}),
   };
   return {
@@ -1983,7 +2056,6 @@ async function fetchBoardItemsBatch(
     allItems?: boolean;
   },
 ): Promise<{ items: MondayItem[]; nextCursor?: string; restarted?: boolean }> {
-  const items: MondayItem[] = [];
   let page: MondayItemsPage;
   let restarted = false;
   if (input.pageCursor) {
@@ -1997,31 +2069,28 @@ async function fetchBoardItemsBatch(
   } else {
     page = await fetchInitialItemsPage(tokens, boardId, input.updatedSince, input.allItems);
   }
-  for (let index = 0; index < 100; index++) {
-    items.push(...(page.items ?? []));
-    if (!page.cursor) return { items, ...(restarted ? { restarted: true } : {}) };
-    if (index === 99) {
-      return { items, nextCursor: page.cursor, ...(restarted ? { restarted: true } : {}) };
-    }
-    page = await fetchNextItemsPage(tokens, page.cursor);
-  }
-  return { items, ...(restarted ? { restarted: true } : {}) };
+  return {
+    items: page.items ?? [],
+    ...(page.cursor ? { nextCursor: page.cursor } : {}),
+    ...(restarted ? { restarted: true } : {}),
+  };
 }
 
-async function fetchActivityLogs(
+async function fetchActivityLogsPage(
   tokens: MondayTokens,
   boardId: string,
   from: string,
   to: string,
+  page: number,
 ): Promise<MondayActivityLog[]> {
   const data = await gql<{ boards: { activity_logs?: MondayActivityLog[] }[] }>(
     tokens,
-    `query ($ids: [ID!], $from: ISO8601DateTime!, $to: ISO8601DateTime!) {
+    `query ($ids: [ID!], $from: ISO8601DateTime!, $to: ISO8601DateTime!, $limit: Int!, $page: Int!) {
       boards(ids: $ids) {
-        activity_logs(from: $from, to: $to) { id event data created_at user_id }
+        activity_logs(from: $from, to: $to, limit: $limit, page: $page) { id event data created_at user_id }
       }
     }`,
-    { ids: [boardId], from, to },
+    { ids: [boardId], from, to, limit: ACTIVITY_PAGE_LIMIT, page },
   );
   return data.boards[0]?.activity_logs ?? [];
 }
@@ -2132,8 +2201,9 @@ async function syncTargetedItem(
   const hydrated = await hydrateItemConversationsForSync(tokens, boardId, sourceItem, ctx, {
     // An update-id webhook has already narrowed the provider response to the
     // one update; its persisted reply cursor is still resumed below.
-    includeUpdatePages: !target?.updateId,
-    maxConversationEvents: MONDAY_BOARD_WRITER_EVENT_BUDGET - 1,
+    includeUpdatePages:
+      !target?.updateId && (target?.surface === 'conversation_continuation' || !target?.surface),
+    maxConversationEvents: target?.updateId ? 200 : BACKFILL_CONVERSATION_EVENT_BUDGET,
   });
   const item = hydrated.item;
   const parentBoard = item.parent_item?.board ?? null;
@@ -2164,14 +2234,17 @@ async function syncTargetedItem(
   itemLifecycles[item.id] = mondayItemLifecycleStatus(itemBoard, item);
   touchedItemIds.add(item.id);
   const subitems =
-    kind === 'item'
+    kind === 'item' && target?.surface === 'manual_full_item'
       ? await hydratedSubitemEvents(
           tokens,
           board,
           item,
           boardId,
           ctx,
-          MONDAY_BOARD_WRITER_EVENT_BUDGET - itemEvents.length,
+          Math.min(
+            BACKFILL_SUBITEM_EVENT_BUDGET,
+            MONDAY_BOARD_WRITER_EVENT_BUDGET - itemEvents.length,
+          ),
           itemLifecycles,
           touchedItemIds,
         )
@@ -2190,6 +2263,108 @@ async function syncTargetedItem(
     item_lifecycles: itemLifecycles,
   });
   return mondayConversationContinuationTargets(boardId, progress, subitems.continuations);
+}
+
+async function recoverBoardActivity(
+  tokens: MondayTokens,
+  boardId: string,
+  cursor: MondayCursor,
+  ctx: SyncContext,
+): Promise<boolean> {
+  const now = new Date();
+  const previous = cursor.activity_since
+    ? dateValue(cursor.activity_since, new Date(now.getTime() - DOC_RECONCILIATION_INTERVAL_MS))
+    : new Date(now.getTime() - DOC_RECONCILIATION_INTERVAL_MS);
+  const resuming = cursor.activity_scan_kind === 'recovery';
+  const from =
+    resuming && cursor.activity_scan_from
+      ? cursor.activity_scan_from
+      : new Date(Math.max(0, previous.getTime() - ACTIVITY_OVERLAP_MS)).toISOString();
+  const to = resuming && cursor.activity_scan_to ? cursor.activity_scan_to : now.toISOString();
+  const page = resuming ? (cursor.activity_scan_page ?? 1) : 1;
+  const logs = await fetchActivityLogsPage(tokens, boardId, from, to, page);
+  const recentLogs = new Map(
+    (cursor.activity_recent_logs ?? []).map((entry) => [entry.id, entry.at]),
+  );
+  if (cursor.activity_after_id) {
+    recentLogs.set(cursor.activity_after_id, cursor.activity_since ?? previous.toISOString());
+  }
+  for (const id of cursor.activity_seen_ids ?? []) {
+    recentLogs.set(id, cursor.activity_since ?? previous.toISOString());
+  }
+  const pageSeen = new Set(resuming ? (cursor.activity_page_seen_ids ?? []) : []);
+  const scanFloor = dateValue(from).getTime();
+  const fresh = logs
+    .filter(
+      (log) =>
+        dateValue(log.created_at, previous).getTime() >= scanFloor &&
+        !recentLogs.has(log.id) &&
+        !pageSeen.has(log.id),
+    )
+    .sort(
+      (a, b) =>
+        dateValue(a.created_at, previous).getTime() - dateValue(b.created_at, previous).getTime() ||
+        a.id.localeCompare(b.id),
+    );
+  const board = fresh.length > 0 ? await fetchBoard(tokens, boardId) : null;
+  let activityCount = 0;
+  for (const log of fresh) {
+    if (pageSeen.has(log.id)) continue;
+    if (board) await ctx.writeEvents([activityEvent(board, log)]);
+    const data = parseActivityData(log.data);
+    const itemId = stringValue(data.pulse_id) ?? stringValue(data.item_id);
+    if (itemId) {
+      await syncTargetedItem(tokens, boardId, itemId, ctx, { surface: 'activity_recovery' });
+    }
+    pageSeen.add(log.id);
+    const logTime = dateValue(log.created_at, previous).toISOString();
+    recentLogs.set(log.id, logTime);
+    activityCount++;
+    await ctx.saveCursor(`monday.board:${boardId}`, {
+      ...cursor,
+      activity_scan_kind: 'recovery',
+      activity_scan_from: from,
+      activity_scan_to: to,
+      activity_scan_page: page,
+      activity_page_seen_ids: [...pageSeen],
+      activity_recent_logs: [...recentLogs].map(([id, at]) => ({ id, at })),
+    });
+  }
+  const hasMore = logs.length === ACTIVITY_PAGE_LIMIT;
+  if (hasMore) {
+    await ctx.saveCursor(`monday.board:${boardId}`, {
+      ...cursor,
+      activity_scan_kind: 'recovery',
+      activity_scan_from: from,
+      activity_scan_to: to,
+      activity_scan_page: page + 1,
+      activity_page_seen_ids: [],
+      activity_recent_logs: [...recentLogs].map(([id, at]) => ({ id, at })),
+    });
+  } else {
+    const overlapFloor = dateValue(to).getTime() - ACTIVITY_OVERLAP_MS;
+    for (const [id, at] of recentLogs) {
+      if (dateValue(at, new Date(0)).getTime() < overlapFloor) recentLogs.delete(id);
+    }
+    await ctx.saveCursor(`monday.board:${boardId}`, {
+      ...cursor,
+      activity_since: to,
+      activity_after_id: undefined,
+      activity_scan_kind: undefined,
+      activity_scan_from: undefined,
+      activity_scan_to: undefined,
+      activity_scan_page: undefined,
+      activity_page_seen_ids: undefined,
+      activity_recent_logs: [...recentLogs].map(([id, at]) => ({ id, at })),
+    });
+  }
+  await ctx.recordAudit('monday_board_recovered', {
+    boardId,
+    activityCount,
+    page,
+    hasMore,
+  });
+  return hasMore;
 }
 
 async function fetchDocsPage(tokens: MondayTokens, page: number): Promise<MondayDoc[]> {
@@ -2214,6 +2389,22 @@ async function listDocs(tokens: MondayTokens): Promise<MondayDoc[]> {
     if (batch.length < DOC_PAGE_LIMIT) break;
   }
   return docs;
+}
+
+async function selectedDocMetadata(
+  tokens: MondayTokens,
+  ids: string[],
+): Promise<Map<string, Pick<MondayDoc, 'id' | 'updated_at'>>> {
+  const result = new Map<string, Pick<MondayDoc, 'id' | 'updated_at'>>();
+  for (let index = 0; index < ids.length; index += DOC_PAGE_LIMIT) {
+    const data = await gql<{ docs: Pick<MondayDoc, 'id' | 'updated_at'>[] }>(
+      tokens,
+      `query ($ids: [ID!]) { docs(ids: $ids) { id updated_at } }`,
+      { ids: ids.slice(index, index + DOC_PAGE_LIMIT) },
+    );
+    for (const doc of data.docs) result.set(doc.id, doc);
+  }
+  return result;
 }
 
 async function fetchBoardsPage(
@@ -2307,12 +2498,14 @@ async function hydratedSubitemEvents(
   const events: IntegrationEvent[] = [];
   const progress: MondayConversationProgress[] = [];
   const continuations: MondayConversationContinuation[] = [];
+  let hydratedCount = 0;
   for (const subitem of item.subitems ?? []) {
     const remaining = maxEvents - events.length;
-    if (remaining < 1) {
+    if (remaining < 1 || hydratedCount >= maxEvents) {
       continuations.push({ itemId: subitem.id });
       continue;
     }
+    hydratedCount++;
     const hydrated = await hydrateItemConversationsForSync(tokens, boardId, subitem, ctx, {
       maxConversationEvents: remaining - 1,
     });
@@ -2401,19 +2594,50 @@ async function syncBoard(
       },
     };
   }
+  const resumingBackfill = options.incremental && cursor.activity_scan_kind === 'backfill';
   const from =
-    cursor.activity_since ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const to = new Date().toISOString();
+    (resumingBackfill ? cursor.activity_scan_from : undefined) ??
+    cursor.activity_since ??
+    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const to = (resumingBackfill ? cursor.activity_scan_to : undefined) ?? new Date().toISOString();
+  const activityComplete = resumingBackfill && cursor.activity_backfill_complete;
+  const itemsComplete = resumingBackfill && cursor.item_backfill_complete;
   const pageCursor = usableItemPageCursor(cursor);
   const itemInput = {
-    ...(options.incremental && cursor.item_since ? { updatedSince: cursor.item_since } : {}),
+    ...(options.incremental && !resumingBackfill && cursor.item_since
+      ? { updatedSince: cursor.item_since }
+      : {}),
     ...(pageCursor ? { pageCursor } : {}),
     ...(board.hierarchy_type === 'multi_level' ? { allItems: true } : {}),
   };
   const [activityLogs, itemBatch] = await Promise.all([
-    fetchActivityLogs(tokens, boardId, from, to),
-    fetchBoardItemsBatch(tokens, boardId, itemInput),
+    activityComplete
+      ? Promise.resolve([])
+      : fetchActivityLogsPage(
+          tokens,
+          boardId,
+          from,
+          to,
+          resumingBackfill ? (cursor.activity_scan_page ?? 1) : 1,
+        ),
+    itemsComplete
+      ? Promise.resolve<{
+          items: MondayItem[];
+          nextCursor?: string;
+          restarted?: boolean;
+        }>({ items: [] })
+      : fetchBoardItemsBatch(tokens, boardId, itemInput),
   ]);
+  const recentActivity = new Map(
+    resumingBackfill
+      ? (cursor.activity_recent_logs ?? []).map((entry) => [entry.id, entry.at])
+      : [],
+  );
+  const overlapFloor = dateValue(to).getTime() - ACTIVITY_OVERLAP_MS;
+  for (const log of activityLogs) {
+    const at = dateValue(log.created_at, new Date(0));
+    if (at.getTime() >= overlapFloor) recentActivity.set(log.id, at.toISOString());
+  }
   const items = itemBatch.items;
   const itemsById = new Map(items.map((item) => [item.id, item]));
   const schemaEvent = boardSchemaEvent(board);
@@ -2436,12 +2660,16 @@ async function syncBoard(
     );
   const activityEntries = allActivityEntries.slice(0, MONDAY_BOARD_WRITER_EVENT_BUDGET - 1);
   const activityEvents = activityEntries.map(({ event }) => event);
-  const hasMoreActivity = activityEntries.length < allActivityEntries.length;
+  const hasMoreActivity =
+    !activityComplete &&
+    (activityLogs.length === ACTIVITY_PAGE_LIMIT ||
+      activityEntries.length < allActivityEntries.length);
   let itemLifecycles = { ...(cursor.item_lifecycles ?? {}) };
   const touchedItemIds = new Set<string>();
   const itemEvents: IntegrationEvent[] = [];
   const conversationProgress: MondayConversationProgress[] = [];
   const continuations: MondayConversationContinuation[] = [];
+  let subitemEventBudget = BACKFILL_SUBITEM_EVENT_BUDGET;
   for (const sourceItem of items) {
     const remaining =
       MONDAY_BOARD_WRITER_EVENT_BUDGET - 1 - activityEvents.length - itemEvents.length;
@@ -2454,7 +2682,7 @@ async function syncBoard(
       boardId,
       sourceItem,
       options.ctx,
-      { maxConversationEvents: remaining - 1 },
+      { maxConversationEvents: Math.min(remaining - 1, BACKFILL_CONVERSATION_EVENT_BUDGET) },
     );
     const item = hydrated.item;
     const kind = item.parent_item?.id ? 'subitem' : 'item';
@@ -2483,11 +2711,15 @@ async function syncBoard(
         item,
         boardId,
         options.ctx,
-        MONDAY_BOARD_WRITER_EVENT_BUDGET - 1 - activityEvents.length - itemEvents.length,
+        Math.min(
+          subitemEventBudget,
+          MONDAY_BOARD_WRITER_EVENT_BUDGET - 1 - activityEvents.length - itemEvents.length,
+        ),
         itemLifecycles,
         touchedItemIds,
       );
       itemEvents.push(...subitems.events);
+      subitemEventBudget -= subitems.events.length;
       conversationProgress.push(...subitems.progress);
       continuations.push(...subitems.continuations);
     }
@@ -2498,7 +2730,6 @@ async function syncBoard(
     board.hierarchy_type === 'multi_level'
       ? items
       : items.flatMap((item) => [item, ...(item.subitems ?? [])]);
-  const latestActivity = activityEntries.at(-1);
   const latestItem = itemEvents
     .map((event) => event.occurredAt.toISOString())
     .sort()
@@ -2521,16 +2752,24 @@ async function syncBoard(
       cursorRestarted: Boolean(itemBatch.restarted),
     },
     cursor: {
-      activity_since: latestActivity
-        ? latestActivity.event.occurredAt.toISOString()
-        : hasMoreActivity
-          ? (cursor.activity_since ?? from)
-          : to,
-      ...(latestActivity
-        ? { activity_after_id: latestActivity.log.id }
-        : hasMoreActivity && cursor.activity_after_id
-          ? { activity_after_id: cursor.activity_after_id }
-          : {}),
+      activity_since: hasMoreActivity ? cursor.activity_since : to,
+      ...(hasMoreActivity && cursor.activity_after_id
+        ? { activity_after_id: cursor.activity_after_id }
+        : {}),
+      activity_recent_logs: [...recentActivity].map(([id, at]) => ({ id, at })),
+      ...(hasMoreActivity || Boolean(itemBatch.nextCursor)
+        ? {
+            activity_scan_kind: 'backfill' as const,
+            ...(hasMoreActivity
+              ? {
+                  activity_scan_from: from,
+                  activity_scan_to: to,
+                  activity_scan_page: (resumingBackfill ? (cursor.activity_scan_page ?? 1) : 1) + 1,
+                }
+              : { activity_backfill_complete: true }),
+            ...(!itemBatch.nextCursor ? { item_backfill_complete: true } : {}),
+          }
+        : {}),
       item_since: itemBatch.nextCursor
         ? cursor.item_since
         : (latestItem ?? cursor.item_since ?? to),
@@ -2581,26 +2820,34 @@ export const mondayProvider: IntegrationProvider = {
       redirect_uri: input.redirectUri,
     });
     const tokens = tokenFromBody(body);
-    const [account, me] = await Promise.all([
-      fetchAccountIdentity(tokens),
-      fetchViewerIdentity(tokens),
-    ]);
+    const account = await fetchAccountIdentity(tokens);
+    if (!tokens.account_id && account?.id && process.env.NODE_ENV !== 'test') {
+      await adoptMondayAccountBudget(account.id, tokens.access_token);
+      tokens.account_id = account.id;
+    }
+    const me = await fetchViewerIdentity(tokens);
     const externalAccountId =
       account?.id ??
       stringValue(body.account_id) ??
       me?.id ??
       stringValue(body.user_id) ??
       'monday';
+    if (!tokens.account_id && process.env.NODE_ENV !== 'test') {
+      await adoptMondayAccountBudget(externalAccountId, tokens.access_token);
+    }
     return {
       externalAccountId,
       displayName: `Monday.com — ${account?.slug ?? me?.name ?? externalAccountId}`,
       scopes: SCOPES,
-      tokens: tokens as unknown as Record<string, unknown>,
+      tokens: { ...tokens, account_id: externalAccountId },
     };
   },
 
-  async listSyncableResources(_integration, tokens, ctx): Promise<ProviderResource[]> {
-    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+  async listSyncableResources(integration, tokens, ctx): Promise<ProviderResource[]> {
+    const mondayTokens = await ensureAccessToken(
+      accountTokens(tokens as MondayTokens, integration.externalAccountId),
+      ctx,
+    );
     const boards = (await listBoards(mondayTokens))
       .filter((board) => !isSubitemsBoard(board))
       .map((board) => ({
@@ -2616,7 +2863,10 @@ export const mondayProvider: IntegrationProvider = {
           .filter(Boolean)
           .join(' '),
       }));
-    const docs = await listDocs(mondayTokens).catch(() => []);
+    const docs = await listDocs(mondayTokens).catch((error: unknown) => {
+      if (error instanceof ProviderRateLimitErrorValue) throw error;
+      return [];
+    });
     return [
       ...boards,
       ...docs.map((doc) => ({
@@ -2635,10 +2885,13 @@ export const mondayProvider: IntegrationProvider = {
     ];
   },
 
-  async backfill({ tokens, selections, ctx }) {
-    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+  async backfill({ integration, tokens, selections, ctx }) {
+    const mondayTokens = await ensureAccessToken(
+      accountTokens(tokens as MondayTokens, integration.externalAccountId),
+      ctx,
+    );
     const partialFailures: SyncPartialFailure[] = [];
-    const continuations: { resourceType: string; externalId: string }[] = [];
+    const continuations: SyncContinuation[] = [];
     for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
       try {
         const cursor = (await ctx.loadCursor(
@@ -2673,6 +2926,16 @@ export const mondayProvider: IntegrationProvider = {
         );
         continuations.push(...boardContinuations);
       } catch (error) {
+        if (error instanceof ProviderRateLimitErrorValue) {
+          throw attachSyncContinuations(error, [
+            ...continuations,
+            {
+              resourceType: 'monday.board',
+              externalId: selection.externalId,
+              surface: 'backfill_restart',
+            },
+          ]);
+        }
         rethrowMondayRateLimit(error);
         partialFailures.push(
           mondaySyncFailure(`monday.board:${selection.externalId}`, 'board', error),
@@ -2684,6 +2947,16 @@ export const mondayProvider: IntegrationProvider = {
         const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
         await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
       } catch (error) {
+        if (error instanceof ProviderRateLimitErrorValue) {
+          throw attachSyncContinuations(error, [
+            ...continuations,
+            {
+              resourceType: 'monday.doc',
+              externalId: selection.externalId,
+              surface: 'backfill_restart',
+            },
+          ]);
+        }
         rethrowMondayRateLimit(error);
         partialFailures.push(
           mondaySyncFailure(`monday.doc:${selection.externalId}`, 'document', error),
@@ -2697,55 +2970,86 @@ export const mondayProvider: IntegrationProvider = {
     };
   },
 
-  async incrementalSync({ tokens, selections, ctx, target }) {
-    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+  async incrementalSync({ integration, tokens, selections, ctx, target }) {
+    const mondayTokens = await ensureAccessToken(
+      accountTokens(tokens as MondayTokens, integration.externalAccountId),
+      ctx,
+    );
     if (target?.resourceType === 'monday.item') {
       const [boardId, itemId, updateId, replyId] = target.externalId.split(':');
       if (boardId && itemId) {
         const continuations = await syncTargetedItem(mondayTokens, boardId, itemId, ctx, {
           ...(updateId ? { updateId } : {}),
           ...(replyId ? { replyId } : {}),
-          ...(target.surface ? { surface: target.surface } : {}),
+          ...(target.reason === 'provider_pagination_continuation' && !target.surface
+            ? { surface: 'conversation_continuation' }
+            : target.surface
+              ? { surface: target.surface }
+              : {}),
         });
         return continuations.length > 0 ? { continuations } : undefined;
       }
       return;
     }
     const partialFailures: SyncPartialFailure[] = [];
-    const continuations: { resourceType: string; externalId: string }[] = [];
-    for (const selection of selections.filter((item) => item.kind === 'monday.board')) {
+    const continuations: SyncContinuation[] = [];
+    for (const selection of selections.filter(
+      (item) =>
+        item.kind === 'monday.board' &&
+        (!target ||
+          (target.resourceType === 'monday.board' && target.externalId === item.externalId)),
+    )) {
       try {
         const cursor = (await ctx.loadCursor(
           `monday.board:${selection.externalId}`,
         )) as MondayCursor;
-        const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
-          incremental: true,
-          ctx,
-        });
-        await ctx.writeEvents(result.events);
-        await persistMondayConversationProgress(
-          ctx,
-          selection.externalId,
-          result.conversationProgress,
-        );
-        await ctx.recordAudit('monday_board_synced', result.stats);
-        const boardContinuations: SyncContinuation[] = [
-          ...(result.stats.hasMoreItems || result.stats.hasMoreActivity
-            ? [{ resourceType: 'monday.board', externalId: selection.externalId }]
-            : []),
-          ...mondayConversationContinuationTargets(
+        if (
+          cursor.activity_scan_kind === 'backfill' ||
+          (target?.reason === 'provider_pagination_continuation' &&
+            (!target.surface || target.surface === 'backfill_restart'))
+        ) {
+          const result = await syncBoard(mondayTokens, selection.externalId, cursor, {
+            incremental: target?.surface !== 'backfill_restart',
+            ctx,
+          });
+          await ctx.writeEvents(result.events);
+          await persistMondayConversationProgress(
+            ctx,
             selection.externalId,
             result.conversationProgress,
-            result.continuations,
-          ),
-        ];
-        await saveMondayCursorCheckpoint(
-          ctx,
-          `monday.board:${selection.externalId}`,
-          result.cursor,
-          boardContinuations,
-        );
-        continuations.push(...boardContinuations);
+          );
+          const boardContinuations: SyncContinuation[] = [
+            ...(result.stats.hasMoreItems || result.stats.hasMoreActivity
+              ? [{ resourceType: 'monday.board', externalId: selection.externalId }]
+              : []),
+            ...mondayConversationContinuationTargets(
+              selection.externalId,
+              result.conversationProgress,
+              result.continuations,
+            ),
+          ];
+          await saveMondayCursorCheckpoint(
+            ctx,
+            `monday.board:${selection.externalId}`,
+            result.cursor,
+            boardContinuations,
+          );
+          continuations.push(...boardContinuations);
+        } else {
+          const hasMore = await recoverBoardActivity(
+            mondayTokens,
+            selection.externalId,
+            cursor,
+            ctx,
+          );
+          if (hasMore) {
+            continuations.push({
+              resourceType: 'monday.board',
+              externalId: selection.externalId,
+              surface: 'activity_recovery',
+            });
+          }
+        }
       } catch (error) {
         rethrowMondayRateLimit(error);
         partialFailures.push(
@@ -2753,11 +3057,41 @@ export const mondayProvider: IntegrationProvider = {
         );
       }
     }
-    for (const selection of selections.filter((item) => item.kind === 'monday.doc')) {
-      try {
-        const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
-        if (!docReconciliationDue(cursor)) continue;
+    const dueDocs: { selection: { kind: string; externalId: string }; cursor: MondayCursor }[] = [];
+    for (const selection of selections.filter(
+      (item) =>
+        item.kind === 'monday.doc' &&
+        (!target ||
+          (target.resourceType === 'monday.doc' && target.externalId === item.externalId)),
+    )) {
+      const cursor = (await ctx.loadCursor(`monday.doc:${selection.externalId}`)) as MondayCursor;
+      if (docReconciliationDue(cursor) || target?.surface === 'backfill_restart') {
+        dueDocs.push({ selection, cursor });
+      }
+    }
+    if (target?.resourceType === 'monday.doc' && target.surface === 'backfill_restart') {
+      for (const { selection, cursor } of dueDocs) {
         await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
+      }
+      return;
+    }
+    const docMetadata = dueDocs.length
+      ? await selectedDocMetadata(
+          mondayTokens,
+          dueDocs.map(({ selection }) => selection.externalId),
+        )
+      : new Map<string, MondayDoc>();
+    for (const { selection, cursor } of dueDocs) {
+      try {
+        const metadata = docMetadata.get(selection.externalId);
+        if (metadata && cursor.doc_since !== metadata.updated_at) {
+          await syncWorkDoc(mondayTokens, selection.externalId, cursor, ctx);
+        } else {
+          await ctx.saveCursor(`monday.doc:${selection.externalId}`, {
+            ...cursor,
+            doc_last_polled_at: new Date().toISOString(),
+          });
+        }
       } catch (error) {
         rethrowMondayRateLimit(error);
         partialFailures.push(
@@ -2806,8 +3140,11 @@ export const mondayProvider: IntegrationProvider = {
     };
   },
 
-  async provisionWebhooks({ tokens, selections, existingSubscriptions, ctx }) {
-    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+  async provisionWebhooks({ integration, tokens, selections, existingSubscriptions, ctx }) {
+    const mondayTokens = await ensureAccessToken(
+      accountTokens(tokens as MondayTokens, integration.externalAccountId),
+      ctx,
+    );
     const url = mondayWebhookUrl();
     const existingByKey = new Map(
       (existingSubscriptions ?? [])
@@ -2823,6 +3160,19 @@ export const mondayProvider: IntegrationProvider = {
       ),
     ];
     for (const boardId of boardIds) {
+      const existingForBoard = MONDAY_WEBHOOK_EVENTS.map((eventType) =>
+        existingByKey.get(
+          mondayWebhookKey({
+            resourceKind: 'monday.board',
+            externalResourceId: boardId,
+            eventType,
+          }),
+        ),
+      );
+      if (existingForBoard.every((subscription) => subscription?.externalSubscriptionId)) {
+        active.push(...existingForBoard.filter((subscription) => subscription !== undefined));
+        continue;
+      }
       const board = await fetchBoard(mondayTokens, boardId);
       if (!board || isSubitemsBoard(board)) continue;
       const boardSubscriptions: WebhookSubscription[] = [];
@@ -2857,10 +3207,13 @@ export const mondayProvider: IntegrationProvider = {
     return active;
   },
 
-  async deprovisionWebhook({ tokens, subscription, ctx }) {
+  async deprovisionWebhook({ integration, tokens, subscription, ctx }) {
     const subscriptionId = subscription.externalSubscriptionId;
     if (!subscriptionId) return;
-    const mondayTokens = await ensureAccessToken(tokens as MondayTokens, ctx);
+    const mondayTokens = await ensureAccessToken(
+      accountTokens(tokens as MondayTokens, integration.externalAccountId),
+      ctx,
+    );
     await deleteMondayWebhook(mondayTokens, subscriptionId);
   },
 };

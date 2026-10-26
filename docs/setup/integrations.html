@@ -282,6 +282,17 @@ GITHUB_WEBHOOK_SECRET=...</code></pre>
 
       <h2 id="monday">Monday.com</h2>
       <p>
+        Timeline imports selected boards once, then uses board webhooks for routine changes. A daily
+        activity-log sweep recovers identifiable missed board changes without rereading every item.
+        Large activity windows advance one log page at a time through durable checkpoints, so a
+        quota pause resumes from the unfinished page. Selected WorkDocs are checked daily and their
+        blocks are fetched only after metadata changes. Automatic monday GraphQL requests share a
+        100-call UTC-day budget per account; webhook provisioning and backfill pause when that
+        budget is exhausted and resume after reset. Resource discovery can be retried after reset. A
+        missed comment edit or reply that does not appear in activity logs may require a manual
+        resync.
+      </p>
+      <p>
         Timeline uses monday.com's OAuth app flow, not a marketplace-only integration recipe. The
         app needs read scopes for boards, users, updates, WorkDocs, and account metadata so selected
         boards and docs can become cited Timeline evidence and provider budgets can be keyed by the
@@ -350,10 +361,9 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
           together before BullMQ delivery, so large conversations resume after contention or queue
           outages without re-emitting completed updates or retrying in a hot loop. Multi-level
           boards use monday's <code>hierarchy_scope_config: "allItems"</code> query so descendants
-          at every supported depth are imported from the real board. Hourly reconciliation can
-          recover missed lifecycle changes, but a same-status owner, due-date, rename, or other
-          field-only change remains absent when both its webhook and activity-log entry are missing
-          because the immutable polling key is lifecycle-stable. Selected WorkDocs reconcile through
+          at every supported depth are imported from the real board. Daily activity-log recovery can
+          recover identifiable missed lifecycle and field changes; a change absent from both its
+          webhook and activity logs requires manual resync. Selected WorkDocs reconcile through
           their own daily cursor. Agent retrieval resolves the visible provider- and
           selection-eligible event IDs in Postgres before semantic search, so historical
           helper-board events never consume the semantic result budget. Candidate filtering is
@@ -365,12 +375,11 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
         </li>
         <li>
           Timeline pins monday API version <code>2026-04</code>. Board pagination cursors are
-          treated as valid for at most 60 minutes. Boards that exceed one 10,000-item worker batch
-          enqueue an immediate resource-targeted continuation after the current integration lock is
-          released, so another worker can acquire the lock and drain the next page before that
-          provider cursor expires. An already expired or provider-rejected cursor restarts that
-          board safely. A failed or inaccessible board is recorded as a partial failure without
-          preventing the remaining selected boards from syncing.
+          treated as valid for at most 60 minutes. Initial imports use 20-item pages and enqueue
+          resource-targeted continuations while more pages remain. If an account budget pause lasts
+          past the provider cursor lifetime, the item walk restarts from page one and deduplication
+          prevents duplicate Timeline events. A failed or inaccessible board is recorded as a
+          partial failure without preventing the remaining selected boards from syncing.
         </li>
       </ol>
 

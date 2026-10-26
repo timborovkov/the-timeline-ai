@@ -110,6 +110,51 @@ function continuationJob(
   };
 }
 
+function retainPausedMondayTarget(
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId' | 'provider'>,
+  target: TargetedIntegrationSyncJob | undefined,
+  continuationJobs: ContinuationJob[],
+  retryAt?: Date,
+): void {
+  if (integration.provider !== 'monday' || !target) return;
+  continuationJobs.push(
+    continuationJob(
+      integration,
+      {
+        resourceType: target.resourceType,
+        externalId: target.externalId,
+        ...(target.surface ? { surface: target.surface } : {}),
+      },
+      retryAt,
+    ),
+  );
+}
+
+async function retainPausedMondayBackfill(
+  db: Db,
+  integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId' | 'provider'>,
+  kind: 'backfill' | 'incremental' | 'targeted',
+  continuationJobs: ContinuationJob[],
+  retryAt?: Date,
+): Promise<void> {
+  if (integration.provider !== 'monday' || kind !== 'backfill') return;
+  const selections = await integrationsLib.adminListSelections(db, integration.id);
+  for (const selection of selections) {
+    if (selection.kind !== 'monday.board' && selection.kind !== 'monday.doc') continue;
+    continuationJobs.push(
+      continuationJob(
+        integration,
+        {
+          resourceType: selection.kind,
+          externalId: selection.externalId,
+          surface: 'backfill_restart',
+        },
+        retryAt,
+      ),
+    );
+  }
+}
+
 function latestRetryAt(...retryAts: (Date | undefined)[]): Date | undefined {
   return retryAts.reduce<Date | undefined>(
     (latest, retryAt) => (!latest || (retryAt && retryAt > latest) ? retryAt : latest),
@@ -694,12 +739,45 @@ export async function runOneIntegration(
           ),
         );
       }
+      if (
+        target &&
+        !pendingContinuations.some((pending) =>
+          isMatchingContinuation(target, pending.continuation),
+        )
+      ) {
+        retainPausedMondayTarget(
+          integration,
+          target,
+          continuationJobs,
+          latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
+        );
+      }
+      await retainPausedMondayBackfill(
+        db,
+        integration,
+        kind,
+        continuationJobs,
+        latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
+      );
       return;
     }
     if (await integrationsLib.adminHasPendingIntegrationSyncContinuations(db, integrationId)) {
       log.info(
         { integrationId, kind },
         'provider pagination continuation is leased by another worker — skipping provider sync',
+      );
+      retainPausedMondayTarget(
+        integration,
+        target,
+        continuationJobs,
+        latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
+      );
+      await retainPausedMondayBackfill(
+        db,
+        integration,
+        kind,
+        continuationJobs,
+        latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
       );
       return;
     }
@@ -716,7 +794,10 @@ export async function runOneIntegration(
         },
         { integrationId },
       );
-      if (isProviderPaginationContinuation(target)) {
+      if (integration.provider === 'monday') {
+        retainPausedMondayTarget(integration, target, continuationJobs, pause.retryAt);
+        await retainPausedMondayBackfill(db, integration, kind, continuationJobs, pause.retryAt);
+      } else if (isProviderPaginationContinuation(target)) {
         continuationJobs.push({
           data: target,
           retryAt: pause.retryAt,
@@ -741,7 +822,21 @@ export async function runOneIntegration(
         },
         { integrationId },
       );
-      if (isProviderPaginationContinuation(target)) {
+      if (integration.provider === 'monday') {
+        retainPausedMondayTarget(
+          integration,
+          target,
+          continuationJobs,
+          providerBudgetPause.retryAt,
+        );
+        await retainPausedMondayBackfill(
+          db,
+          integration,
+          kind,
+          continuationJobs,
+          providerBudgetPause.retryAt,
+        );
+      } else if (isProviderPaginationContinuation(target)) {
         continuationJobs.push({
           data: target,
           retryAt: providerBudgetPause.retryAt,
@@ -861,7 +956,21 @@ export async function runOneIntegration(
     );
     try {
       let syncResult: integrationsLib.SyncResult | undefined;
-      if (kind === 'backfill') {
+      if (
+        kind === 'targeted' &&
+        integration.provider === 'monday' &&
+        target?.resourceType === 'monday.webhook'
+      ) {
+        if (target.externalId !== integration.id) {
+          throw new Error('monday_webhook_continuation_integration_mismatch');
+        }
+        await integrationsLib.adminReconcileIntegrationWebhookSubscriptions(db, integration.id);
+        await integrationsLib.adminResolveConnectionAttention(db, integration.teamId, {
+          providerConnectionId: integration.providerConnectionId,
+          integrationId,
+          categories: ['webhook_degraded'],
+        });
+      } else if (kind === 'backfill') {
         syncResult = await provider.backfill({ integration, tokens, selections, ctx });
       } else {
         syncResult = await provider.incrementalSync({
@@ -1006,6 +1115,42 @@ export async function runOneIntegration(
           ...checkpointContinuations,
           ...integrationsLib.syncContinuationsFromError(err),
         ];
+        if (integration.provider === 'monday') {
+          if (target) {
+            const retryTarget = {
+              resourceType: target.resourceType,
+              externalId: target.externalId,
+              ...(target.surface ? { surface: target.surface } : {}),
+            };
+            if (
+              !continuations.some((continuation) => isMatchingContinuation(target, continuation))
+            ) {
+              continuations.push(retryTarget);
+            }
+          } else if (
+            kind !== 'backfill' ||
+            integrationsLib.syncContinuationsFromError(err).length === 0
+          ) {
+            for (const selection of selections) {
+              if (selection.kind !== 'monday.board' && selection.kind !== 'monday.doc') continue;
+              if (
+                continuations.some(
+                  (continuation) =>
+                    continuation.resourceType === selection.kind &&
+                    continuation.externalId === selection.externalId,
+                )
+              )
+                continue;
+              continuations.push({
+                resourceType: selection.kind,
+                externalId: selection.externalId,
+                ...(kind === 'incremental' && selection.kind === 'monday.board'
+                  ? { surface: 'activity_recovery' }
+                  : {}),
+              });
+            }
+          }
+        }
         includeCurrentContinuationWhenMissing(continuations, target);
         const rateLimitedContinuations = continuations.map((continuation) => {
           const retryAt = latestRetryAt(continuation.retryAt, rateLimit.retryAt);
@@ -1148,6 +1293,9 @@ function targetedSelections(
   selections: { kind: string; externalId: string }[],
   target: TargetedIntegrationSyncJob,
 ): { kind: string; externalId: string }[] {
+  if (provider === 'monday' && target.resourceType === 'monday.webhook') {
+    return [{ kind: 'monday.webhook', externalId: target.externalId }];
+  }
   const exact = selections.filter(
     (selection) =>
       selection.kind === target.resourceType && selection.externalId === target.externalId,
@@ -1273,6 +1421,14 @@ export async function handleTick(db: Db): Promise<void> {
         'integration reconciliation not due yet',
       );
       continue;
+    }
+    if (provider === 'monday') {
+      try {
+        await integrationsLib.adminReconcileIntegrationWebhookSubscriptions(db, i.id);
+      } catch (err) {
+        log.warn({ err, integrationId: i.id }, 'monday webhook provisioning deferred');
+        continue;
+      }
     }
     try {
       await queue.enqueueIntegrationSyncJob({

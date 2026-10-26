@@ -258,7 +258,7 @@ export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy
     provisioningModel: 'app_level',
   },
   monday: {
-    reconciliationIntervalMs: HOUR_MS,
+    reconciliationIntervalMs: 24 * HOUR_MS,
     ingestionPosture: 'webhook_first',
     budgetScopes: ['requests', 'daily', 'minute', 'complexity', 'concurrency'],
     supportsWebhookIngress: true,
