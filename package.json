@@ -62,7 +62,7 @@
     "eslint-plugin-unused-imports": "^4.4.1",
     "knip": "^6.42.0",
     "prettier": "^3.9.10",
-    "react-doctor": "^0.5.8",
+    "react-doctor": "^0.9.18",
     "tsx": "^4.23.15",
     "turbo": "^2.11.9",
     "typescript": "^6.0.3",
