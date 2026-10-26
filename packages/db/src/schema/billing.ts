@@ -306,6 +306,11 @@ export const billingUsageReservations = pgTable(
     reservedNativeUnits: numeric('reserved_native_units', { precision: 20, scale: 6 }).notNull(),
     reservedChargeCents: integer('reserved_charge_cents').notNull(),
     state: usageReservationState('state').notNull().default('reserved'),
+    /**
+     * Plan that admitted this usage. Settlement keeps this plan when the live
+     * plan has changed. Null rows resolve the plan from the usage instant.
+     */
+    admittedPlanId: billingPlanId('admitted_plan_id'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

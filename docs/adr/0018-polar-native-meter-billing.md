@@ -104,9 +104,14 @@ credit hides margin and confuses prospects.
    window under the billing-account lock before pricing current-period usage, and
    the janitor does the same refill. A settlement whose usage instant is earlier
    than that window uses the earlier window's remaining discount and leaves the
-   refilled balance unchanged. The instant is the settlement usage time or the
+   refilled balance unchanged.    The instant is the settlement usage time or the
    reservation's creation time. An explicit historical pool still overrides that
-   lookup. The next window advances from the stored Polar
+   lookup. Settlement prices the plan that admitted the usage. Reserve stores
+   that plan on the reservation. A row without it uses plan history when the
+   plan changed after the usage instant. An explicit pricing plan still wins.
+   A PAYG call settled after a downgrade to Free keeps its overage on the
+   invoice, and a Team call keeps that plan's included discount. The refilled
+   or replacement plan's balance is left unchanged. The next window advances from the stored Polar
    bounds, not by snapping a mid-month renewal to the UTC calendar month. Paid-plan changes
    PATCH the existing Polar subscription (or open the customer portal) instead
    of creating a second checkout. Included-discount cents stay local. Polar

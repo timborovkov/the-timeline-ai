@@ -1354,6 +1354,238 @@ describe('billing scope', () => {
     expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(6_000);
   });
 
+  it('prices recovered reservations on the plan that admitted them', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await Promise.all([
+      scope.reserve({
+        operationId: 'ai:admitted-payg',
+        meterId: 'ai',
+        reservedNativeUnits: 600,
+        reservedChargeCents: 600,
+      }),
+      scope.reserve({
+        operationId: 'recall:admitted-payg',
+        meterId: 'recall_minutes',
+        reservedNativeUnits: 80,
+        reservedChargeCents: 240,
+      }),
+      scope.reserve({
+        operationId: 'email:admitted-payg',
+        meterId: 'email_units',
+        reservedNativeUnits: 1000,
+        reservedChargeCents: 250,
+      }),
+      scope.reserve({
+        operationId: 'sources:admitted-payg',
+        meterId: 'accepted_sources',
+        reservedNativeUnits: 2000,
+        reservedChargeCents: 100,
+      }),
+      scope.reserve({
+        operationId: 'ai:caller-selects-free',
+        meterId: 'ai',
+        reservedNativeUnits: 600,
+        reservedChargeCents: 600,
+      }),
+    ]);
+    expect(reserved.every((row) => row.ok)).toBe(true);
+    for (const row of reserved) {
+      if (row.ok) expect(row.reservation.admittedPlanId).toBe('payg');
+    }
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free',
+          included_discount_remaining_cents = 6000, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const ai = await scope.settle({
+      operationId: 'ai:admitted-payg',
+      meterId: 'ai',
+      nativeUnits: 600,
+      customerChargeCents: 600,
+    });
+    const recall = await scope.settle({
+      operationId: 'recall:admitted-payg',
+      meterId: 'recall_minutes',
+      nativeUnits: 80,
+      customerChargeCents: 240,
+    });
+    const email = await scope.settle({
+      operationId: 'email:admitted-payg',
+      meterId: 'email_units',
+      nativeUnits: 1000,
+      customerChargeCents: 250,
+    });
+    const sources = await scope.settle({
+      operationId: 'sources:admitted-payg',
+      meterId: 'accepted_sources',
+      nativeUnits: 2000,
+      customerChargeCents: 100,
+    });
+    const forcedFree = await scope.settle({
+      operationId: 'ai:caller-selects-free',
+      meterId: 'ai',
+      nativeUnits: 600,
+      customerChargeCents: 600,
+      pricingPlanId: 'free',
+    });
+    if (!ai.duplicate) {
+      expect(ai.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'payg',
+        list_charge_cents: 600,
+        discount_cents: 0,
+        invoice_cents: 100,
+      });
+    }
+    if (!recall.duplicate) {
+      expect(recall.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'payg',
+        discount_cents: 0,
+        invoice_cents: 60,
+      });
+    }
+    if (!email.duplicate) {
+      expect(email.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'payg',
+        discount_cents: 0,
+        invoice_cents: 125,
+      });
+    }
+    if (!sources.duplicate) {
+      expect(sources.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'payg',
+        discount_cents: 0,
+        invoice_cents: 50,
+      });
+    }
+    if (!forcedFree.duplicate) {
+      expect(forcedFree.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'free',
+        discount_cents: 0,
+        invoice_cents: 0,
+      });
+    }
+    const after = await scope.getAccount();
+    expect(after.includedDiscountRemainingCents).toBe(6_000);
+    expect(after.billingState).toBe('free');
+  });
+
+  it('prices a reservation without an admitted plan from history at the usage instant', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const usageAt = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const paygAt = new Date(usageAt.getTime() - 24 * 60 * 60 * 1000);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'free', billing_state = 'free',
+          included_discount_remaining_cents = 6000, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+      INSERT INTO billing_plan_history (team_id, plan_id, effective_at)
+      VALUES ('${TEAM_ID}', 'payg', '${paygAt.toISOString()}');
+    `);
+    const settled = await scope.settle({
+      operationId: 'embedding:job:failed:1',
+      meterId: 'ai',
+      nativeUnits: 600,
+      customerChargeCents: 600,
+      usageAt,
+      metadata: { failed_attempt_for: 'embedding:job' },
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'payg',
+        discount_cents: 0,
+        invoice_cents: 100,
+      });
+    }
+    expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(6_000);
+  });
+
+  it('keeps a recovered Team charge on the Team included discount after a Free downgrade', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'ai:admitted-team',
+      meterId: 'ai',
+      reservedNativeUnits: 100,
+      reservedChargeCents: 100,
+    });
+    const member = await scope.reserve({
+      operationId: 'member:admitted-team',
+      meterId: 'member_days',
+      reservedNativeUnits: 1,
+      reservedChargeCents: 7,
+    });
+    expect(reserved.ok && member.ok).toBe(true);
+    if (reserved.ok) expect(reserved.reservation.admittedPlanId).toBe('team');
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'ai:admitted-team',
+      meterId: 'ai',
+      nativeUnits: 100,
+      customerChargeCents: 100,
+    });
+    const seat = await scope.settle({
+      operationId: 'member:admitted-team',
+      meterId: 'member_days',
+      nativeUnits: 1,
+      customerChargeCents: 7,
+    });
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'team',
+        discount_cents: 100,
+        invoice_cents: 0,
+      });
+    }
+    if (!seat.duplicate) {
+      expect(seat.ledger.customerChargeCents).toBeGreaterThan(0);
+      expect(seat.ledger.metadata).toMatchObject({
+        pricing_plan_id: 'team',
+        discount_cents: 0,
+      });
+      expect(seat.ledger.metadata.invoice_cents).toBe(seat.ledger.customerChargeCents);
+    }
+    expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(0);
+  });
+
   it('does not let a previous-window reservation consume the refilled allowance', async () => {
     const scope = createBillingScope({
       db,
@@ -2831,6 +3063,7 @@ describe('billing scope', () => {
       .from(billingUsageReservations)
       .where(eq(billingUsageReservations.operationId, 'op-reactivate'));
     expect(row?.createdAt.getTime()).toBeGreaterThan(Date.parse('2026-07-02T00:00:00Z'));
+    expect(row?.admittedPlanId).toBe('free');
   });
 
   it('rejects a second concurrent worker AI reservation on Free', async () => {

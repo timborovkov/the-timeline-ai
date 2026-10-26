@@ -129,6 +129,7 @@ describe('drizzle journal order', () => {
       '0085_billing_cancel_effective_at',
       '0086_billing_plan_history_baseline',
       '0087_billing_cap_eligible_spend',
+      '0088_billing_reservation_admitted_plan',
     ]) {
       expect(byTag.get(tag), tag).toBeGreaterThan(mainBoundary);
     }
@@ -169,6 +170,7 @@ describe('drizzle journal order', () => {
       expect(await columnNames(pg, 'billing_usage_counters')).toContain(
         'cap_eligible_charge_cents',
       );
+      expect(await columnNames(pg, 'billing_usage_reservations')).toContain('admitted_plan_id');
       expect(await columnNames(pg, 'legal_acceptances')).toContain('terms_version');
       const tables = await pg.query<{ tablename: string }>(
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'billing_plan_history'`,

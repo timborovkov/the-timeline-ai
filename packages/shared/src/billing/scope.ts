@@ -58,6 +58,7 @@ import {
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
 import {
+  billingPlanIdForSettlement,
   includedDiscountCentsBeforeCurrentWindow,
   recordBillingPlan,
   rollIncludedDiscountIfElapsed,
@@ -951,6 +952,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             meterId: input.meterId,
             reservedNativeUnits: String(input.reservedNativeUnits),
             reservedChargeCents: invoiceCents,
+            admittedPlanId: entitlementsPlanId,
             expiresAt,
             metadata: reservationMetadata,
           })
@@ -1014,6 +1016,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             meterId: input.meterId,
             reservedNativeUnits: String(input.reservedNativeUnits),
             reservedChargeCents: invoiceCents,
+            admittedPlanId: entitlementsPlanId,
             state: 'reserved',
             expiresAt,
             metadata: preservedFailedAttempts
@@ -1079,7 +1082,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
       source?: string;
       deliverySurface?: string;
       metadata?: Record<string, unknown>;
-      /** Price this settlement as the plan in force on a replayed day. */
+      /**
+       * Price this settlement on a caller-selected plan. When omitted, the
+       * reservation's admitted plan wins, then the plan in effect at the usage
+       * instant. A recovered charge keeps the plan that admitted it.
+       */
       pricingPlanId?: BillingPlanId;
       /**
        * Extra-member price of that historical plan, in cents per member-month.
@@ -1164,12 +1171,20 @@ export function createBillingScope(deps: BillingScopeDeps) {
             metersByPeriod.set(row.periodYm, current);
           }
           const livePlanId = effectiveBillingPlanId(account);
-          const entitlementsPlanId = input.pricingPlanId ?? livePlanId;
+          const entitlementsPlanId = await billingPlanIdForSettlement({
+            db: tx,
+            teamId,
+            usageAt: startedAt,
+            livePlanId,
+            account,
+            ...(input.pricingPlanId ? { explicitPlanId: input.pricingPlanId } : {}),
+            ...(reservation[0]?.admittedPlanId
+              ? { admittedPlanId: reservation[0].admittedPlanId }
+              : {}),
+          });
           const commercial = resolveTeamCommercialTerms(account);
           const meteredDiscountPercent =
-            input.pricingPlanId && input.pricingPlanId !== livePlanId
-              ? 0
-              : commercial.meteredDiscountPercent;
+            entitlementsPlanId !== livePlanId ? 0 : commercial.meteredDiscountPercent;
           const comped = compSuppressesPolarCharges(account);
           const enterpriseContract = contractualEnterpriseAccount(account);
           // member_days ignore the caller's customerChargeCents and recompute from
@@ -1178,7 +1193,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
           const memberRateCents =
             input.pricingAdditionalMemberCents !== undefined
               ? Math.max(0, input.pricingAdditionalMemberCents ?? 0)
-              : (commercial.additionalMemberCents ?? 0);
+              : entitlementsPlanId !== livePlanId
+                ? (PLAN_CATALOG[entitlementsPlanId].additionalMemberCents ?? 0)
+                : (commercial.additionalMemberCents ?? 0);
           const segmentCharges = segments.map((segment) => {
             const metersBefore = metersByPeriod.get(segment.periodYm) ?? {};
             const previousNative = metersBefore[input.meterId]?.nativeUnits ?? 0;
@@ -1240,7 +1257,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
             account,
             usageAt: startedAt,
             now,
-            ...(input.pricingPlanId ? { pricingPlanId: input.pricingPlanId } : {}),
+            pricingPlanId: entitlementsPlanId,
+            livePlanId,
             ...(input.historicalIncludedDiscountCents !== undefined
               ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
               : {}),
@@ -1351,7 +1369,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
               reservationId: reservation[0]?.id ?? null,
               metadata: {
                 ...(input.metadata ?? {}),
-                ...(input.pricingPlanId ? { pricing_plan_id: input.pricingPlanId } : {}),
+                ...(input.pricingPlanId || entitlementsPlanId !== livePlanId
+                  ? { pricing_plan_id: entitlementsPlanId }
+                  : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
                 usage_at: startedAt.toISOString(),
                 list_charge_cents: listChargeCents,

@@ -1,5 +1,5 @@
 import { billingPlanHistory, billingUsageLedger, teamBillingAccounts, type Db } from '@timeline/db';
-import { and, asc, desc, eq, lt, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, lt, lte, sql } from 'drizzle-orm';
 
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
 import {
@@ -185,6 +185,91 @@ export async function billingPlanIdOnDay(input: {
   });
 }
 
+/**
+ * Plan in force at a usage instant. History at or before that instant wins.
+ * A missing history row keeps the account plan, then comp expiry for that UTC day.
+ */
+async function billingPlanIdAtInstant(input: {
+  db: Pick<Db, 'select'>;
+  teamId: string;
+  usageAt: Date;
+  account: {
+    planId: BillingPlanId;
+    arrangement?: BillingArrangement | null | undefined;
+    compExpiresAt?: Date | null | undefined;
+  };
+}): Promise<BillingPlanId> {
+  const [row] = await input.db
+    .select({ planId: billingPlanHistory.planId })
+    .from(billingPlanHistory)
+    .where(
+      and(
+        eq(billingPlanHistory.teamId, input.teamId),
+        lte(billingPlanHistory.effectiveAt, input.usageAt),
+      ),
+    )
+    .orderBy(desc(billingPlanHistory.effectiveAt))
+    .limit(1);
+  const storedPlanId = row && isBillingPlanId(row.planId) ? row.planId : input.account.planId;
+  return historicalPlanIdOnDay({
+    storedPlanId,
+    arrangement: input.account.arrangement,
+    compExpiresAt: input.account.compExpiresAt,
+    day: input.usageAt.toISOString().slice(0, 10),
+  });
+}
+
+/**
+ * Plan used to price one settlement. An explicit plan wins, then the plan
+ * stored on the reservation. A row with neither uses history only when the
+ * plan changed after the usage instant and a plan was already recorded at
+ * that instant. Otherwise the live plan stays, so a missing history row cannot
+ * drop current usage.
+ */
+export async function billingPlanIdForSettlement(input: {
+  db: Pick<Db, 'select'>;
+  teamId: string;
+  usageAt: Date;
+  livePlanId: BillingPlanId;
+  explicitPlanId?: BillingPlanId;
+  admittedPlanId?: BillingPlanId | null;
+  account: {
+    planId: BillingPlanId;
+    arrangement?: BillingArrangement | null | undefined;
+    compExpiresAt?: Date | null | undefined;
+  };
+}): Promise<BillingPlanId> {
+  if (input.explicitPlanId) return input.explicitPlanId;
+  if (input.admittedPlanId) return input.admittedPlanId;
+  const [earlier] = await input.db
+    .select({ id: billingPlanHistory.id })
+    .from(billingPlanHistory)
+    .where(
+      and(
+        eq(billingPlanHistory.teamId, input.teamId),
+        lte(billingPlanHistory.effectiveAt, input.usageAt),
+      ),
+    )
+    .limit(1);
+  const [later] = await input.db
+    .select({ id: billingPlanHistory.id })
+    .from(billingPlanHistory)
+    .where(
+      and(
+        eq(billingPlanHistory.teamId, input.teamId),
+        gt(billingPlanHistory.effectiveAt, input.usageAt),
+      ),
+    )
+    .limit(1);
+  if (!earlier || !later) return input.livePlanId;
+  return billingPlanIdAtInstant({
+    db: input.db,
+    teamId: input.teamId,
+    usageAt: input.usageAt,
+    account: input.account,
+  });
+}
+
 const USAGE_DAY_IN_OPERATION_ID = /(?:^|:)(\d{4}-\d{2}-\d{2})(?:$|:)/u;
 
 function calendarMonthWindow(window: { startedAt: Date; endsAt: Date }): boolean {
@@ -344,10 +429,9 @@ export async function includedDiscountRemainingForReplay(input: {
 
 /**
  * Discount pool for one settlement. An explicit historical pool wins. Usage
- * before the current window uses that earlier window's remaining catalog
- * discount, so a recovered reservation does not draw the refilled balance.
- * Usage inside the current window returns undefined and the caller keeps the
- * live balance.
+ * before the current window, and usage priced on a plan other than the live
+ * plan, uses that plan's remaining catalog discount. The live balance stays
+ * in place. Usage on the live plan inside the current window returns undefined.
  */
 export async function includedDiscountCentsBeforeCurrentWindow(input: {
   db: Pick<Db, 'select'>;
@@ -361,7 +445,10 @@ export async function includedDiscountCentsBeforeCurrentWindow(input: {
   };
   usageAt: Date;
   now: Date;
+  /** Plan this settlement is priced on. Omitted rows use the plan at `usageAt`. */
   pricingPlanId?: BillingPlanId;
+  /** Live entitlements. A different pricing plan keeps its own discount pool. */
+  livePlanId?: BillingPlanId;
   historicalIncludedDiscountCents?: number;
 }): Promise<number | undefined> {
   if (input.historicalIncludedDiscountCents !== undefined) {
@@ -372,15 +459,17 @@ export async function includedDiscountCentsBeforeCurrentWindow(input: {
     periodStartedAt: input.account.periodStartedAt,
     periodEndsAt: input.account.periodEndsAt,
   });
-  if (input.usageAt.getTime() >= current.startedAt.getTime()) return undefined;
   const planId =
     input.pricingPlanId ??
-    (await billingPlanIdOnDay({
+    (await billingPlanIdAtInstant({
       db: input.db,
       teamId: input.teamId,
-      day: input.usageAt.toISOString().slice(0, 10),
+      usageAt: input.usageAt,
       account: input.account,
     }));
+  const livePlanId = input.livePlanId ?? input.account.planId;
+  const beforeWindow = input.usageAt.getTime() < current.startedAt.getTime();
+  if (!beforeWindow && planId === livePlanId) return undefined;
   return includedDiscountRemainingForReplay({
     db: input.db,
     teamId: input.teamId,

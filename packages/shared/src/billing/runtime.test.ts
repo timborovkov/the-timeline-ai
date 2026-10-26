@@ -1473,6 +1473,64 @@ describe('billing runtime', () => {
     expect(account?.included).toBe(6_000);
   });
 
+  it('settles a recovered PAYG worker call on the plan that admitted it', async () => {
+    process.env.BILLING_CHARGES_ENABLED = 'true';
+    resetEnvForTests();
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'payg', billing_state = 'payg_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const operationId = 'embedding:recovered-after-downgrade';
+    const reserved = await billing.reserve({
+      operationId,
+      meterId: 'ai',
+      reservedNativeUnits: 800,
+      reservedChargeCents: 800,
+      metadata: { source: 'worker', operation_class: 'embedding' },
+    });
+    expect(reserved.ok).toBe(true);
+    if (reserved.ok) expect(reserved.reservation.admittedPlanId).toBe('payg');
+    await billing.patchReservationMetadata(operationId, {
+      provider_completed: true,
+      worker_settlement_pending: true,
+      openrouter_usd: 2,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET plan_id = 'free', billing_state = 'free',
+          included_discount_remaining_cents = 6000, spend_cap_cents = 100000
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    expect(await settlePendingBillingReservations(db)).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.operationId, operationId));
+    expect(ledger?.metadata).toMatchObject({
+      pricing_plan_id: 'payg',
+      discount_cents: 0,
+      invoice_cents: 236,
+    });
+    const [account] = await db
+      .select({
+        included: teamBillingAccounts.includedDiscountRemainingCents,
+        state: teamBillingAccounts.billingState,
+      })
+      .from(teamBillingAccounts)
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(account?.included).toBe(6_000);
+    expect(account?.state).toBe('free');
+  });
+
   it('retries an Ask settlement saved on the reservation', async () => {
     const billing = billingScopeMod.createBillingScope({
       db,

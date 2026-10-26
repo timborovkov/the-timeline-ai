@@ -631,6 +631,13 @@
       "when": 1795655740000,
       "tag": "0087_billing_cap_eligible_spend",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1795655800000,
+      "tag": "0088_billing_reservation_admitted_plan",
+      "breakpoints": true
     }
   ]
 }
