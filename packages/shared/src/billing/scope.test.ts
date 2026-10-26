@@ -552,6 +552,133 @@ describe('billing scope', () => {
     expect(row?.state).toBe('reserved');
   });
 
+  it('keeps a prior-month pending reservation off this month spend cap', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+    const priorMonth = new Date(monthStart.getTime() - 24 * 60 * 60 * 1000);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          wallet_balance_cents = 5000, included_discount_remaining_cents = 0,
+          spend_cap_cents = 100
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await db.insert(billingUsageReservations).values({
+      teamId: TEAM_ID,
+      operationId: 'op-cap-prior-month',
+      meterId: 'ai',
+      reservedNativeUnits: '1000',
+      reservedChargeCents: 1000,
+      state: 'reserved',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      createdAt: priorMonth,
+      metadata: {
+        list_charge_cents: 1000,
+        metered_charge_cents: 1000,
+        cap_eligible_reserved_cents: 1000,
+        discount_reserved_cents: 0,
+      },
+    });
+    const reserved = await scope.reserve({
+      operationId: 'op-cap-this-month',
+      meterId: 'ai',
+      reservedNativeUnits: 50,
+      reservedChargeCents: 50,
+    });
+    expect(reserved.ok).toBe(true);
+  });
+
+  it('counts only the current-month slice of a pending Recall reservation', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+    await db.insert(billingUsageReservations).values({
+      teamId: TEAM_ID,
+      operationId: 'op-recall-span',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: '60',
+      reservedChargeCents: 180,
+      state: 'reserved',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      createdAt: new Date(monthStart.getTime() - 30 * 60 * 1000),
+      metadata: { list_charge_cents: 180, cap_eligible_reserved_cents: 180 },
+    });
+    const fit = await scope.reserve({
+      operationId: 'op-recall-fit',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: 30,
+      reservedChargeCents: 90,
+    });
+    expect(fit.ok).toBe(true);
+    await scope.release('op-recall-fit');
+    const over = await scope.reserve({
+      operationId: 'op-recall-over',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: 31,
+      reservedChargeCents: 93,
+    });
+    expect(over.ok).toBe(false);
+    if (!over.ok) expect(over.code).toBe('free_allowance_reached');
+  });
+
+  it('holds only the in-window minutes of a Recall reservation against included discount', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
+    const periodEnds = new Date(monthStart);
+    periodEnds.setUTCMonth(periodEnds.getUTCMonth() + 1);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 100, spend_cap_cents = 100000,
+          period_started_at = '${monthStart.toISOString()}',
+          period_ends_at = '${periodEnds.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await db.insert(billingUsageReservations).values({
+      teamId: TEAM_ID,
+      operationId: 'op-recall-discount-span',
+      meterId: 'recall_minutes',
+      reservedNativeUnits: '60',
+      reservedChargeCents: 180,
+      state: 'reserved',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      createdAt: new Date(monthStart.getTime() - 30 * 60 * 1000),
+      metadata: { discount_reserved_cents: 60, cap_eligible_reserved_cents: 0 },
+    });
+    const reserved = await scope.reserve({
+      operationId: 'op-discount-after-span',
+      meterId: 'ai',
+      reservedNativeUnits: 80,
+      reservedChargeCents: 80,
+    });
+    expect(reserved.ok).toBe(true);
+    if (reserved.ok) {
+      expect(reserved.reservation.metadata).toMatchObject({
+        discount_reserved_cents: 70,
+        invoice_reserved_cents: 10,
+      });
+    }
+  });
+
   it('counts pending reservations against the spend cap', async () => {
     const scope = createBillingScope({
       db,
@@ -1176,7 +1303,6 @@ describe('billing scope', () => {
       customerChargeCents: 40,
       usageAt: started,
       pricingPeriodYm: `${started.getUTCFullYear()}-${String(started.getUTCMonth() + 1).padStart(2, '0')}`,
-      historicalIncludedDiscountCents: 80,
     });
     expect(settled.ok).toBe(true);
     if (!settled.duplicate) {
@@ -1318,7 +1444,7 @@ describe('billing scope', () => {
     expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(6_000);
   });
 
-  it('keeps an explicit historical discount pool ahead of the earlier window', async () => {
+  it('reads a spent historical discount under the settlement lock', async () => {
     const scope = createBillingScope({
       db,
       teamId: TEAM_ID,
@@ -1331,6 +1457,7 @@ describe('billing scope', () => {
     const started = new Date(ended);
     started.setUTCMonth(started.getUTCMonth() - 1);
     const usageAt = new Date(started.getTime() + 3 * 24 * 60 * 60 * 1000);
+    const periodYm = `${usageAt.getUTCFullYear()}-${String(usageAt.getUTCMonth() + 1).padStart(2, '0')}`;
     await pg.exec(`
       UPDATE team_billing_accounts
       SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
@@ -1339,17 +1466,29 @@ describe('billing scope', () => {
           period_ends_at = '${ended.toISOString()}'
       WHERE team_id = '${TEAM_ID}';
     `);
-    const forced = await scope.settle({
-      operationId: 'storage:forced-historical-pool',
+    const first = await scope.settle({
+      operationId: 'ai:historical-discount-first',
+      meterId: 'ai',
+      nativeUnits: 6_000,
+      customerChargeCents: 6_000,
+      usageAt,
+      pricingPeriodYm: periodYm,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.duplicate) {
+      expect(first.ledger.metadata).toMatchObject({ discount_cents: 6_000, invoice_cents: 0 });
+    }
+    const second = await scope.settle({
+      operationId: 'ai:historical-discount-second',
       meterId: 'ai',
       nativeUnits: 100,
       customerChargeCents: 100,
       usageAt,
-      historicalIncludedDiscountCents: 0,
+      pricingPeriodYm: periodYm,
     });
-    expect(forced.ok).toBe(true);
-    if (!forced.duplicate) {
-      expect(forced.ledger.metadata).toMatchObject({ discount_cents: 0, invoice_cents: 100 });
+    expect(second.ok).toBe(true);
+    if (!second.duplicate) {
+      expect(second.ledger.metadata).toMatchObject({ discount_cents: 0, invoice_cents: 100 });
     }
     expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(6_000);
   });

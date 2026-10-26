@@ -31,7 +31,6 @@ import {
 import {
   cumulativeChargeDeltaCents,
   daysInPeriodYm,
-  includedDiscountWindowContaining,
   memberDayChargeDelta,
 } from '#src/billing/charge.js';
 import {
@@ -47,11 +46,7 @@ import {
   type OpenRouterFinishEvent,
 } from '#src/billing/openrouter-usage.js';
 import { effectiveBillingPlanId, resolveTeamCommercialTerms } from '#src/billing/operator.js';
-import {
-  billingPlanIdOnDay,
-  includedDiscountRemainingForReplay,
-  rollIncludedDiscountIfElapsed,
-} from '#src/billing/plan-history.js';
+import { billingPlanIdOnDay, rollIncludedDiscountIfElapsed } from '#src/billing/plan-history.js';
 import { applyElapsedScheduledCancellations } from '#src/billing/polar-webhook.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 import { leaveOverdueRecallBots } from '#src/billing/recall-leave.js';
@@ -160,7 +155,6 @@ export async function settleTeamMeter(input: {
   pricingPlanId?: BillingPlanId;
   /** Extra-member price of that historical plan. Null means the plan has no seat price. */
   pricingAdditionalMemberCents?: number | null;
-  historicalIncludedDiscountCents?: number;
   pricingPeriodYm?: string;
   usageAt?: Date;
 }): Promise<{ ok: true; duplicate: boolean } | { ok: false; code: BillingReserveFailureCode }> {
@@ -178,9 +172,6 @@ export async function settleTeamMeter(input: {
     ...(input.pricingPlanId ? { pricingPlanId: input.pricingPlanId } : {}),
     ...(input.pricingAdditionalMemberCents !== undefined
       ? { pricingAdditionalMemberCents: input.pricingAdditionalMemberCents }
-      : {}),
-    ...(input.historicalIncludedDiscountCents !== undefined
-      ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
       : {}),
     ...(input.pricingPeriodYm ? { pricingPeriodYm: input.pricingPeriodYm } : {}),
     ...(input.usageAt ? { usageAt: input.usageAt } : {}),
@@ -706,18 +697,6 @@ export async function snapshotTeamStorageGbMonth(input: {
     const gbMonthSlice = gb / daysInUtcMonth(new Date(`${day}T00:00:00.000Z`));
     const replayPeriodYm = day.slice(0, 7);
     const usageAt = new Date(`${day}T12:00:00.000Z`);
-    const periodStartedAt = account?.periodStartedAt ?? null;
-    const periodEndsAt = account?.periodEndsAt ?? null;
-    const usageWindow = includedDiscountWindowContaining({
-      usageAt,
-      periodStartedAt,
-      periodEndsAt,
-    });
-    const liveWindow = includedDiscountWindowContaining({
-      usageAt: new Date(),
-      periodStartedAt,
-      periodEndsAt,
-    });
     const previous = await currentMeterNativeUnits(
       input.db,
       input.teamId,
@@ -731,18 +710,6 @@ export async function snapshotTeamStorageGbMonth(input: {
       account: account ?? { planId: 'free' },
     });
     const differentPlan = pricingPlanId !== livePlan;
-    const sameDiscountWindow = usageWindow.startedAt.getTime() === liveWindow.startedAt.getTime();
-    const historicalIncludedDiscountCents =
-      differentPlan || !sameDiscountWindow
-        ? await includedDiscountRemainingForReplay({
-            db: input.db,
-            teamId: input.teamId,
-            planId: pricingPlanId,
-            usageAt,
-            periodStartedAt,
-            periodEndsAt,
-          })
-        : undefined;
     const recoverHistorical = storageDayRecoversWithoutLiveAdmission({
       day,
       pricingPlanId,
@@ -766,7 +733,6 @@ export async function snapshotTeamStorageGbMonth(input: {
       pricingPeriodYm: replayPeriodYm,
       ...(recoverHistorical ? { recoverHistorical: true } : {}),
       ...(differentPlan ? { pricingPlanId } : {}),
-      ...(historicalIncludedDiscountCents !== undefined ? { historicalIncludedDiscountCents } : {}),
     });
     settled = result.ok || settled;
   }

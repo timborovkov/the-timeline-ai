@@ -104,9 +104,9 @@ credit hides margin and confuses prospects.
    window under the billing-account lock before pricing current-period usage, and
    the janitor does the same refill. A settlement whose usage instant is earlier
    than that window uses the earlier window's remaining discount and leaves the
-   refilled balance unchanged.    The instant is the settlement usage time or the
-   reservation's creation time. An explicit historical pool still overrides that
-   lookup. Settlement prices the plan that admitted the usage. Reserve stores
+   refilled balance unchanged. The instant is the settlement usage time or the
+   reservation's creation time. That remaining discount is read inside the
+   settlement transaction after the account lock. Settlement prices the plan that admitted the usage. Reserve stores
    that plan on the reservation. A row without it uses plan history when the
    plan changed after the usage instant. An explicit pricing plan still wins.
    A PAYG call settled after a downgrade to Free keeps its overage on the

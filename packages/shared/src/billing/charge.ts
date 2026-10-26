@@ -302,26 +302,137 @@ export function pendingDiscountReservedCents(
   return metadataNonNegativeInteger(metadata, 'discount_reserved_cents', 0);
 }
 
-/** Fold in-flight reservations into settled meter totals for admission. */
+const RECALL_MINUTE_MS = 60_000;
+
+export interface PendingReservationAdmission {
+  meterId: BillingMeterId;
+  createdAt: Date;
+  reservedNativeUnits: string | number;
+  reservedChargeCents: number;
+  metadata: Record<string, unknown> | null;
+}
+
+/** Share of an integer charge that belongs to `part` of `total` native units. */
+export function scaleChargeCents(amount: number, part: number, total: number): number {
+  if (!Number.isFinite(amount) || amount <= 0 || part <= 0 || total <= 0) return 0;
+  if (part >= total) return Math.round(amount);
+  return Math.round((amount * part) / total);
+}
+
+/**
+ * Native units of one pending reservation that fall in a UTC month.
+ * Instant meters use the reservation start. Recall minutes split on the
+ * month boundary the same way settlement does.
+ */
+export function pendingNativeUnitsInPeriod(
+  row: Pick<PendingReservationAdmission, 'meterId' | 'createdAt' | 'reservedNativeUnits'>,
+  periodYm: string,
+): number {
+  const total = Number(row.reservedNativeUnits);
+  if (!Number.isFinite(total) || total <= 0) return 0;
+  if (row.meterId === 'recall_minutes') {
+    return splitDurationNativeUnitsByUtcMonth({
+      startedAt: row.createdAt,
+      nativeUnits: total,
+      unitMs: RECALL_MINUTE_MS,
+    })
+      .filter((segment) => segment.periodYm === periodYm)
+      .reduce((sum, segment) => sum + segment.nativeUnits, 0);
+  }
+  if (!(row.createdAt instanceof Date) || Number.isNaN(row.createdAt.getTime())) return 0;
+  return periodYmUtc(row.createdAt) === periodYm ? total : 0;
+}
+
+/**
+ * Fold in-flight reservations into one UTC month's settled meter totals.
+ * A reservation from another month stays out of this month's Free allowance
+ * and PAYG floor. Recall minutes contribute only the slice inside the month.
+ */
 export function metersPlusPendingReservations(
   meters: MeterTotals,
-  pending: readonly {
-    meterId: BillingMeterId;
-    reservedNativeUnits: string | number;
-    reservedChargeCents: number;
-    metadata: Record<string, unknown> | null;
-  }[],
+  pending: readonly PendingReservationAdmission[],
+  periodYm: string,
 ): MeterTotals {
   const next: MeterTotals = { ...meters };
   for (const row of pending) {
+    const total = Number(row.reservedNativeUnits);
+    const nativeUnits = pendingNativeUnitsInPeriod(row, periodYm);
+    if (nativeUnits <= 0) continue;
+    const list = scaleChargeCents(
+      pendingListChargeCents(row.metadata, row.reservedChargeCents),
+      nativeUnits,
+      Number.isFinite(total) ? total : 0,
+    );
     const current = next[row.meterId] ?? { nativeUnits: 0, customerChargeCents: 0 };
-    const list = pendingListChargeCents(row.metadata, row.reservedChargeCents);
     next[row.meterId] = {
-      nativeUnits: current.nativeUnits + Number(row.reservedNativeUnits),
+      nativeUnits: current.nativeUnits + nativeUnits,
       customerChargeCents: current.customerChargeCents + list,
     };
   }
   return next;
+}
+
+/** In-flight spend-cap cents that land in one UTC month. */
+export function pendingCapEligibleChargeCentsInPeriod(
+  row: PendingReservationAdmission,
+  periodYm: string,
+): number {
+  const amount = pendingCapEligibleChargeCents(row.metadata, row.reservedChargeCents);
+  const total = Number(row.reservedNativeUnits);
+  if (!Number.isFinite(total) || total <= 0) {
+    if (!(row.createdAt instanceof Date) || Number.isNaN(row.createdAt.getTime())) return 0;
+    return periodYmUtc(row.createdAt) === periodYm ? amount : 0;
+  }
+  return scaleChargeCents(amount, pendingNativeUnitsInPeriod(row, periodYm), total);
+}
+
+function recallNativeUnitsOnOrAfter(input: {
+  startedAt: Date;
+  nativeUnits: number;
+  boundary: Date;
+}): number {
+  const total = Math.max(0, input.nativeUnits);
+  if (total === 0) return 0;
+  if (!(input.startedAt instanceof Date) || Number.isNaN(input.startedAt.getTime())) return total;
+  if (!(input.boundary instanceof Date) || Number.isNaN(input.boundary.getTime())) return total;
+  const startMs = input.startedAt.getTime();
+  const endMs = startMs + total * RECALL_MINUTE_MS;
+  const boundaryMs = input.boundary.getTime();
+  if (endMs <= boundaryMs) return 0;
+  if (startMs >= boundaryMs) return total;
+  const before = Math.min(total, Math.floor((boundaryMs - startMs) / RECALL_MINUTE_MS));
+  return total - before;
+}
+
+/**
+ * In-flight included-discount cents that belong to the open subscription
+ * window. Instant meters follow the reservation start. A Recall meeting that
+ * crosses the window keeps only the minutes on or after the boundary.
+ */
+export function pendingDiscountReservedCentsInWindow(
+  row: Pick<
+    PendingReservationAdmission,
+    'meterId' | 'createdAt' | 'reservedNativeUnits' | 'metadata'
+  >,
+  periodStartedAt: Date | null,
+): number {
+  const full = pendingDiscountReservedCents(row.metadata);
+  if (full <= 0) return 0;
+  if (!periodStartedAt) return full;
+  if (row.meterId !== 'recall_minutes') {
+    return row.createdAt < periodStartedAt ? 0 : full;
+  }
+  const total = Number(row.reservedNativeUnits);
+  if (!Number.isFinite(total) || total <= 0) return row.createdAt < periodStartedAt ? 0 : full;
+  return scaleChargeCents(
+    full,
+    recallNativeUnitsOnOrAfter({
+      startedAt: row.createdAt,
+      nativeUnits: total,
+      boundary: periodStartedAt,
+    }),
+    total,
+  );
 }
 
 export function isUniqueViolation(err: unknown): boolean {

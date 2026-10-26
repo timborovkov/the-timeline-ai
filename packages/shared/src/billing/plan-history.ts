@@ -428,10 +428,12 @@ export async function includedDiscountRemainingForReplay(input: {
 }
 
 /**
- * Discount pool for one settlement. An explicit historical pool wins. Usage
- * before the current window, and usage priced on a plan other than the live
- * plan, uses that plan's remaining catalog discount. The live balance stays
- * in place. Usage on the live plan inside the current window returns undefined.
+ * Discount pool for one settlement. Call this on the transaction that holds
+ * the billing-account lock so a concurrent settlement cannot spend the same
+ * remainder. Usage before the current window, and usage priced on a plan
+ * other than the live plan, uses that plan's remaining catalog discount. The
+ * live balance stays in place. Usage on the live plan inside the current
+ * window returns undefined.
  */
 export async function includedDiscountCentsBeforeCurrentWindow(input: {
   db: Pick<Db, 'select'>;
@@ -449,11 +451,7 @@ export async function includedDiscountCentsBeforeCurrentWindow(input: {
   pricingPlanId?: BillingPlanId;
   /** Live entitlements. A different pricing plan keeps its own discount pool. */
   livePlanId?: BillingPlanId;
-  historicalIncludedDiscountCents?: number;
 }): Promise<number | undefined> {
-  if (input.historicalIncludedDiscountCents !== undefined) {
-    return input.historicalIncludedDiscountCents;
-  }
   const current = includedDiscountWindowContaining({
     usageAt: input.now,
     periodStartedAt: input.account.periodStartedAt,

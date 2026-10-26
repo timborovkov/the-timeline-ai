@@ -9,7 +9,11 @@ import {
   includedDiscountWindowContaining,
   nextIncludedDiscountPeriod,
   paygOverageCustomerChargeCents,
+  metersPlusPendingReservations,
   pendingCapEligibleChargeCents,
+  pendingCapEligibleChargeCentsInPeriod,
+  pendingDiscountReservedCentsInWindow,
+  pendingNativeUnitsInPeriod,
   polarCatalogUnitsForInvoiceCents,
   polarInvoiceNativeUnits,
   polarIngestDisposition,
@@ -1070,5 +1074,45 @@ describe('cap-eligible spend', () => {
   it('reads an explicit in-flight cap amount and falls back to the metered charge', () => {
     expect(pendingCapEligibleChargeCents({ cap_eligible_reserved_cents: 0 }, 500)).toBe(0);
     expect(pendingCapEligibleChargeCents({ metered_charge_cents: 40 }, 0)).toBe(40);
+  });
+
+  it('attributes pending usage to its own month and splits Recall', () => {
+    const septemberAi = {
+      meterId: 'ai' as const,
+      createdAt: new Date('2026-09-20T12:00:00.000Z'),
+      reservedNativeUnits: 500,
+      reservedChargeCents: 500,
+      metadata: {
+        list_charge_cents: 500,
+        cap_eligible_reserved_cents: 500,
+        discount_reserved_cents: 500,
+      },
+    };
+    const spanningRecall = {
+      meterId: 'recall_minutes' as const,
+      createdAt: new Date('2026-09-30T23:30:00.000Z'),
+      reservedNativeUnits: 60,
+      reservedChargeCents: 180,
+      metadata: {
+        list_charge_cents: 180,
+        cap_eligible_reserved_cents: 180,
+        discount_reserved_cents: 60,
+      },
+    };
+    expect(pendingNativeUnitsInPeriod(septemberAi, '2026-10')).toBe(0);
+    expect(pendingNativeUnitsInPeriod(spanningRecall, '2026-09')).toBe(30);
+    expect(pendingNativeUnitsInPeriod(spanningRecall, '2026-10')).toBe(30);
+    expect(pendingCapEligibleChargeCentsInPeriod(septemberAi, '2026-10')).toBe(0);
+    expect(pendingCapEligibleChargeCentsInPeriod(spanningRecall, '2026-10')).toBe(90);
+    expect(
+      pendingDiscountReservedCentsInWindow(septemberAi, new Date('2026-10-01T00:00:00.000Z')),
+    ).toBe(0);
+    expect(
+      pendingDiscountReservedCentsInWindow(spanningRecall, new Date('2026-10-01T00:00:00.000Z')),
+    ).toBe(30);
+    expect(
+      metersPlusPendingReservations({}, [septemberAi, spanningRecall], '2026-10').recall_minutes,
+    ).toEqual({ nativeUnits: 30, customerChargeCents: 90 });
+    expect(metersPlusPendingReservations({}, [septemberAi], '2026-10').ai).toBeUndefined();
   });
 });

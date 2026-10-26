@@ -33,8 +33,10 @@ import {
   memberDayChargeDelta,
   metersPlusPendingReservations,
   paygOverageCustomerChargeCents,
-  pendingCapEligibleChargeCents,
-  pendingDiscountReservedCents,
+  pendingCapEligibleChargeCentsInPeriod,
+  pendingDiscountReservedCentsInWindow,
+  pendingNativeUnitsInPeriod,
+  scaleChargeCents,
   polarIngestDispositionBeforeCoverage,
   billingMeterIdForPolarEvent,
   polarCatalogUnitsForInvoiceCents,
@@ -839,6 +841,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
             )
         ).filter((row) => row.operationId !== input.operationId);
         const costlyWorkerCap = CAPACITY_BY_PLAN[entitlementsPlanId].costlyWorkerConcurrency;
+        // In-flight worker slots are concurrency, not a monthly allowance.
         if (
           costlyWorkerCap !== null &&
           input.meterId === 'ai' &&
@@ -860,35 +863,55 @@ export function createBillingScope(deps: BillingScopeDeps) {
             },
           ]),
         ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
-        const metersForAdmission = metersPlusPendingReservations(byMeter, pending);
+        const metersForAdmission = metersPlusPendingReservations(byMeter, pending, ym);
+        const admissionStartedAt = new Date();
+        const reservedUnits = Math.max(0, input.reservedNativeUnits);
+        const unitsThisMonth = pendingNativeUnitsInPeriod(
+          {
+            meterId: input.meterId,
+            createdAt: admissionStartedAt,
+            reservedNativeUnits: reservedUnits,
+          },
+          ym,
+        );
+        const listThisMonth =
+          reservedUnits <= 0
+            ? Math.max(0, input.reservedChargeCents)
+            : scaleChargeCents(input.reservedChargeCents, unitsThisMonth, reservedUnits);
 
         if (entitlementsPlanId === 'free' && !enterpriseContract) {
           const allowance = freeAllowanceConsumedForMeter(input.meterId, metersForAdmission);
           if (allowance) {
             const next =
               allowance.unit === 'cents'
-                ? allowance.consumed + input.reservedChargeCents
-                : allowance.consumed + input.reservedNativeUnits;
+                ? allowance.consumed + listThisMonth
+                : allowance.consumed + unitsThisMonth;
             if (next > allowance.limit) {
               return { kind: 'reject' as const, code: 'free_allowance_reached' as const };
             }
           }
         }
 
-        const billableChargeCents = applyMeteredDiscountCents(
-          paygOverageCustomerChargeCents({
-            planId: entitlementsPlanId,
-            meterId: input.meterId,
-            nativeUnits: input.reservedNativeUnits,
-            listChargeCents: input.reservedChargeCents,
-            meters: metersForAdmission,
-          }),
-          commercial.meteredDiscountPercent,
+        const priceAdmission = (nativeUnits: number, listChargeCents: number) =>
+          applyMeteredDiscountCents(
+            paygOverageCustomerChargeCents({
+              planId: entitlementsPlanId,
+              meterId: input.meterId,
+              nativeUnits,
+              listChargeCents,
+              meters: metersForAdmission,
+            }),
+            commercial.meteredDiscountPercent,
+          );
+        const billableChargeCents = priceAdmission(reservedUnits, input.reservedChargeCents);
+        const billableThisMonth =
+          unitsThisMonth >= reservedUnits
+            ? billableChargeCents
+            : priceAdmission(unitsThisMonth, listThisMonth);
+        const pendingDiscount = pending.reduce(
+          (sum, row) => sum + pendingDiscountReservedCentsInWindow(row, locked.periodStartedAt),
+          0,
         );
-        const pendingDiscount = pending.reduce((sum, row) => {
-          if (locked.periodStartedAt && row.createdAt < locked.periodStartedAt) return sum;
-          return sum + pendingDiscountReservedCents(row.metadata);
-        }, 0);
         const remainingDiscount = Math.max(
           0,
           locked.includedDiscountRemainingCents - pendingDiscount,
@@ -926,8 +949,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }) && billableChargeCents > 0;
         if (enforceSpendCap) {
           const pendingMetered = pending.reduce(
-            (sum, row) =>
-              sum + pendingCapEligibleChargeCents(row.metadata, row.reservedChargeCents),
+            (sum, row) => sum + pendingCapEligibleChargeCentsInPeriod(row, ym),
             0,
           );
           const periodSpend =
@@ -937,7 +959,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
               entitlementsPlanId,
               comped,
               enterpriseContract,
-              chargeCents: billableChargeCents,
+              chargeCents: billableThisMonth,
             });
           if (periodSpend > locked.spendCapCents) {
             return { kind: 'reject' as const, code: 'spend_cap_reached' as const };
@@ -1093,12 +1115,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
        * Live settlement omits this and uses the current commercial rate.
        */
       pricingAdditionalMemberCents?: number | null;
-      /**
-       * Included-discount pool for this settlement. When omitted, usage before
-       * the current window uses that window's remaining discount. A caller
-       * passes this to force a pool, including zero.
-       */
-      historicalIncludedDiscountCents?: number;
       pricingPeriodYm?: string;
       /** When the usage happened. Backfills use this instead of reservation time. */
       usageAt?: Date;
@@ -1259,9 +1275,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
             now,
             pricingPlanId: entitlementsPlanId,
             livePlanId,
-            ...(input.historicalIncludedDiscountCents !== undefined
-              ? { historicalIncludedDiscountCents: input.historicalIncludedDiscountCents }
-              : {}),
           });
           const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
           const { discountCents, invoiceCents } = splitDiscountAndWallet({
@@ -1643,7 +1656,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
     ): Promise<number> {
       await ensureMember();
       const rows = await db
-        .select({ units: billingUsageReservations.reservedNativeUnits })
+        .select({
+          units: billingUsageReservations.reservedNativeUnits,
+          createdAt: billingUsageReservations.createdAt,
+        })
         .from(billingUsageReservations)
         .where(
           and(
@@ -1655,7 +1671,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
               : sql`true`,
           ),
         );
-      return rows.reduce((sum, row) => sum + Number(row.units), 0);
+      const ym = periodYm();
+      return rows.reduce(
+        (sum, row) =>
+          sum +
+          pendingNativeUnitsInPeriod(
+            { meterId, createdAt: row.createdAt, reservedNativeUnits: row.units },
+            ym,
+          ),
+        0,
+      );
     },
   };
 }

@@ -275,29 +275,31 @@ PLATFORM_ADMIN_EMAILS=
         A settlement whose usage instant is earlier than that window uses the earlier window's
         remaining discount and leaves the refilled balance unchanged. The instant is the settlement
         usage time or the reservation's creation time, so a recovered worker, Ask, Recall, email, or
-        accepted-source charge does not need a separate historical pool. An explicit historical pool
-        still overrides that lookup. Settlement prices the plan that admitted the usage. Reserve
-        stores that plan on the reservation, and a row without it uses plan history when the plan
-        changed after the usage instant. An explicit pricing plan still wins, so storage and
-        member-day replay keep the plan they already resolved. A PAYG call recovered after a
-        downgrade to Free keeps its overage on the invoice. A Team call keeps that plan's included
-        discount. The replacement plan's balance stays in place. A reservation opened in the
-        previous window does not reduce the refilled allowance. The janitor rechecks
+        accepted-source charge does not need a separate historical pool. That remaining discount is
+        read inside the settlement transaction after the account lock. Settlement prices the plan
+        that admitted the usage. Reserve stores that plan on the reservation, and a row without it
+        uses plan history when the plan changed after the usage instant. An explicit pricing plan
+        still wins, so storage and member-day replay keep the plan they already resolved. A PAYG
+        call recovered after a downgrade to Free keeps its overage on the invoice. A Team call keeps
+        that plan's included discount. The replacement plan's balance stays in place. A reservation
+        opened in the previous window does not reduce the refilled allowance. The janitor rechecks
         <code>cancel_effective_at</code> under the account lock before a scheduled downgrade. A Free
         plan-history row is stored at account creation, and the first paid history row is backfilled
         with that baseline. A prior month is recorded on that month and is not compared to the live
-        spend cap. Only a positive charge in the current UTC period can freeze on that cap.
-        Member-days and storage days with no stamp yet share one helper: plan history, then comp
-        expiry (Free after <code>comp_expires_at</code>), while a contractual Enterprise plan stays
-        Enterprise. A day before expiry keeps the comped plan's price. An existing member-day stamp
-        still wins. Restoring a document keeps the closed absence interval so those days are not
-        billed again. Slack/Telegram/MCP Ask and web chat save the completed cost before settle and
-        keep the reservation when settlement fails so the janitor can retry it. Paid-plan changes
-        reuse the Polar subscription in non-active paid states. Extra-member plan preview prorates
-        from period member-days, including person-days when the current plan has no extras. Inbound
-        email audio skipped for a denied email meter stays deferred until the parent email is no
-        longer billing-deferred, so an exhausted email allowance cannot be bypassed while AI
-        allowance remains. Denied inbound-email parent enrichment is stamped
+        spend cap. Only a positive charge in the current UTC period can freeze on that cap. An
+        in-flight reservation counts against that cap, the Free allowance, and the PAYG floor only
+        for the UTC month it occupies. Recall minutes split on the month boundary. Member-days and
+        storage days with no stamp yet share one helper: plan history, then comp expiry (Free after
+        <code>comp_expires_at</code>), while a contractual Enterprise plan stays Enterprise. A day
+        before expiry keeps the comped plan's price. An existing member-day stamp still wins.
+        Restoring a document keeps the closed absence interval so those days are not billed again.
+        Slack/Telegram/MCP Ask and web chat save the completed cost before settle and keep the
+        reservation when settlement fails so the janitor can retry it. Paid-plan changes reuse the
+        Polar subscription in non-active paid states. Extra-member plan preview prorates from period
+        member-days, including person-days when the current plan has no extras. Inbound email audio
+        skipped for a denied email meter stays deferred until the parent email is no longer
+        billing-deferred, so an exhausted email allowance cannot be bypassed while AI allowance
+        remains. Denied inbound-email parent enrichment is stamped
         <code>billing_enrichment_deferred</code> and flushed on the email meter, not the
         accepted-source meter. That marker stays set until every pending attachment has been read,
         stored, queued for extract, and linked on the parent. Deferred accepted-source flush rotates
