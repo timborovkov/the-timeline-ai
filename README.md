@@ -179,6 +179,12 @@ Run the nearest targeted test for your change. Changes to shared exports,
 agent behavior, or reconciliation have additional gates documented in
 [AGENTS.md](./AGENTS.md).
 
+`pnpm billing:polar-setup` creates or reuses the sandbox Polar meters and monthly
+products Timeline billing needs. It prints the ids to copy into the web and worker
+environment and does not write `.env`. `--dry-run` prints the plan. Production
+requires `--allow-production`. The command only changes Polar objects identified
+as Timeline's. Details: [docs/setup/polar.html](./docs/setup/polar.html).
+
 ## Documentation
 
 - [Public Trust center](https://thetimeline.cc/trust)

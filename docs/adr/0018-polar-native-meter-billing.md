@@ -58,8 +58,14 @@ credit hides margin and confuses prospects.
    floor (PAYG) and above the included invoice discount (Team/Business) is
    ingested as Polar events and invoiced monthly in arrears on the card on
    file. There is no prepaid wallet, top-up product, or auto-reload.
-   `pnpm billing:polar-setup` archives a product named Timeline Top-up and does
-   not create one. A stray `order.paid` for that product, or any other one-time
+   `pnpm billing:polar-setup` creates or reuses the six Timeline meters and the
+   Pay as you go, Team, Business, and Enterprise monthly products, each with all
+   six catalog prices. A wrong immutable price is replaced by adding the correct
+   price and archiving the old one. The command archives a Timeline Top-up
+   product and does not create one. It prints the resulting ids and does not
+   write `.env`. It only changes objects identified as Timeline's by a `Timeline`
+   name prefix or `timeline_key` metadata, and it only updates the webhook
+   selected by `POLAR_WEBHOOK_ID` or the exact configured URL. A stray `order.paid` for the Timeline Top-up product, or any other one-time
    purchase that is not a subscription product, is recorded on the usage ledger
    and opens an unbilled alert for the platform operator. It does not credit
    `walletBalanceCents`. The spend cap is the risk control: €0 or metered spend at

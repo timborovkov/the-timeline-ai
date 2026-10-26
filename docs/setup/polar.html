@@ -28,23 +28,45 @@
         </li>
       </ul>
       <p>
-        Sandbox accounts, tokens, products, and meters are fully isolated from production. Create a
-        Timeline-specific access token; do not reuse Vernix / Irmin product or webhook IDs even when
-        they share a Polar organization. Create the Pay as you go, Team, and Business products and
-        the Timeline meters in the sandbox dashboard, then paste those ids below.
-        <code>pnpm billing:polar-setup</code> (optional <code>--env-file=</code> and
-        <code>--webhook-url=</code>) archives any active <strong>Timeline Top-up</strong> product
-        and does not create one. It creates or reuses <strong>Timeline Enterprise</strong> (a custom
-        platform fee plus the six metered prices) and writes
-        <code>POLAR_PRODUCT_ID_ENTERPRISE</code>. It ensures a Timeline webhook, then writes
-        <code>POLAR_WEBHOOK_ID</code> and <code>POLAR_WEBHOOK_SECRET</code> and removes a retired
-        <code>POLAR_PRODUCT_ID_TOPUP</code> assignment. It refuses to update or delete endpoints for
-        another product, including an Irmin host or <code>/api/v1/webhooks/polar</code>. It deletes
-        only a disabled <code>example.com/api/webhooks/polar</code> placeholder. Railway deploys
-        <code>main</code> to production and the <code>staging</code> branch to staging, so a feature
-        branch has no preview URL. The command defaults the webhook to
+        Sandbox accounts, tokens, products, and meters are fully isolated from production. The
+        access token needs to read and write products, meters, discounts, and webhooks in the
+        Timeline organization.
+        <code>pnpm billing:polar-setup</code> creates or reuses the Timeline catalog in Polar. It
+        defaults to the sandbox API. <code>--allow-production</code> is required before it reads or
+        changes production. <code>--dry-run</code> prints the plan and does not write.
+        <code>--env-file=</code> loads variables into the process, and
+        <code>--webhook-url=</code> overrides the endpoint URL. The command does not write
+        <code>.env</code>. It prints a copyable block of product ids, meter ids, the checkout
+        discount, and the webhook id and secret.
+      </p>
+      <p>
+        The catalog is six meters (<code>timeline_ai_eur_cents</code>,
+        <code>timeline_recall_minutes</code>, <code>timeline_email_units</code>,
+        <code>timeline_storage_gb_month</code>, <code>timeline_accepted_sources</code>,
+        <code>timeline_extra_member_days</code>) and four monthly EUR products: Pay as you go (€0, 3
+        included members), Team (€49, 25), Business (€199, 100), and Enterprise (custom fee). Each
+        product carries all six usage prices at the current catalog amounts. Polar prices are
+        immutable, so a wrong amount is replaced by adding the correct price and archiving the old
+        one. A second run leaves a correct catalog unchanged. Included-usage discounts stay on the
+        local invoice. The command reuses a Timeline-owned Polar discount when
+        <code>POLAR_DISCOUNT_CODE</code> matches its code, or when a discount is already stamped
+        <code>timeline_key=checkout</code>. It does not invent a percent or duration.
+      </p>
+      <p>
+        The command only creates or updates objects it can identify as Timeline's: a name prefixed
+        with <code>Timeline</code>, metadata <code>timeline_key</code>, or a meter whose event name
+        starts with <code>timeline_</code>. It does not match or skip other projects by host or
+        path. A webhook is updated only when its id is <code>POLAR_WEBHOOK_ID</code> or its URL is
+        exactly the configured Timeline URL. A disabled
+        <code>example.com/api/webhooks/polar</code> placeholder is removed only when it carries
+        Timeline metadata and it is not the selected endpoint. An active product named Timeline
+        Top-up, or stamped <code>timeline_key=topup</code>, is archived and is not recreated.
+        Railway deploys <code>main</code> to production and the <code>staging</code> branch to
+        staging, so a feature branch has no preview URL. The webhook defaults to
         <code>https://thetimeline.cc/api/webhooks/polar</code>. That route has to be deployed before
-        Polar deliveries succeed.
+        Polar deliveries succeed. Copy the printed product, webhook, and discount variables onto the
+        web and worker services. <code>document-extract-orchestrator</code> stays credential-thin
+        and only needs <code>BILLING_CHARGES_ENABLED</code>.
       </p>
 
       <h2>Environment variables</h2>
@@ -96,7 +118,8 @@ PLATFORM_ADMIN_EMAILS=
       </ul>
       <p>
         There is no prepaid wallet and no top-up product. <code>pnpm billing:polar-setup</code>
-        archives a sandbox product named Timeline Top-up if one is still active.
+        archives an active Timeline Top-up product, including one stamped
+        <code>timeline_key=topup</code>.
       </p>
       <p>Native Polar meters (event name → sum <code>units</code>):</p>
       <ul>
@@ -122,24 +145,24 @@ PLATFORM_ADMIN_EMAILS=
         meters. Included-usage discount is not spent on extra members. Seat quantity is not used:
         Polar prorates a seat from the moment the quantity changes, which does not match a daily
         census, a member who leaves, or a per-team price. <code>pnpm billing:polar-setup</code>
-        creates the meter and attaches the price without dropping the other product prices. Comps
-        and shadow billing still count the charge on the spend cap and do not ingest it. An empty
+        creates every Timeline meter and puts all six prices on Pay as you go, Team, Business, and
+        Enterprise. Included member counts are product metadata, not Polar seat prices. Comps and
+        shadow billing still count the charge on the spend cap and do not ingest it. An empty
         Enterprise included-member count means the roster is included. Extra members are billed only
         after the operator sets both an included count and an extra-member price.
       </p>
       <p>
         Polar ingest requires a matching active subscription whose product actually prices that
-        meter, including Enterprise. A matching product id is not enough: Pay as you go, Team, and
-        Business setup only guarantees the extra-member price, so a missing native meter price stays
-        on the local ledger and opens one <code>billing_unbilled_alerts</code> row per team, meter,
-        and month. Operators see open alerts for the selected team on
-        <code>/app/admin/billing</code>. Shadow billing, comps, Free allowance usage, and sub-cent
-        rounds are not ingested and do not alert. A cent that accumulates from those sub-cent rounds
-        is ingested as the catalog units that price it (four email units, or twenty accepted
-        sources, per cent). A percentage discount is taken from the cumulative meter total before
-        that cent is rounded. A later ingest of that meter resolves the open alert.
-        <code>past_due</code>, <code>payment_retry</code>, and <code>read_only</code> still cover
-        the meter when the subscription product prices it.
+        meter, including Enterprise. A matching product id is not enough when that meter's price is
+        missing, so a missing native meter price stays on the local ledger and opens one
+        <code>billing_unbilled_alerts</code> row per team, meter, and month. Operators see open
+        alerts for the selected team on <code>/app/admin/billing</code>. Shadow billing, comps, Free
+        allowance usage, and sub-cent rounds are not ingested and do not alert. A cent that
+        accumulates from those sub-cent rounds is ingested as the catalog units that price it (four
+        email units, or twenty accepted sources, per cent). A percentage discount is taken from the
+        cumulative meter total before that cent is rounded. A later ingest of that meter resolves
+        the open alert. <code>past_due</code>, <code>payment_retry</code>, and
+        <code>read_only</code> still cover the meter when the subscription product prices it.
       </p>
       <p>
         Agent turns, concurrent Recall bots, custom MCP servers, documents, storage, indexed chunks,

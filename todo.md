@@ -716,10 +716,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       caps follow the locally metered charge for comps and paid plans even when
       Polar will not invoice that charge. Standard Free stays on the allowance,
       and a contractual Enterprise subscription does not freeze on the cap.
-      <code>POLAR_PRODUCT_ID_ENTERPRISE</code> is written by
-      <code>pnpm billing:polar-setup</code>. Null included members stay unlimited.
-      <code>pnpm billing:polar-setup</code> creates the meter without dropping
-      other prices.
+      <code>pnpm billing:polar-setup</code> creates or reuses the six meters and four
+      monthly products, fixes a wrong immutable price by adding the correct one and
+      archiving the old one, and prints the ids instead of writing <code>.env</code>.
+      Null included members stay unlimited.
       Polar webhooks bound the request body before signature verify and lock the billing account
       before applying Polar `modified_at`. Settlement above the current UTC period's paid
       spend cap freezes the workspace. A prior month is recorded on that month and does not

@@ -1,35 +1,26 @@
-import { renameSync, readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 import {
   DEFAULT_TIMELINE_POLAR_WEBHOOK_URL,
-  TIMELINE_POLAR_WEBHOOK_EVENTS,
-  TIMELINE_POLAR_WEBHOOK_NAME,
-  TIMELINE_TOPUP_PRODUCT_NAME,
+  TIMELINE_PRODUCT_ENV_NAMES,
+  TIMELINE_PRODUCT_KEYS,
+  assertPolarSetupServer,
   assertTimelineWebhookUrl,
-  isDisabledExampleTimelineWebhook,
-  isProtectedForeignWebhook,
-  mergedWebhookEvents,
   polarApiBaseUrl,
-  removeEnvAssignments,
-  selectTimelineWebhook,
-  enterpriseProductPriceWrites,
-  productPricesWithExtraMemberMeter,
-  selectTimelineEnterpriseProduct,
-  selectTimelineExtraMemberMeter,
-  timelineEnterpriseProductCreateBody,
-  timelineExtraMemberMeterCreateBody,
-  timelineMeterIdsByEvent,
-  timelineTopUpsToArchive,
-  TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
-  TIMELINE_ENTERPRISE_PRODUCT_NAME,
-  TIMELINE_EXTRA_MEMBER_EVENT_NAME,
-  TIMELINE_EXTRA_MEMBER_METER_NAME,
-  TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
-  upsertEnvAssignments,
-  webhookNeedsUpdate,
-  type PolarCatalogPrice,
+  renderPolarSetupPlan,
+  renderPolarSetupReport,
+  runPolarSetup,
+  type PolarMeterWrite,
+  type PolarProductPatch,
+  type PolarProductWrite,
+  type PolarSetupClient,
+  type PolarSetupDiscount,
+  type PolarSetupMeter,
+  type PolarSetupPrice,
   type PolarSetupProduct,
   type PolarSetupWebhook,
+  type PolarWebhookWrite,
+  type TimelineProductKey,
 } from '@timeline/shared/billing/polar-setup';
 
 const args = process.argv.slice(2);
@@ -61,66 +52,9 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-interface PolarPriceRow {
-  id?: string;
-  amount_type?: string;
-  price_amount?: number | null;
-  price_currency?: string | null;
-  minimum_amount?: number | null;
-  preset_amount?: number | null;
-  meter_id?: string | null;
-  unit_amount?: string | number | null;
-  is_archived?: boolean;
-}
-
-interface PolarMeterRow {
-  id?: string;
-  name?: string;
-  filter?: { clauses?: { value?: string }[] };
-}
-
-interface PolarProductRow {
-  id: string;
-  name?: string;
-  is_archived?: boolean;
-  is_recurring?: boolean;
-  prices?: PolarPriceRow[];
-}
-
-interface PolarWebhookRow {
-  id: string;
-  url?: string;
-  enabled?: boolean;
-  format?: string;
-  events?: string[];
-  secret?: string;
-}
-
-function toProduct(row: PolarProductRow): PolarSetupProduct {
-  return {
-    id: row.id,
-    name: row.name ?? '',
-    isArchived: row.is_archived === true,
-    isRecurring: row.is_recurring === true,
-    prices: (row.prices ?? []).map((price) => ({
-      ...(price.amount_type ? { amountType: price.amount_type } : {}),
-      priceAmount: price.price_amount,
-      ...(price.price_currency ? { priceCurrency: price.price_currency } : {}),
-      minimumAmount: price.minimum_amount,
-      presetAmount: price.preset_amount,
-    })),
-  };
-}
-
-function toWebhook(row: PolarWebhookRow): PolarSetupWebhook & { secret?: string } {
-  return {
-    id: row.id,
-    url: row.url ?? '',
-    enabled: row.enabled === true,
-    ...(row.format ? { format: row.format } : {}),
-    events: row.events ?? [],
-    ...(row.secret ? { secret: row.secret } : {}),
-  };
+function optionalEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
 }
 
 function redact(value: unknown): string {
@@ -130,6 +64,30 @@ function redact(value: unknown): string {
     .replace(/polar_oat_[A-Za-z0-9]+/gu, 'polar_oat_[redacted]')
     .replace(/"secret"\s*:\s*"[^"]*"/gu, '"secret":"[redacted]"')
     .slice(0, 500);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function metadataOf(value: unknown): Record<string, string> {
+  const record = asRecord(value);
+  if (!record) return {};
+  const metadata: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(record)) {
+    if (typeof entry === 'string') metadata[key] = entry;
+    else if (typeof entry === 'number' || typeof entry === 'boolean') metadata[key] = String(entry);
+  }
+  return metadata;
+}
+
+function assertSameOrganization(body: unknown, organizationId: string, label: string): void {
+  const record = asRecord(body);
+  if (!record || !('organization_id' in record) || record.organization_id == null) return;
+  if (record.organization_id !== organizationId) {
+    throw new Error(`${label} belongs to a different Polar organization`);
+  }
 }
 
 async function polarFetch(
@@ -160,34 +118,10 @@ async function polarFetch(
   return { status: response.status, body };
 }
 
-function catalogPrices(rows: PolarPriceRow[] | undefined): PolarCatalogPrice[] {
-  return (rows ?? []).flatMap((price) => {
-    if (!price.id) return [];
-    return [
-      {
-        id: price.id,
-        ...(price.is_archived === true ? { isArchived: true } : {}),
-        ...(price.meter_id ? { meterId: price.meter_id } : {}),
-        ...(price.amount_type ? { amountType: price.amount_type } : {}),
-        ...(typeof price.minimum_amount === 'number'
-          ? { minimumAmount: price.minimum_amount }
-          : {}),
-      },
-    ];
-  });
-}
-
-function assertSameOrganization(body: unknown, organizationId: string, label: string): void {
-  if (!body || typeof body !== 'object' || !('organization_id' in body)) return;
-  if (body.organization_id !== organizationId) {
-    throw new Error(`${label} belongs to a different Polar organization`);
-  }
-}
-
 function itemsOf(body: unknown): unknown[] {
-  if (!body || typeof body !== 'object' || !('items' in body)) return [];
-  const items = body.items;
-  return Array.isArray(items) ? items : [];
+  const record = asRecord(body);
+  if (!record || !Array.isArray(record.items)) return [];
+  return record.items;
 }
 
 async function listAll(base: string, token: string, path: string): Promise<unknown[]> {
@@ -200,341 +134,221 @@ async function listAll(base: string, token: string, path: string): Promise<unkno
     }
     const pageRows = itemsOf(response.body);
     rows.push(...pageRows);
+    for (const row of pageRows)
+      assertSameOrganization(row, requiredEnv('POLAR_ORGANIZATION_ID'), path);
     if (pageRows.length < 100) break;
   }
   return rows;
 }
 
-function writeEnvFile(path: string, updates: Record<string, string>): void {
-  const current = readFileSync(path, 'utf8');
-  const next = removeEnvAssignments(upsertEnvAssignments(current, updates), [
-    'POLAR_PRODUCT_ID_TOPUP',
-  ]);
-  const temporary = `${path}.setup-tmp`;
-  writeFileSync(temporary, next, { encoding: 'utf8', mode: 0o600 });
-  try {
-    renameSync(temporary, path);
-  } catch (error) {
-    if (existsSync(temporary)) unlinkSync(temporary);
-    throw error;
+function eventNameOf(row: Record<string, unknown>): string | null {
+  const filter = asRecord(row.filter);
+  const clauses = Array.isArray(filter?.clauses) ? filter.clauses : [];
+  for (const clause of clauses) {
+    const record = asRecord(clause);
+    if (
+      record?.property === 'name' &&
+      record.operator === 'eq' &&
+      typeof record.value === 'string'
+    ) {
+      return record.value;
+    }
   }
+  for (const clause of clauses) {
+    const record = asRecord(clause);
+    if (typeof record?.value === 'string') return record.value;
+  }
+  return null;
+}
+
+function priceOf(value: unknown): PolarSetupPrice | null {
+  const price = asRecord(value);
+  if (!price || typeof price.id !== 'string' || price.id.length === 0) return null;
+  const unit = price.unit_amount;
+  return {
+    id: price.id,
+    archived: price.is_archived === true,
+    meterId: typeof price.meter_id === 'string' ? price.meter_id : null,
+    amountType: typeof price.amount_type === 'string' ? price.amount_type : null,
+    priceAmount: typeof price.price_amount === 'number' ? price.price_amount : null,
+    priceCurrency: typeof price.price_currency === 'string' ? price.price_currency : null,
+    minimumAmount: typeof price.minimum_amount === 'number' ? price.minimum_amount : null,
+    unitAmount: typeof unit === 'string' ? unit : typeof unit === 'number' ? String(unit) : null,
+  };
+}
+
+function meterOf(value: unknown): PolarSetupMeter | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== 'string') return null;
+  return {
+    id: row.id,
+    name: typeof row.name === 'string' ? row.name : '',
+    eventName: eventNameOf(row),
+    metadata: metadataOf(row.metadata),
+    archived: row.archived_at != null || row.is_archived === true,
+  };
+}
+
+function productOf(value: unknown): PolarSetupProduct | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== 'string') return null;
+  const prices = Array.isArray(row.prices)
+    ? row.prices.flatMap((price) => priceOf(price) ?? [])
+    : [];
+  return {
+    id: row.id,
+    name: typeof row.name === 'string' ? row.name : '',
+    archived: row.is_archived === true,
+    metadata: metadataOf(row.metadata),
+    prices,
+  };
+}
+
+function webhookOf(value: unknown): PolarSetupWebhook | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== 'string') return null;
+  return {
+    id: row.id,
+    url: typeof row.url === 'string' ? row.url : '',
+    enabled: row.enabled === true,
+    format: typeof row.format === 'string' ? row.format : null,
+    apiVersion: typeof row.api_version === 'string' ? row.api_version : null,
+    events: Array.isArray(row.events)
+      ? row.events.filter((event): event is string => typeof event === 'string')
+      : [],
+    metadata: metadataOf(row.metadata),
+  };
+}
+
+function discountOf(value: unknown): PolarSetupDiscount | null {
+  const row = asRecord(value);
+  if (!row || typeof row.id !== 'string') return null;
+  return {
+    id: row.id,
+    name: typeof row.name === 'string' ? row.name : '',
+    code: typeof row.code === 'string' ? row.code : null,
+    metadata: metadataOf(row.metadata),
+  };
+}
+
+function createClient(base: string, token: string, organizationId: string): PolarSetupClient {
+  const encodedOrg = encodeURIComponent(organizationId);
+  async function send(path: string, method: string, body?: unknown): Promise<unknown> {
+    const response = await polarFetch(base, token, path, { method, body });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(
+        `Polar ${method} ${path} failed: ${response.status} ${redact(response.body)}`,
+      );
+    }
+    assertSameOrganization(response.body, organizationId, path);
+    return response.body;
+  }
+  return {
+    async listMeters() {
+      const rows = await listAll(base, token, `/meters/?organization_id=${encodedOrg}`);
+      return rows.flatMap((row) => meterOf(row) ?? []);
+    },
+    async listProducts() {
+      const rows = await listAll(
+        base,
+        token,
+        `/products/?organization_id=${encodedOrg}&is_archived=false`,
+      );
+      return rows.flatMap((row) => productOf(row) ?? []);
+    },
+    async listWebhooks() {
+      const rows = await listAll(base, token, `/webhooks/endpoints?organization_id=${encodedOrg}`);
+      return rows.flatMap((row) => webhookOf(row) ?? []);
+    },
+    async listDiscounts() {
+      const rows = await listAll(base, token, `/discounts/?organization_id=${encodedOrg}`);
+      return rows.flatMap((row) => discountOf(row) ?? []);
+    },
+    async createMeter(body: PolarMeterWrite) {
+      const created = asRecord(await send('/meters/', 'POST', body));
+      if (!created || typeof created.id !== 'string')
+        throw new Error('Polar create meter returned no id');
+      return { id: created.id };
+    },
+    async patchMeter(id, body) {
+      await send(`/meters/${encodeURIComponent(id)}`, 'PATCH', body);
+    },
+    async createProduct(body: PolarProductWrite) {
+      const created = asRecord(await send('/products/', 'POST', body));
+      if (!created || typeof created.id !== 'string') {
+        throw new Error('Polar create product returned no id');
+      }
+      return { id: created.id };
+    },
+    async patchProduct(id, body: PolarProductPatch) {
+      await send(`/products/${encodeURIComponent(id)}`, 'PATCH', body);
+    },
+    async archiveProduct(id) {
+      await send(`/products/${encodeURIComponent(id)}`, 'PATCH', { is_archived: true });
+    },
+    async createWebhook(body: PolarWebhookWrite) {
+      const created = asRecord(await send('/webhooks/endpoints', 'POST', body));
+      if (!created || typeof created.id !== 'string') {
+        throw new Error('Polar create webhook returned no id');
+      }
+      return { id: created.id, secret: typeof created.secret === 'string' ? created.secret : null };
+    },
+    async patchWebhook(id, body) {
+      await send(`/webhooks/endpoints/${encodeURIComponent(id)}`, 'PATCH', body);
+    },
+    async deleteWebhook(id) {
+      await send(`/webhooks/endpoints/${encodeURIComponent(id)}`, 'DELETE');
+    },
+    async patchDiscount(id, body) {
+      await send(`/discounts/${encodeURIComponent(id)}`, 'PATCH', body);
+    },
+  };
+}
+
+function preferredProductIds(): Partial<Record<TimelineProductKey, string>> {
+  const ids: Partial<Record<TimelineProductKey, string>> = {};
+  for (const key of TIMELINE_PRODUCT_KEYS) {
+    const value = optionalEnv(TIMELINE_PRODUCT_ENV_NAMES[key]);
+    if (value) ids[key] = value;
+  }
+  return ids;
 }
 
 async function main(): Promise<void> {
-  const envFile = argValue('env-file') ?? '.env';
-  if (existsSync(envFile)) loadEnvFile(envFile);
-  const server = process.env.POLAR_SERVER?.trim() || 'sandbox';
-  if (server !== 'sandbox' && !args.includes('--allow-production')) {
-    throw new Error('Refusing to run unless POLAR_SERVER=sandbox or --allow-production is set');
-  }
+  const envFile = argValue('env-file');
+  if (envFile) loadEnvFile(envFile);
+  else if (existsSync('.env')) loadEnvFile('.env');
+  const dryRun = args.includes('--dry-run');
+  const server = assertPolarSetupServer(
+    process.env.POLAR_SERVER?.trim() || 'sandbox',
+    args.includes('--allow-production'),
+  );
   const token = requiredEnv('POLAR_ACCESS_TOKEN');
   const organizationId = requiredEnv('POLAR_ORGANIZATION_ID');
   const webhookUrl = argValue('webhook-url') ?? DEFAULT_TIMELINE_POLAR_WEBHOOK_URL;
   assertTimelineWebhookUrl(webhookUrl);
-  const base = polarApiBaseUrl(server);
-
-  const productRows = (await listAll(
-    base,
-    token,
-    `/products/?organization_id=${encodeURIComponent(organizationId)}&is_archived=false`,
-  )) as PolarProductRow[];
-  const meterRows = (await listAll(
-    base,
-    token,
-    `/meters/?organization_id=${encodeURIComponent(organizationId)}`,
-  )) as PolarMeterRow[];
-  const namedMeters = (rows: PolarMeterRow[]) =>
-    rows.flatMap((row) => (row.id && row.name ? [{ id: row.id, name: row.name }] : []));
-  let extraMemberMeter = selectTimelineExtraMemberMeter(namedMeters(meterRows));
-  let extraMemberMeterAction = 'reused';
-  if (!extraMemberMeter) {
-    let created = await polarFetch(base, token, '/meters/', {
-      method: 'POST',
-      body: timelineExtraMemberMeterCreateBody('custom'),
-    });
-    if (created.status < 200 || created.status >= 300) {
-      const listed = (await listAll(
-        base,
-        token,
-        `/meters/?organization_id=${encodeURIComponent(organizationId)}`,
-      )) as PolarMeterRow[];
-      extraMemberMeter = selectTimelineExtraMemberMeter(namedMeters(listed));
-      if (!extraMemberMeter) {
-        created = await polarFetch(base, token, '/meters/', {
-          method: 'POST',
-          body: timelineExtraMemberMeterCreateBody('scalar'),
-        });
-      }
-    }
-    if (!extraMemberMeter) {
-      if (created.status < 200 || created.status >= 300) {
-        throw new Error(
-          `Polar create ${TIMELINE_EXTRA_MEMBER_METER_NAME} failed: ${created.status} ${redact(created.body)}`,
-        );
-      }
-      assertSameOrganization(created.body, organizationId, TIMELINE_EXTRA_MEMBER_METER_NAME);
-      const row = created.body as PolarMeterRow;
-      if (!row.id) {
-        throw new Error(`Polar create ${TIMELINE_EXTRA_MEMBER_METER_NAME} returned no id`);
-      }
-      extraMemberMeter = { id: row.id, name: row.name ?? TIMELINE_EXTRA_MEMBER_METER_NAME };
-      extraMemberMeterAction = 'created';
-    }
-  }
-
-  const subscriptionProducts = [
-    ['PAYG', process.env.POLAR_PRODUCT_ID_PAYG?.trim()],
-    ['Team', process.env.POLAR_PRODUCT_ID_TEAM?.trim()],
-    ['Business', process.env.POLAR_PRODUCT_ID_BUSINESS?.trim()],
-  ] as const;
-  const extraMemberPrices: string[] = [];
-  for (const [label, productId] of subscriptionProducts) {
-    if (!productId) throw new Error(`POLAR_PRODUCT_ID for ${label} is required`);
-    const current = await polarFetch(base, token, `/products/${productId}`);
-    if (current.status < 200 || current.status >= 300) {
-      throw new Error(
-        `Polar read ${label} product failed: ${current.status} ${redact(current.body)}`,
-      );
-    }
-    assertSameOrganization(current.body, organizationId, `${label} product`);
-    const product = current.body as PolarProductRow;
-    const prices = productPricesWithExtraMemberMeter({
-      prices: catalogPrices(product.prices),
-      meterId: extraMemberMeter.id,
-      unitAmount: TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT,
-    });
-    const alreadyAttached = prices.every((price) => 'id' in price);
-    if (!alreadyAttached) {
-      const updated = await polarFetch(base, token, `/products/${productId}`, {
-        method: 'PATCH',
-        body: { prices },
-      });
-      if (updated.status < 200 || updated.status >= 300) {
-        throw new Error(
-          `Polar attach extra-member price on ${label} failed: ${updated.status} ${redact(updated.body)}`,
-        );
-      }
-    }
-    extraMemberPrices.push(
-      `${label} ${alreadyAttached ? 'present' : 'attached'} ${TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT}`,
-    );
-  }
-
-  const meterRowsAfter = (await listAll(
-    base,
-    token,
-    `/meters/?organization_id=${encodeURIComponent(organizationId)}`,
-  )) as PolarMeterRow[];
-  const meterIdsByEvent = timelineMeterIdsByEvent(
-    meterRowsAfter.flatMap((row) => (row.id ? [{ id: row.id, filter: row.filter }] : [])),
-  );
-  if (!meterIdsByEvent[TIMELINE_EXTRA_MEMBER_EVENT_NAME]) {
-    meterIdsByEvent[TIMELINE_EXTRA_MEMBER_EVENT_NAME] = extraMemberMeter.id;
-  }
-
-  let enterpriseProduct = selectTimelineEnterpriseProduct(productRows.map(toProduct));
-  let enterpriseAction = 'reused';
-  if (!enterpriseProduct) {
-    let created = await polarFetch(base, token, '/products/', {
-      method: 'POST',
-      body: timelineEnterpriseProductCreateBody({ meterIdsByEvent }),
-    });
-    if (created.status < 200 || created.status >= 300) {
-      const listed = (await listAll(
-        base,
-        token,
-        `/products/?organization_id=${encodeURIComponent(organizationId)}&is_archived=false`,
-      )) as PolarProductRow[];
-      enterpriseProduct = selectTimelineEnterpriseProduct(listed.map(toProduct));
-      const failure = JSON.stringify(created.body);
-      if (
-        !enterpriseProduct &&
-        (failure.includes('maximum_amount') || failure.includes('maximum'))
-      ) {
-        created = await polarFetch(base, token, '/products/', {
-          method: 'POST',
-          body: timelineEnterpriseProductCreateBody({
-            meterIdsByEvent,
-            maximumAmount: TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
-          }),
-        });
-      }
-    }
-    if (!enterpriseProduct) {
-      if (created.status < 200 || created.status >= 300) {
-        throw new Error(
-          `Polar create ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${created.status} ${redact(created.body)}`,
-        );
-      }
-      assertSameOrganization(created.body, organizationId, TIMELINE_ENTERPRISE_PRODUCT_NAME);
-      const row = created.body as PolarProductRow;
-      if (!row.id)
-        throw new Error(`Polar create ${TIMELINE_ENTERPRISE_PRODUCT_NAME} returned no id`);
-      enterpriseProduct = toProduct(row);
-      enterpriseAction = 'created';
-    }
-  }
-  if (!enterpriseProduct) {
-    throw new Error(`${TIMELINE_ENTERPRISE_PRODUCT_NAME} was not created`);
-  }
-  if (enterpriseAction !== 'created') {
-    const current = await polarFetch(base, token, `/products/${enterpriseProduct.id}`);
-    if (current.status < 200 || current.status >= 300) {
-      throw new Error(
-        `Polar read ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${current.status} ${redact(current.body)}`,
-      );
-    }
-    assertSameOrganization(current.body, organizationId, TIMELINE_ENTERPRISE_PRODUCT_NAME);
-    const product = current.body as PolarProductRow;
-    const prices = enterpriseProductPriceWrites({
-      prices: catalogPrices(product.prices),
-      meterIdsByEvent,
-    });
-    const needsPatch = prices.some((price) => !('id' in price));
-    if (needsPatch) {
-      const updated = await polarFetch(base, token, `/products/${enterpriseProduct.id}`, {
-        method: 'PATCH',
-        body: { prices },
-      });
-      if (updated.status < 200 || updated.status >= 300) {
-        const failure = JSON.stringify(updated.body);
-        if (failure.includes('maximum_amount') || failure.includes('maximum')) {
-          const retried = await polarFetch(base, token, `/products/${enterpriseProduct.id}`, {
-            method: 'PATCH',
-            body: {
-              prices: enterpriseProductPriceWrites({
-                prices: catalogPrices(product.prices),
-                meterIdsByEvent,
-                maximumAmount: TIMELINE_ENTERPRISE_CUSTOM_MAXIMUM_CENTS,
-              }),
-            },
-          });
-          if (retried.status < 200 || retried.status >= 300) {
-            throw new Error(
-              `Polar update ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${retried.status} ${redact(retried.body)}`,
-            );
-          }
-        } else {
-          throw new Error(
-            `Polar update ${TIMELINE_ENTERPRISE_PRODUCT_NAME} failed: ${updated.status} ${redact(updated.body)}`,
-          );
-        }
-      }
-      enterpriseAction = 'updated';
-    }
-  }
-  const enterpriseProductId = enterpriseProduct.id;
-
-  const archived: string[] = [];
-  for (const product of timelineTopUpsToArchive(productRows.map(toProduct))) {
-    const updated = await polarFetch(base, token, `/products/${product.id}`, {
-      method: 'PATCH',
-      body: { is_archived: true },
-    });
-    if (updated.status < 200 || updated.status >= 300) {
-      throw new Error(
-        `Polar archive ${TIMELINE_TOPUP_PRODUCT_NAME} failed: ${updated.status} ${redact(updated.body)}`,
-      );
-    }
-    archived.push(product.id);
-  }
-
-  const webhookRows = (
-    (await listAll(
-      base,
-      token,
-      `/webhooks/endpoints?organization_id=${encodeURIComponent(organizationId)}`,
-    )) as PolarWebhookRow[]
-  ).map(toWebhook);
-  const removed: string[] = [];
-  for (const webhook of webhookRows) {
-    if (!isDisabledExampleTimelineWebhook(webhook) || isProtectedForeignWebhook(webhook)) continue;
-    const deleted = await polarFetch(base, token, `/webhooks/endpoints/${webhook.id}`, {
-      method: 'DELETE',
-    });
-    if (deleted.status < 200 || deleted.status >= 300) {
-      throw new Error(
-        `Polar delete placeholder webhook failed: ${deleted.status} ${redact(deleted.body)}`,
-      );
-    }
-    removed.push(webhook.id);
-  }
-
-  const existing = selectTimelineWebhook(webhookRows, webhookUrl);
-  let webhookId: string;
-  let webhookSecret: string | undefined;
-  let webhookAction: string;
-  if (!existing) {
-    const created = await polarFetch(base, token, '/webhooks/endpoints', {
-      method: 'POST',
-      body: {
-        name: TIMELINE_POLAR_WEBHOOK_NAME,
-        url: webhookUrl,
-        format: 'raw',
-        api_version: '2026-10',
-        enabled: true,
-        events: [...TIMELINE_POLAR_WEBHOOK_EVENTS],
-      },
-    });
-    if (created.status < 200 || created.status >= 300) {
-      throw new Error(`Polar create webhook failed: ${created.status} ${redact(created.body)}`);
-    }
-    assertSameOrganization(created.body, organizationId, 'Timeline webhook');
-    const row = toWebhook(created.body as PolarWebhookRow);
-    webhookId = row.id;
-    webhookSecret = row.secret;
-    webhookAction = 'created';
-  } else if (webhookNeedsUpdate(existing, TIMELINE_POLAR_WEBHOOK_EVENTS)) {
-    const updated = await polarFetch(base, token, `/webhooks/endpoints/${existing.id}`, {
-      method: 'PATCH',
-      body: {
-        format: 'raw',
-        enabled: true,
-        events: mergedWebhookEvents(existing.events, TIMELINE_POLAR_WEBHOOK_EVENTS),
-      },
-    });
-    if (updated.status < 200 || updated.status >= 300) {
-      throw new Error(`Polar update webhook failed: ${updated.status} ${redact(updated.body)}`);
-    }
-    const row = toWebhook(updated.body as PolarWebhookRow);
-    webhookId = row.id;
-    webhookSecret = row.secret;
-    webhookAction = 'updated';
-  } else {
-    webhookId = existing.id;
-    webhookSecret = webhookRows.find((webhook) => webhook.id === existing.id)?.secret;
-    webhookAction = 'reused';
-  }
-  if (!webhookSecret) webhookSecret = process.env.POLAR_WEBHOOK_SECRET?.trim();
-  if (!webhookSecret) throw new Error('Polar did not return a webhook secret and none is stored');
-
-  if (existsSync(envFile)) {
-    writeEnvFile(envFile, {
-      POLAR_WEBHOOK_ID: webhookId,
-      POLAR_WEBHOOK_SECRET: webhookSecret,
-      POLAR_PRODUCT_ID_ENTERPRISE: enterpriseProductId,
-    });
-  }
-
+  const result = await runPolarSetup({
+    client: createClient(polarApiBaseUrl(server), token, organizationId),
+    dryRun,
+    request: {
+      webhookUrl,
+      webhookId: optionalEnv('POLAR_WEBHOOK_ID'),
+      discountCode: optionalEnv('POLAR_DISCOUNT_CODE'),
+      preferredProductIds: preferredProductIds(),
+    },
+  });
+  const creatingWebhook = result.plan.actions.some((action) => action.kind === 'create_webhook');
+  const webhookSecret =
+    result.webhookSecret ?? (creatingWebhook ? null : optionalEnv('POLAR_WEBHOOK_SECRET'));
+  console.log(renderPolarSetupPlan(result.plan));
   console.log(
-    `Extra member meter: ${extraMemberMeterAction} ${extraMemberMeter.id} unit_amount ${TIMELINE_EXTRA_MEMBER_UNIT_AMOUNT}`,
-  );
-  console.log(`Extra member prices: ${extraMemberPrices.join('; ')}`);
-  console.log(
-    `Timeline Enterprise: ${enterpriseAction} ${enterpriseProductId} custom platform fee plus six meters`,
-  );
-  if (archived.length > 0) {
-    console.log(`Archived Timeline Top-up ${archived.join(', ')}`);
-  } else {
-    console.log('Timeline Top-up: none active');
-  }
-  console.log(`Timeline webhook: ${webhookAction} ${webhookId} ${webhookUrl}`);
-  if (removed.length > 0)
-    console.log(`Removed disabled example.com placeholder ${removed.join(', ')}`);
-  console.log(
-    existsSync(envFile)
-      ? `Updated ${envFile} keys: POLAR_WEBHOOK_ID, POLAR_WEBHOOK_SECRET, POLAR_PRODUCT_ID_ENTERPRISE`
-      : 'No env file found; ids were printed and the webhook secret was not saved',
+    renderPolarSetupReport({
+      server,
+      organizationId,
+      dryRun,
+      result,
+      webhookSecret,
+    }),
   );
 }
 
