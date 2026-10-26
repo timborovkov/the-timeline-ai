@@ -100,8 +100,10 @@ credit hides margin and confuses prospects.
    member-seat claims with advisory lock key 4. Ask chat titles settle inside
    the Ask reservation. Failed post-verification Free-grant claims retry on the
    next signed-in load. Polar webhook HMAC timestamps follow the same 5-minute
-   replay window as Svix. Janitor fallback refills that discount by advancing the stored Polar
-   renewal window, not by snapping to UTC calendar months. Paid-plan changes
+   replay window as Svix. Reserve and settle refill an elapsed included-discount
+   window under the billing-account lock before pricing current-period usage, and
+   the janitor does the same refill. The next window advances from the stored Polar
+   bounds, not by snapping a mid-month renewal to the UTC calendar month. Paid-plan changes
    PATCH the existing Polar subscription (or open the customer portal) instead
    of creating a second checkout. Included-discount cents stay local. Polar
    ingest sends the customer-payable remainder, scaling native units by

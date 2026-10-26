@@ -201,6 +201,67 @@ describe('included discount remaining for replay', () => {
     ).resolves.toBe(5_975);
   });
 
+  it('counts an untagged September usage instant in September when the row was written in October', async () => {
+    const octoberWrite = new Date('2026-10-15T12:00:00.000Z');
+    await db.insert(billingUsageLedger).values([
+      {
+        teamId: TEAM_ID,
+        operationId: 'ai:september-recovered',
+        kind: 'settlement',
+        meterId: 'ai',
+        nativeUnits: '100',
+        customerChargeCents: 0,
+        metadata: {
+          discount_cents: 100,
+          usage_at: '2026-09-20T12:00:00.000Z',
+        },
+        occurredAt: octoberWrite,
+      },
+      {
+        teamId: TEAM_ID,
+        operationId: 'ai:tagged-october',
+        kind: 'settlement',
+        meterId: 'ai',
+        nativeUnits: '50',
+        customerChargeCents: 50,
+        metadata: {
+          discount_cents: 50,
+          usage_at: '2026-09-21T12:00:00.000Z',
+          pricing_period_ym: '2026-10',
+        },
+        occurredAt: octoberWrite,
+      },
+      {
+        teamId: TEAM_ID,
+        operationId: 'ai:recovered:2026-09-12',
+        kind: 'settlement',
+        meterId: 'ai',
+        nativeUnits: '25',
+        customerChargeCents: 25,
+        metadata: { discount_cents: 25 },
+        occurredAt: octoberWrite,
+      },
+    ]);
+    const monthBoundary = {
+      periodStartedAt: new Date('2026-09-01T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-10-01T00:00:00.000Z'),
+    };
+    const remaining = (usageAt: string, bounds: typeof monthBoundary | null) =>
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: new Date(usageAt),
+        periodStartedAt: bounds?.periodStartedAt ?? null,
+        periodEndsAt: bounds?.periodEndsAt ?? null,
+      });
+
+    await expect(remaining('2026-09-15T12:00:00.000Z', monthBoundary)).resolves.toBe(5_875);
+    await expect(remaining('2026-10-15T12:00:00.000Z', monthBoundary)).resolves.toBe(5_950);
+    await expect(remaining('2026-09-15T12:00:00.000Z', null)).resolves.toBe(5_875);
+    await expect(remaining('2026-10-15T12:00:00.000Z', null)).resolves.toBe(5_950);
+  });
+
   it('keeps a stamped live settlement in the renewal window that contains usage_at', async () => {
     const renewal = {
       periodStartedAt: new Date('2026-10-10T00:00:00.000Z'),

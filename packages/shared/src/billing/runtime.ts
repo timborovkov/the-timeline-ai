@@ -33,7 +33,6 @@ import {
   daysInPeriodYm,
   includedDiscountWindowContaining,
   memberDayChargeDelta,
-  nextIncludedDiscountPeriod,
 } from '#src/billing/charge.js';
 import {
   BILLING_SYSTEM_USER_ID,
@@ -51,6 +50,7 @@ import { effectiveBillingPlanId, resolveTeamCommercialTerms } from '#src/billing
 import {
   billingPlanIdOnDay,
   includedDiscountRemainingForReplay,
+  rollIncludedDiscountIfElapsed,
 } from '#src/billing/plan-history.js';
 import { applyElapsedScheduledCancellations } from '#src/billing/polar-webhook.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
@@ -1354,35 +1354,9 @@ export async function resetIncludedDiscountIfPeriodElapsed(input: {
       .limit(1)
       .for('update');
     if (!account) return false;
-    const now = input.now ?? new Date();
-    const next = nextIncludedDiscountPeriod({
-      now,
-      periodStartedAt: account.periodStartedAt,
-      periodEndsAt: account.periodEndsAt,
+    const rolled = await rollIncludedDiscountIfElapsed(tx, account, input.now ?? new Date(), {
+      openMissingBounds: true,
     });
-    if (!next) return false;
-    const included = PLAN_CATALOG[effectiveBillingPlanId(account)].includedUsageDiscountCents;
-    const [updated] = await tx
-      .update(teamBillingAccounts)
-      .set({
-        includedDiscountRemainingCents: included,
-        periodStartedAt: next.periodStartedAt,
-        periodEndsAt: next.periodEndsAt,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(teamBillingAccounts.teamId, input.teamId),
-          eq(teamBillingAccounts.planId, account.planId),
-          account.periodStartedAt
-            ? eq(teamBillingAccounts.periodStartedAt, account.periodStartedAt)
-            : sql`${teamBillingAccounts.periodStartedAt} IS NULL`,
-          account.periodEndsAt
-            ? eq(teamBillingAccounts.periodEndsAt, account.periodEndsAt)
-            : sql`${teamBillingAccounts.periodEndsAt} IS NULL`,
-        ),
-      )
-      .returning({ teamId: teamBillingAccounts.teamId });
-    return Boolean(updated);
+    return rolled.rolled;
   });
 }

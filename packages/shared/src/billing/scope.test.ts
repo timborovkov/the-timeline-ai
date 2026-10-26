@@ -1060,6 +1060,182 @@ describe('billing scope', () => {
     expect(counter?.periodYm).toBe('2026-02');
   });
 
+  it('refills an elapsed included discount before pricing the next charge', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const ended = new Date(Date.now() - 60 * 60 * 1000);
+    const started = new Date(ended);
+    started.setUTCMonth(started.getUTCMonth() - 1);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000,
+          period_started_at = '${started.toISOString()}',
+          period_ends_at = '${ended.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'ai:after-renewal',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({
+        discount_cents: 40,
+        invoice_cents: 0,
+      });
+    }
+    const after = await scope.getAccount();
+    expect(after.includedDiscountRemainingCents).toBe(5_960);
+    expect(after.periodStartedAt?.toISOString()).toBe(ended.toISOString());
+    expect(after.periodEndsAt && after.periodEndsAt > new Date()).toBe(true);
+    const periodEndsAt = after.periodEndsAt;
+
+    const second = await scope.settle({
+      operationId: 'ai:after-renewal-next',
+      meterId: 'ai',
+      nativeUnits: 10,
+      customerChargeCents: 10,
+    });
+    expect(second.ok).toBe(true);
+    if (!second.duplicate) {
+      expect(second.ledger.metadata).toMatchObject({ discount_cents: 10, invoice_cents: 0 });
+    }
+    const later = await scope.getAccount();
+    expect(later.includedDiscountRemainingCents).toBe(5_950);
+    expect(later.periodEndsAt?.toISOString()).toBe(periodEndsAt?.toISOString());
+  });
+
+  it('does not refill an open included-discount window', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const ends = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const starts = new Date(ends);
+    starts.setUTCMonth(starts.getUTCMonth() - 1);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 100, spend_cap_cents = 100000,
+          period_started_at = '${starts.toISOString()}',
+          period_ends_at = '${ends.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'ai:open-window',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({ discount_cents: 40, invoice_cents: 0 });
+    }
+    const after = await scope.getAccount();
+    expect(after.includedDiscountRemainingCents).toBe(60);
+    expect(after.periodEndsAt?.toISOString()).toBe(ends.toISOString());
+  });
+
+  it('keeps a historical charge off the allowance refilled after the live window elapsed', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const ended = new Date(Date.now() - 60 * 60 * 1000);
+    const started = new Date(ended);
+    started.setUTCMonth(started.getUTCMonth() - 1);
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000,
+          period_started_at = '${started.toISOString()}',
+          period_ends_at = '${ended.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'ai:historical-after-renewal',
+      meterId: 'ai',
+      nativeUnits: 40,
+      customerChargeCents: 40,
+      usageAt: started,
+      pricingPeriodYm: `${started.getUTCFullYear()}-${String(started.getUTCMonth() + 1).padStart(2, '0')}`,
+      historicalIncludedDiscountCents: 80,
+    });
+    expect(settled.ok).toBe(true);
+    if (!settled.duplicate) {
+      expect(settled.ledger.metadata).toMatchObject({ discount_cents: 40, invoice_cents: 0 });
+    }
+    const after = await scope.getAccount();
+    expect(after.includedDiscountRemainingCents).toBe(6_000);
+    expect(after.periodStartedAt?.toISOString()).toBe(ended.toISOString());
+  });
+
+  it('does not let a previous-window reservation consume the refilled allowance', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const ended = new Date(Date.now() - 60 * 60 * 1000);
+    const started = new Date(ended);
+    started.setUTCMonth(started.getUTCMonth() - 1);
+    await db.insert(billingUsageReservations).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:previous-window',
+      meterId: 'ai',
+      reservedNativeUnits: '6000',
+      reservedChargeCents: 0,
+      state: 'reserved',
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      metadata: { discount_reserved_cents: 6_000 },
+      createdAt: new Date(ended.getTime() - 60 * 60 * 1000),
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 0, spend_cap_cents = 100000,
+          period_started_at = '${started.toISOString()}',
+          period_ends_at = '${ended.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const reserved = await scope.reserve({
+      operationId: 'ai:new-window',
+      meterId: 'ai',
+      reservedNativeUnits: 40,
+      reservedChargeCents: 40,
+    });
+    expect(reserved.ok).toBe(true);
+    if (reserved.ok) {
+      expect(reserved.reservation.metadata).toMatchObject({
+        discount_reserved_cents: 40,
+        invoice_reserved_cents: 0,
+      });
+    }
+    const after = await scope.getAccount();
+    expect(after.includedDiscountRemainingCents).toBe(6_000);
+    expect(after.periodStartedAt?.toISOString()).toBe(ended.toISOString());
+  });
+
   it('reserves included discount once and invoices the next overlapping Team charge', async () => {
     const scope = createBillingScope({
       db,

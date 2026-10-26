@@ -755,7 +755,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Terminal Recall settlement errors propagate for webhook retry. Remaining Free grants keep
       the leftover team unrestricted. A retained Polar subscription id does not keep a Free
       workspace unrestricted. Re-accepting a removed member stamps a new `createdAt`.
-      Replay included discount follows the subscription renewal window that contains the usage day. A Free plan-history baseline is stored at account creation and backfilled ahead of the first paid row. The janitor rechecks <code>cancel_effective_at</code> under the account lock before downgrading. Deferred enrichment clears its
+      Replay included discount follows the subscription renewal window that contains the usage day, including a calendar-month window that has a persisted <code>usage_at</code>. Reserve and settle refill an elapsed included-discount window under the account lock before pricing current-period usage. A Free plan-history baseline is stored at account creation and backfilled ahead of the first paid row. The janitor rechecks <code>cancel_effective_at</code> under the account lock before downgrading. Deferred enrichment clears its
       marker only after Redis enqueue succeeds.
       Storage snapshots backfill missed days. A missed storage day, or one priced on another plan or month, settles without today's allowance or billing-state admission. Suspended and terminated workspaces still block that recovery. Today's live-plan snapshot still reserves. Missed member-days with no stamp use the
       plan effective that day before the current plan. Reactivating a reservation resets `createdAt`.

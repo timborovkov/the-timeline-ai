@@ -1,9 +1,16 @@
 import { billingPlanHistory, billingUsageLedger, teamBillingAccounts, type Db } from '@timeline/db';
-import { and, asc, desc, eq, lt, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, lt, lte, sql } from 'drizzle-orm';
 
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
-import { includedDiscountWindowContaining } from '#src/billing/charge.js';
-import { historicalPlanIdOnDay, type BillingArrangement } from '#src/billing/operator.js';
+import {
+  includedDiscountWindowContaining,
+  nextIncludedDiscountPeriod,
+} from '#src/billing/charge.js';
+import {
+  effectiveBillingPlanId,
+  historicalPlanIdOnDay,
+  type BillingArrangement,
+} from '#src/billing/operator.js';
 
 function isBillingPlanId(value: string): value is BillingPlanId {
   return value in PLAN_CATALOG;
@@ -129,9 +136,9 @@ function taggedPeriodYm(value: unknown): string | null {
 
 /**
  * One settlement belongs to one discount period. `pricing_period_ym` wins,
- * then `polar_ingest_period_ym`. The ledger timestamp is used only when
- * neither tag is set, so a backfilled month is not also charged to the
- * month the row was written.
+ * then `polar_ingest_period_ym`. With neither tag, the timestamp decides the
+ * calendar month. Callers pass the usage instant when the row has one, and
+ * the ledger time only for an untagged row with no usage instant.
  */
 export function settlementMatchesDiscountPeriod(input: {
   periodYm: string;
@@ -232,18 +239,69 @@ function settlementInDiscountWindow(
   },
   window: { startedAt: Date; endsAt: Date },
 ): boolean {
+  const usageAt = settlementUsageInstant(row);
   if (calendarMonthWindow(window)) {
     const periodYm = `${window.startedAt.getUTCFullYear()}-${String(window.startedAt.getUTCMonth() + 1).padStart(2, '0')}`;
     return settlementMatchesDiscountPeriod({
       periodYm,
-      occurredAt: row.occurredAt,
+      occurredAt: usageAt,
       metadata: row.metadata,
     });
   }
-  const usageAt = settlementUsageInstant(row);
   return (
     usageAt.getTime() >= window.startedAt.getTime() && usageAt.getTime() < window.endsAt.getTime()
   );
+}
+
+/**
+ * Refill the included-usage discount when the stored renewal window has
+ * closed. A missing window is left alone unless the caller is the janitor,
+ * which opens the current calendar month. The next bounds advance from the
+ * stored Polar window.
+ */
+export async function rollIncludedDiscountIfElapsed(
+  tx: Pick<Db, 'update'>,
+  account: typeof teamBillingAccounts.$inferSelect,
+  now: Date,
+  options?: { openMissingBounds?: boolean },
+): Promise<{ account: typeof teamBillingAccounts.$inferSelect; rolled: boolean }> {
+  const hasBounds = Boolean(account.periodStartedAt && account.periodEndsAt);
+  if (!hasBounds && options?.openMissingBounds !== true) {
+    return { account, rolled: false };
+  }
+  if (account.periodEndsAt && account.periodEndsAt > now) {
+    return { account, rolled: false };
+  }
+  const next = nextIncludedDiscountPeriod({
+    now,
+    periodStartedAt: account.periodStartedAt,
+    periodEndsAt: account.periodEndsAt,
+  });
+  if (!next) return { account, rolled: false };
+  const included = PLAN_CATALOG[effectiveBillingPlanId(account, now)].includedUsageDiscountCents;
+  const [updated] = await tx
+    .update(teamBillingAccounts)
+    .set({
+      includedDiscountRemainingCents: included,
+      periodStartedAt: next.periodStartedAt,
+      periodEndsAt: next.periodEndsAt,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(teamBillingAccounts.teamId, account.teamId),
+        eq(teamBillingAccounts.planId, account.planId),
+        account.periodStartedAt
+          ? eq(teamBillingAccounts.periodStartedAt, account.periodStartedAt)
+          : sql`${teamBillingAccounts.periodStartedAt} IS NULL`,
+        account.periodEndsAt
+          ? eq(teamBillingAccounts.periodEndsAt, account.periodEndsAt)
+          : sql`${teamBillingAccounts.periodEndsAt} IS NULL`,
+      ),
+    )
+    .returning();
+  if (!updated) return { account, rolled: false };
+  return { account: updated, rolled: true };
 }
 
 /**

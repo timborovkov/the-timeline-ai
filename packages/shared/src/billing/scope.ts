@@ -57,7 +57,7 @@ import {
   localChargeSpendCapApplies,
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
-import { recordBillingPlan } from '#src/billing/plan-history.js';
+import { recordBillingPlan, rollIncludedDiscountIfElapsed } from '#src/billing/plan-history.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
 import {
   expireStaleBillingReservations,
@@ -734,16 +734,18 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const ym = periodYm();
 
       const outcome = await db.transaction(async (tx) => {
-        const [locked] = await tx
+        const [lockedRow] = await tx
           .select()
           .from(teamBillingAccounts)
           .where(eq(teamBillingAccounts.teamId, teamId))
           .limit(1)
           .for('update');
-        if (!locked) throw new Error('Missing billing account');
-        if (locked.securityState === 'suspended' || locked.securityState === 'terminated') {
+        if (!lockedRow) throw new Error('Missing billing account');
+        if (lockedRow.securityState === 'suspended' || lockedRow.securityState === 'terminated') {
           return { kind: 'reject' as const, code: 'security_blocked' as const };
         }
+        const rolled = await rollIncludedDiscountIfElapsed(tx, lockedRow, new Date());
+        const locked = rolled.account;
         const [existingReservation] = await tx
           .select()
           .from(billingUsageReservations)
@@ -878,10 +880,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
           }),
           commercial.meteredDiscountPercent,
         );
-        const pendingDiscount = pending.reduce(
-          (sum, row) => sum + pendingDiscountReservedCents(row.metadata),
-          0,
-        );
+        const pendingDiscount = pending.reduce((sum, row) => {
+          if (locked.periodStartedAt && row.createdAt < locked.periodStartedAt) return sum;
+          return sum + pendingDiscountReservedCents(row.metadata);
+        }, 0);
         const remainingDiscount = Math.max(
           0,
           locked.includedDiscountRemainingCents - pendingDiscount,
@@ -1099,13 +1101,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
         | undefined;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const written = await db.transaction(async (tx) => {
-          const [account] = await tx
+          const [lockedAccount] = await tx
             .select()
             .from(teamBillingAccounts)
             .where(eq(teamBillingAccounts.teamId, teamId))
             .limit(1)
             .for('update');
-          if (!account) throw new Error('Missing billing account');
+          if (!lockedAccount) throw new Error('Missing billing account');
+          const rolled = await rollIncludedDiscountIfElapsed(tx, lockedAccount, new Date());
+          const account = rolled.account;
           const reservation = await tx
             .select()
             .from(billingUsageReservations)
