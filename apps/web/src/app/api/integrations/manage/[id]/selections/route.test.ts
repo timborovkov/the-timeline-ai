@@ -15,11 +15,13 @@ const fakes = vi.hoisted(() => ({
   listSelections: vi.fn(),
   setSelections: vi.fn(),
   recordAudit: vi.fn(),
+  recordError: vi.fn(),
   recordConnectionAttention: vi.fn(),
   resolveConnectionAttention: vi.fn(),
   listConnectionAttention: vi.fn(),
   getProvider: vi.fn(),
   adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
+  adminRecordPendingIntegrationSyncContinuations: vi.fn(),
   listSyncableResources: vi.fn(),
   requireRedisQueue: vi.fn(),
   enqueueIntegrationSyncJob: vi.fn(),
@@ -30,9 +32,18 @@ vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam
 vi.mock('@/lib/db', () => ({ db: {} }));
 vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
 vi.mock('@timeline/shared/integrations', () => ({
+  ProviderRateLimitError: class ProviderRateLimitError extends Error {
+    retryAt: Date;
+    constructor(input: { message?: string; retryAt: Date }) {
+      super(input.message);
+      this.retryAt = input.retryAt;
+    }
+  },
   getProvider: fakes.getProvider,
   adminReconcileIntegrationWebhookSubscriptions:
     fakes.adminReconcileIntegrationWebhookSubscriptions,
+  adminRecordPendingIntegrationSyncContinuations:
+    fakes.adminRecordPendingIntegrationSyncContinuations,
 }));
 vi.mock('@timeline/shared/team-scope', () => ({
   withTeam: () => ({
@@ -43,6 +54,7 @@ vi.mock('@timeline/shared/team-scope', () => ({
       listSelections: fakes.listSelections,
       setSelections: fakes.setSelections,
       recordAudit: fakes.recordAudit,
+      recordError: fakes.recordError,
       recordConnectionAttention: fakes.recordConnectionAttention,
       resolveConnectionAttention: fakes.resolveConnectionAttention,
       listConnectionAttention: fakes.listConnectionAttention,
@@ -82,6 +94,7 @@ beforeEach(() => {
   fakes.listSelections.mockResolvedValue([]);
   fakes.setSelections.mockResolvedValue(undefined);
   fakes.recordAudit.mockResolvedValue(undefined);
+  fakes.recordError.mockResolvedValue(undefined);
   fakes.recordConnectionAttention.mockResolvedValue(undefined);
   fakes.resolveConnectionAttention.mockResolvedValue(undefined);
   fakes.listConnectionAttention.mockResolvedValue([]);
@@ -90,6 +103,7 @@ beforeEach(() => {
     deprovisioned: 0,
     skipped: true,
   });
+  fakes.adminRecordPendingIntegrationSyncContinuations.mockResolvedValue(undefined);
   fakes.getProvider.mockReturnValue({ listSyncableResources: fakes.listSyncableResources });
   fakes.listSyncableResources.mockResolvedValue([
     { kind: 'github.repo', externalId: 'acme/private' },
@@ -192,6 +206,41 @@ describe('/api/integrations/manage/[id]/selections', () => {
     });
     expect(attentionInput?.summary).toEqual(
       expect.stringContaining('Webhook provisioning failed for monday'),
+    );
+  });
+
+  it('stages retryable Monday webhook setup after a provider limit', async () => {
+    const { ProviderRateLimitError } = await import('@timeline/shared/integrations');
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.getIntegration.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: null,
+    });
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
+      new ProviderRateLimitError({
+        provider: 'monday',
+        retryAt,
+        retryAfterSeconds: 60,
+        scope: 'daily',
+        reason: 'daily_limit_exceeded',
+      }),
+    );
+
+    const response = await PUT(
+      request({ selections: [{ kind: 'monday.board', externalId: 'board-1' }] }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.recordError).toHaveBeenCalledWith(INTEGRATION_ID, expect.any(String));
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      {},
+      INTEGRATION_ID,
+      [{ resourceType: 'monday.webhook', externalId: INTEGRATION_ID, retryAt }],
     );
   });
 

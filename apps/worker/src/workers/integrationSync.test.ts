@@ -50,6 +50,7 @@ const fakes = vi.hoisted(() => {
     adminLoadProviderBudgetPause: vi.fn(),
     adminRecordProviderBudgetPause: vi.fn(),
     adminReconcileExpiringWebhookSubscriptions: vi.fn(),
+    adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
     adminResolveConnectionAttention: vi.fn(),
     adminRecordTransientSyncFailure: vi.fn(),
     adminRecordCountedHealthFailure: vi.fn(),
@@ -108,6 +109,8 @@ vi.mock('@timeline/shared', async (importOriginal) => {
       adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
       adminRecordProviderBudgetPause: fakes.adminRecordProviderBudgetPause,
       adminReconcileExpiringWebhookSubscriptions: fakes.adminReconcileExpiringWebhookSubscriptions,
+      adminReconcileIntegrationWebhookSubscriptions:
+        fakes.adminReconcileIntegrationWebhookSubscriptions,
       adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
       adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
       adminRecordCountedHealthFailure: fakes.adminRecordCountedHealthFailure,
@@ -181,6 +184,11 @@ beforeEach(() => {
   fakes.adminResetTransientSyncFailures.mockResolvedValue(undefined);
   fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
   fakes.adminRecordIntegrationSyncPause.mockResolvedValue(undefined);
+  fakes.adminReconcileIntegrationWebhookSubscriptions.mockResolvedValue({
+    active: 1,
+    deprovisioned: 0,
+    skipped: false,
+  });
   fakes.pendingContinuationHandoffs = [];
   fakes.continuationHandoffSequence = 0;
   const stageContinuations = (continuations: readonly TestSyncContinuation[]) => {
@@ -1927,6 +1935,149 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('keeps a document-only Monday backfill durable when its account budget runs out', async () => {
+    const retryAt = new Date('2026-06-25T02:02:00.000Z');
+    const err = Object.assign(new Error('Monday sync paused for Timeline API budget'), {
+      provider: 'monday',
+      retryAt,
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'timeline_daily_budget',
+      externalAccountId: 'monday-account-1',
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ],
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'monday.doc', externalId: 'doc-1' }]);
+    fakes.getProvider.mockReturnValueOnce({ backfill: vi.fn().mockRejectedValue(err) });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [{ resourceType: 'monday.doc', externalId: 'doc-1', retryAt }],
+    });
+  });
+
+  it('retries only the Monday backfill resource that reported a budget pause', async () => {
+    const retryAt = new Date('2026-06-25T02:02:00.000Z');
+    const err = Object.assign(new Error('Monday sync paused for Timeline API budget'), {
+      provider: 'monday',
+      retryAt,
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'timeline_daily_budget',
+      externalAccountId: 'monday-account-1',
+      syncContinuations: [
+        {
+          resourceType: 'monday.board',
+          externalId: 'board-2',
+          surface: 'backfill_restart',
+        },
+      ],
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ],
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+      { kind: 'monday.board', externalId: 'board-2' },
+    ]);
+    fakes.getProvider.mockReturnValueOnce({ backfill: vi.fn().mockRejectedValue(err) });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'monday.board',
+          externalId: 'board-2',
+          surface: 'backfill_restart',
+          retryAt,
+        },
+      ],
+    });
+  });
+
+  it('keeps a budget-paused Monday webhook target durable with its surface', async () => {
+    const retryAt = new Date('2026-06-25T02:02:00.000Z');
+    const err = Object.assign(new Error('Monday sync paused for Timeline API budget'), {
+      provider: 'monday',
+      retryAt,
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'timeline_daily_budget',
+      externalAccountId: 'monday-account-1',
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ],
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1',
+      surface: 'column.changed',
+      reason: 'monday_item_webhook',
+    });
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1',
+          surface: 'column.changed',
+          retryAt,
+        },
+      ],
+    });
+  });
+
   it('skips provider work while a recorded sync pause is active', async () => {
     const retryAt = new Date(Date.now() + 60_000);
     fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
@@ -1978,6 +2129,148 @@ describe('runOneIntegration attention classification', () => {
       },
       { integrationId: INTEGRATION_ID },
     );
+  });
+
+  it('durably delays a Monday webhook that arrives during an account pause', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'timeline_daily_budget',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1',
+      surface: 'update.created',
+      reason: 'monday_item_webhook',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1',
+          surface: 'update.created',
+          retryAt,
+        },
+      ],
+    );
+  });
+
+  it('preserves Monday initial backfill selections while an API pause is active', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'timeline_daily_budget',
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+      { kind: 'monday.doc', externalId: 'doc-1' },
+    ]);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'monday.board',
+          externalId: 'board-1',
+          surface: 'backfill_restart',
+          retryAt,
+        },
+        {
+          resourceType: 'monday.doc',
+          externalId: 'doc-1',
+          surface: 'backfill_restart',
+          retryAt,
+        },
+      ],
+    );
+  });
+
+  it('preserves Monday initial backfill behind a pending webhook setup retry', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    await fakes.adminRecordPendingIntegrationSyncContinuations({}, INTEGRATION_ID, [
+      { resourceType: 'monday.webhook', externalId: INTEGRATION_ID },
+    ]);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [{ resourceType: 'monday.board', externalId: 'board-1', surface: 'backfill_restart' }],
+    );
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+  });
+
+  it('stages a Monday webhook while another worker holds a continuation lease', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminHasPendingIntegrationSyncContinuations.mockResolvedValueOnce(true);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1:update-1',
+      surface: 'update.created',
+      reason: 'monday_item_webhook',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1:update-1',
+          surface: 'update.created',
+        },
+      ],
+    );
+  });
+
+  it('retries paused Monday webhook provisioning without scanning the board', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'monday.webhook',
+      externalId: INTEGRATION_ID,
+      reason: 'provider_pagination_continuation',
+    });
+
+    expect(fakes.adminReconcileIntegrationWebhookSubscriptions).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+    );
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminResolveConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      categories: ['webhook_degraded'],
+    });
   });
 
   it('skips GitHub provider work while an installation budget pause is active', async () => {
