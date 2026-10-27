@@ -4,7 +4,11 @@ import { createHash, createSign } from 'node:crypto';
 import { getEnv } from '#src/env.js';
 import { formatErrorCause } from '#src/http/error-cause.js';
 import { ExternalHttpError } from '#src/http/external-fetch.js';
-import { providerFetch, withProviderAccount } from '#src/integrations/request.js';
+import {
+  providerFetch,
+  providerResponseLimit,
+  withProviderAccount,
+} from '#src/integrations/request.js';
 import { resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import {
   attachSyncContinuation,
@@ -261,6 +265,8 @@ async function postJson(
     parsed = text;
   }
   if (!res.ok) {
+    const quota = providerResponseLimit('github', res, text);
+    if (quota) throw quota;
     throw new Error(
       `GitHub ${String(res.status)}: ${typeof parsed === 'string' ? parsed : JSON.stringify(parsed)}`,
     );
@@ -357,6 +363,8 @@ async function createGithubInstallationAccessToken(
     parsed = text;
   }
   if (!res.ok) {
+    const quota = providerResponseLimit('github', res, text);
+    if (quota) throw quota;
     throw new Error(
       `GitHub POST /app/installations/${installationId}/access_tokens failed with status ${String(res.status)}: ${
         typeof parsed === 'string' ? parsed : JSON.stringify(parsed)

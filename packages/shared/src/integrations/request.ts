@@ -46,17 +46,14 @@ export function providerRetryAt(headers: Headers, now = Date.now()): Date {
       return Number.isFinite(value) ? (value > 1e12 ? value : value * 1000) : 0;
     }),
   );
+  const retryAfter =
+    Number.isFinite(seconds) && seconds >= 0
+      ? now + seconds * 1000
+      : Number.isFinite(date)
+        ? date
+        : 0;
   return new Date(
-    Math.max(
-      now + 1000,
-      Number.isFinite(seconds) && seconds >= 0
-        ? now + seconds * 1000
-        : Number.isFinite(date)
-          ? date
-          : reset > now
-            ? reset
-            : now + 60_000,
-    ),
+    Math.max(now + 1000, retryAfter, reset, retryAfter || reset > now ? 0 : now + 60_000),
   );
 }
 

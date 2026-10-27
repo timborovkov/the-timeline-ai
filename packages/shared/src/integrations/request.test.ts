@@ -34,6 +34,33 @@ describe('provider quota responses', () => {
       ).getTime(),
     ).toBe(now + 60_000);
   });
+  it.each(['30', 'Mon, 26 Oct 2026 10:00:30 GMT'])(
+    'honors a later quota reset alongside Retry-After %s',
+    (retryAfter) => {
+      const now = Date.parse('2026-10-26T10:00:00Z');
+      expect(
+        providerRetryAt(
+          new Headers({
+            'retry-after': retryAfter,
+            'x-ratelimit-requests-reset': String(now + 3600_000),
+          }),
+          now,
+        ).getTime(),
+      ).toBe(now + 3600_000);
+    },
+  );
+  it('does not shorten Retry-After to an earlier quota reset', () => {
+    const now = Date.parse('2026-10-26T10:00:00Z');
+    expect(
+      providerRetryAt(
+        new Headers({
+          'retry-after': '120',
+          'x-ratelimit-reset': String((now + 30_000) / 1000),
+        }),
+        now,
+      ).getTime(),
+    ).toBe(now + 120_000);
+  });
   it('distinguishes quota exhaustion from access denial', () => {
     expect(
       providerResponseLimit('google_drive', new Response('', { status: 403 }), 'permission denied'),

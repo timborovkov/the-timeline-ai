@@ -83,7 +83,13 @@ export function startChatDeliveryWorker(): Worker<ChatDeliveryJobData> {
         throw new Error('Chat delivery failed; automatic replay suppressed');
       }
     },
-    { connection: getRedisConnection(), concurrency: 2 },
+    {
+      connection: getRedisConnection(),
+      concurrency: 2,
+      // A lost worker lock can follow a successful non-idempotent send.
+      // Fail stalled deliveries for inspection rather than replaying them.
+      maxStalledCount: 0,
+    },
   );
   worker.on('failed', (job) => {
     log.warn({ jobId: job?.id }, 'chat delivery requires attention');

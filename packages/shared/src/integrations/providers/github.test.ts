@@ -172,6 +172,29 @@ describe('githubProvider.handleOAuthCallback', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it.each([403, 429])('preserves quota pauses during OAuth exchange (%s)', async (status) => {
+    vi.useFakeTimers();
+    const now = new Date('2026-10-27T10:00:00Z');
+    vi.setSystemTime(now);
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
+        status,
+        headers: { 'retry-after': '120' },
+      }),
+    );
+    globalThis.fetch = fetchMock;
+    await expect(
+      githubProvider.handleOAuthCallback({
+        code: 'code',
+        redirectUri: 'https://timeline.test/api/integrations/github/callback',
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_rate_limited',
+      retryAt: new Date(now.getTime() + 120_000),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('stores GitHub App installation metadata for later installation-token sync', async () => {
     const fetchMock = vi.fn<typeof fetch>((input) => {
       const requestUrl =
@@ -3157,6 +3180,41 @@ describe('githubProvider.incrementalSync', () => {
         max_updated_at: secondSecond,
       },
     });
+  });
+
+  it('preserves quota pauses while refreshing installation tokens', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    process.env.GITHUB_APP_ID = '999';
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey
+      .export({ format: 'pem', type: 'pkcs1' })
+      .toString();
+    resetEnvForTests();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse({ message: 'secondary rate limit' }, 403, { 'retry-after': '120' }),
+      );
+    globalThis.fetch = fetchMock;
+    const ctx = {
+      writeEvents: vi.fn().mockResolvedValue([]),
+      recordAudit: vi.fn(),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      loadCursor: vi.fn().mockResolvedValue({}),
+      persistTokens: vi.fn(),
+    };
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: {
+          access_token: 'ghu_user',
+          github_app_installations: [{ id: '123', account_login: 'acme' }],
+        },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx,
+      }),
+    ).rejects.toMatchObject({ code: 'provider_rate_limited', retryAt: expect.any(Date) as Date });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
   });
 
   it('uses GitHub App installation tokens for repository syncs without persisting the transient bearer', async () => {
