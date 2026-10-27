@@ -90,6 +90,7 @@ interface SlackCursor {
   thread_versions?: Record<string, string>;
   history_complete?: boolean;
   full_walk?: boolean;
+  initialized?: boolean;
 }
 
 function buildAuthorizeUrl(input: {
@@ -277,7 +278,7 @@ async function syncChannel(
     if (!next.pending_threads?.length && !next.history_complete) {
       const oldest =
         next.history_oldest ??
-        (next.latest_ts && !next.backfill_before_ts && !next.full_walk
+        ((next.initialized || next.latest_ts) && !next.backfill_before_ts && !next.full_walk
           ? ((Date.now() - INCREMENTAL_LOOKBACK_MS) / 1000).toFixed(6)
           : undefined);
       const page = await slackCall<SlackHistoryResponse>(token, 'conversations.history', {
@@ -333,6 +334,7 @@ async function syncChannel(
     }
     const pending = (next.pending_threads?.length ?? 0) > 0 || Boolean(next.history_page);
     if (!pending) {
+      next.initialized = true;
       delete next.full_walk;
       delete next.history_complete;
       delete next.history_oldest;
@@ -363,6 +365,9 @@ async function syncSlackResources(
   const continuations: SyncContinuation[] = [];
   for (const selection of selections.filter((item) => item.kind === 'slack.channel')) {
     const cursor = (await ctx.loadCursor(`slack.channel:${selection.externalId}`)) as SlackCursor;
+    // A migration-paused initial import can resume via the scheduled worker.
+    // Keep its unbounded initial window stable across all continuation pages.
+    if (!cursor.initialized && !cursor.latest_ts) cursor.full_walk = true;
     if (full && !cursor.full_walk && !cursor.history_page && !cursor.pending_threads?.length) {
       cursor.full_walk = true;
       delete cursor.history_oldest;

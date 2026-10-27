@@ -11,8 +11,9 @@ import {
 } from '@timeline/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import * as secrets from '#src/crypto/secrets.js';
 import {
   adminRecordConnectionAttention,
   adminReconcileExpiringWebhookSubscriptions,
@@ -73,6 +74,7 @@ describe('webhook delivery persistence', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await pg.close();
   });
 
@@ -218,7 +220,10 @@ describe('webhook delivery persistence', () => {
     ).rejects.toThrow();
   });
 
-  it('marks expired manual Drive channels as webhook-degraded while reconciliation remains available', async () => {
+  it('marks failed Drive channel renewals as webhook-degraded while reconciliation remains available', async () => {
+    vi.spyOn(secrets, 'decryptJson').mockImplementation(() => {
+      throw new Error('invalid_subscription_credentials');
+    });
     await db.insert(providerConnections).values({
       id: DRIVE_CONNECTION_ID,
       ownerUserId: USER_ID,
@@ -268,7 +273,7 @@ describe('webhook delivery persistence', () => {
       .where(eq(integrationWebhookSubscriptions.integrationId, DRIVE_INTEGRATION_ID));
     expect(subscription).toMatchObject({
       status: 'failed',
-      lastError: 'webhook_subscription_expired',
+      lastError: 'invalid_subscription_credentials',
     });
     const [attention] = await db
       .select()
@@ -278,7 +283,7 @@ describe('webhook delivery persistence', () => {
       category: 'webhook_degraded',
       providerConnectionId: DRIVE_CONNECTION_ID,
     });
-    expect(attention?.summary).toContain('expired');
+    expect(attention?.summary).toContain('renewal failed: invalid_subscription_credentials');
     expect(attention?.summary).toContain('Reconciliation remains active');
   });
 });

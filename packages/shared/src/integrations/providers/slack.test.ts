@@ -496,6 +496,48 @@ describe('slackProvider', () => {
       retryAt: new Date('2026-06-28T01:02:00.000Z'),
     });
   });
+  it.each([false, true])(
+    'keeps resumed initial history unbounded, then bounds recovery (empty=%s)',
+    async (empty) => {
+      const fetch = vi
+        .fn<typeof globalThis.fetch>()
+        .mockResolvedValueOnce(
+          jsonResponse({
+            ok: true,
+            messages: empty ? [] : [{ ts: '100.000001', text: 'Old' }],
+            response_metadata: { next_cursor: 'page-2' },
+          }),
+        )
+        .mockImplementation(() =>
+          Promise.resolve(jsonResponse({ ok: true, messages: [], response_metadata: {} })),
+        );
+      vi.stubGlobal('fetch', fetch);
+      let saved: unknown = {};
+      const ctx = {
+        loadCursor: vi.fn(() => Promise.resolve(saved)),
+        saveCursor: vi.fn((_key: string, value: unknown) => {
+          saved = structuredClone(value);
+          return Promise.resolve();
+        }),
+        writeEvents: vi.fn().mockResolvedValue([]),
+        persistTokens: vi.fn(),
+        recordAudit: vi.fn(),
+      };
+      const input = {
+        integration: { externalAccountId: 'T1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'slack.channel', externalId: 'C1' }],
+        ctx,
+      };
+      for (let run = 0; run < 3; run++) await slackProvider.incrementalSync(input);
+      const params = fetch.mock.calls.map(([, init]) => new URLSearchParams(init?.body as string));
+      expect(params[0]?.has('oldest')).toBe(false);
+      expect(params[1]?.get('cursor')).toBe('page-2');
+      expect(params[1]?.has('oldest')).toBe(false);
+      expect(Number(params[2]?.get('oldest'))).toBeGreaterThan(Date.now() / 1000 - 49 * 3600);
+    },
+  );
+
   it('does not rehydrate unchanged threads during daily recovery', async () => {
     const now = Date.now();
     const ts = ((now - 3600_000) / 1000).toFixed(6);

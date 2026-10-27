@@ -749,6 +749,28 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it.each(['google_drive', 'linear'] as const)(
+    'preserves all %s selections when advancing a shared cursor',
+    async (provider) => {
+      fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider });
+      const kind = provider === 'linear' ? 'linear.team' : 'drive.folder';
+      const selections = [
+        { kind, externalId: 'complete' },
+        { kind, externalId: 'pending' },
+      ];
+      fakes.adminListSelections.mockResolvedValue(selections);
+      fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+        Promise.resolve(
+          resource === 'sync.recovery'
+            ? { completed: { [`${kind}:complete`]: new Date().toISOString() } }
+            : {},
+        ),
+      );
+      await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+      expect(fakes.incrementalSync).toHaveBeenCalledWith(expect.objectContaining({ selections }));
+    },
+  );
+
   it('does not suppress push wake-ups after a successful scheduled recovery', async () => {
     fakes.adminListSelections.mockResolvedValue([
       { kind: 'github.repo', externalId: 'acme/app', label: 'App' },
@@ -1859,6 +1881,7 @@ describe('runOneIntegration attention classification', () => {
       'slack.channel:C123',
       {
         latest_ts: '1782000000.000100',
+        initialized: true,
         history_page: undefined,
         pending_threads: [],
         thread_versions: {},
@@ -1872,6 +1895,7 @@ describe('runOneIntegration attention classification', () => {
           resourceType: 'slack.channel:C123',
           cursor: {
             latest_ts: '1782000000.000100',
+            initialized: true,
             history_page: undefined,
             pending_threads: [],
             thread_versions: {},

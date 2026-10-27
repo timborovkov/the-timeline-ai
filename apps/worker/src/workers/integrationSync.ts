@@ -993,12 +993,17 @@ export async function runOneIntegration(
       triggeredBy === 'reconcile' &&
       integration.provider !== 'monday'
     ) {
-      selections = selections.filter((selection) => {
+      const dueSelections = selections.filter((selection) => {
         const at = completed[resourceKey(selection)];
         return (
           !at || !Number.isFinite(Date.parse(at)) || Date.now() - Date.parse(at) >= 24 * 3600_000
         );
       });
+      // These providers advance a shared feed/collection cursor. Filtering only
+      // some selections would consume changes for selections omitted from this run.
+      const sharedCursor =
+        integration.provider === 'google_drive' || integration.provider === 'linear';
+      if (!sharedCursor || dueSelections.length === 0) selections = dueSelections;
     }
     if (kind !== 'targeted' && selections.length > 1) {
       const rotation = (await ctx.loadCursor('sync.rotation')) as { offset?: number };
