@@ -1,6 +1,6 @@
 import { type Db } from '@timeline/db';
 import { childLogger, integrations as integrationsLib, queue } from '@timeline/shared';
-import { Worker, type Job } from 'bullmq';
+import { DelayedError, Worker, type Job } from 'bullmq';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -82,6 +82,7 @@ export async function processWebhookDeliveryJob(
   let processed = 0;
   let ignored = 0;
   const failures: string[] = [];
+  let retryAt: Date | undefined;
   if (!integrationsLib.isNativeProviderId(work.delivery.provider)) {
     await integrationsLib.markWebhookDeliveryStatus(
       deps.db,
@@ -137,6 +138,12 @@ export async function processWebhookDeliveryJob(
         await provider.handleWebhook({
           integration,
           payload: work.delivery.payload,
+          ...(integration.provider === 'slack'
+            ? {
+                tokens:
+                  (await integrationsLib.adminDecryptIntegrationTokens(deps.db, integration)) ?? {},
+              }
+            : {}),
         }),
       );
       const { events } = normalized;
@@ -148,7 +155,9 @@ export async function processWebhookDeliveryJob(
                 ? [task]
                 : [catchUpTask(integration)],
             )
-          : normalized.syncTaskDisposition === 'handled'
+          : normalized.syncTaskDisposition === 'handled' ||
+              work.delivery.provider === 'slack' ||
+              work.delivery.provider === 'linear'
             ? []
             : [catchUpTask(integration)];
       if (events.length > 0) {
@@ -184,6 +193,13 @@ export async function processWebhookDeliveryJob(
       });
       processed += 1;
     } catch (err) {
+      if (
+        err instanceof Error &&
+        'retryAt' in err &&
+        err.retryAt instanceof Date &&
+        (!retryAt || err.retryAt > retryAt)
+      )
+        retryAt = err.retryAt;
       const message = errorMessage(err).slice(0, 500);
       failures.push(`${target.integrationId}: ${message}`);
       await integrationsLib.markWebhookDeliveryTargetFailed(deps.db, target.id, message);
@@ -193,7 +209,10 @@ export async function processWebhookDeliveryJob(
   if (failures.length > 0) {
     const message = failures.join('; ').slice(0, 500);
     await integrationsLib.markWebhookDeliveryStatus(deps.db, work.delivery.id, 'failed', message);
-    throw new Error(`webhook_delivery_failed: ${message}`);
+    throw Object.assign(
+      new Error(`webhook_delivery_failed: ${message}`),
+      retryAt ? { retryAt } : {},
+    );
   }
 
   await integrationsLib.markWebhookDeliveryStatus(
@@ -257,9 +276,18 @@ export function startWebhookDeliveryWorker(
 ): Worker<queue.WebhookDeliveryJobData> {
   const worker = new Worker<queue.WebhookDeliveryJobData>(
     queue.QUEUE_NAMES.webhookDelivery,
-    async (job: Job<queue.WebhookDeliveryJobData>) => {
+    async (job: Job<queue.WebhookDeliveryJobData>, token?: string) => {
       const startedAt = Date.now();
-      const result = await processWebhookDeliveryJob(deps, job.data);
+      let result: WebhookDeliveryProcessResult;
+      try {
+        result = await processWebhookDeliveryJob(deps, job.data);
+      } catch (error) {
+        if (error instanceof Error && 'retryAt' in error && error.retryAt instanceof Date) {
+          await job.moveToDelayed(Math.max(Date.now() + 1000, error.retryAt.getTime()), token);
+          throw new DelayedError();
+        }
+        throw error;
+      }
       log.info(
         { jobId: job.id, ...result, durationMs: Date.now() - startedAt },
         'webhook delivery job complete',

@@ -58,13 +58,13 @@ async function reconcileWebhooksBestEffort(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (
-      integration.provider === 'monday' &&
+      (integration.provider === 'monday' || integration.provider === 'google_drive') &&
       err instanceof integrationsLib.ProviderRateLimitError
     ) {
       await scope.integrations.recordError(integration.id, message);
       await integrationsLib.adminRecordPendingIntegrationSyncContinuations(db, integration.id, [
         {
-          resourceType: 'monday.webhook',
+          resourceType: `${integration.provider}.webhook`,
           externalId: integration.id,
           retryAt: err.retryAt,
         },

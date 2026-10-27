@@ -81,7 +81,7 @@ describe('MCP health worker', () => {
     await pg.close();
   });
 
-  it('checks enabled servers, persists healthy state, and invalidates team and personal caches', async () => {
+  it('checks enabled servers, persists healthy state, without invalidating unrelated caches', async () => {
     await insertServer(db, { id: TEAM_SERVER_ID, lastError: 'stale error' });
     await insertServer(db, { id: PERSONAL_SERVER_ID, userId: USER_ID });
     await insertServer(db, { id: DISABLED_SERVER_ID, enabled: false });
@@ -94,8 +94,10 @@ describe('MCP health worker', () => {
     });
 
     expect(manager.discoverTools).toHaveBeenCalledTimes(2);
-    expect(manager.invalidate).toHaveBeenCalledWith(TEAM_ID);
-    expect(manager.invalidate).toHaveBeenCalledWith(`${TEAM_ID}:${USER_ID}`);
+    expect(manager.invalidate).not.toHaveBeenCalled();
+    await expect(processMcpHealthTick({ db: db as never as Db, manager })).resolves.toMatchObject({
+      checked: 0,
+    });
     const teamServer = await loadServer(db, TEAM_SERVER_ID);
     expect(teamServer.lastConnectedAt).toBeInstanceOf(Date);
     expect(teamServer.lastError).toBeNull();

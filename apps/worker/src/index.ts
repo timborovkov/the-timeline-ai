@@ -9,6 +9,7 @@ import {
 } from '#src/document-ingestion/full-worker-extract-gate.js';
 import { captureWorkerException, flushWorkerSentry, initWorkerSentry } from '#src/monitoring.js';
 import { startCalendarRecurrenceWorker } from '#src/workers/calendarRecurrence.js';
+import { startChatDeliveryWorker } from '#src/workers/chatDelivery.js';
 import { startConversationAgentWorker } from '#src/workers/conversationAgent.js';
 import { startDailyDigestWorker } from '#src/workers/dailyDigest.js';
 import { startDocumentExtractWorker } from '#src/workers/documentExtract.js';
@@ -71,6 +72,7 @@ async function main(): Promise<void> {
   const embedWorker = startEmbedWorker({ db });
   const overdueWorker = startOverdueWorker({ db });
   const calendarRecurrenceWorker = startCalendarRecurrenceWorker({ db });
+  const chatDeliveryWorker = startChatDeliveryWorker();
   const conversationAgentWorker = startConversationAgentWorker({ db });
   const documentExtractWorker = documentExtractEnabled ? startDocumentExtractWorker({ db }) : null;
   const meetingFinalizeWorker = startMeetingFinalizeWorker({ db });
@@ -117,6 +119,7 @@ async function main(): Promise<void> {
         overdueWorker.close(),
         calendarRecurrenceWorker.close(),
         conversationAgentWorker.close(),
+        chatDeliveryWorker.close(),
         documentExtractWorker?.close(),
         meetingFinalizeWorker.close(),
         meetingSchedulerWorker.close(),
@@ -138,6 +141,7 @@ async function main(): Promise<void> {
       await queue.closeOverdueScanQueue();
       await queue.closeCalendarRecurrenceQueue();
       await queue.closeConversationAgentQueue();
+      await queue.closeChatDeliveryQueue();
       if (documentExtractEnabled) {
         await queue.closeDocumentExtractQueue();
       }

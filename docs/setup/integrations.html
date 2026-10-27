@@ -390,8 +390,10 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
         <code>/ask</code>, and <code>/timeline join</code>. Native workspace ingestion uses the same
         Slack app credentials but syncs selected channels as a passive integration with
         <code>source='integration'</code> and <code>provider='slack'</code>. Native Slack workspace
-        ingestion is reconciliation-first for v1; the <code>/api/slack/events</code> route remains
-        dedicated to interactive Slack conversations and capture.
+        ingestion shares the signed <code>/api/slack/events</code> route with interactive
+        conversations. Native deliveries are persisted before processing and restricted to the
+        verified app, workspace, and selected channel. Existing native connections pause until
+        migration is verified.
       </p>
       <ol>
         <li>
@@ -417,8 +419,13 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
           selected public or private channel requires the bot to be present before Slack will expose
           history. The native picker does not currently preserve Slack's membership flag, so invite
           the bot even when a public channel appears in the list. The worker reconciles selected
-          channels hourly and honors Slack Web API <code>Retry-After</code> responses as shared
-          provider budget pauses instead of retrying per Timeline team.
+          channels once daily over a 48-hour recovery window. Subscribe to
+          <code>message.channels</code>, <code>message.groups</code>, <code>reaction_added</code>,
+          and <code>reaction_removed</code>, reinstall if permissions changed, then send a test
+          message in a selected channel to activate native capture. OAuth alone does not activate
+          it. History and reply reads use 15-record pages and conservative one-request-per-minute
+          pacing per workspace/app/method. Old missed edits or replies require manual resync, which
+          uses the same quota controls.
         </li>
       </ol>
 
@@ -586,8 +593,8 @@ SENTRY_INTEGRATION_CLIENT_SECRET=...</code></pre>
         toolset on every <code>/api/chat</code> request. Outputs are fenced through
         <code>fenceExternalContent</code> so the agent treats them as untrusted data per Rule 8 of
         the system prompt. A background <code>mcp-health</code> worker pings every enabled server on
-        a 5-minute schedule and surfaces <code>last_connected_at</code> / <code>last_error</code> in
-        the UI.
+        a daily per-server schedule with 1, 2, 4, 8, then 24-hour failure backoff and surfaces
+        <code>last_connected_at</code> / <code>last_error</code> in the UI.
       </p>
 
       <h2 id="timeline-as-mcp">Timeline as an MCP server (outbound)</h2>
@@ -941,7 +948,7 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         fallback. A successfully written Monday update/reply deletion is explicitly terminal for
         that delivery and does not enqueue a broad catch-up; genuinely unhandled deliveries retain
         the fallback. Google Drive can still use webhooks as wake-up signals; GitHub, Linear,
-        Monday.com, and Sentry now route protected deliveries through the shared delivery worker.
+        Monday.com, Slack, and Sentry route protected deliveries through the shared delivery worker.
         GitHub repo deliveries, Monday item/board deliveries, and Sentry project deliveries hydrate
         only the affected selected resource. Sentry issue alert, issue lifecycle, and release
         payloads can also write direct events before the reconciliation pass. Provider rate-limit
@@ -950,14 +957,42 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         until the provider retry time rather than retrying per Timeline team. GitHub selected repos
         and organization scopes can accept signed webhook deliveries, while slow reconciliation
         still covers missed events and backfill. GitHub background sync skips active provider
-        rate-limit pauses, waits at least an hour after the previous successful sync, and caches
+        rate-limit pauses, waits 24 hours after the previous successful sync, and caches
         organization repo expansion for a short window so org-wide selections do not re-list every
         repository on every tick. GitHub repo cursors are also split by surface — PRs, issues, issue
         comments, inline PR review comments, commits, releases, and workflow runs — so one failing
-        or noisy surface does not block cursor advancement for the others. Releases and workflow
-        runs poll less often than high-signal PR, issue, and commit surfaces. MCP servers are
-        monitored by the MCP health worker, but that health check only validates connectivity and
-        cached tools.
+        or noisy surface does not block cursor advancement for the others. Daily reconciliation
+        retains independent checkpoints for releases, workflow runs, and other surfaces. MCP servers
+        are monitored by the MCP health worker, but that health check only validates connectivity
+        and cached tools.
+      </p>
+      <p>
+        Routine recovery is daily for all six native providers. Webhooks remain the prompt update
+        path; quota pauses can delay recovery beyond 24 hours. Drive renews change-notification
+        watches and retains its change token. Linear checkpoints collection pages with timestamp
+        overlap. Sentry checkpoints issue and release pages and stops release enumeration at the
+        saved boundary. Explicit backfill and resync use the same limits. Monday retains its
+        100-call UTC daily cap; other providers use measured usage and provider-reported cooldowns
+        rather than a new universal cap.
+      </p>
+      <p>
+        With Redis configured, the shared request guard coordinates concurrent requests and
+        cooldowns across workers and web processes. Logs contain provider, request purpose,
+        operation, hashed quota identity, outcome/status, duration, and numeric remaining capacity,
+        never tokens or content. Timeline request counters are separate from the provider's
+        remaining capacity, which other apps can consume. Slack and Telegram final answers and
+        command responses respect rate-limit retry times through durable delivery; queued Telegram
+        edits coalesce to the latest version, and final sends remain distinct; an ambiguous send
+        timeout is not automatically replayed.
+      </p>
+      <p>
+        Operators can roll out providers independently with comma-separated
+        <code>INTEGRATION_REQUEST_GOVERNOR_PROVIDERS</code> and
+        <code>INTEGRATION_RECOVERY_PROVIDERS</code>. Both default to all six native providers; an
+        empty list disables that layer. Disabling recovery preserves cursors and never restores
+        legacy Slack polling. Monday's existing daily cap remains active independently. Compare
+        request counts, quota pauses, pending work, and last successful sync before and after each
+        rollout.
       </p>
       <p>
         GitHub commit sync keeps a high-water SHA per repo. If a repo has more than the configured

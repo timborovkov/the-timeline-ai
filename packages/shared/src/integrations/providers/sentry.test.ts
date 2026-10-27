@@ -186,7 +186,7 @@ describe('sentryProvider', () => {
       ctx,
     });
 
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.eventType)).toEqual(['issue.updated', 'release.created']);
     expect(events[0]?.dedupKey).toBe('sentry:issue:issue-1:open');
     expect(events[1]?.dedupKey).toBe('sentry:release:acme:web:web@1.2.3:created');
@@ -359,7 +359,7 @@ describe('sentryProvider', () => {
       ctx,
     });
 
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.externalObjectId)).toEqual(['issue-1', 'issue-2']);
     expect(ctx.saveCursor).toHaveBeenCalledWith(
       'sentry.project:acme/web',
@@ -391,14 +391,14 @@ describe('sentryProvider', () => {
       recordAudit: vi.fn(),
     };
 
-    await sentryProvider.backfill({
+    await sentryProvider.incrementalSync({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'sentry.project', externalId: 'acme/web' }],
       ctx,
     });
 
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.externalObjectId)).toEqual(['acme/web/release/web@1.2.4']);
     expect(ctx.saveCursor).toHaveBeenCalledWith(
       'sentry.project:acme/web',
@@ -447,7 +447,7 @@ describe('sentryProvider', () => {
     });
 
     expect(ctx.writeEvents).toHaveBeenCalledTimes(1);
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.externalObjectId)).toEqual(['issue-1']);
     expect(ctx.saveCursor).toHaveBeenCalledWith(
       'sentry.project:acme/web',
@@ -501,10 +501,10 @@ describe('sentryProvider', () => {
     expect(externalFetchCalls).toHaveBeenCalledWith(
       'https://sentry.io/api/0/organizations/acme/projects/',
       expect.objectContaining({ headers: { authorization: 'Bearer token' } }),
-      expect.objectContaining({ retries: 1 }),
+      expect.objectContaining({ retries: 0 }),
     );
     expect(ctx.writeEvents).toHaveBeenCalledTimes(1);
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.externalObjectId)).toEqual(['issue-1']);
   });
 

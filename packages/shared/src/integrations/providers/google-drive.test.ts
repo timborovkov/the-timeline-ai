@@ -56,6 +56,26 @@ describe('googleDriveProvider', () => {
     vi.unstubAllGlobals();
   });
 
+  it('propagates a resource-picker quota pause instead of returning an incomplete success', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(
+            { error: 'rate limited' },
+            { status: 429, headers: { 'retry-after': '120' } },
+          ),
+        ),
+    );
+    await expect(
+      googleDriveProvider.listSyncableResources({ id: 'i' } as never, {
+        access_token: 'token',
+        expires_at: Date.now() + 600_000,
+      }),
+    ).rejects.toMatchObject({ provider: 'google_drive', retryAfterSeconds: 120 });
+  });
+
   it('builds a Google OAuth authorize URL', async () => {
     const { authorizeUrl } = await googleDriveProvider.startOAuth({
       teamId: 'team-1',
@@ -328,7 +348,7 @@ describe('googleDriveProvider', () => {
     const downloadCall = externalFetchMock.mock.calls.find(
       ([input]) => requestUrl(input).searchParams.get('alt') === 'media',
     );
-    expect(downloadCall?.[2]).toEqual({ maxResponseBytes: 20 * 1024 * 1024 });
+    expect(downloadCall?.[2]).toMatchObject({ maxResponseBytes: 20 * 1024 * 1024 });
   });
 
   it('audits Drive bodies that exceed the harvest cap as skipped instead of failed', async () => {

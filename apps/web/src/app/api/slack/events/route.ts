@@ -1,6 +1,8 @@
 import * as email from '@timeline/shared/email';
 import { getEnv } from '@timeline/shared/env';
+import { acceptSignedSlackNativeEvent } from '@timeline/shared/integrations';
 import { childLogger } from '@timeline/shared/logger';
+import { enqueueWebhookDeliveryJob } from '@timeline/shared/queue';
 import * as rateLimit from '@timeline/shared/rate-limit';
 import * as slack from '@timeline/shared/slack';
 
@@ -76,6 +78,14 @@ export async function POST(req: Request): Promise<Response> {
       tags: { reason: 'invalid_json' },
     });
     return Response.json({ ok: false, reason: 'invalid_json' }, { status: 200 });
+  }
+
+  try {
+    const deliveryId = await acceptSignedSlackNativeEvent(db, payload);
+    if (deliveryId) await enqueueWebhookDeliveryJob({ deliveryId });
+  } catch (err) {
+    reportCaughtError(err, { surface: 'background', operation: 'slack_native_delivery' });
+    return Response.json({ ok: false, reason: 'delivery_deferred' }, { status: 503 });
   }
 
   const actor = extractSlackActor(payload);

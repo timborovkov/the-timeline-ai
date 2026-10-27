@@ -67,4 +67,26 @@ describe('HttpTelegramApi file downloads', () => {
       }),
     );
   });
+  it('preserves Telegram retry_after and marks ambiguous sends without retrying', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ parameters: { retry_after: 120 } }), { status: 429 }),
+      )
+      .mockRejectedValueOnce(new Error('socket closed'));
+    vi.stubGlobal('fetch', fetch);
+    const api = new HttpTelegramApi('token');
+    const before = Date.now();
+    const error = await api
+      .sendMessage({ chat_id: 1, text: 'hello' })
+      .catch((value: unknown) => value);
+    expect(error).toHaveProperty('retryAt');
+    if (!(error instanceof Error) || !('retryAt' in error) || !(error.retryAt instanceof Date))
+      throw new Error('missing retry time');
+    expect(error.retryAt.getTime()).toBeGreaterThanOrEqual(before + 120_000);
+    await expect(api.sendMessage({ chat_id: 1, text: 'hello' })).rejects.toMatchObject({
+      code: 'delivery_outcome_unknown',
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });

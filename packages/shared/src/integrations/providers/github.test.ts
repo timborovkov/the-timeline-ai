@@ -15,6 +15,7 @@ import type { SyncContext } from '#src/integrations/index.js';
 
 import { resetEnvForTests } from '#src/env.js';
 import { GithubRateLimitError, githubProvider } from '#src/integrations/providers/github.js';
+import { ProviderRateLimitError } from '#src/integrations/types.js';
 
 const ENV_BACKUP = { ...process.env };
 
@@ -153,6 +154,8 @@ describe('githubProvider.handleOAuthCallback', () => {
       ),
     );
     globalThis.fetch = fetchMock;
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.RECALL_API_KEY;
     process.env.NODE_ENV = 'production';
     process.env.E2E_DETERMINISTIC_GITHUB_OAUTH = '1';
     process.env.AUTH_SECRET = 'test-auth-secret-at-least-sixteen-characters';
@@ -1704,6 +1707,46 @@ describe('githubProvider.incrementalSync', () => {
     globalThis.fetch = originalFetch;
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('propagates shared quota pauses instead of converting them to partial sync failures', async () => {
+    const error = new ProviderRateLimitError({
+      provider: 'github',
+      retryAt: new Date(Date.now() + 60_000),
+      retryAfterSeconds: 60,
+      reason: 'shared_request_budget',
+      scope: 'requests',
+    });
+    globalThis.fetch = vi.fn<typeof fetch>((input) => {
+      const url = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      );
+      if (url.pathname === '/repos/acme/app')
+        return Promise.resolve(
+          Response.json({
+            id: 1,
+            full_name: 'acme/app',
+            default_branch: 'main',
+            owner: { login: 'acme' },
+          }),
+        );
+      return Promise.reject(error);
+    });
+    const ctx: SyncContext = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn(),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx,
+      }),
+    ).rejects.toBe(error);
   });
 
   function jsonResponse(

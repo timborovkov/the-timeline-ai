@@ -96,7 +96,7 @@ beforeEach(() => {
 });
 
 describe('webhook delivery worker', () => {
-  it('normalizes each pending target, writes events, and enqueues catch-up sync', async () => {
+  it('normalizes direct Linear deliveries without enqueuing a redundant catch-up', async () => {
     fakes.loadWebhookDeliveryWork.mockResolvedValueOnce({
       delivery,
       targets: [{ target, integration }],
@@ -128,12 +128,7 @@ describe('webhook delivery worker', () => {
         },
       ],
     });
-    expect(fakes.enqueueIntegrationSyncJob).toHaveBeenCalledWith({
-      kind: 'incremental',
-      integrationId: INTEGRATION_ID,
-      teamId: TEAM_ID,
-      triggeredBy: 'webhook',
-    });
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
     expect(fakes.markWebhookDeliveryTargetProcessed).toHaveBeenCalledWith({}, TARGET_ID, {
       eventDedupKeys: ['linear:issue:issue-1:2026-06-28T00:00:00Z'],
     });

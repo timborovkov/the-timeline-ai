@@ -4,6 +4,7 @@ import { resetEnvForTests } from '@timeline/shared/env';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as EmailModule from '@timeline/shared/email';
+import type * as QueueModule from '@timeline/shared/queue';
 import type * as RateLimitModule from '@timeline/shared/rate-limit';
 import type * as SlackModule from '@timeline/shared/slack';
 
@@ -11,12 +12,22 @@ const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
   handleSlackEnvelope: vi.fn(),
+  acceptSignedSlackNativeEvent: vi.fn().mockResolvedValue(null),
+  enqueueWebhookDeliveryJob: vi.fn().mockResolvedValue(undefined),
   slackIngestDeps: vi.fn(),
   reportCaughtError: vi.fn(),
   reportHandledEvent: vi.fn(),
   extract: { enqueueExtract: vi.fn() },
   embed: { enqueueEmbed: vi.fn() },
   suggestions: { enqueueSuggestion: vi.fn() },
+}));
+
+vi.mock('@timeline/shared/integrations', () => ({
+  acceptSignedSlackNativeEvent: fakes.acceptSignedSlackNativeEvent,
+}));
+vi.mock('@timeline/shared/queue', async (importOriginal) => ({
+  ...(await importOriginal<typeof QueueModule>()),
+  enqueueWebhookDeliveryJob: fakes.enqueueWebhookDeliveryJob,
 }));
 
 vi.mock('@/lib/db', () => ({ db: {} }));

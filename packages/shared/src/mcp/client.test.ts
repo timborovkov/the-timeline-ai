@@ -7,6 +7,36 @@ vi.mock('#src/http/external-fetch.js', () => ({ externalFetch }));
 import { McpClientManager } from '#src/mcp/client.js';
 
 describe('McpClientManager Timeline-agent delegation', () => {
+  it('reuses saved discovery during the daily cooldown without contacting any server', async () => {
+    externalFetch.mockClear();
+    const manager = new McpClientManager();
+    const tool = {
+      name: 'search',
+      description: 'Search',
+      inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+    };
+    const server = {
+      nextHealthCheckAt: new Date(Date.now() + 3600_000),
+      lastError: null,
+      cachedTools: [tool, { name: 'disabled' }],
+      disabledTools: ['disabled'],
+    };
+    await expect(manager.discoverTools({} as never, server as never)).resolves.toEqual([tool]);
+    expect(externalFetch).not.toHaveBeenCalled();
+  });
+
+  it('honors a failed health cooldown without another discovery request', async () => {
+    externalFetch.mockClear();
+    const retryAt = new Date(Date.now() + 3600_000);
+    await expect(
+      new McpClientManager().discoverTools(
+        {} as never,
+        { nextHealthCheckAt: retryAt, lastError: 'quota exhausted' } as never,
+      ),
+    ).rejects.toMatchObject({ retryAt });
+    expect(externalFetch).not.toHaveBeenCalled();
+  });
+
   it('propagates delegation depth and cancellation to custom MCP calls', async () => {
     const serverId = '11111111-1111-4111-8111-111111111111';
     const namespacedName = 'mcp__11111111111141118111111111111111__ask_agent';

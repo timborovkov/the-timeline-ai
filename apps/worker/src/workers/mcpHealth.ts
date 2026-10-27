@@ -1,7 +1,7 @@
 import { type Db, mcpServers } from '@timeline/db';
 import { childLogger, mcp, queue } from '@timeline/shared';
 import { Worker, type Job } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, lte, or } from 'drizzle-orm';
 
 import { captureWorkerJobFailure } from '#src/monitoring.js';
 
@@ -28,21 +28,22 @@ export async function pingMcpServer(
     'discoverTools' | 'invalidate'
   > = mcp.getMcpManager(),
 ): Promise<{ ok: boolean; error?: string }> {
-  // Reuse the existing manager's discoverTools handshake — it already does
-  // the initialize + tools/list round trip. We invalidate by team after
-  // fetching the row so the next chat turn picks up fresh tool state instead of
-  // serving a stale 5-min-cached list. (The manager keys its cache on
-  // teamId or teamId:userId — never on serverId.)
   const rows = await db.select().from(mcpServers).where(eq(mcpServers.id, serverId)).limit(1);
   const row = rows[0];
   if (!row) return { ok: false, error: 'not_found' };
-  manager.invalidate(row.teamId);
-  if (row.userId) manager.invalidate(`${row.teamId}:${row.userId}`);
+  if (row.nextHealthCheckAt && row.nextHealthCheckAt.getTime() > Date.now()) {
+    return { ok: !row.lastError, ...(row.lastError ? { error: row.lastError } : {}) };
+  }
   const urlError = mcp.validateMcpUrl(row.url);
   if (urlError) {
     await db
       .update(mcpServers)
-      .set({ lastError: urlError, updatedAt: new Date() })
+      .set({
+        lastError: urlError,
+        updatedAt: new Date(),
+        healthFailures: row.healthFailures + 1,
+        nextHealthCheckAt: new Date(Date.now() + 24 * 3600_000),
+      })
       .where(eq(mcpServers.id, serverId));
     return { ok: false, error: urlError };
   }
@@ -61,6 +62,8 @@ export async function pingMcpServer(
       .update(mcpServers)
       .set({
         lastConnectedAt: new Date(),
+        nextHealthCheckAt: new Date(Date.now() + 24 * 3600_000),
+        healthFailures: 0,
         lastError: null,
         updatedAt: new Date(),
       })
@@ -75,7 +78,19 @@ export async function pingMcpServer(
           : String(err);
     await db
       .update(mcpServers)
-      .set({ lastError: error, updatedAt: new Date() })
+      .set({
+        lastError: error,
+        updatedAt: new Date(),
+        healthFailures: row.healthFailures + 1,
+        nextHealthCheckAt: new Date(
+          Math.max(
+            Date.now() + ([1, 2, 4, 8, 24][Math.min(row.healthFailures, 4)] ?? 24) * 3600_000,
+            err instanceof Error && 'retryAt' in err && err.retryAt instanceof Date
+              ? err.retryAt.getTime()
+              : 0,
+          ),
+        ),
+      })
       .where(eq(mcpServers.id, serverId));
     return { ok: false, error };
   } finally {
@@ -90,7 +105,12 @@ export async function processMcpHealthTick(deps: HealthDeps): Promise<HealthResu
   const rows = await deps.db
     .select({ id: mcpServers.id })
     .from(mcpServers)
-    .where(eq(mcpServers.enabled, true));
+    .where(
+      and(
+        eq(mcpServers.enabled, true),
+        or(isNull(mcpServers.nextHealthCheckAt), lte(mcpServers.nextHealthCheckAt, new Date())),
+      ),
+    );
   let healthy = 0;
   let failed = 0;
   const manager = deps.manager ?? mcp.getMcpManager();

@@ -513,6 +513,11 @@ and minimizes production trace/profile sampling. Exception text can still
 contain unexpected customer data, so deployed configuration, sample events,
 and scrubbers require review before an **Enforced** or **Verified** claim.
 
+Integration API usage counters use hashed quota identities and expire after two days in Redis.
+Request diagnostics record provider, operation/purpose, status, duration, and numeric remaining
+capacity; hashing does not make account metadata anonymous. Provider capacity is distinct from
+Timeline usage.
+
 Application logs must not include customer-content bodies, prompts, outputs,
 transcripts, document text, authorization/cookie headers, signed URLs, tokens,
 or encryption material. Log identifiers, operation, status, duration, counts,
@@ -836,3 +841,5 @@ Cookies and similar technologies notice, Terms, help, guides, README, sales
 material, and security questionnaires against section 16 and the open-gap
 table. Completion means every modified claim has current support or has been
 removed.
+
+Deferred Slack/Telegram command delivery stores an AES-256-GCM encrypted payload in the existing Redis queue infrastructure, including the credential needed to complete that authorized send. Successful jobs are removed immediately; failed jobs expire after 24 hours. Pending quota-delayed sends remain until eligible. Delivery logs contain job IDs, never message contents or credentials. Agent answers retain their existing conversation-turn delivery path.

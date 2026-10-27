@@ -33,6 +33,7 @@ const pgliteTests = [
   'src/integrations/provider-budget.test.ts',
   'src/integrations/scope.test.ts',
   'src/integrations/webhooks.test.ts',
+  'src/integrations/slack-ingress.test.ts',
   'src/job-recovery/index.test.ts',
   'src/mcp-server/handler.test.ts',
   'src/mcp-server/oauth.test.ts',

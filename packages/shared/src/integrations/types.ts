@@ -191,6 +191,14 @@ export interface SyncContinuation {
   continuationAttempt?: number;
 }
 
+export class ProviderSyncDeferredError extends Error {
+  readonly syncContinuations: SyncContinuation[];
+  constructor(continuations: SyncContinuation[]) {
+    super('provider_sync_deferred');
+    this.syncContinuations = continuations;
+  }
+}
+
 export interface SyncResult {
   partialFailures?: SyncPartialFailure[];
   /** Provider resources that must be resumed promptly before their page cursor expires. */
@@ -220,8 +228,7 @@ export function isNativeProviderId(provider: string): provider is NativeProvider
   return (NATIVE_PROVIDER_IDS as readonly string[]).includes(provider);
 }
 
-const MINUTE_MS = 60 * 1000;
-const HOUR_MS = 60 * MINUTE_MS;
+const HOUR_MS = 60 * 60_000;
 
 export interface ProviderSyncPolicy {
   reconciliationIntervalMs: number;
@@ -234,15 +241,15 @@ export interface ProviderSyncPolicy {
 
 export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy> = {
   google_drive: {
-    reconciliationIntervalMs: 15 * MINUTE_MS,
+    reconciliationIntervalMs: 24 * HOUR_MS,
     ingestionPosture: 'webhook_wakeup',
     budgetScopes: ['requests'],
     supportsWebhookIngress: true,
     supportsTargetedSync: false,
-    provisioningModel: 'manual',
+    provisioningModel: 'provider_managed',
   },
   linear: {
-    reconciliationIntervalMs: 6 * HOUR_MS,
+    reconciliationIntervalMs: 24 * HOUR_MS,
     ingestionPosture: 'webhook_first',
     budgetScopes: ['requests'],
     supportsWebhookIngress: true,
@@ -250,7 +257,7 @@ export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy
     provisioningModel: 'manual',
   },
   github: {
-    reconciliationIntervalMs: 6 * HOUR_MS,
+    reconciliationIntervalMs: 24 * HOUR_MS,
     ingestionPosture: 'webhook_first',
     budgetScopes: ['requests', 'primary', 'secondary'],
     supportsWebhookIngress: true,
@@ -266,12 +273,12 @@ export const PROVIDER_SYNC_POLICIES: Record<NativeProviderId, ProviderSyncPolicy
     provisioningModel: 'provider_managed',
   },
   slack: {
-    reconciliationIntervalMs: HOUR_MS,
-    ingestionPosture: 'reconciliation_first',
+    reconciliationIntervalMs: 24 * HOUR_MS,
+    ingestionPosture: 'webhook_first',
     budgetScopes: ['requests', 'web_api'],
-    supportsWebhookIngress: false,
+    supportsWebhookIngress: true,
     supportsTargetedSync: false,
-    provisioningModel: 'none',
+    provisioningModel: 'manual',
   },
   sentry: {
     reconciliationIntervalMs: 24 * HOUR_MS,
@@ -656,6 +663,7 @@ export interface IntegrationProvider {
    * right place.
    */
   backfill(input: {
+    purpose?: 'backfill' | 'resync';
     integration: IntegrationRow;
     tokens: unknown;
     selections: { kind: string; externalId: string }[];
@@ -665,6 +673,7 @@ export interface IntegrationProvider {
    * Delta sync since the last cursor. Same idempotency rules.
    */
   incrementalSync(input: {
+    purpose?: 'recovery' | 'webhook';
     integration: IntegrationRow;
     tokens: unknown;
     selections: { kind: string; externalId: string }[];
@@ -677,6 +686,7 @@ export interface IntegrationProvider {
    * shapes the payload.
    */
   handleWebhook?(input: {
+    tokens?: Record<string, unknown>;
     integration: IntegrationRow;
     payload: unknown;
   }): Promise<WebhookHandleResult>;
