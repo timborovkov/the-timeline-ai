@@ -185,11 +185,11 @@ Minimum deterministic tests:
 Run at least:
 
 ```bash
-pnpm validate
-pnpm run doctor
-pnpm test:dist-imports
-pnpm test:eval
-pnpm canary:integrations -- --env-file=<env-file>
+bun run validate
+bun run doctor
+bun run test:dist-imports
+bun run test:eval
+bun run canary:integrations -- --env-file=<env-file>
 ```
 
 ## 6. Update Docs And Canary

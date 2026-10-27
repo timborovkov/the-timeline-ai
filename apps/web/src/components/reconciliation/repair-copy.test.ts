@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { repairFailureCopy } from '@/components/reconciliation/repair-copy';
-
 describe('repairFailureCopy', () => {
   it('names missing evidence without release-gate jargon', () => {
     const copy = repairFailureCopy({

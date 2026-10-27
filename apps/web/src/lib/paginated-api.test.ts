@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { readJson } from '@/lib/paginated-api';
-
 describe('readJson', () => {
   it('routes a stale API session through the legal gate to an app page', async () => {
     const navigate = vi.fn();

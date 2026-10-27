@@ -1,10 +1,8 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
-
-import { DEFAULT_TIMEZONE } from '@/lib/timezones';
-
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   cookies: vi.fn(),
@@ -38,42 +36,90 @@ const selectResults = [
 ];
 const select = vi.fn(() => queryResult(selectResults.shift() ?? []));
 
-vi.mock('next/headers', () => ({ cookies: fakes.cookies }));
-vi.mock('next/navigation', () => ({
-  redirect: (path: string) => {
-    throw new Error(`redirect:${path}`);
-  },
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
-    objects: {
-      listNotifications: fakes.listNotifications,
-      unreadNotificationCount: fakes.unreadNotificationCount,
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({ cookies: fakes.cookies }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: (path: string) => {
+      throw new Error(`redirect:${path}`);
     },
   }),
-}));
-vi.mock('@/components/app-shell', () => ({
-  AppShell: ({
-    children,
-    workspaceTimezone,
-  }: {
-    children: ReactNode;
-    workspaceTimezone: string;
-  }) => <div data-workspace-timezone={workspaceTimezone}>{children}</div>,
-}));
-vi.mock('@/components/query-provider', () => ({
-  QueryProvider: ({ children }: { children: ReactNode }) => children,
-}));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/db', () => ({ db: { select } }));
-vi.mock('@/lib/hub-status', () => ({ getNavAttentionSummary: fakes.getNavAttentionSummary }));
-vi.mock('@/lib/legal', () => ({
-  getUserLegalAcceptance: fakes.getUserLegalAcceptance,
-  hasCurrentLegalAcceptance: fakes.hasCurrentLegalAcceptance,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      objects: {
+        listNotifications: fakes.listNotifications,
+        unreadNotificationCount: fakes.unreadNotificationCount,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/app-shell'),
+  () => ({
+    AppShell: ({
+      children,
+      workspaceTimezone,
+    }: {
+      children: ReactNode;
+      workspaceTimezone: string;
+    }) => <div data-workspace-timezone={workspaceTimezone}>{children}</div>,
+  }),
+  () => import('@/components/app-shell'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/query-provider'),
+  () => ({
+    QueryProvider: ({ children }: { children: ReactNode }) => children,
+  }),
+  () => import('@/components/query-provider'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { select } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/hub-status'),
+  () => ({ getNavAttentionSummary: fakes.getNavAttentionSummary }),
+  () => import('@/lib/hub-status'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    getUserLegalAcceptance: fakes.getUserLegalAcceptance,
+    hasCurrentLegalAcceptance: fakes.hasCurrentLegalAcceptance,
+  }),
+  () => import('@/lib/legal'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { DEFAULT_TIMEZONE } = await import('@/lib/timezones');
 
 const { default: AppLayout } = await import('./layout.js');
 

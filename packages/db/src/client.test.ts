@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi, freshModuleUrl } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+
+import type * as TestModule1 from '#src/index.js';
 
 import { buildPgClientOptions, PG_TIMEOUTS } from '#src/client.js';
-
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {
@@ -49,7 +52,9 @@ describe('postgres client guardrails', () => {
   it('labels app pools from the Railway service name', async () => {
     process.env.RAILWAY_SERVICE_NAME = 'timeline-worker-production';
 
-    const { resolveAppApplicationName } = await import('#src/index.js');
+    const { resolveAppApplicationName } = await (import(
+      freshModuleUrl(import.meta.resolve('#src/index.js'))
+    ) as Promise<typeof TestModule1>);
 
     expect(resolveAppApplicationName()).toBe('timeline-worker');
   });

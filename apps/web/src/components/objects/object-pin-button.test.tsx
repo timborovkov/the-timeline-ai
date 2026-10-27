@@ -1,20 +1,31 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pin: vi.fn(),
   unpin: vi.fn(),
 }));
 
-vi.mock('@/app/actions/pins', () => ({
-  pinTargetAction: fakes.pin,
-  unpinTargetAction: fakes.unpin,
-}));
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    pinTargetAction: fakes.pin,
+    unpinTargetAction: fakes.unpin,
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
 
 const { ObjectPinButton } = await import('@/components/objects/object-pin-button');
 

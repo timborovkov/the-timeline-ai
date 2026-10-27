@@ -37,31 +37,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version-file: .nvmrc
+          bun-version-file: .bun-version
 
-      - name: Enable pnpm via corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.8.0 --activate
-
-      - name: Configure pnpm store cache
+      - name: Cache Bun downloads
         uses: actions/cache@v6
         with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Resolve content-hashed snapshot name
         id: name
         run: |
-          NAME="$(pnpm --silent --filter @timeline/worker create-document-extract-snapshot -- --print-name-only)"
+          NAME="$(bun run --silent --filter @timeline/worker create-document-extract-snapshot -- --print-name-only)"
           echo "snapshot_name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "Resolved DAYTONA_SNAPSHOT=${NAME}"
 
@@ -75,7 +68,7 @@ jobs:
             echo "DAYTONA_API_KEY secret is required when DAYTONA_SNAPSHOT_PUBLISH=true" >&2
             exit 1
           fi
-          pnpm --filter @timeline/worker create-document-extract-snapshot
+          bun run --filter @timeline/worker create-document-extract-snapshot
 
       - name: Retain deployed, current, and rollback snapshots
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.deployed_snapshots != '' }}
@@ -85,7 +78,7 @@ jobs:
           DAYTONA_TARGET: ${{ vars.DAYTONA_TARGET }}
           DAYTONA_SNAPSHOT: auto
           DAYTONA_ACTIVE_SNAPSHOTS: ${{ inputs.deployed_snapshots }}
-        run: pnpm --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3
+        run: bun run --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3
 
       - name: Summarize
         run: |

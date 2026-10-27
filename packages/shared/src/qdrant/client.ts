@@ -310,7 +310,7 @@ export interface QdrantClientOptions {
   /** Override the catalog embedding dimensions. Used by tests. */
   vectorSize?: number;
   /** Inject a fetch implementation for tests. */
-  fetcher?: typeof fetch;
+  fetcher?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   /**
    * Require the collection to already exist; do not auto-create on 404.
    * Used by the re-embed script and the on-disk collection copy when writing

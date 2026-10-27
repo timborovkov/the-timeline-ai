@@ -1,5 +1,7 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { z } from 'zod';
 
 import type { LanguageModel, StreamTextOnErrorCallback } from 'ai';
@@ -14,7 +16,6 @@ import {
   streamChat,
 } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-
 const aiSdkGlobal = globalThis as typeof globalThis & {
   AI_SDK_LOG_WARNINGS?: boolean;
 };
@@ -94,7 +95,9 @@ describe('chatStructured', () => {
 
   it('allows per-call maxOutputTokens overrides for bulk structured callers', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(
@@ -159,7 +162,9 @@ describe('chatStructured', () => {
   it('passes abortSignal through to provider fetches', async () => {
     const controller = new AbortController();
     const seenSignals: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       seenSignals.push(init?.signal);
       return Promise.resolve(
         new Response(
@@ -332,7 +337,9 @@ describe('chatStructured', () => {
   it('requests OpenRouter json_schema structured output for extraction', async () => {
     const requests: unknown[] = [];
     const requestHeaders: Headers[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       requestHeaders.push(new Headers(init?.headers));
       if (typeof init?.body === 'string') {
         const parsed: unknown = JSON.parse(init.body);
@@ -414,7 +421,9 @@ describe('chatStructured', () => {
   });
 
   it('normalizes wrapped task-category JSON before accepting the object', async () => {
-    const fetchStub: typeof fetch = () =>
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = () =>
       Promise.resolve(
         new Response(
           JSON.stringify({
@@ -464,7 +473,9 @@ describe('chatStructured', () => {
 
   it('falls back to json_object mode when OpenRouter rejects strict json_schema', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -557,7 +568,9 @@ describe('chatStructured', () => {
 
   it('falls back to json_object mode when structured generation returns no object', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -630,7 +643,9 @@ describe('chatStructured', () => {
 
   it('does not retry with a fallback model for auth failures', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(
@@ -659,7 +674,9 @@ describe('chatStructured', () => {
 
   it('retries retryable provider failures on the structured fallback model', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -726,7 +743,9 @@ describe('chatStructured', () => {
 
   it('retries request timeouts on the structured fallback model', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -778,7 +797,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback hits a retryable provider failure', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -866,7 +887,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback also returns no object', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -946,7 +969,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback returns schema-invalid JSON', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -1040,7 +1065,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback returns invalid JSON text', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -1134,7 +1161,9 @@ describe('chatStructured', () => {
 
   it('does not try the structured fallback model when json_object fallback fails with auth error', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);

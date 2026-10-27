@@ -1,27 +1,20 @@
 # syntax=docker/dockerfile:1.7
-
-# ---- Base ----
-FROM node:24.22.1-alpine AS base
-RUN apk add --no-cache libc6-compat
-RUN corepack enable && corepack prepare pnpm@11.8.0 --activate
+FROM oven/bun:1.4.4-debian AS base
 WORKDIR /app
 
-# ---- Pruner ----
-FROM base AS pruner
+FROM base AS dependencies
+COPY package.json bun.lock bunfig.toml ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker/package.json ./apps/worker/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/test-support/package.json ./packages/test-support/package.json
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
+    bun install --frozen-lockfile
+
+FROM dependencies AS builder
 COPY . .
-RUN pnpm dlx turbo@2.1.0 prune @timeline/worker --docker
-
-# ---- Deps ----
-FROM base AS deps
-COPY --from=pruner /app/out/json/ .
-RUN pnpm install --frozen-lockfile
-
-# ---- Builder ----
-FROM base AS builder
-COPY --from=deps /app/ .
-COPY --from=pruner /app/out/full/ .
-# turbo prune excludes root-level config; copy it explicitly
-COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
 ARG SENTRY_AUTH_TOKEN
 ARG SENTRY_ORG
 ARG SENTRY_PROJECT
@@ -30,33 +23,28 @@ ENV SENTRY_AUTH_TOKEN=$SENTRY_AUTH_TOKEN
 ENV SENTRY_ORG=$SENTRY_ORG
 ENV SENTRY_PROJECT=$SENTRY_PROJECT
 ENV SENTRY_RELEASE=$SENTRY_RELEASE
-RUN pnpm --filter @timeline/db build
-RUN pnpm --filter @timeline/shared build
-RUN pnpm --filter @timeline/worker build
+RUN bun run --filter @timeline/db build
+RUN bun run --filter @timeline/shared build
+RUN bun run --filter @timeline/worker build
 
-# ---- Deployer ----
-# pnpm deploy creates a self-contained directory with a flat node_modules (no symlinks).
-# This is the correct way to deploy a pnpm workspace package to production.
-FROM base AS deployer
-COPY --from=builder /app/ .
-RUN pnpm deploy --filter @timeline/worker --prod /prod/worker
+FROM base AS production-dependencies
+COPY package.json bun.lock bunfig.toml ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker/package.json ./apps/worker/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/test-support/package.json ./packages/test-support/package.json
+RUN --mount=type=secret,id=proxy_ca \
+    if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
+    bun install --frozen-lockfile --production
 
-# ---- Runner ----
-FROM node:24.22.1-alpine AS runner
-WORKDIR /app
-
+FROM base AS runner
 ENV NODE_ENV=production
-
-RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 worker
-
-COPY --from=deployer --chown=worker:nodejs /prod/worker ./
-# Content-hash snapshot resolution + Image bake need the sandbox sources even
-# when turbo prune / pnpm deploy omit unreferenced trees. Copy from pruner
-# (full repo) rather than prune output.
-COPY --from=pruner --chown=worker:nodejs /app/apps/worker/document-extract-sandbox ./document-extract-sandbox
-
-USER worker
-
-# Default entry; Railway overrides start command per worker service.
-CMD ["node", "dist/index.js"]
+COPY --from=production-dependencies --chown=bun:bun /app/ ./
+COPY --from=builder --chown=bun:bun /app/packages/db/dist ./packages/db/dist
+COPY --from=builder --chown=bun:bun /app/packages/db/drizzle ./packages/db/drizzle
+COPY --from=builder --chown=bun:bun /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder --chown=bun:bun /app/apps/worker/dist ./apps/worker/dist
+COPY --from=builder --chown=bun:bun /app/apps/worker/document-extract-sandbox ./apps/worker/document-extract-sandbox
+USER bun
+CMD ["bun", "--no-env-file", "apps/worker/dist/index.js"]

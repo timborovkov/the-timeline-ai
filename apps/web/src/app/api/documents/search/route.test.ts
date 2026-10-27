@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for `/api/documents/search`. Shared document search owns
  * Qdrant and hydration semantics; this route owns auth/config/rate gates,
@@ -18,25 +19,53 @@ const fakes = vi.hoisted(() => ({
   fakeCachedJson: vi.fn((_key: string, _ttl: number, load: () => unknown) => load()),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/cache', () => ({
-  cacheKey: fakes.fakeCacheKey,
-  cachedJson: fakes.fakeCachedJson,
-}));
-vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { search: { limit: 10, windowMs: 60_000 } },
-  checkRateLimit: fakes.fakeCheckRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/cache'),
+  () => ({
+    cacheKey: fakes.fakeCacheKey,
+    cachedJson: fakes.fakeCachedJson,
   }),
-}));
+  () => import('@timeline/shared/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: fakes.fakeGetEnv }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { search: { limit: 10, windowMs: 60_000 } },
+    checkRateLimit: fakes.fakeCheckRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { POST } = await import('./route.js');
 

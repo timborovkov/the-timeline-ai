@@ -2,8 +2,8 @@
  * Build a redacted production-sampling report from reconciliation live-eval artifacts.
  *
  * Usage:
- *   pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/report.json
- *   TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/report.json --team=<uuid>
+ *   bun run --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/report.json
+ *   TIMELINE_ENV_FILE=/path/to/.env bun run --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/report.json --team=<uuid>
  *
  * Optional:
  *   --input=/path     Repeatable. Accepts live-eval run directories or JSON files.

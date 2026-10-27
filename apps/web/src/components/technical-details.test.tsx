@@ -1,9 +1,10 @@
-// @vitest-environment happy-dom
-
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { TechnicalDetails } from '@/components/technical-details';
+// Test environment: happy-dom
 
 describe('TechnicalDetails', () => {
   const writeText = vi.fn<(value: string) => Promise<void>>();

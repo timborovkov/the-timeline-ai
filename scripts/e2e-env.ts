@@ -104,14 +104,25 @@ export function buildE2eWebServerConfig(input: Env = process.env): {
   return {
     baseURL: input.E2E_BASE_URL ?? `http://localhost:${port}`,
     command:
-      input.E2E_WEB_SERVER_COMMAND ??
-      `pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p ${port}`,
+      input.E2E_WEB_SERVER_COMMAND ?? `bun run --filter @timeline/web dev -H 127.0.0.1 -p ${port}`,
   };
 }
 
 export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOptions = {}): Env {
   const env = { ...input };
   delete env.NO_COLOR;
+  // Fixture service URLs/credentials stay configurable, but ordinary E2E runs
+  // must never inherit exported provider or telemetry credentials from a shell.
+  const providerVariable =
+    /^(?:OPENROUTER_|OPENAI_|ANTHROPIC_|LANGSMITH_|SENTRY_|NEXT_PUBLIC_SENTRY_|NEXT_PUBLIC_POSTHOG_|POSTHOG_|GITHUB_|AUTH_GITHUB_|SLACK_|TELEGRAM_|POSTMARK_|DAYTONA_|RECALL_|LINEAR_|MONDAY_|GOOGLE_|TURNSTILE_|NEXT_PUBLIC_TURNSTILE_|CRON_|ANALYTICS_)/;
+  for (const key of Object.keys(env)) {
+    if (providerVariable.test(key)) delete env[key];
+  }
+  // Preserve the existing intercepted analytics scenario's explicit dummy key.
+  if (input.NEXT_PUBLIC_POSTHOG_KEY === 'ph-e2e') env.NEXT_PUBLIC_POSTHOG_KEY = 'ph-e2e';
+  // Next's pinned env loader honors this marker: test servers and smoke builds
+  // must not merge a developer's symlinked apps/web/.env into isolated fixtures.
+  env.__NEXT_PROCESSED_ENV = 'true';
   const workspaceHashValue = workspaceHash(options.workspacePath ?? process.cwd());
 
   const useDockerPorts = env.E2E_USE_DOCKER_PORTS !== '0';
@@ -148,7 +159,7 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.TASK_CATEGORY_WORKER_ENABLED ??= 'true';
   env.TASK_CATEGORY_UI_ENABLED ??= 'true';
   env.CROSS_SOURCE_EVIDENCE_MODE ??= 'off';
-  env.OPENROUTER_API_KEY ??= 'e2e-deterministic-chat';
+  if (env.E2E_PROD_SMOKE !== '1') env.OPENROUTER_API_KEY = 'e2e-deterministic-chat';
   env.QDRANT_URL ??= qdrantPort ? localUrl(qdrantPort) : 'http://qdrant.e2e.invalid';
   env.QDRANT_API_KEY ??= 'dev_qdrant_key';
   env.NODE_OPTIONS = withDevelopmentCondition(env.NODE_OPTIONS);

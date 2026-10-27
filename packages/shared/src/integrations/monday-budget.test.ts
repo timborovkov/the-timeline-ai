@@ -1,11 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  adoptMondayAccountBudget,
-  observeMondayRemaining,
-  reserveMondayCall,
-} from '#src/integrations/monday-budget.js';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const state = vi.hoisted(() => ({
   calls: new Map<string, number>(),
   pausedUntil: new Map<string, number>(),
@@ -43,9 +38,16 @@ const state = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('#src/queue/connection.js', () => ({
-  getRedisConnection: () => ({ eval: state.eval }),
-}));
+await vi.mock(
+  import.meta.resolve('#src/queue/connection.js'),
+  () => ({
+    getRedisConnection: () => ({ eval: state.eval }),
+  }),
+  () => import('#src/queue/connection.js'),
+);
+
+const { adoptMondayAccountBudget, observeMondayRemaining, reserveMondayCall } =
+  await import('#src/integrations/monday-budget.js');
 
 describe('monday account budget', () => {
   beforeEach(() => {

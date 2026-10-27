@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   buildAssociationDedupeKey,
@@ -8,7 +9,6 @@ import {
   validateSourceRefs,
   visibilityAtOrBelowFloor,
 } from '#src/reconciliation/index.js';
-
 const USER_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const USER_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 

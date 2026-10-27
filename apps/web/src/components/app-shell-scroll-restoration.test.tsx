@@ -1,15 +1,22 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const routeState = vi.hoisted(() => ({
   pathname: '/app/timeline',
 }));
 
-vi.mock('next/navigation', () => ({
-  usePathname: () => routeState.pathname,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => routeState.pathname,
+  }),
+  () => import('next/navigation'),
+);
+
+const { cleanup, render, waitFor } = await import('@testing-library/react');
 
 const { AppMainScrollRestoration } = await import('./app-shell-scroll-restoration.js');
 

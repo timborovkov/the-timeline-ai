@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
 import { integrationSyncContinuationHandoffs, integrations, teams } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   adminAcknowledgePendingIntegrationSyncContinuation,
@@ -11,7 +12,6 @@ import {
   adminLoadCursor,
 } from '#src/integrations/scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const INTEGRATION_ID = '22222222-2222-4222-8222-222222222222';
 

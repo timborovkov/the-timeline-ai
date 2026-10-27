@@ -1,8 +1,17 @@
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ back: vi.fn() }) }));
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { HistoryBackLink } = await import('./history-back-link.js');
 const { canUseAppHistory, shouldUseHistoryBackClick } = await import('@/lib/history-back');

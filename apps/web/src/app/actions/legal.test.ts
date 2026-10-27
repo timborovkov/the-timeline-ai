@@ -1,8 +1,6 @@
-import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { acceptLegalAction } from '@/app/actions/legal';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * The legal gate must require an affirmative checkbox and commit acceptance
  * evidence before navigation. These tests cover the server-action boundary so
@@ -25,20 +23,54 @@ const fakes = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-  withServerActionInstrumentation: fakes.withServerActionInstrumentation,
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth, updateSession: fakes.updateSession }));
-vi.mock('@/lib/db', () => ({ db: { transaction: fakes.transaction } }));
-vi.mock('@/lib/legal', () => ({
-  legalAcceptanceRequestMetadata: fakes.legalAcceptanceRequestMetadata,
-  recordCurrentLegalAcceptance: fakes.recordCurrentLegalAcceptance,
-}));
-vi.mock('@/lib/legal-publication', () => ({
-  isLegalPublicationReady: fakes.isLegalPublicationReady,
-}));
-vi.mock('next/headers', () => ({ headers: fakes.headers }));
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+await vi.mock(
+  import.meta.resolve('@sentry/nextjs'),
+  () => ({
+    withServerActionInstrumentation: fakes.withServerActionInstrumentation,
+  }),
+  () => import('@sentry/nextjs'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth, updateSession: fakes.updateSession }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { transaction: fakes.transaction } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    legalAcceptanceRequestMetadata: fakes.legalAcceptanceRequestMetadata,
+    recordCurrentLegalAcceptance: fakes.recordCurrentLegalAcceptance,
+  }),
+  () => import('@/lib/legal'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal-publication'),
+  () => ({
+    isLegalPublicationReady: fakes.isLegalPublicationReady,
+  }),
+  () => import('@/lib/legal-publication'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({ headers: fakes.headers }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+
+const { PRIVACY_VERSION, TERMS_VERSION } = await import('@timeline/shared/legal-versions');
+const { acceptLegalAction } = await import('@/app/actions/legal');
 
 const tx = { kind: 'legal-test-transaction' };
 

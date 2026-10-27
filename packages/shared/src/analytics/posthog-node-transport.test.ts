@@ -1,27 +1,35 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi, freshModuleUrl } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
+import type * as TestModule1 from '#src/analytics/posthog-node.js';
 import type * as PostHogNodeSdk from 'posthog-node';
-
 const transport = vi.hoisted(() => ({ fetch: vi.fn() }));
 
-vi.mock('posthog-node', async (importOriginal) => {
-  const actual = await importOriginal<typeof PostHogNodeSdk>();
-  return {
-    ...actual,
-    PostHog: class extends actual.PostHog {
-      constructor(key: string, options: ConstructorParameters<typeof actual.PostHog>[1]) {
-        super(key, {
-          ...options,
-          disableCompression: true,
-          fetch: transport.fetch,
-        });
-      }
-    },
-  };
-});
+await vi.mock(
+  import.meta.resolve('posthog-node'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof PostHogNodeSdk>();
+    return {
+      ...actual,
+      PostHog: class extends actual.PostHog {
+        constructor(key: string, options: ConstructorParameters<typeof actual.PostHog>[1]) {
+          super(key, {
+            ...options,
+            disableCompression: true,
+            fetch: transport.fetch,
+          });
+        }
+      },
+    };
+  },
+  () => import('posthog-node'),
+);
 
 afterEach(async () => {
-  const analytics = await import('#src/analytics/posthog-node.js');
+  const analytics = await (import(
+    freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+  ) as Promise<typeof TestModule1>);
   await analytics.shutdownPostHogNodeClients();
   vi.clearAllMocks();
   vi.resetModules();
@@ -35,7 +43,9 @@ describe('PostHog Node fixed-stream transport', () => {
       json: () => Promise.resolve({}),
       headers: { get: () => null },
     });
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePostHogPersonlessSurfaceRequest(
       { key: 'ph-test', host: 'https://eu.i.posthog.com' },

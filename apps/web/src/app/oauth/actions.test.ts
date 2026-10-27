@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getUserLegalAcceptance: vi.fn(),
@@ -14,44 +15,75 @@ const fakes = vi.hoisted(() => ({
   reportCaughtError: vi.fn(),
 }));
 
-vi.mock('@timeline/shared/mcp-server', () => {
-  class McpOAuthError extends Error {
-    constructor(
-      readonly code: string,
-      message: string,
-      readonly trustedAuthorizationRedirect?: { redirectUri: string; state?: string },
-    ) {
-      super(message);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/mcp-server'),
+  () => {
+    class McpOAuthError extends Error {
+      constructor(
+        readonly code: string,
+        message: string,
+        readonly trustedAuthorizationRedirect?: { redirectUri: string; state?: string },
+      ) {
+        super(message);
+      }
     }
-  }
-  return {
-    McpOAuthError,
-    MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
-    validateMcpAuthorizationRequest: fakes.validate,
-    createMcpAuthorizationCode: fakes.createCode,
-    revokeMcpOAuthGrant: fakes.revokeGrant,
-    withMcpOAuthTrustedAuthorizationRedirect: (
-      error: unknown,
-      trustedAuthorizationRedirect: { redirectUri: string; state?: string },
-    ) =>
-      error instanceof McpOAuthError
-        ? new McpOAuthError(error.code, error.message, trustedAuthorizationRedirect)
-        : new McpOAuthError(
-            'server_error',
-            'Timeline could not complete the authorization request',
-            trustedAuthorizationRedirect,
-          ),
-  };
-});
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.revalidatePath }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/db', () => ({ db: { name: 'db' } }));
-vi.mock('@/lib/legal', () => ({
-  getUserLegalAcceptance: fakes.getUserLegalAcceptance,
-  hasCurrentLegalAcceptance: fakes.hasCurrentLegalAcceptance,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+    return {
+      McpOAuthError,
+      MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
+      validateMcpAuthorizationRequest: fakes.validate,
+      createMcpAuthorizationCode: fakes.createCode,
+      revokeMcpOAuthGrant: fakes.revokeGrant,
+      withMcpOAuthTrustedAuthorizationRedirect: (
+        error: unknown,
+        trustedAuthorizationRedirect: { redirectUri: string; state?: string },
+      ) =>
+        error instanceof McpOAuthError
+          ? new McpOAuthError(error.code, error.message, trustedAuthorizationRedirect)
+          : new McpOAuthError(
+              'server_error',
+              'Timeline could not complete the authorization request',
+              trustedAuthorizationRedirect,
+            ),
+    };
+  },
+  () => import('@timeline/shared/mcp-server'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.revalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { name: 'db' } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    getUserLegalAcceptance: fakes.getUserLegalAcceptance,
+    hasCurrentLegalAcceptance: fakes.hasCurrentLegalAcceptance,
+  }),
+  () => import('@/lib/legal'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
 const { McpOAuthError } = await import('@timeline/shared/mcp-server');
 const { approveMcpOAuthAction, denyMcpOAuthAction, revokeMcpOAuthGrantAction } =

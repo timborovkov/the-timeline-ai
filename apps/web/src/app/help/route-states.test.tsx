@@ -1,34 +1,51 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pathname: '/help/documents',
   reportCaughtError: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ usePathname: () => fakes.pathname }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('@/lib/auth', () => ({ auth: vi.fn().mockResolvedValue(null) }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => fakes.pathname,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: vi.fn().mockResolvedValue(null) }),
+  () => import('@/lib/auth'),
+);
 
-import HelpTopicError from '@/app/help/[slug]/error';
-import HelpTopicLoading from '@/app/help/[slug]/loading';
-import HelpTopicPage from '@/app/help/[slug]/page';
-import ContactError from '@/app/help/contact/error';
-import ContactLoading from '@/app/help/contact/loading';
-import HelpError from '@/app/help/error';
-import HelpLoading from '@/app/help/loading';
-import HelpIndexPage from '@/app/help/page';
-import SupportError from '@/app/help/support/error';
-import SupportLoading from '@/app/help/support/loading';
-import { HelpShell } from '@/components/help/help-shell';
-import {
+const { cleanup, fireEvent, render, screen, waitFor, within } =
+  await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: HelpTopicError } = await import('@/app/help/[slug]/error');
+const { default: HelpTopicLoading } = await import('@/app/help/[slug]/loading');
+const { default: HelpTopicPage } = await import('@/app/help/[slug]/page');
+const { default: ContactError } = await import('@/app/help/contact/error');
+const { default: ContactLoading } = await import('@/app/help/contact/loading');
+const { default: HelpError } = await import('@/app/help/error');
+const { default: HelpLoading } = await import('@/app/help/loading');
+const { default: HelpIndexPage } = await import('@/app/help/page');
+const { default: SupportError } = await import('@/app/help/support/error');
+const { default: SupportLoading } = await import('@/app/help/support/loading');
+const { HelpShell } = await import('@/components/help/help-shell');
+const {
   TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
   TIMELINE_SKILL_INSTALL_PROMPT,
-} from '@/lib/agent-install-content';
+} = await import('@/lib/agent-install-content');
 
 afterEach(() => {
   cleanup();

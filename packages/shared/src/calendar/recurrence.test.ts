@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   expandRRuleBetween,
   recurrenceWindowFrom,
   validateRRule,
 } from '#src/calendar/recurrence.js';
-
 describe('calendar recurrence rules', () => {
   it('includes recent past occurrences for calendar grid queries', () => {
     const window = recurrenceWindowFrom(

@@ -15,14 +15,15 @@ import {
   makeExtractionModelVersion,
 } from '@timeline/shared/extraction-model-version';
 import { TIMELINE_MODELS } from '@timeline/shared/llm';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processEmbedJobForTests } from '#src/workers/embed.js';
 import { extractWorkerInternals, processExtractJobForTests } from '#src/workers/extract.js';
-
 /**
  * Extract worker contract tests. These run the processor against a migrated
  * PGlite database with deterministic LLM and queue boundaries, proving raw

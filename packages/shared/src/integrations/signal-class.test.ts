@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { resolveSignalClass } from '#src/integrations/signal-class.js';
-
 describe('resolveSignalClass', () => {
   it('prefers an explicit envelope field', () => {
     expect(

@@ -1,12 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { PinnedItem } from '@timeline/shared/pins';
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   movePinAction: vi.fn(),
@@ -15,36 +13,58 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: fakes.refresh }),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-  notifyError: vi.fn(),
-}));
-vi.mock('@/app/actions/pins', () => ({
-  movePinAction: fakes.movePinAction,
-  pinTargetAction: fakes.pinTargetAction,
-  unpinTargetAction: fakes.unpinTargetAction,
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { pinId: string }[];
-    renderItem: (item: { pinId: string }, index: number) => ReactNode;
-    getItemKey: (item: { pinId: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+    notifyError: vi.fn(),
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    movePinAction: fakes.movePinAction,
+    pinTargetAction: fakes.pinTargetAction,
+    unpinTargetAction: fakes.unpinTargetAction,
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { pinId: string }[];
+      renderItem: (item: { pinId: string }, index: number) => ReactNode;
+      getItemKey: (item: { pinId: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
 
 const { PinnedWorkspaceManager } = await import('@/components/pins/pinned-workspace-manager');
 

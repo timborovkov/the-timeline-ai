@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { auditTargetPresentation, canSeeAuditTarget } from '#src/audit/scope.js';
-
 describe('canSeeAuditTarget', () => {
   it('allows team-visible targets', () => {
     expect(

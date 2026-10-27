@@ -1,25 +1,30 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
+await vi.mock(
+  import.meta.resolve('@/components/legal-page'),
+  () => ({
+    LegalPage: ({
+      children,
+      description,
+      title,
+    }: {
+      children: React.ReactNode;
+      description: string;
+      title: string;
+    }) => (
+      <main>
+        <h1>{title}</h1>
+        <p>{description}</p>
+        {children}
+      </main>
+    ),
+  }),
+  () => import('@/components/legal-page'),
+);
 
-vi.mock('@/components/legal-page', () => ({
-  LegalPage: ({
-    children,
-    description,
-    title,
-  }: {
-    children: React.ReactNode;
-    description: string;
-    title: string;
-  }) => (
-    <main>
-      <h1>{title}</h1>
-      <p>{description}</p>
-      {children}
-    </main>
-  ),
-}));
-
-import CookiesPage from '@/app/cookies/page';
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { default: CookiesPage } = await import('@/app/cookies/page');
 
 describe('Cookies and similar technologies page', () => {
   it('publishes the current inventory without presenting notice as consent', () => {

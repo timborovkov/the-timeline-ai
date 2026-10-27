@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { AGENT_PROMPT_VERSION, buildSystemPrompt } from '#src/agent/system-prompt.js';
-
 describe('buildSystemPrompt', () => {
   it('keeps first-person statements in retrieved messages attached to their sender', () => {
     const prompt = buildSystemPrompt({

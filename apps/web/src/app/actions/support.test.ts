@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -14,31 +15,71 @@ const fakes = vi.hoisted(() => ({
   turnstileHostnameFromHeaders: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    insert: fakes.dbInsert,
-    update: fakes.dbUpdate,
-  },
-}));
-vi.mock('@/lib/request-ip', () => ({ clientIpFromHeaders: fakes.clientIpFromHeaders }));
-vi.mock('@/lib/sentry-action', () => ({
-  runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
-}));
-vi.mock('@/lib/turnstile', () => ({
-  turnstileHostnameFromHeaders: fakes.turnstileHostnameFromHeaders,
-  verifyTurnstileToken: fakes.verifyTurnstileToken,
-}));
-vi.mock('next/headers', () => ({ headers: fakes.headers }));
-vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.getEnv }));
-vi.mock('@timeline/shared/messaging', () => ({ sendMessage: fakes.sendMessage }));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { supportForm: { limit: 3, windowMs: 60_000 } },
-  checkRateLimit: fakes.checkRateLimit,
-  rateLimitKey: (...parts: (string | number | null | undefined)[]) =>
-    `rl:${parts.filter(Boolean).join(':')}`,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      insert: fakes.dbInsert,
+      update: fakes.dbUpdate,
+    },
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/request-ip'),
+  () => ({ clientIpFromHeaders: fakes.clientIpFromHeaders }),
+  () => import('@/lib/request-ip'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-action'),
+  () => ({
+    runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
+  }),
+  () => import('@/lib/sentry-action'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/turnstile'),
+  () => ({
+    turnstileHostnameFromHeaders: fakes.turnstileHostnameFromHeaders,
+    verifyTurnstileToken: fakes.verifyTurnstileToken,
+  }),
+  () => import('@/lib/turnstile'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({ headers: fakes.headers }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: fakes.getEnv }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/messaging'),
+  () => ({ sendMessage: fakes.sendMessage }),
+  () => import('@timeline/shared/messaging'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { supportForm: { limit: 3, windowMs: 60_000 } },
+    checkRateLimit: fakes.checkRateLimit,
+    rateLimitKey: (...parts: (string | number | null | undefined)[]) =>
+      `rl:${parts.filter(Boolean).join(':')}`,
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
 
 const { submitSupportRequestAction } = await import('./support.js');
 

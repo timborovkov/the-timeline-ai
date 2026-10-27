@@ -7,7 +7,6 @@ jobs:
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-latest
-    continue-on-error: true
     services:
       postgres:
         image: postgres:16
@@ -34,35 +33,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version-file: .nvmrc
+          bun-version-file: .bun-version
 
-      - name: Enable pnpm via corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.8.0 --activate
-
-      - name: Configure pnpm store cache
+      - name: Cache Bun downloads
         uses: actions/cache@v6
         with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: bun x --bun --no-install playwright install --with-deps chromium webkit
 
       - name: Run migrations
-        run: pnpm db:migrate
+        run: bun run db:migrate
 
       - name: Run Playwright E2E
-        run: pnpm e2e
+        run: bun run e2e
 
       - name: Upload Playwright report
         if: always()
@@ -77,7 +69,6 @@ jobs:
   prod-smoke:
     name: Production-ish web smoke
     runs-on: ubuntu-latest
-    continue-on-error: true
     services:
       postgres:
         image: postgres:16
@@ -104,35 +95,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version-file: .nvmrc
+          bun-version-file: .bun-version
 
-      - name: Enable pnpm via corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.8.0 --activate
-
-      - name: Configure pnpm store cache
+      - name: Cache Bun downloads
         uses: actions/cache@v6
         with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
+        run: bun x --bun --no-install playwright install --with-deps chromium webkit
 
       - name: Run migrations
-        run: pnpm db:migrate
+        run: bun run db:migrate
 
       - name: Run production-ish smoke
-        run: pnpm e2e:prod-smoke
+        run: bun run e2e:prod-smoke
 
       - name: Upload Playwright report
         if: always()

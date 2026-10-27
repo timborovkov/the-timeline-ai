@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { CaptureDialog } from '@/components/home/capture-dialog';
+// Test environment: happy-dom
 
 describe('CaptureDialog', () => {
   beforeEach(() => {

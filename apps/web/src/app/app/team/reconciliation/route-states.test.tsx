@@ -1,18 +1,31 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ back: vi.fn(), reportCaughtError: vi.fn() }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ back: fakes.back }) }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: fakes.back }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
-import ClusterError from '@/app/app/team/reconciliation/clusters/[id]/error';
-import ClusterLoading from '@/app/app/team/reconciliation/clusters/[id]/loading';
-import ReconciliationError from '@/app/app/team/reconciliation/error';
-import ReconciliationLoading from '@/app/app/team/reconciliation/loading';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: ClusterError } = await import('@/app/app/team/reconciliation/clusters/[id]/error');
+const { default: ClusterLoading } =
+  await import('@/app/app/team/reconciliation/clusters/[id]/loading');
+const { default: ReconciliationError } = await import('@/app/app/team/reconciliation/error');
+const { default: ReconciliationLoading } = await import('@/app/app/team/reconciliation/loading');
 
 afterEach(() => {
   cleanup();

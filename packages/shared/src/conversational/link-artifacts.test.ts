@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { extractLinksFromText, linkMetadata } from '#src/conversational/link-artifacts.js';
-
 describe('conversational link artifacts', () => {
   it('extracts and normalizes Slack and bare links without tracking or secret params', () => {
     const links = extractLinksFromText(

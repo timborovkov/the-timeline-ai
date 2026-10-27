@@ -1,22 +1,31 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as ExternalFetch from '#src/http/external-fetch.js';
-
 const warn = vi.hoisted(() => vi.fn());
 
-vi.mock('#src/logger.js', () => ({
-  childLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('#src/logger.js'),
+  () => ({
+    childLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+  }),
+  () => import('#src/logger.js'),
+);
 
-vi.mock('#src/http/external-fetch.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof ExternalFetch>();
-  return {
-    ...actual,
-    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-  };
-});
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ExternalFetch>();
+    return {
+      ...actual,
+      externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+    };
+  },
+  () => import('#src/http/external-fetch.js'),
+);
 
-import { githubProvider } from '#src/integrations/providers/github.js';
+const { githubProvider } = await import('#src/integrations/providers/github.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -40,35 +49,41 @@ describe('github fetch logging', () => {
   });
 
   it('labels a 404 repo fetch as access_revoked with connection ids in the message text', async () => {
-    globalThis.fetch = vi.fn<typeof fetch>((input) => {
-      const requestUrl =
-        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-      const url = new URL(requestUrl);
-      if (url.pathname.endsWith('/pulls')) {
-        return Promise.resolve(jsonResponse({ message: 'Not Found' }, 404));
-      }
-      if (url.pathname.endsWith('/issues')) return Promise.resolve(jsonResponse([]));
-      if (url.pathname.endsWith('/issues/comments')) return Promise.resolve(jsonResponse([]));
-      if (url.pathname.endsWith('/pulls/comments')) return Promise.resolve(jsonResponse([]));
-      if (url.pathname.endsWith('/releases')) return Promise.resolve(jsonResponse([]));
-      if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
-      if (url.pathname.endsWith('/actions/runs')) {
-        return Promise.resolve(jsonResponse({ workflow_runs: [] }));
-      }
-      if (url.pathname === '/repos/acme/lost-repo') {
-        return Promise.resolve(
-          jsonResponse({
-            id: 9,
-            full_name: 'acme/lost-repo',
-            name: 'lost-repo',
-            owner: { login: 'acme' },
-            private: true,
-            default_branch: 'main',
-          }),
-        );
-      }
-      return Promise.resolve(jsonResponse({ message: 'unexpected' }, 404));
-    });
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(
+        vi.fn<
+          (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+        >((input) => {
+          const requestUrl =
+            typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          const url = new URL(requestUrl);
+          if (url.pathname.endsWith('/pulls')) {
+            return Promise.resolve(jsonResponse({ message: 'Not Found' }, 404));
+          }
+          if (url.pathname.endsWith('/issues')) return Promise.resolve(jsonResponse([]));
+          if (url.pathname.endsWith('/issues/comments')) return Promise.resolve(jsonResponse([]));
+          if (url.pathname.endsWith('/pulls/comments')) return Promise.resolve(jsonResponse([]));
+          if (url.pathname.endsWith('/releases')) return Promise.resolve(jsonResponse([]));
+          if (url.pathname.endsWith('/commits')) return Promise.resolve(jsonResponse([]));
+          if (url.pathname.endsWith('/actions/runs')) {
+            return Promise.resolve(jsonResponse({ workflow_runs: [] }));
+          }
+          if (url.pathname === '/repos/acme/lost-repo') {
+            return Promise.resolve(
+              jsonResponse({
+                id: 9,
+                full_name: 'acme/lost-repo',
+                name: 'lost-repo',
+                owner: { login: 'acme' },
+                private: true,
+                default_branch: 'main',
+              }),
+            );
+          }
+          return Promise.resolve(jsonResponse({ message: 'unexpected' }, 404));
+        }),
+        { preconnect: vi.fn() },
+      );
 
     await githubProvider.incrementalSync({
       integration: {
@@ -107,11 +122,17 @@ describe('github fetch logging', () => {
       syscall: 'connect',
       address: '140.82.112.6',
     });
-    globalThis.fetch = vi.fn<typeof fetch>(() =>
-      Promise.reject(
-        new ExternalHttpError('network_failure', 'External request failed', { cause: leaf }),
-      ),
-    );
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(
+        vi.fn<
+          (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+        >(() =>
+          Promise.reject(
+            new ExternalHttpError('network_failure', 'External request failed', { cause: leaf }),
+          ),
+        ),
+        { preconnect: vi.fn() },
+      );
 
     await githubProvider.incrementalSync({
       integration: { id: '22222222-2222-4222-8222-222222222222' } as never,

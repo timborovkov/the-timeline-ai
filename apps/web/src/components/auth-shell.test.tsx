@@ -1,27 +1,37 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
+await vi.mock(
+  import.meta.resolve('next/link'),
+  () => ({
+    default: ({
+      children,
+      href,
+      ...props
+    }: {
+      children: ReactNode;
+      href: string;
+      [key: string]: unknown;
+    }) => (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    ),
+  }),
+  () => import('next/link'),
+);
 
-vi.mock('next/link', () => ({
-  default: ({
-    children,
-    href,
-    ...props
-  }: {
-    children: ReactNode;
-    href: string;
-    [key: string]: unknown;
-  }) => (
-    <a href={href} {...props}>
-      {children}
-    </a>
-  ),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/theme-toggle'),
+  () => ({
+    ThemeToggle: () => <button type="button">Theme</button>,
+  }),
+  () => import('@/components/theme-toggle'),
+);
 
-vi.mock('@/components/theme-toggle', () => ({
-  ThemeToggle: () => <button type="button">Theme</button>,
-}));
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { AuthShell } = await import('@/components/auth-shell');
 

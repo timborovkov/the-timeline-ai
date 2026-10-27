@@ -6,8 +6,10 @@ import {
   entities,
   objectChanges,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PGlite } from '@electric-sql/pglite';
 
@@ -20,7 +22,6 @@ import {
 } from '#src/messaging/destinations.js';
 import { generateDailyDigest } from '#src/messaging/digest.js';
 import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 

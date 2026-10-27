@@ -4,7 +4,7 @@ import { buildOpenRouterPrivacyAttestationToken } from '@timeline/shared/llm/pri
 
 function usage(): string {
   return [
-    'Usage: pnpm openrouter:attestation [-- --env-file=/absolute/path/to/.env]',
+    'Usage: bun run openrouter:attestation [-- --env-file=/absolute/path/to/.env]',
     '',
     'Reads OPENROUTER_API_KEY and OPENROUTER_GUARDRAIL_ID, then prints only the',
     'non-secret OPENROUTER_PRIVACY_POLICY_ATTESTATION assignment.',

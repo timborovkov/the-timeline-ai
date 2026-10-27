@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   classifyCapturedEvent,
@@ -6,7 +7,6 @@ import {
   promotesWorkspaceObject,
   visualWeightForEventClass,
 } from '#src/event-class.js';
-
 describe('timeline event class', () => {
   it('maps native sources to families', () => {
     expect(classifyCapturedEvent({ source: 'telegram' })).toBe('communication');

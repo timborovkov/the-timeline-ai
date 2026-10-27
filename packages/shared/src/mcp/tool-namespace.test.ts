@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   compactToServerId,
   namespaceToolName,
   parseNamespacedToolName,
 } from '#src/mcp/tool-namespace.js';
-
 describe('mcp/tool-namespace', () => {
   const serverId = '6f1f1c5e-9d3d-4b7e-9c1a-7e1d3c1d7b9f';
   const compact = '6f1f1c5e9d3d4b7e9c1a7e1d3c1d7b9f';

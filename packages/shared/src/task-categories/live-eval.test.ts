@@ -1,6 +1,7 @@
 import { loadEnvFile } from 'node:process';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   buildTaskCategoryPacket,
@@ -10,7 +11,6 @@ import {
 import { TASK_CATEGORY_EVAL_CASES } from '#src/task-categories/eval-cases.js';
 import { buildTaskCategoryConfusionMatrix } from '#src/task-categories/eval-report.js';
 import { TASK_CATEGORIES, type TaskCategory } from '#src/task-categories/types.js';
-
 if (process.env.TASK_CATEGORY_LIVE_ENV_FILE) {
   loadEnvFile(process.env.TASK_CATEGORY_LIVE_ENV_FILE);
 }

@@ -1,14 +1,19 @@
-// @vitest-environment happy-dom
-
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   signOut: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-vi.mock('next-auth/react', () => ({
-  signOut: fakes.signOut,
-}));
+await vi.mock(
+  import.meta.resolve('next-auth/react'),
+  () => ({
+    signOut: fakes.signOut,
+  }),
+  () => import('next-auth/react'),
+);
 
 const { signOutAfterClearingLocalSession } = await import('@/lib/sign-out-session');
 

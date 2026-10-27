@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { PageHeader } from '@/components/page-header';
+// Test environment: happy-dom
 
 describe('PageHeader', () => {
   it('renders the title as the only h1 in sentence case', () => {

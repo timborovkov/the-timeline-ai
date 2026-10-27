@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { SectionHeading, SettingsSection } from '@/components/section-heading';
+// Test environment: happy-dom
 
 describe('SectionHeading', () => {
   it('renders the title as an h2 in sentence case', () => {

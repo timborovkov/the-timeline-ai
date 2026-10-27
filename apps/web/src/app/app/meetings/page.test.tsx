@@ -1,8 +1,8 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
-
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),
@@ -20,58 +20,99 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/db', () => ({ users: {} }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    meetings: {
-      getCurrentMonthMinutes: fakes.getCurrentMonthMinutes,
-      getMeetingSettings: fakes.getMeetingSettings,
-      listMeetings: fakes.listMeetings,
-      listSavedMeetings: fakes.listSavedMeetings,
-    },
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
-    pins: { isPinnedMany: fakes.isPinnedMany },
-    timeline: {
-      listMembers: fakes.listMembers,
-      resolveVisibilityDefault: fakes.resolveVisibilityDefault,
-    },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
   }),
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-    ariaLabel,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-    ariaLabel?: string;
-  }) => (
-    <div aria-label={ariaLabel}>
-      {items.map((item, index) => (
-        <div key={getItemKey(item, index)}>{renderItem(item, index)}</div>
-      ))}
-    </div>
-  ),
-}));
-vi.mock('@/components/meeting-forms', () => ({
-  ArchiveSavedMeetingButton: () => null,
-  EditSavedMeetingForm: () => null,
-  JoinSavedMeetingButton: () => null,
-  SavedMeetingForm: () => null,
-  ScheduleMeetingBotForm: () => null,
-  SkipScheduledMeetingButton: () => null,
-}));
-vi.mock('@/components/pins/pin-overflow-menu', () => ({
-  PinOverflowMenu: () => null,
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({ users: {} }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      meetings: {
+        getCurrentMonthMinutes: fakes.getCurrentMonthMinutes,
+        getMeetingSettings: fakes.getMeetingSettings,
+        listMeetings: fakes.listMeetings,
+        listSavedMeetings: fakes.listSavedMeetings,
+      },
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      pins: { isPinnedMany: fakes.isPinnedMany },
+      timeline: {
+        listMembers: fakes.listMembers,
+        resolveVisibilityDefault: fakes.resolveVisibilityDefault,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+      ariaLabel,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+      ariaLabel?: string;
+    }) => (
+      <div aria-label={ariaLabel}>
+        {items.map((item, index) => (
+          <div key={getItemKey(item, index)}>{renderItem(item, index)}</div>
+        ))}
+      </div>
+    ),
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/meeting-forms'),
+  () => ({
+    ArchiveSavedMeetingButton: () => null,
+    EditSavedMeetingForm: () => null,
+    JoinSavedMeetingButton: () => null,
+    SavedMeetingForm: () => null,
+    ScheduleMeetingBotForm: () => null,
+    SkipScheduledMeetingButton: () => null,
+  }),
+  () => import('@/components/meeting-forms'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/pins/pin-overflow-menu'),
+  () => ({
+    PinOverflowMenu: () => null,
+  }),
+  () => import('@/components/pins/pin-overflow-menu'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: MeetingsPage } = await import('./page.js');
 

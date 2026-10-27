@@ -1,22 +1,57 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('@/app/actions/slack'),
+  () => ({
+    bindSlackConversationAction: vi.fn(),
+    unbindSlackConversationAction: vi.fn(),
+  }),
+  () => import('@/app/actions/slack'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: vi.fn(),
+    useRouter: () => ({ back: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: vi.fn() }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: vi.fn() }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: vi.fn(() => ({})) }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({ withTeam: vi.fn() }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slack'),
+  () => ({ listSlackConversationsForTeam: vi.fn() }),
+  () => import('@timeline/shared/slack'),
+);
 
-vi.mock('@/app/actions/slack', () => ({
-  bindSlackConversationAction: vi.fn(),
-  unbindSlackConversationAction: vi.fn(),
-}));
-vi.mock('next/navigation', () => ({
-  redirect: vi.fn(),
-  useRouter: () => ({ back: vi.fn() }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: vi.fn() }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: vi.fn() }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/env', () => ({ getEnv: vi.fn(() => ({})) }));
-vi.mock('@timeline/shared/team-scope', () => ({ withTeam: vi.fn() }));
-vi.mock('@timeline/shared/slack', () => ({ listSlackConversationsForTeam: vi.fn() }));
+const { cleanup, render, screen } = await import('@testing-library/react');
 
 const { SlackSettingsPageView } = await import('@/app/app/team/slack/slack-settings-page-content');
 

@@ -157,7 +157,7 @@ MCP descriptor.
   skill validator passed. Isolated Codex and Claude marketplace installs also
   installed `timeline` version `0.2.0` and exposed one skill plus the hosted MCP
   server.
-- The canonical `pnpm test` completed all six workspace tasks successfully in
+- The canonical `bun run test` completed all six workspace tasks successfully in
   40 minutes 4 seconds, including the reordered serial PGlite suite, 2,107 web
   tests, and the worker unit and integration suites.
 - Production `GET /.well-known/oauth-authorization-server` returned `404`.
@@ -199,11 +199,11 @@ not clear provider identity, account-plan, or production deployment gates.
   (`localhost`, `127.0.0.1`, `::1`, `[::1]`), `invalid_client` mapped to HTTP
   `401`, extra redirect/PKCE-plain/credentialed-URI tests, and AI-apps grant UI
   tests. Plugin source files were not changed.
-- `pnpm validate` passed (Prettier, typecheck, ESLint, Knip).
-- `pnpm run doctor` reported `React Doctor score: 100` and `No issues found!`.
-- `pnpm test` completed all six workspace tasks successfully after merging
+- `bun run validate` passed (Prettier, typecheck, ESLint, Knip).
+- `bun run doctor` reported `React Doctor score: 100` and `No issues found!`.
+- `bun run test` completed all six workspace tasks successfully after merging
   #435/#437 (web 2,362 tests).
-- `pnpm test:eval` and `pnpm test:dist-imports` passed on that revision.
+- `bun run test:eval` and `bun run test:dist-imports` passed on that revision.
 - Local `GET /.well-known/oauth-authorization-server` and
   `GET /.well-known/oauth-protected-resource/api/mcp/server` returned `200` with
   `read` plus `agent:ask`, PKCE `S256`, public-client token auth `none`, and
@@ -254,14 +254,14 @@ relaxing `state` or `resource` checks for less strict hosts.
 
 ## Local release checks
 
-Run with Node 24 and pnpm 11.8 from the repository root:
+Run with Bun 1.4.4 from the repository root:
 
 ```bash
-pnpm validate
-pnpm run doctor
-pnpm test
-pnpm test:eval
-pnpm test:dist-imports
+bun run validate
+bun run doctor
+bun run test
+bun run test:eval
+bun run test:dist-imports
 ```
 
 Validate the packages themselves:
@@ -304,7 +304,7 @@ server revision is deployed.
 
 | Date | Check | Result |
 | --- | --- | --- |
-| 2026-10-24 | `pnpm validate`, `pnpm run doctor`, `pnpm test`, `pnpm test:eval`, `pnpm test:dist-imports` | Passed after merging latest `main` |
+| 2026-10-24 | `bun run validate`, `bun run doctor`, `bun run test`, `bun run test:eval`, `bun run test:dist-imports` | Passed after merging latest `main` |
 | 2026-10-24 | Local OAuth discovery, unauthenticated MCP `401` challenge, browser consent, and grant revocation UI | Passed against the local web service |
 | 2026-10-24 | Codex/Claude plugin validators and isolated installs | Not re-run; plugin sources unchanged since 2026-08-27 |
 

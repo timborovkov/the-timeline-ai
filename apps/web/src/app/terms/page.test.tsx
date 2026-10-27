@@ -1,16 +1,21 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+await vi.mock(
+  import.meta.resolve('@/components/legal-page'),
+  () => ({
+    LegalPage: ({ children, title }: { children: React.ReactNode; title: string }) => (
+      <main>
+        <h1>{title}</h1>
+        {children}
+      </main>
+    ),
+  }),
+  () => import('@/components/legal-page'),
+);
 
-vi.mock('@/components/legal-page', () => ({
-  LegalPage: ({ children, title }: { children: React.ReactNode; title: string }) => (
-    <main>
-      <h1>{title}</h1>
-      {children}
-    </main>
-  ),
-}));
-
-import TermsPage from '@/app/terms/page';
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { default: TermsPage } = await import('@/app/terms/page');
 
 afterEach(() => {
   vi.unstubAllEnvs();

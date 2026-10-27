@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { getSiteUrl } from '@/lib/site-url';
-
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {

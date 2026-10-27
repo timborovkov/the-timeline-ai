@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   findSolution,
@@ -8,7 +9,6 @@ import {
   SOLUTION_ROUTES,
   SOLUTIONS,
 } from '@/components/marketing/solutions/content';
-
 describe('solution content', () => {
   it('exports the three audience routes for reuse without adding a navigation taxonomy', () => {
     expect(SOLUTION_CANONICAL_ROUTES).toEqual(Object.values(SOLUTION_ROUTES));

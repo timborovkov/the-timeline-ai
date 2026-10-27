@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ObjectListFilter, ObjectRow, ObjectType } from '@timeline/shared/objects/types';
 
@@ -6,7 +8,6 @@ import {
   boardAddItemTypeOptions,
   loadBoardAddItemCandidates,
 } from '@/lib/board-add-item-candidates';
-
 function objectRow(input: {
   id: string;
   type: ObjectType;

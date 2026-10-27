@@ -1,8 +1,10 @@
-import { PGlite } from '@electric-sql/pglite';
-import { rawEvents, teamMembers, teams, users } from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { PostmarkInbound } from '#src/email/postmark-schema.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 const log = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -11,16 +13,22 @@ const log = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('#src/logger.js', () => ({
-  childLogger: () => log,
-  logger: log,
-}));
+await vi.mock(
+  import.meta.resolve('#src/logger.js'),
+  () => ({
+    childLogger: () => log,
+    logger: log,
+  }),
+  () => import('#src/logger.js'),
+);
 
-import type { PostmarkInbound } from '#src/email/postmark-schema.js';
-
-import { handleInbound, inboundRecipientLogHints } from '#src/email/dispatcher.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-import { textQueueDeps } from '#src/test/queue-deps.js';
+const { PGlite } = await import('@electric-sql/pglite');
+const { rawEvents, teamMembers, teams, users } = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { handleInbound, inboundRecipientLogHints } = await import('#src/email/dispatcher.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
+const { textQueueDeps } = await import('#src/test/queue-deps.js');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

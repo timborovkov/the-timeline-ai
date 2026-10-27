@@ -1,10 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import sitemap from '@/app/sitemap';
 import { HELP_PAGES } from '@/lib/help-content';
 import { createPublicDocumentRegistry, definePublicDocuments } from '@/lib/public-site';
 import { buildPublicSitemap } from '@/lib/public-site/sitemap';
-
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {

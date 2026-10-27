@@ -1,4 +1,38 @@
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
+
+import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
+const qdrantFakes = vi.hoisted(() => ({
+  deletePoints: vi.fn().mockResolvedValue(undefined),
+  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
+  getQdrantClient: vi.fn(),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/qdrant/client.js'),
+  () => ({
+    getQdrantClient: qdrantFakes.getQdrantClient,
+  }),
+  () => import('#src/qdrant/client.js'),
+);
+
+const {
   boardItemChanges,
   boardItems,
   boardLanes,
@@ -9,39 +43,13 @@ import {
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
-  type Db,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { PGlite } from '@electric-sql/pglite';
-
-import {
-  buildBoardDirectWriteSourceContext,
-  defaultBoardLanes,
-  defaultBoardRecommendedTypes,
-} from '#src/boards/index.js';
-import { withTeam } from '#src/team-scope.js';
-import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-const qdrantFakes = vi.hoisted(() => ({
-  deletePoints: vi.fn().mockResolvedValue(undefined),
-  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
-  getQdrantClient: vi.fn(),
-}));
-
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-}));
-vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: qdrantFakes.getQdrantClient,
-}));
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { buildBoardDirectWriteSourceContext, defaultBoardLanes, defaultBoardRecommendedTypes } =
+  await import('#src/boards/index.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { createResettablePGliteTestDb } = await import('#src/test/pglite.js');
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-2222-2222-222222222222';

@@ -9,7 +9,7 @@
  * --limit flag now caps total enqueues, not the SELECT page size.
  *
  * Usage:
- *   pnpm --filter @timeline/worker reextract -- --team=<teamId> [--limit=N] [--dry-run]
+ *   bun run --filter @timeline/worker reextract -- --team=<teamId> [--limit=N] [--dry-run]
  *
  * Requires DATABASE_URL and REDIS_URL. OPENROUTER_API_KEY is required at
  * extraction time (in the worker), not here.

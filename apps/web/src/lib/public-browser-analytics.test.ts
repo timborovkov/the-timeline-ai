@@ -1,13 +1,10 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi, freshModuleUrl } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import type * as TestModule1 from '@/lib/public-browser-analytics';
 import type { CaptureResult } from 'posthog-js';
-
-import {
-  readPublicAnalyticsConsent,
-  writePublicAnalyticsConsent,
-} from '@/lib/public-analytics-consent';
+// Test environment: happy-dom
 
 const posthog = vi.hoisted(() => {
   const client = {
@@ -21,10 +18,17 @@ const posthog = vi.hoisted(() => {
   return { client, init: vi.fn(() => client), moduleLoads: 0 };
 });
 
-vi.mock('posthog-js', () => {
-  posthog.moduleLoads += 1;
-  return { default: { init: posthog.init } };
-});
+await vi.mock(
+  import.meta.resolve('posthog-js'),
+  () => {
+    posthog.moduleLoads += 1;
+    return { default: { init: posthog.init } };
+  },
+  () => import('posthog-js'),
+);
+
+const { readPublicAnalyticsConsent, writePublicAnalyticsConsent } =
+  await import('@/lib/public-analytics-consent');
 
 beforeEach(() => {
   vi.resetModules();
@@ -46,7 +50,9 @@ describe('public PostHog runtime', () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', '');
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://eu.i.posthog.com');
     writePublicAnalyticsConsent('accepted');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
 
     expect(analytics.isPublicBrowserAnalyticsConfigured).toBe(false);
     await analytics.capturePublicPageView('home');
@@ -58,7 +64,9 @@ describe('public PostHog runtime', () => {
 
   it('does not import or initialize PostHog without current affirmative consent', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePublicPageView('home');
     writePublicAnalyticsConsent('rejected');
@@ -73,7 +81,9 @@ describe('public PostHog runtime', () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     writePublicAnalyticsConsent('accepted');
     window.history.replaceState({}, '', '/app');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePublicPageView('home');
 
@@ -86,7 +96,9 @@ describe('public PostHog runtime', () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://eu.i.posthog.com');
     writePublicAnalyticsConsent('accepted');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePublicPageView('home');
     await analytics.capturePublicCta('home', 'try_project');
@@ -150,7 +162,9 @@ describe('public PostHog runtime', () => {
 
   it('rebuilds the outbound payload from allowlisted properties', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
     const result = captureResult('public_cta_clicked', {
       surface: 'home',
       cta: 'try_project',
@@ -195,7 +209,9 @@ describe('public PostHog runtime', () => {
   });
 
   it('allows Web analytics only with a reviewed public path and origin-only referrer', async () => {
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
     const result = captureResult('$pageview', {
       surface: 'how_it_works',
       token: 'ph-test',
@@ -259,7 +275,9 @@ describe('public PostHog runtime', () => {
   it('keeps provider failures best-effort and still clears browser state', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     writePublicAnalyticsConsent('accepted');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
     posthog.client.capture.mockImplementationOnce(() => {
       throw new Error('capture unavailable');
     });
@@ -283,7 +301,9 @@ describe('public PostHog runtime', () => {
   it('keeps rejection and deactivation best-effort when local storage cleanup fails', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     writePublicAnalyticsConsent('accepted');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
     const removeItem = vi.spyOn(window.localStorage, 'removeItem').mockImplementation(() => {
       throw new DOMException('Storage is unavailable', 'SecurityError');
     });
@@ -305,7 +325,9 @@ describe('public PostHog runtime', () => {
   it('clears provider and legacy state, then resumes an opted-out singleton without an opt-in event', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     writePublicAnalyticsConsent('accepted');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
     await analytics.capturePublicPageView('home');
 
     const keys = [
@@ -366,7 +388,9 @@ describe('public PostHog runtime', () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'ph-test');
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'https://us.i.posthog.com');
     writePublicAnalyticsConsent('accepted');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
 
     expect(analytics.isPublicBrowserAnalyticsConfigured).toBe(false);
     await analytics.capturePublicPageView('home');
@@ -376,7 +400,9 @@ describe('public PostHog runtime', () => {
 
   it('clears legacy Convex tracker state without a consent choice or PostHog key', async () => {
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', '');
-    const analytics = await import('@/lib/public-browser-analytics');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('@/lib/public-browser-analytics'))
+    ) as Promise<typeof TestModule1>);
     for (const key of ['am_vid', 'am_sid', 'am_st']) {
       window.localStorage.setItem(key, 'value');
       window.sessionStorage.setItem(key, 'value');

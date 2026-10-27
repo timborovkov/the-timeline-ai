@@ -1,8 +1,8 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { CollectionGroup } from '@/components/collections/collection-group';
 import { CollectionRow } from '@/components/collections/collection-row';
@@ -13,6 +13,7 @@ import { CollectionViewToggle } from '@/components/collections/collection-view-t
 import { EditableMetadata } from '@/components/collections/editable-metadata';
 import { MetadataDateEditor } from '@/components/collections/metadata-date-editor';
 import { SelectionBar } from '@/components/collections/selection-bar';
+// Test environment: happy-dom
 
 describe('collection primitives', () => {
   afterEach(cleanup);

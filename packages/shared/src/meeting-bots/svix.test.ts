@@ -1,9 +1,9 @@
 import { createHmac } from 'node:crypto';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { verifySvixSignature } from '#src/meeting-bots/svix.js';
-
 function sign(secret: string, id: string, ts: number, body: string): string {
   const stripped = secret.slice('whsec_'.length);
   const decoded = Buffer.from(stripped, 'base64');

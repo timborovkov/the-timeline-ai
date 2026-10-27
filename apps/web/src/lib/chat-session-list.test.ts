@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { chatSessionLabel, filterChatSessions } from '@/lib/chat-session-list';
-
 const sessions = [
   {
     title: 'Website requirements and launch',

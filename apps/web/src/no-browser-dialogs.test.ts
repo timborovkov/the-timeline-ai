@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 const sourceRoot = path.join(process.cwd(), 'src');
 const browserDialogPatterns = [
   /\bwindow\.(?:alert|confirm|prompt)\s*\(/,

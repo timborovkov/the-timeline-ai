@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { classifyAppAnalyticsPath } from '@/lib/app-analytics-routes';
-
 describe('app analytics route classification', () => {
   it('maps static app routes to stable surface enums', () => {
     expect(classifyAppAnalyticsPath('/app')).toBe('home');

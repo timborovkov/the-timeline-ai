@@ -1,4 +1,37 @@
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
+
+import type * as QueueModule from '#src/queue/queues.js';
+import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
+import type { PGlite, Transaction } from '@electric-sql/pglite';
+const queueFakes = vi.hoisted(() => ({
+  enqueueTaskCategoryJob: vi.fn(() =>
+    Promise.resolve({ enqueued: true, jobId: 'task-category-job' }),
+  ),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof QueueModule>();
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    return {
+      ...actual,
+      enqueueCalendarEventEmbedJob: enqueue,
+      enqueueEmbedJob: enqueue,
+      enqueueObjectEmbedJob: enqueue,
+      enqueueObjectNoteEmbedJob: enqueue,
+      enqueueObjectSummaryJob: vi.fn(() =>
+        Promise.resolve({ enqueued: true, jobId: 'summary-job' }),
+      ),
+      enqueueTaskCategoryJob: queueFakes.enqueueTaskCategoryJob,
+    };
+  },
+  () => import('#src/queue/queues.js'),
+);
+
+const {
   artifactClusterAnchors,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -7,49 +40,26 @@ import {
   agentSuggestions,
   boardItemChanges,
   boardLanes,
-  boards as boardsTable,
+  boards: boardsTable,
   entities,
   entityRelationships,
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
   users,
-} from '@timeline/db';
-import { asc, eq, or, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+} = await import('@timeline/db');
+const { asc, eq, or, sql } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { calendarEventMutationLockKey } = await import('#src/calendar/locking.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
+const { encodeCursor } = await import('#src/pagination.js');
+const { suggestionDedupeKey } = await import('#src/suggestions/index.js');
+const { buildTaskCategoryPacket, taskCategoryInputHash } =
+  await import('#src/task-categories/classifier.js');
+const { withTeam } = await import('#src/team-scope.js');
 
-import type * as QueueModule from '#src/queue/queues.js';
-import type { PGlite, Transaction } from '@electric-sql/pglite';
-
-import { calendarEventMutationLockKey } from '#src/calendar/locking.js';
-import { resetEnvForTests } from '#src/env.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { encodeCursor } from '#src/pagination.js';
-import { suggestionDedupeKey } from '#src/suggestions/index.js';
-import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-categories/classifier.js';
-import { withTeam } from '#src/team-scope.js';
-import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-const queueFakes = vi.hoisted(() => ({
-  enqueueTaskCategoryJob: vi.fn(() =>
-    Promise.resolve({ enqueued: true, jobId: 'task-category-job' }),
-  ),
-}));
-
-vi.mock('#src/queue/queues.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof QueueModule>();
-  const enqueue = vi.fn(() => Promise.resolve(undefined));
-  return {
-    ...actual,
-    enqueueCalendarEventEmbedJob: enqueue,
-    enqueueEmbedJob: enqueue,
-    enqueueObjectEmbedJob: enqueue,
-    enqueueObjectNoteEmbedJob: enqueue,
-    enqueueObjectSummaryJob: vi.fn(() => Promise.resolve({ enqueued: true, jobId: 'summary-job' })),
-    enqueueTaskCategoryJob: queueFakes.enqueueTaskCategoryJob,
-  };
-});
+const { createResettablePGliteTestDb } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';

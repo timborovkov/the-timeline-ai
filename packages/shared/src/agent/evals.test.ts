@@ -6,8 +6,9 @@ import {
   documentVersions,
   entities,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { SearchHit } from '#src/qdrant/client.js';
 import type { SearchOpts } from '#src/qdrant/client.js';
@@ -23,7 +24,6 @@ import {
   runAgentToolEval,
 } from '#src/test/agent-eval-harness.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 // Fast agent evals: these run the real Timeline agent tools against seeded
 // workspace state with deterministic retrieval. Success means the tool trace
 // and synthesized answer have the right evidence and no cross-team/private

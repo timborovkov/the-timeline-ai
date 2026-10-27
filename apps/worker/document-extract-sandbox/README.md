@@ -20,13 +20,13 @@ plus the Image recipe revision in
 set -a; . ./.env; set +a
 
 # Print the name for this commit (no Daytona API call):
-pnpm --filter @timeline/worker create-document-extract-snapshot -- --print-name-only
+bun run --filter @timeline/worker create-document-extract-snapshot -- --print-name-only
 
 # Create if missing (idempotent; preferred):
-pnpm --filter @timeline/worker create-document-extract-snapshot
+bun run --filter @timeline/worker create-document-extract-snapshot
 
 # Force delete + recreate (debug / corruption only):
-pnpm --filter @timeline/worker create-document-extract-snapshot -- --force
+bun run --filter @timeline/worker create-document-extract-snapshot -- --force
 ```
 
 Requires `DAYTONA_API_KEY` (and optional `DAYTONA_API_URL` / `DAYTONA_TARGET`).

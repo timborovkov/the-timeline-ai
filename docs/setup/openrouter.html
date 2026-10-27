@@ -83,14 +83,14 @@ OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
       </p>
       <p>
         After the separate provider-side check, generate the non-secret token with
-        <code>pnpm openrouter:attestation -- --env-file=/absolute/path/to/operator.env</code>. The
-        file needs only <code>OPENROUTER_API_KEY</code> and <code>OPENROUTER_GUARDRAIL_ID</code> and
-        should remain outside the repository. The command prints only the
-        <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION=...</code> assignment, never the key. Hosted
-        production validation fails closed when the token does not match the current policy version,
-        model-catalog digest, inference-key fingerprint, and guardrail id. The token detects local
-        drift; it does not prove the provider-side assignment or settings, which still require the
-        management-key deployment check and dated evidence. ZDR-required requests send
+        <code>bun run openrouter:attestation -- --env-file=/absolute/path/to/operator.env</code>.
+        The file needs only <code>OPENROUTER_API_KEY</code> and
+        <code>OPENROUTER_GUARDRAIL_ID</code> and should remain outside the repository. The command
+        prints only the <code>OPENROUTER_PRIVACY_POLICY_ATTESTATION=...</code> assignment, never the
+        key. Hosted production validation fails closed when the token does not match the current
+        policy version, model-catalog digest, inference-key fingerprint, and guardrail id. The token
+        detects local drift; it does not prove the provider-side assignment or settings, which still
+        require the management-key deployment check and dated evidence. ZDR-required requests send
         <code>provider.data_collection=deny</code>, <code>provider.zdr=true</code>, and an explicit
         cache-disable control on every API surface that supports them. OpenRouter's
         <a href="https://openrouter.ai/docs/guides/features/zdr">ZDR documentation</a> says those
@@ -231,8 +231,8 @@ OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
         The normal test suite mocks OpenRouter. To run only the optional live structured-extraction
         smoke test, export <code>OPENROUTER_API_KEY</code> and run
         <code
-          >OPENROUTER_LIVE_TESTS=1 pnpm --filter @timeline/shared exec vitest run
-          src/llm/chat.test.ts --project unit --maxWorkers=1 --no-file-parallelism</code
+          >OPENROUTER_LIVE_TESTS=1 bun scripts/testing/run.ts packages/shared/src/llm/chat.test.ts
+          --live</code
         >.
       </p>
 
@@ -241,15 +241,15 @@ OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
         Canonical tasks are categorized asynchronously through the pinned
         <code>TIMELINE_MODELS.taskCategorization</code> model. Run the live 120-case release gate
         against the same environment with
-        <code>TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env pnpm test:task-category-eval:live</code>.
+        <code>TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env bun run test:task-category-eval:live</code>.
         The report includes exact accuracy, macro recall, prompt-injection safety, and a confusion
         matrix; it does not write task content to product analytics.
       </p>
       <p>
         Historical work defaults to a dry run:
         <code
-          >TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill --
-          --team-id=&lt;uuid&gt; --limit=500</code
+          >TIMELINE_ENV_FILE=/path/to/.env bun run --filter @timeline/worker task-category-backfill
+          -- --team-id=&lt;uuid&gt; --limit=500</code
         >. Enqueueing requires both <code>--enqueue</code> and a projected-cost guard such as
         <code>--max-cost-usd=0.10</code>. The guard compares a fixed $0.0002 per-task estimate
         (about 2× weekday-peak Flash 1017 spend on a 220/20 token packet), not actual provider
@@ -281,7 +281,7 @@ OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
 
       <h2 id="phase-3">Phase 3 verification (transcription)</h2>
       <p>
-        <code>pnpm canary:integrations</code> sends a tiny embedded spoken MP3 fixture through
+        <code>bun run canary:integrations</code> sends a tiny embedded spoken MP3 fixture through
         <code>llm.transcribeAudio()</code> and verifies the pinned OpenRouter transcription endpoint
         returns the expected canary words. This proves provider/model access and real speech
         decoding without requiring operator-recorded sample files.
@@ -312,7 +312,7 @@ OPENROUTER_PRIVACY_POLICY_ATTESTATION=&lt;generated orpa1 token&gt;
         >, then run the aggregate-only live gate:
       </p>
       <pre><code>TRANSCRIPTION_QUALITY_EVAL_ENV_FILE=/secure/eval.env \
-pnpm eval:transcription-quality:live -- \
+bun run eval:transcription-quality:live -- \
   --manifest=/secure/corpus/manifest.json \
   --out=/secure/evidence/transcription-eval.json \
   --baseline=openai/gpt-4o-transcribe \
@@ -324,7 +324,7 @@ pnpm eval:transcription-quality:live -- \
         availability, route, and cost metrics, never audio or transcript content. Keep the
         production pin unchanged when no candidate passes every gate.
       </p>
-      <p>After setting <code>OPENROUTER_API_KEY</code> and starting <code>pnpm dev</code>:</p>
+      <p>After setting <code>OPENROUTER_API_KEY</code> and starting <code>bun run dev</code>:</p>
       <ol>
         <li>
           Record a ~5s voice memo via the web recorder on <code>/app</code>. Optionally type a note
@@ -348,7 +348,7 @@ pnpm eval:transcription-quality:live -- \
       <h2 id="phase-4">Phase 4 verification (extraction + object links)</h2>
       <p>
         After <code>OPENROUTER_API_KEY</code> and <code>REDIS_URL</code> are set, with
-        <code>pnpm dev</code> (web) and the worker process running:
+        <code>bun run dev</code> (web) and the worker process running:
       </p>
       <ol>
         <li>
@@ -425,7 +425,7 @@ pnpm eval:transcription-quality:live -- \
         <li>Update <code>packages/shared/src/llm/models.ts</code> if the model changes.</li>
         <li>
           Run for one team:
-          <pre><code>pnpm --filter @timeline/worker reextract -- --team=&lt;teamId&gt;
+          <pre><code>bun run --filter @timeline/worker reextract -- --team=&lt;teamId&gt;
 </code></pre>
         </li>
         <li>
@@ -443,7 +443,7 @@ pnpm eval:transcription-quality:live -- \
       <p>
         After <code>OPENROUTER_API_KEY</code>, <code>REDIS_URL</code>, and
         <code>QDRANT_URL</code> are set, with the docker stack (<code>docker compose up -d</code>)
-        running and both <code>pnpm dev</code> (web) and the worker process started:
+        running and both <code>bun run dev</code> (web) and the worker process started:
       </p>
       <ol>
         <li>
@@ -625,7 +625,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
           <strong>Re-embed each team</strong> into the new collection. The worker reads
           <code>targetCollection</code> from the job payload and writes there instead of
           <code>QDRANT_COLLECTION</code>. The old collection is untouched.
-          <pre><code>pnpm --filter @timeline/worker reembed -- \
+          <pre><code>bun run --filter @timeline/worker reembed -- \
   --team=&lt;teamId&gt; \
   --target-collection=events_v2
 </code></pre>
@@ -641,7 +641,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         <li>
           <strong>Verify</strong> spot-checks against the new collection by overriding
           <code>QDRANT_COLLECTION</code> in a single shell before flipping production:
-          <pre><code>QDRANT_COLLECTION=events_v2 pnpm --filter @timeline/web dev
+          <pre><code>QDRANT_COLLECTION=events_v2 bun run --filter @timeline/web dev
 </code></pre>
         </li>
         <li>
@@ -680,7 +680,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         <li>
           <strong>Create the target collection</strong> with the current app create body (same
           <code>requireExisting</code> contract as re-embed). The migrate script can do this:
-          <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+          <pre><code>bun run --filter @timeline/worker qdrant-migrate-collection -- \
   --source-collection=events \
   --target-collection=events_ondisk \
   --create-target --copy --verify --writers-paused --all-teams
@@ -713,7 +713,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
           query point is excluded from both rankings, and the uncompressed baseline is exact search
           with <code>quantization.ignore</code>. Zero comparable queries are reported as
           <code>no_data</code> (exit 1), not 100% recall:
-          <pre><code>pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+          <pre><code>bun run --filter @timeline/worker qdrant-migrate-collection -- \
   --source-collection=events \
   --target-collection=events_ondisk \
   --measure --team=20000000-0000-4000-8000-000000000001 \
@@ -734,7 +734,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
       --header "Content-Type: application/json" \
       --data '{"hnsw_config":{"full_scan_threshold":10000}}'
   done
-  QDRANT_COLLECTION=events_ondisk pnpm demo:verify
+  QDRANT_COLLECTION=events_ondisk bun run demo:verify
 )
 </code></pre>
         </li>
@@ -762,7 +762,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
           In the operator process, use the real production environment, URL, API key, and active
           <code>QDRANT_COLLECTION</code>. Keep the acknowledgment out of service variables:
           <pre><code>ALLOW_QDRANT_MIGRATE_PRODUCTION=I_UNDERSTAND_THIS_MIGRATES_PRODUCTION_QDRANT \
-pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+bun run --filter @timeline/worker qdrant-migrate-collection -- \
   --production --source-collection=events --target-collection=events_ondisk \
   --create-target --copy --verify --writers-paused --all-teams
 </code></pre>

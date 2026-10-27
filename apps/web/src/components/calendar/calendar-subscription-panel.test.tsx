@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 // Team members manage a private calendar feed URL from this panel, so these
 // tests cover the user-visible create, reset, and disable state transitions.
@@ -12,16 +11,31 @@ const fakes = vi.hoisted(() => ({
   notifyError: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
-    fakes.notifyAction(options);
-    return options.run();
-  },
-  notifyError: (id: string, message: string) => {
-    fakes.notifyError(id, message);
-  },
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+      fakes.notifyAction(options);
+      return options.run();
+    },
+    notifyError: (id: string, message: string) => {
+      fakes.notifyError(id, message);
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
+const { default: userEvent, PointerEventsCheckLevel } = await import('@testing-library/user-event');
 
 const { CalendarSubscriptionPanel } = await import('./calendar-subscription-panel.js');
 

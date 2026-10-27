@@ -1,16 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
-
-import {
-  acceptAllSuggestionAction,
-  acceptSuggestionItemAction,
-  acceptVisibleSuggestionsAction,
-  rejectSuggestionItemAction,
-  rejectVisibleSuggestionsAction,
-  reviseSuggestionItemAction,
-  reviseTaskSuggestionItemAction,
-} from '@/app/actions/suggestions';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for approval-queue suggestions. The shared suggestion
  * scope owns durable DB behavior; these tests pin validation, auth/scope
@@ -33,18 +23,45 @@ const fakes = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/action-scope', async () => {
-  const { z } = await import('zod');
-  return {
-    resolveScope: fakes.fakeResolveScope,
-    uuidSchema: z.uuid(),
-  };
-});
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/lib/action-scope'),
+  async () => {
+    const { z } = await import('zod');
+    return {
+      resolveScope: fakes.fakeResolveScope,
+      uuidSchema: z.uuid(),
+    };
+  },
+  () => import('@/lib/action-scope'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.fakeReportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+
+const { z } = await import('zod');
+const {
+  acceptAllSuggestionAction,
+  acceptSuggestionItemAction,
+  acceptVisibleSuggestionsAction,
+  rejectSuggestionItemAction,
+  rejectVisibleSuggestionsAction,
+  reviseSuggestionItemAction,
+  reviseTaskSuggestionItemAction,
+} = await import('@/app/actions/suggestions');
 
 const ITEM_ID = '11111111-1111-4111-8111-111111111111';
 const SUGGESTION_ID = '22222222-2222-4222-8222-222222222222';

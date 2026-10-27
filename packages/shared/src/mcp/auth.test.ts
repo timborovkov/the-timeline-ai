@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
 import { buildAuth, validateMcpUrl, type McpServerRow } from '#src/mcp/auth.js';
-
 function row(overrides: Partial<McpServerRow> = {}): McpServerRow {
   return {
     id: '00000000-0000-0000-0000-000000000001',

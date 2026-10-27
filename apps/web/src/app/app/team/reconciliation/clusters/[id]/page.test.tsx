@@ -1,9 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const CLUSTER_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -21,24 +19,53 @@ const fakes = vi.hoisted(() => ({
   requireMembership: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
-  redirect: fakes.redirect,
-  notFound: fakes.notFound,
-  useRouter: () => ({ back: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
-    reconciliation: { getClusterDetail: fakes.getClusterDetail },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+    notFound: fakes.notFound,
+    useRouter: () => ({ back: vi.fn() }),
   }),
-}));
-vi.mock('@/app/actions/reconciliation', () => ({
-  queueReconciliationJobFormAction: vi.fn(),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      reconciliation: { getClusterDetail: fakes.getClusterDetail },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/reconciliation'),
+  () => ({
+    queueReconciliationJobFormAction: vi.fn(),
+  }),
+  () => import('@/app/actions/reconciliation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: ReconciliationClusterPage } = await import('./page.js');
 

@@ -4,7 +4,7 @@
  *
  * Usage:
  *   set -a; . ./.env; set +a
- *   NODE_OPTIONS=--conditions=development pnpm exec tsx apps/worker/scripts/e2e-document-extract-daytona.ts [pdf|docx|queue] [fixturePath]
+ *   bun apps/worker/scripts/e2e-document-extract-daytona.ts [pdf|docx|queue] [fixturePath]
  */
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';

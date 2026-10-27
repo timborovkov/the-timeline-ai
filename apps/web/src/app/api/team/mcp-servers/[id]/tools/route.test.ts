@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for MCP tool discovery and test calls. The shared MCP
  * client owns live protocol behavior; this route owns auth/team gates,
@@ -15,19 +16,35 @@ const fakes = vi.hoisted(() => ({
   callTool: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    mcp: {
-      getServer: fakes.getServer,
-      discoverTools: fakes.discoverTools,
-      callTool: fakes.callTool,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      mcp: {
+        getServer: fakes.getServer,
+        discoverTools: fakes.discoverTools,
+        callTool: fakes.callTool,
+      },
+    }),
   }),
-}));
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { GET, POST } = await import('./route.js');
 

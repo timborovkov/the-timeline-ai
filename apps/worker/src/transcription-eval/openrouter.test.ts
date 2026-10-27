@@ -1,20 +1,24 @@
-/**
- * The live transport must use OpenRouter's documented STT/usage contracts,
- * preflight the public ZDR registry, disable response caching, and return only
- * route/cost metadata beside the in-memory hypothesis. All HTTP is mocked here;
- * no API key, audio corpus, or external service is touched.
- */
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { TranscriptionEvalRequestError } from '#src/transcription-eval/evaluate.js';
 import {
   createOpenRouterTranscriptionEvalTransport,
   OPENROUTER_TRANSCRIPTION_EVAL_BASE_URL,
 } from '#src/transcription-eval/openrouter.js';
+/**
+ * The live transport must use OpenRouter's documented STT/usage contracts,
+ * preflight the public ZDR registry, disable response caching, and return only
+ * route/cost metadata beside the in-memory hypothesis. All HTTP is mocked here;
+ * no API key, audio corpus, or external service is touched.
+ */
 
 describe('OpenRouter transcription eval transport', () => {
   it('preflights ZDR routes and captures aggregate-ready route, cost, and latency data', async () => {
-    const fetchImpl = vi.fn<typeof fetch>((input, init) => {
+    const fetchImpl = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith('/endpoints/zdr')) {
         return Promise.resolve(
@@ -140,11 +144,16 @@ describe('OpenRouter transcription eval transport', () => {
   });
 
   it('classifies provider format failures without retaining the provider body', async () => {
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
-      new Response(JSON.stringify({ error: { message: 'content-bearing provider diagnostic' } }), {
-        status: 415,
-      }),
-    );
+    const fetchImpl = vi
+      .fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ error: { message: 'content-bearing provider diagnostic' } }),
+          {
+            status: 415,
+          },
+        ),
+      );
     const transport = createOpenRouterTranscriptionEvalTransport({
       apiKey: 'test-key',
       fetch: fetchImpl,
@@ -170,7 +179,9 @@ describe('OpenRouter transcription eval transport', () => {
   });
 
   it('rejects endpoint isolation when the same provider has regular and ZDR siblings', async () => {
-    const fetchImpl = vi.fn<typeof fetch>((input) => {
+    const fetchImpl = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith('/endpoints/zdr')) {
         return Promise.resolve(
@@ -244,7 +255,9 @@ describe('OpenRouter transcription eval transport', () => {
       expected: 'invalid',
     },
   ] as const)('rejects endpoint isolation when full inventory $label', async (inventoryCase) => {
-    const fetchImpl = vi.fn<typeof fetch>((input) => {
+    const fetchImpl = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       if (url.endsWith('/endpoints/zdr')) {
         return Promise.resolve(
@@ -286,7 +299,7 @@ describe('OpenRouter transcription eval transport', () => {
     const transport = createOpenRouterTranscriptionEvalTransport({
       apiKey: 'test-key',
       fetch: vi
-        .fn<typeof fetch>()
+        .fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>()
         .mockResolvedValue(
           new Response(JSON.stringify({ data: [{ wrong_key: 'value' }] }), { status: 200 }),
         ),
@@ -300,11 +313,13 @@ describe('OpenRouter transcription eval transport', () => {
   it('fails closed when a matched ZDR route omits its provider name', async () => {
     const transport = createOpenRouterTranscriptionEvalTransport({
       apiKey: 'test-key',
-      fetch: vi.fn<typeof fetch>().mockResolvedValue(
-        new Response(JSON.stringify({ data: [{ model_id: 'openai/whisper-large-v3' }] }), {
-          status: 200,
-        }),
-      ),
+      fetch: vi
+        .fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ data: [{ model_id: 'openai/whisper-large-v3' }] }), {
+            status: 200,
+          }),
+        ),
     });
 
     await expect(transport.inspectZdrRoutes(['openai/whisper-large-v3'])).rejects.toThrow(
@@ -316,7 +331,7 @@ describe('OpenRouter transcription eval transport', () => {
     const transport = createOpenRouterTranscriptionEvalTransport({
       apiKey: 'test-key',
       fetch: vi
-        .fn<typeof fetch>()
+        .fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>()
         .mockResolvedValue(
           new Response(JSON.stringify({ usage: { cost: 0.001 } }), { status: 200 }),
         ),

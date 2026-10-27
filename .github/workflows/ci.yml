@@ -10,53 +10,54 @@ jobs:
   ci:
     name: Static checks
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # Use corepack instead of `pnpm/action-setup`. The latter's codeload
-      # archives have been intermittently 404ing from GitHub-hosted runners
-      # across multiple v4.x SHAs. Corepack ships with Node and pins pnpm
-      # via the project's `packageManager` field — same effect, no external
-      # action download.
-      - name: Setup Node
-        uses: actions/setup-node@v7
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version-file: .nvmrc
+          bun-version-file: .bun-version
 
-      - name: Enable pnpm via corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.8.0 --activate
-
-      - name: Configure pnpm store cache
+      - name: Cache Bun downloads
         uses: actions/cache@v6
         with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: bun install --frozen-lockfile
 
       - name: Static checks
         env:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: pnpm validate
+        run: bun run validate
+
+      - name: Unit and integration tests
+        run: bun run test
+
+      - name: Bun runtime smoke tests
+        run: bun run test:runtime
+
+      - name: React Doctor
+        run: bun run doctor
 
       - name: Reconciliation evals
         env:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: pnpm test:reconciliation-eval
+        run: bun run test:reconciliation-eval
 
       - name: E2E environment contract
-        run: pnpm test:e2e-env
+        run: bun run test:e2e-env
 
       - name: Dist import smoke test
         env:
           AUTH_SECRET: ci_dummy_secret_at_least_16_chars
           DATABASE_URL: postgres://placeholder@localhost:5432/placeholder
-        run: pnpm test:dist-imports
+        run: bun run test:dist-imports

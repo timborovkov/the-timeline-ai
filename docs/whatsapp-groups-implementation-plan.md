@@ -94,7 +94,7 @@
 7. Add a partial unique index on `raw_events.source_metadata ->> 'whatsapp_message_id'`, exactly like the Slack event-ID index, so a redelivery cannot create duplicate evidence.
 8. Add schema/migration tests that prove enum availability, foreign-key cascade behavior, uniqueness of active number/group routes, group-ask event idempotency, and raw-event deduplication.
 
-**Verification:** `pnpm --filter @timeline/db test` passes with a migration test that attempts cross-team enabled bindings and duplicate WhatsApp message IDs.
+**Verification:** `bun run --filter @timeline/db test` passes with a migration test that attempts cross-team enabled bindings and duplicate WhatsApp message IDs.
 
 ### Task 3: Define a strict WhatsApp protocol boundary
 
@@ -270,15 +270,15 @@
 Run, at minimum, after implementation:
 
 ```bash
-pnpm validate
-pnpm run doctor
-pnpm test
-pnpm test:dist-imports
-pnpm test:eval
-pnpm e2e
+bun run validate
+bun run doctor
+bun run test
+bun run test:dist-imports
+bun run test:eval
+bun run e2e
 ```
 
-Add the narrow package/route tests while iterating and run `pnpm test:reconciliation-eval` if source references, evidence associations, visibility floors, or reconciliation planning are touched. The final web check must show `React Doctor score: 100` and `No issues found!`.
+Add the narrow package/route tests while iterating and run `bun run test:reconciliation-eval` if source references, evidence associations, visibility floors, or reconciliation planning are touched. The final web check must show `React Doctor score: 100` and `No issues found!`.
 
 ---
 

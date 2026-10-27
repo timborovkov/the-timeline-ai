@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ToolSet } from 'ai';
 
 import { instrumentAgentTools, summarizeAgentToolObservations } from '#src/agent/observability.js';
-
 const EVENT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const DOCUMENT_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const CHUNK_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';

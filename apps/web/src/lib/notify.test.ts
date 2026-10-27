@@ -1,8 +1,6 @@
-import { isValidElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { UndoToastButton } from '@/components/ui/undo-toast-button';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const toast = vi.hoisted(() => ({
   loading: vi.fn(() => 'toast-1'),
   success: vi.fn(),
@@ -10,7 +8,14 @@ const toast = vi.hoisted(() => ({
   warning: vi.fn(),
 }));
 
-vi.mock('sonner', () => ({ toast }));
+await vi.mock(
+  import.meta.resolve('sonner'),
+  () => ({ toast }),
+  () => import('sonner'),
+);
+
+const { isValidElement } = await import('react');
+const { UndoToastButton } = await import('@/components/ui/undo-toast-button');
 
 const {
   displayActionError,

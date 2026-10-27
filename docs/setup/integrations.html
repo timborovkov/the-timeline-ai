@@ -742,8 +742,8 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         <code>packages/db/drizzle/0075_mcp_oauth_server.sql</code> through the normal migrator and
         deploy the matching web revision. Railway's existing pre-deploy migrator does this
         automatically and blocks the release on migration failure; self-hosted operators must run
-        <code>pnpm db:migrate</code> before starting the updated web service. Do not advertise OAuth
-        availability while the hosted MCP route and OAuth tables are on different revisions.
+        <code>bun run db:migrate</code> before starting the updated web service. Do not advertise
+        OAuth availability while the hosted MCP route and OAuth tables are on different revisions.
       </p>
       <p>
         Production smoke tests must cover the unauthenticated <code>401</code> challenge, both
@@ -977,7 +977,7 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         reports success.
       </p>
       <p>Manual full backfill from the CLI:</p>
-      <pre><code>pnpm --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>
+      <pre><code>bun run --filter @timeline/worker integration-resync -- --team=&lt;uuid&gt; --from-zero</code></pre>
       <p>
         Existing Monday connections that selected hidden helper boards can be repaired with the
         team-scoped command below. It is a dry-run unless <code>--apply</code> is present. The
@@ -999,10 +999,10 @@ codex mcp add timeline --url "&lt;copied MCP endpoint URL&gt;" --bearer-token-en
         <code>--allow-unverified</code>
         after reviewing the dry-run.
       </p>
-      <pre><code>pnpm repair:monday -- --env-file=/path/to/.env \
+      <pre><code>bun run repair:monday -- --env-file=/path/to/.env \
   --team-id=&lt;team-uuid&gt; --user-id=&lt;admin-user-uuid&gt;
 
-pnpm repair:monday -- --env-file=/path/to/.env \
+bun run repair:monday -- --env-file=/path/to/.env \
   --team-id=&lt;team-uuid&gt; --user-id=&lt;admin-user-uuid&gt; --apply</code></pre>
 
       <h2 id="audit">Audit log</h2>
@@ -1020,11 +1020,11 @@ pnpm repair:monday -- --env-file=/path/to/.env \
         <dt>Need to verify live provider credentials without leaking secrets</dt>
         <dd>
           Run
-          <code>pnpm canary:integrations -- --env-file=/path/to/.env</code>. The canary prints only
-          <code>OK</code>, <code>WARN</code>, or <code>SKIP</code> rows for OpenRouter, GitHub App
-          auth, Sentry API access, Postmark API access, native OAuth authorize endpoints, and native
-          webhook/signing secrets, followed by secret-safe next steps for any non-OK row. Use
-          <code>pnpm canary:integrations:strict -- --env-file=/path/to/.env</code> when every row
+          <code>bun run canary:integrations -- --env-file=/path/to/.env</code>. The canary prints
+          only <code>OK</code>, <code>WARN</code>, or <code>SKIP</code> rows for OpenRouter, GitHub
+          App auth, Sentry API access, Postmark API access, native OAuth authorize endpoints, and
+          native webhook/signing secrets, followed by secret-safe next steps for any non-OK row. Use
+          <code>bun run canary:integrations:strict -- --env-file=/path/to/.env</code> when every row
           must be <code>OK</code>. Configured GitHub, Google Drive, Linear, Monday.com, Slack, and
           Sentry OAuth rows require both client id and client secret env vars to be present, then
           build the provider authorize URL and make a secret-free request to the provider, treating

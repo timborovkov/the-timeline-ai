@@ -10,7 +10,7 @@
  * cutover pattern).
  *
  * Usage:
- *   pnpm --filter @timeline/worker redocument-embed -- \
+ *   bun run --filter @timeline/worker redocument-embed -- \
  *     --team=<uuid> [--target-collection=<name>] [--limit=N] [--dry-run]
  */
 import { closeDb, documentChunks, documents, getDb } from '@timeline/db';

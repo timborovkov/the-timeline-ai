@@ -1,15 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   redirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
 
-import EntityProfileRedirect from '@/app/app/entities/[id]/page';
-import EntitiesIndexRedirect from '@/app/app/entities/page';
+const { default: EntityProfileRedirect } = await import('@/app/app/entities/[id]/page');
+const { default: EntitiesIndexRedirect } = await import('@/app/app/entities/page');
 
 beforeEach(() => {
   vi.clearAllMocks();

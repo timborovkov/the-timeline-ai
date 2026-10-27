@@ -1,42 +1,57 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as boards from '@timeline/shared/boards';
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   updateItem: vi.fn(),
   notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
 }));
 
-vi.mock('@/app/actions/objects', () => ({
-  loadTaskCategoryStatesAction: vi.fn(),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: fakes.notifyAction,
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    loadTaskCategoryStatesAction: vi.fn(),
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: fakes.notifyAction,
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
 
 const { CuratedBoardList } = await import('./curated-board-views.js');
 

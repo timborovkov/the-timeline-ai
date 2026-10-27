@@ -1,10 +1,11 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import styles from '@/app/(landing)/home.module.css';
 import { TimelineFlowMotion } from '@/components/marketing/home/timeline-flow-motion';
+// Test environment: happy-dom
 
 const MOTION_READY_CLASS = requiredClassName(styles.motionReady, 'motionReady');
 const VISIBLE_CLASS = requiredClassName(styles.visible, 'visible');

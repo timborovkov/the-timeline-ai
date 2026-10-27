@@ -39,7 +39,7 @@ export function installJobsPreviewMocks(opts: { olderCount: number }): () => voi
   const originalFetch = window.fetch.bind(window);
   let olderRemaining = opts.olderCount;
 
-  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const previewFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = requestUrl(input);
     const method = requestMethod(input, init);
     if (!url.includes('/api/team/job-recovery') && !url.includes('/api/jobs/dashboard')) {
@@ -125,6 +125,12 @@ export function installJobsPreviewMocks(opts: { olderCount: number }): () => voi
     return originalFetch(input, init);
   };
 
+  // This runs in a browser, whose fetch does not have Bun's preconnect extension.
+  Object.defineProperty(window, 'fetch', {
+    configurable: true,
+    writable: true,
+    value: previewFetch,
+  });
   return () => {
     window.fetch = originalFetch;
   };

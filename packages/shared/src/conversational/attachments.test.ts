@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   classifyConversationalAttachment,
   CONVERSATIONAL_ATTACHMENT_LIMITS,
 } from '#src/conversational/attachments.js';
-
 describe('classifyConversationalAttachment', () => {
   it('routes audio and supported documents', () => {
     expect(

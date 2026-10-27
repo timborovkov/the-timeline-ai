@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   attentionCount,
@@ -14,7 +16,6 @@ import {
   shouldWarnPlaceholderInboundEmail,
   workAttentionCount,
 } from '@/lib/hub-status';
-
 describe('hub status helpers', () => {
   it('aggregates only positive attention counts', () => {
     expect(attentionCount(2, 0, -1, 3)).toBe(5);

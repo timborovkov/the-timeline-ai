@@ -1,20 +1,31 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   useOnboardingChecklistQuery: vi.fn(),
 }));
 
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useOnboardingChecklistQuery: fakes.useOnboardingChecklistQuery,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyError: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useOnboardingChecklistQuery: fakes.useOnboardingChecklistQuery,
+  }),
+  () => import('@/lib/use-paginated-queries'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyError: vi.fn(),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { OnboardingChecklist } = await import('./onboarding-checklist.js');
 

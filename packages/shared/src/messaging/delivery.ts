@@ -94,7 +94,7 @@ export interface SendMessageOptions {
   userId?: string | null;
   dedupeKey?: string;
   metadata?: Record<string, unknown>;
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }
 
 function configuredSender(): string | null {
@@ -109,7 +109,9 @@ function shortError(err: unknown, fallback: string): string {
 
 async function sendPostmarkEmail(
   message: RenderedMessage,
-  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+  fetchImpl: (
+    ...args: Parameters<typeof globalThis.fetch>
+  ) => ReturnType<typeof globalThis.fetch> = globalThis.fetch,
 ): Promise<PostmarkResult> {
   const env = getEnv();
   const from = configuredSender();
@@ -371,7 +373,7 @@ export async function sendDailyDigest(input: {
   digestId: string;
   to: string;
   digestUrl: string;
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   now?: Date;
 }): Promise<SendMessageResult> {
   const rows = await input.db
@@ -554,7 +556,7 @@ async function deliverPersonalDigestDestination(input: {
   email: string;
   digestUrl: string;
   payload: DailyDigestPayload;
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }): Promise<SendMessageResult> {
   const dedupeKey = digestDestinationDedupeKey({
     scope: 'member',

@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Legacy integration selection management predates person-owned provider
  * connections. Provider-connection-backed integrations must stay on the shared
@@ -27,40 +28,64 @@ const fakes = vi.hoisted(() => ({
   enqueueIntegrationSyncJob: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
-vi.mock('@timeline/shared/integrations', () => ({
-  ProviderRateLimitError: class ProviderRateLimitError extends Error {
-    retryAt: Date;
-    constructor(input: { message?: string; retryAt: Date }) {
-      super(input.message);
-      this.retryAt = input.retryAt;
-    }
-  },
-  getProvider: fakes.getProvider,
-  adminReconcileIntegrationWebhookSubscriptions:
-    fakes.adminReconcileIntegrationWebhookSubscriptions,
-  adminRecordPendingIntegrationSyncContinuations:
-    fakes.adminRecordPendingIntegrationSyncContinuations,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    integrations: {
-      getIntegration: fakes.getIntegration,
-      getIntegrationTokens: fakes.getIntegrationTokens,
-      listSelections: fakes.listSelections,
-      setSelections: fakes.setSelections,
-      recordAudit: fakes.recordAudit,
-      recordError: fakes.recordError,
-      recordConnectionAttention: fakes.recordConnectionAttention,
-      resolveConnectionAttention: fakes.resolveConnectionAttention,
-      listConnectionAttention: fakes.listConnectionAttention,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.requireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({
+    ProviderRateLimitError: class ProviderRateLimitError extends Error {
+      retryAt: Date;
+      constructor(input: { message?: string; retryAt: Date }) {
+        super(input.message);
+        this.retryAt = input.retryAt;
+      }
     },
+    getProvider: fakes.getProvider,
+    adminReconcileIntegrationWebhookSubscriptions:
+      fakes.adminReconcileIntegrationWebhookSubscriptions,
+    adminRecordPendingIntegrationSyncContinuations:
+      fakes.adminRecordPendingIntegrationSyncContinuations,
   }),
-}));
+  () => import('@timeline/shared/integrations'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      integrations: {
+        getIntegration: fakes.getIntegration,
+        getIntegrationTokens: fakes.getIntegrationTokens,
+        listSelections: fakes.listSelections,
+        setSelections: fakes.setSelections,
+        recordAudit: fakes.recordAudit,
+        recordError: fakes.recordError,
+        recordConnectionAttention: fakes.recordConnectionAttention,
+        resolveConnectionAttention: fakes.resolveConnectionAttention,
+        listConnectionAttention: fakes.listConnectionAttention,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { GET, PUT } = await import('./route.js');
 

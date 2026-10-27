@@ -4,7 +4,7 @@
  * duplicate events so a human can review the cleanup.
  *
  * Usage:
- *   pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--apply]
+ *   bun run --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=YYYY-MM-DD] [--to=YYYY-MM-DD] [--apply]
  */
 import { pathToFileURL } from 'node:url';
 

@@ -1,12 +1,12 @@
+import { expect } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { LanguageModel } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { extractTextFromMedia, resolveVisionModelId } from '#src/llm/vision.js';
-
 // The v3 model layer in `ai` doesn't re-export its call-options type from
 // the package root. We only need the prompt + maxOutputTokens fields for
 // our assertions, so type the captured call narrowly.
@@ -197,7 +197,9 @@ describe('extractTextFromMedia', () => {
   it('enforces ZDR routing and disables OpenRouter response caching at the HTTP boundary', async () => {
     let requestBody: unknown;
     let requestHeaders: Headers | undefined;
-    const fetch: typeof globalThis.fetch = (_input, init) => {
+    const fetch: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_input, init) => {
       if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
       requestBody = JSON.parse(init.body) as unknown;
       requestHeaders = new Headers(init.headers);

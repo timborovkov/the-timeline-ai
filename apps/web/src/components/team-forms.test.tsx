@@ -1,10 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as ReactModule from 'react';
 import type * as ReactDomModule from 'react-dom';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   action: vi.fn(),
@@ -12,46 +12,73 @@ const fakes = vi.hoisted(() => ({
   useFormStatus: vi.fn(),
 }));
 
-vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof ReactModule>();
-  return {
-    ...actual,
-    useActionState: fakes.useActionState,
-  };
-});
+await vi.mock(
+  import.meta.resolve('react'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ReactModule>();
+    return {
+      ...actual,
+      useActionState: fakes.useActionState,
+    };
+  },
+  () => import('react'),
+);
 
-vi.mock('react-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof ReactDomModule>();
-  return {
-    ...actual,
-    useFormStatus: fakes.useFormStatus,
-  };
-});
+await vi.mock(
+  import.meta.resolve('react-dom'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ReactDomModule>();
+    return {
+      ...actual,
+      useFormStatus: fakes.useFormStatus,
+    };
+  },
+  () => import('react-dom'),
+);
 
-vi.mock('@/app/actions/team-exports', () => ({
-  createTeamExportAction: vi.fn(),
-  downloadTeamExportAction: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/team-exports'),
+  () => ({
+    createTeamExportAction: vi.fn(),
+    downloadTeamExportAction: vi.fn(),
+  }),
+  () => import('@/app/actions/team-exports'),
+);
 
-vi.mock('@/app/actions/teams', () => ({
-  createTeamAction: vi.fn(),
-  inviteMemberAction: vi.fn(),
-  renameTeamAction: vi.fn(),
-  updateDigestPreferenceAction: vi.fn(),
-  addDigestDestinationAction: vi.fn(),
-  removeDigestDestinationAction: vi.fn(),
-  updateInboundEmailWhitelistAction: vi.fn(),
-  updateTeamTimezoneAction: vi.fn(),
-}));
-vi.mock('@/components/form-action-toast', () => ({
-  FormActionToast: () => null,
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/teams'),
+  () => ({
+    createTeamAction: vi.fn(),
+    inviteMemberAction: vi.fn(),
+    renameTeamAction: vi.fn(),
+    updateDigestPreferenceAction: vi.fn(),
+    addDigestDestinationAction: vi.fn(),
+    removeDigestDestinationAction: vi.fn(),
+    updateInboundEmailWhitelistAction: vi.fn(),
+    updateTeamTimezoneAction: vi.fn(),
+  }),
+  () => import('@/app/actions/teams'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/form-action-toast'),
+  () => ({
+    FormActionToast: () => null,
+  }),
+  () => import('@/components/form-action-toast'),
+);
 const notify = vi.hoisted(() => ({
   notifyError: vi.fn(),
 }));
-vi.mock('@/lib/notify', () => ({
-  notifyError: notify.notifyError,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyError: notify.notifyError,
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, within } = await import('@testing-library/react');
 
 const {
   DigestPreferenceForm,

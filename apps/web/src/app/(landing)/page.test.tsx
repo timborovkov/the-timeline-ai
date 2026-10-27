@@ -1,14 +1,24 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ auth: vi.fn(), listCatalog: vi.fn() }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@timeline/shared/integrations/registry', () => ({ listCatalog: fakes.listCatalog }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations/registry'),
+  () => ({ listCatalog: fakes.listCatalog }),
+  () => import('@timeline/shared/integrations/registry'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: LandingPage, metadata } = await import('@/app/(landing)/page');
 

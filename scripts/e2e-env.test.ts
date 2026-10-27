@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -209,7 +211,7 @@ function lookupPort(container: string, port: number): string | null {
   assert.equal(env.E2E_WEB_PORT, '43123');
   assert.deepEqual(buildE2eWebServerConfig(env), {
     baseURL: 'http://localhost:43123',
-    command: 'pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p 43123',
+    command: 'bun run --filter @timeline/web dev -H 127.0.0.1 -p 43123',
   });
 }
 
@@ -237,11 +239,65 @@ function lookupPort(container: string, port: number): string | null {
   );
 }
 
-console.log('e2e-env tests passed');
-
 function pick<T extends Record<string, unknown>, K extends keyof T>(
   input: T,
   keys: K[],
 ): Pick<T, K> {
   return Object.fromEntries(keys.map((key) => [key, input[key]])) as Pick<T, K>;
 }
+
+{
+  const env = buildE2eEnv({}, { publishedPort: () => null });
+  assert.equal(env.__NEXT_PROCESSED_ENV, 'true');
+  const dir = mkdtempSync(path.join(tmpdir(), 'timeline-e2e-next-env-'));
+  try {
+    writeFileSync(path.join(dir, '.env'), 'E2E_DOTENV_SECRET=must-not-be-loaded\n');
+    const webRequire = createRequire(path.resolve('apps/web/package.json'));
+    const nextRequire = createRequire(webRequire.resolve('next/package.json'));
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--no-env-file',
+        '-e',
+        `const { loadEnvConfig } = require(${JSON.stringify(nextRequire.resolve('@next/env'))}); loadEnvConfig(${JSON.stringify(dir)}); if (process.env.E2E_DOTENV_SECRET !== undefined) process.exit(1);`,
+      ],
+      { env, encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const env = buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    DATABASE_URL: 'postgres://fixture@localhost:15432/fixture',
+    OPENROUTER_API_KEY: 'exported-provider-sentinel',
+    SENTRY_AUTH_TOKEN: 'exported-upload-sentinel',
+    GITHUB_TOKEN: 'exported-github-sentinel',
+    NEXT_PUBLIC_POSTHOG_KEY: 'exported-analytics-sentinel',
+  });
+  assert.equal(env.DATABASE_URL, 'postgres://fixture@localhost:15432/fixture');
+  assert.equal(env.OPENROUTER_API_KEY, 'e2e-deterministic-chat');
+  assert.equal(env.SENTRY_AUTH_TOKEN, undefined);
+  assert.equal(env.GITHUB_TOKEN, undefined);
+  assert.equal(env.NEXT_PUBLIC_POSTHOG_KEY, undefined);
+}
+
+assert.equal(
+  buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    E2E_PROD_SMOKE: '1',
+    OPENROUTER_API_KEY: 'exported-provider-sentinel',
+  }).OPENROUTER_API_KEY,
+  undefined,
+);
+
+assert.equal(
+  buildE2eEnv({ E2E_USE_DOCKER_PORTS: '0', NEXT_PUBLIC_POSTHOG_KEY: 'ph-e2e' })
+    .NEXT_PUBLIC_POSTHOG_KEY,
+  'ph-e2e',
+);
+
+console.log('e2e-env tests passed');

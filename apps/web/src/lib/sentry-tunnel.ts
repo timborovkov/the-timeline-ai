@@ -42,7 +42,7 @@ export function sentryIngestTargetFromDsn(dsn: string | undefined): SentryIngest
 export async function forwardSentryTunnelEnvelope(input: {
   dsn: string | undefined;
   req: Request;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }): Promise<Response> {
   const target = sentryIngestTargetFromDsn(input.dsn);
   if (!target) {

@@ -1,12 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  createAudioEventAction,
-  createTextEventAction,
-  removeConversationalEventAction,
-  requestAudioUploadAction,
-} from '@/app/actions/events';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for event capture. The shared timeline scope owns the
  * real DB behavior; these tests pin the action contract around auth, schema
@@ -32,40 +26,87 @@ const fakes = vi.hoisted(() => ({
   fakeDbSet: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.fakeSafeMarkOnboardingStep }));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn().mockResolvedValue({
-    enqueueExtractJob: fakes.fakeEnqueueExtractJob,
-    enqueueEmbedJob: fakes.fakeEnqueueEmbedJob,
-    enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
-    enqueueTranscribeJob: fakes.fakeEnqueueTranscribeJob,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/onboarding'),
+  () => ({ safeMarkOnboardingStep: fakes.fakeSafeMarkOnboardingStep }),
+  () => import('@/lib/onboarding'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: vi.fn().mockResolvedValue({
+      enqueueExtractJob: fakes.fakeEnqueueExtractJob,
+      enqueueEmbedJob: fakes.fakeEnqueueEmbedJob,
+      enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
+      enqueueTranscribeJob: fakes.fakeEnqueueTranscribeJob,
+    }),
   }),
-}));
-vi.mock('@/lib/db', () => ({ db: { update: fakes.fakeDbUpdate } }));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@timeline/shared/cache', () => ({
-  cacheKey: (parts: string[]) => parts.join(':'),
-  deleteCacheKey: fakes.fakeDeleteCacheKey,
-}));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn() }),
-}));
-vi.mock('@timeline/shared/s3', () => ({
-  getAudioBucket: () => 'audio-test',
-  getS3PresignClient: () => ({}),
-  getSignedPutObjectUrl: fakes.fakeGetSignedPutObjectUrl,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    timeline: {
-      createEvent: fakes.fakeCreateEvent,
-      removeConversationalMessage: fakes.fakeRemoveConversationalMessage,
-    },
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { update: fakes.fakeDbUpdate } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/cache'),
+  () => ({
+    cacheKey: (parts: string[]) => parts.join(':'),
+    deleteCacheKey: fakes.fakeDeleteCacheKey,
   }),
-}));
+  () => import('@timeline/shared/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), warn: vi.fn(), info: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/s3'),
+  () => ({
+    getAudioBucket: () => 'audio-test',
+    getS3PresignClient: () => ({}),
+    getSignedPutObjectUrl: fakes.fakeGetSignedPutObjectUrl,
+  }),
+  () => import('@timeline/shared/s3'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      timeline: {
+        createEvent: fakes.fakeCreateEvent,
+        removeConversationalMessage: fakes.fakeRemoveConversationalMessage,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+
+const {
+  createAudioEventAction,
+  createTextEventAction,
+  removeConversationalEventAction,
+  requestAudioUploadAction,
+} = await import('@/app/actions/events');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';

@@ -1,25 +1,39 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/teams'),
+  () => ({
+    changeMemberRoleAction: vi.fn(),
+    removeMemberAction: vi.fn(),
+    resendInviteAction: vi.fn(),
+    revokeInviteAction: vi.fn(),
+  }),
+  () => import('@/app/actions/teams'),
+);
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ back: vi.fn(), push: vi.fn(), refresh: vi.fn() }),
-}));
-vi.mock('@/app/actions/teams', () => ({
-  changeMemberRoleAction: vi.fn(),
-  removeMemberAction: vi.fn(),
-  resendInviteAction: vi.fn(),
-  revokeInviteAction: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/team-forms'),
+  () => ({
+    InviteMemberForm: ({ canInviteAdmin }: { canInviteAdmin: boolean }) => (
+      <p>Invite form: {canInviteAdmin ? 'owner' : 'admin'}</p>
+    ),
+  }),
+  () => import('@/components/team-forms'),
+);
 
-vi.mock('@/components/team-forms', () => ({
-  InviteMemberForm: ({ canInviteAdmin }: { canInviteAdmin: boolean }) => (
-    <p>Invite form: {canInviteAdmin ? 'owner' : 'admin'}</p>
-  ),
-}));
-
-import { TeamMembersSettings } from '@/components/team-members-settings';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { TeamMembersSettings } = await import('@/components/team-members-settings');
 
 afterEach(() => {
   cleanup();

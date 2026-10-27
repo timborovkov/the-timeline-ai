@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 const rootLayout = readFileSync(new URL('./layout.tsx', import.meta.url), 'utf8');
 const publicShell = readFileSync(
   new URL('../components/public-shell.tsx', import.meta.url),

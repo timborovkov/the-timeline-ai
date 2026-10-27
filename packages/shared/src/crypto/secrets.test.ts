@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import {
   decryptJson,
@@ -10,7 +11,6 @@ import {
   resetSecretsKeyCacheForTests,
 } from '#src/crypto/secrets.js';
 import { resetEnvForTests } from '#src/env.js';
-
 describe('crypto/secrets', () => {
   const originalKey = process.env.SECRETS_ENCRYPTION_KEY;
 

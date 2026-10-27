@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { currentExtractionModelVersions } from '#src/extraction-model-version.js';
 import {
@@ -7,7 +8,6 @@ import {
   timelineModelEntries,
   uniqueTimelineModelsByPrivacyMode,
 } from '#src/llm/models.js';
-
 describe('TIMELINE_MODELS', () => {
   it('matches OpenRouter metadata for OSS chat-capable roles', () => {
     expect(TIMELINE_MODELS.extraction).toMatchObject({

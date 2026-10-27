@@ -597,7 +597,15 @@ function InspectorBody({
   const href = externalSourceHref(moment);
   const meetingHref = meetingDetailHrefForMoment(moment);
   const preview = supportingText(moment, '');
-  const compactEvidence = moment.visualWeight === 'pulse';
+  // Compact list rows must not remove an owner's evidence-management controls
+  // from the inspector, including when All events renders every row as a pulse.
+  const compactEvidence =
+    moment.visualWeight === 'pulse' &&
+    !moment.rawEvents.some(
+      (event) =>
+        canEditVisibility(event, currentUserId) ||
+        canRemoveConversational(event, currentUserId, isAdmin),
+    );
 
   return (
     <div className="space-y-5">

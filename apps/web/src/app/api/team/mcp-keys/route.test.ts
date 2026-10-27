@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for outbound Timeline-as-MCP-server bearer keys. The
  * shared key helper owns key generation; this route owns admin gates, active
@@ -19,58 +20,98 @@ const fakes = vi.hoisted(() => ({
   trackProductEventBestEffort: vi.fn(),
 }));
 
-vi.mock('@timeline/db', () => ({
-  auditLog: { table: 'audit_log' },
-  mcpOutboundKeys: {
-    table: 'mcp_outbound_keys',
-    teamId: 'team_id',
-    revokedAt: 'revoked_at',
-    createdAt: 'created_at',
-  },
-}));
-vi.mock('drizzle-orm', () => ({
-  and: (...args: unknown[]) => ({ op: 'and', args }),
-  desc: (arg: unknown) => ({ op: 'desc', arg }),
-  eq: (...args: unknown[]) => ({ op: 'eq', args }),
-  isNull: (arg: unknown) => ({ op: 'isNull', arg }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: fakes.loggerError, warn: vi.fn(), info: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.requireMembership }),
-}));
-vi.mock('@timeline/shared/mcp-server', () => ({ mintKey: fakes.mintKey }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          orderBy: vi.fn().mockImplementation(() => Promise.resolve(fakes.selectRows)),
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({
+    auditLog: { table: 'audit_log' },
+    mcpOutboundKeys: {
+      table: 'mcp_outbound_keys',
+      teamId: 'team_id',
+      revokedAt: 'revoked_at',
+      createdAt: 'created_at',
+    },
+  }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('drizzle-orm'),
+  () => ({
+    and: (...args: unknown[]) => ({ op: 'and', args }),
+    desc: (arg: unknown) => ({ op: 'desc', arg }),
+    eq: (...args: unknown[]) => ({ op: 'eq', args }),
+    isNull: (arg: unknown) => ({ op: 'isNull', arg }),
+  }),
+  () => import('drizzle-orm'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: fakes.loggerError, warn: vi.fn(), info: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/mcp-server'),
+  () => ({ mintKey: fakes.mintKey }),
+  () => import('@timeline/shared/mcp-server'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: vi.fn().mockImplementation(() => Promise.resolve(fakes.selectRows)),
+          }),
         }),
       }),
-    }),
-    transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-      if (fakes.transactionError) throw fakes.transactionError;
-      const tx = {
-        insert: (table: unknown) => ({
-          values: (value: unknown) => {
-            fakes.insertValues.push({ table, value });
-            return {
-              returning: vi.fn().mockResolvedValue(fakes.returningRow ? [fakes.returningRow] : []),
-            };
-          },
+      transaction: vi
+        .fn()
+        .mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+          if (fakes.transactionError) throw fakes.transactionError;
+          const tx = {
+            insert: (table: unknown) => ({
+              values: (value: unknown) => {
+                fakes.insertValues.push({ table, value });
+                return {
+                  returning: vi
+                    .fn()
+                    .mockResolvedValue(fakes.returningRow ? [fakes.returningRow] : []),
+                };
+              },
+            }),
+          };
+          return callback(tx);
         }),
-      };
-      return callback(tx);
-    }),
-  },
-}));
+    },
+  }),
+  () => import('@/lib/db'),
+);
 
 const { GET, POST } = await import('./route.js');
 

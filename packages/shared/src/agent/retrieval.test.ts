@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { TeamScope } from '#src/team-scope.js';
 
 import { retrieveWorkspaceContext } from '#src/agent/retrieval.js';
-
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const EVENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const SUPPORT_EVENT_ID = 'abababab-abab-4bab-8bab-abababababab';

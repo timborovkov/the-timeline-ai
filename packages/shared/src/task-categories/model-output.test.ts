@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { normalizeTaskCategoryModelJson } from '#src/task-categories/model-output.js';
-
 describe('task category model output', () => {
   it('unwraps a labeled batch and coerces string confidence', () => {
     expect(

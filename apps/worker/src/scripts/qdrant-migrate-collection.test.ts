@@ -1,5 +1,7 @@
 import { type qdrant } from '@timeline/shared';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   parseArgs,
@@ -7,7 +9,6 @@ import {
   runQdrantMigrateCollection,
   type QdrantMigrateArgs,
 } from '#src/scripts/qdrant-migrate-collection.js';
-
 type QdrantClient = qdrant.QdrantClient;
 
 const TEAM = '20000000-0000-4000-8000-000000000001';

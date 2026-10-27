@@ -1,20 +1,9 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
-  artifactClusters,
-  artifactEvidenceAssociations,
-  ingestWebhookCredentials,
-  ingestWebhooks,
-  rawEvents,
-  reconciliationEvidence,
-} from '@timeline/db';
-import { hashCredential } from '@timeline/shared/ingest-webhooks';
-import * as rateLimit from '@timeline/shared/rate-limit';
-import { applyDbMigrations } from '@timeline/shared/test/pglite';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 const fakes = vi.hoisted(() => ({
   db: null as ReturnType<typeof drizzle> | null,
@@ -23,30 +12,71 @@ const fakes = vi.hoisted(() => ({
   enqueueSuggestionJob: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({
-  get db() {
-    if (!fakes.db) throw new Error('test db not ready');
-    return fakes.db;
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: new Proxy(
+      {},
+      {
+        get(_target, key) {
+          if (!fakes.db) throw new Error('test database is not initialized');
+          const value: unknown = Reflect.get(fakes.db, key);
+          return typeof value === 'function' ? (value.bind(fakes.db) as unknown) : value;
+        },
+      },
+    ),
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: vi.fn(() => ({
+      enqueueExtractJob: fakes.enqueueExtractJob,
+      enqueueEmbedJob: fakes.enqueueEmbedJob,
+      enqueueSuggestionJob: fakes.enqueueSuggestionJob,
+    })),
+  }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return {
+      ...actual,
+      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+    };
   },
-}));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn(() => ({
-    enqueueExtractJob: fakes.enqueueExtractJob,
-    enqueueEmbedJob: fakes.enqueueEmbedJob,
-    enqueueSuggestionJob: fakes.enqueueSuggestionJob,
-  })),
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return {
-    ...actual,
-    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-  };
-});
+  () => import('@timeline/shared/rate-limit'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
+  artifactClusters,
+  artifactEvidenceAssociations,
+  ingestWebhookCredentials,
+  ingestWebhooks,
+  rawEvents,
+  reconciliationEvidence,
+} = await import('@timeline/db');
+const { hashCredential } = await import('@timeline/shared/ingest-webhooks');
+const rateLimit = await import('@timeline/shared/rate-limit');
+const { applyDbMigrations } = await import('@timeline/shared/test/pglite');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
 
 const { GET, POST } = await import('./route.js');
 

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { taskDisplayStatus, taskStatusFilterValues } from '@/lib/task-statuses';
-
 describe('task statuses', () => {
   it.each([
     ['suggested', 'backlog'],

@@ -35,7 +35,13 @@ test.describe('Infinite scroll collections', () => {
     const oldest = `${marker} moment 45`;
     const main = page.locator('#main');
     for (let attempt = 0; attempt < 30; attempt += 1) {
-      if ((await page.getByText(oldest).count()) > 0) break;
+      if (
+        await page
+          .getByRole('status')
+          .filter({ hasText: /^No older activity$/ })
+          .isVisible()
+      )
+        break;
       await main.evaluate((node) => {
         node.scrollTo({ top: node.scrollHeight });
       });
@@ -44,7 +50,7 @@ test.describe('Infinite scroll collections', () => {
       await page.waitForTimeout(400);
     }
     await expect(page.getByText(oldest)).toBeVisible();
-    await expect(page.getByRole('status', { name: 'No older activity' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: /^No older activity$/ })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
   });
 

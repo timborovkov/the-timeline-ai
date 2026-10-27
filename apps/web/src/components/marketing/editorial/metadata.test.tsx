@@ -1,5 +1,6 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import { EDITORIAL_GUIDES, HOW_IT_WORKS_ROUTE } from '@/components/marketing/editorial/content';
 import { EditorialStructuredData } from '@/components/marketing/editorial/editorial-structured-data';
@@ -9,7 +10,6 @@ import {
   createGuideMetadata,
   createHowItWorksMetadata,
 } from '@/components/marketing/editorial/metadata';
-
 describe('editorial metadata', () => {
   it('publishes canonical index metadata', () => {
     const metadata = createHowItWorksMetadata();

@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { DaytonaNotFoundError } from '@daytonaio/sdk';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import {
   DOCUMENT_EXTRACT_SNAPSHOT_IMAGE_REVISION,
@@ -14,7 +16,6 @@ import {
   pruneDocumentExtractSnapshots,
   resolveDocumentExtractSnapshotName,
 } from '#src/document-ingestion/document-extract-snapshot.js';
-
 async function writeSandbox(dir: string, files: Record<string, string>): Promise<void> {
   for (const [rel, body] of Object.entries(files)) {
     const abs = join(dir, rel);

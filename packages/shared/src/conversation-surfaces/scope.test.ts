@@ -1,31 +1,36 @@
-// Direct-chat state must remain private, idempotent, bounded, and reusable by
-// provider identifiers that the product does not know about at compile time.
-import { PGlite } from '@electric-sql/pglite';
-import {
-  chatMessages,
-  chatSessions,
-  chatSurfaceSessionLinks,
-  chatSurfaceTurns,
-  type Db,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 
 import type * as QueueModule from '#src/queue/queues.js';
-
-import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
+type PGlite = PGliteType;
+// Direct-chat state must remain private, idempotent, bounded, and reusable by
+// provider identifiers that the product does not know about at compile time.
 
 const queueFakes = vi.hoisted(() => ({
   enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
 }));
 
-vi.mock('#src/queue/queues.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof QueueModule>()),
-  enqueueConversationAgentJob: queueFakes.enqueueConversationAgentJob,
-}));
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof QueueModule>()),
+    enqueueConversationAgentJob: queueFakes.enqueueConversationAgentJob,
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+
+const { chatMessages, chatSessions, chatSurfaceSessionLinks, chatSurfaceTurns } =
+  await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { acceptDirectAgentTurn } = await import('#src/conversation-surfaces/runtime.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
