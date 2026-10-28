@@ -12,6 +12,7 @@ const fakes = vi.hoisted(() => ({
       _options?: { jobId?: string },
     ) => fn(),
   ),
+  Worker: vi.fn((..._args: unknown[]) => ({ on: vi.fn() })),
 }));
 
 await vi.mock(
@@ -44,9 +45,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('bullmq'),
   () => ({
-    Worker: vi.fn(function WorkerMock() {
-      return { on: vi.fn() };
-    }),
+    Worker: fakes.Worker,
   }),
   () => import('bullmq'),
 );
@@ -132,10 +131,9 @@ describe('object summary worker', () => {
       `${stableId}:${String(refreshGeneration)}`,
     );
 
-    const { Worker } = await import('bullmq');
     fakes.generateAndStoreObjectSummary.mockResolvedValue({ status: 'ready' });
     startObjectSummaryWorker({ db: {} as never });
-    const processor = vi.mocked(Worker).mock.calls[0]?.[1] as
+    const processor = fakes.Worker.mock.calls[0]?.[1] as
       | ((
           job: {
             id: string;
