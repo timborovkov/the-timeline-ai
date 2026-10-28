@@ -35,7 +35,10 @@ await vi.mock(
 
 await vi.mock(
   import.meta.resolve('bullmq'),
-  () => ({ Worker: vi.fn() }),
+  async () => ({
+    ...(await import('bullmq')),
+    Worker: vi.fn(),
+  }),
   () => import('bullmq'),
 );
 await vi.mock(

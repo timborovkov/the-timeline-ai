@@ -12,7 +12,10 @@ await vi.mock(
 );
 await vi.mock(
   import.meta.resolve('@timeline/shared/integrations/registry'),
-  () => ({ listCatalog: fakes.listCatalog }),
+  async () => ({
+    ...(await import('@timeline/shared/integrations/registry')),
+    listCatalog: fakes.listCatalog,
+  }),
   () => import('@timeline/shared/integrations/registry'),
 );
 
