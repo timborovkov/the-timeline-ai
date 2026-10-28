@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-23</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-28</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>bun run dev</code> for app + worker hot reload.
@@ -28,6 +28,13 @@
       </ul>
 
       <h2 id="first-time-setup">First-time setup</h2>
+      <pre><code>curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4"</code></pre>
+      <p>
+        Open a new shell after installing Bun. For a checkout previously installed with pnpm, remove
+        generated root and workspace <code>node_modules</code> directories before running
+        <code>bun run deps --frozen-lockfile</code>. Preserve <code>.env</code> and Docker volumes.
+        Stop old Node development processes before starting the Bun app and workers.
+      </p>
       <pre><code>bun --version # must match .bun-version
 cp .env.example .env
 # Next.js dev server reads env from the app dir, so symlink:

@@ -54,13 +54,15 @@
             <td><code>web</code></td>
             <td>App</td>
             <td><code>apps/web/railway.json</code> (Dockerfile)</td>
-            <td><code>NODE_ENV=production bun --no-env-file apps/web/start.mjs</code></td>
+            <td><code>env NODE_ENV=production bun --no-env-file apps/web/start.mjs</code></td>
           </tr>
           <tr>
             <td><code>worker</code></td>
             <td>App</td>
             <td><code>apps/worker/railway.json</code> (Dockerfile)</td>
-            <td><code>NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code></td>
+            <td>
+              <code>env NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code>
+            </td>
           </tr>
           <tr>
             <td><code>document-extract-orchestrator</code></td>
@@ -68,7 +70,7 @@
             <td><code>apps/worker/railway.extract.json</code> (Dockerfile)</td>
             <td>
               <code
-                >NODE_ENV=production WORKER_MODE=document-extract bun --no-env-file
+                >env NODE_ENV=production WORKER_MODE=document-extract bun --no-env-file
                 apps/worker/dist/extract-main.js</code
               >
             </td>
@@ -405,17 +407,14 @@ LOG_LEVEL=info
 
       <h2 id="staging-vs-production">Staging vs production</h2>
       <p>
-        Two Railway environments on the same project: <code>staging</code> and
-        <code>production</code>. Each gets its own Postgres, Redis, Qdrant, RustFS instances.
-        Domains:
+        The current project has only <code>production</code>, deployed from <code>main</code> at
+        <code>thetimeline.cc</code>. With no users, it also serves as the development and
+        deployment-verification environment.
       </p>
-      <ul>
-        <li><code>staging.thetimeline.cc</code> → staging web</li>
-        <li><code>thetimeline.cc</code> → production web</li>
-      </ul>
       <p>
-        Branch deploys: <code>main</code> → production, <code>staging</code> → staging. Configure
-        via Railway service settings.
+        If a separate staging environment is introduced later, give it isolated Postgres, Redis,
+        Qdrant, RustFS, and provider credentials. Configure its branch and domain then; a staging
+        deployment does not currently exist.
       </p>
 
       <h2 id="volumes-and-persistence">Volumes and persistence</h2>
@@ -580,7 +579,7 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
           restart. The pre-deploy command is already wired in
           <code>apps/web/railway.json</code> and <code>apps/worker/railway.json</code>:
           <pre><code>"preDeployCommand": [
-  "NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js"
+  "env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js"
 ]
 </code></pre>
           The script (<code>packages/db/src/migrate.ts</code>) is built before deploy, and the
