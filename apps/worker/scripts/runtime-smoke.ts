@@ -155,7 +155,6 @@ try {
 let envelopes = 0;
 Sentry.init({
   dsn: 'https://public@example.invalid/1',
-  defaultIntegrations: false,
   transport: () => ({
     send: async () => {
       envelopes++;

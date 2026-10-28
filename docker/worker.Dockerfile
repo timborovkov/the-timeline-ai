@@ -11,7 +11,7 @@ COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/test-support/package.json ./packages/test-support/package.json
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
-    bun install --frozen-lockfile
+    bun run deps --frozen-lockfile
 
 FROM dependencies AS builder
 COPY . .
@@ -36,7 +36,7 @@ COPY packages/shared/package.json ./packages/shared/package.json
 COPY packages/test-support/package.json ./packages/test-support/package.json
 RUN --mount=type=secret,id=proxy_ca \
     if [ -f /run/secrets/proxy_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/proxy_ca; fi; \
-    bun install --frozen-lockfile --production
+    bun run deps --frozen-lockfile --production
 
 FROM base AS runner
 ENV NODE_ENV=production

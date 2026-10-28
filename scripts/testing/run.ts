@@ -31,6 +31,9 @@ const selected = all.filter(
     (manifest[file as keyof typeof manifest].group !== 'live' || live) &&
     (!selectors.length || selectors.some((selector) => file.includes(selector))),
 );
+const unmatched = selectors.filter((selector) => !selected.some((file) => file.includes(selector)));
+if (unmatched.length)
+  throw new Error(`No eligible tests matched selectors: ${unmatched.join(', ')}`);
 if (!selected.length) throw new Error('No tests matched');
 if (args.includes('--list')) {
   console.log(selected.join('\n'));

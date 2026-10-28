@@ -17,6 +17,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./chunk": {
+      "types": "./src/chunk.ts",
+      "development": "./src/chunk.ts",
+      "import": "./dist/chunk.js",
+      "default": "./dist/chunk.js"
+    },
     "./integrations": {
       "types": "./src/integrations/index.ts",
       "development": "./src/integrations/index.ts",

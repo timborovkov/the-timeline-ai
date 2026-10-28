@@ -378,3 +378,7 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 - **The root `bun run dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `bun run --filter @timeline/web dev` and `bun run --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.
 - Keep a real `OPENROUTER_API_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` for chat/extraction/embeddings and for `bun run demo:seed` (seed encrypts fake integration credentials).
+
+- **E2E fixture isolation:** remote service URLs require `E2E_REMOTE_FIXTURES=isolated` and disposable synthetic fixtures. E2E ignores ordinary exported authentication, encryption, S3 and Qdrant secrets; custom fixture credentials must use the corresponding `E2E_`-prefixed variables documented in `docs/setup/local.html`. Never use production services for fixture setup or cleanup.
+
+- **Install with `bun run deps` (add `--frozen-lockfile` in CI).** Plain `bun install` can execute dependency lifecycle scripts with a host Node installation. The `deps` script inherits `[run].bun = true`, forcing those scripts through Bun without changing the global Node binary.

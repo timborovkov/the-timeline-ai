@@ -57,6 +57,8 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       '/api/team/mcp-keys',
       '/api/mcp/server',
       '/api/onboarding/checklist',
+      `/api/team/job-recovery/${taskId}/retry`,
+      `/api/team/job-recovery/${taskId}/dismiss`,
       `/api/objects/${taskId}/sections?section=facts`,
       `/api/objects/${taskId}/sections?section=events`,
     ];

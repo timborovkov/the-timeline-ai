@@ -31,7 +31,7 @@
         <code>packages/shared/src/crypto/secrets.ts</code>. Generate a 32-byte key and set
         <code>SECRETS_ENCRYPTION_KEY</code> in your environment:
       </p>
-      <pre><code>node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"</code></pre>
+      <pre><code>bun --no-env-file -e "console.log(require('crypto').randomBytes(32).toString('base64'))"</code></pre>
       <p>
         The first <code>encryptSecret()</code> call throws with a clear message if the key is
         missing or the wrong length, so worker boot fails fast instead of writing plaintext.

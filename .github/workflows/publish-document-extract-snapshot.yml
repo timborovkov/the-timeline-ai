@@ -49,12 +49,12 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', '.bun-version') }}
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun run deps --frozen-lockfile
 
       - name: Resolve content-hashed snapshot name
         id: name
         run: |
-          NAME="$(bun run --silent --filter @timeline/worker create-document-extract-snapshot -- --print-name-only)"
+          NAME="$(bun --no-env-file --conditions=development apps/worker/scripts/create-document-extract-snapshot.ts --print-name-only)"
           echo "snapshot_name=${NAME}" >> "$GITHUB_OUTPUT"
           echo "Resolved DAYTONA_SNAPSHOT=${NAME}"
 

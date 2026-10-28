@@ -101,7 +101,7 @@ docker compose ps           # all services should be "healthy"
       </p>
 
       <p>Install deps, run migrations, and optionally seed demo data:</p>
-      <pre><code>bun install
+      <pre><code>bun run deps
 set -a
 . ./.env
 set +a
@@ -291,13 +291,21 @@ docker compose down -v                # nuke local data
         <code>localhost:5432</code>, <code>6379</code>, <code>9000</code>, and
         <code>6333</code> ports. Set <code>DATABASE_URL</code>, <code>REDIS_URL</code>,
         <code>S3_ENDPOINT</code>, or <code>QDRANT_URL</code> explicitly to override this, or set
-        <code>E2E_USE_DOCKER_PORTS=0</code> to force the fallback defaults.
+        <code>E2E_USE_DOCKER_PORTS=0</code> to force the fallback defaults. Remote fixture services
+        require the explicit <code>E2E_REMOTE_FIXTURES=isolated</code>
+        opt-in; use only disposable synthetic data. Ordinary exported application secrets are
+        replaced with fixture defaults. Configure custom fixture secrets with
+        <code>E2E_AUTH_SECRET</code>, <code>E2E_SECRETS_ENCRYPTION_KEY</code>,
+        <code>E2E_S3_ACCESS_KEY_ID</code>, <code>E2E_S3_SECRET_ACCESS_KEY</code>, and
+        <code>E2E_QDRANT_API_KEY</code>. Setup and cleanup enforce the service guard before opening
+        a database transaction.
       </p>
       <p>
-        GitHub PR CI intentionally skips <code>bun run build</code> and
-        <code>bun run check:web-bundle</code>. The required CI proof is formatting, TypeScript
-        compilation, linting, Knip, deterministic reconciliation evals, and the compiled-package
-        import smoke check. Run broader relevant test commands separately, including
+        The static CI job runs formatting, TypeScript compilation, linting, Knip, the offline Bun
+        suite, runtime smoke checks, React Doctor, deterministic reconciliation evaluations,
+        environment contracts, and compiled-package import checks. The separate production browser
+        smoke job builds the web application. Run broader relevant test commands separately,
+        including
         <code>bun run test:eval</code> for agent, retrieval, summary, dashboard chat, or proposal
         changes, and run the production build and bundle hygiene checks manually when changing
         deploy output, bundling, or server/client import boundaries.

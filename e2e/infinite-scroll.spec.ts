@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import { entities, getDb, rawEvents } from '@timeline/db';
 
+import { withE2eDataTransaction } from './cleanup.js';
 import { newSignedInPage } from './helpers.js';
 import { e2eTeam, e2eUsers } from './test-data.js';
 
@@ -25,33 +26,43 @@ test.describe('Infinite scroll collections', () => {
     await db.insert(rawEvents).values(rows);
 
     const page = await newSignedInPage(browser, 'owner');
-    await page.goto('/app/timeline');
-    await expect(page.getByRole('link', { name: 'Moments' })).toBeVisible();
-    await expect(page.getByRole('searchbox', { name: 'Search timeline' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Filters' })).toBeVisible();
-    await expect(page.getByText(/\d+ loaded/i)).toHaveCount(0);
-    await expect(page.getByText(/\d+ moments/i)).toHaveCount(0);
+    try {
+      await page.goto('/app/timeline');
+      await expect(page.getByRole('link', { name: 'Moments' })).toBeVisible();
+      await expect(page.getByRole('searchbox', { name: 'Search timeline' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Filters' })).toBeVisible();
+      await expect(page.getByText(/\d+ loaded/i)).toHaveCount(0);
+      await expect(page.getByText(/\d+ moments/i)).toHaveCount(0);
 
-    const oldest = `${marker} moment 45`;
-    const main = page.locator('#main');
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      if (
-        await page
-          .getByRole('status')
-          .filter({ hasText: /^No older activity$/ })
-          .isVisible()
-      )
-        break;
-      await main.evaluate((node) => {
-        node.scrollTo({ top: node.scrollHeight });
+      const oldest = `${marker} moment 45`;
+      const main = page.locator('#main');
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        // Scrolling triggers the observer. Clicking its transient sentinel races
+        // automatic loading, which can remove the button before the click lands.
+        await main.evaluate((node) => {
+          node.scrollTo({ top: node.scrollHeight });
+        });
+        if (
+          (await page.getByText(oldest).isVisible()) &&
+          (await page
+            .getByRole('status')
+            .filter({ hasText: /^No older activity$/ })
+            .isVisible())
+        )
+          break;
+        await page.waitForTimeout(400);
+      }
+      await expect(page.getByText(oldest)).toBeVisible();
+      await expect(
+        page.getByRole('status').filter({ hasText: /^No older activity$/ }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
+    } finally {
+      await page.context().close();
+      await withE2eDataTransaction(async (sql) => {
+        await sql`DELETE FROM raw_events WHERE team_id = ${e2eTeam.id} AND id = ANY(${rows.map((row) => row.id)}::uuid[])`;
       });
-      const loadMore = page.getByRole('button', { name: 'Load more' });
-      if ((await loadMore.count()) > 0) await loadMore.first().click({ force: true });
-      await page.waitForTimeout(400);
     }
-    await expect(page.getByText(oldest)).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: /^No older activity$/ })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Load more' })).toHaveCount(0);
   });
 
   test('filtered tasks show matching of total and a kanban card can move columns', async ({

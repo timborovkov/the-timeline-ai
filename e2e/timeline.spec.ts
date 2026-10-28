@@ -1393,8 +1393,9 @@ test('Postmark inbound email lands as a cited team timeline event', async ({ pag
 });
 
 test('inbound email sender whitelist blocks and allows Postmark capture from the browser', async ({
-  page,
+  browser,
 }) => {
+  const page = await newSignedInPage(browser, 'owner');
   const stamp = Date.now();
   const blockedText = `E2E inbound whitelist blocked note ${stamp}`;
   const allowedText = `E2E inbound whitelist allowed note ${stamp}`;
@@ -1402,7 +1403,6 @@ test('inbound email sender whitelist blocks and allows Postmark capture from the
 
   await resetInboundEmailWhitelist();
   try {
-    await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team?section=email');
 
     const whitelistForm = page.locator('form').filter({ hasText: 'Allowed senders' });
@@ -1449,16 +1449,17 @@ test('inbound email sender whitelist blocks and allows Postmark capture from the
     await expect(page.getByText(blockedText)).toHaveCount(0);
   } finally {
     await resetInboundEmailWhitelist();
+    await page.context().close();
   }
 });
 
 test('job recovery dashboard retries and dismisses failed work from the browser', async ({
-  page,
+  browser,
 }) => {
+  const page = await newSignedInPage(browser, 'owner');
   const seed = await seedJobRecoveryDashboardState(Date.now());
   const rawEventIds = [seed.retryEventId, seed.dismissEventId];
   try {
-    await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/team/jobs');
     await expect(page.getByRole('heading', { name: 'Job recovery' })).toBeVisible();
 
@@ -1501,6 +1502,7 @@ test('job recovery dashboard retries and dismisses failed work from the browser'
   } finally {
     await removeQueuedEmbedJobsForRawEvents(rawEventIds);
     await cleanupJobRecoveryE2eSeed(rawEventIds);
+    await page.context().close();
   }
 });
 
@@ -2708,9 +2710,14 @@ test.describe
     await page.getByRole('button', { name: literalPattern(secondaryName) }).click();
     await expect(page.getByText(`Selected ${secondaryName} · Task`)).toBeVisible();
 
-    await waitForPost(page, `/app/objects/${primaryId}`, () =>
-      page.getByRole('button', { name: 'Link' }).click(),
+    await waitForPost(
+      page,
+      `/app/objects/${primaryId}`,
+      () => page.getByRole('button', { name: 'Link' }).click(),
+      (response) => response.request().postData()?.includes(secondaryId) ?? false,
     );
+    // The link is optimistic; wait for the committed action before navigating.
+    await expect(page.getByText('Relationship added', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: secondaryName })).toBeVisible();
     await expect(page.getByText('Related · Task')).toBeVisible();
   });
@@ -2732,6 +2739,7 @@ test.describe
           .click(),
       (response) => response.request().postData()?.includes(secondaryId) ?? false,
     );
+    await expect(page.getByText('Relationship removed', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: secondaryName })).toHaveCount(0);
     await expect(
       page.getByRole('region', { name: 'Related', exact: true }).getByRole('link'),

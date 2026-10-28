@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
 
 const outputDir = mkdtempSync(join(tmpdir(), 'react-doctor-'));
 
@@ -15,12 +16,7 @@ function exitWith(message, code = 1) {
 try {
   const result = spawnSync(
     process.execPath,
-    [
-      import.meta.resolve('react-doctor').replace('file://', ''),
-      '--json',
-      '--output-dir',
-      outputDir,
-    ],
+    [fileURLToPath(import.meta.resolve('react-doctor')), '--json', '--output-dir', outputDir],
     {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],

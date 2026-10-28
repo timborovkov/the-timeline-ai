@@ -54,13 +54,13 @@
             <td><code>web</code></td>
             <td>App</td>
             <td><code>apps/web/railway.json</code> (Dockerfile)</td>
-            <td><code>NODE_ENV=production bun apps/web/start.mjs</code></td>
+            <td><code>NODE_ENV=production bun --no-env-file apps/web/start.mjs</code></td>
           </tr>
           <tr>
             <td><code>worker</code></td>
             <td>App</td>
             <td><code>apps/worker/railway.json</code> (Dockerfile)</td>
-            <td><code>NODE_ENV=production bun apps/worker/dist/index.js</code></td>
+            <td><code>NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code></td>
           </tr>
           <tr>
             <td><code>document-extract-orchestrator</code></td>
@@ -68,7 +68,7 @@
             <td><code>apps/worker/railway.extract.json</code> (Dockerfile)</td>
             <td>
               <code
-                >NODE_ENV=production WORKER_MODE=document-extract node
+                >NODE_ENV=production WORKER_MODE=document-extract bun --no-env-file
                 apps/worker/dist/extract-main.js</code
               >
             </td>
@@ -172,10 +172,11 @@
         variable; it is a maintenance-command input only.
       </p>
       <p>
-        Extract startup checks the raw environment against a strict credential-thin allowlist.
-        Railway's normal Railpack / MISE runtime variables are accepted automatically. If startup
-        reports an unexpected variable, remove that copied service variable or deliberately add an
-        exact non-secret platform key in code; do not widen the allowlist by prefix.
+        Extract startup checks the raw environment against a strict credential-thin allowlist. The
+        pinned Bun image's runtime paths and explicitly listed Railway metadata are accepted
+        automatically. If startup reports an unexpected variable, remove that copied service
+        variable or deliberately add an exact non-secret platform key in code; do not widen the
+        allowlist by prefix.
       </p>
 
       <h2 id="environment-variables">Environment variables</h2>

@@ -1873,5 +1873,8 @@
   },
   "scripts/e2e-env.test.ts": {
     "group": "script"
+  },
+  "scripts/testing/runner.test.ts": {
+    "group": "script"
   }
 }

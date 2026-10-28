@@ -5,6 +5,7 @@
   "packageManager": "bun@1.4.4",
   "type": "module",
   "scripts": {
+    "deps": "bun install",
     "dev": "turbo run dev --env-mode=loose",
     "build": "turbo run build",
     "lint": "turbo run lint --concurrency=1",

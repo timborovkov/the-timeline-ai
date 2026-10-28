@@ -108,6 +108,41 @@ export function buildE2eWebServerConfig(input: Env = process.env): {
   };
 }
 
+// Remote fixtures must be selected deliberately, never inherited silently from
+// an exported application environment. Reserved test hosts cannot reach a provider.
+export function assertE2eFixtureServices(env: Env): void {
+  if (env.E2E_REMOTE_FIXTURES === 'isolated') return;
+  for (const key of [
+    'DATABASE_URL',
+    'REDIS_URL',
+    'S3_ENDPOINT',
+    'S3_PUBLIC_ENDPOINT',
+    'QDRANT_URL',
+    'E2E_BASE_URL',
+  ]) {
+    const value = env[key];
+    if (!value) continue;
+    let host: string;
+    try {
+      host = new URL(value).hostname;
+    } catch {
+      throw new Error(`Invalid E2E fixture URL in ${key}`);
+    }
+    if (
+      host === 'localhost' ||
+      host.endsWith('.localhost') ||
+      /^127\.\d+\.\d+\.\d+$/.test(host) ||
+      host === '[::1]' ||
+      host.endsWith('.test') ||
+      host.endsWith('.invalid')
+    )
+      continue;
+    throw new Error(
+      `${key} points outside local test services. Use isolated synthetic fixtures and explicitly set E2E_REMOTE_FIXTURES=isolated to opt in.`,
+    );
+  }
+}
+
 export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOptions = {}): Env {
   const env = { ...input };
   delete env.NO_COLOR;
@@ -137,14 +172,15 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.DATABASE_URL ??= postgresPort
     ? `postgres://timeline:timeline_dev@localhost:${postgresPort}/timeline`
     : 'postgres://timeline:timeline_dev@localhost:5432/timeline';
-  env.AUTH_SECRET ??= 'e2e-auth-secret-at-least-sixteen-characters';
-  env.SECRETS_ENCRYPTION_KEY ??= 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+  env.AUTH_SECRET = env.E2E_AUTH_SECRET ?? 'e2e-auth-secret-at-least-sixteen-characters';
+  env.SECRETS_ENCRYPTION_KEY =
+    env.E2E_SECRETS_ENCRYPTION_KEY ?? 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
   env.REDIS_URL ??= redisPort ? localUrl(redisPort, 'redis') : 'redis://localhost:6379';
   env.S3_ENDPOINT ??= rustfsPort ? localUrl(rustfsPort) : 'http://localhost:9000';
   env.S3_PUBLIC_ENDPOINT ??= env.S3_ENDPOINT;
   env.S3_REGION ??= 'us-east-1';
-  env.S3_ACCESS_KEY_ID ??= 'timeline';
-  env.S3_SECRET_ACCESS_KEY ??= 'timeline_dev_secret';
+  env.S3_ACCESS_KEY_ID = env.E2E_S3_ACCESS_KEY_ID ?? 'timeline';
+  env.S3_SECRET_ACCESS_KEY = env.E2E_S3_SECRET_ACCESS_KEY ?? 'timeline_dev_secret';
   env.S3_FORCE_PATH_STYLE ??= 'true';
   env.S3_BUCKET_DOCUMENTS ??= 'timeline-documents';
   env.S3_BUCKET_EXPORTS ??= 'timeline-exports';
@@ -160,8 +196,9 @@ export function buildE2eEnv(input: Env = process.env, options: BuildE2eEnvOption
   env.TASK_CATEGORY_UI_ENABLED ??= 'true';
   env.CROSS_SOURCE_EVIDENCE_MODE ??= 'off';
   if (env.E2E_PROD_SMOKE !== '1') env.OPENROUTER_API_KEY = 'e2e-deterministic-chat';
-  env.QDRANT_URL ??= qdrantPort ? localUrl(qdrantPort) : 'http://qdrant.e2e.invalid';
-  env.QDRANT_API_KEY ??= 'dev_qdrant_key';
+  env.QDRANT_URL ??= qdrantPort ? localUrl(qdrantPort) : 'http://localhost:6333';
+  env.QDRANT_API_KEY = env.E2E_QDRANT_API_KEY ?? 'dev_qdrant_key';
   env.NODE_OPTIONS = withDevelopmentCondition(env.NODE_OPTIONS);
+  assertE2eFixtureServices(env);
   return env;
 }

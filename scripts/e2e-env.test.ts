@@ -146,7 +146,7 @@ function lookupPort(container: string, port: number): string | null {
       REDIS_URL: 'redis://localhost:6379',
       S3_ENDPOINT: 'http://localhost:9000',
       S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
-      QDRANT_URL: 'http://qdrant.e2e.invalid',
+      QDRANT_URL: 'http://localhost:6333',
       QDRANT_API_KEY: 'dev_qdrant_key',
     },
   );
@@ -167,7 +167,7 @@ function lookupPort(container: string, port: number): string | null {
     assert.equal(env.DATABASE_URL, 'postgres://timeline:timeline_dev@localhost:5432/timeline');
     assert.equal(env.REDIS_URL, 'redis://localhost:6379');
     assert.equal(env.S3_ENDPOINT, 'http://localhost:9000');
-    assert.equal(env.QDRANT_URL, 'http://qdrant.e2e.invalid');
+    assert.equal(env.QDRANT_URL, 'http://localhost:6333');
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
@@ -298,6 +298,51 @@ assert.equal(
   buildE2eEnv({ E2E_USE_DOCKER_PORTS: '0', NEXT_PUBLIC_POSTHOG_KEY: 'ph-e2e' })
     .NEXT_PUBLIC_POSTHOG_KEY,
   'ph-e2e',
+);
+
+for (const key of [
+  'DATABASE_URL',
+  'REDIS_URL',
+  'S3_ENDPOINT',
+  'S3_PUBLIC_ENDPOINT',
+  'QDRANT_URL',
+  'E2E_BASE_URL',
+]) {
+  const remote = { E2E_USE_DOCKER_PORTS: '0', [key]: 'https://fixture.example.com' };
+  assert.throws(() => buildE2eEnv(remote), new RegExp(`${key} points outside local test services`));
+  assert.equal(buildE2eEnv({ ...remote, E2E_REMOTE_FIXTURES: 'isolated' })[key], remote[key]);
+}
+{
+  const env = buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    AUTH_SECRET: 'live-sentinel',
+    SECRETS_ENCRYPTION_KEY: 'live-sentinel',
+    S3_ACCESS_KEY_ID: 'live-sentinel',
+    S3_SECRET_ACCESS_KEY: 'live-sentinel',
+    QDRANT_API_KEY: 'live-sentinel',
+  });
+  assert.equal(env.AUTH_SECRET, 'e2e-auth-secret-at-least-sixteen-characters');
+  assert.equal(env.SECRETS_ENCRYPTION_KEY, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+  assert.equal(env.S3_ACCESS_KEY_ID, 'timeline');
+  assert.equal(env.S3_SECRET_ACCESS_KEY, 'timeline_dev_secret');
+  assert.equal(env.QDRANT_API_KEY, 'dev_qdrant_key');
+  const explicit = buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    E2E_AUTH_SECRET: 'isolated-fixture-secret',
+    E2E_QDRANT_API_KEY: 'isolated-fixture-key',
+  });
+  assert.equal(explicit.AUTH_SECRET, 'isolated-fixture-secret');
+  assert.equal(explicit.QDRANT_API_KEY, 'isolated-fixture-key');
+  assert.deepEqual(buildE2eEnv(explicit), explicit);
+}
+
+assert.throws(
+  () =>
+    buildE2eEnv({
+      E2E_USE_DOCKER_PORTS: '0',
+      DATABASE_URL: 'postgres://fixture@127.remote.example.com/fixture',
+    }),
+  /DATABASE_URL points outside local test services/,
 );
 
 console.log('e2e-env tests passed');

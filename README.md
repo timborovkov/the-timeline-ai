@@ -62,7 +62,7 @@ Requirements: Bun 1.4.4 and Docker. The runtime is pinned in `.bun-version`.
 git clone https://github.com/timborovkov/the-timeline-ai.git
 cd the-timeline-ai
 bun --version # must match .bun-version
-bun install
+bun run deps
 
 cp .env.example .env
 ln -sf ../../.env apps/web/.env
