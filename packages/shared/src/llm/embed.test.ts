@@ -86,7 +86,9 @@ describe('llm.embed', () => {
     let requestBody: unknown;
     let requestHeaders: Headers | undefined;
     const vector = embeddingVector(1);
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
       requestBody = JSON.parse(init.body) as unknown;
       requestHeaders = new Headers(init.headers);
@@ -115,7 +117,9 @@ describe('llm.embed', () => {
 
   it('meters OpenRouter embedding cost from the raw response body', async () => {
     const vector = embeddingVector(1);
-    const fetch = vi.fn<typeof globalThis.fetch>(() =>
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({
@@ -141,7 +145,9 @@ describe('llm.embed', () => {
   it('sums OpenRouter embedding cost across a batch response body', async () => {
     const first = embeddingVector(1);
     const second = embeddingVector(2);
-    const fetch = vi.fn<typeof globalThis.fetch>(() =>
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() =>
       Promise.resolve(
         new Response(
           JSON.stringify({

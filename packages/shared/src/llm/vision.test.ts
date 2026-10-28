@@ -226,7 +226,9 @@ describe('extractTextFromMedia', () => {
   it('enforces ZDR routing and disables OpenRouter response caching at the HTTP boundary', async () => {
     let requestBody: unknown;
     let requestHeaders: Headers | undefined;
-    const fetch: typeof globalThis.fetch = (_input, init) => {
+    const fetch: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_input, init) => {
       if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
       requestBody = JSON.parse(init.body) as unknown;
       requestHeaders = new Headers(init.headers);

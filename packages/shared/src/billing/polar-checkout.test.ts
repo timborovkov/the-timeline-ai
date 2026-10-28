@@ -33,7 +33,7 @@ describe('expireCheckout', () => {
       }
       return Promise.resolve(jsonResponse({ status: 'confirmed' }));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(provider.expireCheckout('missing')).resolves.toBe('expired');
     await expect(provider.expireCheckout('gone')).resolves.toBe('expired');
@@ -58,7 +58,7 @@ describe('expireCheckout', () => {
       }
       return Promise.resolve(jsonResponse({ status: 'open' }));
     });
-    globalThis.fetch = fetchMock as typeof fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(provider.expireCheckout('open-stays')).resolves.toBe('still_open');
     await expect(provider.expireCheckout('open-expires')).resolves.toBe('expired');

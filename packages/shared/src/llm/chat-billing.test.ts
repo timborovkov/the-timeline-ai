@@ -17,6 +17,10 @@ import { chatStructured } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 
+type ProviderFetch = (
+  ...args: Parameters<typeof globalThis.fetch>
+) => ReturnType<typeof globalThis.fetch>;
+
 const TEAM_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const USER_ID = '11111111-2222-4333-8444-555555555555';
 
@@ -110,7 +114,7 @@ describe('structured billing operation ids', () => {
     process.env.OPENROUTER_API_KEY = 'sk-test-key';
     process.env.OPENROUTER_BASE_URL = 'https://example.test/v1';
     resetEnvForTests();
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: ProviderFetch = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const request = z
         .object({
