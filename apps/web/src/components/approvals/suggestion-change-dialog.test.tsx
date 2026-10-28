@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -10,16 +9,35 @@ const fakes = vi.hoisted(() => ({
   notifyAction: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
-    fakes.notifyAction(options);
-    return options.run();
-  },
-}));
-vi.mock('@/app/actions/suggestions', () => ({
-  reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+      fakes.notifyAction(options);
+      return options.run();
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/suggestions'),
+  () => ({
+    reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
+  }),
+  () => import('@/app/actions/suggestions'),
+);
+
+const { cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
+const { default: userEvent, PointerEventsCheckLevel } = await import('@testing-library/user-event');
 
 const { SuggestionChangeDialog } = await import('./suggestion-change-dialog.js');
 

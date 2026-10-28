@@ -12,6 +12,7 @@ import {
 } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
+import { asBunFetch } from '#src/http/fetch.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
@@ -42,7 +43,7 @@ export interface EmbedDeps {
   /** Inject a pre-built EmbeddingModel — used by tests with a mock. */
   model?: EmbeddingModel;
   /** Inject transport for boundary tests. */
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   /** Override SDK-level retries. Workers set this to 0 so BullMQ owns backoff. */
   maxRetries?: number;
 }
@@ -109,7 +110,9 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function privateEmbeddingFetch(fetchImpl: typeof globalThis.fetch): typeof globalThis.fetch {
+function privateEmbeddingFetch(
+  fetchImpl: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>,
+): (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch> {
   return async (input, init) => {
     if (typeof init?.body !== 'string') {
       throw new Error('OpenRouter embedding request did not serialize a JSON body');
@@ -142,7 +145,9 @@ function privateEmbeddingFetch(fetchImpl: typeof globalThis.fetch): typeof globa
 
 function buildDefaultModel(
   modelId: string,
-  fetchImpl: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+  fetchImpl: (
+    ...args: Parameters<typeof globalThis.fetch>
+  ) => ReturnType<typeof globalThis.fetch> = globalThis.fetch.bind(globalThis),
 ): EmbeddingModel {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
@@ -157,7 +162,7 @@ function buildDefaultModel(
     // The installed compatible adapter only serializes `dimensions` and
     // `user` for embeddings. Inject the OpenRouter routing policy at the HTTP
     // boundary and fail closed if that request shape changes.
-    fetch: privateEmbeddingFetch(fetchImpl),
+    fetch: asBunFetch(privateEmbeddingFetch(fetchImpl)),
   });
   return provider.embeddingModel(modelId);
 }

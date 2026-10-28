@@ -9,9 +9,11 @@ import {
   teamVisibilityDefaults,
   users,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PostmarkInbound } from '#src/email/postmark-schema.js';
 
@@ -20,7 +22,6 @@ import { createBillingScope } from '#src/billing/scope.js';
 import { flushDeferredEmailEnrichment, handleInbound } from '#src/email/dispatcher.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { textQueueDeps } from '#src/test/queue-deps.js';
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

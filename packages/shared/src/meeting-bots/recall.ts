@@ -33,7 +33,7 @@ interface RecallProviderOptions {
   /** Display name for the bot in the participant list. */
   botName?: string;
   /** Inject fetch for tests. */
-  fetcher?: typeof fetch;
+  fetcher?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }
 
 interface RecallBotResponse {

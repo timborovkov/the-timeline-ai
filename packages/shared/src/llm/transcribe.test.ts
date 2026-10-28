@@ -1,12 +1,13 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
 import { MockTranscriptionModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { TranscriptionModel } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { transcribeAudio } from '#src/llm/transcribe.js';
-
 // Tests for the transcribe wrapper. The production path calls OpenRouter's
 // JSON/base64 STT endpoint; tests also inject a mock TranscriptionModel for
 // deterministic SDK-level wrapper coverage. AUTH_SECRET and DATABASE_URL are
@@ -52,7 +53,9 @@ describe('transcribeAudio', () => {
   it('posts JSON/base64 audio to OpenRouter by default', async () => {
     const calls: [input: Parameters<typeof globalThis.fetch>[0], init: RequestInit | undefined][] =
       [];
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       calls.push([input, init]);
       return Promise.resolve(
         new Response(JSON.stringify({ text: 'hello from openrouter' }), {
@@ -99,7 +102,9 @@ describe('transcribeAudio', () => {
   it('accepts an eval model and key without reading shared env', async () => {
     delete process.env.OPENROUTER_API_KEY;
     resetEnvForTests();
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       if (!init || typeof init.body !== 'string') throw new Error('expected JSON request body');
       expect(JSON.parse(init.body)).toMatchObject({
         model: 'openai/whisper-large-v3',

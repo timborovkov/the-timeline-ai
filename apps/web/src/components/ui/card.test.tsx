@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { CardTitle } from '@/components/ui/card';
+// Test environment: happy-dom
 
 describe('CardTitle', () => {
   it('renders a requested semantic heading', () => {

@@ -199,7 +199,7 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
     const expected = CORPUS_PEOPLE.find((person) => person.email === row.email);
     if (expected && row.id !== expected.id) {
       throw new Error(
-        `Cannot seed: ${row.email} already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+        `Cannot seed: ${row.email} already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
       );
     }
     const reserved = CORPUS_PEOPLE.find((person) => person.id === row.id);
@@ -213,7 +213,7 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
   for (const row of reservedTeams) {
     if (row.slug === 'acme-labs' && row.id !== IDS.team) {
       throw new Error(
-        `Cannot seed: acme-labs already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+        `Cannot seed: acme-labs already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
       );
     }
     if (row.id === IDS.team && row.slug !== 'acme-labs') {
@@ -250,7 +250,7 @@ function assertReservedIntegrationRows(
           : undefined;
     if (expected && row.id !== expected) {
       throw new Error(
-        `Cannot seed: ${label} for ${row.provider}:${row.externalAccountId ?? '(none)'} already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+        `Cannot seed: ${label} for ${row.provider}:${row.externalAccountId ?? '(none)'} already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
       );
     }
   }

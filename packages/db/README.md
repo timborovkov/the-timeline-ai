@@ -19,9 +19,9 @@ All team-scoped reads must go through `withTeam(db, teamId, userId)` from `@time
 Workspace commands:
 
 ```bash
-pnpm db:generate   # drizzle-kit generate after schema change
-pnpm db:migrate    # apply pending migrations
-pnpm db:studio     # local schema browser
+bun run db:generate   # drizzle-kit generate after schema change
+bun run db:migrate    # apply pending migrations
+bun run db:studio     # local schema browser
 ```
 
 ## Schema guardrails

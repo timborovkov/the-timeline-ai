@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   DEFAULT_BINARY_OVERSAMPLING,
@@ -10,7 +11,6 @@ import {
   qdrantQuantizationFromEnv,
   qdrantSearchQuantizationParams,
 } from '#src/qdrant/collection-config.js';
-
 describe('qdrant collection storage layout', () => {
   it('creates on-disk cosine vectors with scalar int8 quantization by default', () => {
     expect(qdrantCollectionCreateBody(1536)).toEqual({

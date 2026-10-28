@@ -1,12 +1,6 @@
-import { createHmac } from 'node:crypto';
-
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as EmailModule from '@timeline/shared/email';
-import type * as IntegrationsModule from '@timeline/shared/integrations';
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
@@ -31,55 +25,78 @@ const fakes = vi.hoisted(() => ({
   requireRedisQueue: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: vi.fn((shape?: unknown) => ({
-      from: vi.fn(() => ({
-        innerJoin: vi.fn(() => ({
-          where: vi.fn(() =>
-            Promise.resolve(
-              fakes.subscriptionIntegrationRows.map((integration) => ({ integration })),
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: vi.fn((shape?: unknown) => ({
+        from: vi.fn(() => ({
+          innerJoin: vi.fn(() => ({
+            where: vi.fn(() =>
+              Promise.resolve(
+                fakes.subscriptionIntegrationRows.map((integration) => ({ integration })),
+              ),
             ),
-          ),
+          })),
+          where: vi.fn(() => {
+            if (shape) return Promise.resolve(fakes.selectionRows);
+            return Promise.resolve(fakes.integrationRows);
+          }),
         })),
-        where: vi.fn(() => {
-          if (shape) return Promise.resolve(fakes.selectionRows);
-          return Promise.resolve(fakes.integrationRows);
-        }),
       })),
-    })),
-    insert: vi.fn(() => ({
-      values: fakes.insertValues.mockImplementation(() => ({
-        onConflictDoNothing: fakes.onConflictDoNothing.mockResolvedValue(undefined),
+      insert: vi.fn(() => ({
+        values: fakes.insertValues.mockImplementation(() => ({
+          onConflictDoNothing: fakes.onConflictDoNothing.mockResolvedValue(undefined),
+        })),
       })),
-    })),
+    },
+  }),
+  () => import('@/lib/db'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: fakes.requireRedisQueue,
+  }),
+  () => import('@/lib/queue'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/email'),
+  async () => {
+    const actual = await import('@timeline/shared/email');
+    return { ...actual, clientIpFromHeaders: () => null };
   },
-}));
+  () => import('@timeline/shared/email'),
+);
 
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: fakes.requireRedisQueue,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  async () => {
+    const actual = await import('@timeline/shared/integrations');
+    return {
+      ...actual,
+      recordWebhookDeliveryTargets: fakes.recordWebhookDeliveryTargets,
+    };
+  },
+  () => import('@timeline/shared/integrations'),
+);
 
-vi.mock('@timeline/shared/email', async () => {
-  const actual = await vi.importActual<typeof EmailModule>('@timeline/shared/email');
-  return { ...actual, clientIpFromHeaders: () => null };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return {
+      ...actual,
+      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+    };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
 
-vi.mock('@timeline/shared/integrations', async () => {
-  const actual = await vi.importActual<typeof IntegrationsModule>('@timeline/shared/integrations');
-  return {
-    ...actual,
-    recordWebhookDeliveryTargets: fakes.recordWebhookDeliveryTargets,
-  };
-});
-
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return {
-    ...actual,
-    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-  };
-});
+const { createHmac } = await import('node:crypto');
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 

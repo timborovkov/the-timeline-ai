@@ -1,6 +1,7 @@
+import { expect, vi } from '@timeline/test-support';
 import { tool, type LanguageModel, type StreamTextOnErrorCallback } from 'ai';
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { z } from 'zod';
 
 import { openRouterUsdCostFromFinishEvent } from '#src/billing/openrouter-usage.js';

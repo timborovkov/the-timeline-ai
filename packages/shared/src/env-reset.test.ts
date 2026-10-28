@@ -5,7 +5,9 @@ import {
   type S3Client,
 } from '@aws-sdk/client-s3';
 import { postgresResetStatements } from '@timeline/db';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   assertDestructiveDevWipeAllowed,
@@ -15,7 +17,6 @@ import {
   emptyBucket,
   versionedBuckets,
 } from '#src/env-reset.js';
-
 describe('env reset helpers', () => {
   it('requires NODE_ENV to be explicitly development or test', () => {
     expect(assertResetNodeEnv('development')).toBe('development');
@@ -88,7 +89,9 @@ describe('env reset helpers', () => {
         );
       }
       return Promise.resolve(response({}));
-    }) as unknown as typeof fetch;
+    }) as unknown as (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch>;
 
     await expect(
       deleteAllQdrantCollections({

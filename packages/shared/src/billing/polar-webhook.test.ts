@@ -1,7 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   billingStateForPolarSubscriptionUpsert,

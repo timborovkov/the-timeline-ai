@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { formatCollectionCount } from '@/lib/collection-count';
-
 describe('formatCollectionCount', () => {
   it('shows the inventory total when the collection is unfiltered', () => {
     expect(formatCollectionCount({ matching: 847, total: 847, filtered: false })).toBe('847');

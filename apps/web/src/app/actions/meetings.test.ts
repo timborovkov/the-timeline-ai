@@ -1,12 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-
-import {
-  cancelMeetingBotAction,
-  scheduleMeetingBotAction,
-  updateSavedMeetingAction,
-} from '@/app/actions/meetings';
 
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
@@ -34,53 +28,98 @@ const fakes = vi.hoisted(() => ({
   fakeStampRecall: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }));
-vi.mock('next/cache', () => ({ revalidatePath: vi.fn() }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: vi.fn() }),
+  () => import('next/cache'),
+);
 
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    meetings: fakes.fakeMeetings,
-    timeline: { team: vi.fn(() => Promise.resolve({ name: 'Acme' })) },
-    billing: {},
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      meetings: fakes.fakeMeetings,
+      timeline: { team: vi.fn(() => Promise.resolve({ name: 'Acme' })) },
+      billing: {},
+    }),
   }),
-}));
-vi.mock('@timeline/shared/meeting-bots', () => ({
-  isMeetingBotConfigured: vi.fn(() => true),
-  resolveTranscriptWebhookUrl: vi.fn(() => 'https://timeline.test/api/webhooks/recall/transcript'),
-  meetingBotDisplayName: vi.fn((teamName: string | null | undefined) =>
-    teamName ? `${teamName}'s thetimeline.cc bot` : 'Timeline',
-  ),
-  meetingBotErrorCode: vi.fn(() => 'provider_request_failed'),
-  getMeetingBotProvider: vi.fn(() => ({
-    joinMeeting: fakes.fakeJoinMeeting,
-    leaveMeeting: fakes.fakeLeaveMeeting,
-  })),
-}));
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return { ...actual, checkRateLimit: fakes.fakeCheckRateLimit };
-});
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
-vi.mock('@timeline/shared/billing', () => ({
-  assertTeamConcurrentRecallCapacity: vi.fn().mockResolvedValue(undefined),
-  claimMeetingJoinUnderRecallCap: fakes.fakeClaimMeetingJoinUnderRecallCap,
-  isBillingAdmissionError: () => false,
-  recallBillingUserMessage: (code: string) => code,
-  abortRecallJoinAfterProviderAccept: vi.fn().mockResolvedValue(undefined),
-  reserveRecallMeetingMinutes: vi.fn().mockResolvedValue({
-    ok: true,
-    operationId: 'recall:test',
-    reservedMinutes: 60,
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/meeting-bots'),
+  () => ({
+    isMeetingBotConfigured: vi.fn(() => true),
+    resolveTranscriptWebhookUrl: vi.fn(
+      () => 'https://timeline.test/api/webhooks/recall/transcript',
+    ),
+    meetingBotDisplayName: vi.fn((teamName: string | null | undefined) =>
+      teamName ? `${teamName}'s thetimeline.cc bot` : 'Timeline',
+    ),
+    meetingBotErrorCode: vi.fn(() => 'provider_request_failed'),
+    getMeetingBotProvider: vi.fn(() => ({
+      joinMeeting: fakes.fakeJoinMeeting,
+      leaveMeeting: fakes.fakeLeaveMeeting,
+    })),
   }),
-  settleElapsedRecallMeetingMinutes: fakes.fakeSettleElapsedRecall,
-  releaseRecallMeetingMinutes: fakes.fakeReleaseRecall,
-  stampPendingRecallSettlement: fakes.fakeStampRecall,
-}));
+  () => import('@timeline/shared/meeting-bots'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return { ...actual, checkRateLimit: fakes.fakeCheckRateLimit };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    assertTeamConcurrentRecallCapacity: vi.fn().mockResolvedValue(undefined),
+    claimMeetingJoinUnderRecallCap: fakes.fakeClaimMeetingJoinUnderRecallCap,
+    isBillingAdmissionError: () => false,
+    recallBillingUserMessage: (code: string) => code,
+    abortRecallJoinAfterProviderAccept: vi.fn().mockResolvedValue(undefined),
+    reserveRecallMeetingMinutes: vi.fn().mockResolvedValue({
+      ok: true,
+      operationId: 'recall:test',
+      reservedMinutes: 60,
+    }),
+    settleElapsedRecallMeetingMinutes: fakes.fakeSettleElapsedRecall,
+    releaseRecallMeetingMinutes: fakes.fakeReleaseRecall,
+    stampPendingRecallSettlement: fakes.fakeStampRecall,
+  }),
+  () => import('@timeline/shared/billing'),
+);
+
+const { cancelMeetingBotAction, scheduleMeetingBotAction, updateSavedMeetingAction } =
+  await import('@/app/actions/meetings');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';

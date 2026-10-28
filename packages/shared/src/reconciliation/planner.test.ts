@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { z } from 'zod';
@@ -10,7 +11,6 @@ import {
   reconciliationPlannerResultSchema,
   type ReconciliationPlannerResult,
 } from '#src/reconciliation/planner.js';
-
 describe('reconciliation planner', () => {
   it('builds a policy prompt with surfaces, source refs, and authority guardrails', () => {
     const prompt = buildReconciliationPlannerPrompt({

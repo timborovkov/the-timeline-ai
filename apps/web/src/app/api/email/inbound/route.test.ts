@@ -1,9 +1,8 @@
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as EmailModule from '@timeline/shared/email';
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
@@ -23,31 +22,53 @@ const fakes = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)),
+  }),
+  () => import('@/lib/queue'),
+);
 
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => fakes.log,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => fakes.log,
+  }),
+  () => import('@timeline/shared/logger'),
+);
 
-vi.mock('@timeline/shared/email', async () => {
-  const actual = await vi.importActual<typeof EmailModule>('@timeline/shared/email');
-  return {
-    ...actual,
-    clientIpFromHeaders: () => null,
-    handleInbound: fakes.handleInbound,
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/email'),
+  async () => {
+    const actual = await import('@timeline/shared/email');
+    return {
+      ...actual,
+      clientIpFromHeaders: () => null,
+      handleInbound: fakes.handleInbound,
+    };
+  },
+  () => import('@timeline/shared/email'),
+);
 
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return {
-    ...actual,
-    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return {
+      ...actual,
+      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+    };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 

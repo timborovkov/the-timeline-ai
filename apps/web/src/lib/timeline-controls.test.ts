@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   parseTimelineImpact,
@@ -15,7 +16,6 @@ import {
   resolveTimelineDateWindow,
   updateTimelineSourceSelection,
 } from '@/lib/timeline-controls';
-
 describe('timeline controls', () => {
   it('parses source presets and rejects unknown values', () => {
     expect(parseTimelineSource('slack')).toBe('slack');

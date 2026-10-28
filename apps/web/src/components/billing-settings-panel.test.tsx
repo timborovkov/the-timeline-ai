@@ -1,22 +1,31 @@
+import { expect, vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
 
+import type { BillingSettingsPanelProps } from '@/components/billing-settings-panel';
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 
-import {
-  BillingSettingsPanel,
-  type BillingSettingsPanelProps,
-} from '@/components/billing-settings-panel';
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
 
-vi.mock('@/app/actions/billing', () => ({
-  startBillingCheckout: vi.fn(),
-  startBillingPortal: vi.fn(),
-  updateBillingSpendCap: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/billing'),
+  () => ({
+    startBillingCheckout: vi.fn(),
+    startBillingPortal: vi.fn(),
+    updateBillingSpendCap: vi.fn(),
+  }),
+  () => import('@/app/actions/billing'),
+);
+
+const { BillingSettingsPanel } = await import('@/components/billing-settings-panel');
 
 const planPreview: CheapestPlanPreview = {
   recommended: 'payg',

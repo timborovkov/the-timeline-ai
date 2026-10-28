@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   generateAndStoreObjectSummary: vi.fn(),
   withTeam: vi.fn(),
@@ -14,37 +14,61 @@ const fakes = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('@timeline/shared', () => ({
-  queue: {
-    QUEUE_NAMES: { objectSummary: 'object-summary' },
-    getRedisConnection: vi.fn(),
-  },
-}));
-
-vi.mock('@timeline/shared/objects', () => ({
-  generateAndStoreObjectSummary: fakes.generateAndStoreObjectSummary,
-}));
-
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: fakes.withTeam,
-}));
-
-vi.mock('bullmq', () => ({
-  Worker: vi.fn(function WorkerMock() {
-    return { on: vi.fn() };
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  () => ({
+    queue: {
+      QUEUE_NAMES: { objectSummary: 'object-summary' },
+      getRedisConnection: vi.fn(),
+    },
   }),
-}));
-vi.mock('#src/monitoring.js', () => ({ captureWorkerJobFailure: vi.fn() }));
-vi.mock('#src/billing-context.js', () => ({
-  withWorkerAiBilling: fakes.withWorkerAiBilling,
-  workerBillingJobOptions: (
-    job: { id?: string; moveToDelayed: (timestamp: number, token?: string) => Promise<void> },
-    token?: string,
-  ) => ({
-    ...(job.id ? { jobId: job.id } : {}),
-    delayJob: (delayMs: number) => job.moveToDelayed(Date.now() + delayMs, token),
+  () => import('@timeline/shared'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/objects'),
+  () => ({
+    generateAndStoreObjectSummary: fakes.generateAndStoreObjectSummary,
   }),
-}));
+  () => import('@timeline/shared/objects'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: fakes.withTeam,
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({
+    Worker: vi.fn(function WorkerMock() {
+      return { on: vi.fn() };
+    }),
+  }),
+  () => import('bullmq'),
+);
+await vi.mock(
+  import.meta.resolve('#src/monitoring.js'),
+  () => ({ captureWorkerJobFailure: vi.fn() }),
+  () => import('#src/monitoring.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/billing-context.js'),
+  () => ({
+    withWorkerAiBilling: fakes.withWorkerAiBilling,
+    workerBillingJobOptions: (
+      job: { id?: string; moveToDelayed: (timestamp: number, token?: string) => Promise<void> },
+      token?: string,
+    ) => ({
+      ...(job.id ? { jobId: job.id } : {}),
+      delayJob: (delayMs: number) => job.moveToDelayed(Date.now() + delayMs, token),
+    }),
+  }),
+  () => import('#src/billing-context.js'),
+);
 
 const { objectSummaryBillingJobId, processObjectSummaryJobForTests, startObjectSummaryWorker } =
   await import('#src/workers/objectSummary.js');

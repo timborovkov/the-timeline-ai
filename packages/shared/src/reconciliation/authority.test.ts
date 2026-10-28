@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   AUTHORITY_POLICY_VERSION,
   authorityDecisionPayload,
   evaluateAuthorityPolicy,
 } from '#src/reconciliation/authority.js';
-
 describe('reconciliation authority policy', () => {
   it('allows provider-owned lifecycle updates as direct writes', () => {
     const result = evaluateAuthorityPolicy({

@@ -8,29 +8,29 @@ here is real customer data. Seed it, wipe it, and seed it again.
 Export the root `.env` first (`set -a; . ./.env; set +a`). Then:
 
 ```bash
-pnpm db:migrate
-pnpm demo:seed
+bun run db:migrate
+bun run demo:seed
 ```
 
 `demo:seed` runs `dev:seed`, indexes every fixture-version raw event, fact, document
 chunk, and meeting chunk through the production embed worker, then runs `demo:verify`.
 Vector indexing requires all nine original Acme Labs events and their three facts,
 as well as the Northstar and expanded-corpus source sets, and rejects unexpected fixture IDs.
-`demo:seed` is safe to rerun. Use `pnpm demo:reset` when you need the workspace restored
+`demo:seed` is safe to rerun. Use `bun run demo:reset` when you need the workspace restored
 to the exact canonical fixture after local edits.
 
 ```bash
-pnpm demo:verify   # re-check a previously seeded workspace
-pnpm demo:reset    # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed again
+bun run demo:verify   # re-check a previously seeded workspace
+bun run demo:reset    # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed again
 ```
 
-`demo:reset` is `pnpm dev:wipe && pnpm demo:seed`. Wipe requires
+`demo:reset` is `bun run dev:wipe && bun run demo:seed`. Wipe requires
 `NODE_ENV=development` or `test`. On Railway it also needs
 `ALLOW_DESTRUCTIVE_DEV_WIPE=wipe-dev`. Seed refuses production, unapproved
 remote databases/Qdrant, and non-local S3 unless `ALLOW_DEV_SEED` /
 `ALLOW_DEV_SEED_STORAGE` carry the documented acknowledgements.
 
-`pnpm dev:seed:heavy` is optional extra Acme Labs volume for infinite-scroll and
+`bun run dev:seed:heavy` is optional extra Acme Labs volume for infinite-scroll and
 virtualization tests. It runs after the verified corpus and is not part of
 `demo:seed`.
 

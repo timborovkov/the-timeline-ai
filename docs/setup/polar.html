@@ -31,13 +31,13 @@
         Sandbox accounts, tokens, products, and meters are fully isolated from production. The
         access token needs to read and write products, meters, discounts, and webhooks in the
         Timeline organization.
-        <code>pnpm billing:polar-setup</code> creates or reuses the Timeline catalog in Polar. It
+        <code>bun run billing:polar-setup</code> creates or reuses the Timeline catalog in Polar. It
         defaults to the sandbox API. <code>--allow-production</code> is required before it reads or
-        changes production. <code>--dry-run</code> prints the plan and does not write.
-        <code>--env-file=</code> loads variables into the process, and
-        <code>--webhook-url=</code> overrides the endpoint URL. The command does not write
-        <code>.env</code>. It prints a copyable block of product ids, meter ids, the checkout
-        discount, and the webhook id and secret.
+        changes production. <code>bun run billing:polar-setup -- --dry-run</code> prints the plan
+        and does not write. <code>--env-file=</code> loads variables into the process, and
+        <code>--webhook-url=</code> overrides the endpoint URL. Pass those flags after
+        <code>--</code>. The command does not write <code>.env</code>. It prints a copyable block of
+        product ids, meter ids, the checkout discount, and the webhook id and secret.
       </p>
       <p>
         The catalog is six meters (<code>timeline_ai_eur_cents</code>,
@@ -86,7 +86,7 @@ PLATFORM_ADMIN_EMAILS=
 </code></pre>
       <p>
         <code>PLATFORM_ADMIN_EMAILS</code> is a comma-separated allowlist for
-        <code>/app/admin/billing</code> and <code>pnpm billing:operator</code>. It is not a team
+        <code>/app/admin/billing</code> and <code>bun run billing:operator</code>. It is not a team
         role. The address must match a Timeline user whose email is already verified. Comped
         workspaces keep metering and the spend cap, skip Polar checkout and meter ingest, and show a
         one-line comp banner on the team billing page. Customer billing shows the plan, this month's
@@ -113,11 +113,12 @@ PLATFORM_ADMIN_EMAILS=
         <li>
           <strong>Timeline Enterprise</strong> — custom monthly platform fee (minimum €0) plus the
           same six metered prices. A platform operator opens the checkout from
-          <code>/app/admin/billing</code> or <code>pnpm billing:operator -- start-enterprise</code>.
+          <code>/app/admin/billing</code> or
+          <code>bun run billing:operator -- start-enterprise</code>.
         </li>
       </ul>
       <p>
-        There is no prepaid wallet and no top-up product. <code>pnpm billing:polar-setup</code>
+        There is no prepaid wallet and no top-up product. <code>bun run billing:polar-setup</code>
         archives an active Timeline Top-up product, including one stamped
         <code>timeline_key=topup</code>.
       </p>
@@ -144,7 +145,7 @@ PLATFORM_ADMIN_EMAILS=
         discount is not used for this, because it would also cut the platform fee and the other
         meters. Included-usage discount is not spent on extra members. Seat quantity is not used:
         Polar prorates a seat from the moment the quantity changes, which does not match a daily
-        census, a member who leaves, or a per-team price. <code>pnpm billing:polar-setup</code>
+        census, a member who leaves, or a per-team price. <code>bun run billing:polar-setup</code>
         creates every Timeline meter and puts all six prices on Pay as you go, Team, Business, and
         Enterprise. Included member counts are product metadata, not Polar seat prices. Comps and
         shadow billing still count the charge on the spend cap and do not ingest it. An empty
@@ -190,7 +191,7 @@ PLATFORM_ADMIN_EMAILS=
         <code>refund.updated</code>, plus <code>subscription.created</code>,
         <code>subscription.active</code>, <code>subscription.updated</code>,
         <code>subscription.canceled</code>, and <code>subscription.revoked</code>).
-        <code>pnpm billing:polar-setup</code> creates that endpoint. Keep it pointed at a deploy
+        <code>bun run billing:polar-setup</code> creates that endpoint. Keep it pointed at a deploy
         that serves this route; production and staging only follow <code>main</code> and
         <code>staging</code>. Webhook signatures require a timestamp within five minutes.
         Subscription events compare Polar <code>modified_at</code> to

@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
 import { legalAcceptances, users } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   legalAcceptanceRequestMetadata,
@@ -10,7 +11,6 @@ import {
   recordCurrentLegalAcceptance,
 } from '@/lib/legal';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
-
 /**
  * Legal acceptance is durable evidence, not just a checkbox state. These tests
  * exercise the recorder against Postgres semantics so retries cannot rewrite

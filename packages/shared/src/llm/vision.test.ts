@@ -1,21 +1,26 @@
+import { expect, vi } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { LanguageModel } from 'ai';
 
-import { resetEnvForTests } from '#src/env.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { extractTextFromMedia, resolveVisionModelId } from '#src/llm/vision.js';
+await vi.mock(
+  import.meta.resolve('#src/billing/runtime.js'),
+  () => ({
+    withAiMetering: async (
+      _input: unknown,
+      fn: () => Promise<{ value: { text: string } }>,
+    ): Promise<{ text: string }> => {
+      const { value } = await fn();
+      return JSON.parse(JSON.stringify(value)) as { text: string };
+    },
+  }),
+  () => import('#src/billing/runtime.js'),
+);
 
-vi.mock('#src/billing/runtime.js', () => ({
-  withAiMetering: async (
-    _input: unknown,
-    fn: () => Promise<{ value: { text: string } }>,
-  ): Promise<{ text: string }> => {
-    const { value } = await fn();
-    return JSON.parse(JSON.stringify(value)) as { text: string };
-  },
-}));
+const { resetEnvForTests } = await import('#src/env.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
+const { extractTextFromMedia, resolveVisionModelId } = await import('#src/llm/vision.js');
 
 // The v3 model layer in `ai` doesn't re-export its call-options type from
 // the package root. We only need the prompt + maxOutputTokens fields for

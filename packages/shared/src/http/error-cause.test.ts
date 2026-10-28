@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { formatErrorCause } from '#src/http/error-cause.js';
-
 describe('formatErrorCause', () => {
   it('includes code, errno, syscall, and host from the cause chain', () => {
     const leaf = Object.assign(new Error('connect ECONNREFUSED 140.82.112.6:443'), {

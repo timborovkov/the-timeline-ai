@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 /**
  * Opt-in Polar sandbox checks. Skipped unless POLAR_SANDBOX_INTEGRATION=1,
  * POLAR_SERVER=sandbox, and the access token plus the three subscription

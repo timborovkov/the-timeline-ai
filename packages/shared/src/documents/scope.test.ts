@@ -1,35 +1,40 @@
 import { PGlite } from '@electric-sql/pglite';
-import {
-  type Db,
-  documentVersions,
-  documents,
-  reconciliationEvidence,
-  reconciliationEvidenceAnchors,
-} from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
-
-import { BillingAdmissionError } from '#src/billing/errors.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import type { Db } from '@timeline/db';
 
 const s3Fakes = vi.hoisted(() => ({
   deleteObject: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('#src/s3/objects.js', () => ({
-  deleteObject: async (...args: unknown[]) => {
-    await s3Fakes.deleteObject(...args);
-  },
-}));
-vi.mock('#src/s3/client.js', () => ({
-  getS3Client: () => ({}),
-  getDocumentsBucket: () => 'timeline-documents',
-}));
+await vi.mock(
+  import.meta.resolve('#src/s3/objects.js'),
+  () => ({
+    deleteObject: async (...args: unknown[]) => {
+      await s3Fakes.deleteObject(...args);
+    },
+  }),
+  () => import('#src/s3/objects.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/s3/client.js'),
+  () => ({
+    getS3Client: () => ({}),
+    getDocumentsBucket: () => 'timeline-documents',
+  }),
+  () => import('#src/s3/client.js'),
+);
+
+const { documentVersions, documents, reconciliationEvidence, reconciliationEvidenceAnchors } =
+  await import('@timeline/db');
+const { BillingAdmissionError } = await import('#src/billing/errors.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 /**
  * Real-DB integration tests for the Phase 9 document scope. Uses pglite

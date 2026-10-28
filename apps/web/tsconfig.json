@@ -12,11 +12,16 @@
     "allowJs": true,
     "incremental": true,
     "exactOptionalPropertyTypes": false,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "paths": {
       "@/*": ["./src/*"]
     },
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "types": ["node", "bun"]
   },
   "include": [
     "next-env.d.ts",

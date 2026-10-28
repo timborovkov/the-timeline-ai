@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { billingUsageAlertKindsForState } from '#src/billing/alerts.js';
 import { FREE_ALLOWANCES } from '#src/billing/catalog.js';

@@ -36,7 +36,7 @@ function stripInertExternalStubs(text: string): string {
 
 if (!existsSync(bundleRoot)) {
   console.error(
-    `Built web bundle not found at ${bundleRoot}. Run pnpm --filter @timeline/web build first.`,
+    `Built web bundle not found at ${bundleRoot}. Run bun run --filter @timeline/web build first.`,
   );
   process.exit(1);
 }

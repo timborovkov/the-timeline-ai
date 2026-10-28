@@ -1,11 +1,11 @@
-// @vitest-environment happy-dom
-
-// Guards the public explanation from regressing into decorative motion without a complete static story.
-
 import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { TimelineFlowDiagram } from '@/components/marketing/home/timeline-flow-diagram';
+// Test environment: happy-dom
+
+// Guards the public explanation from regressing into decorative motion without a complete static story.
 
 describe('TimelineFlowDiagram', () => {
   afterEach(cleanup);

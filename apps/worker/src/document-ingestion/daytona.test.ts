@@ -1,15 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as SharedModule from '@timeline/shared';
-
-import {
-  daytonaSandboxCreateParams,
-  downloadSandboxPageImages,
-  extractPdfInDaytonaSandbox,
-  MAX_SANDBOX_PAGE_IMAGE_BYTES,
-  parseSandboxJsonObject,
-} from '#src/document-ingestion/daytona.js';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   create: vi.fn(),
   delete: vi.fn(),
@@ -19,35 +10,52 @@ const fakes = vi.hoisted(() => ({
   executeCommand: vi.fn(),
 }));
 
-vi.mock('@daytonaio/sdk', () => ({
-  Daytona: class {
-    create(...args: unknown[]): Promise<unknown> {
-      return fakes.create(...args) as Promise<unknown>;
-    }
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@daytonaio/sdk'),
+  async () => ({
+    ...(await import('@daytonaio/sdk')),
+    Daytona: class {
+      create(...args: unknown[]): Promise<unknown> {
+        return fakes.create(...args) as Promise<unknown>;
+      }
+    },
+  }),
+  () => import('@daytonaio/sdk'),
+);
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModule>('@timeline/shared');
-  return {
-    ...actual,
-    getEnv: () => ({
-      DAYTONA_API_KEY: 'dtn_test',
-      DAYTONA_API_URL: 'https://app.daytona.io/api',
-      DAYTONA_TARGET: 'us',
-      DAYTONA_SNAPSHOT: 'timeline-document-extract-testpin',
-      DAYTONA_SNAPSHOT_ENSURE: true,
-      DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS: 500,
-      DOCUMENT_EXTRACT_MAX_VISION_PAGES: 20,
-    }),
-    childLogger: () => ({
-      warn: vi.fn(),
-      info: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    }),
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  async () => {
+    const actual = await import('@timeline/shared');
+    return {
+      ...actual,
+      getEnv: () => ({
+        DAYTONA_API_KEY: 'dtn_test',
+        DAYTONA_API_URL: 'https://app.daytona.io/api',
+        DAYTONA_TARGET: 'us',
+        DAYTONA_SNAPSHOT: 'timeline-document-extract-testpin',
+        DAYTONA_SNAPSHOT_ENSURE: true,
+        DOCUMENT_EXTRACT_SPARSE_TEXT_CHARS: 500,
+        DOCUMENT_EXTRACT_MAX_VISION_PAGES: 20,
+      }),
+      childLogger: () => ({
+        warn: vi.fn(),
+        info: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+      }),
+    };
+  },
+  () => import('@timeline/shared'),
+);
+
+const {
+  daytonaSandboxCreateParams,
+  downloadSandboxPageImages,
+  extractPdfInDaytonaSandbox,
+  MAX_SANDBOX_PAGE_IMAGE_BYTES,
+  parseSandboxJsonObject,
+} = await import('#src/document-ingestion/daytona.js');
 
 describe('daytonaSandboxCreateParams', () => {
   it('creates sandboxes with networkBlockAll and no secrets surface', () => {

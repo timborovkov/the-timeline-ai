@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   classifyMondayBoardResponse,
   runMondayHelperRepairFollowups,
 } from '#src/integrations/monday-repair.js';
-
 // Monday may return HTTP 200 while omitting deleted or inaccessible boards.
 // Repair must treat those omissions as unverified so apply mode cannot silently
 // leave stale helper-board selections and webhook rows behind.

@@ -1,17 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { IntegrationEvent } from '#src/integrations/types.js';
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
 
-import { resetEnvForTests } from '#src/env.js';
-import {
-  MONDAY_BOARD_WRITER_EVENT_BUDGET,
-  mondayProvider,
-} from '#src/integrations/providers/monday.js';
-import { ProviderRateLimitError } from '#src/integrations/types.js';
+const { resetEnvForTests } = await import('#src/env.js');
+const { MONDAY_BOARD_WRITER_EVENT_BUDGET, mondayProvider } =
+  await import('#src/integrations/providers/monday.js');
+const { ProviderRateLimitError } = await import('#src/integrations/types.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -33,7 +37,11 @@ function requestPayload(init: RequestInit | undefined): {
   return payload;
 }
 
-function requestUrl(input: Parameters<typeof fetch>[0]): string {
+function requestUrl(
+  input: Parameters<
+    (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+  >[0],
+): string {
   if (typeof input === 'string') return input;
   if (input instanceof URL) return input.toString();
   return input.url;
@@ -74,7 +82,9 @@ describe('mondayProvider', () => {
   });
 
   it('exchanges a monday.com OAuth code and labels the connection from the viewer', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
         const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
         expect(body?.get('grant_type')).toBe('authorization_code');
@@ -138,7 +148,9 @@ describe('mondayProvider', () => {
   });
 
   it('connects monday.com from token metadata when the viewer query is unauthorized', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
         return Promise.resolve(
           jsonResponse({
@@ -169,7 +181,9 @@ describe('mondayProvider', () => {
   });
 
   it('does not ignore non-workspace monday.com missing-scope errors during OAuth', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
         return Promise.resolve(
           jsonResponse({
@@ -208,38 +222,40 @@ describe('mondayProvider', () => {
   it('lists boards and WorkDocs as syncable resources', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('boards(limit: $limit')) {
-          expect(body.variables).toMatchObject({ limit: 100, page: 1 });
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('boards(limit: $limit')) {
+            expect(body.variables).toMatchObject({ limit: 100, page: 1 });
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      id: 'board-1',
+                      name: 'Launch',
+                      workspace: { id: 'workspace-1', name: 'Product' },
+                    },
+                  ],
+                },
+              }),
+            );
+          }
           return Promise.resolve(
             jsonResponse({
               data: {
-                boards: [
+                docs: [
                   {
-                    id: 'board-1',
-                    name: 'Launch',
+                    id: 'doc-1',
+                    name: 'Launch notes',
                     workspace: { id: 'workspace-1', name: 'Product' },
                   },
                 ],
               },
             }),
           );
-        }
-        return Promise.resolve(
-          jsonResponse({
-            data: {
-              docs: [
-                {
-                  id: 'doc-1',
-                  name: 'Launch notes',
-                  workspace: { id: 'workspace-1', name: 'Product' },
-                },
-              ],
-            },
-          }),
-        );
-      }),
+        },
+      ),
     );
 
     const resources = await mondayProvider.listSyncableResources({} as never, {
@@ -265,26 +281,27 @@ describe('mondayProvider', () => {
     vi.setSystemTime(new Date('2026-06-25T02:00:00.000Z'));
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>(() =>
-        Promise.resolve(
-          new Response(
-            JSON.stringify({
-              errors: [
-                {
-                  message: 'Daily limit exceeded',
-                  extensions: {
-                    code: 'DAILY_LIMIT_EXCEEDED',
-                    retry_in_seconds: 120,
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        () =>
+          Promise.resolve(
+            new Response(
+              JSON.stringify({
+                errors: [
+                  {
+                    message: 'Daily limit exceeded',
+                    extensions: {
+                      code: 'DAILY_LIMIT_EXCEEDED',
+                      retry_in_seconds: 120,
+                    },
                   },
-                },
-              ],
-            }),
-            {
-              status: 429,
-              headers: { 'content-type': 'application/json' },
-            },
+                ],
+              }),
+              {
+                status: 429,
+                headers: { 'content-type': 'application/json' },
+              },
+            ),
           ),
-        ),
       ),
     );
 
@@ -303,6 +320,29 @@ describe('mondayProvider', () => {
       mondayProvider.listSyncableResources({} as never, {
         access_token: 'token',
       }),
+    ).rejects.toBeInstanceOf(ProviderRateLimitError);
+  });
+
+  it('does not silently omit documents when listing them hits a provider limit', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const { query } = requestPayload(init);
+          if (query.includes('boards(')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [] } }));
+          }
+          return Promise.resolve(
+            new Response(JSON.stringify({ errors: [{ message: 'Daily limit exceeded' }] }), {
+              status: 429,
+            }),
+          );
+        },
+      ),
+    );
+
+    await expect(
+      mondayProvider.listSyncableResources({} as never, { access_token: 'token' }),
     ).rejects.toBeInstanceOf(ProviderRateLimitError);
   });
 
@@ -757,46 +797,48 @@ describe('mondayProvider', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        expect(body.query).toContain('updates(ids: $updateIds)');
-        expect(body.variables).toEqual({
-          itemIds: ['1772139123'],
-          updateIds: ['1772140001'],
-        });
-        return Promise.resolve(
-          jsonResponse({
-            data: {
-              items: [
-                {
-                  id: '1772139123',
-                  name: 'sub-item',
-                  updated_at: '2021-10-11T09:24:51.835Z',
-                  board: { id: '1772135370', name: 'Subitems of Pipeline', columns: [] },
-                  parent_item: {
-                    id: '1771812716',
-                    name: 'parent item',
-                    board: { id: '1771812698', name: 'Pipeline', columns: [] },
-                  },
-                  column_values: [],
-                  updates: [
-                    {
-                      id: '1772140001',
-                      body: '<p>Subitem update</p>',
-                      text_body: 'Subitem update',
-                      created_at: '2021-10-11T09:24:51.835Z',
-                      updated_at: '2021-10-11T09:24:51.835Z',
-                      creator: { id: 'user-1', name: 'Ada' },
-                      replies: [],
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          expect(body.query).toContain('updates(ids: $updateIds)');
+          expect(body.variables).toEqual({
+            itemIds: ['1772139123'],
+            updateIds: ['1772140001'],
+          });
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: '1772139123',
+                    name: 'sub-item',
+                    updated_at: '2021-10-11T09:24:51.835Z',
+                    board: { id: '1772135370', name: 'Subitems of Pipeline', columns: [] },
+                    parent_item: {
+                      id: '1771812716',
+                      name: 'parent item',
+                      board: { id: '1771812698', name: 'Pipeline', columns: [] },
                     },
-                  ],
-                  subitems: [],
-                },
-              ],
-            },
-          }),
-        );
-      }),
+                    column_values: [],
+                    updates: [
+                      {
+                        id: '1772140001',
+                        body: '<p>Subitem update</p>',
+                        text_body: 'Subitem update',
+                        created_at: '2021-10-11T09:24:51.835Z',
+                        updated_at: '2021-10-11T09:24:51.835Z',
+                        creator: { id: 'user-1', name: 'Ada' },
+                        replies: [],
+                      },
+                    ],
+                    subitems: [],
+                  },
+                ],
+              },
+            }),
+          );
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -913,7 +955,9 @@ describe('mondayProvider', () => {
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
     resetEnvForTests();
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (body.query.includes('boards(ids: $ids)')) {
         return Promise.resolve(
@@ -993,7 +1037,9 @@ describe('mondayProvider', () => {
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
     resetEnvForTests();
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (body.query.includes('create_webhook')) {
         throw new Error('must not create a webhook on a subitems board');
@@ -1032,7 +1078,9 @@ describe('mondayProvider', () => {
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
     resetEnvForTests();
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       const variables = body.variables ?? {};
       if (body.query.includes('boards(ids: $ids)')) {
@@ -1100,7 +1148,9 @@ describe('mondayProvider', () => {
     process.env.MONDAY_WEBHOOK_SECRET = 'webhook-secret';
     resetEnvForTests();
     const persisted: unknown[] = [];
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (body.query.includes('boards(ids: $ids)')) {
         return Promise.resolve(
@@ -1176,7 +1226,9 @@ describe('mondayProvider', () => {
   });
 
   it('deprovisions stale monday.com webhooks', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       expect(body.query).toContain('delete_webhook');
       expect(body.variables).toEqual({ id: 'hook-1' });
@@ -1207,56 +1259,58 @@ describe('mondayProvider', () => {
   it('hides monday.com subitem boards from source sharing', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('boards(limit: $limit')) {
-          expect(body.query).toContain('hierarchy_types: [classic, multi_level]');
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    id: 'board-1',
-                    name: 'KIESI',
-                    board_kind: 'public',
-                    type: 'board',
-                    workspace: null,
-                  },
-                  {
-                    id: 'subitems-board-1',
-                    name: 'Subitems of KIESI',
-                    board_kind: 'public',
-                    type: 'sub_items_board',
-                    workspace: null,
-                  },
-                  {
-                    id: 'real-board-with-subitems-name',
-                    name: 'Subitems of Marketing',
-                    board_kind: 'public',
-                    type: 'board',
-                    workspace: null,
-                  },
-                  {
-                    id: 'localized-subitems-board-1',
-                    name: 'Alitehtävät KIESI',
-                    board_kind: 'sub_items_board',
-                    workspace: null,
-                  },
-                  {
-                    id: 'multi-level-board-1',
-                    name: 'Portfolio projects',
-                    type: 'board',
-                    board_kind: 'public',
-                    hierarchy_type: 'multi_level',
-                    workspace: null,
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        return Promise.resolve(jsonResponse({ data: { docs: [] } }));
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('boards(limit: $limit')) {
+            expect(body.query).toContain('hierarchy_types: [classic, multi_level]');
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      id: 'board-1',
+                      name: 'KIESI',
+                      board_kind: 'public',
+                      type: 'board',
+                      workspace: null,
+                    },
+                    {
+                      id: 'subitems-board-1',
+                      name: 'Subitems of KIESI',
+                      board_kind: 'public',
+                      type: 'sub_items_board',
+                      workspace: null,
+                    },
+                    {
+                      id: 'real-board-with-subitems-name',
+                      name: 'Subitems of Marketing',
+                      board_kind: 'public',
+                      type: 'board',
+                      workspace: null,
+                    },
+                    {
+                      id: 'localized-subitems-board-1',
+                      name: 'Alitehtävät KIESI',
+                      board_kind: 'sub_items_board',
+                      workspace: null,
+                    },
+                    {
+                      id: 'multi-level-board-1',
+                      name: 'Portfolio projects',
+                      type: 'board',
+                      board_kind: 'public',
+                      hierarchy_type: 'multi_level',
+                      workspace: null,
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+        },
+      ),
     );
 
     const resources = await mondayProvider.listSyncableResources({} as never, {
@@ -1283,7 +1337,9 @@ describe('mondayProvider', () => {
   });
 
   it('persists refreshed monday.com tokens while listing syncable resources', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
         return Promise.resolve(
           jsonResponse({
@@ -1334,33 +1390,35 @@ describe('mondayProvider', () => {
   it('paginates monday.com boards while listing syncable resources', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('boards(limit: $limit')) {
-          if (body.variables?.page === 1) {
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('boards(limit: $limit')) {
+            if (body.variables?.page === 1) {
+              return Promise.resolve(
+                jsonResponse({
+                  data: {
+                    boards: Array.from({ length: 100 }, (_, index) => ({
+                      id: `board-${String(index + 1)}`,
+                      name: `Board ${String(index + 1)}`,
+                      workspace: null,
+                    })),
+                  },
+                }),
+              );
+            }
+            expect(body.variables?.page).toBe(2);
             return Promise.resolve(
               jsonResponse({
                 data: {
-                  boards: Array.from({ length: 100 }, (_, index) => ({
-                    id: `board-${String(index + 1)}`,
-                    name: `Board ${String(index + 1)}`,
-                    workspace: null,
-                  })),
+                  boards: [{ id: 'board-101', name: 'Board 101', workspace: null }],
                 },
               }),
             );
           }
-          expect(body.variables?.page).toBe(2);
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [{ id: 'board-101', name: 'Board 101', workspace: null }],
-              },
-            }),
-          );
-        }
-        return Promise.resolve(jsonResponse({ data: { docs: [] } }));
-      }),
+          return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+        },
+      ),
     );
 
     const resources = await mondayProvider.listSyncableResources({} as never, {
@@ -1376,7 +1434,9 @@ describe('mondayProvider', () => {
   });
 
   it('lists monday.com boards without workspace labels when workspace metadata is unauthorized', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (body.query.includes('workspace { id name }')) {
         return Promise.resolve(
@@ -1417,41 +1477,43 @@ describe('mondayProvider', () => {
     let workspaceBoardQueries = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('docs(')) {
-          return Promise.resolve(jsonResponse({ data: { docs: [] } }));
-        }
-        if (body.query.includes('workspace { id name }')) {
-          workspaceBoardQueries += 1;
-          return Promise.resolve(
-            jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
-          );
-        }
-        if (body.query.includes('boards(limit: $limit')) {
-          if (body.variables?.page === 1) {
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('docs(')) {
+            return Promise.resolve(jsonResponse({ data: { docs: [] } }));
+          }
+          if (body.query.includes('workspace { id name }')) {
+            workspaceBoardQueries += 1;
+            return Promise.resolve(
+              jsonResponse({ errors: [{ message: 'Unauthorized field or type' }] }),
+            );
+          }
+          if (body.query.includes('boards(limit: $limit')) {
+            if (body.variables?.page === 1) {
+              return Promise.resolve(
+                jsonResponse({
+                  data: {
+                    boards: Array.from({ length: 100 }, (_, index) => ({
+                      id: `board-${String(index + 1)}`,
+                      name: `Board ${String(index + 1)}`,
+                    })),
+                  },
+                }),
+              );
+            }
+            expect(body.variables?.page).toBe(2);
             return Promise.resolve(
               jsonResponse({
                 data: {
-                  boards: Array.from({ length: 100 }, (_, index) => ({
-                    id: `board-${String(index + 1)}`,
-                    name: `Board ${String(index + 1)}`,
-                  })),
+                  boards: [{ id: 'board-101', name: 'Board 101' }],
                 },
               }),
             );
           }
-          expect(body.variables?.page).toBe(2);
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [{ id: 'board-101', name: 'Board 101' }],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
 
     const resources = await mondayProvider.listSyncableResources({} as never, {
@@ -1468,7 +1530,9 @@ describe('mondayProvider', () => {
   });
 
   it('refreshes expired monday.com tokens and persists the replacement before syncing', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (requestUrl(input) === 'https://auth.monday.com/oauth2/token') {
         const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
         expect(body?.get('grant_type')).toBe('refresh_token');
@@ -1542,7 +1606,9 @@ describe('mondayProvider', () => {
   });
 
   it('syncs monday.com boards when workspace metadata is unauthorized', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (body.query.includes('workspace { id name }')) {
         return Promise.resolve(
@@ -1612,97 +1678,99 @@ describe('mondayProvider', () => {
   it('normalizes and renders parent groups and people columns beyond the generic column budget', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    id: 'board-1',
-                    name: 'Product',
-                    updated_at: '2026-06-20T09:00:00Z',
-                    columns: [
-                      ...Array.from({ length: 12 }, (_, index) => ({
-                        id: `detail_${String(index + 1)}`,
-                        title: `Detail ${String(index + 1)}`,
-                        type: 'text',
-                      })),
-                      { id: 'status', title: 'Stage', type: 'status' },
-                      { id: 'owner', title: 'Owner', type: 'people' },
-                      { id: 'due_date', title: 'Due date', type: 'date' },
-                      { id: 'priority', title: 'Priority', type: 'priority' },
-                      { id: 'untrusted_payload', title: 'Untrusted payload', type: 'text' },
-                    ],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-1',
-                          name: 'Publish launch plan',
-                          updated_at: '2026-06-20T10:00:00Z',
-                          group: { id: 'group-active', title: 'Active work' },
-                          column_values: [
-                            ...Array.from({ length: 12 }, (_, index) => ({
-                              id: `detail_${String(index + 1)}`,
-                              type: 'text',
-                              text: `detail ${String(index + 1)}`,
-                            })),
-                            { id: 'status', type: 'status', text: 'Working on it' },
-                            {
-                              id: 'owner',
-                              type: 'people',
-                              text: 'Ada Lovelace, Research, Product team',
-                              persons_and_teams: [
-                                { id: 'person-1', kind: 'person' },
-                                { id: 'team-1', kind: 'team' },
-                              ],
-                              value:
-                                '{"personsAndTeams":[{"id":"person-1","kind":"person"},{"id":"team-1","kind":"team"}]}',
-                            },
-                            { id: 'due_date', type: 'date', text: '2026-06-30' },
-                            { id: 'priority', type: 'priority', text: 'High' },
-                            {
-                              id: 'untrusted_payload',
-                              type: 'text',
-                              text: null,
-                              value:
-                                '{"personsAndTeams":[{"id":"not-an-assignee","kind":"person"}]}',
-                            },
-                          ],
-                          updates: [],
-                          subitems: [],
-                        },
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      id: 'board-1',
+                      name: 'Product',
+                      updated_at: '2026-06-20T09:00:00Z',
+                      columns: [
+                        ...Array.from({ length: 12 }, (_, index) => ({
+                          id: `detail_${String(index + 1)}`,
+                          title: `Detail ${String(index + 1)}`,
+                          type: 'text',
+                        })),
+                        { id: 'status', title: 'Stage', type: 'status' },
+                        { id: 'owner', title: 'Owner', type: 'people' },
+                        { id: 'due_date', title: 'Due date', type: 'date' },
+                        { id: 'priority', title: 'Priority', type: 'priority' },
+                        { id: 'untrusted_payload', title: 'Untrusted payload', type: 'text' },
                       ],
                     },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-1',
+                            name: 'Publish launch plan',
+                            updated_at: '2026-06-20T10:00:00Z',
+                            group: { id: 'group-active', title: 'Active work' },
+                            column_values: [
+                              ...Array.from({ length: 12 }, (_, index) => ({
+                                id: `detail_${String(index + 1)}`,
+                                type: 'text',
+                                text: `detail ${String(index + 1)}`,
+                              })),
+                              { id: 'status', type: 'status', text: 'Working on it' },
+                              {
+                                id: 'owner',
+                                type: 'people',
+                                text: 'Ada Lovelace, Research, Product team',
+                                persons_and_teams: [
+                                  { id: 'person-1', kind: 'person' },
+                                  { id: 'team-1', kind: 'team' },
+                                ],
+                                value:
+                                  '{"personsAndTeams":[{"id":"person-1","kind":"person"},{"id":"team-1","kind":"team"}]}',
+                              },
+                              { id: 'due_date', type: 'date', text: '2026-06-30' },
+                              { id: 'priority', type: 'priority', text: 'High' },
+                              {
+                                id: 'untrusted_payload',
+                                type: 'text',
+                                text: null,
+                                value:
+                                  '{"personsAndTeams":[{"id":"not-an-assignee","kind":"person"}]}',
+                              },
+                            ],
+                            updates: [],
+                            subitems: [],
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -1785,75 +1853,77 @@ describe('mondayProvider', () => {
   it('normalizes legacy person and team base values without pairing comma-separated display text to IDs', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        expect(body.variables).toEqual({ itemIds: ['subitem-1'] });
-        return Promise.resolve(
-          jsonResponse({
-            data: {
-              items: [
-                {
-                  id: 'subitem-1',
-                  name: 'Review launch copy',
-                  updated_at: '2026-06-20T10:00:00Z',
-                  group: { id: 'group-review', title: 'Editorial review' },
-                  board: {
-                    id: 'subitems-board-1',
-                    name: 'Subitems of Product',
-                    type: 'sub_items_board',
-                    hierarchy_type: 'classic',
-                    columns: [
-                      { id: 'assignee', title: 'Assignee', type: 'people' },
-                      { id: 'legacy_person', title: 'Legacy person', type: 'person' },
-                      { id: 'legacy_team', title: 'Legacy team', type: 'team' },
-                      { id: 'legacy_invalid', title: 'Legacy invalid', type: 'person' },
-                    ],
-                  },
-                  parent_item: {
-                    id: 'item-1',
-                    name: 'Publish launch plan',
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          expect(body.variables).toEqual({ itemIds: ['subitem-1'] });
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: 'subitem-1',
+                    name: 'Review launch copy',
+                    updated_at: '2026-06-20T10:00:00Z',
+                    group: { id: 'group-review', title: 'Editorial review' },
                     board: {
-                      id: 'board-1',
-                      name: 'Product',
-                      type: 'board',
+                      id: 'subitems-board-1',
+                      name: 'Subitems of Product',
+                      type: 'sub_items_board',
                       hierarchy_type: 'classic',
+                      columns: [
+                        { id: 'assignee', title: 'Assignee', type: 'people' },
+                        { id: 'legacy_person', title: 'Legacy person', type: 'person' },
+                        { id: 'legacy_team', title: 'Legacy team', type: 'team' },
+                        { id: 'legacy_invalid', title: 'Legacy invalid', type: 'person' },
+                      ],
                     },
+                    parent_item: {
+                      id: 'item-1',
+                      name: 'Publish launch plan',
+                      board: {
+                        id: 'board-1',
+                        name: 'Product',
+                        type: 'board',
+                        hierarchy_type: 'classic',
+                      },
+                    },
+                    column_values: [
+                      {
+                        id: 'assignee',
+                        type: 'people',
+                        text: 'Grace Hopper',
+                        value: '{"personsAndTeams":[{"id":42,"kind":"person"}]}',
+                      },
+                      {
+                        id: 'legacy_person',
+                        type: 'person',
+                        text: 'Doe, Jane, Alice Nguyen',
+                        value:
+                          '{"personsAndTeams":[{"id":101,"kind":"person"},{"id":102,"kind":"person"}]}',
+                      },
+                      {
+                        id: 'legacy_team',
+                        type: 'team',
+                        text: 'Research, Design',
+                        value: '{"persons_and_teams":[{"id":"team-7","kind":"team"}]}',
+                      },
+                      {
+                        id: 'legacy_invalid',
+                        type: 'person',
+                        text: 'Unresolved legacy person',
+                        value: '{not valid JSON}',
+                      },
+                    ],
+                    updates: [],
+                    subitems: [],
                   },
-                  column_values: [
-                    {
-                      id: 'assignee',
-                      type: 'people',
-                      text: 'Grace Hopper',
-                      value: '{"personsAndTeams":[{"id":42,"kind":"person"}]}',
-                    },
-                    {
-                      id: 'legacy_person',
-                      type: 'person',
-                      text: 'Doe, Jane, Alice Nguyen',
-                      value:
-                        '{"personsAndTeams":[{"id":101,"kind":"person"},{"id":102,"kind":"person"}]}',
-                    },
-                    {
-                      id: 'legacy_team',
-                      type: 'team',
-                      text: 'Research, Design',
-                      value: '{"persons_and_teams":[{"id":"team-7","kind":"team"}]}',
-                    },
-                    {
-                      id: 'legacy_invalid',
-                      type: 'person',
-                      text: 'Unresolved legacy person',
-                      value: '{not valid JSON}',
-                    },
-                  ],
-                  updates: [],
-                  subitems: [],
-                },
-              ],
-            },
-          }),
-        );
-      }),
+                ],
+              },
+            }),
+          );
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -1955,7 +2025,9 @@ describe('mondayProvider', () => {
   });
 
   it('syncs board activity, records, subitems, paginated items, and updates into timeline events', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (
         body.query.includes('boards(ids: $ids)') &&
@@ -2109,7 +2181,6 @@ describe('mondayProvider', () => {
       'update.observed',
       'subitem.updated',
       'update.observed',
-      'item.updated',
     ]);
     expect(events[1]?.contentText).toContain('Monday status changed on Pipeline: Acme renewal');
     expect(events[2]?.objectMap).toMatchObject({
@@ -2145,19 +2216,19 @@ describe('mondayProvider', () => {
     expect(ctx.saveCursor).toHaveBeenCalledWith(
       'monday.board:board-1',
       expect.objectContaining({
-        activity_since: '2026-06-20T10:00:00.000Z',
-        item_since: '2026-06-20T13:00:00.000Z',
+        activity_backfill_complete: true,
+        item_page_cursor: 'cursor-2',
       }),
     );
     expect(ctx.recordAudit).toHaveBeenCalledWith('monday_board_synced', {
       boardId: 'board-1',
       hierarchyType: 'classic',
-      parentItemCount: 2,
+      parentItemCount: 1,
       subitemCount: 1,
       updateCount: 2,
       activityCount: 1,
-      eventCount: 7,
-      hasMoreItems: false,
+      eventCount: 6,
+      hasMoreItems: true,
       hasMoreActivity: false,
       cursorRestarted: false,
     });
@@ -2166,80 +2237,82 @@ describe('mondayProvider', () => {
   it('syncs every level of a multi-level board under one selected board', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    id: 'board-1',
-                    name: 'Portfolio projects',
-                    type: 'board',
-                    board_kind: 'public',
-                    hierarchy_type: 'multi_level',
-                    updated_at: '2026-06-20T09:00:00Z',
-                    columns: [{ id: 'status', title: 'Stage', type: 'status' }],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          expect(body.query).toContain('hierarchy_scope_config: "allItems"');
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-1',
-                          name: 'Launch',
-                          updated_at: '2026-06-20T10:00:00Z',
-                          column_values: [],
-                          updates: [],
-                          subitems: [],
-                        },
-                        {
-                          id: 'item-2',
-                          name: 'Recruit partners',
-                          updated_at: '2026-06-20T10:01:00Z',
-                          parent_item: { id: 'item-1', name: 'Launch' },
-                          column_values: [],
-                          updates: [],
-                          subitems: [],
-                        },
-                        {
-                          id: 'item-3',
-                          name: 'Research',
-                          updated_at: '2026-06-20T10:02:00Z',
-                          parent_item: { id: 'item-2', name: 'Recruit partners' },
-                          column_values: [],
-                          updates: [],
-                          subitems: [],
-                        },
-                      ],
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      id: 'board-1',
+                      name: 'Portfolio projects',
+                      type: 'board',
+                      board_kind: 'public',
+                      hierarchy_type: 'multi_level',
+                      updated_at: '2026-06-20T09:00:00Z',
+                      columns: [{ id: 'status', title: 'Stage', type: 'status' }],
                     },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            expect(body.query).toContain('hierarchy_scope_config: "allItems"');
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-1',
+                            name: 'Launch',
+                            updated_at: '2026-06-20T10:00:00Z',
+                            column_values: [],
+                            updates: [],
+                            subitems: [],
+                          },
+                          {
+                            id: 'item-2',
+                            name: 'Recruit partners',
+                            updated_at: '2026-06-20T10:01:00Z',
+                            parent_item: { id: 'item-1', name: 'Launch' },
+                            column_values: [],
+                            updates: [],
+                            subitems: [],
+                          },
+                          {
+                            id: 'item-3',
+                            name: 'Research',
+                            updated_at: '2026-06-20T10:02:00Z',
+                            parent_item: { id: 'item-2', name: 'Recruit partners' },
+                            column_values: [],
+                            updates: [],
+                            subitems: [],
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -2280,65 +2353,67 @@ describe('mondayProvider', () => {
   it('continues a backfill when one selected board fails', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        const boardId = String((body.variables?.ids as string[] | undefined)?.[0]);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          if (boardId === 'board-1') {
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          const boardId = String((body.variables?.ids as string[] | undefined)?.[0]);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            if (boardId === 'board-1') {
+              return Promise.resolve(
+                jsonResponse({ errors: [{ message: 'Board access was revoked' }] }),
+              );
+            }
             return Promise.resolve(
-              jsonResponse({ errors: [{ message: 'Board access was revoked' }] }),
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      id: 'board-2',
+                      name: 'Healthy board',
+                      hierarchy_type: 'classic',
+                      updated_at: '2026-06-20T09:00:00Z',
+                      columns: [],
+                    },
+                  ],
+                },
+              }),
             );
           }
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    id: 'board-2',
-                    name: 'Healthy board',
-                    hierarchy_type: 'classic',
-                    updated_at: '2026-06-20T09:00:00Z',
-                    columns: [],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-2',
-                          name: 'Visible item',
-                          updated_at: '2026-06-20T10:00:00Z',
-                          column_values: [],
-                          updates: [],
-                          subitems: [],
-                        },
-                      ],
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-2',
+                            name: 'Visible item',
+                            updated_at: '2026-06-20T10:00:00Z',
+                            column_values: [],
+                            updates: [],
+                            subitems: [],
+                          },
+                        ],
+                      },
                     },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -2374,7 +2449,9 @@ describe('mondayProvider', () => {
   });
 
   it('hydrates a single monday.com item for targeted webhook syncs', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (body.query.includes('items(ids: $itemIds)')) {
         expect(body.variables).toEqual({ itemIds: ['item-1'] });
@@ -2462,44 +2539,46 @@ describe('mondayProvider', () => {
   it('hydrates a classic subitem against its selected parent board', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        expect(body.variables).toEqual({ itemIds: ['subitem-1'] });
-        return Promise.resolve(
-          jsonResponse({
-            data: {
-              items: [
-                {
-                  id: 'subitem-1',
-                  name: 'Security review',
-                  updated_at: '2026-06-20T10:00:00Z',
-                  board: {
-                    id: 'subitems-board-1',
-                    name: 'Subitems of Pipeline',
-                    type: 'sub_items_board',
-                    hierarchy_type: 'classic',
-                    columns: [{ id: 'status', title: 'Subitem stage', type: 'status' }],
-                  },
-                  parent_item: {
-                    id: 'item-1',
-                    name: 'Acme renewal',
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          expect(body.variables).toEqual({ itemIds: ['subitem-1'] });
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: 'subitem-1',
+                    name: 'Security review',
+                    updated_at: '2026-06-20T10:00:00Z',
                     board: {
-                      id: 'board-1',
-                      name: 'Pipeline',
-                      type: 'board',
+                      id: 'subitems-board-1',
+                      name: 'Subitems of Pipeline',
+                      type: 'sub_items_board',
                       hierarchy_type: 'classic',
-                      columns: [{ id: 'status', title: 'Stage', type: 'status' }],
+                      columns: [{ id: 'status', title: 'Subitem stage', type: 'status' }],
                     },
+                    parent_item: {
+                      id: 'item-1',
+                      name: 'Acme renewal',
+                      board: {
+                        id: 'board-1',
+                        name: 'Pipeline',
+                        type: 'board',
+                        hierarchy_type: 'classic',
+                        columns: [{ id: 'status', title: 'Stage', type: 'status' }],
+                      },
+                    },
+                    column_values: [{ id: 'status', text: 'Done', type: 'status', value: null }],
+                    updates: [],
+                    subitems: [],
                   },
-                  column_values: [{ id: 'status', text: 'Done', type: 'status', value: null }],
-                  updates: [],
-                  subitems: [],
-                },
-              ],
-            },
-          }),
-        );
-      }),
+                ],
+              },
+            }),
+          );
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -2554,8 +2633,10 @@ describe('mondayProvider', () => {
     );
   });
 
-  it('uses the item cursor to filter monday.com records during incremental sync', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+  it('does not scan items during scheduled reconciliation', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (
         body.query.includes('boards(ids: $ids)') &&
@@ -2635,12 +2716,335 @@ describe('mondayProvider', () => {
       ctx,
     });
 
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
-    expect(events.map((event) => event.externalObjectId)).toContain('item-1');
-    expect(ctx.saveCursor).toHaveBeenCalledWith(
+    expect(
+      fetch.mock.calls.some(([, init]) => requestPayload(init).query.includes('items_page')),
+    ).toBe(false);
+    const saved = ctx.saveCursor.mock.calls[0]?.[1] as { activity_since?: string } | undefined;
+    expect(saved?.activity_since).toMatch(/^2026-/);
+  });
+
+  it('recovers only the item named by a 17-digit activity log', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-20T10:02:00Z'));
+    const activityLogs = [
+      {
+        id: 'log-1',
+        event: 'change_status_column_value',
+        created_at: String(Date.parse('2026-06-20T10:00:00Z') * 10_000),
+        data: JSON.stringify({ item_id: 'item-1' }),
+      },
+    ];
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [{ activity_logs: activityLogs }],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('items(ids: $itemIds)')) {
+        expect(body.variables).toEqual({ itemIds: ['item-1'] });
+        expect(body.query).not.toContain('subitems {');
+        expect(body.query).not.toContain('updates(limit:');
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              items: [
+                {
+                  id: 'item-1',
+                  name: 'Recovered item',
+                  updated_at: '2026-06-20T10:00:00Z',
+                  column_values: [],
+                  board: { id: 'board-1', name: 'Board', columns: [] },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('boards(ids: $ids)')) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  id: 'board-1',
+                  name: 'Board',
+                  columns: [],
+                },
+              ],
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const cursors = new Map<string, Record<string, unknown>>();
+    const ctx = {
+      loadCursor: vi.fn((key: string) => Promise.resolve(cursors.get(key) ?? {})),
+      saveCursor: vi.fn((key: string, value: Record<string, unknown>) => {
+        cursors.set(key, value);
+        return Promise.resolve();
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(cursors.get('monday.board:board-1')).toMatchObject({
+      activity_since: '2026-06-20T10:02:00.000Z',
+      activity_scan_kind: undefined,
+    });
+    activityLogs.push({
+      id: 'log-late',
+      event: 'change_status_column_value',
+      created_at: String(Date.parse('2026-06-20T09:58:00Z') * 10_000),
+      data: JSON.stringify({ item_id: 'item-1' }),
+    });
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+    expect(
+      fetch.mock.calls.filter(([, init]) =>
+        requestPayload(init).query.includes('items(ids: $itemIds)'),
+      ),
+    ).toHaveLength(2);
+    expect(cursors.get('monday.board:board-1')).toMatchObject({
+      activity_since: '2026-06-20T10:02:00.000Z',
+      activity_recent_logs: [
+        { id: 'log-1', at: '2026-06-20T10:00:00.000Z' },
+        { id: 'log-late', at: '2026-06-20T09:58:00.000Z' },
+      ],
+    });
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+    expect(
+      fetch.mock.calls.filter(([, init]) =>
+        requestPayload(init).query.includes('items(ids: $itemIds)'),
+      ),
+    ).toHaveLength(2);
+  });
+
+  it('pages daily activity recovery from an old cursor without scanning items', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-20T12:00:00Z'));
+    const logs = Array.from({ length: 101 }, (_, index) => ({
+      id: `log-${String(index).padStart(3, '0')}`,
+      event: 'update_column_value',
+      created_at: '2026-06-20T10:00:00Z',
+      data: '{}',
+    }));
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('activity_logs')) {
+        const page = Number(body.variables?.page ?? 1);
+        return Promise.resolve(
+          jsonResponse({
+            data: { boards: [{ activity_logs: logs.slice((page - 1) * 100, page * 100) }] },
+          }),
+        );
+      }
+      if (body.query.includes('boards(ids: $ids)')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Board', columns: [] }] } }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const cursors = new Map<string, Record<string, unknown>>([
+      [
+        'monday.board:board-1',
+        {
+          activity_since: '2026-06-19T10:00:00Z',
+          activity_after_id: 'older-log',
+        },
+      ],
+    ]);
+    const ctx = {
+      loadCursor: vi.fn((key: string) => Promise.resolve(cursors.get(key) ?? {})),
+      saveCursor: vi.fn((key: string, value: Record<string, unknown>) => {
+        cursors.set(key, value);
+        return Promise.resolve();
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const first = await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(first?.continuations).toEqual([
+      { resourceType: 'monday.board', externalId: 'board-1', surface: 'activity_recovery' },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(
+      ctx.writeEvents.mock.calls.flatMap(([events]) => events as IntegrationEvent[]),
+    ).toHaveLength(100);
+    expect(ctx.saveCursor).toHaveBeenLastCalledWith(
       'monday.board:board-1',
-      expect.objectContaining({ item_since: '2026-06-20T11:00:00.000Z' }),
+      expect.objectContaining({
+        activity_since: '2026-06-19T10:00:00Z',
+        activity_scan_page: 2,
+      }),
     );
+    const second = await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.board',
+        externalId: 'board-1',
+        surface: 'activity_recovery',
+        reason: 'provider_pagination_continuation',
+      },
+      ctx,
+    });
+    expect(second?.continuations).toBeUndefined();
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(
+      ctx.writeEvents.mock.calls.flatMap(([events]) => events as IntegrationEvent[]),
+    ).toHaveLength(101);
+    expect(cursors.get('monday.board:board-1')).toMatchObject({
+      activity_since: '2026-06-20T12:00:00.000Z',
+      activity_scan_kind: undefined,
+    });
+  });
+
+  it('resumes an interrupted recovery page after the last completed log', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-20T12:00:00Z'));
+    let budgetPaused = true;
+    const fetchedItems: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      activity_logs: ['log-1', 'log-2'].map((id, index) => ({
+                        id,
+                        event: 'update_column_value',
+                        created_at: `2026-06-20T10:0${String(index)}:00Z`,
+                        data: JSON.stringify({ item_id: `item-${String(index + 1)}` }),
+                      })),
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('items(ids: $itemIds)')) {
+            const itemId = String((body.variables?.itemIds as string[])[0]);
+            fetchedItems.push(itemId);
+            if (itemId === 'item-2' && budgetPaused) {
+              return Promise.resolve(
+                new Response(
+                  JSON.stringify({
+                    errors: [
+                      {
+                        message: 'Daily limit exceeded',
+                        extensions: { code: 'DAILY_LIMIT_EXCEEDED', retry_in_seconds: 60 },
+                      },
+                    ],
+                  }),
+                  {
+                    status: 429,
+                  },
+                ),
+              );
+            }
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  items:
+                    itemId === 'item-2'
+                      ? []
+                      : [
+                          {
+                            id: itemId,
+                            name: 'Recovered item',
+                            updated_at: '2026-06-20T10:00:00Z',
+                            column_values: [],
+                            board: { id: 'board-1', name: 'Board', columns: [] },
+                          },
+                        ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('boards(ids: $ids)')) {
+            return Promise.resolve(
+              jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Board', columns: [] }] } }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
+    );
+    const cursors = new Map<string, Record<string, unknown>>();
+    const ctx = {
+      loadCursor: vi.fn((key: string) => Promise.resolve(cursors.get(key) ?? {})),
+      saveCursor: vi.fn((key: string, value: Record<string, unknown>) => {
+        cursors.set(key, value);
+        return Promise.resolve();
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    const run = () =>
+      mondayProvider.incrementalSync({
+        integration: { id: 'integration-1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+        ctx,
+      });
+
+    await expect(run()).rejects.toBeInstanceOf(ProviderRateLimitError);
+    expect(cursors.get('monday.board:board-1')).toMatchObject({
+      activity_scan_page: 1,
+      activity_page_seen_ids: ['log-1'],
+    });
+    budgetPaused = false;
+    vi.setSystemTime(new Date('2026-06-22T12:00:00Z'));
+    await run();
+    expect(fetchedItems).toEqual(['item-1', 'item-2', 'item-2']);
+    expect(cursors.get('monday.board:board-1')).toMatchObject({
+      activity_since: '2026-06-20T12:00:00.000Z',
+      activity_scan_kind: undefined,
+    });
   });
 
   it('resumes a monday.com backfill when a board exceeds one sync batch', async () => {
@@ -2654,7 +3058,9 @@ describe('mondayProvider', () => {
       updates: [],
       subitems: [],
     });
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (
         body.query.includes('boards(ids: $ids)') &&
@@ -2686,7 +3092,7 @@ describe('mondayProvider', () => {
           jsonResponse({
             data: {
               next_items_page: {
-                cursor: page < 101 ? `cursor-${String(page + 1)}` : null,
+                cursor: null,
                 items: [itemForPage(page)],
               },
             },
@@ -2722,7 +3128,7 @@ describe('mondayProvider', () => {
             ? {}
             : {
                 activity_since: '2026-06-20T00:00:00.000Z',
-                item_page_cursor: 'cursor-101',
+                item_page_cursor: 'cursor-2',
               },
         );
       }),
@@ -2753,13 +3159,13 @@ describe('mondayProvider', () => {
     expect(ctx.saveCursor).toHaveBeenNthCalledWith(
       1,
       'monday.board:board-1',
-      expect.objectContaining({ item_page_cursor: 'cursor-101' }),
+      expect.objectContaining({ item_page_cursor: 'cursor-2' }),
     );
     expect(ctx.saveCursor).toHaveBeenNthCalledWith(
       2,
       'monday.board:board-1',
       expect.objectContaining({
-        item_since: '2026-06-20T01:41:00.000Z',
+        item_since: '2026-06-20T00:02:00.000Z',
       }),
     );
     expect(ctx.saveCursor.mock.calls[1]?.[1]).not.toHaveProperty('item_page_cursor');
@@ -2767,117 +3173,280 @@ describe('mondayProvider', () => {
       (ctx.writeEvents.mock.calls[0]?.[0] as IntegrationEvent[]).map(
         (event) => event.externalObjectId,
       ),
-    ).toContain('item-100');
+    ).toContain('item-1');
     expect(
       (ctx.writeEvents.mock.calls[1]?.[0] as IntegrationEvent[]).map(
         (event) => event.externalObjectId,
       ),
-    ).toContain('item-101');
+    ).toContain('item-2');
   });
 
-  it('atomically checkpoints an overflowing activity window past equal timestamps', async () => {
+  it('restarts an explicit board backfill after a budget pause before its first checkpoint', async () => {
+    let paused = true;
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('activity_logs')) {
+        if (paused) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                errors: [
+                  {
+                    message: 'Daily limit exceeded',
+                    extensions: { code: 'DAILY_LIMIT_EXCEEDED', retry_in_seconds: 60 },
+                  },
+                ],
+              }),
+              { status: 429 },
+            ),
+          );
+        }
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+        );
+      }
+      if (body.query.includes('boards(ids: $ids)')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Board', columns: [] }] } }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({
+        activity_since: '2026-06-19T10:00:00Z',
+        item_since: '2026-06-19T10:00:00Z',
+      }),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    await expect(
+      mondayProvider.backfill({
+        integration: { id: 'integration-1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+        ctx,
+      }),
+    ).rejects.toMatchObject({
+      syncContinuations: [
+        {
+          resourceType: 'monday.board',
+          externalId: 'board-1',
+          surface: 'backfill_restart',
+        },
+      ],
+    });
+    paused = false;
+    await mondayProvider.incrementalSync({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.board',
+        externalId: 'board-1',
+        surface: 'backfill_restart',
+        reason: 'provider_pagination_continuation',
+      },
+      ctx,
+    });
+    const itemQueries = fetch.mock.calls
+      .map(([, init]) => requestPayload(init).query)
+      .filter((query) => query.includes('items_page'));
+    expect(itemQueries).toHaveLength(2);
+    expect(itemQueries[1]).not.toContain('query_params:');
+  });
+
+  it('bounds a backfill batch before hydrating the next item page', async () => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('activity_logs')) {
+        return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+      }
+      if (body.query.includes('items_page')) {
+        expect(body.variables?.limit).toBe(20);
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              boards: [
+                {
+                  items_page: {
+                    cursor: 'next-page',
+                    items: Array.from({ length: 20 }, (_, index) => ({
+                      id: `item-${String(index + 1)}`,
+                      name: `Item ${String(index + 1)}`,
+                      updated_at: '2026-06-20T10:00:00Z',
+                      column_values: [],
+                      subitems: [],
+                    })),
+                  },
+                },
+              ],
+            },
+          }),
+        );
+      }
+      if (body.query.includes('updates(limit: $limit, page: $page)')) {
+        return Promise.resolve(jsonResponse({ data: { items: [{ updates: [] }] } }));
+      }
+      if (body.query.includes('boards(ids: $ids)')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Board', columns: [] }] } }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+
+    const result = await mondayProvider.backfill({
+      integration: { id: 'integration-1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      ctx,
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(23);
+    expect(result?.continuations).toEqual(
+      expect.arrayContaining([{ resourceType: 'monday.board', externalId: 'board-1' }]),
+    );
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'monday.board:board-1',
+      expect.objectContaining({ item_page_cursor: 'next-page' }),
+    );
+  });
+
+  it('checkpoints equal-timestamp activity pages without repeating the item walk', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-20T12:00:00Z'));
     const timestamp = '2026-06-20T10:00:00.000Z';
-    const firstActivityId = `activity-${String(MONDAY_BOARD_WRITER_EVENT_BUDGET - 1).padStart(5, '0')}`;
-    const finalActivityId = `activity-${String(MONDAY_BOARD_WRITER_EVENT_BUDGET).padStart(5, '0')}`;
-    const activityLogs = Array.from({ length: MONDAY_BOARD_WRITER_EVENT_BUDGET }, (_, index) => ({
+    const activityLogs = Array.from({ length: 201 }, (_, index) => ({
       id: `activity-${String(index + 1).padStart(5, '0')}`,
       event: 'update_column_value',
-      data: JSON.stringify({ item_id: 'item-1', item_name: 'Acme renewal' }),
+      data: JSON.stringify({ item_id: 'item-1' }),
       created_at: timestamp,
       user_id: 'user-1',
     }));
-    vi.stubGlobal(
-      'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
+    let pauseSecondPage = true;
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
+      const body = requestPayload(init);
+      if (body.query.includes('activity_logs')) {
+        const page = Number(body.variables?.page ?? 1);
+        if (page === 2 && pauseSecondPage) {
           return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [{ id: 'board-1', name: 'Pipeline', updated_at: timestamp, columns: [] }],
-              },
-            }),
+            new Response(
+              JSON.stringify({
+                errors: [
+                  {
+                    message: 'Daily limit exceeded',
+                    extensions: { code: 'DAILY_LIMIT_EXCEEDED', retry_in_seconds: 60 },
+                  },
+                ],
+              }),
+              { status: 429 },
+            ),
           );
         }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(
-            jsonResponse({ data: { boards: [{ activity_logs: activityLogs }] } }),
-          );
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
-    );
+        return Promise.resolve(
+          jsonResponse({
+            data: { boards: [{ activity_logs: activityLogs.slice((page - 1) * 100, page * 100) }] },
+          }),
+        );
+      }
+      if (body.query.includes('items_page')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ items_page: { cursor: null, items: [] } }] } }),
+        );
+      }
+      if (body.query.includes('boards(ids: $ids)')) {
+        return Promise.resolve(
+          jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
+        );
+      }
+      throw new Error(`unexpected query: ${body.query}`);
+    });
+    vi.stubGlobal('fetch', fetch);
     const cursors = new Map<string, unknown>();
     const ctx = {
-      loadCursor: vi.fn((resourceType: string) => Promise.resolve(cursors.get(resourceType) ?? {})),
-      saveCursor: vi.fn((resourceType: string, cursor: unknown) => {
-        cursors.set(resourceType, cursor);
-        return Promise.resolve(undefined);
+      loadCursor: vi.fn((key: string) => Promise.resolve(cursors.get(key) ?? {})),
+      saveCursor: vi.fn((key: string, value: unknown) => {
+        cursors.set(key, value);
+        return Promise.resolve();
       }),
       saveCursorWithContinuations: vi.fn(
-        (resourceType: string, cursor: unknown, _continuations: unknown[]) => {
-          cursors.set(resourceType, cursor);
-          return Promise.resolve(undefined);
+        (key: string, value: unknown, _continuations: unknown[]) => {
+          cursors.set(key, value);
+          return Promise.resolve();
         },
       ),
       writeEvents: vi.fn().mockResolvedValue([]),
       persistTokens: vi.fn(),
       recordAudit: vi.fn(),
     };
-
-    const first = await mondayProvider.incrementalSync({
-      integration: { id: 'integration-1' } as never,
-      tokens: { access_token: 'token' },
-      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
-      ctx,
-    });
-    const second = await mondayProvider.incrementalSync({
-      integration: { id: 'integration-1' } as never,
-      tokens: { access_token: 'token' },
-      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
-      ctx,
-    });
-
+    const run = () =>
+      mondayProvider.incrementalSync({
+        integration: { id: 'integration-1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+        target: {
+          resourceType: 'monday.board',
+          externalId: 'board-1',
+          reason: 'provider_pagination_continuation',
+        },
+        ctx,
+      });
+    const first = await run();
+    await expect(run()).rejects.toBeInstanceOf(ProviderRateLimitError);
+    expect(cursors.get('monday.board:board-1')).toMatchObject({ activity_scan_page: 2 });
+    pauseSecondPage = false;
+    const second = await run();
+    const third = await run();
     expect(first?.continuations).toEqual([{ resourceType: 'monday.board', externalId: 'board-1' }]);
+    expect(second?.continuations).toEqual([
+      { resourceType: 'monday.board', externalId: 'board-1' },
+    ]);
+    expect(third?.continuations).toBeUndefined();
     expect(ctx.saveCursorWithContinuations).toHaveBeenCalledWith(
       'monday.board:board-1',
-      expect.objectContaining({
-        activity_since: timestamp,
-        activity_after_id: firstActivityId,
-      }),
+      expect.objectContaining({ activity_scan_page: 2, item_backfill_complete: true }),
       [{ resourceType: 'monday.board', externalId: 'board-1' }],
     );
-    expect(ctx.saveCursor).toHaveBeenCalledWith(
-      'monday.board:board-1',
-      expect.objectContaining({ activity_after_id: finalActivityId }),
-    );
     expect(cursors.get('monday.board:board-1')).toMatchObject({
-      activity_since: timestamp,
-      activity_after_id: finalActivityId,
+      activity_since: '2026-06-20T12:00:00.000Z',
     });
-    expect(second?.continuations).toBeUndefined();
     expect(
-      (ctx.writeEvents.mock.calls[1]?.[0] as IntegrationEvent[]).map(
-        (event) => event.externalEventId,
-      ),
-    ).toEqual([undefined, finalActivityId]);
+      fetch.mock.calls.filter(([, init]) => requestPayload(init).query.includes('items_page')),
+    ).toHaveLength(1);
+    const activityIds = ctx.writeEvents.mock.calls.flatMap(([events]) =>
+      (events as IntegrationEvent[]).map((event) => event.externalEventId).filter(Boolean),
+    );
+    expect(activityIds).toHaveLength(201);
+    expect(new Set(activityIds).size).toBe(201);
   });
 
   it('restarts an incremental page scan when the saved monday cursor expired', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-20T12:00:00Z'));
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (
         body.query.includes('boards(ids: $ids)') &&
@@ -2954,6 +3523,11 @@ describe('mondayProvider', () => {
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+      target: {
+        resourceType: 'monday.board',
+        externalId: 'board-1',
+        reason: 'provider_pagination_continuation',
+      },
       ctx,
     });
 
@@ -2966,58 +3540,60 @@ describe('mondayProvider', () => {
   it('does not advance the monday.com item cursor from board schema timestamps', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    id: 'board-1',
-                    name: 'Pipeline',
-                    updated_at: '2026-06-22T12:00:00Z',
-                    columns: [],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-1',
-                          name: 'Older record',
-                          updated_at: '2026-06-20T11:00:00Z',
-                          column_values: [],
-                          updates: [],
-                          subitems: [],
-                        },
-                      ],
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      id: 'board-1',
+                      name: 'Pipeline',
+                      updated_at: '2026-06-22T12:00:00Z',
+                      columns: [],
                     },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-1',
+                            name: 'Older record',
+                            updated_at: '2026-06-20T11:00:00Z',
+                            column_values: [],
+                            updates: [],
+                            subitems: [],
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -3043,34 +3619,36 @@ describe('mondayProvider', () => {
   it('syncs selected WorkDocs as timeline events and harvested documents', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('blocks(limit: $blockLimit')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                docs: [
-                  {
-                    id: 'doc-1',
-                    object_id: 'object-1',
-                    name: 'Launch notes',
-                    created_at: '2026-06-18T09:00:00Z',
-                    updated_at: '2026-06-20T14:00:00Z',
-                    url: 'https://monday.com/docs/doc-1',
-                    workspace_id: 'workspace-1',
-                    workspace: { id: 'workspace-1', name: 'Product' },
-                    created_by: { id: 'user-1', name: 'Ada' },
-                    blocks: [
-                      { id: 'block-1', type: 'normal_text', content: 'Launch moved to Friday.' },
-                    ],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('blocks(limit: $blockLimit')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  docs: [
+                    {
+                      id: 'doc-1',
+                      object_id: 'object-1',
+                      name: 'Launch notes',
+                      created_at: '2026-06-18T09:00:00Z',
+                      updated_at: '2026-06-20T14:00:00Z',
+                      url: 'https://monday.com/docs/doc-1',
+                      workspace_id: 'workspace-1',
+                      workspace: { id: 'workspace-1', name: 'Product' },
+                      created_by: { id: 'user-1', name: 'Ada' },
+                      blocks: [
+                        { id: 'block-1', type: 'normal_text', content: 'Launch moved to Friday.' },
+                      ],
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -3121,7 +3699,9 @@ describe('mondayProvider', () => {
   it('skips selected WorkDocs during hourly incremental sync until their doc cursor is due', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-21T14:00:00.000Z'));
-    const fetch = vi.fn<typeof globalThis.fetch>(() => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() => {
       throw new Error('WorkDoc should not be fetched before its reconciliation interval');
     });
     vi.stubGlobal('fetch', fetch);
@@ -3155,32 +3735,44 @@ describe('mondayProvider', () => {
     vi.setSystemTime(new Date('2026-06-21T14:00:00.000Z'));
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('blocks(limit: $blockLimit')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                docs: [
-                  {
-                    id: 'doc-1',
-                    object_id: 'object-1',
-                    name: 'Launch notes',
-                    created_at: '2026-06-18T09:00:00Z',
-                    updated_at: '2026-06-21T13:55:00Z',
-                    url: 'https://monday.com/docs/doc-1',
-                    workspace_id: 'workspace-1',
-                    workspace: { id: 'workspace-1', name: 'Product' },
-                    created_by: { id: 'user-1', name: 'Ada' },
-                    blocks: [{ id: 'block-1', type: 'normal_text', content: 'Daily update.' }],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('docs(ids: $ids) { id updated_at }')) {
+            expect(body.variables).toEqual({ ids: ['doc-1'] });
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  docs: [{ id: 'doc-1', name: 'Launch notes', updated_at: '2026-06-21T13:55:00Z' }],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('blocks(limit: $blockLimit')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  docs: [
+                    {
+                      id: 'doc-1',
+                      object_id: 'object-1',
+                      name: 'Launch notes',
+                      created_at: '2026-06-18T09:00:00Z',
+                      updated_at: '2026-06-21T13:55:00Z',
+                      url: 'https://monday.com/docs/doc-1',
+                      workspace_id: 'workspace-1',
+                      workspace: { id: 'workspace-1', name: 'Product' },
+                      created_by: { id: 'user-1', name: 'Ada' },
+                      blocks: [{ id: 'block-1', type: 'normal_text', content: 'Daily update.' }],
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({
@@ -3222,41 +3814,43 @@ describe('mondayProvider', () => {
   it('continues WorkDoc block pagination until the current page is short', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('blocks(limit: $blockLimit')) {
-          const page = Number(body.variables?.blockPage ?? 1);
-          const blocks =
-            page < 3
-              ? Array.from({ length: 100 }, (_, index) => ({
-                  id: `block-${String(page)}-${String(index)}`,
-                  type: 'normal_text',
-                  content: `Page ${String(page)} block ${String(index)}`,
-                }))
-              : [{ id: 'block-3-tail', type: 'normal_text', content: 'Third page tail.' }];
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                docs: [
-                  {
-                    id: 'doc-1',
-                    object_id: 'object-1',
-                    name: 'Long WorkDoc',
-                    created_at: '2026-06-18T09:00:00Z',
-                    updated_at: '2026-06-20T14:00:00Z',
-                    url: 'https://monday.com/docs/doc-1',
-                    workspace_id: 'workspace-1',
-                    workspace: { id: 'workspace-1', name: 'Product' },
-                    created_by: { id: 'user-1', name: 'Ada' },
-                    blocks,
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('blocks(limit: $blockLimit')) {
+            const page = Number(body.variables?.blockPage ?? 1);
+            const blocks =
+              page < 3
+                ? Array.from({ length: 100 }, (_, index) => ({
+                    id: `block-${String(page)}-${String(index)}`,
+                    type: 'normal_text',
+                    content: `Page ${String(page)} block ${String(index)}`,
+                  }))
+                : [{ id: 'block-3-tail', type: 'normal_text', content: 'Third page tail.' }];
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  docs: [
+                    {
+                      id: 'doc-1',
+                      object_id: 'object-1',
+                      name: 'Long WorkDoc',
+                      created_at: '2026-06-18T09:00:00Z',
+                      updated_at: '2026-06-20T14:00:00Z',
+                      url: 'https://monday.com/docs/doc-1',
+                      workspace_id: 'workspace-1',
+                      workspace: { id: 'workspace-1', name: 'Product' },
+                      created_by: { id: 'user-1', name: 'Ada' },
+                      blocks,
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -3281,26 +3875,28 @@ describe('mondayProvider', () => {
   it('skips WorkDoc harvest when the event and cursor already match', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (body.query.includes('blocks(limit: $blockLimit')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                docs: [
-                  {
-                    id: 'doc-1',
-                    name: 'Launch notes',
-                    updated_at: '2026-06-20T14:00:00Z',
-                    blocks: [{ id: 'block-1', content: 'No change.' }],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (body.query.includes('blocks(limit: $blockLimit')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  docs: [
+                    {
+                      id: 'doc-1',
+                      name: 'Launch notes',
+                      updated_at: '2026-06-20T14:00:00Z',
+                      blocks: [{ id: 'block-1', content: 'No change.' }],
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({ doc_since: '2026-06-20T14:00:00.000Z' }),
@@ -3323,7 +3919,9 @@ describe('mondayProvider', () => {
   });
 
   it('renders selected-board update conversations and preserves reply thread metadata', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (
         body.query.includes('boards(ids: $ids)') &&
@@ -3476,7 +4074,9 @@ describe('mondayProvider', () => {
   });
 
   it('fetches board item shells before bounded per-item conversation hydration', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (
         body.query.includes('boards(ids: $ids)') &&
@@ -3582,7 +4182,7 @@ describe('mondayProvider', () => {
       recordAudit: vi.fn(),
     };
 
-    await mondayProvider.backfill({
+    const result = await mondayProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
@@ -3591,14 +4191,17 @@ describe('mondayProvider', () => {
 
     const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
     expect(events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-1' })]),
+    );
+    expect(events.some((event) => event.externalEventId === 'reply-1')).toBe(false);
+    expect(result?.continuations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ externalEventId: 'update-1' }),
-        expect.objectContaining({ externalEventId: 'reply-1' }),
+        { resourceType: 'monday.item', externalId: 'board-1:item-1:update-1' },
       ]),
     );
   });
 
-  it('paginates selected-board updates and replies without silently truncating either history', async () => {
+  it('defers selected-board update and reply history through durable continuations', async () => {
     const updates = Array.from({ length: 100 }, (_, index) => ({
       id: `update-${String(index + 1)}`,
       body: `<p>Update ${String(index + 1)}</p>`,
@@ -3618,7 +4221,9 @@ describe('mondayProvider', () => {
             }))
           : [],
     }));
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       if (
         body.query.includes('boards(ids: $ids)') &&
@@ -3729,7 +4334,7 @@ describe('mondayProvider', () => {
       recordAudit: vi.fn(),
     };
 
-    await mondayProvider.backfill({
+    const result = await mondayProvider.backfill({
       integration: { id: 'integration-1' } as never,
       tokens: { access_token: 'token' },
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
@@ -3737,11 +4342,11 @@ describe('mondayProvider', () => {
     });
 
     const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
-    expect(events).toHaveLength(204);
-    expect(events).toEqual(
+    expect(events).toHaveLength(2);
+    expect(result?.continuations).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ externalEventId: 'update-101' }),
-        expect.objectContaining({ externalEventId: 'reply-101' }),
+        { resourceType: 'monday.item', externalId: 'board-1:item-1' },
+        { resourceType: 'monday.item', externalId: 'board-1:item-1:update-1' },
       ]),
     );
   });
@@ -3761,71 +4366,75 @@ describe('mondayProvider', () => {
     }));
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-1',
-                          name: 'Acme renewal',
-                          updated_at: '2026-06-20T10:00:00Z',
-                          column_values: [],
-                          updates,
-                          subitems: [],
-                        },
-                      ],
-                    },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('updates(ids: $updateIds)')) {
-          if (body.variables?.page === 2) {
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
             return Promise.resolve(
-              jsonResponse({ data: { items: [{ updates: [{ id: 'update-1', replies: [] }] }] } }),
+              jsonResponse({
+                data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] },
+              }),
             );
           }
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                items: [
-                  {
-                    id: 'item-1',
-                    name: 'Acme renewal',
-                    updated_at: '2026-06-20T10:00:00Z',
-                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
-                    column_values: [],
-                    updates: [updates[0]],
-                    subitems: [],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-1',
+                            name: 'Acme renewal',
+                            updated_at: '2026-06-20T10:00:00Z',
+                            column_values: [],
+                            updates,
+                            subitems: [],
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('updates(ids: $updateIds)')) {
+            if (body.variables?.page === 2) {
+              return Promise.resolve(
+                jsonResponse({ data: { items: [{ updates: [{ id: 'update-1', replies: [] }] }] } }),
+              );
+            }
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  items: [
+                    {
+                      id: 'item-1',
+                      name: 'Acme renewal',
+                      updated_at: '2026-06-20T10:00:00Z',
+                      board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                      column_values: [],
+                      updates: [updates[0]],
+                      subitems: [],
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const cursors = new Map<string, unknown>();
     const ctx = {
@@ -3862,6 +4471,7 @@ describe('mondayProvider', () => {
         created_at: '2026-06-20T10:05:00.000Z',
         id: 'update-100',
       },
+      update_page_hint: 2,
     });
 
     await mondayProvider.incrementalSync({
@@ -3888,10 +4498,12 @@ describe('mondayProvider', () => {
         created_at: '2026-06-20T10:05:00.000Z',
         id: 'update-100',
       },
+      update_page_hint: 2,
+      reply_next_pages: { 'update-1': 2 },
     });
   });
 
-  it('defers a full update page when the selected-board writer budget is exhausted', async () => {
+  it('defers a full update page at the selected-board conversation budget', async () => {
     const updatePage = (page: number) =>
       Array.from({ length: 100 }, (_, index) => {
         const id = (page - 1) * 100 + index + 1;
@@ -3906,57 +4518,61 @@ describe('mondayProvider', () => {
     const requestedUpdatePages: number[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-1',
-                          name: 'Acme renewal',
-                          updated_at: '2026-06-20T10:00:00Z',
-                          column_values: [],
-                          updates: updatePage(1),
-                          subitems: [],
-                        },
-                      ],
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] },
+              }),
+            );
+          }
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-1',
+                            name: 'Acme renewal',
+                            updated_at: '2026-06-20T10:00:00Z',
+                            column_values: [],
+                            updates: updatePage(1),
+                            subitems: [],
+                          },
+                        ],
+                      },
                     },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('updates(limit: $limit, page: $page)')) {
-          const page = body.variables?.page;
-          if (typeof page !== 'number') throw new Error('expected update page');
-          requestedUpdatePages.push(page);
-          return Promise.resolve(
-            jsonResponse({
-              data: { items: [{ updates: page <= 100 ? updatePage(page) : [] }] },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('updates(limit: $limit, page: $page)')) {
+            const page = body.variables?.page;
+            if (typeof page !== 'number') throw new Error('expected update page');
+            requestedUpdatePages.push(page);
+            return Promise.resolve(
+              jsonResponse({
+                data: { items: [{ updates: page <= 100 ? updatePage(page) : [] }] },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -3973,19 +4589,18 @@ describe('mondayProvider', () => {
       ctx,
     });
 
-    // Once fewer than a full update page fits, shell hydration defers the
-    // saved item cursor without fetching an update body it cannot write.
-    expect(requestedUpdatePages).toEqual(Array.from({ length: 70 }, (_, index) => index + 2));
+    expect(requestedUpdatePages).toEqual([]);
     expect(result?.continuations).toEqual(
       expect.arrayContaining([{ resourceType: 'monday.item', externalId: 'board-1:item-1' }]),
     );
     const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
     expect(events.length).toBeLessThanOrEqual(MONDAY_BOARD_WRITER_EVENT_BUDGET);
+    expect(events).toHaveLength(102);
     expect(events).toEqual(
-      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-7100' })]),
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-100' })]),
     );
     expect(events).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-7101' })]),
+      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-101' })]),
     );
   });
 
@@ -4007,81 +4622,85 @@ describe('mondayProvider', () => {
     const requestedUpdatePages: number[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-1',
-                          name: 'Acme renewal',
-                          updated_at: '2026-06-20T10:00:00Z',
-                          column_values: [],
-                          updates: updatePage(1),
-                          subitems: [],
-                        },
-                      ],
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] },
+              }),
+            );
+          }
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-1',
+                            name: 'Acme renewal',
+                            updated_at: '2026-06-20T10:00:00Z',
+                            column_values: [],
+                            updates: updatePage(1),
+                            subitems: [],
+                          },
+                        ],
+                      },
                     },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('updates(limit: $limit, page: $page)')) {
-          const page = body.variables?.page;
-          if (typeof page !== 'number') throw new Error('expected update page');
-          requestedUpdatePages.push(page);
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                items: [
-                  {
-                    updates: page <= 101 ? updatePage(page) : updatePage(page, 1),
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('items(ids: $itemIds)')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                items: [
-                  {
-                    id: 'item-1',
-                    name: 'Acme renewal',
-                    updated_at: '2026-06-20T10:00:00Z',
-                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
-                    column_values: [],
-                    subitems: [],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('updates(limit: $limit, page: $page)')) {
+            const page = body.variables?.page;
+            if (typeof page !== 'number') throw new Error('expected update page');
+            requestedUpdatePages.push(page);
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  items: [
+                    {
+                      updates: page <= 101 ? updatePage(page) : updatePage(page, 1),
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('items(ids: $itemIds)')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  items: [
+                    {
+                      id: 'item-1',
+                      name: 'Acme renewal',
+                      updated_at: '2026-06-20T10:00:00Z',
+                      board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                      column_values: [],
+                      subitems: [],
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const cursors = new Map<string, unknown>();
     const ctx = {
@@ -4101,48 +4720,54 @@ describe('mondayProvider', () => {
       selections: [{ kind: 'monday.board', externalId: 'board-1' }],
       ctx,
     });
-    // postgres.js rejects statements at 65,534 parameters. The raw-event
-    // insert binds nine values per event, and the provider leaves explicit
-    // headroom for writer changes: the whole selected-board batch must stay
-    // at or below 7,167 events rather than accumulating every hydrated page.
     const initialEvents = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
-    expect(initialEvents).toHaveLength(7_102);
+    expect(initialEvents).toHaveLength(102);
     expect(initial?.continuations).toEqual(
       expect.arrayContaining([{ resourceType: 'monday.item', externalId: 'board-1:item-1' }]),
     );
-    expect(initial?.continuations).toHaveLength(1);
-    const initialBoundary = updatePage(71).at(-1);
+    const initialBoundary = updatePage(1).at(-1);
     expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({
       update_boundary: {
         created_at: initialBoundary?.created_at,
         id: initialBoundary?.id,
       },
+      update_page_hint: 2,
     });
 
-    const resumed = await mondayProvider.incrementalSync({
-      integration: { id: 'integration-1' } as never,
-      tokens: { access_token: 'token' },
-      selections: [{ kind: 'monday.board', externalId: 'board-1' }],
-      target: {
-        resourceType: 'monday.item',
-        externalId: 'board-1:item-1',
-        triggeredBy: 'reconcile',
-      },
-      ctx,
-    });
-
-    expect(resumed).toBeUndefined();
-    expect(requestedUpdatePages.filter((page) => page === 1)).toHaveLength(1);
-    expect(requestedUpdatePages.filter((page) => page === 2)).toHaveLength(2);
+    let continuation = initial?.continuations?.find(
+      (entry) => entry.resourceType === 'monday.item' && entry.externalId === 'board-1:item-1',
+    );
+    let runs = 0;
+    while (continuation && runs < 110) {
+      const result = await mondayProvider.incrementalSync({
+        integration: { id: 'integration-1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'monday.board', externalId: 'board-1' }],
+        target: {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1',
+          reason: 'provider_pagination_continuation',
+          triggeredBy: 'reconcile',
+        },
+        ctx,
+      });
+      continuation = result?.continuations?.find(
+        (entry) => entry.resourceType === 'monday.item' && entry.externalId === 'board-1:item-1',
+      );
+      runs++;
+    }
+    expect(continuation).toBeUndefined();
+    expect(runs).toBe(101);
+    expect(requestedUpdatePages.length).toBeLessThan(250);
     expect(requestedUpdatePages.at(-1)).toBe(102);
     expect(cursors.get('monday.conversation:board-1:item-1')).toEqual({});
-    const resumedEvents = (ctx.writeEvents.mock.calls[1]?.[0] ?? []) as IntegrationEvent[];
-    expect(resumedEvents).toEqual(
-      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-10101' })]),
+    const updateIds = ctx.writeEvents.mock.calls.flatMap(([events]) =>
+      (events as IntegrationEvent[])
+        .filter((event) => event.eventType.startsWith('update.'))
+        .map((event) => event.externalEventId),
     );
-    expect(resumedEvents).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ externalEventId: 'update-7100' })]),
-    );
+    expect(updateIds).toHaveLength(10_101);
+    expect(new Set(updateIds).size).toBe(10_101);
   });
 
   it('resumes update history from a stable boundary when a newer update shifts provider pages', async () => {
@@ -4180,83 +4805,87 @@ describe('mondayProvider', () => {
     const requestedUpdatePages: number[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                boards: [
-                  {
-                    items_page: {
-                      cursor: null,
-                      items: [
-                        {
-                          id: 'item-1',
-                          name: 'Acme renewal',
-                          updated_at: '2026-06-20T12:00:00Z',
-                          column_values: [],
-                          updates: firstPage,
-                          subitems: [],
-                        },
-                      ],
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] },
+              }),
+            );
+          }
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  boards: [
+                    {
+                      items_page: {
+                        cursor: null,
+                        items: [
+                          {
+                            id: 'item-1',
+                            name: 'Acme renewal',
+                            updated_at: '2026-06-20T12:00:00Z',
+                            column_values: [],
+                            updates: firstPage,
+                            subitems: [],
+                          },
+                        ],
+                      },
                     },
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (
-          body.query.includes('items(ids: $itemIds)') &&
-          !body.query.includes('updates(limit: $limit, page: $page)')
-        ) {
-          return Promise.resolve(
-            jsonResponse({
-              data: {
-                items: [
-                  {
-                    id: 'item-1',
-                    name: 'Acme renewal',
-                    updated_at: '2026-06-20T12:00:01Z',
-                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
-                    column_values: [],
-                    subitems: [],
-                  },
-                ],
-              },
-            }),
-          );
-        }
-        if (body.query.includes('updates(limit: $limit, page: $page)')) {
-          const page = body.variables?.page;
-          if (typeof page !== 'number') throw new Error('expected update page');
-          requestedUpdatePages.push(page);
-          const updates = resumed
-            ? page === 1
-              ? [insertedUpdate, ...firstPage.slice(0, 99)]
+                  ],
+                },
+              }),
+            );
+          }
+          if (
+            body.query.includes('items(ids: $itemIds)') &&
+            !body.query.includes('updates(limit: $limit, page: $page)')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: {
+                  items: [
+                    {
+                      id: 'item-1',
+                      name: 'Acme renewal',
+                      updated_at: '2026-06-20T12:00:01Z',
+                      board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                      column_values: [],
+                      subitems: [],
+                    },
+                  ],
+                },
+              }),
+            );
+          }
+          if (body.query.includes('updates(limit: $limit, page: $page)')) {
+            const page = body.variables?.page;
+            if (typeof page !== 'number') throw new Error('expected update page');
+            requestedUpdatePages.push(page);
+            const updates = resumed
+              ? page === 1
+                ? [insertedUpdate, ...firstPage.slice(0, 99)]
+                : page === 2
+                  ? [firstPage[99], olderUpdate]
+                  : []
               : page === 2
-                ? [firstPage[99], olderUpdate]
-                : []
-            : page === 2
-              ? [olderUpdate]
-              : [];
-          return Promise.resolve(jsonResponse({ data: { items: [{ updates }] } }));
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+                ? [olderUpdate]
+                : [];
+            return Promise.resolve(jsonResponse({ data: { items: [{ updates }] } }));
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const cursors = new Map<string, unknown>();
     const ctx = {
@@ -4285,6 +4914,7 @@ describe('mondayProvider', () => {
         created_at: firstPage[99]?.created_at,
         id: firstPage[99]?.id,
       },
+      update_page_hint: 2,
     });
 
     resumed = true;
@@ -4310,7 +4940,9 @@ describe('mondayProvider', () => {
   });
 
   it('hydrates the same update conversation through a selected-board webhook target', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       expect(body.query).toContain('text_body');
       expect(body.query).not.toContain('replies(');
@@ -4431,32 +5063,36 @@ describe('mondayProvider', () => {
     });
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        if (
-          body.query.includes('boards(ids: $ids)') &&
-          !body.query.includes('items_page') &&
-          !body.query.includes('activity_logs')
-        ) {
-          return Promise.resolve(
-            jsonResponse({ data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] } }),
-          );
-        }
-        if (body.query.includes('activity_logs')) {
-          return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
-        }
-        if (body.query.includes('items_page')) {
-          return Promise.resolve(
-            jsonResponse({
-              data: { boards: [{ items_page: { cursor: null, items: [item()] } }] },
-            }),
-          );
-        }
-        if (body.query.includes('items(ids: $itemIds)')) {
-          return Promise.resolve(jsonResponse({ data: { items: [item(true)] } }));
-        }
-        throw new Error(`unexpected query: ${body.query}`);
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          if (
+            body.query.includes('boards(ids: $ids)') &&
+            !body.query.includes('items_page') &&
+            !body.query.includes('activity_logs')
+          ) {
+            return Promise.resolve(
+              jsonResponse({
+                data: { boards: [{ id: 'board-1', name: 'Pipeline', columns: [] }] },
+              }),
+            );
+          }
+          if (body.query.includes('activity_logs')) {
+            return Promise.resolve(jsonResponse({ data: { boards: [{ activity_logs: [] }] } }));
+          }
+          if (body.query.includes('items_page')) {
+            return Promise.resolve(
+              jsonResponse({
+                data: { boards: [{ items_page: { cursor: null, items: [item()] } }] },
+              }),
+            );
+          }
+          if (body.query.includes('items(ids: $itemIds)')) {
+            return Promise.resolve(jsonResponse({ data: { items: [item(true)] } }));
+          }
+          throw new Error(`unexpected query: ${body.query}`);
+        },
+      ),
     );
     const backfillContext = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -4511,47 +5147,49 @@ describe('mondayProvider', () => {
   it('preserves a reply edit operation through update-id-targeted hydration', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        const body = requestPayload(init);
-        expect(body.query).toContain('updates(ids: $updateIds)');
-        expect(body.variables).toEqual({ itemIds: ['item-1'], updateIds: ['update-1'] });
-        return Promise.resolve(
-          jsonResponse({
-            data: {
-              items: [
-                {
-                  id: 'item-1',
-                  name: 'Acme renewal',
-                  updated_at: '2026-06-20T10:00:00Z',
-                  board: { id: 'board-1', name: 'Pipeline', columns: [] },
-                  column_values: [],
-                  updates: [
-                    {
-                      id: 'update-1',
-                      body: '<p>Parent update</p>',
-                      text_body: 'Parent update',
-                      created_at: '2026-06-20T10:05:00Z',
-                      updated_at: '2026-06-20T10:05:00Z',
-                      creator: { id: 'user-1', name: 'Ada' },
-                      replies: [
-                        {
-                          id: 'reply-1',
-                          body: '<p>Edited reply</p>',
-                          text_body: 'Edited reply',
-                          created_at: '2026-06-20T10:06:00Z',
-                          updated_at: '2026-06-20T10:07:00Z',
-                          creator: { id: 'user-2', name: 'Grace' },
-                        },
-                      ],
-                    },
-                  ],
-                  subitems: [],
-                },
-              ],
-            },
-          }),
-        );
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          const body = requestPayload(init);
+          expect(body.query).toContain('updates(ids: $updateIds)');
+          expect(body.variables).toEqual({ itemIds: ['item-1'], updateIds: ['update-1'] });
+          return Promise.resolve(
+            jsonResponse({
+              data: {
+                items: [
+                  {
+                    id: 'item-1',
+                    name: 'Acme renewal',
+                    updated_at: '2026-06-20T10:00:00Z',
+                    board: { id: 'board-1', name: 'Pipeline', columns: [] },
+                    column_values: [],
+                    updates: [
+                      {
+                        id: 'update-1',
+                        body: '<p>Parent update</p>',
+                        text_body: 'Parent update',
+                        created_at: '2026-06-20T10:05:00Z',
+                        updated_at: '2026-06-20T10:05:00Z',
+                        creator: { id: 'user-1', name: 'Ada' },
+                        replies: [
+                          {
+                            id: 'reply-1',
+                            body: '<p>Edited reply</p>',
+                            text_body: 'Edited reply',
+                            created_at: '2026-06-20T10:06:00Z',
+                            updated_at: '2026-06-20T10:07:00Z',
+                            creator: { id: 'user-2', name: 'Grace' },
+                          },
+                        ],
+                      },
+                    ],
+                    subitems: [],
+                  },
+                ],
+              },
+            }),
+          );
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),

@@ -1,10 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 interface ObjectSectionQueryData {
   pages: { items: Record<string, unknown>[] }[];
@@ -170,9 +167,18 @@ function emptyEventResponse() {
   );
 }
 
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useObjectSectionQuery: () => fakes.query,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useObjectSectionQuery: () => fakes.query,
+  }),
+  () => import('@/lib/use-paginated-queries'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectSectionFeed } = await import('./object-section-feed.js');
 

@@ -1,5 +1,6 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import type { PlanCapacityUsageRow } from '@timeline/shared/billing/status';
 

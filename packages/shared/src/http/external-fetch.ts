@@ -1,6 +1,6 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
 
-import { Agent, fetch as undiciFetch } from 'undici';
+import { Agent, fetch as undiciFetch } from 'undici/index.js';
 
 import type { LookupAddress, LookupOptions } from 'node:dns';
 import type { LookupFunction } from 'node:net';

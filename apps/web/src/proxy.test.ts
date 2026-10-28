@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it } from 'vitest';
 
 import { canonicalHostRedirect } from '@/lib/canonical-host';
-
 const ORIGINAL_AUTH_URL = process.env.AUTH_URL;
 const ORIGINAL_NEXTAUTH_URL = process.env.NEXTAUTH_URL;
 

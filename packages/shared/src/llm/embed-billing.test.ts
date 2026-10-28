@@ -1,9 +1,10 @@
 import { PGlite } from '@electric-sql/pglite';
 import { billingUsageLedger, type Db } from '@timeline/db';
+import { expect } from '@timeline/test-support';
 import { MockEmbeddingModelV3 } from 'ai/test';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { EmbeddingModel } from 'ai';
 

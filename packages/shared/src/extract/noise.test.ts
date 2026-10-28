@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ExtractedFact } from '#src/extract/schema.js';
 
@@ -7,7 +8,6 @@ import {
   isLowSignalObjectName,
   isNoisyExtractedFact,
 } from '#src/extract/noise.js';
-
 function fact(statement: string): ExtractedFact {
   return { statement, confidence: 1, mentions: [] };
 }

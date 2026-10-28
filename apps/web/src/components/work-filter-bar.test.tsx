@@ -1,18 +1,29 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { WorkFilterState } from '@/lib/work-filters';
+// Test environment: happy-dom
 
 const replace = vi.hoisted(() => vi.fn());
 const searchObjectsAction = vi.hoisted(() => vi.fn());
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace }),
-}));
-vi.mock('@/app/actions/objects', () => ({ searchObjectsAction }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ replace }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({ searchObjectsAction }),
+  () => import('@/app/actions/objects'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { WorkFilterBar } = await import('./work-filter-bar.js');
 

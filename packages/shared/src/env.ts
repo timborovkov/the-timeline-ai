@@ -152,6 +152,9 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST = new Set([
   'OLDPWD',
   'COLORTERM',
   'CI',
+  // Exact, non-secret runtime paths injected by the pinned Bun container.
+  'BUN_INSTALL_BIN',
+  'BUN_RUNTIME_TRANSPILER_CACHE_PATH',
   // Railpack's mise toolchain/runtime metadata. Keep these exact so a future
   // credential-bearing MISE_* or RAILPACK_* variable is still rejected.
   'MISE_DATA_DIR',

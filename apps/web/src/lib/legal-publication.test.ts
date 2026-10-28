@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { isLegalPublicationReady } from '@/lib/legal-publication';
-
 describe('isLegalPublicationReady', () => {
   it('fails closed in production unless readiness is explicitly attested', () => {
     expect(isLegalPublicationReady({ NODE_ENV: 'production' })).toBe(false);

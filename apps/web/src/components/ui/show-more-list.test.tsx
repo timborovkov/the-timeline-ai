@@ -1,11 +1,11 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it } from 'vitest';
 
 import { ShowMoreList } from '@/components/ui/show-more-list';
+// Test environment: happy-dom
 
 afterEach(() => {
   cleanup();

@@ -5,6 +5,7 @@ import { digestAiBytes } from '#src/billing/ai-call.js';
 import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
+import { asBunFetch } from '#src/http/fetch.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import {
@@ -69,14 +70,17 @@ export interface VisionDeps {
   /** Inject a pre-built LanguageModel — used by tests. */
   model?: LanguageModel;
   /** Inject transport for provider-boundary tests. */
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }
 
 function resolveVisionModelId(): string {
   return TIMELINE_MODELS.vision.id;
 }
 
-function buildDefaultModel(modelId: string, fetchImpl?: typeof globalThis.fetch): LanguageModel {
+function buildDefaultModel(
+  modelId: string,
+  fetchImpl?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>,
+): LanguageModel {
   const env = getEnv();
   if (!env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY is required for llm.extractTextFromMedia');
@@ -87,7 +91,7 @@ function buildDefaultModel(modelId: string, fetchImpl?: typeof globalThis.fetch)
     apiKey: env.OPENROUTER_API_KEY,
     baseURL,
     headers: OPENROUTER_DISABLE_CACHE_HEADERS,
-    ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    ...(fetchImpl ? { fetch: asBunFetch(fetchImpl) } : {}),
   });
   return provider(modelId);
 }

@@ -11,9 +11,10 @@ import {
   savedMeetingAliases,
   savedMeetings,
 } from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { recallAttemptOperationId, reserveRecallMeetingMinutes } from '#src/billing/admission.js';
 import { settlePendingBillingReservations } from '#src/billing/runtime.js';

@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   push: vi.fn(),
@@ -13,27 +12,44 @@ const fakes = vi.hoisted(() => ({
   updateSavedMeetingAction: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
-    try {
-      return await run();
-    } catch {
-      return { error: 'failed' };
-    }
-  },
-}));
-vi.mock('@/app/actions/meetings', () => ({
-  archiveSavedMeetingAction: fakes.archiveSavedMeetingAction,
-  cancelMeetingBotAction: vi.fn(),
-  createSavedMeetingAction: fakes.createSavedMeetingAction,
-  joinSavedMeetingAction: vi.fn(),
-  scheduleMeetingBotAction: fakes.scheduleMeetingBotAction,
-  skipScheduledMeetingAction: vi.fn(),
-  updateSavedMeetingAction: fakes.updateSavedMeetingAction,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/meetings'),
+  () => ({
+    archiveSavedMeetingAction: fakes.archiveSavedMeetingAction,
+    cancelMeetingBotAction: vi.fn(),
+    createSavedMeetingAction: fakes.createSavedMeetingAction,
+    joinSavedMeetingAction: vi.fn(),
+    scheduleMeetingBotAction: fakes.scheduleMeetingBotAction,
+    skipScheduledMeetingAction: vi.fn(),
+    updateSavedMeetingAction: fakes.updateSavedMeetingAction,
+  }),
+  () => import('@/app/actions/meetings'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const {
   ArchiveSavedMeetingButton,

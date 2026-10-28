@@ -1,9 +1,9 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import { SOLUTIONS } from '@/components/marketing/solutions/content';
 import { SolutionPage } from '@/components/marketing/solutions/solution-page';
-
 describe('solution page template', () => {
   it.each(SOLUTIONS)('renders $route as a substantive, answer-first page', (solution) => {
     const html = renderToStaticMarkup(<SolutionPage solution={solution} />);

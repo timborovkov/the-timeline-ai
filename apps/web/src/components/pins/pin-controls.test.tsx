@@ -1,12 +1,12 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { PinnedItem } from '@timeline/shared/pins';
+// Test environment: happy-dom
 
 // Pin controls are shared across every work surface. These tests guard their
 // optimistic state, rollback, and Home-preview removal contract.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { PinnedItem } from '@timeline/shared/pins';
 
 const fakes = vi.hoisted(() => ({
   pinTargetAction: vi.fn(),
@@ -14,16 +14,33 @@ const fakes = vi.hoisted(() => ({
   notifyAction: vi.fn(async (options: { run: () => Promise<{ error?: string }> }) => options.run()),
 }));
 
-vi.mock('@/app/actions/pins', () => ({
-  pinTargetAction: fakes.pinTargetAction,
-  unpinTargetAction: fakes.unpinTargetAction,
-}));
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: fakes.notifyAction,
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    pinTargetAction: fakes.pinTargetAction,
+    unpinTargetAction: fakes.unpinTargetAction,
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: fakes.notifyAction,
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { PinButton } = await import('@/components/pins/pin-button');
 const { PinOverflowMenu } = await import('@/components/pins/pin-overflow-menu');

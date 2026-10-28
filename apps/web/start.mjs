@@ -31,11 +31,7 @@ async function run(command, args) {
         resolvePromise({ code: SIGNAL_EXIT_CODES[signal] ?? 1, signal });
         return;
       }
-      if (code === 0) {
-        resolvePromise({ code, signal: undefined });
-        return;
-      }
-      reject(new Error(`${command} ${args.join(' ')} exited with ${signal ?? code}`));
+      resolvePromise({ code: code ?? 1, signal: undefined });
     });
   });
 }
@@ -55,9 +51,9 @@ const serverPath = firstExisting([
   resolve(appRoot, '.next/standalone/apps/web/server.js'),
 ]);
 
-const migrationResult = await run(process.execPath, [migratePath]);
+const migrationResult = await run(process.execPath, ['--no-env-file', migratePath]);
 if (migrationResult.code !== 0 || receivedSignal) {
   process.exit(receivedSignal ? SIGNAL_EXIT_CODES[receivedSignal] : migrationResult.code);
 }
-const result = await run(process.execPath, [serverPath]);
+const result = await run(process.execPath, ['--no-env-file', serverPath]);
 process.exit(receivedSignal ? SIGNAL_EXIT_CODES[receivedSignal] : result.code);

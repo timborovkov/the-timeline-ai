@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   absoluteDigestAppUrl,
@@ -16,7 +17,6 @@ import {
   formatDigestWindowRange,
   scrubDigestArtifactIds,
 } from '#src/messaging/digest-format.js';
-
 const NOW = new Date('2026-07-20T12:00:00.000Z');
 
 describe('formatDigestActivityLines', () => {

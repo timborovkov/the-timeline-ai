@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { extractionResultSchema, normalizeExtractionResult } from '#src/extract/schema.js';
-
 describe('extractionResultSchema', () => {
   it('accepts a well-formed extraction payload', () => {
     const parsed = extractionResultSchema.safeParse({

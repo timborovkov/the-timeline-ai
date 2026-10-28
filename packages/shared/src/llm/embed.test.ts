@@ -1,31 +1,35 @@
+import { expect, vi } from '@timeline/test-support';
 import { MockEmbeddingModelV3 } from 'ai/test';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { OpenRouterFinishEvent } from '#src/billing/openrouter-usage.js';
 import type { EmbeddingModel } from 'ai';
 
-import {
-  openRouterUsdCostFromFinishEvent,
-  type OpenRouterFinishEvent,
-} from '#src/billing/openrouter-usage.js';
-import { resetEnvForTests } from '#src/env.js';
-import { embed, embedMany, truncateEmbeddingTextToTokenBudget } from '#src/llm/embed.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
 
 const { embeddingFinishes } = vi.hoisted(() => ({
   embeddingFinishes: [] as unknown[],
 }));
 
-vi.mock('#src/billing/runtime.js', () => ({
-  withAiMetering: async (
-    _input: unknown,
-    fn: () => Promise<{ value: unknown; finish?: unknown }>,
-  ): Promise<unknown> => {
-    const result = await fn();
-    embeddingFinishes.push(result.finish);
-    return JSON.parse(JSON.stringify(result.value)) as unknown;
-  },
-}));
+await vi.mock(
+  import.meta.resolve('#src/billing/runtime.js'),
+  () => ({
+    withAiMetering: async (
+      _input: unknown,
+      fn: () => Promise<{ value: unknown; finish?: unknown }>,
+    ): Promise<unknown> => {
+      const result = await fn();
+      embeddingFinishes.push(result.finish);
+      return JSON.parse(JSON.stringify(result.value)) as unknown;
+    },
+  }),
+  () => import('#src/billing/runtime.js'),
+);
+
+const { openRouterUsdCostFromFinishEvent } = await import('#src/billing/openrouter-usage.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { embed, embedMany, truncateEmbeddingTextToTokenBudget } = await import('#src/llm/embed.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
 
 const ENV_BACKUP = { ...process.env };
 

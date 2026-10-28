@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 
 import { encryptJson } from '@timeline/shared/crypto';
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import { expect, type Locator, test } from '@playwright/test';
 import { getDbClient } from '@timeline/db';
 
 import { signIn, waitForPost } from './helpers.js';
@@ -754,13 +754,19 @@ test('Slack settings page renders seeded workspace status for members', async ({
   await expect(page.getByText(SLACK_SETTINGS_TEAM_ID, { exact: true })).not.toBeVisible();
   await workspaceDetails.locator('summary').click();
   await expect(page.getByText(SLACK_SETTINGS_TEAM_ID, { exact: true })).toBeVisible();
-  await expect(page.getByText(`${SLACK_SETTINGS_PREFIX} #launch`)).toBeVisible();
-  await expect(page.getByText('Channel · Team visibility')).toBeVisible();
+  await expect(page.getByText(`${SLACK_SETTINGS_PREFIX} #launch`, { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('Channel · Team visibility', { exact: true }).filter({ visible: true }),
+  ).toBeVisible();
   await expect(page.getByText(e2eUsers.member.name)).toBeVisible();
   await expect(
-    page.getByText(`Slack ${SLACK_SETTINGS_PREFIX} Member · ${e2eUsers.member.email}`),
+    page
+      .getByText(`Slack ${SLACK_SETTINGS_PREFIX} Member · ${e2eUsers.member.email}`, {
+        exact: true,
+      })
+      .filter({ visible: true }),
   ).toBeVisible();
-  await expect(page.getByText('active DM')).toBeVisible();
+  await expect(page.getByText('Active DM', { exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Connect identity' })).toHaveAttribute(
     'href',
     '/api/slack/user-link/start',
@@ -786,7 +792,7 @@ test('Slack settings admins can bind and unbind seeded provider conversations', 
   await expect(page.getByRole('option', { name: '#private-plans (invite bot first)' })).toHaveCount(
     1,
   );
-  await expect(page.getByText(`${SLACK_SETTINGS_PREFIX} #launch`)).toBeVisible();
+  await expect(page.getByText(`${SLACK_SETTINGS_PREFIX} #launch`, { exact: true })).toBeVisible();
 
   await page.locator('select[name="conversationId"]').selectOption('C_E2E_SUPPORT');
   await page.getByRole('button', { name: 'Bind', exact: true }).click();
@@ -820,8 +826,10 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
   await expect(page.getByText('Link a personal DM', { exact: true })).toBeVisible();
   await expect(page.getByText('Bind a group chat', { exact: true })).toBeVisible();
   await expect(page.getByText('Group binding', { exact: true })).toBeVisible();
-  await expect(page.getByText('issued by another teammate')).toBeVisible();
-  await expect(page.getByText(`${TELEGRAM_SETTINGS_PREFIX} group`)).toBeVisible();
+  await expect(
+    page.getByText('Issued by another teammate', { exact: true }).filter({ visible: true }),
+  ).toBeVisible();
+  await expect(page.getByText(`${TELEGRAM_SETTINGS_PREFIX} group`, { exact: true })).toBeVisible();
   const groupRow = page
     .getByRole('listitem')
     .filter({ hasText: `${TELEGRAM_SETTINGS_PREFIX} group` });
@@ -833,8 +841,12 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
   await groupDetails.locator('summary').click();
   await expect(page.getByText(String(TELEGRAM_SETTINGS_CHAT_ID), { exact: true })).toBeVisible();
   await expect(page.getByText(e2eUsers.member.name)).toBeVisible();
-  await expect(page.getByText(`tg:timeline_e2e_member · ${e2eUsers.member.email}`)).toBeVisible();
-  await expect(page.getByText('active DM')).toBeVisible();
+  await expect(
+    page
+      .getByText(`timeline_e2e_member · ${e2eUsers.member.email}`, { exact: true })
+      .filter({ visible: true }),
+  ).toBeVisible();
+  await expect(page.getByText('Active DM', { exact: true })).toBeVisible();
 
   await page.locator('#group-tg-username').fill('e2egroupadmin');
   await page.getByRole('button', { name: 'Generate group link' }).click();
@@ -843,9 +855,9 @@ test('Telegram settings admins can generate tokens, revoke tokens, and unbind gr
 
   const seededTokenRow = page
     .getByRole('listitem')
-    .filter({ hasText: 'issued by another teammate' });
+    .filter({ hasText: 'Issued by another teammate' });
   await seededTokenRow.getByRole('button', { name: 'Revoke' }).click();
-  await expect(page.getByText('issued by another teammate')).toHaveCount(0);
+  await expect(page.getByText('Issued by another teammate', { exact: true })).toHaveCount(0);
   await expect.poll(telegramPendingTokenUsernames).toEqual(['e2egroupadmin']);
 
   await groupRow.getByRole('button', { name: 'Unbind' }).click();
@@ -873,17 +885,19 @@ test.describe.serial('integrations health states', () => {
     await expect(page.getByText('integration items need attention')).toHaveCount(0);
 
     const githubRow = page
-      .locator('li')
+      .locator('div')
+      .filter({ has: page.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
       .filter({ hasText: `${SEED_PREFIX} GitHub` })
-      .first();
+      .last();
     await expect(githubRow.getByText('Webhook delivery degraded:')).toBeVisible();
     await expect(githubRow.getByText('reconciliation remains active')).toBeVisible();
     await expect(githubRow.getByRole('button', { name: 'Sync now' })).toBeEnabled();
 
     const linearRow = page
-      .locator('li')
+      .locator('div')
+      .filter({ has: page.getByRole('combobox', { name: 'Default visibility for Linear' }) })
       .filter({ hasText: `${SEED_PREFIX} Linear` })
-      .first();
+      .last();
     await expect(linearRow.getByText('Provider quota cooldown (requests).')).toBeVisible();
     await expect(linearRow.getByRole('button', { name: 'Paused' })).toBeDisabled();
   });
@@ -894,10 +908,12 @@ test.describe.serial('integrations health states', () => {
     await page.goto('/app/team/integrations');
 
     await expect(page.getByText('1 webhook subscription degraded')).toBeVisible();
-    await expect(page.getByLabel('Open floating agent chat')).toBeHidden();
+    const chatLauncher = page.getByLabel('Open floating agent chat');
+    await expect(chatLauncher).toBeVisible();
+    await expect(chatLauncher).toHaveAttribute('aria-expanded', 'false');
 
     const sourceCard = page
-      .locator('section.rounded-md')
+      .locator('section.border-y')
       .filter({ hasText: `${SEED_PREFIX} GitHub connection` })
       .first();
     const saveButton = sourceCard.getByRole('button', { name: 'Save team sync' });
@@ -913,26 +929,40 @@ test.describe.serial('integrations health states', () => {
     );
 
     const githubRow = page
-      .locator('li')
+      .locator('div')
+      .filter({ has: page.getByRole('combobox', { name: 'Default visibility for GitHub' }) })
       .filter({ hasText: `${SEED_PREFIX} GitHub` })
-      .first();
+      .last();
     const attentionPanel = githubRow
-      .locator('div.rounded-sm')
-      .filter({ hasText: 'Webhook delivery degraded:' })
-      .first();
+      .getByText('Webhook delivery degraded:', { exact: true })
+      .locator('xpath=ancestor::div[1]');
     await expect(attentionPanel).toBeVisible();
     const attentionBox = await attentionPanel.boundingBox();
     expect(attentionBox).not.toBeNull();
     expect(attentionBox?.width ?? 0).toBeGreaterThan(300);
 
     const syncButton = githubRow.getByRole('button', { name: 'Sync now' });
-    const disconnectButton = githubRow.getByRole('button', { name: 'Disconnect' });
+    const disconnectButton = githubRow.getByRole('button', { name: /^Actions for / });
     const syncBox = await syncButton.boundingBox();
     const disconnectBox = await disconnectButton.boundingBox();
     expect(syncBox).not.toBeNull();
     expect(disconnectBox).not.toBeNull();
-    expect(syncBox?.width ?? 0).toBeGreaterThan(130);
-    expect(disconnectBox?.width ?? 0).toBeGreaterThan(130);
+    // Compact actions replaced the old full-width buttons. Verify usable targets
+    // and the destructive action's actual overflow-menu path on mobile.
+    expect(syncBox?.width ?? 0).toBeGreaterThanOrEqual(32);
+    expect(syncBox?.height ?? 0).toBeGreaterThanOrEqual(32);
+    expect(disconnectBox?.width ?? 0).toBeGreaterThanOrEqual(32);
+    expect(disconnectBox?.height ?? 0).toBeGreaterThanOrEqual(32);
+    await expect(syncButton).toBeEnabled();
+    await disconnectButton.click();
+    const disconnectItem = page.getByRole('menuitem', { name: 'Disconnect', exact: true });
+    await expect(disconnectItem).toBeVisible();
+    await expect(disconnectItem).toBeEnabled();
+    const menuBox = await disconnectItem.boundingBox();
+    expect(menuBox).not.toBeNull();
+    expect(menuBox?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((menuBox?.x ?? 0) + (menuBox?.width ?? 0)).toBeLessThanOrEqual(390);
+    await page.keyboard.press('Escape');
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     const viewportWidth = page.viewportSize()?.width ?? 0;
@@ -953,7 +983,7 @@ test.describe.serial('integrations source management', () => {
     await page.goto('/app/team/integrations');
 
     const firstCard = page
-      .locator('section.rounded-md')
+      .locator('section.border-y')
       .filter({ hasText: `${MANAGE_PREFIX} first GitHub connection` })
       .first();
     await expect(firstCard.getByText('Shared, not syncing')).toBeVisible();
@@ -966,7 +996,7 @@ test.describe.serial('integrations source management', () => {
     await expect.poll(() => activeIntegrationConnectionIdForManageRepo()).toBe(firstConnectionId);
 
     const secondCard = page
-      .locator('section.rounded-md')
+      .locator('section.border-y')
       .filter({ hasText: `${MANAGE_PREFIX} second GitHub connection` })
       .first();
     await expect(secondCard.getByText('Shared, not syncing')).toBeVisible();
@@ -1051,14 +1081,14 @@ test.describe.serial('provider-backed source listing', () => {
     await page.goto('/app/me/connections');
 
     const accountCard = page
-      .locator('section.rounded-md')
+      .locator('section.border-y')
       .filter({ hasText: `${SOURCE_LISTING_PREFIX} GitHub account` })
       .first();
     await expect(accountCard.getByText('Choose individual repositories')).toBeVisible();
     await expect(accountCard.getByText(`${SOURCE_LISTING_PREFIX} organization`)).toBeVisible();
     await expect(accountCard.getByText(sourceLabel)).toBeVisible();
 
-    await accountCard.getByRole('textbox', { name: 'Search provider sources' }).fill('repository');
+    await accountCard.getByRole('textbox', { name: 'Search sources' }).fill('repository');
     await expect(accountCard.getByText(sourceLabel)).toBeVisible();
     await expect(accountCard.getByText(`${SOURCE_LISTING_PREFIX} organization`)).toHaveCount(0);
 
@@ -1123,10 +1153,7 @@ test.describe.serial('provider-backed source listing', () => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/me/connections');
 
-    const accountCard = page
-      .locator('section.rounded-md')
-      .filter({ hasText: accountLabel })
-      .first();
+    const accountCard = page.locator('section.border-y').filter({ hasText: accountLabel }).first();
     await expect(accountCard.getByText(parentLabel)).toBeVisible();
     await expect(accountCard.getByText(`Subitems of ${parentLabel}`)).toHaveCount(0);
     await clickSourceCheckbox(accountCard, parentLabel);
@@ -1211,14 +1238,19 @@ test('Timeline MCP bearer keys expose only team-visible events', async ({ page }
       (res) => res.ok(),
     );
 
-    const keyTitle = page.getByText('New key: copy now', { exact: false });
+    const keyTitle = page.getByText('New key: keep this open until your client is connected', {
+      exact: true,
+    });
     const keyCard = keyTitle.locator('xpath=ancestor::div[.//code][1]');
     await expect(keyCard).toBeVisible();
     const plaintext = (await keyCard.locator('code').first().innerText()).trim();
     expect(plaintext).toMatch(/^tla_/);
 
     const response = await page.request.post('/api/mcp/server', {
-      headers: { authorization: `Bearer ${plaintext}` },
+      headers: {
+        authorization: `Bearer ${plaintext}`,
+        accept: 'application/json, text/event-stream',
+      },
       data: {
         jsonrpc: '2.0',
         id: 1,
@@ -1235,20 +1267,33 @@ test('Timeline MCP bearer keys expose only team-visible events', async ({ page }
       },
     });
     expect(response.ok()).toBe(true);
-    const rpc = (await response.json()) as {
+    const body = await response.text();
+    const data = response.headers()['content-type']?.includes('text/event-stream')
+      ? body
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .at(-1)
+          ?.slice(5)
+          .trim()
+      : body;
+    expect(data).toBeTruthy();
+    const rpc = JSON.parse(data ?? '') as {
       error?: unknown;
       result?: { content?: { text?: string }[] };
     };
     expect(rpc.error).toBeUndefined();
     const payload = JSON.parse(rpc.result?.content?.[0]?.text ?? '{}') as {
       count: number;
-      events: { content_text: string }[];
+      events: { id: string; content_text: string }[];
     };
     const texts = payload.events.map((event) => event.content_text);
     expect(payload.count).toBe(1);
-    expect(texts).toContain(teamText);
-    expect(texts).not.toContain(privateText);
-    expect(texts).not.toContain(memberSpecificText);
+    expect(payload.events[0]?.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(texts).toEqual([
+      `<external_content source="web" event_id="${payload.events[0]?.id}">${teamText}</external_content>`,
+    ]);
+    expect(texts.join('\n')).not.toContain(privateText);
+    expect(texts.join('\n')).not.toContain(memberSpecificText);
   } finally {
     await cleanupMcpShareSeed();
   }

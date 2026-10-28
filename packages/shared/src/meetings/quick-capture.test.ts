@@ -1,35 +1,37 @@
 import { PGlite } from '@electric-sql/pglite';
-import { meetingCaptureConfirmations, meetings, teamMeetingSettings } from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as MeetingBotsModule from '#src/meeting-bots/index.js';
-
-import {
-  confirmRawUrlQuickJoin,
-  createRawUrlQuickJoinConfirmation,
-} from '#src/meetings/quick-capture.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
 
 const joinMeetingMock = vi.hoisted(() => vi.fn());
 
-vi.mock('#src/meeting-bots/index.js', async () => {
-  const actual = await vi.importActual<typeof MeetingBotsModule>('#src/meeting-bots/index.js');
-  return {
-    ...actual,
-    isMeetingBotConfigured: vi.fn(() => true),
-    getMeetingBotProvider: vi.fn(() => ({
-      name: 'recall',
-      joinMeeting: joinMeetingMock,
-      leaveMeeting: vi.fn().mockResolvedValue(undefined),
-    })),
-    resolveTranscriptWebhookUrl: vi.fn(
-      () => 'https://timeline.test/api/webhooks/recall/transcript',
-    ),
-  };
-});
+await vi.mock(
+  import.meta.resolve('#src/meeting-bots/index.js'),
+  async () => {
+    const actual = await import('#src/meeting-bots/index.js');
+    return {
+      ...actual,
+      isMeetingBotConfigured: vi.fn(() => true),
+      getMeetingBotProvider: vi.fn(() => ({
+        name: 'recall',
+        joinMeeting: joinMeetingMock,
+        leaveMeeting: vi.fn().mockResolvedValue(undefined),
+      })),
+      resolveTranscriptWebhookUrl: vi.fn(
+        () => 'https://timeline.test/api/webhooks/recall/transcript',
+      ),
+    };
+  },
+  () => import('#src/meeting-bots/index.js'),
+);
+
+const { meetingCaptureConfirmations, meetings, teamMeetingSettings } = await import('@timeline/db');
+const { confirmRawUrlQuickJoin, createRawUrlQuickJoinConfirmation } =
+  await import('#src/meetings/quick-capture.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

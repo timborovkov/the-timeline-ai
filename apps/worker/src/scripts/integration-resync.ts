@@ -6,7 +6,7 @@
  * default is incremental resume from the saved cursor.
  *
  * Usage:
- *   pnpm --filter @timeline/worker integration-resync -- \
+ *   bun run --filter @timeline/worker integration-resync -- \
  *     --team=<uuid> [--integration=<uuid>] [--from-zero] [--dry-run]
  */
 import {

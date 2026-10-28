@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const IDS = {
   team: '11111111-1111-4111-8111-111111111111',
   user: '22222222-2222-4222-8222-222222222222',
@@ -38,40 +39,60 @@ const fakes = vi.hoisted(() => ({
   db: { select: vi.fn() },
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: fakes.db }));
-vi.mock('@timeline/shared/s3', () => ({
-  getAudioBucket: fakes.getAudioBucket,
-  getS3PresignClient: fakes.getS3PresignClient,
-  getSignedGetObjectUrl: fakes.getSignedGetObjectUrl,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    timeline: {
-      getEventsByIds: fakes.getEventsByIds,
-      resolveEventSenders: fakes.resolveEventSenders,
-      listEventsForMomentLookup: fakes.listEventsForMomentLookup,
-    },
-    objects: {
-      getObject: fakes.getObject,
-      getObjectNotePreview: fakes.getObjectNotePreview,
-    },
-    documents: {
-      getDocument: fakes.getDocument,
-      getDocumentChunk: fakes.getDocumentChunk,
-      listDocumentVersions: fakes.listDocumentVersions,
-    },
-    calendar: {
-      getCalendarEvent: fakes.getCalendarEvent,
-      getCalendarSettings: fakes.getCalendarSettings,
-    },
-    boards: {
-      getBoard: fakes.getBoard,
-      getBoardItem: fakes.getBoardItem,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: fakes.db }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/s3'),
+  () => ({
+    getAudioBucket: fakes.getAudioBucket,
+    getS3PresignClient: fakes.getS3PresignClient,
+    getSignedGetObjectUrl: fakes.getSignedGetObjectUrl,
   }),
-}));
+  () => import('@timeline/shared/s3'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      timeline: {
+        getEventsByIds: fakes.getEventsByIds,
+        resolveEventSenders: fakes.resolveEventSenders,
+        listEventsForMomentLookup: fakes.listEventsForMomentLookup,
+      },
+      objects: {
+        getObject: fakes.getObject,
+        getObjectNotePreview: fakes.getObjectNotePreview,
+      },
+      documents: {
+        getDocument: fakes.getDocument,
+        getDocumentChunk: fakes.getDocumentChunk,
+        listDocumentVersions: fakes.listDocumentVersions,
+      },
+      calendar: {
+        getCalendarEvent: fakes.getCalendarEvent,
+        getCalendarSettings: fakes.getCalendarSettings,
+      },
+      boards: {
+        getBoard: fakes.getBoard,
+        getBoardItem: fakes.getBoardItem,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { POST } = await import('./route.js');
 

@@ -58,7 +58,7 @@ credit hides margin and confuses prospects.
    floor (PAYG) and above the included invoice discount (Team/Business) is
    ingested as Polar events and invoiced monthly in arrears on the card on
    file. There is no prepaid wallet, top-up product, or auto-reload.
-   `pnpm billing:polar-setup` creates or reuses the six Timeline meters and the
+   `bun run billing:polar-setup` creates or reuses the six Timeline meters and the
    Pay as you go, Team, Business, and Enterprise monthly products, each with all
    six catalog prices. A wrong immutable price is replaced by adding the correct
    price and archiving the old one. The command archives a Timeline Top-up

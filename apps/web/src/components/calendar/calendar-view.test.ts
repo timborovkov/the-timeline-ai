@@ -1,73 +1,102 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { act, createElement, type ReactNode } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { CalendarEvent } from '@/components/calendar/calendar-overlay';
-
-import {
-  applyCalendarPageOverlay,
-  calendarOverlayReducer,
-} from '@/components/calendar/calendar-overlay';
+import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   createCalendarEventAction: vi.fn(),
   updateCalendarEventAction: vi.fn(),
   deleteCalendarEventAction: vi.fn(),
+  loadCalendarEventListPageAction: vi.fn(),
   push: vi.fn(),
   refresh: vi.fn(),
   searchParams: 'view=month&date=2026-06-03',
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
-  useSearchParams: () => new URLSearchParams(fakes.searchParams),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
-    try {
-      return await run();
-    } catch {
-      return { error: 'failed' };
-    }
-  },
-}));
-vi.mock('@/app/actions/calendar', () => ({
-  createCalendarEventAction: fakes.createCalendarEventAction,
-  updateCalendarEventAction: fakes.updateCalendarEventAction,
-  deleteCalendarEventAction: fakes.deleteCalendarEventAction,
-}));
-vi.mock('@/app/actions/pins', () => ({
-  pinTargetAction: vi.fn(),
-  unpinTargetAction: vi.fn(),
-}));
-vi.mock('@/app/actions/collection-pages', () => ({
-  loadCalendarEventListPageAction: vi.fn(),
-}));
-vi.mock('@/components/collections/virtual-list', async () => {
-  const { createElement: h } = await import('react');
-  return {
-    VirtualList: ({
-      items,
-      renderItem,
-      getItemKey,
-    }: {
-      items: { id: string }[];
-      renderItem: (item: { id: string }, index: number) => ReactNode;
-      getItemKey: (item: { id: string }, index: number) => string;
-    }) =>
-      h(
-        'div',
-        null,
-        items.map((item, index) =>
-          h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
+    useSearchParams: () => new URLSearchParams(fakes.searchParams),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string; ok?: boolean }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/calendar'),
+  () => ({
+    createCalendarEventAction: fakes.createCalendarEventAction,
+    updateCalendarEventAction: fakes.updateCalendarEventAction,
+    deleteCalendarEventAction: fakes.deleteCalendarEventAction,
+  }),
+  () => import('@/app/actions/calendar'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    pinTargetAction: vi.fn(),
+    unpinTargetAction: vi.fn(),
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/collection-pages'),
+  () => ({
+    loadCalendarEventListPageAction: fakes.loadCalendarEventListPageAction,
+  }),
+  () => import('@/app/actions/collection-pages'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  async () => {
+    const { createElement: h } = await import('react');
+    return {
+      VirtualList: ({
+        items,
+        renderItem,
+        getItemKey,
+      }: {
+        items: { id: string }[];
+        renderItem: (item: { id: string }, index: number) => ReactNode;
+        getItemKey: (item: { id: string }, index: number) => string;
+      }) =>
+        h(
+          'div',
+          null,
+          items.map((item, index) =>
+            h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+          ),
         ),
-      ),
-  };
-});
+    };
+  },
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor, within } =
+  await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+
+const { act, createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { applyCalendarPageOverlay, calendarOverlayReducer } =
+  await import('@/components/calendar/calendar-overlay');
 
 const { CalendarView } = await import('@/components/calendar/calendar-view');
 
@@ -97,6 +126,7 @@ function event(id: string, title = id): CalendarEvent {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.loadCalendarEventListPageAction.mockResolvedValue({ events: [], nextOffset: null });
   fakes.searchParams = 'view=month&date=2026-06-03';
   fakes.createCalendarEventAction.mockResolvedValue({ ok: true, id: 'new-event' });
   fakes.updateCalendarEventAction.mockResolvedValue({ ok: true, id: 'event-1' });
@@ -446,6 +476,40 @@ describe('CalendarView recurrence and tentative UI', () => {
     expect(screen.getByRole('button', { name: 'Roadmap review' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Previous events' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Next events' })).toBeNull();
+  });
+
+  it('discards loaded pages after a server refresh removes calendar events', async () => {
+    fakes.loadCalendarEventListPageAction.mockResolvedValue({
+      events: [event('deleted-occurrence', 'Deleted recurring occurrence')],
+      nextOffset: null,
+    });
+    const props = {
+      events: [],
+      eventListEvents: [event('event-1', 'Roadmap review')],
+      eventListTotal: 2,
+      eventListNextOffset: 1,
+      eventListQuery: '',
+      eventListScope: 'future' as const,
+      timezone: 'UTC',
+    };
+    const view = render(createElement(CalendarView, props));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
+      await Promise.resolve();
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Deleted recurring occurrence' }),
+    ).toBeTruthy();
+
+    view.rerender(
+      createElement(CalendarView, {
+        ...props,
+        eventListTotal: 1,
+        eventListNextOffset: null,
+      }),
+    );
+    expect(screen.queryByRole('button', { name: 'Deleted recurring occurrence' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Roadmap review' })).toBeTruthy();
   });
 
   it('does not append optimistic creates to the server-paginated event list', async () => {

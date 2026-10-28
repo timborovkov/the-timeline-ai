@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { PublicDocument } from '@/lib/public-site';
 
@@ -17,7 +18,6 @@ import {
   PUBLIC_DOCUMENT_REGISTRY,
 } from '@/lib/public-site';
 import { TRUST_AI_ROUTES } from '@/lib/trust-claims';
-
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {

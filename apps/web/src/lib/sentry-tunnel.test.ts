@@ -2,10 +2,11 @@ import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { forwardSentryTunnelEnvelope, sentryIngestTargetFromDsn } from '@/lib/sentry-tunnel';
-
 const DSN = 'https://publickey@o123.ingest.sentry.io/450999';
 
 function onCloseOnce(res: EventEmitter, listener: () => void): () => void {
@@ -53,9 +54,9 @@ describe('sentry tunnel', () => {
         controller.enqueue(chunk);
       },
     });
-    const fetchImpl = vi.fn<typeof fetch>(() =>
-      Promise.resolve(new Response(null, { status: 200 })),
-    );
+    const fetchImpl = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() => Promise.resolve(new Response(null, { status: 200 })));
     const response = await forwardSentryTunnelEnvelope({
       dsn: DSN,
       req: new Request('https://timeline.test/sentry-tunnel', {
@@ -72,7 +73,9 @@ describe('sentry tunnel', () => {
   });
 
   it('forwards the envelope only to the configured ingest host', async () => {
-    const fetchImpl = vi.fn<typeof fetch>((input) => {
+    const fetchImpl = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       expect(url).toBe(
         'https://o123.ingest.sentry.io/api/450999/envelope/?sentry_key=publickey&sentry_version=7',

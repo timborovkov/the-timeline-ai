@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   formatNavBadge,
@@ -7,7 +8,6 @@ import {
   visibleNavGroups,
   visibleNavItems,
 } from '@/components/nav-items';
-
 describe('nav items', () => {
   it('shows Home before Timeline', () => {
     const items = visibleNavItems('member');

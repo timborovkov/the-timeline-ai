@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { createPolarBillingProvider } from '#src/billing/polar.js';
 

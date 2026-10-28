@@ -1,14 +1,17 @@
-import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const { capture } = vi.hoisted(() => ({ capture: vi.fn().mockResolvedValue(undefined) }));
 
-vi.mock('@/lib/analytics', () => ({ capturePersonlessSurfaceRequest: capture }));
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({ capturePersonlessSurfaceRequest: capture }),
+  () => import('@/lib/analytics'),
+);
 
-import {
-  isCountableSurfaceNavigation,
-  schedulePersonlessSurfaceRequest,
-} from '@/lib/surface-request-analytics';
+const { NextRequest } = await import('next/server');
+const { isCountableSurfaceNavigation, schedulePersonlessSurfaceRequest } =
+  await import('@/lib/surface-request-analytics');
 
 function request(path: string, headers: Record<string, string> = { accept: 'text/html' }) {
   return new NextRequest(`https://thetimeline.cc${path}`, { headers });
@@ -18,7 +21,9 @@ function context() {
   return { waitUntil: vi.fn() };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('personless surface request scheduling', () => {
   it('counts full-document and non-prefetch RSC navigations', () => {

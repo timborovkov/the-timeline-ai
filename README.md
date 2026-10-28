@@ -56,15 +56,13 @@ and Pipedrive app listings are separate future work.
 
 ## Quick start
 
-Requirements: Node.js 24.22.1, pnpm 11.8+, and Docker.
+Requirements: Bun 1.4.4 and Docker. The runtime is pinned in `.bun-version`.
 
 ```bash
 git clone https://github.com/timborovkov/the-timeline-ai.git
 cd the-timeline-ai
-nvm install
-nvm use
-corepack enable
-pnpm install
+bun --version # must match .bun-version
+bun run deps
 
 cp .env.example .env
 ln -sf ../../.env apps/web/.env
@@ -86,11 +84,11 @@ set -a
 . ./.env
 set +a
 
-pnpm db:migrate
-pnpm demo:seed
+bun run db:migrate
+bun run demo:seed
 # Optional extra volume for infinite-scroll / virtualization:
-# pnpm dev:seed:heavy
-pnpm dev
+# bun run dev:seed:heavy
+bun run dev
 ```
 
 `demo:seed` runs the idempotent local dev seed, indexes every fixture-version raw
@@ -106,7 +104,7 @@ floors hold. A real development
 `OPENROUTER_API_KEY` is therefore required; a missing key or unavailable Qdrant fails closed without
 marking the document embedded. The commands refuse production, unapproved remote databases or
 Qdrant, and non-local/nonstandard S3 storage without its separate explicit acknowledgement.
-`pnpm dev:seed:heavy` is optional extra Acme Labs volume for infinite-scroll and virtualization
+`bun run dev:seed:heavy` is optional extra Acme Labs volume for infinite-scroll and virtualization
 tests; recorded demos should keep using `demo:seed`.
 
 Open <http://localhost:3000> and sign in with any seeded Acme Labs member. Password
@@ -133,7 +131,7 @@ the Ledger ingest webhook, and MCP keys are listed in
 | GitHub | `gho_dev_seed_access_token_123` | `ghr_dev_seed_refresh_token_123` |
 | Linear | `lin_api_dev_seed_access_token_456` | `lin_refresh_dev_seed_refresh_token_456` |
 
-Reset a local stack with `pnpm demo:reset` (`dev:wipe` then `demo:seed`). The
+Reset a local stack with `bun run demo:reset` (`dev:wipe` then `demo:seed`). The
 [demo corpus guide](./docs/demo-corpus.md) covers commands, story, boards,
 documents, Ask questions, and fake credentials.
 
@@ -142,7 +140,7 @@ For environment details and troubleshooting, read the
 
 ## Architecture
 
-The Timeline is a pnpm/Turborepo monorepo:
+The Timeline is a Bun/Turborepo monorepo:
 
 | Path | Purpose |
 | --- | --- |
@@ -150,6 +148,7 @@ The Timeline is a pnpm/Turborepo monorepo:
 | `apps/worker` | BullMQ workers for capture, extraction, agents, sync, and maintenance |
 | `packages/db` | Drizzle schema, migrations, and database exports |
 | `packages/shared` | Team-scoped data access, inference, storage, integrations, and domain modules |
+| `packages/test-support` | Bun assertion compatibility and isolated-suite test utilities |
 | `.agents/plugins` | Codex marketplace catalog for repository plugins |
 | `.claude-plugin` | Claude Code repository marketplace catalog |
 | `plugins/timeline` | Codex and Claude Code plugin manifests, hosted MCP connection, and general cited-workspace skill |
@@ -169,20 +168,20 @@ Two boundaries are non-negotiable:
 ## Development
 
 ```bash
-pnpm dev          # run the web app and workers with the exported local env
-pnpm validate     # formatting, TypeScript, ESLint, and Knip
-pnpm test         # unit and integration tests
-pnpm run doctor   # React Doctor
+bun run dev          # run the web app and workers with the exported local env
+bun run validate     # formatting, TypeScript, ESLint, and Knip
+bun run test         # unit and integration tests
+bun run doctor   # React Doctor
 ```
 
 Run the nearest targeted test for your change. Changes to shared exports,
 agent behavior, or reconciliation have additional gates documented in
 [AGENTS.md](./AGENTS.md).
 
-`pnpm billing:polar-setup` creates or reuses the sandbox Polar meters and monthly
+`bun run billing:polar-setup` creates or reuses the sandbox Polar meters and monthly
 products Timeline billing needs. It prints the ids to copy into the web and worker
-environment and does not write `.env`. `--dry-run` prints the plan. Production
-requires `--allow-production`. The command only changes Polar objects identified
+environment and does not write `.env`. `bun run billing:polar-setup -- --dry-run`
+prints the plan. Production requires `--allow-production` after `--`. The command only changes Polar objects identified
 as Timeline's. Details: [docs/setup/polar.html](./docs/setup/polar.html).
 
 ## Documentation
@@ -200,6 +199,7 @@ as Timeline's. Details: [docs/setup/polar.html](./docs/setup/polar.html).
 - [Product brief](./docs/product-brief.html)
 - [Operating memory engine](./docs/relational-memory.md)
 - [Local development](./docs/setup/local.html)
+- [Bun migration validation and release runbook](./docs/bun-migration.md)
 - [Integrations and custom MCP servers](./docs/setup/integrations.html)
 - [Codex and Claude Code plugins and agent skill](./plugins/timeline/skills/README.md)
 - [Railway deployment](./docs/railway.html)
@@ -218,7 +218,7 @@ issue, and wait for maintainer agreement. Because the repository does not yet
 publish a license or general contribution terms, public visibility alone does
 not authorize changes or reuse. Approved contributions must keep changes
 team-scoped, preserve raw evidence, update affected docs, and pass
-`pnpm validate`, `pnpm run doctor`, and the relevant tests.
+`bun run validate`, `bun run doctor`, and the relevant tests.
 
 ## Source availability
 

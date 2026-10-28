@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { PublicDocument } from '@/lib/public-site/types';
 
@@ -7,7 +8,6 @@ import {
   createPublicDocumentRegistry,
   definePublicDocuments,
 } from '@/lib/public-site/registry';
-
 describe('public document registry', () => {
   it('composes document sources and excludes noindex documents from discovery', () => {
     const indexable = document({ canonicalPath: '/guides/one' });

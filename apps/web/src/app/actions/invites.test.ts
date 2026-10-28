@@ -1,10 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  acceptInviteAction,
-  acceptRecipientInviteAction,
-  declineInviteAction,
-} from '@/app/actions/invites';
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 /**
  * Server-action tests for invite acceptance. These pin the user-visible
@@ -35,41 +30,95 @@ const fakes = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-  captureException: fakes.fakeCaptureException,
-  withServerActionInstrumentation: fakes.fakeWithServerActionInstrumentation,
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    transaction: fakes.fakeTransaction,
-    select: fakes.fakeDbSelect,
-    update: fakes.fakeDbUpdate,
-  },
-}));
-vi.mock('@/lib/active-team', () => ({
-  ACTIVE_TEAM_COOKIE: 'timeline_active_team',
-  activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
-  serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
-}));
-vi.mock('@/lib/default-team', () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }));
-vi.mock('@/lib/legal', () => ({
-  getUserLegalAcceptance: fakes.fakeGetUserLegalAcceptance,
-  hasCurrentLegalAcceptance: fakes.fakeHasCurrentLegalAcceptance,
-}));
-vi.mock('@/lib/pending-invite', () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }));
-vi.mock('@timeline/shared/billing', () => ({
-  assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
-  isBillingAdmissionError: () => false,
-}));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: fakes.fakeLoggerError }),
-}));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('next/headers', () => ({
-  cookies: vi.fn().mockResolvedValue({ set: fakes.fakeCookieSet }),
-}));
-vi.mock('next/navigation', () => ({ redirect: fakes.fakeRedirect }));
+await vi.mock(
+  import.meta.resolve('@sentry/nextjs'),
+  () => ({
+    captureException: fakes.fakeCaptureException,
+    withServerActionInstrumentation: fakes.fakeWithServerActionInstrumentation,
+  }),
+  () => import('@sentry/nextjs'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      transaction: fakes.fakeTransaction,
+      select: fakes.fakeDbSelect,
+      update: fakes.fakeDbUpdate,
+    },
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({
+    ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+    activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+    serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+  }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/default-team'),
+  () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }),
+  () => import('@/lib/default-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    getUserLegalAcceptance: fakes.fakeGetUserLegalAcceptance,
+    hasCurrentLegalAcceptance: fakes.fakeHasCurrentLegalAcceptance,
+  }),
+  () => import('@/lib/legal'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/pending-invite'),
+  () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }),
+  () => import('@/lib/pending-invite'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
+    isBillingAdmissionError: () => false,
+  }),
+  () => import('@timeline/shared/billing'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: fakes.fakeLoggerError }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({
+    cookies: vi.fn().mockResolvedValue({ set: fakes.fakeCookieSet }),
+  }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.fakeRedirect,
+  }),
+  () => import('next/navigation'),
+);
+
+const { acceptInviteAction, acceptRecipientInviteAction, declineInviteAction } =
+  await import('@/app/actions/invites');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';

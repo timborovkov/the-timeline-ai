@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const RESOURCE_URL = 'https://timeline.test/api/mcp/server';
 const METADATA_URL = 'https://timeline.test/.well-known/oauth-protected-resource/api/mcp/server';
 const MCP_BODY_LIMIT_BYTES = 256 * 1024;
@@ -38,23 +37,43 @@ const fakes = vi.hoisted(() => {
   };
 });
 
-vi.mock('@/lib/db', () => ({ db: { kind: 'db' } }));
-vi.mock('@/lib/site-url', () => ({
-  appUrl: (path: string) => new URL(path, 'https://timeline.test'),
-}));
-vi.mock('@/lib/request-ip', () => ({ clientIpFromHeaders: fakes.clientIpFromHeaders }));
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return { ...actual, checkRateLimit: fakes.checkRateLimit };
-});
-vi.mock('@timeline/shared/mcp-server', () => ({
-  validateTimelineMcpRequestHeaders: fakes.validateTimelineMcpRequestHeaders,
-  isValidatedCurrentTimelineAgentCall: fakes.isValidatedCurrentTimelineAgentCall,
-  resolveMcpBearer: fakes.resolveMcpBearer,
-  buildTimelineMcpAuthInfo: fakes.buildTimelineMcpAuthInfo,
-  timelineMcpResourceMetadataUrl: fakes.timelineMcpResourceMetadataUrl,
-  createTimelineMcpHttpHandler: fakes.createTimelineMcpHttpHandler,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { kind: 'db' } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/site-url'),
+  () => ({
+    appUrl: (path: string) => new URL(path, 'https://timeline.test'),
+  }),
+  () => import('@/lib/site-url'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/request-ip'),
+  () => ({ clientIpFromHeaders: fakes.clientIpFromHeaders }),
+  () => import('@/lib/request-ip'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return { ...actual, checkRateLimit: fakes.checkRateLimit };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/mcp-server'),
+  () => ({
+    validateTimelineMcpRequestHeaders: fakes.validateTimelineMcpRequestHeaders,
+    isValidatedCurrentTimelineAgentCall: fakes.isValidatedCurrentTimelineAgentCall,
+    resolveMcpBearer: fakes.resolveMcpBearer,
+    buildTimelineMcpAuthInfo: fakes.buildTimelineMcpAuthInfo,
+    timelineMcpResourceMetadataUrl: fakes.timelineMcpResourceMetadataUrl,
+    createTimelineMcpHttpHandler: fakes.createTimelineMcpHttpHandler,
+  }),
+  () => import('@timeline/shared/mcp-server'),
+);
 
 fakes.timelineMcpResourceMetadataUrl.mockReturnValue(METADATA_URL);
 

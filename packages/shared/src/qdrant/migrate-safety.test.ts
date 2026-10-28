@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   QDRANT_MIGRATE_REMOTE_ACK,
   assertQdrantMigrateAllowed,
 } from '#src/qdrant/migrate-safety.js';
-
 describe('assertQdrantMigrateAllowed', () => {
   // Production copies need an explicit acknowledgement and a complete, tenant-safe cutover plan.
   it('allows production only with all maintenance safeguards', () => {

@@ -1,10 +1,11 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { IntegrationsCatalog } from '@/components/integrations/catalog';
+// Test environment: happy-dom
 
 afterEach(() => {
   vi.unstubAllGlobals();

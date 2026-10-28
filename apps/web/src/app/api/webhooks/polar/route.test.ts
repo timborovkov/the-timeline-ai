@@ -1,31 +1,44 @@
 import { createHmac } from 'node:crypto';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 const verifyPolarWebhookSignature = vi.fn();
 const handlePolarWebhookEvent = vi.fn();
 const createPolarBillingProvider = vi.fn(() => null);
 
-vi.mock('@timeline/shared/env', () => ({
-  getEnv: () => ({
-    POLAR_WEBHOOK_SECRET: 'whsec_dGVzdC1zZWNyZXQ=',
-    POLAR_PRODUCT_ID_PAYG: 'prod_payg',
-    POLAR_PRODUCT_ID_TEAM: 'prod_team',
-    POLAR_PRODUCT_ID_BUSINESS: 'prod_business',
-    BILLING_CHARGES_ENABLED: false,
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({
+    getEnv: () => ({
+      POLAR_WEBHOOK_SECRET: 'whsec_dGVzdC1zZWNyZXQ=',
+      POLAR_PRODUCT_ID_PAYG: 'prod_payg',
+      POLAR_PRODUCT_ID_TEAM: 'prod_team',
+      POLAR_PRODUCT_ID_BUSINESS: 'prod_business',
+      BILLING_CHARGES_ENABLED: false,
+    }),
   }),
-}));
+  () => import('@timeline/shared/env'),
+);
 
-vi.mock('@timeline/shared/billing', () => ({
-  verifyPolarWebhookSignature: (...args: unknown[]) =>
-    verifyPolarWebhookSignature(...args) as boolean,
-  handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
-  createPolarBillingProvider: () => createPolarBillingProvider(),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    verifyPolarWebhookSignature: (...args: unknown[]) =>
+      verifyPolarWebhookSignature(...args) as boolean,
+    handlePolarWebhookEvent: (...args: unknown[]) => handlePolarWebhookEvent(...args) as unknown,
+    createPolarBillingProvider: () => createPolarBillingProvider(),
+  }),
+  () => import('@timeline/shared/billing'),
+);
 
-vi.mock('@/lib/db', () => ({
-  db: { id: 'db' },
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: { id: 'db' },
+  }),
+  () => import('@/lib/db'),
+);
 
 describe('POST /api/webhooks/polar', () => {
   beforeEach(() => {

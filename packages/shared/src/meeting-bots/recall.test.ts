@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import { createRecallProvider, listRecallBotsForCanary } from '#src/meeting-bots/recall.js';
-
 const ENV_BACKUP = { ...process.env };
 
 beforeEach(() => {
@@ -21,7 +21,9 @@ afterEach(() => {
 
 function makeFetcher(responder: (input: { url: string; init: RequestInit }) => Response) {
   const calls: { url: string; init: RequestInit }[] = [];
-  const fetcher: typeof fetch = (input, init) => {
+  const fetcher: (
+    ...args: Parameters<typeof globalThis.fetch>
+  ) => ReturnType<typeof globalThis.fetch> = (input, init) => {
     const url =
       typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     calls.push({ url, init: init ?? {} });

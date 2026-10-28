@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -8,22 +9,42 @@ const fakes = vi.hoisted(() => ({
   cacheInputs: [] as unknown[],
 }));
 
-vi.mock('@timeline/shared/cache', () => ({
-  cacheKey: (parts: unknown[]) => {
-    fakes.cacheInputs.push(parts);
-    return parts.join(':');
-  },
-  cachedJson: async (_key: string, _ttl: number, callback: () => Promise<unknown>) => callback(),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    objects: { getObjectSectionPage: fakes.getObjectSectionPage },
+await vi.mock(
+  import.meta.resolve('@timeline/shared/cache'),
+  () => ({
+    cacheKey: (parts: unknown[]) => {
+      fakes.cacheInputs.push(parts);
+      return parts.join(':');
+    },
+    cachedJson: async (_key: string, _ttl: number, callback: () => Promise<unknown>) => callback(),
   }),
-}));
+  () => import('@timeline/shared/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      objects: { getObjectSectionPage: fakes.getObjectSectionPage },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { GET } = await import('./route.js');
 

@@ -1,15 +1,22 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi, freshModuleUrl } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
+import type * as TestModule1 from '#src/analytics/posthog-node.js';
 const shutdown = vi.fn();
 const captureImmediate = vi.fn().mockResolvedValue(undefined);
 const ctor = vi.fn();
 
-vi.mock('posthog-node', () => ({
-  PostHog: vi.fn().mockImplementation(function PostHog(key: string, options: unknown) {
-    ctor(key, options);
-    return { captureImmediate, shutdown };
+await vi.mock(
+  import.meta.resolve('posthog-node'),
+  () => ({
+    PostHog: vi.fn().mockImplementation(function PostHog(key: string, options: unknown) {
+      ctor(key, options);
+      return { captureImmediate, shutdown };
+    }),
   }),
-}));
+  () => import('posthog-node'),
+);
 
 describe('PostHog Node analytics helper', () => {
   afterEach(() => {
@@ -18,7 +25,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('no-ops without a project key', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePostHogProductEvent(
       {
@@ -36,7 +45,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('fails closed without the pseudonymization key', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePostHogProductEvent(
       { key: 'ph-test', host: 'https://eu.i.posthog.com' },
@@ -50,7 +61,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('fails closed with a short pseudonymization key', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePostHogProductEvent(
       {
@@ -68,7 +81,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('captures runtime-validated product events with only pseudonymous actor keys', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
     const pseudonymizationKey = 'a'.repeat(32);
     const userKey = analytics.pseudonymizeAnalyticsId(pseudonymizationKey, 'user', 'user-1');
     const teamKey = analytics.pseudonymizeAnalyticsId(pseudonymizationKey, 'team', 'team-1');
@@ -112,7 +127,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('rejects extra properties before the provider receives anything', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await expect(
       analytics.capturePostHogProductEvent(
@@ -135,7 +152,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('passes only the approved application-owned fixed-stream input to the SDK', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePostHogPersonlessSurfaceRequest(
       { key: 'ph-test', host: 'https://eu.i.posthog.com' },
@@ -169,7 +188,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('fails closed for unknown surface values', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await expect(
       analytics.capturePostHogPersonlessSurfaceRequest(
@@ -182,7 +203,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('fails closed for an unreviewed PostHog ingestion host', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
 
     await analytics.capturePostHogPersonlessSurfaceRequest(
       { key: 'ph-test', host: 'https://us.i.posthog.com' },
@@ -194,7 +217,9 @@ describe('PostHog Node analytics helper', () => {
   });
 
   it('creates a separate cached client when host or key changes', async () => {
-    const analytics = await import('#src/analytics/posthog-node.js');
+    const analytics = await (import(
+      freshModuleUrl(import.meta.resolve('#src/analytics/posthog-node.js'))
+    ) as Promise<typeof TestModule1>);
     const actor = { kind: 'team' as const, teamId: 'team-1' };
 
     await analytics.capturePostHogProductEvent(

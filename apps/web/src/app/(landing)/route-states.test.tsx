@@ -1,16 +1,21 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
-import LandingError from '@/app/(landing)/error';
-import LandingLoading from '@/app/(landing)/loading';
+const { cleanup, render, screen, within } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { default: LandingError } = await import('@/app/(landing)/error');
+const { default: LandingLoading } = await import('@/app/(landing)/loading');
 
 afterEach(() => {
   cleanup();

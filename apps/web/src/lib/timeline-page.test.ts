@@ -2,13 +2,14 @@ import {
   buildTimelineMomentPresentationCacheFingerprint,
   buildTimelineMomentPresentationCacheKey,
 } from '@timeline/shared/timeline-moments/presentation';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 
 import { buildTimelineMoments, type TimelineMoment } from '@/lib/timeline-moments';
 import { applyCachedTimelineMomentPresentations, collectTimelinePage } from '@/lib/timeline-page';
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = '22222222-2222-2222-2222-222222222222';
 

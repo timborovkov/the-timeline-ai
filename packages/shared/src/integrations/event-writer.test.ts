@@ -1,7 +1,26 @@
 import { Buffer } from 'node:buffer';
 
 import { PGlite } from '@electric-sql/pglite';
-import {
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueTranscribeJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+    enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const {
   artifactClusterAnchors,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -18,35 +37,18 @@ import {
   reconciliationRuns,
   slackConversationBindings,
   slackWorkspaces,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { insertRestrictedFreeBillingAccount } from '#src/billing/capacity.js';
-import {
+} = await import('@timeline/db');
+const { insertRestrictedFreeBillingAccount } = await import('#src/billing/capacity.js');
+const {
   flushDeferredAcceptedSourceEnrichment,
   flushDeferredAudioTranscription,
   writeIntegrationEvents,
-} from '#src/integrations/event-writer.js';
-import {
-  enqueueEmbedJob,
-  enqueueExtractJob,
-  enqueueObjectSummaryJob,
-  enqueueTranscribeJob,
-} from '#src/queue/queues.js';
-import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueTranscribeJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-  enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
-}));
+} = await import('#src/integrations/event-writer.js');
+const { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob, enqueueTranscribeJob } =
+  await import('#src/queue/queues.js');
+const { AUTHORITY_POLICY_VERSION } = await import('#src/reconciliation/authority.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

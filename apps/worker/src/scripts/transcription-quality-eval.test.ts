@@ -1,15 +1,12 @@
-/**
- * The opt-in CLI must make model/corpus choices explicit, write one immutable
- * aggregate artifact, and expose a strict promotion exit code without printing
- * transcript-bearing details. All dependencies are fakes; no file or provider is touched.
- */
 import {
   TIMELINE_AI_PRIVACY_POLICY_VERSION,
   TIMELINE_MODELS,
   buildOpenRouterPrivacyAttestationPayload,
   buildOpenRouterPrivacyAttestationToken,
 } from '@timeline/shared/llm';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   DEFAULT_TRANSCRIPTION_QUALITY_BASELINE_MODEL,
@@ -23,6 +20,11 @@ import {
   type TranscriptionQualityEvalReport,
 } from '#src/transcription-eval/evaluate.js';
 import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
+/**
+ * The opt-in CLI must make model/corpus choices explicit, write one immutable
+ * aggregate artifact, and expose a strict promotion exit code without printing
+ * transcript-bearing details. All dependencies are fakes; no file or provider is touched.
+ */
 
 const TEST_API_KEY = 'sk-or-v1-synthetic-cli-eval-key';
 const TEST_GUARDRAIL_ID = 'synthetic-cli-eval-guardrail';

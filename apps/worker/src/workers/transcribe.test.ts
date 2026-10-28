@@ -2,10 +2,12 @@ import { PGlite } from '@electric-sql/pglite';
 import { conversationReviews, rawEvents, reconciliationEvidence, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
 import { handleUpdate, type TelegramApi } from '@timeline/shared/telegram';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
 import { UnrecoverableError } from 'bullmq';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
@@ -15,7 +17,6 @@ import {
   transcribeWorkerInternals,
   type TranscribeWorkerIO,
 } from '#src/workers/transcribe.js';
-
 /**
  * Transcribe worker tests protect the media-to-agent handoff: audio bytes become
  * durable transcript text, then extraction, embedding, and approval suggestion

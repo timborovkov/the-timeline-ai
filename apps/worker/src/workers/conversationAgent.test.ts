@@ -1,14 +1,16 @@
-// The direct-conversation worker must persist paid answers before delivery,
-// retry provider delivery from cache, and abort long-running agent work.
 import { PGlite } from '@electric-sql/pglite';
 import { chatMessages, chatSurfaceTurns, type Db } from '@timeline/db';
 import { conversationSurfaces, withTeam, type agent } from '@timeline/shared';
 import { applyDbMigrations } from '@timeline/shared/test/pglite';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { processConversationAgentJob } from '#src/workers/conversationAgent.js';
+// The direct-conversation worker must persist paid answers before delivery,
+// retry provider delivery from cache, and abort long-running agent work.
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

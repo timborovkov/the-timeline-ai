@@ -1,6 +1,6 @@
-// @vitest-environment happy-dom
-
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import {
   clearPublicAnalyticsConsent,
@@ -12,6 +12,7 @@ import {
   subscribePublicAnalyticsConsent,
   writePublicAnalyticsConsent,
 } from '@/lib/public-analytics-consent';
+// Test environment: happy-dom
 
 afterEach(() => {
   clearPublicAnalyticsConsent();

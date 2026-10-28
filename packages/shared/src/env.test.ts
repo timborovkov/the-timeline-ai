@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { getEnv, isAllowedDocumentExtractProcessEnvKey, resetEnvForTests } from '#src/env.js';
 import { buildOpenRouterPrivacyAttestationToken } from '#src/llm/privacy-attestation.js';
-
 const ENV_BACKUP = { ...process.env };
 const TEST_OPENROUTER_API_KEY = 'sk-or-test';
 const TEST_OPENROUTER_GUARDRAIL_ID = 'guardrail-test-production';
@@ -688,9 +688,11 @@ describe('getEnv', () => {
     expect(env.DAYTONA_SNAPSHOT).toBeUndefined();
   });
 
-  it('accepts non-secret runtime variables injected by Railway Railpack', () => {
+  it('accepts non-secret runtime variables injected by Bun and Railway', () => {
     setExtractProductionEnv({
       CI: 'true',
+      BUN_INSTALL_BIN: '/usr/local/bin',
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '/tmp/bun-cache',
       MISE_DATA_DIR: '/mise/data',
       MISE_SHIMS_DIR: '/mise/shims',
       MISE_CACHE_DIR: '/mise/cache',
@@ -744,6 +746,8 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('MISE_DATA_DIR')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('__MISE_SHIM')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('CI')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('BUN_INSTALL_BIN')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('BUN_RUNTIME_TRANSPILER_CACHE_PATH')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('PATH')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('BILLING_CHARGES_ENABLED')).toBe(true);
   });
@@ -754,5 +758,6 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('MCP_PREREGISTERED_X_CLIENT_SECRET')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('AUTH_SECRET')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_FUTURE_SECRET')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('BUN_FUTURE_SECRET')).toBe(false);
   });
 });

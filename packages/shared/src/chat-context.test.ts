@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   CHAT_CONTEXT_TRAIL_MAX,
@@ -11,7 +12,6 @@ import {
   parseChatContextTrail,
   pinnedObjectIdFromContext,
 } from '#src/chat-context.js';
-
 const objectA = {
   kind: 'object' as const,
   href: '/app/objects/44444444-4444-4444-8444-444444444444',

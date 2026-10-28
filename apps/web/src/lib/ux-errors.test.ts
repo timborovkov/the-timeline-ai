@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { chatErrorMessage, connectionErrorMessage, searchErrorMessage } from '@/lib/ux-errors';
-
 describe('UX error messages', () => {
   it('maps search configuration failures to human recovery copy', () => {
     expect(searchErrorMessage('search_unconfigured')).toContain('Search is not configured yet');

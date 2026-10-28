@@ -1,28 +1,29 @@
-import { createServer, type RequestListener, type Server } from 'node:http';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import type { ExternalHttpError } from '#src/http/external-fetch.js';
-import type * as Undici from 'undici';
-
-import {
-  createPinnedAddressLookup,
-  externalFetch,
-  resolveExternalAddresses,
-} from '#src/http/external-fetch.js';
-
+import type { RequestListener, Server } from 'node:http';
+import type * as Undici from 'undici/index.js';
 const capturedAgentOptions = vi.hoisted(() => [] as unknown[]);
 
-vi.mock('undici', async (importOriginal) => {
-  const actual = await importOriginal<typeof Undici>();
-  class Agent extends actual.Agent {
-    constructor(options?: ConstructorParameters<typeof actual.Agent>[0]) {
-      capturedAgentOptions.push(options);
-      super(options);
+await vi.mock(
+  import.meta.resolve('undici/index.js'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof Undici>();
+    class Agent extends actual.Agent {
+      constructor(options?: ConstructorParameters<typeof actual.Agent>[0]) {
+        capturedAgentOptions.push(options);
+        super(options);
+      }
     }
-  }
-  return { ...actual, Agent };
-});
+    return { ...actual, Agent };
+  },
+  () => import('undici/index.js'),
+);
+
+const { createServer } = await import('node:http');
+const { createPinnedAddressLookup, externalFetch, resolveExternalAddresses } =
+  await import('#src/http/external-fetch.js');
 
 function lastAgentConnect(): { autoSelectFamily?: unknown; lookup?: unknown } | undefined {
   const last = capturedAgentOptions.at(-1);
@@ -204,7 +205,7 @@ describe('external HTTP boundary', () => {
         {},
         { allowPrivateNetworkInDevelopment: true, timeoutMs: 25 },
       ),
-    ).rejects.toEqual(expect.objectContaining<Partial<ExternalHttpError>>({ code: 'timeout' }));
+    ).rejects.toEqual(expect.objectContaining({ code: 'timeout' }));
   });
 
   it('does not retry unsafe methods', async () => {

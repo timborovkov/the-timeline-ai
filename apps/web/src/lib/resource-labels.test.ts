@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   groupResourcesByKind,
@@ -9,7 +10,6 @@ import {
   type ProviderResourceLike,
   type ResourceShareLike,
 } from '@/lib/resource-labels';
-
 describe('resource labels', () => {
   it('maps provider ids to human names', () => {
     expect(providerLabel('google_drive')).toBe('Google Drive');

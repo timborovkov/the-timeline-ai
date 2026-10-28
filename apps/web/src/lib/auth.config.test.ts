@@ -1,11 +1,12 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 import { NextRequest } from 'next/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Session } from 'next-auth';
 
 import { authorizeProductRequest, hasCurrentLegalSession } from '@/lib/auth.config';
 import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
 afterEach(() => {

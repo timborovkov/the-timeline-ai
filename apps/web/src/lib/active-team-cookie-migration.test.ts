@@ -1,19 +1,31 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as ActiveTeamModule from '@/lib/active-team';
+import type { NextResponse as NextResponseType } from 'next/server';
 import type { NextAuthRequest } from 'next-auth';
+type NextResponse = NextResponseType;
 
 const fakes = vi.hoisted(() => ({ verifyMembership: vi.fn() }));
 
-vi.mock('@/lib/db', () => ({ db: { select: vi.fn() } }));
-vi.mock('@/lib/active-team', async (importOriginal) => {
-  const actual = await importOriginal<typeof ActiveTeamModule>();
-  return { ...actual, verifyMembership: fakes.verifyMembership };
-});
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { select: vi.fn() } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ActiveTeamModule>();
+    return { ...actual, verifyMembership: fakes.verifyMembership };
+  },
+  () => import('@/lib/active-team'),
+);
 
-import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
-import { migrateLegacyActiveTeamCookie } from '@/lib/active-team-cookie-migration';
+const { NextRequest, NextResponse } = await import('next/server');
+const { ACTIVE_TEAM_COOKIE } = await import('@/lib/active-team');
+const { migrateLegacyActiveTeamCookie } = await import('@/lib/active-team-cookie-migration');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';

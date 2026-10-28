@@ -1,34 +1,69 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { visibleConnectionAttentionStats } from '@/app/app/team/integrations/connection-attention';
-import { IntegrationsPageView } from '@/app/app/team/integrations/integrations-page-content';
-
-vi.mock('next/navigation', () => ({
-  redirect: vi.fn(),
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('next/image', () => ({
-  default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
-    <img {...props} alt={props.alt ?? ''} />
-  ),
-}));
-vi.mock('@/lib/auth', () => ({ auth: vi.fn() }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: vi.fn() }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/app/actions/visibility', () => ({
-  setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: vi.fn(),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('next/image'),
+  () => ({
+    default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => (
+      <img {...props} alt={props.alt ?? ''} />
+    ),
+  }),
+  () => import('next/image'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: vi.fn() }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: vi.fn() }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/visibility'),
+  () => ({
+    setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
+  }),
+  () => import('@/app/actions/visibility'),
+);
 const notify = vi.hoisted(() => ({
   notifyError: vi.fn(),
   notifySuccess: vi.fn(),
 }));
-vi.mock('@/lib/notify', () => ({
-  notifyError: notify.notifyError,
-  notifySuccess: notify.notifySuccess,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyError: notify.notifyError,
+    notifySuccess: notify.notifySuccess,
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { renderToString } = await import('react-dom/server');
+const { RedirectActionToast } = await import('@/components/redirect-action-toast');
+const { visibleConnectionAttentionStats } =
+  await import('@/app/app/team/integrations/connection-attention');
+const { IntegrationsPageView } =
+  await import('@/app/app/team/integrations/integrations-page-content');
 
 afterEach(() => {
   notify.notifyError.mockClear();
@@ -288,5 +323,14 @@ describe('IntegrationsPageView', () => {
     );
     expect(screen.queryByText('oauth_denied')).toBeNull();
     expect(screen.queryByText('The provider denied access. Try connecting again.')).toBeNull();
+  });
+
+  it('announces redirect errors after client mount, never during server rendering', () => {
+    const toast = <RedirectActionToast id="ssr-contract" error="OAuth fixture denied" />;
+    expect(renderToString(toast)).toBe('');
+    expect(notify.notifyError).not.toHaveBeenCalled();
+    render(toast);
+    expect(notify.notifyError).toHaveBeenCalledTimes(1);
+    expect(notify.notifyError).toHaveBeenCalledWith('ssr-contract', 'OAuth fixture denied');
   });
 });

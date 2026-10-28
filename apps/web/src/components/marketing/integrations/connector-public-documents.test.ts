@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { CAPTURE_SURFACES } from '@/components/marketing/integrations/capture-surface-content';
 import { CONNECTORS } from '@/components/marketing/integrations/connector-content';
@@ -8,7 +9,6 @@ import {
   findConnectorPublicDocument,
 } from '@/components/marketing/integrations/connector-public-documents';
 import { PUBLIC_DOCUMENT_REGISTRY } from '@/lib/public-site';
-
 describe('connector public documents', () => {
   it('contributes the directory and six native connector routes to public discovery', () => {
     expect(CONNECTOR_PUBLIC_DOCUMENTS.documents.map((document) => document.canonicalPath)).toEqual([

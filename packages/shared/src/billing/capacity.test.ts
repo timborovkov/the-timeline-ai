@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
 import { billingFreeGrants, type Db } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   applyOwnedTeamFreeGrant,

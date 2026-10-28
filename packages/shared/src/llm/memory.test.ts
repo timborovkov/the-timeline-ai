@@ -1,5 +1,6 @@
+import { expect } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
-import { describe, expect, it } from 'vitest';
+import { describe, it } from 'bun:test';
 
 import type { LanguageModel, ModelMessage } from 'ai';
 
@@ -12,7 +13,6 @@ import {
   TIMELINE_MODELS,
   truncateTextToTokenBudget,
 } from '#src/llm/models.js';
-
 function promptText(value: unknown): string {
   if (typeof value === 'string') return value;
   if (!value || typeof value !== 'object') return JSON.stringify(value);

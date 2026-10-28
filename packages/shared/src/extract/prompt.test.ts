@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { buildExtractionPrompt, EXTRACTION_SYSTEM_PROMPT } from '#src/extract/prompt.js';
-
 describe('buildExtractionPrompt', () => {
   it('includes the current event under a labelled header', () => {
     const out = buildExtractionPrompt({

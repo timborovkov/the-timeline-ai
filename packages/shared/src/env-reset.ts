@@ -82,7 +82,7 @@ export async function flushRedisAll(redisUrl: string): Promise<void> {
 interface QdrantResetOptions {
   url: string;
   apiKey?: string;
-  fetcher?: typeof fetch;
+  fetcher?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }
 
 interface QdrantCollectionsResponse {

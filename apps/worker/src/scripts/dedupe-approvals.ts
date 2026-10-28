@@ -7,7 +7,7 @@
  * deterministic and can undercount apply-mode results.
  *
  * Usage:
- *   pnpm --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
+ *   bun run --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
  *
  * Defaults to dry-run. Pass --apply to write superseded approval state.
  * Requires DATABASE_URL.

@@ -17,6 +17,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./chunk": {
+      "types": "./src/chunk.ts",
+      "development": "./src/chunk.ts",
+      "import": "./dist/chunk.js",
+      "default": "./dist/chunk.js"
+    },
     "./integrations": {
       "types": "./src/integrations/index.ts",
       "development": "./src/integrations/index.ts",
@@ -530,22 +536,22 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-email-templates.mjs",
-    "dev": "tsc -p tsconfig.json --watch",
-    "lint": "eslint src",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "NODE_OPTIONS=--conditions=development node scripts/run-tests.mjs"
+    "build": "bun x --bun --no-install tsc -p tsconfig.json && bun scripts/copy-email-templates.mjs",
+    "dev": "bun x --bun --no-install tsc -p tsconfig.json --watch",
+    "lint": "bun x --bun --no-install eslint src",
+    "typecheck": "bun x --bun --no-install tsc -p tsconfig.json --noEmit",
+    "test": "bun ../../scripts/testing/run.ts packages/shared"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "3.0.71",
-    "@aws-sdk/client-s3": "^3.1152.0",
-    "@aws-sdk/s3-request-presigner": "^3.1152.0",
+    "@ai-sdk/openai-compatible": "3.0.75",
+    "@aws-sdk/client-s3": "^3.1155.0",
+    "@aws-sdk/s3-request-presigner": "^3.1155.0",
     "@js-temporal/polyfill": "^0.5.1",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/server": "2.3.1",
     "@timeline/db": "workspace:*",
     "ai": "^7.0.143",
     "bcryptjs": "^3.0.3",
-    "bullmq": "6.3.17",
+    "bullmq": "6.4.0",
     "drizzle-orm": "^0.45.4",
     "gpt-tokenizer": "^4.1.0",
     "ioredis": "6.0.0",
@@ -555,15 +561,16 @@
     "libphonenumber-js": "^1.13.15",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
-    "posthog-node": "^5.56.2",
+    "posthog-node": "^5.56.4",
     "rrule": "^2.8.1",
-    "undici": "8.12.2",
+    "undici": "8.12.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.10",
+    "@electric-sql/pglite": "^0.5.11",
     "@types/node": "^24.19.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "@timeline/test-support": "workspace:*",
+    "@types/bun": "1.4.4"
   }
 }

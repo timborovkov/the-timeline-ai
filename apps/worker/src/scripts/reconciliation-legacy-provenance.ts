@@ -2,8 +2,8 @@
  * Legacy reconciliation provenance cutover audit.
  *
  * Usage:
- *   pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid>
- *   TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid>
+ *   bun run --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid>
+ *   TIMELINE_ENV_FILE=/path/to/.env bun run --filter @timeline/worker reconciliation-legacy-provenance -- --team=<uuid>
  *
  * Optional:
  *   --fail-on-legacy   Exit 1 when any legacy object/board provenance rows remain.

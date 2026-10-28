@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   CONNECTOR_DIRECTORY_SUMMARY,
@@ -12,7 +13,6 @@ import {
   PUBLIC_DEMO_DISCLOSURE,
   PUBLIC_DEMO_STORY,
 } from '@/components/marketing/public-demo-story';
-
 describe('connector content manifest', () => {
   it('exports exactly the six implemented native connector routes for public indexing', () => {
     expect(CONNECTORS.map((connector) => connector.slug)).toEqual(CONNECTOR_SLUGS);

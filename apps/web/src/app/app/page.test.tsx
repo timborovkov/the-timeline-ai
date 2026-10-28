@@ -1,5 +1,6 @@
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ReactNode } from 'react';
 
@@ -49,99 +50,185 @@ const fakes = vi.hoisted(() => ({
   } | null,
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/db', () => ({
-  users: {},
-  teams: { id: 'id', slug: 'slug', inboundEmail: 'inboundEmail' },
-}));
-vi.mock('@timeline/shared/messaging', () => ({ latestDailyDigest: fakes.latestDailyDigest }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: vi.fn().mockImplementation(() => Promise.resolve(fakes.role)),
-    billing: { getDashboard: fakes.getDashboard },
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
-    integrations: { listConnectionAttention: fakes.listConnectionAttention },
-    jobRecovery: { listRecoverableJobs: fakes.listRecoverableJobs },
-    onboarding: { getChecklistState: vi.fn() },
-    pins: { isPinnedMany: fakes.isPinnedMany, list: fakes.listPins },
-    timeline: {
-      listArtifactClusters: fakes.listArtifactClusters,
-      listEventsPage: fakes.listEventsPage,
-      listImpactItems: fakes.listImpactItems,
-      listMembers: fakes.listMembers,
-      resolveVisibilityDefault: fakes.resolveVisibilityDefault,
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({
+    users: {},
+    teams: { id: 'id', slug: 'slug', inboundEmail: 'inboundEmail' },
+  }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/messaging'),
+  () => ({ latestDailyDigest: fakes.latestDailyDigest }),
+  () => import('@timeline/shared/messaging'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: vi.fn().mockImplementation(() => Promise.resolve(fakes.role)),
+      billing: { getDashboard: fakes.getDashboard },
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      integrations: { listConnectionAttention: fakes.listConnectionAttention },
+      jobRecovery: { listRecoverableJobs: fakes.listRecoverableJobs },
+      onboarding: { getChecklistState: vi.fn() },
+      pins: { isPinnedMany: fakes.isPinnedMany, list: fakes.listPins },
+      timeline: {
+        listArtifactClusters: fakes.listArtifactClusters,
+        listEventsPage: fakes.listEventsPage,
+        listImpactItems: fakes.listImpactItems,
+        listMembers: fakes.listMembers,
+        resolveVisibilityDefault: fakes.resolveVisibilityDefault,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/capture-form'),
+  () => ({
+    CaptureForm: ({ initialVisibility }: { initialVisibility?: 'private' | 'team' }) => {
+      fakes.captureVisibility = initialVisibility ?? null;
+      return <div data-testid="capture-form" />;
     },
   }),
-}));
-vi.mock('@/components/capture-form', () => ({
-  CaptureForm: ({ initialVisibility }: { initialVisibility?: 'private' | 'team' }) => {
-    fakes.captureVisibility = initialVisibility ?? null;
-    return <div data-testid="capture-form" />;
-  },
-}));
-vi.mock('@/components/home/capture-dialog', () => ({
-  CaptureDialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-}));
-vi.mock('@/components/home/daily-digest-block', () => ({ DailyDigestBlock: () => null }));
-vi.mock('@/components/home/home-ask-composer', () => ({
-  HomeAskComposer: ({ actions }: { actions?: ReactNode }) => <div>{actions}</div>,
-}));
-vi.mock('@/components/onboarding-checklist', () => ({
-  OnboardingChecklist: ({ initialData }: { initialData?: { dismissed: boolean } | null }) => {
-    fakes.onboardingInitialData = initialData ?? null;
-    return <div data-testid="home-onboarding">Team setup checklist</div>;
-  },
-}));
-vi.mock('@/components/home/home-team-email', () => ({
-  HomeTeamEmail: ({ inboundEmail }: { inboundEmail: string | null }) => {
-    fakes.homeTeamEmail = inboundEmail;
-    return <div data-testid="home-team-email">Team email</div>;
-  },
-}));
-vi.mock('@/components/pins/pinned-workspace-preview', () => ({
-  PinnedWorkspacePreview: () => <div data-testid="home-pins">Pinned work</div>,
-}));
-vi.mock('@/components/timeline-feed', () => ({
-  TimelineFeed: (props: { compact?: boolean; live?: boolean; maxMoments?: number }) => {
-    fakes.timelineFeedProps = props;
-    return <div data-testid="timeline-feed" />;
-  },
-}));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(fakes.teamRow ? [fakes.teamRow] : []),
+  () => import('@/components/capture-form'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/home/capture-dialog'),
+  () => ({
+    CaptureDialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  }),
+  () => import('@/components/home/capture-dialog'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/home/daily-digest-block'),
+  () => ({ DailyDigestBlock: () => null }),
+  () => import('@/components/home/daily-digest-block'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/home/home-ask-composer'),
+  () => ({
+    HomeAskComposer: ({ actions }: { actions?: ReactNode }) => <div>{actions}</div>,
+  }),
+  () => import('@/components/home/home-ask-composer'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/onboarding-checklist'),
+  () => ({
+    OnboardingChecklist: ({ initialData }: { initialData?: { dismissed: boolean } | null }) => {
+      fakes.onboardingInitialData = initialData ?? null;
+      return <div data-testid="home-onboarding">Team setup checklist</div>;
+    },
+  }),
+  () => import('@/components/onboarding-checklist'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/home/home-team-email'),
+  () => ({
+    HomeTeamEmail: ({ inboundEmail }: { inboundEmail: string | null }) => {
+      fakes.homeTeamEmail = inboundEmail;
+      return <div data-testid="home-team-email">Team email</div>;
+    },
+  }),
+  () => import('@/components/home/home-team-email'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/pins/pinned-workspace-preview'),
+  () => ({
+    PinnedWorkspacePreview: () => <div data-testid="home-pins">Pinned work</div>,
+  }),
+  () => import('@/components/pins/pinned-workspace-preview'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/timeline-feed'),
+  () => ({
+    TimelineFeed: (props: { compact?: boolean; live?: boolean; maxMoments?: number }) => {
+      fakes.timelineFeedProps = props;
+      return <div data-testid="timeline-feed" />;
+    },
+  }),
+  () => import('@/components/timeline-feed'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: () => Promise.resolve(fakes.teamRow ? [fakes.teamRow] : []),
+          }),
         }),
       }),
-    }),
-  },
-}));
-vi.mock('@/lib/hub-status', () => ({
-  displayInboundEmail: (
-    team: { slug: string; inboundEmail: string | null } | null,
-    _postmarkInboundAddress: string | undefined,
-  ) =>
-    team?.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
-      ? team.inboundEmail
-      : null,
-  getWorkAttentionSummary: fakes.getWorkAttentionSummary,
-  getHomeOpenObjectCounts: fakes.getHomeOpenObjectCounts,
-  homeOpenObjectTotal: (counts: Record<string, number>) =>
-    Object.entries(counts).reduce((sum, [type, count]) => (type === 'task' ? sum : sum + count), 0),
-  homeWorkNeedingAttentionCount: (summary: { overdueTasks: number }) => summary.overdueTasks,
-}));
-vi.mock('@/lib/onboarding-checklist', () => ({
-  loadOnboardingChecklistView: fakes.loadOnboardingChecklistView,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('@/lib/timeline-captured-files', () => ({
-  listTimelineCapturedFilesByEventId: fakes.listTimelineCapturedFilesByEventId,
-}));
-vi.mock('@/lib/timeline-moments', () => ({ buildTimelineMoments: fakes.buildTimelineMoments }));
+    },
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/hub-status'),
+  () => ({
+    displayInboundEmail: (
+      team: { slug: string; inboundEmail: string | null } | null,
+      _postmarkInboundAddress: string | undefined,
+    ) =>
+      team?.inboundEmail && !team.inboundEmail.endsWith('@inbound.invalid')
+        ? team.inboundEmail
+        : null,
+    getWorkAttentionSummary: fakes.getWorkAttentionSummary,
+    getHomeOpenObjectCounts: fakes.getHomeOpenObjectCounts,
+    homeOpenObjectTotal: (counts: Record<string, number>) =>
+      Object.entries(counts).reduce(
+        (sum, [type, count]) => (type === 'task' ? sum : sum + count),
+        0,
+      ),
+    homeWorkNeedingAttentionCount: (summary: { overdueTasks: number }) => summary.overdueTasks,
+  }),
+  () => import('@/lib/hub-status'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/onboarding-checklist'),
+  () => ({
+    loadOnboardingChecklistView: fakes.loadOnboardingChecklistView,
+  }),
+  () => import('@/lib/onboarding-checklist'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/timeline-captured-files'),
+  () => ({
+    listTimelineCapturedFilesByEventId: fakes.listTimelineCapturedFilesByEventId,
+  }),
+  () => import('@/lib/timeline-captured-files'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/timeline-moments'),
+  () => ({ buildTimelineMoments: fakes.buildTimelineMoments }),
+  () => import('@/lib/timeline-moments'),
+);
 
 const { default: HomeDashboardPage } = await import('@/app/app/page');
 

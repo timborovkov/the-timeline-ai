@@ -7,9 +7,9 @@
  *
  * Usage:
  *   set -a; . ./.env; set +a
- *   pnpm --filter @timeline/worker create-document-extract-snapshot
- *   pnpm --filter @timeline/worker create-document-extract-snapshot -- --force
- *   pnpm --filter @timeline/worker create-document-extract-snapshot -- --print-name-only
+ *   bun run --filter @timeline/worker create-document-extract-snapshot
+ *   bun run --filter @timeline/worker create-document-extract-snapshot -- --force
+ *   bun run --filter @timeline/worker create-document-extract-snapshot -- --print-name-only
  *
  * Env:
  *   DAYTONA_API_KEY (required unless --print-name-only)
@@ -30,7 +30,7 @@ function hasFlag(args: string[], flag: string): boolean {
 }
 
 async function main(): Promise<void> {
-  // pnpm sometimes forwards a bare `--` before script flags.
+  // bun run sometimes forwards a bare `--` before script flags.
   const args = process.argv.slice(2).filter((arg) => arg !== '--');
   const force = hasFlag(args, '--force');
   const printNameOnly = hasFlag(args, '--print-name-only');

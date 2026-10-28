@@ -1,15 +1,20 @@
+import { expect, vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
 
 import type { ReactNode } from 'react';
 
-import { SidebarBillingUsage } from '@/components/sidebar-billing-usage';
+await vi.mock(
+  import.meta.resolve('@/components/ui/tooltip'),
+  () => ({
+    Tooltip: ({ children }: { children: ReactNode }) => children,
+    TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+    TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+  }),
+  () => import('@/components/ui/tooltip'),
+);
 
-vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
-}));
+const { SidebarBillingUsage } = await import('@/components/sidebar-billing-usage');
 
 describe('SidebarBillingUsage', () => {
   const summary = {

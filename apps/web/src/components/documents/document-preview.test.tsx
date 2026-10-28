@@ -1,32 +1,47 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   getDocumentPreviewUrlAction: vi.fn(),
   notifyError: vi.fn(),
 }));
 
-vi.mock('next/image', () => ({
-  default: ({
-    fill: _fill,
-    unoptimized: _unoptimized,
-    ...props
-  }: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean; unoptimized?: boolean }) => (
-    <img {...props} alt={props.alt ?? ''} />
-  ),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => options.run(),
-  notifyError: (id: string, message: string) => {
-    fakes.notifyError(id, message);
-  },
-}));
-vi.mock('@/app/actions/documents', () => ({
-  getDocumentPreviewUrlAction: fakes.getDocumentPreviewUrlAction,
-}));
+await vi.mock(
+  import.meta.resolve('next/image'),
+  () => ({
+    default: ({
+      fill: _fill,
+      unoptimized: _unoptimized,
+      ...props
+    }: React.ImgHTMLAttributes<HTMLImageElement> & { fill?: boolean; unoptimized?: boolean }) => (
+      <img {...props} alt={props.alt ?? ''} />
+    ),
+  }),
+  () => import('next/image'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => options.run(),
+    notifyError: (id: string, message: string) => {
+      fakes.notifyError(id, message);
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/documents'),
+  () => ({
+    getDocumentPreviewUrlAction: fakes.getDocumentPreviewUrlAction,
+  }),
+  () => import('@/app/actions/documents'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { DocumentPreview } = await import('./document-preview.js');
 

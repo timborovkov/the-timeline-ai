@@ -6,7 +6,7 @@
  * default; pass `--enqueue` to spend queue/LLM capacity.
  *
  * Usage:
- *   pnpm --filter @timeline/worker timeline-moment-presentations -- \
+ *   bun run --filter @timeline/worker timeline-moment-presentations -- \
  *     --team=<uuid> [--user=<uuid>] [--since=2026-06-01] [--until=2026-06-04]
  *     [--source=all|telegram|slack|integration|email|meeting|calendar|document|ingest_webhook|system]
  *     [--max-events=500] [--limit=100] [--enqueue]

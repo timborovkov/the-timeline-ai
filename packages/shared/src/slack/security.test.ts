@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import {
@@ -8,7 +9,6 @@ import {
   verifySlackOAuthState,
   verifySlackSignature,
 } from '#src/slack/security.js';
-
 beforeEach(() => {
   process.env.AUTH_SECRET = 'a'.repeat(32);
   process.env.DATABASE_URL = 'postgres://user:pass@localhost:5432/test';

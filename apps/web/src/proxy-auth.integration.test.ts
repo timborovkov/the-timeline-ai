@@ -1,19 +1,30 @@
-import { NextRequest, type NextFetchEvent } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
+import type { NextFetchEvent } from 'next/server';
 const mocks = vi.hoisted(() => ({
   migrateActiveTeamCookie: vi.fn().mockResolvedValue(undefined),
   scheduleSurfaceRequest: vi.fn(),
 }));
 
-vi.mock('@/lib/active-team-cookie-migration', () => ({
-  migrateLegacyActiveTeamCookie: mocks.migrateActiveTeamCookie,
-}));
-vi.mock('@/lib/surface-request-analytics', () => ({
-  schedulePersonlessSurfaceRequest: mocks.scheduleSurfaceRequest,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/active-team-cookie-migration'),
+  () => ({
+    migrateLegacyActiveTeamCookie: mocks.migrateActiveTeamCookie,
+  }),
+  () => import('@/lib/active-team-cookie-migration'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/surface-request-analytics'),
+  () => ({
+    schedulePersonlessSurfaceRequest: mocks.scheduleSurfaceRequest,
+  }),
+  () => import('@/lib/surface-request-analytics'),
+);
 
-import { proxy } from '@/proxy';
+const { NextRequest } = await import('next/server');
+const { proxy } = await import('@/proxy');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
@@ -24,7 +35,9 @@ function context(): NextFetchEvent {
   } as unknown as NextFetchEvent;
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('proxy with installed Auth.js', () => {
   it('redirects an unauthenticated app request before active-team migration', async () => {

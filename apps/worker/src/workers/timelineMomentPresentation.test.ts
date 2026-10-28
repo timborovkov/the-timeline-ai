@@ -1,27 +1,48 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   generateAndStoreTimelineMomentPresentation: vi.fn(),
   withTeam: vi.fn(),
 }));
 
-vi.mock('@timeline/shared', () => ({
-  queue: {
-    QUEUE_NAMES: { timelineMomentPresentation: 'timeline-moment-presentation' },
-    getRedisConnection: vi.fn(),
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  () => ({
+    queue: {
+      QUEUE_NAMES: { timelineMomentPresentation: 'timeline-moment-presentation' },
+      getRedisConnection: vi.fn(),
+    },
+  }),
+  () => import('@timeline/shared'),
+);
 
-vi.mock('@timeline/shared/timeline-moments/generation', () => ({
-  generateAndStoreTimelineMomentPresentation: fakes.generateAndStoreTimelineMomentPresentation,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/timeline-moments/generation'),
+  () => ({
+    generateAndStoreTimelineMomentPresentation: fakes.generateAndStoreTimelineMomentPresentation,
+  }),
+  () => import('@timeline/shared/timeline-moments/generation'),
+);
 
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: fakes.withTeam,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: fakes.withTeam,
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
-vi.mock('bullmq', () => ({ Worker: vi.fn() }));
-vi.mock('#src/monitoring.js', () => ({ captureWorkerJobFailure: vi.fn() }));
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({ Worker: vi.fn() }),
+  () => import('bullmq'),
+);
+await vi.mock(
+  import.meta.resolve('#src/monitoring.js'),
+  () => ({ captureWorkerJobFailure: vi.fn() }),
+  () => import('#src/monitoring.js'),
+);
 
 const { processTimelineMomentPresentationJobForTests } =
   await import('#src/workers/timelineMomentPresentation.js');

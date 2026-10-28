@@ -1,6 +1,6 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -16,34 +16,65 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({
-  notFound: fakes.notFound,
-  redirect: fakes.redirect,
-  useRouter: () => ({ back: vi.fn(), refresh: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    meetings: {
-      getMeeting: fakes.getMeeting,
-      listChunks: fakes.listChunks,
-    },
-    pins: { isPinned: fakes.isPinned },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    notFound: fakes.notFound,
+    redirect: fakes.redirect,
+    useRouter: () => ({ back: vi.fn(), refresh: vi.fn() }),
   }),
-}));
-vi.mock('@/components/meeting-export-buttons', () => ({
-  MeetingExportButtons: ({ transcriptText }: { transcriptText: string }) => (
-    <output aria-label="transcript export">{transcriptText}</output>
-  ),
-}));
-vi.mock('@/components/meeting-forms', () => ({
-  CancelMeetingButton: ({ meetingId }: { meetingId: string }) => (
-    <button type="button">Cancel {meetingId}</button>
-  ),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      meetings: {
+        getMeeting: fakes.getMeeting,
+        listChunks: fakes.listChunks,
+      },
+      pins: { isPinned: fakes.isPinned },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/meeting-export-buttons'),
+  () => ({
+    MeetingExportButtons: ({ transcriptText }: { transcriptText: string }) => (
+      <output aria-label="transcript export">{transcriptText}</output>
+    ),
+  }),
+  () => import('@/components/meeting-export-buttons'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/meeting-forms'),
+  () => ({
+    CancelMeetingButton: ({ meetingId }: { meetingId: string }) => (
+      <button type="button">Cancel {meetingId}</button>
+    ),
+  }),
+  () => import('@/components/meeting-forms'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: MeetingDetailPage } = await import('./page.js');
 

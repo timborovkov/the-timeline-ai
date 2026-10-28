@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   markAllRead: vi.fn(),
@@ -10,20 +9,39 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
 }));
 
-vi.mock('@/app/actions/objects', () => ({
-  markAllNotificationsReadAction: fakes.markAllRead,
-  markNotificationReadAction: fakes.markRead,
-}));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
-    try {
-      return await run();
-    } catch {
-      return { error: 'failed' };
-    }
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    markAllNotificationsReadAction: fakes.markAllRead,
+    markNotificationReadAction: fakes.markRead,
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { MarkAllReadButton } = await import('./mark-all-read-button.js');
 const { NotificationRow } = await import('./notification-row.js');

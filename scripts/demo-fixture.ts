@@ -832,7 +832,7 @@ export function assertDemoVectorEnvironment(env: DemoEnvironment = process.env):
   assertDemoSeedEnvironment(env);
   if (!env.OPENROUTER_API_KEY) {
     throw new Error(
-      'OPENROUTER_API_KEY is required to create and verify genuine demo embeddings; configure a development key and rerun pnpm demo:seed',
+      'OPENROUTER_API_KEY is required to create and verify genuine demo embeddings; configure a development key and rerun bun run demo:seed',
     );
   }
   if (!env.QDRANT_URL) {

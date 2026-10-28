@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { CONNECTORS } from '@/components/marketing/integrations/connector-content';
 import {
@@ -6,7 +7,6 @@ import {
   directoryStructuredData,
   stringifyStructuredData,
 } from '@/components/marketing/integrations/connector-structured-data';
-
 describe('connector structured data', () => {
   it('derives each connector graph from the same content manifest', () => {
     const connector = CONNECTORS.find((item) => item.slug === 'sentry');

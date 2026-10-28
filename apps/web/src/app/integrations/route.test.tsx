@@ -1,9 +1,7 @@
-// @vitest-environment happy-dom
-
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { CONNECTOR_SLUGS } from '@/components/marketing/integrations/connector-content';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 function visibleText(html: string): string {
   return html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gu, '').replace(/<[^>]+>/gu, '');
@@ -11,7 +9,14 @@ function visibleText(html: string): string {
 
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { CONNECTOR_SLUGS } = await import('@/components/marketing/integrations/connector-content');
 
 const { default: IntegrationsPage, metadata } = await import('@/app/integrations/page');
 const connectorRoute = await import('@/app/integrations/[slug]/page');

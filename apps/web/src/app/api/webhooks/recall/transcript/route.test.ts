@@ -1,11 +1,6 @@
-import { createHmac } from 'node:crypto';
-
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as MeetingsModule from '@timeline/shared/meetings';
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 /**
  * Route-level tests for the Recall transcript webhook. Covers:
  *
@@ -35,44 +30,75 @@ const fakes = vi.hoisted(() => ({
   fakeReportHandledEvent: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn().mockResolvedValue({
-    enqueueExtractJob: fakes.fakeEnqueueExtract,
-    enqueueEmbedJob: fakes.fakeEnqueueEmbed,
-    enqueueMeetingChunkEmbedJob: fakes.fakeEnqueueMeetingChunk,
-    enqueueCalendarEventEmbedJob: fakes.fakeEnqueueCalendarEvent,
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: vi.fn().mockResolvedValue({
+      enqueueExtractJob: fakes.fakeEnqueueExtract,
+      enqueueEmbedJob: fakes.fakeEnqueueEmbed,
+      enqueueMeetingChunkEmbedJob: fakes.fakeEnqueueMeetingChunk,
+      enqueueCalendarEventEmbedJob: fakes.fakeEnqueueCalendarEvent,
+    }),
   }),
-}));
+  () => import('@/lib/queue'),
+);
 
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
 
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: (...args: unknown[]) => {
-    fakes.fakeWithTeam(...args);
-    return { meetings: { appendMeetingChunk: fakes.fakeAppendChunk } };
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: (...args: unknown[]) => {
+      fakes.fakeWithTeam(...args);
+      return { meetings: { appendMeetingChunk: fakes.fakeAppendChunk } };
+    },
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({
+    reportCaughtError: vi.fn(),
+    reportHandledEvent: fakes.fakeReportHandledEvent,
+  }),
+  () => import('@/lib/sentry-report'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/meetings'),
+  async () => {
+    const actual = await import('@timeline/shared/meetings');
+    return {
+      ...actual,
+      lookupMeetingByBotId: fakes.fakeLookup,
+    };
   },
-}));
+  () => import('@timeline/shared/meetings'),
+);
 
-vi.mock('@/lib/sentry-report', () => ({
-  reportCaughtError: vi.fn(),
-  reportHandledEvent: fakes.fakeReportHandledEvent,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return { ...actual, checkRateLimit: fakes.fakeRateLimit };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
 
-vi.mock('@timeline/shared/meetings', async () => {
-  const actual = await vi.importActual<typeof MeetingsModule>('@timeline/shared/meetings');
-  return {
-    ...actual,
-    lookupMeetingByBotId: fakes.fakeLookup,
-  };
-});
-
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return { ...actual, checkRateLimit: fakes.fakeRateLimit };
-});
+const { createHmac } = await import('node:crypto');
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 

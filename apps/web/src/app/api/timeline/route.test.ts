@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for `/api/timeline`. Shared timeline scope tests own
  * database visibility semantics; this route owns auth, active-team scoping,
@@ -31,40 +32,72 @@ const fakes = vi.hoisted(() => ({
   fakeDbSelect: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: { select: fakes.fakeDbSelect } }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }));
-vi.mock('@/lib/timeline-captured-files', () => ({
-  listTimelineCapturedFilesByEventId: fakes.fakeListTimelineCapturedFilesByEventId,
-}));
-vi.mock('@timeline/shared/cache', () => ({
-  cacheKey: fakes.fakeCacheKey,
-  cachedJson: fakes.fakeCachedJson,
-}));
-vi.mock('@timeline/shared/s3', () => ({
-  getAudioBucket: fakes.fakeGetAudioBucket,
-  getS3PresignClient: fakes.fakeGetS3PresignClient,
-  getSignedGetObjectUrl: fakes.fakeGetSignedGetObjectUrl,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    calendar: {
-      getCalendarSettings: fakes.fakeGetCalendarSettings,
-    },
-    pins: { isPinnedMany: fakes.fakeIsPinnedMany },
-    timeline: {
-      listEvents: fakes.fakeListEvents,
-      listEventsForMomentLookup: fakes.fakeListEventsForMomentLookup,
-      listEventsPage: fakes.fakeListEventsPage,
-      getEventsByIds: fakes.fakeGetEventsByIds,
-      listImpactItems: fakes.fakeListImpactItems,
-      listArtifactClusters: fakes.fakeListArtifactClusters,
-      listMomentPresentations: fakes.fakeListMomentPresentations,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { select: fakes.fakeDbSelect } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/timeline-captured-files'),
+  () => ({
+    listTimelineCapturedFilesByEventId: fakes.fakeListTimelineCapturedFilesByEventId,
   }),
-}));
+  () => import('@/lib/timeline-captured-files'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/cache'),
+  () => ({
+    cacheKey: fakes.fakeCacheKey,
+    cachedJson: fakes.fakeCachedJson,
+  }),
+  () => import('@timeline/shared/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/s3'),
+  () => ({
+    getAudioBucket: fakes.fakeGetAudioBucket,
+    getS3PresignClient: fakes.fakeGetS3PresignClient,
+    getSignedGetObjectUrl: fakes.fakeGetSignedGetObjectUrl,
+  }),
+  () => import('@timeline/shared/s3'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      calendar: {
+        getCalendarSettings: fakes.fakeGetCalendarSettings,
+      },
+      pins: { isPinnedMany: fakes.fakeIsPinnedMany },
+      timeline: {
+        listEvents: fakes.fakeListEvents,
+        listEventsForMomentLookup: fakes.fakeListEventsForMomentLookup,
+        listEventsPage: fakes.fakeListEventsPage,
+        getEventsByIds: fakes.fakeGetEventsByIds,
+        listImpactItems: fakes.fakeListImpactItems,
+        listArtifactClusters: fakes.fakeListArtifactClusters,
+        listMomentPresentations: fakes.fakeListMomentPresentations,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { GET } = await import('./route.js');
 

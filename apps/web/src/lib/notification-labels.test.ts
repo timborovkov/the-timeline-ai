@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { notificationKindLabel } from '@/lib/notification-labels';
-
 describe('notificationKindLabel', () => {
   it('maps notification enums to calm, human-readable labels', () => {
     expect(notificationKindLabel('agent_suggestion')).toBe('Suggestion ready');

@@ -1,37 +1,79 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import LegalAcceptPage from '@/app/legal/accept/page';
-import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getUserLegalAcceptance: vi.fn(),
   redirect: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/auth.config', () => ({
-  hasCurrentLegalSession: (user: {
-    legalTermsVersion?: string | null;
-    legalPrivacyVersion?: string | null;
-    legalAcceptedAt?: string | null;
-  }) =>
-    user.legalTermsVersion === TERMS_VERSION &&
-    user.legalPrivacyVersion === PRIVACY_VERSION &&
-    Boolean(user.legalAcceptedAt),
-}));
-vi.mock('@/lib/legal', () => ({
-  getUserLegalAcceptance: fakes.getUserLegalAcceptance,
-  hasCurrentLegalAcceptance: (legal: {
-    legalTermsVersion: string;
-    legalPrivacyVersion: string;
-    legalAcceptedAt: Date | null;
-  }) =>
-    legal.legalTermsVersion === TERMS_VERSION &&
-    legal.legalPrivacyVersion === PRIVACY_VERSION &&
-    Boolean(legal.legalAcceptedAt),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    hasGitHubAuth: vi.fn(() => {
+      throw new Error('Unexpected hasGitHubAuth call in this test');
+    }),
+    handlers: vi.fn(() => {
+      throw new Error('Unexpected handlers call in this test');
+    }),
+    signIn: vi.fn(() => {
+      throw new Error('Unexpected signIn call in this test');
+    }),
+    updateSession: vi.fn(() => {
+      throw new Error('Unexpected updateSession call in this test');
+    }),
+    auth: fakes.auth,
+  }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth.config'),
+  () => ({
+    hasCurrentLegalSession: (user: {
+      legalTermsVersion?: string | null;
+      legalPrivacyVersion?: string | null;
+      legalAcceptedAt?: string | null;
+    }) =>
+      user.legalTermsVersion === TERMS_VERSION &&
+      user.legalPrivacyVersion === PRIVACY_VERSION &&
+      Boolean(user.legalAcceptedAt),
+  }),
+  () => import('@/lib/auth.config'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    legalAcceptanceRequestMetadata: vi.fn(() => {
+      throw new Error('Unexpected legalAcceptanceRequestMetadata call in this test');
+    }),
+    recordCurrentLegalAcceptance: vi.fn(() => {
+      throw new Error('Unexpected recordCurrentLegalAcceptance call in this test');
+    }),
+    getUserLegalAcceptance: fakes.getUserLegalAcceptance,
+    hasCurrentLegalAcceptance: (legal: {
+      legalTermsVersion: string;
+      legalPrivacyVersion: string;
+      legalAcceptedAt: Date | null;
+    }) =>
+      legal.legalTermsVersion === TERMS_VERSION &&
+      legal.legalPrivacyVersion === PRIVACY_VERSION &&
+      Boolean(legal.legalAcceptedAt),
+  }),
+  () => import('@/lib/legal'),
+);
+
+const { default: LegalAcceptPage } = await import('@/app/legal/accept/page');
+const { PRIVACY_VERSION, TERMS_VERSION } = await import('@/lib/legal-versions');
 
 const currentDbAcceptance = {
   legalTermsVersion: TERMS_VERSION,

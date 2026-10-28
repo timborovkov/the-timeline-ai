@@ -1,6 +1,6 @@
-import { BillingAdmissionError } from '@timeline/shared/billing';
+import { expect, vi } from '@timeline/test-support';
 import { DelayedError } from 'bullmq';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, it } from 'bun:test';
 
 const runWorkerBilling = vi.hoisted(() =>
   vi.fn((_db: unknown, _teamId: string, _operationClass: string, fn: () => Promise<unknown>) =>
@@ -8,12 +8,17 @@ const runWorkerBilling = vi.hoisted(() =>
   ),
 );
 
-vi.mock('@timeline/shared/billing', async () => {
-  const actual = await vi.importActual('@timeline/shared/billing');
-  return { ...actual, runWorkerBilling };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  async () => {
+    const actual = await import('@timeline/shared/billing');
+    return { ...actual, runWorkerBilling };
+  },
+  () => import('@timeline/shared/billing'),
+);
 
-import { withWorkerAiBilling } from '#src/billing-context.js';
+const { BillingAdmissionError } = await import('@timeline/shared/billing');
+const { withWorkerAiBilling } = await import('#src/billing-context.js');
 
 const TEAM_ID = '11111111-2222-4333-8444-555555555555';
 

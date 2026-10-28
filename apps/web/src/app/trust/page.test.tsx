@@ -1,11 +1,16 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
 
-import TrustPage from '@/app/trust/page';
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { default: TrustPage } = await import('@/app/trust/page');
 
 afterEach(() => {
   vi.clearAllMocks();

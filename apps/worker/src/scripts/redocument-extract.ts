@@ -14,7 +14,7 @@
  *     transaction, so a partial mid-flight crash leaves no orphans.
  *
  * Usage:
- *   pnpm --filter @timeline/worker redocument-extract -- \
+ *   bun run --filter @timeline/worker redocument-extract -- \
  *     --team=<uuid> \
  *     [--status=<comma-separated>] [--limit=N] [--dry-run] [--force]
  */

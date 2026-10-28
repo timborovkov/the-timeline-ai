@@ -1,70 +1,192 @@
-// @vitest-environment happy-dom
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as ReactQuery from '@tanstack/react-query';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
   loadTaskCategoryStatesAction: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
-vi.mock('@/lib/auth', () => ({ auth: vi.fn() }));
-vi.mock('next-auth', () => ({
-  default: () => ({ handlers: {}, auth: vi.fn(), signIn: vi.fn(), signOut: vi.fn() }),
-  CredentialsSignin: class CredentialsSignin extends Error {},
-}));
-vi.mock('@tanstack/react-query', async (importOriginal) => {
-  const actual = await importOriginal<typeof ReactQuery>();
-  return {
-    ...actual,
-    useQuery: () => ({ data: { query: '', results: [] } }),
-  };
-});
-vi.mock('@/app/actions/objects', () => ({
-  acceptObjectChangeAction: vi.fn(),
-  addRelationshipAction: vi.fn(),
-  archiveObjectAction: vi.fn(),
-  createNoteAction: vi.fn(),
-  deleteNoteAction: vi.fn(),
-  generateObjectSummaryAction: vi.fn(),
-  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
-  pinObjectAction: vi.fn(),
-  rejectObjectChangeAction: vi.fn(),
-  removeRelationshipAction: vi.fn(),
-  repairObjectMemoryAction: vi.fn(),
-  unarchiveObjectAction: vi.fn(),
-  updateNoteAction: vi.fn(),
-  updateObjectAction: vi.fn(),
-  unpinObjectAction: vi.fn(),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
-    try {
-      return await run();
-    } catch {
-      return { error: 'failed' };
-    }
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => fakes,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: vi.fn() }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('next-auth'),
+  () => ({
+    default: () => ({ handlers: {}, auth: vi.fn(), signIn: vi.fn(), signOut: vi.fn() }),
+    CredentialsSignin: class CredentialsSignin extends Error {},
+  }),
+  () => import('next-auth'),
+);
+await vi.mock(
+  import.meta.resolve('@tanstack/react-query'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ReactQuery>();
+    return {
+      ...actual,
+      useQuery: () => ({ data: { query: '', results: [] } }),
+    };
   },
-}));
-vi.mock('@/app/actions/pins', () => ({
-  pinTargetAction: vi.fn(),
-  unpinTargetAction: vi.fn(),
-}));
-vi.mock('@/app/actions/suggestions', () => ({
-  acceptAllSuggestionAction: vi.fn(),
-  acceptSuggestionItemAction: vi.fn(),
-  rejectSuggestionItemAction: vi.fn(),
-}));
-vi.mock('@/components/objects/object-section-feed', () => ({
-  ObjectSectionFeed: ({ title }: { title: string }) => title,
-}));
+  () => import('@tanstack/react-query'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    searchObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected searchObjectsAction call in this test');
+    }),
+    searchAddableObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected searchAddableObjectsAction call in this test');
+    }),
+    loadTaskRowsAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskRowsAction call in this test');
+    }),
+    loadObjectRowsAction: vi.fn(() => {
+      throw new Error('Unexpected loadObjectRowsAction call in this test');
+    }),
+    createObjectAction: vi.fn(() => {
+      throw new Error('Unexpected createObjectAction call in this test');
+    }),
+    setTaskCategoryAction: vi.fn(() => {
+      throw new Error('Unexpected setTaskCategoryAction call in this test');
+    }),
+    undoTaskCategoryChangeAction: vi.fn(() => {
+      throw new Error('Unexpected undoTaskCategoryChangeAction call in this test');
+    }),
+    resetTaskCategoryAction: vi.fn(() => {
+      throw new Error('Unexpected resetTaskCategoryAction call in this test');
+    }),
+    retryTaskCategoryAction: vi.fn(() => {
+      throw new Error('Unexpected retryTaskCategoryAction call in this test');
+    }),
+    setTaskProjectAction: vi.fn(() => {
+      throw new Error('Unexpected setTaskProjectAction call in this test');
+    }),
+    updateObjectMetadataAction: vi.fn(() => {
+      throw new Error('Unexpected updateObjectMetadataAction call in this test');
+    }),
+    createIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected createIdentityFacetAction call in this test');
+    }),
+    archiveIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected archiveIdentityFacetAction call in this test');
+    }),
+    setPersonCompanyAction: vi.fn(() => {
+      throw new Error('Unexpected setPersonCompanyAction call in this test');
+    }),
+    structureContactFromBoardNotesAction: vi.fn(() => {
+      throw new Error('Unexpected structureContactFromBoardNotesAction call in this test');
+    }),
+    loadTaskCategoryFilterStateAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskCategoryFilterStateAction call in this test');
+    }),
+    loadTaskPrimaryProjectsAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskPrimaryProjectsAction call in this test');
+    }),
+    bulkArchiveObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected bulkArchiveObjectsAction call in this test');
+    }),
+    mergeObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected mergeObjectsAction call in this test');
+    }),
+    findObjectCleanupSuggestionsAction: vi.fn(() => {
+      throw new Error('Unexpected findObjectCleanupSuggestionsAction call in this test');
+    }),
+    markNotificationReadAction: vi.fn(() => {
+      throw new Error('Unexpected markNotificationReadAction call in this test');
+    }),
+    markAllNotificationsReadAction: vi.fn(() => {
+      throw new Error('Unexpected markAllNotificationsReadAction call in this test');
+    }),
+    acceptObjectChangeAction: vi.fn(),
+    addRelationshipAction: vi.fn(),
+    archiveObjectAction: vi.fn(),
+    createNoteAction: vi.fn(),
+    deleteNoteAction: vi.fn(),
+    generateObjectSummaryAction: vi.fn(),
+    loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+    pinObjectAction: vi.fn(),
+    rejectObjectChangeAction: vi.fn(),
+    removeRelationshipAction: vi.fn(),
+    repairObjectMemoryAction: vi.fn(),
+    unarchiveObjectAction: vi.fn(),
+    updateNoteAction: vi.fn(),
+    updateObjectAction: vi.fn(),
+    unpinObjectAction: vi.fn(),
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    pinTargetAction: vi.fn(),
+    unpinTargetAction: vi.fn(),
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/suggestions'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    reviseTaskSuggestionItemAction: vi.fn(() => {
+      throw new Error('Unexpected reviseTaskSuggestionItemAction call in this test');
+    }),
+    rejectVisibleSuggestionsAction: vi.fn(() => {
+      throw new Error('Unexpected rejectVisibleSuggestionsAction call in this test');
+    }),
+    acceptVisibleSuggestionsAction: vi.fn(() => {
+      throw new Error('Unexpected acceptVisibleSuggestionsAction call in this test');
+    }),
+    reviseSuggestionItemAction: vi.fn(() => {
+      throw new Error('Unexpected reviseSuggestionItemAction call in this test');
+    }),
+    acceptAllSuggestionAction: vi.fn(),
+    acceptSuggestionItemAction: vi.fn(),
+    rejectSuggestionItemAction: vi.fn(),
+  }),
+  () => import('@/app/actions/suggestions'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-section-feed'),
+  () => ({
+    ObjectSectionFeed: ({ title }: { title: string }) => title,
+  }),
+  () => import('@/components/objects/object-section-feed'),
+);
+
+const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectDetailClient } = await import('./object-detail-client.js');
 const { visibleObjectSearchResultsForQuery } = await import('./object-search-results.js');

@@ -1,5 +1,22 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   auditLog,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -25,29 +42,21 @@ import {
   teamProviderResourceShares,
   teamVisibilityDefaults,
   telegramChatBindings,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
-
-import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
-
-import { resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
-import { resetEnvForTests } from '#src/env.js';
-import {
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { resetSecretsKeyCacheForTests } = await import('#src/crypto/secrets.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const {
   adminCommitIntegrationSyncCheckpoint,
   adminDecryptIntegrationTokens,
   adminMarkSynced,
   adminRecordError,
   adminRecordTransientSyncFailure,
   adminResetTransientSyncFailures,
-} from '#src/integrations/scope.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+} = await import('#src/integrations/scope.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-2222-2222-222222222222';
@@ -2279,7 +2288,9 @@ describe('withTeam namespaced port', () => {
     });
     expect(await adminScope.integrations.listSelections(integration.id)).toHaveLength(1);
 
-    const fetchMock = vi.fn<typeof globalThis.fetch>(async (_input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(async (_input, init) => {
       if (typeof init?.body !== 'string') throw new Error('Expected a JSON request body');
       const body = JSON.parse(init.body) as { query?: string };
       expect(body.query).toContain('delete_webhook');
@@ -2459,18 +2470,22 @@ describe('withTeam namespaced port', () => {
     const deletedIds: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        if (typeof init?.body !== 'string') throw new Error('Expected JSON request body');
-        const body = JSON.parse(init.body) as { variables?: { id?: string } };
-        deletedIds.push(String(body.variables?.id));
-        if (deletedIds.length === 2) throw new Error('provider unavailable');
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({ data: { delete_webhook: { id: body.variables?.id, board_id: '1' } } }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          ),
-        );
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          if (typeof init?.body !== 'string') throw new Error('Expected JSON request body');
+          const body = JSON.parse(init.body) as { variables?: { id?: string } };
+          deletedIds.push(String(body.variables?.id));
+          if (deletedIds.length === 2) throw new Error('provider unavailable');
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                data: { delete_webhook: { id: body.variables?.id, board_id: '1' } },
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } },
+            ),
+          );
+        },
+      ),
     );
 
     await expect(
@@ -2492,17 +2507,21 @@ describe('withTeam namespaced port', () => {
     const retriedIds: string[] = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((_input, init) => {
-        if (typeof init?.body !== 'string') throw new Error('Expected JSON request body');
-        const body = JSON.parse(init.body) as { variables?: { id?: string } };
-        retriedIds.push(String(body.variables?.id));
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({ data: { delete_webhook: { id: body.variables?.id, board_id: '1' } } }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          ),
-        );
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (_input, init) => {
+          if (typeof init?.body !== 'string') throw new Error('Expected JSON request body');
+          const body = JSON.parse(init.body) as { variables?: { id?: string } };
+          retriedIds.push(String(body.variables?.id));
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                data: { delete_webhook: { id: body.variables?.id, board_id: '1' } },
+              }),
+              { status: 200, headers: { 'content-type': 'application/json' } },
+            ),
+          );
+        },
+      ),
     );
     await adminScope.integrations.repairMondayHelperResources({
       helperBoardIds: ['subitems-board-retry'],

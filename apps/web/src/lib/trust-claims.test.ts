@@ -3,7 +3,8 @@ import {
   TIMELINE_MODELS,
   timelineModelEntries,
 } from '@timeline/shared/llm';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS,
@@ -13,7 +14,6 @@ import {
   TRUST_AI_ROUTES,
   buildPublicTranscriptionPrivacyClaims,
 } from '@/lib/trust-claims';
-
 describe('public AI trust claims', () => {
   it('derives every published model and privacy classification from the code-owned registry', () => {
     expect(TRUST_AI_ROUTES).toEqual([

@@ -1,5 +1,34 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type * as QueueModule from '#src/queue/queues.js';
+import type { TelegramApi } from '#src/telegram/api.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof QueueModule>()),
+    enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const askAgentMock = vi.hoisted(() => vi.fn());
+
+await vi.mock(
+  import.meta.resolve('#src/agent/ask.js'),
+  () => ({
+    askAgent: askAgentMock,
+    TEAM_BOT_ACTOR_USER_ID: '00000000-0000-0000-0000-000000000000',
+  }),
+  () => import('#src/agent/ask.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   chatSurfaceSessionLinks,
   chatSurfaceTurns,
   meetingCaptureConfirmations,
@@ -9,39 +38,19 @@ import {
   savedMeetings,
   telegramUsers,
   telegramUserTeams,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as QueueModule from '#src/queue/queues.js';
-import type { TelegramApi } from '#src/telegram/api.js';
-
-import { resetEnvForTests } from '#src/env.js';
-import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
-import { TELEGRAM_DM_COMMANDS, TELEGRAM_GROUP_COMMANDS } from '#src/telegram/commands.js';
-import { createTelegramConversationDeliveryAdapter } from '#src/telegram/conversation-adapter.js';
-import {
-  formatCachedTelegramAskAnswer,
-  handleUpdate,
-  parseCommand,
-  startTelegramTypingHeartbeat,
-} from '#src/telegram/dispatcher.js';
-import { verifyWebhookSecret } from '#src/telegram/secret.js';
-import { tgUpdateSchema } from '#src/telegram/types.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-vi.mock('#src/queue/queues.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof QueueModule>()),
-  enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
-}));
-
-const askAgentMock = vi.hoisted(() => vi.fn());
-
-vi.mock('#src/agent/ask.js', () => ({
-  askAgent: askAgentMock,
-  TEAM_BOT_ACTOR_USER_ID: '00000000-0000-0000-0000-000000000000',
-}));
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { resetEnvForTests } = await import('#src/env.js');
+const { resetMeetingBotProviderForTests } = await import('#src/meeting-bots/index.js');
+const { TELEGRAM_DM_COMMANDS, TELEGRAM_GROUP_COMMANDS } = await import('#src/telegram/commands.js');
+const { createTelegramConversationDeliveryAdapter } =
+  await import('#src/telegram/conversation-adapter.js');
+const { formatCachedTelegramAskAnswer, handleUpdate, parseCommand, startTelegramTypingHeartbeat } =
+  await import('#src/telegram/dispatcher.js');
+const { verifyWebhookSecret } = await import('#src/telegram/secret.js');
+const { tgUpdateSchema } = await import('#src/telegram/types.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-2222-2222-222222222222';

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   inlineSourceSnapshotMetadata,
@@ -7,7 +8,6 @@ import {
 } from '#src/reconciliation/source-snapshot.js';
 import { stableSha256Digest } from '#src/reconciliation/stable-digest.js';
 import { stableJson } from '#src/reconciliation/stable-json.js';
-
 describe('stable reconciliation JSON helpers', () => {
   it('serializes nested objects deterministically while omitting undefined fields', () => {
     const left = {

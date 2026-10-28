@@ -1,8 +1,6 @@
-import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { signUpAction } from '@/app/actions/auth';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Credential signup is the first legal clickwrap path. These tests ensure the
  * acceptance event shares the user/team transaction and that a failed evidence
@@ -37,60 +35,147 @@ const fakes = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-  withServerActionInstrumentation: fakes.withServerActionInstrumentation,
-}));
-vi.mock('@timeline/shared/messaging', () => ({
-  insertDefaultDigestDestination: fakes.insertDefaultDigestDestination,
-  sendMessage: fakes.sendMessage,
-}));
-vi.mock('@timeline/shared/passwords', () => ({ hashPassword: fakes.hashPassword }));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { signup: { limit: 5, windowMs: 60_000 } },
-  checkRateLimit: fakes.checkRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
-vi.mock('@timeline/shared/slug', () => ({
-  buildInboundEmail: (slug: string) => `${slug}@inbound.test`,
-  randomSlugSuffix: () => 'legal',
-  slugify: (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-}));
-vi.mock('@/lib/active-team', () => ({
-  ACTIVE_TEAM_COOKIE: 'timeline_active_team',
-  activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
-  serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
-}));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/auth', () => ({ auth: vi.fn(), signIn: fakes.signIn }));
-vi.mock('@/lib/db', () => ({
-  db: { select: fakes.dbSelect, transaction: fakes.dbTransaction },
-}));
-vi.mock('@/lib/email-verification', () => ({
-  sendEmailVerification: fakes.sendEmailVerification,
-}));
-vi.mock('@/lib/legal', () => ({
-  legalAcceptanceRequestMetadata: fakes.legalAcceptanceRequestMetadata,
-  recordCurrentLegalAcceptance: fakes.recordCurrentLegalAcceptance,
-}));
-vi.mock('@/lib/legal-publication', () => ({
-  isLegalPublicationReady: fakes.isLegalPublicationReady,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('@/lib/site-url', () => ({ getSiteUrl: () => 'https://timeline.test' }));
-vi.mock('@/lib/turnstile', () => ({
-  turnstileHostnameFromHeaders: () => 'timeline.test',
-  verifyTurnstileToken: fakes.verifyTurnstileToken,
-}));
-vi.mock('next/headers', () => ({
-  cookies: vi.fn().mockResolvedValue({ get: vi.fn(), set: fakes.cookieSet }),
-  headers: fakes.headers,
-}));
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('next-auth', () => ({
-  AuthError: class AuthError extends Error {},
-}));
+// Keep this suite focused on signup; telemetry/header timing has its own tests.
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-action'),
+  () => ({
+    runSentryServerAction: (_operation: string, callback: () => unknown) => callback(),
+  }),
+  () => import('@/lib/sentry-action'),
+);
+
+await vi.mock(
+  import.meta.resolve('@sentry/nextjs'),
+  () => ({
+    withServerActionInstrumentation: fakes.withServerActionInstrumentation,
+  }),
+  () => import('@sentry/nextjs'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/messaging'),
+  () => ({
+    insertDefaultDigestDestination: fakes.insertDefaultDigestDestination,
+    sendMessage: fakes.sendMessage,
+  }),
+  () => import('@timeline/shared/messaging'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/passwords'),
+  () => ({ hashPassword: fakes.hashPassword }),
+  () => import('@timeline/shared/passwords'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { signup: { limit: 5, windowMs: 60_000 } },
+    checkRateLimit: fakes.checkRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slug'),
+  () => ({
+    buildInboundEmail: (slug: string) => `${slug}@inbound.test`,
+    randomSlugSuffix: () => 'legal',
+    slugify: (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+  }),
+  () => import('@timeline/shared/slug'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({
+    ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+    activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+    serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+  }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: vi.fn(), signIn: fakes.signIn }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: { select: fakes.dbSelect, transaction: fakes.dbTransaction },
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/email-verification'),
+  () => ({
+    sendEmailVerification: fakes.sendEmailVerification,
+  }),
+  () => import('@/lib/email-verification'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    legalAcceptanceRequestMetadata: fakes.legalAcceptanceRequestMetadata,
+    recordCurrentLegalAcceptance: fakes.recordCurrentLegalAcceptance,
+  }),
+  () => import('@/lib/legal'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal-publication'),
+  () => ({
+    isLegalPublicationReady: fakes.isLegalPublicationReady,
+  }),
+  () => import('@/lib/legal-publication'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/site-url'),
+  () => ({ getSiteUrl: () => 'https://timeline.test' }),
+  () => import('@/lib/site-url'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/turnstile'),
+  () => ({
+    turnstileHostnameFromHeaders: () => 'timeline.test',
+    verifyTurnstileToken: fakes.verifyTurnstileToken,
+  }),
+  () => import('@/lib/turnstile'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({
+    cookies: vi.fn().mockResolvedValue({ get: vi.fn(), set: fakes.cookieSet }),
+    headers: fakes.headers,
+  }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('next-auth'),
+  () => ({
+    AuthError: class AuthError extends Error {},
+  }),
+  () => import('next-auth'),
+);
+
+const { PRIVACY_VERSION, TERMS_VERSION } = await import('@timeline/shared/legal-versions');
+const { signUpAction } = await import('@/app/actions/auth');
 
 function form(includeAcceptance = true): FormData {
   const result = new FormData();

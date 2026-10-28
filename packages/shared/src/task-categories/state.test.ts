@@ -1,35 +1,46 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
+
+import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
+import type { Db } from '@timeline/db';
 /**
  * Business intent: category authority and a task's primary project remain
  * team-scoped, singular, auditable, and safe under stale LLM responses.
  */
-import {
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary' }),
+    enqueueTaskCategoryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'category' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const {
   entities,
   entityRelationships,
   objectChanges,
   taskCategoryAssignments,
   taskCategoryProjectInvalidations,
-  type Db,
-} from '@timeline/db';
-import { and, asc, eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+} = await import('@timeline/db');
+const { and, asc, eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { resetEnvForTests } = await import('#src/env.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
+const queue = await import('#src/queue/queues.js');
+const { buildTaskCategoryPacket, taskCategoryInputHash } =
+  await import('#src/task-categories/classifier.js');
+const { TASK_CATEGORY_TAXONOMY_VERSION } = await import('#src/task-categories/types.js');
+const { withTeam } = await import('#src/team-scope.js');
 
-import { resetEnvForTests } from '#src/env.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
-import * as queue from '#src/queue/queues.js';
-import { buildTaskCategoryPacket, taskCategoryInputHash } from '#src/task-categories/classifier.js';
-import { TASK_CATEGORY_TAXONOMY_VERSION } from '#src/task-categories/types.js';
-import { withTeam } from '#src/team-scope.js';
-import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary' }),
-  enqueueTaskCategoryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'category' }),
-}));
+const { createResettablePGliteTestDb } = await import('#src/test/pglite.js');
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-4222-8222-222222222222';

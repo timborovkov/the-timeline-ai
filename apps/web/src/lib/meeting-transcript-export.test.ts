@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { formatMeetingOffset, formatTranscriptExport } from '@/lib/meeting-transcript-export';
-
 describe('meeting transcript export', () => {
   it('formats transcript chunks with metadata, summary, speakers, and offsets', () => {
     const exported = formatTranscriptExport({

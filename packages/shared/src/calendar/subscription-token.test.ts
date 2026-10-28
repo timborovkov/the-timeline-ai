@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   calendarSubscriptionHashesMatch,
@@ -6,7 +7,6 @@ import {
   isCalendarSubscriptionToken,
   mintCalendarSubscriptionToken,
 } from '#src/calendar/subscription-token.js';
-
 // Calendar subscription URLs are bearer credentials, so these tests pin the
 // public token shape and hash-only comparison contract that protects stored rows.
 describe('calendar subscription tokens', () => {

@@ -23,7 +23,7 @@
  * Requires DATABASE_URL and REDIS_URL.
  *
  * Usage:
- *   pnpm --filter @timeline/worker reembed -- \
+ *   bun run --filter @timeline/worker reembed -- \
  *     --team=<uuid> \
  *     [--target-collection=<name>] \
  *     [--limit=N] [--dry-run] \

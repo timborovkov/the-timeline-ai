@@ -1,11 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createOnboardingScope } from '#src/onboarding/index.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 /**
  * Onboarding checklist tests. The checklist is inferred from real workspace
  * state as well as explicit completion/dismissal rows, so these PGlite tests

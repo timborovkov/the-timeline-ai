@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
 import type { ZodType } from 'zod';
@@ -14,7 +16,6 @@ import {
   generateTimelineMomentPresentation,
   timelineMomentPresentationEligibility,
 } from '#src/timeline-moments/presentation.js';
-
 const ENV_BACKUP = { ...process.env };
 const liveOpenRouterIt =
   ENV_BACKUP.OPENROUTER_API_KEY && ENV_BACKUP.OPENROUTER_LIVE_TESTS === '1' ? it : it.skip;

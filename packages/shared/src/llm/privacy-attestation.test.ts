@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   TIMELINE_AI_PRIVACY_POLICY_VERSION,
@@ -17,7 +18,6 @@ import {
   isValidOpenRouterGuardrailId,
   parseOpenRouterPrivacyAttestationToken,
 } from '#src/llm/privacy-attestation.js';
-
 const API_KEY = 'sk-or-v1-test-attestation-key';
 const GUARDRAIL_ID = '8b978e76-c028-4f3f-9313-123456789abc';
 

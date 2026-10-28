@@ -1,15 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { ChatViewProvider } from '@/components/chat/chat-view-context';
-import {
-  readFloatingChatSessionId,
-  storeFloatingChatSessionId,
-} from '@/lib/floating-chat-session-storage';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pathname: vi.fn(),
@@ -26,27 +18,55 @@ const fakes = vi.hoisted(() => ({
 const boardItemId = '55555555-5555-4555-8555-555555555555';
 const objectId = '44444444-4444-4444-8444-444444444444';
 
-vi.mock('next/navigation', () => ({
-  usePathname: fakes.pathname,
-  useSearchParams: fakes.searchParams,
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('@ai-sdk/react', () => ({ useChat: fakes.useChat }));
-vi.mock('ai', () => ({
-  DefaultChatTransport: class DefaultChatTransport {
-    constructor(public options: { body?: () => unknown }) {
-      fakes.transports.push({ options });
-    }
-  },
-  lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(),
-}));
-vi.mock('@/app/actions/chat', () => ({
-  loadChatSessionAction: fakes.loadChatSessionAction,
-  unpinChatSessionAction: vi.fn(),
-}));
-vi.mock('@/components/chat/tool-step', () => ({
-  ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: fakes.pathname,
+    useSearchParams: fakes.searchParams,
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@ai-sdk/react'),
+  () => ({ useChat: fakes.useChat }),
+  () => import('@ai-sdk/react'),
+);
+await vi.mock(
+  import.meta.resolve('ai'),
+  () => ({
+    DefaultChatTransport: class DefaultChatTransport {
+      constructor(public options: { body?: () => unknown }) {
+        fakes.transports.push({ options });
+      }
+    },
+    lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(),
+  }),
+  () => import('ai'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/chat'),
+  () => ({
+    loadChatSessionAction: fakes.loadChatSessionAction,
+    unpinChatSessionAction: vi.fn(),
+  }),
+  () => import('@/app/actions/chat'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/chat/tool-step'),
+  () => ({
+    ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
+  }),
+  () => import('@/components/chat/tool-step'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { ChatViewProvider } = await import('@/components/chat/chat-view-context');
+const { readFloatingChatSessionId, storeFloatingChatSessionId } =
+  await import('@/lib/floating-chat-session-storage');
 
 const { FloatingAgentChat } = await import('./floating-agent-chat.js');
 

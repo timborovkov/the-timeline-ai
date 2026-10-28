@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { documentDetailProvenance } from '@/lib/document-detail-provenance';
-
 describe('documentDetailProvenance', () => {
   it('preserves captured source event links when joined provenance is unavailable', () => {
     expect(

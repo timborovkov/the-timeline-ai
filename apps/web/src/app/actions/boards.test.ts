@@ -1,17 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  addBoardItemAction,
-  createBoardAction,
-  deleteBoardAction,
-  pinBoardAction,
-  quickCreateBoardItemAction,
-  renameBoardAction,
-  removeBoardItemAction,
-  updateBoardSettingsAction,
-  updateBoardItemAction,
-} from '@/app/actions/boards';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
@@ -31,18 +20,46 @@ const fakes = vi.hoisted(() => ({
   fakePins: { pin: vi.fn() },
 }));
 
-vi.mock('@/lib/action-scope', async () => {
-  const { z } = await import('zod');
-  return {
-    resolveScope: fakes.fakeResolveScope,
-    uuidSchema: z.uuid(),
-  };
-});
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/lib/action-scope'),
+  async () => {
+    const { z } = await import('zod');
+    return {
+      resolveScope: fakes.fakeResolveScope,
+      uuidSchema: z.uuid(),
+    };
+  },
+  () => import('@/lib/action-scope'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.fakeReportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+
+const {
+  addBoardItemAction,
+  createBoardAction,
+  deleteBoardAction,
+  pinBoardAction,
+  quickCreateBoardItemAction,
+  renameBoardAction,
+  removeBoardItemAction,
+  updateBoardSettingsAction,
+  updateBoardItemAction,
+} = await import('@/app/actions/boards');
 
 const BOARD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ITEM_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

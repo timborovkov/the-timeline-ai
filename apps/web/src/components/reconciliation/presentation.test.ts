@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   artifactClusterKindLabel,
@@ -14,7 +15,6 @@ import {
   outputStatusLabel,
   runTriggerLabel,
 } from '@/components/reconciliation/presentation';
-
 describe('reconciliation presentation', () => {
   it('replaces storage tokens with concise operator labels', () => {
     expect(artifactClusterKindLabel('customer_project')).toBe('Customer project');

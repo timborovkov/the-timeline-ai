@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for `/api/chat`. Agent/tool implementations own their
  * own behavior; this route owns auth/config/rate gates, session persistence
@@ -50,114 +50,170 @@ const fakes = vi.hoisted(() => ({
   fakeOpenRouterUsdCost: vi.fn((_event: unknown) => 0),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ info: fakes.fakeLoggerInfo, warn: fakes.fakeLoggerWarn }),
-}));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { aiChat: { limit: 5, windowMs: 60_000 } },
-  checkRateLimit: fakes.fakeCheckRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    billing: {},
-    timeline: {
-      team: fakes.fakeTeam,
-      currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
-    },
-    objects: {
-      chatSessionExists: fakes.fakeChatSessionExists,
-      chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
-      createChatSession: fakes.fakeCreateChatSession,
-      mergeChatSessionContextTrail: fakes.fakeMergeChatSessionContextTrail,
-      listChatSessions: fakes.fakeListChatSessions,
-      setChatSessionTitle: fakes.fakeSetChatSessionTitle,
-      setUniqueChatSessionTitle: fakes.fakeSetUniqueChatSessionTitle,
-      listObjects: fakes.fakeListObjects,
-    },
-    calendar: {
-      getCalendarSettings: fakes.fakeGetCalendarSettings,
-      listCalendarEvents: fakes.fakeListCalendarEvents,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: fakes.fakeGetEnv }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ info: fakes.fakeLoggerInfo, warn: fakes.fakeLoggerWarn }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { aiChat: { limit: 5, windowMs: 60_000 } },
+    checkRateLimit: fakes.fakeCheckRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      billing: {},
+      timeline: {
+        team: fakes.fakeTeam,
+        currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
+      },
+      objects: {
+        chatSessionExists: fakes.fakeChatSessionExists,
+        chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
+        createChatSession: fakes.fakeCreateChatSession,
+        mergeChatSessionContextTrail: fakes.fakeMergeChatSessionContextTrail,
+        listChatSessions: fakes.fakeListChatSessions,
+        setChatSessionTitle: fakes.fakeSetChatSessionTitle,
+        setUniqueChatSessionTitle: fakes.fakeSetUniqueChatSessionTitle,
+        listObjects: fakes.fakeListObjects,
+      },
+      calendar: {
+        getCalendarSettings: fakes.fakeGetCalendarSettings,
+        listCalendarEvents: fakes.fakeListCalendarEvents,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/agent'),
+  () => ({
+    AGENT_PROMPT_VERSION: 'test-prompt-v1',
+    buildSystemPrompt: fakes.fakeBuildSystemPrompt,
+    resolveAgentPresentation: fakes.fakeResolveAgentPresentation,
+    buildAgentTools: fakes.fakeBuildAgentTools,
+    buildMcpTools: fakes.fakeBuildMcpTools,
+    instrumentAgentTools: fakes.fakeInstrumentAgentTools,
+    summarizeAgentToolObservations: fakes.fakeSummarizeAgentToolObservations,
+    userApprovalForTools: (tools: Record<string, unknown> = {}) => {
+      const approval = Object.fromEntries(
+        Object.keys(tools)
+          .filter((name) => name.startsWith('execute_'))
+          .map((name) => [name, 'user-approval' as const]),
+      );
+      return Object.keys(approval).length > 0 ? approval : undefined;
     },
   }),
-}));
-vi.mock('@timeline/shared/agent', () => ({
-  AGENT_PROMPT_VERSION: 'test-prompt-v1',
-  buildSystemPrompt: fakes.fakeBuildSystemPrompt,
-  resolveAgentPresentation: fakes.fakeResolveAgentPresentation,
-  buildAgentTools: fakes.fakeBuildAgentTools,
-  buildMcpTools: fakes.fakeBuildMcpTools,
-  instrumentAgentTools: fakes.fakeInstrumentAgentTools,
-  summarizeAgentToolObservations: fakes.fakeSummarizeAgentToolObservations,
-  userApprovalForTools: (tools: Record<string, unknown> = {}) => {
-    const approval = Object.fromEntries(
-      Object.keys(tools)
-        .filter((name) => name.startsWith('execute_'))
-        .map((name) => [name, 'user-approval' as const]),
-    );
-    return Object.keys(approval).length > 0 ? approval : undefined;
-  },
-}));
-vi.mock('@timeline/shared/time', () => ({
-  workspaceTimeContext: fakes.fakeWorkspaceTimeContext,
-}));
-vi.mock('@timeline/shared/objects', () => ({
-  appendChatMessages: fakes.fakeAppendChatMessages,
-}));
-vi.mock('@timeline/shared/llm', () => ({
-  DEFAULT_AGENT_MAX_STEPS: 20,
-  DEFAULT_CHAT_MEMORY: { maxRequestMessages: 50 },
-  TIMELINE_MODELS: {
-    agent: { contextWindowTokens: 128_000 },
-    summarization: { id: 'summarizer-model' },
-  },
-  buildOpenRouterLanguageModel: fakes.fakeBuildOpenRouterLanguageModel,
-  compressMessagesForContext: fakes.fakeCompressMessagesForContext,
-  chatStructured: fakes.fakeChatStructured,
-  resolveAgentModelId: fakes.fakeResolveAgentModelId,
-  streamChatFallbackModelIds: (modelId: string) =>
-    modelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
-  streamChatModelAttribution: (
-    event: { model?: { modelId?: string }; response?: { modelId?: string } },
-    requestedModelId?: string,
-  ) => ({
-    requestedModelId: requestedModelId ?? event.model?.modelId ?? 'agent-model',
-    responseModelId: event.response?.modelId ?? event.model?.modelId ?? requestedModelId,
-    fallbackModelIds: requestedModelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+  () => import('@timeline/shared/agent'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/time'),
+  () => ({
+    workspaceTimeContext: fakes.fakeWorkspaceTimeContext,
   }),
-  streamChat: fakes.fakeStreamChat,
-}));
-vi.mock('@timeline/shared/billing', () => ({
-  askBillingUserMessage: (error: string) => error,
-  askOperationId: () => 'ask:web:test',
-  ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS: 250,
-  mapAskBillingError: (code: string) => code,
-  openRouterUsdCostFromFinishEvent: fakes.fakeOpenRouterUsdCost,
-  openRouterUsdForCompletedStream: (input: { stepUsd: number; finishEvent?: unknown }) => {
-    const stepUsd = Number.isFinite(input.stepUsd) && input.stepUsd > 0 ? input.stepUsd : 0;
-    const finishUsd = input.finishEvent ? fakes.fakeOpenRouterUsdCost(input.finishEvent) : 0;
-    return Math.max(stepUsd, finishUsd);
-  },
-  releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
-  reserveAskAi: vi.fn().mockResolvedValue({ ok: true }),
-  settleAskAiFromOpenRouterUsd: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock('@/lib/sentry-report', () => ({
-  reportCaughtError: fakes.fakeReportCaughtError,
-  reportHandledEvent: fakes.fakeReportHandledEvent,
-}));
-vi.mock('ai', () => ({
-  convertToModelMessages: fakes.fakeConvertToModelMessages,
-  createUIMessageStream: fakes.fakeCreateUIMessageStream,
-  createUIMessageStreamResponse: fakes.fakeCreateUIMessageStreamResponse,
-  toUIMessageStream: fakes.fakeToUIMessageStream,
-  safeValidateUIMessages: fakes.fakeSafeValidateUIMessages,
-}));
+  () => import('@timeline/shared/time'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/objects'),
+  () => ({
+    appendChatMessages: fakes.fakeAppendChatMessages,
+  }),
+  () => import('@timeline/shared/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/llm'),
+  () => ({
+    DEFAULT_AGENT_MAX_STEPS: 20,
+    DEFAULT_CHAT_MEMORY: { maxRequestMessages: 50 },
+    TIMELINE_MODELS: {
+      agent: { contextWindowTokens: 128_000 },
+      summarization: { id: 'summarizer-model' },
+    },
+    buildOpenRouterLanguageModel: fakes.fakeBuildOpenRouterLanguageModel,
+    compressMessagesForContext: fakes.fakeCompressMessagesForContext,
+    chatStructured: fakes.fakeChatStructured,
+    resolveAgentModelId: fakes.fakeResolveAgentModelId,
+    streamChatFallbackModelIds: (modelId: string) =>
+      modelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+    streamChatModelAttribution: (
+      event: { model?: { modelId?: string }; response?: { modelId?: string } },
+      requestedModelId?: string,
+    ) => ({
+      requestedModelId: requestedModelId ?? event.model?.modelId ?? 'agent-model',
+      responseModelId: event.response?.modelId ?? event.model?.modelId ?? requestedModelId,
+      fallbackModelIds: requestedModelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+    }),
+    streamChat: fakes.fakeStreamChat,
+  }),
+  () => import('@timeline/shared/llm'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    askBillingUserMessage: (error: string) => error,
+    askOperationId: () => 'ask:web:test',
+    ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS: 250,
+    mapAskBillingError: (code: string) => code,
+    openRouterUsdCostFromFinishEvent: fakes.fakeOpenRouterUsdCost,
+    openRouterUsdForCompletedStream: (input: { stepUsd: number; finishEvent?: unknown }) => {
+      const stepUsd = Number.isFinite(input.stepUsd) && input.stepUsd > 0 ? input.stepUsd : 0;
+      const finishUsd = input.finishEvent ? fakes.fakeOpenRouterUsdCost(input.finishEvent) : 0;
+      return Math.max(stepUsd, finishUsd);
+    },
+    releaseBillingReservation: vi.fn().mockResolvedValue(undefined),
+    reserveAskAi: vi.fn().mockResolvedValue({ ok: true }),
+    settleAskAiFromOpenRouterUsd: vi.fn().mockResolvedValue(undefined),
+  }),
+  () => import('@timeline/shared/billing'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({
+    reportCaughtError: fakes.fakeReportCaughtError,
+    reportHandledEvent: fakes.fakeReportHandledEvent,
+  }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('ai'),
+  () => ({
+    convertToModelMessages: fakes.fakeConvertToModelMessages,
+    createUIMessageStream: fakes.fakeCreateUIMessageStream,
+    createUIMessageStreamResponse: fakes.fakeCreateUIMessageStreamResponse,
+    toUIMessageStream: fakes.fakeToUIMessageStream,
+    safeValidateUIMessages: fakes.fakeSafeValidateUIMessages,
+  }),
+  () => import('ai'),
+);
 
 const { POST } = await import('./route.js');
 const { releaseBillingReservation, settleAskAiFromOpenRouterUsd } =

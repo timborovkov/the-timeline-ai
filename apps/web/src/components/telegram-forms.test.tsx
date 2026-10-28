@@ -1,10 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as ReactModule from 'react';
 import type * as ReactDomModule from 'react-dom';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   action: vi.fn(),
@@ -12,29 +12,47 @@ const fakes = vi.hoisted(() => ({
   useFormStatus: vi.fn(),
 }));
 
-vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof ReactModule>();
-  return {
-    ...actual,
-    useActionState: fakes.useActionState,
-  };
-});
+await vi.mock(
+  import.meta.resolve('react'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ReactModule>();
+    return {
+      ...actual,
+      useActionState: fakes.useActionState,
+    };
+  },
+  () => import('react'),
+);
 
-vi.mock('react-dom', async (importOriginal) => {
-  const actual = await importOriginal<typeof ReactDomModule>();
-  return {
-    ...actual,
-    useFormStatus: fakes.useFormStatus,
-  };
-});
+await vi.mock(
+  import.meta.resolve('react-dom'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ReactDomModule>();
+    return {
+      ...actual,
+      useFormStatus: fakes.useFormStatus,
+    };
+  },
+  () => import('react-dom'),
+);
 
-vi.mock('@/app/actions/telegram', () => ({
-  generateGroupLinkTokenAction: vi.fn(),
-  generatePersonalLinkTokenAction: vi.fn(),
-}));
-vi.mock('@/components/form-action-toast', () => ({
-  FormActionToast: () => null,
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/telegram'),
+  () => ({
+    generateGroupLinkTokenAction: vi.fn(),
+    generatePersonalLinkTokenAction: vi.fn(),
+  }),
+  () => import('@/app/actions/telegram'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/form-action-toast'),
+  () => ({
+    FormActionToast: () => null,
+  }),
+  () => import('@/components/form-action-toast'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
 
 const { GenerateGroupTokenForm, GeneratePersonalTokenForm } = await import('./telegram-forms.js');
 

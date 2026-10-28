@@ -3,8 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 /**
  * Drizzle applies a migration only when its journal `when` is greater than the
  * newest `drizzle.__drizzle_migrations.created_at`. It does not match hashes,

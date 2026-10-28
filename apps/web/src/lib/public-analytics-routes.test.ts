@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   PUBLIC_ANALYTICS_ROUTES,
   classifyPublicAnalyticsPath,
 } from '@/lib/public-analytics-routes';
-
 describe('public analytics route registry', () => {
   it('classifies only reviewed public documents', () => {
     expect(classifyPublicAnalyticsPath('/')).toBe('home');

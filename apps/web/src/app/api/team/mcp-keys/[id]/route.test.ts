@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for revoking outbound MCP bearer keys. The route owns
  * admin gates, team-scoped lookup, idempotent soft revoke behavior, and audit
@@ -16,60 +17,90 @@ const fakes = vi.hoisted(() => ({
   trackProductEventBestEffort: vi.fn(),
 }));
 
-vi.mock('@timeline/db', () => ({
-  auditLog: { table: 'audit_log' },
-  mcpOutboundKeys: {
-    table: 'mcp_outbound_keys',
-    id: 'id',
-    teamId: 'team_id',
-    revokedAt: 'revoked_at',
-  },
-}));
-vi.mock('drizzle-orm', () => ({
-  and: (...args: unknown[]) => ({ op: 'and', args }),
-  eq: (...args: unknown[]) => ({ op: 'eq', args }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.requireMembership }),
-}));
-vi.mock('@/lib/db', () => ({
-  db: {
-    transaction: vi.fn().mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-      const tx = {
-        select: () => ({
-          from: () => ({
-            where: () => ({
-              limit: () => ({
-                for: vi.fn().mockResolvedValue(fakes.existingRow ? [fakes.existingRow] : []),
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({
+    auditLog: { table: 'audit_log' },
+    mcpOutboundKeys: {
+      table: 'mcp_outbound_keys',
+      id: 'id',
+      teamId: 'team_id',
+      revokedAt: 'revoked_at',
+    },
+  }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('drizzle-orm'),
+  () => ({
+    and: (...args: unknown[]) => ({ op: 'and', args }),
+    eq: (...args: unknown[]) => ({ op: 'eq', args }),
+  }),
+  () => import('drizzle-orm'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      transaction: vi
+        .fn()
+        .mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+          const tx = {
+            select: () => ({
+              from: () => ({
+                where: () => ({
+                  limit: () => ({
+                    for: vi.fn().mockResolvedValue(fakes.existingRow ? [fakes.existingRow] : []),
+                  }),
+                }),
               }),
             }),
-          }),
-        }),
-        update: (table: unknown) => ({
-          set: (value: unknown) => ({
-            where: () => ({
-              returning: vi.fn().mockResolvedValue(fakes.updateRows),
-              _table: table,
-              _value: value,
+            update: (table: unknown) => ({
+              set: (value: unknown) => ({
+                where: () => ({
+                  returning: vi.fn().mockResolvedValue(fakes.updateRows),
+                  _table: table,
+                  _value: value,
+                }),
+              }),
             }),
-          }),
+            insert: (table: unknown) => ({
+              values: (value: unknown) => {
+                fakes.insertValues.push({ table, value });
+                return Promise.resolve();
+              },
+            }),
+          };
+          return callback(tx);
         }),
-        insert: (table: unknown) => ({
-          values: (value: unknown) => {
-            fakes.insertValues.push({ table, value });
-            return Promise.resolve();
-          },
-        }),
-      };
-      return callback(tx);
-    }),
-  },
-}));
+    },
+  }),
+  () => import('@/lib/db'),
+);
 
 const { DELETE } = await import('./route.js');
 

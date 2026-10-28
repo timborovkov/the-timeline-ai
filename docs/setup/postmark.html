@@ -310,8 +310,8 @@ SUPPORT_EMAIL=contact@thetimeline.cc
       <h2 id="smoke-test">8. Smoke test</h2>
       <p>
         Before sending a test email, run
-        <code>pnpm canary:integrations -- --env-file=/path/to/.env</code>. The Postmark rows perform
-        a read-only server lookup with <code>POSTMARK_SERVER_TOKEN</code> and verify that
+        <code>bun run canary:integrations -- --env-file=/path/to/.env</code>. The Postmark rows
+        perform a read-only server lookup with <code>POSTMARK_SERVER_TOKEN</code> and verify that
         <code>POSTMARK_WEBHOOK_SECRET</code> is configured, without printing either secret.
       </p>
       <p>

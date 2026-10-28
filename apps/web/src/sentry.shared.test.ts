@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ErrorEvent } from '@sentry/nextjs';
 
@@ -12,7 +13,6 @@ import {
   shouldDropBrowserExtensionEvent,
   shouldDropMalformedMultipartFormDataEvent,
 } from '@/sentry.shared';
-
 describe('Sentry web config helpers', () => {
   it('defaults invalid sample rates to zero', () => {
     process.env.SENTRY_TRACES_SAMPLE_RATE = 'nope';

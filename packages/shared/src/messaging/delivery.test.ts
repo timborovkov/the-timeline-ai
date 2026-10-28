@@ -1,13 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { resetEnvForTests } from '#src/env.js';
-import {
-  messagingInternals,
-  sendDailyDigest,
-  sendMessage,
-  shouldMeterWorkspaceEmail,
-} from '#src/messaging/delivery.js';
-import { renderMessage } from '#src/messaging/templates.js';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 const billingFakes = vi.hoisted(() => ({
   reserveEmailUnits: vi.fn(),
@@ -15,11 +7,21 @@ const billingFakes = vi.hoisted(() => ({
   settleEmailUnits: vi.fn(),
 }));
 
-vi.mock('#src/billing/runtime.js', () => ({
-  reserveEmailUnits: billingFakes.reserveEmailUnits,
-  releaseEmailUnits: billingFakes.releaseEmailUnits,
-  settleEmailUnits: billingFakes.settleEmailUnits,
-}));
+await vi.mock(
+  import.meta.resolve('#src/billing/runtime.js'),
+  async () => ({
+    ...(await import('#src/billing/runtime.js')),
+    reserveEmailUnits: billingFakes.reserveEmailUnits,
+    releaseEmailUnits: billingFakes.releaseEmailUnits,
+    settleEmailUnits: billingFakes.settleEmailUnits,
+  }),
+  () => import('#src/billing/runtime.js'),
+);
+
+const { resetEnvForTests } = await import('#src/env.js');
+const { messagingInternals, sendDailyDigest, sendMessage, shouldMeterWorkspaceEmail } =
+  await import('#src/messaging/delivery.js');
+const { renderMessage } = await import('#src/messaging/templates.js');
 
 function fakeDeliveryDb(
   existing: { id: string; status: string; dedupeKey: string } | null,

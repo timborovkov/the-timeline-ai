@@ -1849,7 +1849,7 @@ export const CORPUS_DOCUMENTS: CorpusDocument[] = [
       'Atlas stores team-scoped events. Outbound MCP bearer keys see only team-visibility rows.',
       'Secrets at rest use AES-256-GCM. Integration tokens are never stored as plaintext.',
       'CSV preview replay reads stored bytes. We do not call the customer vendor during preview.',
-      'Production deletes follow team export. Demo wipe is pnpm demo:reset on local stacks only.',
+      'Production deletes follow team export. Demo wipe is bun run demo:reset on local stacks only.',
     ],
   }),
 ];

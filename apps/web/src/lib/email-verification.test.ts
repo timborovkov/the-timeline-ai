@@ -1,13 +1,19 @@
 import { createHash } from 'node:crypto';
 
-import { claimOwnedTeamFreeGrantsForVerifiedUser } from '@timeline/shared/billing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect, vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
-import { retryOwnedTeamFreeGrantsAfterSignIn, verifyEmailToken } from '@/lib/email-verification';
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  () => ({
+    claimOwnedTeamFreeGrantsForVerifiedUser: vi.fn().mockResolvedValue(undefined),
+  }),
+  () => import('@timeline/shared/billing'),
+);
 
-vi.mock('@timeline/shared/billing', () => ({
-  claimOwnedTeamFreeGrantsForVerifiedUser: vi.fn().mockResolvedValue(undefined),
-}));
+const { claimOwnedTeamFreeGrantsForVerifiedUser } = await import('@timeline/shared/billing');
+const { retryOwnedTeamFreeGrantsAfterSignIn, verifyEmailToken } =
+  await import('@/lib/email-verification');
 
 beforeEach(() => {
   vi.clearAllMocks();
