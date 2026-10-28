@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { displayObjectTitle } from '@/lib/object-title';
-
 describe('displayObjectTitle', () => {
   it('prefers explicit display titles when they match the current canonical name', () => {
     expect(

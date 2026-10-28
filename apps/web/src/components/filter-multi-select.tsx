@@ -98,7 +98,12 @@ export function FilterMultiSelect({
     const next = selectedReducer(selected, action);
     if (!controlled) dispatchInternalSelected(action);
     onValueChange?.(next);
-    inputRef.current?.dispatchEvent(new Event('input', { bubbles: true }));
+    // Form listeners snapshot values synchronously. React batches the reducer
+    // update, so publish the new hidden value before emitting its input event.
+    if (inputRef.current) {
+      inputRef.current.value = next;
+      inputRef.current.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   }
 
   const trigger = (

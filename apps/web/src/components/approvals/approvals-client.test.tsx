@@ -1,10 +1,9 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement, type ReactNode } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -20,47 +19,85 @@ const fakes = vi.hoisted(() => ({
   notifyAction: vi.fn(async (options: { run: () => Promise<{ error?: string }> }) => options.run()),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
-vi.mock('@/app/actions/suggestions', () => ({
-  acceptAllSuggestionAction: fakes.acceptAllSuggestionAction,
-  acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
-  acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
-  rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
-  rejectVisibleSuggestionsAction: fakes.rejectVisibleSuggestionsAction,
-  reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
-  reviseTaskSuggestionItemAction: fakes.reviseTaskSuggestionItemAction,
-}));
-vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
-vi.mock('@/app/actions/approval-preview', () => ({
-  getApprovalTargetSnapshotAction: fakes.getApprovalTargetSnapshotAction,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: fakes.notifyAction,
-}));
-vi.mock('@/app/actions/collection-pages', () => ({
-  loadSuggestionsPageAction: vi.fn(() => Promise.resolve({ suggestions: [], nextCursor: null })),
-}));
-vi.mock('@/components/collections/virtual-list', async () => {
-  const { createElement: h } = await import('react');
-  return {
-    VirtualList: ({
-      items,
-      renderItem,
-      getItemKey,
-    }: {
-      items: { id: string }[];
-      renderItem: (item: { id: string }, index: number) => ReactNode;
-      getItemKey: (item: { id: string }, index: number) => string;
-    }) =>
-      h(
-        'div',
-        null,
-        items.map((item, index) =>
-          h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => fakes,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/suggestions'),
+  () => ({
+    acceptAllSuggestionAction: fakes.acceptAllSuggestionAction,
+    acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
+    acceptVisibleSuggestionsAction: fakes.acceptVisibleSuggestionsAction,
+    rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
+    rejectVisibleSuggestionsAction: fakes.rejectVisibleSuggestionsAction,
+    reviseSuggestionItemAction: fakes.reviseSuggestionItemAction,
+    reviseTaskSuggestionItemAction: fakes.reviseTaskSuggestionItemAction,
+  }),
+  () => import('@/app/actions/suggestions'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({ searchObjectsAction: fakes.searchObjectsAction }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/approval-preview'),
+  () => ({
+    getApprovalTargetSnapshotAction: fakes.getApprovalTargetSnapshotAction,
+  }),
+  () => import('@/app/actions/approval-preview'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: fakes.notifyAction,
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/collection-pages'),
+  () => ({
+    loadSuggestionsPageAction: vi.fn(() => Promise.resolve({ suggestions: [], nextCursor: null })),
+  }),
+  () => import('@/app/actions/collection-pages'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  async () => {
+    const { createElement: h } = await import('react');
+    return {
+      VirtualList: ({
+        items,
+        renderItem,
+        getItemKey,
+      }: {
+        items: { id: string }[];
+        renderItem: (item: { id: string }, index: number) => ReactNode;
+        getItemKey: (item: { id: string }, index: number) => string;
+      }) =>
+        h(
+          'div',
+          null,
+          items.map((item, index) =>
+            h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+          ),
         ),
-      ),
-  };
-});
+    };
+  },
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ApprovalsClient } = await import('./approvals-client.js');
 
@@ -1251,6 +1288,7 @@ describe('ApprovalsClient', () => {
     expect(html).toContain('Select Send proposal');
     expect(html).toContain('Send proposal');
     expect(html).toContain('Proposal meeting');
+    expect(html).toContain('needs retry');
     expect(html).toContain('Select all visible proposals');
     expect(html).not.toContain('Accept all visible');
     expect(html).not.toContain('border-x border-border');

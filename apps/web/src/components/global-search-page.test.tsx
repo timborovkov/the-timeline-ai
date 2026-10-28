@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 /**
  * The full search page is the durable fallback when palette preview is not
@@ -14,7 +13,17 @@ const fakes = vi.hoisted(() => ({
   replace: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: fakes.replace }) }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ replace: fakes.replace }),
+  }),
+  () => import('next/navigation'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { GlobalSearchPage } = await import('./global-search-page.js');
 

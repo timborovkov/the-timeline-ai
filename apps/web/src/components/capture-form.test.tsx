@@ -1,10 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -32,47 +29,80 @@ const fakes = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('@/components/audio-recorder', () => ({
-  AudioRecorder: ({
-    onClipChange,
-  }: {
-    onClipChange?: (clip: {
-      blob: Blob;
-      url: string;
-      mimeType: string;
-      durationSec: number;
-    }) => void;
-  }) =>
-    createElement(
-      'button',
-      {
-        type: 'button',
-        onClick: () => {
-          onClipChange?.({
-            blob: new Blob(['recorded-audio'], { type: 'audio/webm' }),
-            url: 'blob:recorded-audio',
-            mimeType: 'audio/webm;codecs=opus',
-            durationSec: 12,
-          });
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@tanstack/react-query'),
+  () => ({ useQueryClient: fakes.useQueryClient }),
+  () => import('@tanstack/react-query'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/audio-recorder'),
+  () => ({
+    AudioRecorder: ({
+      onClipChange,
+    }: {
+      onClipChange?: (clip: {
+        blob: Blob;
+        url: string;
+        mimeType: string;
+        durationSec: number;
+      }) => void;
+    }) =>
+      createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => {
+            onClipChange?.({
+              blob: new Blob(['recorded-audio'], { type: 'audio/webm' }),
+              url: 'blob:recorded-audio',
+              mimeType: 'audio/webm;codecs=opus',
+              durationSec: 12,
+            });
+          },
         },
-      },
-      'Use recorded clip',
-    ),
-}));
-vi.mock('@/app/actions/events', () => ({
-  createAudioEventAction: fakes.createAudioEventAction,
-  createTextEventAction: fakes.createTextEventAction,
-  requestAudioUploadAction: fakes.requestAudioUploadAction,
-}));
-vi.mock('@/app/actions/documents', () => ({
-  finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,
-  requestDocumentUploadAction: fakes.requestDocumentUploadAction,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: fakes.notifyAction,
-}));
+        'Use recorded clip',
+      ),
+  }),
+  () => import('@/components/audio-recorder'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/events'),
+  () => ({
+    createAudioEventAction: fakes.createAudioEventAction,
+    createTextEventAction: fakes.createTextEventAction,
+    requestAudioUploadAction: fakes.requestAudioUploadAction,
+  }),
+  () => import('@/app/actions/events'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/documents'),
+  () => ({
+    finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,
+    requestDocumentUploadAction: fakes.requestDocumentUploadAction,
+  }),
+  () => import('@/app/actions/documents'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: fakes.notifyAction,
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { CaptureForm } = await import('./capture-form.js');
 

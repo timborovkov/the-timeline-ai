@@ -1,11 +1,13 @@
-import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { PGlite } from '@electric-sql/pglite';
-import { calendarEvents, teamCalendarSubscriptions } from '@timeline/db';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+
+type PGlite = PGliteType;
 
 // Real-DB coverage for the calendar feed visibility contract. Calendar apps
 // should see the same busy/free surface as the subscriber sees in Timeline:
@@ -16,18 +18,38 @@ const fakes = vi.hoisted(() => ({
   db: undefined as ReturnType<typeof drizzle> | undefined,
 }));
 
-vi.mock('@/lib/db', () => ({
-  get db() {
-    if (!fakes.db) throw new Error('test db not initialised');
-    return fakes.db;
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: new Proxy(
+      {},
+      {
+        get(_target, key) {
+          if (!fakes.db) throw new Error('test database is not initialized');
+          const value: unknown = Reflect.get(fakes.db, key);
+          return typeof value === 'function' ? (value.bind(fakes.db) as unknown) : value;
+        },
+      },
+    ),
+  }),
+  () => import('@/lib/db'),
+);
 
-vi.mock('next/server', () => ({
-  after: (callback: () => unknown) => {
-    fakes.afterCallbacks.push(callback);
-  },
-}));
+await vi.mock(
+  import.meta.resolve('next/server'),
+  () => ({
+    after: (callback: () => unknown) => {
+      fakes.afterCallbacks.push(callback);
+    },
+  }),
+  () => import('next/server'),
+);
+
+const { createHash } = await import('node:crypto');
+
+const { PGlite } = await import('@electric-sql/pglite');
+const { calendarEvents, teamCalendarSubscriptions } = await import('@timeline/db');
+const { drizzle } = await import('drizzle-orm/pglite');
 
 const { GET } = await import('./route.js');
 

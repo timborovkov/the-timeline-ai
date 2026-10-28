@@ -1,6 +1,6 @@
-import { RESTRICTED_SENTRY_DATA_COLLECTION } from '@timeline/shared/monitoring/sentry-scrub';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 const init = vi.fn();
 const setTag = vi.fn();
 const setScopeTag = vi.fn();
@@ -40,17 +40,28 @@ interface WorkerSentryInitOptions {
   beforeBreadcrumb?: (breadcrumb: WorkerBreadcrumb) => WorkerBreadcrumb;
 }
 
-vi.mock('@sentry/node', () => ({
-  init,
-  setTag,
-  withScope,
-  captureException,
-  flush,
-}));
+await vi.mock(
+  import.meta.resolve('@sentry/node'),
+  () => ({
+    init,
+    setTag,
+    withScope,
+    captureException,
+    flush,
+  }),
+  () => import('@sentry/node'),
+);
 
-vi.mock('bullmq', () => ({
-  UnrecoverableError: MockUnrecoverableError,
-}));
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({
+    UnrecoverableError: MockUnrecoverableError,
+  }),
+  () => import('bullmq'),
+);
+
+const { RESTRICTED_SENTRY_DATA_COLLECTION } =
+  await import('@timeline/shared/monitoring/sentry-scrub');
 
 const ENV_BACKUP = { ...process.env };
 

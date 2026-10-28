@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { verifyEmailToken } from '@/lib/email-verification';
-
 function digest(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   documentPresentation,
@@ -6,7 +7,6 @@ import {
   normalizeSuggestedTitle,
   truncateFilenameMiddle,
 } from '#src/documents/presentation.js';
-
 describe('document presentation', () => {
   it('keeps human document names as the display title', () => {
     expect(

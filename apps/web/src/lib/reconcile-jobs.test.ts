@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   whereArgs: [] as unknown[],
   queryResults: [] as unknown[][],
@@ -15,47 +16,67 @@ function queryResult(rows: unknown[]) {
   };
 }
 
-vi.mock('@timeline/db', () => ({
-  facts: { rawEventId: 'fact_raw_event_id' },
-  rawEvents: {
-    id: 'id',
-    teamId: 'team_id',
-    contentAudioUrl: 'content_audio_url',
-    contentText: 'content_text',
-    createdAt: 'created_at',
-    sourceMetadata: 'source_metadata',
-    visibility: 'visibility',
-  },
-}));
-vi.mock('drizzle-orm', () => ({
-  and: (...args: unknown[]) => ({ op: 'and', args }),
-  eq: (...args: unknown[]) => ({ op: 'eq', args }),
-  isNotNull: (arg: unknown) => ({ op: 'isNotNull', arg }),
-  isNull: (arg: unknown) => ({ op: 'isNull', arg }),
-  lt: (...args: unknown[]) => ({ op: 'lt', args }),
-  notExists: (arg: unknown) => ({ op: 'notExists', arg }),
-  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
-    op: 'sql',
-    strings: Array.from(strings),
-    values,
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({
+    facts: { rawEventId: 'fact_raw_event_id' },
+    rawEvents: {
+      id: 'id',
+      teamId: 'team_id',
+      contentAudioUrl: 'content_audio_url',
+      contentText: 'content_text',
+      createdAt: 'created_at',
+      sourceMetadata: 'source_metadata',
+      visibility: 'visibility',
+    },
   }),
-}));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: (arg: unknown) => {
-          fakes.whereArgs.push(arg);
-          return queryResult(fakes.queryResults.shift() ?? []);
-        },
-      }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('drizzle-orm'),
+  () => ({
+    and: (...args: unknown[]) => ({ op: 'and', args }),
+    eq: (...args: unknown[]) => ({ op: 'eq', args }),
+    isNotNull: (arg: unknown) => ({ op: 'isNotNull', arg }),
+    isNull: (arg: unknown) => ({ op: 'isNull', arg }),
+    lt: (...args: unknown[]) => ({ op: 'lt', args }),
+    notExists: (arg: unknown) => ({ op: 'notExists', arg }),
+    sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+      op: 'sql',
+      strings: Array.from(strings),
+      values,
     }),
-  },
-}));
+  }),
+  () => import('drizzle-orm'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.requireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: (arg: unknown) => {
+            fakes.whereArgs.push(arg);
+            return queryResult(fakes.queryResults.shift() ?? []);
+          },
+        }),
+      }),
+    },
+  }),
+  () => import('@/lib/db'),
+);
 
 const { reconcileOrphanedJobs } = await import('./reconcile-jobs.js');
 

@@ -1,18 +1,9 @@
-import { runInNewContext } from 'node:vm';
-
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
-
-import { DesktopSidebar } from '@/components/desktop-sidebar';
-import {
-  SIDEBAR_PREFERENCE_BOOTSTRAP,
-  persistSidebarExpanded,
-  sidebarExpandedFromCookie,
-} from '@/lib/sidebar-preference';
-
 function sidebarCookieDocument(
   pathname: string,
   initial: { app?: 'true' | 'false'; root?: 'true' | 'false' } = {},
@@ -44,19 +35,37 @@ function sidebarCookieDocument(
   };
 }
 
-vi.mock('@/components/rail-nav', () => ({
-  RailNav: ({ expanded }: { expanded: boolean }) => <nav data-expanded={expanded} />,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/rail-nav'),
+  () => ({
+    RailNav: ({ expanded }: { expanded: boolean }) => <nav data-expanded={expanded} />,
+  }),
+  () => import('@/components/rail-nav'),
+);
 
-vi.mock('@/components/team-switcher', () => ({
-  TeamSwitcher: ({ variant }: { variant: string }) => <button type="button">{variant}</button>,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/team-switcher'),
+  () => ({
+    TeamSwitcher: ({ variant }: { variant: string }) => <button type="button">{variant}</button>,
+  }),
+  () => import('@/components/team-switcher'),
+);
 
-vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/ui/tooltip'),
+  () => ({
+    Tooltip: ({ children }: { children: ReactNode }) => children,
+    TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+    TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+  }),
+  () => import('@/components/ui/tooltip'),
+);
+
+const { runInNewContext } = await import('node:vm');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { DesktopSidebar } = await import('@/components/desktop-sidebar');
+const { SIDEBAR_PREFERENCE_BOOTSTRAP, persistSidebarExpanded, sidebarExpandedFromCookie } =
+  await import('@/lib/sidebar-preference');
 
 describe('DesktopSidebar', () => {
   const active: TeamMembership = {

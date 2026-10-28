@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -10,14 +9,33 @@ const fakes = vi.hoisted(() => ({
   setTaskProjectAction: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@/app/actions/objects', () => ({
-  searchObjectsAction: fakes.searchObjectsAction,
-  setTaskProjectAction: fakes.setTaskProjectAction,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    searchObjectsAction: fakes.searchObjectsAction,
+    setTaskProjectAction: fakes.setTaskProjectAction,
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { act, cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { TaskProjectSelect } = await import('./task-project-select.js');
 

@@ -1,12 +1,12 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
 import JSZip from 'jszip';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { buildTeamExportArchive } from '#src/team-exports/index.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 type AnyDb = Db;
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';

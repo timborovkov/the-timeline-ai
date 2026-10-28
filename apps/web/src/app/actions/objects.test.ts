@@ -1,38 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  acceptObjectChangeAction,
-  addRelationshipAction,
-  archiveObjectAction,
-  bulkArchiveObjectsAction,
-  createNoteAction,
-  createObjectAction,
-  deleteNoteAction,
-  generateObjectSummaryAction,
-  loadTaskCategoryFilterStateAction,
-  loadTaskRowsAction,
-  loadObjectRowsAction,
-  markAllNotificationsReadAction,
-  markNotificationReadAction,
-  mergeObjectsAction,
-  pinObjectAction,
-  rejectObjectChangeAction,
-  removeRelationshipAction,
-  repairObjectMemoryAction,
-  resetTaskCategoryAction,
-  retryTaskCategoryAction,
-  searchAddableObjectsAction,
-  searchObjectsAction,
-  setTaskCategoryAction,
-  undoTaskCategoryChangeAction,
-  setTaskProjectAction,
-  updateNoteAction,
-  updateObjectAction,
-  unarchiveObjectAction,
-  unpinObjectAction,
-} from '@/app/actions/objects';
-import { expectPublicActionErrorReport } from '@/test/public-error';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for object actions. The shared object scope owns the
  * real database behavior; these tests pin the action boundary: validation,
@@ -101,29 +69,98 @@ const fakes = vi.hoisted(() => ({
   fakeEnqueueSuggestionJob: vi.fn(),
 }));
 
-vi.mock('@/lib/action-scope', async () => {
-  const { z } = await import('zod');
-  return {
-    resolveScope: fakes.fakeResolveScope,
-    uuidSchema: z.uuid(),
-  };
-});
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
-vi.mock('@/lib/db', () => ({ db: { transaction: fakes.fakeTransaction } }));
-vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.fakeWithTeam }));
-vi.mock('@timeline/shared/queue', () => ({
-  enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
-}));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { search: { capacity: 30, refillPerSec: 0.5 } },
-  checkRateLimit: fakes.fakeCheckRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
-vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
+await vi.mock(
+  import.meta.resolve('@/lib/action-scope'),
+  async () => {
+    const { z } = await import('zod');
+    return {
+      resolveScope: fakes.fakeResolveScope,
+      uuidSchema: z.uuid(),
+    };
+  },
+  () => import('@/lib/action-scope'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.fakeReportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { transaction: fakes.fakeTransaction } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({ withTeam: fakes.fakeWithTeam }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/queue'),
+  () => ({
+    enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
+  }),
+  () => import('@timeline/shared/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { search: { capacity: 30, refillPerSec: 0.5 } },
+    checkRateLimit: fakes.fakeCheckRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: fakes.fakeGetEnv }),
+  () => import('@timeline/shared/env'),
+);
+
+const {
+  acceptObjectChangeAction,
+  addRelationshipAction,
+  archiveObjectAction,
+  bulkArchiveObjectsAction,
+  createNoteAction,
+  createObjectAction,
+  deleteNoteAction,
+  generateObjectSummaryAction,
+  loadTaskCategoryFilterStateAction,
+  loadTaskRowsAction,
+  loadObjectRowsAction,
+  markAllNotificationsReadAction,
+  markNotificationReadAction,
+  mergeObjectsAction,
+  pinObjectAction,
+  rejectObjectChangeAction,
+  removeRelationshipAction,
+  repairObjectMemoryAction,
+  resetTaskCategoryAction,
+  retryTaskCategoryAction,
+  searchAddableObjectsAction,
+  searchObjectsAction,
+  setTaskCategoryAction,
+  undoTaskCategoryChangeAction,
+  setTaskProjectAction,
+  updateNoteAction,
+  updateObjectAction,
+  unarchiveObjectAction,
+  unpinObjectAction,
+} = await import('@/app/actions/objects');
+const { expectPublicActionErrorReport } = await import('@/test/public-error');
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

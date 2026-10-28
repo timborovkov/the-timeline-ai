@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Deleting a provider connection is a personal action: the route only locates
  * the active team and delegates to the scoped owner-only integration API.
@@ -13,20 +14,44 @@ const fakes = vi.hoisted(() => ({
   reportCaughtError: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    integrations: {
-      deleteOwnedProviderConnection: fakes.deleteOwnedProviderConnection,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
   }),
-}));
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      integrations: {
+        deleteOwnedProviderConnection: fakes.deleteOwnedProviderConnection,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { DELETE } = await import('./route.js');
 

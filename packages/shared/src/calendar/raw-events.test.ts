@@ -5,13 +5,13 @@ import {
   rawEvents,
   reconciliationEvidence,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { insertCalendarRawEvents, updateCalendarRawEvents } from '#src/calendar/raw-events.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const CALENDAR_EVENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';

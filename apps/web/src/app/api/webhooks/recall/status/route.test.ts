@@ -1,10 +1,6 @@
-import { createHmac } from 'node:crypto';
-
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as MeetingsModule from '@timeline/shared/meetings';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 /**
  * Route-level tests for the Recall status webhook. These cover the
  * state-machine logic that the unit tests can't reach:
@@ -37,44 +33,71 @@ const fakes = vi.hoisted(() => ({
   fakeWithTeam: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn().mockResolvedValue({
-    enqueueMeetingFinalizeJob: fakes.fakeEnqueueFinalize,
-    enqueueMeetingSchedulerTick: fakes.fakeEnqueueScheduler,
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: vi.fn().mockResolvedValue({
+      enqueueMeetingFinalizeJob: fakes.fakeEnqueueFinalize,
+      enqueueMeetingSchedulerTick: fakes.fakeEnqueueScheduler,
+    }),
   }),
-}));
-vi.mock('@/lib/sentry-report', () => ({
-  reportCaughtError: fakes.fakeReportCaughtError,
-  reportHandledEvent: fakes.fakeReportHandledEvent,
-}));
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({
+    reportCaughtError: fakes.fakeReportCaughtError,
+    reportHandledEvent: fakes.fakeReportHandledEvent,
+  }),
+  () => import('@/lib/sentry-report'),
+);
 
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
 
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: (...args: unknown[]) => {
-    fakes.fakeWithTeam(...args);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: (...args: unknown[]) => {
+      fakes.fakeWithTeam(...args);
+      return {
+        meetings: {
+          updateMeetingStatus: fakes.fakeUpdateStatus,
+          updateMeetingStatusForBot: fakes.fakeUpdateStatusForBot,
+          recordSavedMeetingJoinFailure: fakes.fakeRecordJoinFailure,
+          handleMeetingFailure: fakes.fakeHandleFailure,
+          handleMeetingNoShow: fakes.fakeHandleNoShow,
+        },
+      };
+    },
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+
+await vi.mock(
+  import.meta.resolve('@timeline/shared/meetings'),
+  async () => {
+    const actual = await import('@timeline/shared/meetings');
     return {
-      meetings: {
-        updateMeetingStatus: fakes.fakeUpdateStatus,
-        updateMeetingStatusForBot: fakes.fakeUpdateStatusForBot,
-        recordSavedMeetingJoinFailure: fakes.fakeRecordJoinFailure,
-        handleMeetingFailure: fakes.fakeHandleFailure,
-        handleMeetingNoShow: fakes.fakeHandleNoShow,
-      },
+      ...actual,
+      lookupMeetingByBotId: fakes.fakeLookup,
     };
   },
-}));
+  () => import('@timeline/shared/meetings'),
+);
 
-vi.mock('@timeline/shared/meetings', async () => {
-  const actual = await vi.importActual<typeof MeetingsModule>('@timeline/shared/meetings');
-  return {
-    ...actual,
-    lookupMeetingByBotId: fakes.fakeLookup,
-  };
-});
+const { createHmac } = await import('node:crypto');
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 

@@ -5,7 +5,7 @@ dist
 coverage
 playwright-report
 test-results
-pnpm-lock.yaml
+bun.lock
 packages/db/drizzle
 **/.next/**
 **/dist/**

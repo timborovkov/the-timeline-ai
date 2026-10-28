@@ -1,10 +1,10 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import { useHydrated } from '@/lib/use-hydrated';
+// Test environment: happy-dom
 
 function HydrationProbe() {
   return <span>{useHydrated() ? 'client' : 'server'}</span>;

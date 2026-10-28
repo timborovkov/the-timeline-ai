@@ -1,15 +1,16 @@
 import { PGlite } from '@electric-sql/pglite';
 import { rawEvents } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { reconcileArtifactEvidence } from '#src/artifacts/index.js';
 import { reconcileLinkArtifactsForRawEvent } from '#src/conversational/link-artifacts.js';
 import { buildEvidencePack } from '#src/evidence-pack/index.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 // Evidence packs are a security and provenance seam: callers receive only
 // visible immutable events, in deterministic order, with enough policy metadata
 // to audit the prompt or answer that consumed them.

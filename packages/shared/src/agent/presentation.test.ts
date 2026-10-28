@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   EXTERNAL_CHAT_MAX_CHARACTERS,
@@ -9,7 +10,6 @@ import {
   presentationInstructions,
   resolveAgentPresentation,
 } from '#src/agent/presentation.js';
-
 describe('agent presentation policy', () => {
   it('reserves rich presentation for the literal web delivery surface', () => {
     expect(resolveAgentPresentation('web')).toBe('web_rich');
@@ -147,7 +147,7 @@ describe('formatAgentAnswerForPresentation', () => {
   it('preserves command case, code tokens, and indentation during plain-text cleanup', () => {
     const answer = [
       '```sh',
-      'pnpm validate',
+      'bun run validate',
       '```',
       'Return `[]`.',
       'Use `AND`.',
@@ -156,7 +156,7 @@ describe('formatAgentAnswerForPresentation', () => {
     ].join('\n');
 
     expect(formatAgentAnswerForPresentation(answer, 'external_chat').text).toBe(
-      ['pnpm validate', 'Return [].', 'Use AND.', '  nested', '  SELECT  value FROM table'].join(
+      ['bun run validate', 'Return [].', 'Use AND.', '  nested', '  SELECT  value FROM table'].join(
         '\n',
       ),
     );

@@ -1,20 +1,37 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { ConnectedIntegrations } from '@/components/integrations/connected';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const routerRefresh = vi.hoisted(() => vi.fn());
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: routerRefresh }) }));
-vi.mock('@/app/actions/visibility', () => ({
-  setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: routerRefresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/visibility'),
+  () => ({
+    setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
+  }),
+  () => import('@/app/actions/visibility'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { ConnectedIntegrations } = await import('@/components/integrations/connected');
 
 afterEach(() => {
   vi.restoreAllMocks();

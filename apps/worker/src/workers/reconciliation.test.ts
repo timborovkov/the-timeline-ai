@@ -15,9 +15,10 @@ import {
   createResettablePGliteTestDb,
   type ResettablePGliteTestDb,
 } from '@timeline/shared/test/pglite';
+import { expect } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import type { PGlite } from '@electric-sql/pglite';
 
@@ -25,7 +26,6 @@ import {
   processReconciliationJob,
   type ReconciliationWorkerResult,
 } from '#src/workers/reconciliation.js';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OTHER_USER_ID = '33333333-3333-4333-8333-333333333333';

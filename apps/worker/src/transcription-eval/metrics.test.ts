@@ -1,9 +1,5 @@
-/**
- * Scoring must compare multilingual transcripts consistently while reducing all
- * transcript-bearing observations to content-free aggregates. These tests use
- * synthetic strings and no provider, audio file, or network resource.
- */
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   aggregateTranscriptionEvalMetrics,
@@ -13,6 +9,11 @@ import {
   type TranscriptionEvalObservation,
 } from '#src/transcription-eval/metrics.js';
 import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
+/**
+ * Scoring must compare multilingual transcripts consistently while reducing all
+ * transcript-bearing observations to content-free aggregates. These tests use
+ * synthetic strings and no provider, audio file, or network resource.
+ */
 
 describe('transcription quality metrics', () => {
   it('normalizes Unicode punctuation and calculates WER and CER', () => {

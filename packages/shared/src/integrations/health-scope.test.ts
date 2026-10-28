@@ -1,29 +1,32 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
-  integrationAuditLog,
-  integrations,
-  integrationSyncState,
-  notifications,
-  teams,
-  users,
-} from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-vi.mock('#src/messaging/delivery.js', () => ({
-  sendMessage: vi.fn().mockResolvedValue({ ok: true }),
-}));
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
-import { healthPauseNotificationDedupeKey } from '#src/integrations/health.js';
-import {
+await vi.mock(
+  import.meta.resolve('#src/messaging/delivery.js'),
+  () => ({
+    sendMessage: vi.fn().mockResolvedValue({ ok: true }),
+  }),
+  () => import('#src/messaging/delivery.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const { integrationAuditLog, integrations, integrationSyncState, notifications, teams, users } =
+  await import('@timeline/db');
+const { and, eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { healthPauseNotificationDedupeKey } = await import('#src/integrations/health.js');
+const {
   adminRecordCountedHealthFailure,
   adminResetIntegrationHealth,
   adminResumeIntegrationHealth,
-} from '#src/integrations/scope.js';
-import { sendMessage } from '#src/messaging/delivery.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+} = await import('#src/integrations/scope.js');
+const { sendMessage } = await import('#src/messaging/delivery.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_TEAM_ID = '22222222-2222-4222-8222-222222222222';

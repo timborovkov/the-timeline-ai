@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 const styles = readFileSync(new URL('./records-to-answer.module.css', import.meta.url), 'utf8');
 
 describe('records-to-answer motion contract', () => {

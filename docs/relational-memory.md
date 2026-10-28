@@ -1026,7 +1026,7 @@ When code changes ingest or proposals, update this file in the same change.
   ([ADR 0016](./adr/0016-ingest-signal-class-lives-on-the-envelope.md))
 - Live messy proposal eval (opt-in, not CI):
   `apps/worker/src/workers/proposal-engine.live-eval.test.ts`
-  (`pnpm test:proposal-engine:live`)
+  (`bun run test:proposal-engine:live`)
 - Proposal payload canonicalization:
   `packages/shared/src/suggestions/proposal-payload.ts`
 - Captured-work proposals: `packages/shared/src/integrations/github-task-proposals.ts`
@@ -1108,8 +1108,8 @@ vector recall is last.
    still approval-backed. Never cosine-as-write. Do not start this before
    packs.
 
-Eval while building: deterministic `pnpm test:eval` on every prompt/retrieval
-change; opt-in `pnpm test:proposal-engine:live` with real models, real
+Eval while building: deterministic `bun run test:eval` on every prompt/retrieval
+change; opt-in `bun run test:proposal-engine:live` with real models, real
 vectors, and messy payloads for the scenarios in this file. That live suite is
 not CI. About 90% of live fixtures should be messy (Sentry spikes, CI
 pulses, overlapping clients, typos, mention soup, truncated paste, silent

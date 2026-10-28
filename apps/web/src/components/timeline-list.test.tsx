@@ -1,13 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { TimelineEvent } from '@/lib/use-paginated-queries';
 import type { ComponentProps, ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   showInspector: vi.fn(),
@@ -18,66 +15,104 @@ const fakes = vi.hoisted(() => ({
   notifyError: vi.fn(),
 }));
 
-vi.mock('@/app/actions/events', () => ({
-  removeConversationalEventAction: fakes.removeConversationalEvent,
-}));
-vi.mock('@/components/documents/document-preview', () => ({
-  DocumentPreview: () => createElement('button', { type: 'button' }, 'Preview'),
-}));
-vi.mock('@/components/event-visibility-form', () => ({
-  EventVisibilityForm: ({
-    onSaved,
-  }: {
-    onSaved?: (value: { visibility: string; visibilityUserIds: string[] }) => void;
-  }) =>
-    createElement(
-      'button',
-      {
-        type: 'button',
-        onClick: () => onSaved?.({ visibility: 'specific_users', visibilityUserIds: ['user-2'] }),
-      },
-      'Save test visibility',
-    ),
-}));
-vi.mock('@/components/inspector-context', () => ({
-  useInspector: () => ({
-    open: false,
-    content: null,
-    show: fakes.showInspector,
-    hide: fakes.hideInspector,
+await vi.mock(
+  import.meta.resolve('@/app/actions/events'),
+  () => ({
+    removeConversationalEventAction: fakes.removeConversationalEvent,
   }),
-}));
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
-    fakes.notifyAction(options);
-    return options.run();
-  },
-  notifyError: (id: string, message: string) => {
-    fakes.notifyError(id, message);
-  },
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    renderSticky,
-    getItemKey,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    renderSticky?: (item: { id: string } | undefined) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      renderSticky?.(items[0]),
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+  () => import('@/app/actions/events'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/documents/document-preview'),
+  () => ({
+    DocumentPreview: () => createElement('button', { type: 'button' }, 'Preview'),
+  }),
+  () => import('@/components/documents/document-preview'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/event-visibility-form'),
+  () => ({
+    EventVisibilityForm: ({
+      onSaved,
+    }: {
+      onSaved?: (value: { visibility: string; visibilityUserIds: string[] }) => void;
+    }) =>
+      createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: () => onSaved?.({ visibility: 'specific_users', visibilityUserIds: ['user-2'] }),
+        },
+        'Save test visibility',
       ),
-    ),
-}));
+  }),
+  () => import('@/components/event-visibility-form'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/inspector-context'),
+  () => ({
+    useInspector: () => ({
+      open: false,
+      content: null,
+      show: fakes.showInspector,
+      hide: fakes.hideInspector,
+    }),
+  }),
+  () => import('@/components/inspector-context'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+      fakes.notifyAction(options);
+      return options.run();
+    },
+    notifyError: (id: string, message: string) => {
+      fakes.notifyError(id, message);
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      renderSticky,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      renderSticky?: (item: { id: string } | undefined) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        renderSticky?.(items[0]),
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
+      ),
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor, within } =
+  await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { TimelineList } = await import('./timeline-list.js');
 
@@ -700,75 +735,79 @@ describe('TimelineList evidence-owned actions', () => {
     expect(within(firstFooter).getByText('Specific people · 1')).toBeTruthy();
   });
 
-  it('confirms removal, retains retryable failures, then closes and refreshes on success', async () => {
-    const user = userEvent.setup();
-    const event = timelineEvent({
-      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-      occurredAt: '2026-08-04T12:35:00.000Z',
-      source: 'slack',
-      contentText: 'Remove this captured message',
-      authorUserId: 'user-1',
-      visibilityOwnerUserId: 'user-1',
-      sourceMetadata: {
-        slack_workspace_id: 'workspace-1',
-        slack_channel_id: 'channel-1',
-        slack_message_ts: '123.456',
-        slack_sender_name: 'Mikael',
-      },
-    });
+  it.each(['moments', 'events'] as const)(
+    'confirms removal, retains retryable failures, then closes and refreshes in %s mode',
+    async (mode) => {
+      const user = userEvent.setup();
+      const event = timelineEvent({
+        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        occurredAt: '2026-08-04T12:35:00.000Z',
+        source: 'slack',
+        contentText: 'Remove this captured message',
+        authorUserId: 'user-1',
+        visibilityOwnerUserId: 'user-1',
+        sourceMetadata: {
+          slack_workspace_id: 'workspace-1',
+          slack_channel_id: 'channel-1',
+          slack_message_ts: '123.456',
+          slack_sender_name: 'Mikael',
+        },
+      });
 
-    render(
-      <TimelineList
-        events={[event]}
-        authorMap={new Map()}
-        currentUserId="user-1"
-        isAdmin={false}
-      />,
-    );
-    await user.click(screen.getByRole('button', { name: /^Remove this captured message/i }));
-    renderLastInspectorContent();
-
-    const openRemoval = async () => {
-      await user.click(screen.getByRole('button', { name: /Actions for Slack evidence/ }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Remove evidence' }));
-    };
-
-    await openRemoval();
-    expect(
-      screen.getByText(
-        /tombstone this captured Telegram or Slack message and all stored revisions/i,
-      ),
-    ).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: 'Keep evidence' }));
-    expect(fakes.removeConversationalEvent).not.toHaveBeenCalled();
-
-    fakes.removeConversationalEvent.mockResolvedValueOnce({ error: 'Removal failed' });
-    await openRemoval();
-    await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
-    await waitFor(() => {
-      expect(fakes.notifyAction).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: 'Evidence removed',
-          error: 'Couldn’t remove evidence',
-        }),
+      render(
+        <TimelineList
+          mode={mode}
+          events={[event]}
+          authorMap={new Map()}
+          currentUserId="user-1"
+          isAdmin={false}
+        />,
       );
-    });
-    expect(fakes.hideInspector).not.toHaveBeenCalled();
+      await user.click(screen.getByRole('button', { name: /^Remove this captured message/i }));
+      renderLastInspectorContent();
 
-    fakes.removeConversationalEvent.mockResolvedValueOnce({ ok: true });
-    await openRemoval();
-    await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
-    await waitFor(() => {
-      expect(fakes.hideInspector).toHaveBeenCalledTimes(1);
-      expect(fakes.refresh).toHaveBeenCalledTimes(1);
-      expect(fakes.notifyAction).toHaveBeenCalledWith(
-        expect.objectContaining({
-          success: 'Evidence removed',
-          error: 'Couldn’t remove evidence',
-        }),
-      );
-    });
-  });
+      const openRemoval = async () => {
+        await user.click(screen.getByRole('button', { name: /Actions for Slack evidence/ }));
+        await user.click(await screen.findByRole('menuitem', { name: 'Remove evidence' }));
+      };
+
+      await openRemoval();
+      expect(
+        screen.getByText(
+          /tombstone this captured Telegram or Slack message and all stored revisions/i,
+        ),
+      ).toBeTruthy();
+      await user.click(screen.getByRole('button', { name: 'Keep evidence' }));
+      expect(fakes.removeConversationalEvent).not.toHaveBeenCalled();
+
+      fakes.removeConversationalEvent.mockResolvedValueOnce({ error: 'Removal failed' });
+      await openRemoval();
+      await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
+      await waitFor(() => {
+        expect(fakes.notifyAction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            success: 'Evidence removed',
+            error: 'Couldn’t remove evidence',
+          }),
+        );
+      });
+      expect(fakes.hideInspector).not.toHaveBeenCalled();
+
+      fakes.removeConversationalEvent.mockResolvedValueOnce({ ok: true });
+      await openRemoval();
+      await user.click(screen.getByRole('button', { name: 'Remove evidence' }));
+      await waitFor(() => {
+        expect(fakes.hideInspector).toHaveBeenCalledTimes(1);
+        expect(fakes.refresh).toHaveBeenCalledTimes(1);
+        expect(fakes.notifyAction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            success: 'Evidence removed',
+            error: 'Couldn’t remove evidence',
+          }),
+        );
+      });
+    },
+  );
 });
 
 describe('TimelineList inspector source caps', () => {

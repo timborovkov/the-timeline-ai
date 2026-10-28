@@ -1,21 +1,22 @@
 .git
 .github
 .claude
-node_modules
-dist
-.next
-.turbo
-*.tsbuildinfo
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/*.tsbuildinfo
 
-.env
-.env.local
-.env.*.local
+**/.env
+**/.env.*
 
 .DS_Store
 Thumbs.db
 
 coverage
 .nyc_output
+test-results
+playwright-report
 
 # Docker build context doesn't need these
 *.md

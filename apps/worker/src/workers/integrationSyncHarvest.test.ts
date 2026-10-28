@@ -6,16 +6,17 @@ import {
   rawEvents,
   reconciliationEvidence,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { asc, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
   harvestIntegrationDocument,
   type IntegrationDocumentHarvestIO,
 } from '#src/workers/integrationSync.js';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const INTEGRATION_ID = '33333333-3333-4333-8333-333333333333';

@@ -1,15 +1,15 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, reconciliationEvidence, reconciliationEvidenceAnchors } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { EmbedResult } from '#src/llm/embed.js';
 import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
 
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 /**
  * Real-DB integration tests for the Phase 9 document scope. Uses pglite
  * (in-process Postgres in WASM) so we can exercise the actual SQL —

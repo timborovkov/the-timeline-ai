@@ -1,7 +1,7 @@
 # Local development stack. Everything runs in containers, no cloud dependencies.
 # Usage:
 #   docker compose up -d        # start infra (db, redis, qdrant, rustfs)
-#   pnpm dev                    # run app + workers on host with hot reload
+#   bun run dev                    # run app + workers on host with hot reload
 #
 # To run app + workers in containers too (closer to prod parity):
 #   docker compose --profile app up
@@ -114,7 +114,7 @@ services:
         echo 'RustFS buckets ready.';
 
   # ---- App services (optional, --profile app) ----
-  # For most local dev you run web/workers on host via `pnpm dev` for hot reload.
+  # For most local dev you run web/workers on host via `bun run dev` for hot reload.
   # These profiles let you exercise the full container stack when needed.
 
   web:

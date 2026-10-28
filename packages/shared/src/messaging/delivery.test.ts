@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import { messagingInternals, sendDailyDigest, sendMessage } from '#src/messaging/delivery.js';
 import { renderMessage } from '#src/messaging/templates.js';
-
 function fakeDeliveryDb(
   existing: { id: string; status: string; dedupeKey: string } | null,
   opts: { claimFailed?: boolean; claimPending?: boolean } = {},

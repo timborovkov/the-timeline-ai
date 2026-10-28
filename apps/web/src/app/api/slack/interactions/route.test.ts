@@ -1,23 +1,49 @@
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const ENV_BACKUP = { ...process.env };
 
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
-vi.mock('@timeline/shared/email', () => ({ clientIpFromHeaders: () => '203.0.113.10' }));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { slackWebhookIp: { capacity: 1, refillPerSecond: 1 } },
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-  checkRateLimit: () => Promise.resolve({ ok: true }),
-}));
-vi.mock('@timeline/shared/slack', () => ({
-  verifySlackSignature: vi.fn(),
-  handleSlackInteraction: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/email'),
+  () => ({ clientIpFromHeaders: () => '203.0.113.10' }),
+  () => import('@timeline/shared/email'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { slackWebhookIp: { capacity: 1, refillPerSecond: 1 } },
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+    checkRateLimit: () => Promise.resolve({ ok: true }),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slack'),
+  () => ({
+    verifySlackSignature: vi.fn(),
+    handleSlackInteraction: vi.fn(),
+  }),
+  () => import('@timeline/shared/slack'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 

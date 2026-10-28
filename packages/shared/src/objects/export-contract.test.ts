@@ -1,9 +1,8 @@
-import { describe, expectTypeOf, it } from 'vitest';
+import { describe, expectTypeOf, it } from 'bun:test';
 
 import type { objects as rootObjects } from '#src/index.js';
 import type * as objectIndex from '#src/objects/index.js';
 import type * as objectTypes from '#src/objects/types.js';
-
 describe('object type export contracts', () => {
   it('keeps both object entry points and the root namespace type-identical', () => {
     expectTypeOf<objectIndex.ObjectType>().toEqualTypeOf<objectTypes.ObjectType>();

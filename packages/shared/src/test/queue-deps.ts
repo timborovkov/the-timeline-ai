@@ -1,4 +1,4 @@
-import { type Mock, vi } from 'vitest';
+import { type Mock, vi } from '@timeline/test-support';
 
 type QueueMock = Mock<() => Promise<void>>;
 

@@ -1,5 +1,33 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { McpAuthPrincipal } from '#src/mcp-server/oauth.js';
+import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+const semanticSearchFakes = vi.hoisted(() => ({
+  embed: vi.fn(),
+  search: vi.fn(),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/llm/embed.js'),
+  () => ({ embed: semanticSearchFakes.embed }),
+  () => import('#src/llm/embed.js'),
+);
+
+await vi.mock(
+  import.meta.resolve('#src/qdrant/client.js'),
+  () => ({
+    getQdrantClient: vi.fn(() => ({ search: semanticSearchFakes.search })),
+  }),
+  () => import('#src/qdrant/client.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   agentSuggestionItems,
   agentSuggestions,
   mcpOutboundKeys,
@@ -8,39 +36,23 @@ import {
   mcpOutboundOAuthTokens,
   rawEvents,
   teamMembers,
-} from '@timeline/db';
-import { and, eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { McpAuthPrincipal } from '#src/mcp-server/oauth.js';
-import type { SearchHit, SearchOpts } from '#src/qdrant/client.js';
-
-import { EXTERNAL_AGENT_TURN_TIMEOUT_MS } from '#src/agent/timeout.js';
-import { buildAgentTools } from '#src/agent/tools.js';
-import {
+} = await import('@timeline/db');
+const { and, eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { EXTERNAL_AGENT_TURN_TIMEOUT_MS } = await import('#src/agent/timeout.js');
+const { buildAgentTools } = await import('#src/agent/tools.js');
+const {
   buildTimelineMcpAuthInfo,
   createTimelineMcpHttpHandler,
-  handleMcpRequest as handleTimelineMcpRequest,
+  handleMcpRequest: handleTimelineMcpRequest,
   isValidatedCurrentTimelineAgentCall,
   validateTimelineMcpRequestHeaders,
-} from '#src/mcp-server/handler.js';
-import { hashKey } from '#src/mcp-server/keys.js';
-import { hashSecret } from '#src/mcp-server/oauth-core.js';
-import { TASK_CATEGORIES } from '#src/task-categories/types.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-const semanticSearchFakes = vi.hoisted(() => ({
-  embed: vi.fn(),
-  search: vi.fn(),
-}));
-
-vi.mock('#src/llm/embed.js', () => ({ embed: semanticSearchFakes.embed }));
-
-vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: vi.fn(() => ({ search: semanticSearchFakes.search })),
-}));
+} = await import('#src/mcp-server/handler.js');
+const { hashKey } = await import('#src/mcp-server/keys.js');
+const { hashSecret } = await import('#src/mcp-server/oauth-core.js');
+const { TASK_CATEGORIES } = await import('#src/task-categories/types.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

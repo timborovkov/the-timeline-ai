@@ -1,0 +1,22 @@
+{
+  "name": "@timeline/test-support",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "@sinonjs/fake-timers": "15.4.0",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "typecheck": "bun x --bun --no-install tsc --noEmit",
+    "test": "bun ../../scripts/testing/run.ts packages/test-support",
+    "lint": "bun x --bun --no-install eslint runtime.test.ts"
+  }
+}

@@ -1,13 +1,19 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('@/components/work-subnav'),
+  () => ({
+    WorkSubnav: ({ current }: { current: string }) => (
+      <nav aria-label="Work navigation">{current}</nav>
+    ),
+  }),
+  () => import('@/components/work-subnav'),
+);
 
-vi.mock('@/components/work-subnav', () => ({
-  WorkSubnav: ({ current }: { current: string }) => (
-    <nav aria-label="Work navigation">{current}</nav>
-  ),
-}));
+const { cleanup, render, screen } = await import('@testing-library/react');
 
 const { default: CalendarLoading } = await import('./loading.js');
 

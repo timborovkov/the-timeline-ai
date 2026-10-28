@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { PublicDocument } from '@/lib/public-site/types';
 
 import { metadataForPublicDocument } from '@/lib/public-site/metadata';
-
 describe('public document metadata', () => {
   it('uses the registry canonical path and indexability', () => {
     const metadata = metadataForPublicDocument(document());

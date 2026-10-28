@@ -1,12 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, documents, documentVersions, meetings, rawEvents } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createJobRecoveryScope } from '#src/job-recovery/index.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const OTHER_TEAM_ID = '99999999-9999-9999-9999-999999999999';
 const ADMIN_ID = '22222222-2222-2222-2222-222222222222';

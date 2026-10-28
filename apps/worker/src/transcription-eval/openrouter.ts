@@ -22,7 +22,7 @@ export const OPENROUTER_TRANSCRIPTION_EVAL_BASE_URL = 'https://openrouter.ai/api
 
 export interface OpenRouterTranscriptionEvalTransportOptions {
   apiKey: string;
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   nowMs?: () => number;
 }
 
@@ -198,7 +198,7 @@ async function inspectEndpointIsolation(
   modelId: string,
   route: ZdrRegistryRoute,
   apiKey: string,
-  fetchImpl: typeof globalThis.fetch,
+  fetchImpl: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>,
 ): Promise<TranscriptionEvalZdrRoutes> {
   let response: Response;
   try {
@@ -236,7 +236,7 @@ async function inspectEndpointIsolation(
 async function fetchGenerationRoute(
   generationId: string | null,
   apiKey: string,
-  fetchImpl: typeof globalThis.fetch,
+  fetchImpl: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>,
 ): Promise<GenerationRoute> {
   if (!generationId) return {};
   const url = new URL(`${OPENROUTER_TRANSCRIPTION_EVAL_BASE_URL}/generation`);

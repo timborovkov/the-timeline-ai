@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   changeMemberRoleAction: vi.fn(),
@@ -13,20 +12,41 @@ const fakes = vi.hoisted(() => ({
   notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: fakes.refresh }),
-}));
-vi.mock('@/app/actions/teams', () => fakes);
-vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/teams'),
+  () => fakes,
+  () => import('@/app/actions/teams'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: (options: { run: () => Promise<{ error?: string }> }) =>
+      fakes.notifyAction(options),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { MemberRoleForm, PendingInviteActions, RemoveMemberForm } =
   await import('./team-member-actions.js');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fakes.changeMemberRoleAction.mockResolvedValue({});
+  fakes.removeMemberAction.mockResolvedValue({});
+  fakes.resendInviteAction.mockResolvedValue({});
+  fakes.revokeInviteAction.mockResolvedValue({});
 });
 
 afterEach(() => {

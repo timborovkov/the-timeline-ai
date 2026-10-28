@@ -2,7 +2,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   APP_MARK_SHAPES,
@@ -14,7 +15,6 @@ import {
   PWA_BACKGROUND_COLOR,
   pwaViewport,
 } from '@/lib/pwa-splash';
-
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const splashDir = join(webRoot, 'public/splash');
 const iconSvg = readFileSync(join(webRoot, 'src/app/icon.svg'), 'utf8');

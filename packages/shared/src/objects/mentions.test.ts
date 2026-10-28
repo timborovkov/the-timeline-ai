@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   AGENT_DISPLAY_NAME,
@@ -10,7 +11,6 @@ import {
   parseMentions,
   type MentionMember,
 } from '#src/objects/mentions.js';
-
 const avery: MentionMember = {
   userId: '11111111-1111-1111-1111-111111111111',
   name: 'Avery Timeline',

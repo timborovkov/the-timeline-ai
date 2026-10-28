@@ -1,13 +1,21 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { chatHandoffKey } from '@/lib/chat-handoff';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ push: vi.fn() }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: fakes.push }) }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ push: fakes.push }),
+  }),
+  () => import('next/navigation'),
+);
+
+const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
+const { chatHandoffKey } = await import('@/lib/chat-handoff');
 
 const { HomeAskComposer } = await import('@/components/home/home-ask-composer');
 

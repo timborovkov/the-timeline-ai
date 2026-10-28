@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   TRANSCRIPTION_SPEECH_CANARY_TEXT,
@@ -26,7 +27,6 @@ import {
   OPENROUTER_OFFICIAL_BASE_URL,
   OPENROUTER_PRIVATE_PROVIDER_ROUTING,
 } from '#src/llm/privacy.js';
-
 function serializedRequestBody(body: unknown): string {
   if (typeof body !== 'string') throw new Error('Expected a serialized JSON request body');
   return body;
@@ -119,7 +119,9 @@ describe('OpenRouter authenticated ZDR model canaries', () => {
   it('issues all authenticated requests with one key and returns content-free outcomes', async () => {
     const requests: { body: Record<string, unknown>; headers: Headers; url: string }[] = [];
     const providerOnlyContent = 'provider-output-must-not-be-recorded';
-    const fetchImpl: typeof globalThis.fetch = (input, init) => {
+    const fetchImpl: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (input, init) => {
       const url = requestInputUrl(input);
       const body = JSON.parse(serializedRequestBody(init?.body)) as Record<string, unknown>;
       requests.push({ body, headers: new Headers(init?.headers), url });
@@ -170,7 +172,9 @@ describe('OpenRouter authenticated ZDR model canaries', () => {
 
   it('reports only bounded status metadata when a provider returns content or an error body', async () => {
     const sensitiveBody = 'provider-secret-or-echoed-content';
-    const fetchImpl: typeof globalThis.fetch = (_input, init) => {
+    const fetchImpl: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_input, init) => {
       const body = JSON.parse(serializedRequestBody(init?.body)) as Record<string, unknown>;
       if (body.model === TIMELINE_MODELS.structuredFallback.id) {
         return Promise.resolve(

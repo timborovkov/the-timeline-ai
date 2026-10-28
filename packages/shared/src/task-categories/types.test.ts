@@ -1,5 +1,5 @@
-/** Business intent: category keys are a stable wire contract with one clear label each. */
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   TASK_CATEGORIES,
@@ -8,6 +8,7 @@ import {
   taskCategoryLabel,
   taskCategorySchema,
 } from '#src/task-categories/types.js';
+/** Business intent: category keys are a stable wire contract with one clear label each. */
 
 describe('task category taxonomy', () => {
   it('has unique keys, labels, and matching selector options', () => {

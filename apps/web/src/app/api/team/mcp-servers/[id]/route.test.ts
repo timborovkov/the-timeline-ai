@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for updating and deleting MCP server rows. The MCP
  * scope owns authorization details; this route owns auth/team gates, input
@@ -14,20 +15,40 @@ const fakes = vi.hoisted(() => ({
   trackProductEventBestEffort: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    mcp: {
-      updateServer: fakes.updateServer,
-      deleteServer: fakes.deleteServer,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
   }),
-}));
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      mcp: {
+        updateServer: fakes.updateServer,
+        deleteServer: fakes.deleteServer,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { DELETE, PATCH } = await import('./route.js');
 

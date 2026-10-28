@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   APP_ANALYTICS_SURFACES,
@@ -15,7 +16,6 @@ import {
   validateProductEventProperties,
   type ProductEventPayloads,
 } from '#src/analytics/events.js';
-
 describe('product analytics contract', () => {
   it('documents every event as pseudonymous with an explicit purpose and retention target', () => {
     expect(Object.keys(PRODUCT_EVENT_METADATA).sort()).toEqual(

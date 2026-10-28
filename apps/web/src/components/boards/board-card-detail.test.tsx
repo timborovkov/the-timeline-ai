@@ -1,13 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   confirm: vi.fn(),
@@ -23,21 +20,151 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
-}));
-vi.mock('@/components/ui/app-dialog', () => ({
-  useAppDialog: () => ({ confirm: fakes.confirm, node: null }),
-}));
-vi.mock('@/app/actions/boards', () => ({ removeBoardItemAction: fakes.removeBoardItemAction }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: fakes.notifyAction,
-}));
-vi.mock('@/app/actions/objects', () => ({
-  resetTaskCategoryAction: vi.fn(),
-  retryTaskCategoryAction: vi.fn(),
-  setTaskCategoryAction: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/ui/app-dialog'),
+  () => ({
+    useAppDialog: () => ({ confirm: fakes.confirm, node: null }),
+  }),
+  () => import('@/components/ui/app-dialog'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/boards'),
+  () => ({ removeBoardItemAction: fakes.removeBoardItemAction }),
+  () => import('@/app/actions/boards'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: fakes.notifyAction,
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    searchObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected searchObjectsAction call in this test');
+    }),
+    searchAddableObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected searchAddableObjectsAction call in this test');
+    }),
+    loadTaskRowsAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskRowsAction call in this test');
+    }),
+    loadObjectRowsAction: vi.fn(() => {
+      throw new Error('Unexpected loadObjectRowsAction call in this test');
+    }),
+    createObjectAction: vi.fn(() => {
+      throw new Error('Unexpected createObjectAction call in this test');
+    }),
+    updateObjectAction: vi.fn(() => {
+      throw new Error('Unexpected updateObjectAction call in this test');
+    }),
+    undoTaskCategoryChangeAction: vi.fn(() => {
+      throw new Error('Unexpected undoTaskCategoryChangeAction call in this test');
+    }),
+    setTaskProjectAction: vi.fn(() => {
+      throw new Error('Unexpected setTaskProjectAction call in this test');
+    }),
+    updateObjectMetadataAction: vi.fn(() => {
+      throw new Error('Unexpected updateObjectMetadataAction call in this test');
+    }),
+    createIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected createIdentityFacetAction call in this test');
+    }),
+    archiveIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected archiveIdentityFacetAction call in this test');
+    }),
+    setPersonCompanyAction: vi.fn(() => {
+      throw new Error('Unexpected setPersonCompanyAction call in this test');
+    }),
+    structureContactFromBoardNotesAction: vi.fn(() => {
+      throw new Error('Unexpected structureContactFromBoardNotesAction call in this test');
+    }),
+    loadTaskCategoryStatesAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskCategoryStatesAction call in this test');
+    }),
+    loadTaskCategoryFilterStateAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskCategoryFilterStateAction call in this test');
+    }),
+    loadTaskPrimaryProjectsAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskPrimaryProjectsAction call in this test');
+    }),
+    unarchiveObjectAction: vi.fn(() => {
+      throw new Error('Unexpected unarchiveObjectAction call in this test');
+    }),
+    archiveObjectAction: vi.fn(() => {
+      throw new Error('Unexpected archiveObjectAction call in this test');
+    }),
+    pinObjectAction: vi.fn(() => {
+      throw new Error('Unexpected pinObjectAction call in this test');
+    }),
+    unpinObjectAction: vi.fn(() => {
+      throw new Error('Unexpected unpinObjectAction call in this test');
+    }),
+    bulkArchiveObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected bulkArchiveObjectsAction call in this test');
+    }),
+    mergeObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected mergeObjectsAction call in this test');
+    }),
+    findObjectCleanupSuggestionsAction: vi.fn(() => {
+      throw new Error('Unexpected findObjectCleanupSuggestionsAction call in this test');
+    }),
+    repairObjectMemoryAction: vi.fn(() => {
+      throw new Error('Unexpected repairObjectMemoryAction call in this test');
+    }),
+    addRelationshipAction: vi.fn(() => {
+      throw new Error('Unexpected addRelationshipAction call in this test');
+    }),
+    removeRelationshipAction: vi.fn(() => {
+      throw new Error('Unexpected removeRelationshipAction call in this test');
+    }),
+    updateNoteAction: vi.fn(() => {
+      throw new Error('Unexpected updateNoteAction call in this test');
+    }),
+    generateObjectSummaryAction: vi.fn(() => {
+      throw new Error('Unexpected generateObjectSummaryAction call in this test');
+    }),
+    markNotificationReadAction: vi.fn(() => {
+      throw new Error('Unexpected markNotificationReadAction call in this test');
+    }),
+    markAllNotificationsReadAction: vi.fn(() => {
+      throw new Error('Unexpected markAllNotificationsReadAction call in this test');
+    }),
+    acceptObjectChangeAction: vi.fn(() => {
+      throw new Error('Unexpected acceptObjectChangeAction call in this test');
+    }),
+    rejectObjectChangeAction: vi.fn(() => {
+      throw new Error('Unexpected rejectObjectChangeAction call in this test');
+    }),
+    deleteNoteAction: vi.fn(() => {
+      throw new Error('Unexpected deleteNoteAction call in this test');
+    }),
+    createNoteAction: vi.fn(() => {
+      throw new Error('Unexpected createNoteAction call in this test');
+    }),
+    resetTaskCategoryAction: vi.fn(),
+    retryTaskCategoryAction: vi.fn(),
+    setTaskCategoryAction: vi.fn(),
+  }),
+  () => import('@/app/actions/objects'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { BoardCardDetail } = await import('./board-card-detail.js');
 

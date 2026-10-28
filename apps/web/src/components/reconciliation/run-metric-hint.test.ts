@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { runMetricHint } from '@/components/reconciliation/run-metric-hint';
-
 describe('runMetricHint', () => {
   it('summarizes audit, repair, and sampling metrics for hover titles', () => {
     expect(

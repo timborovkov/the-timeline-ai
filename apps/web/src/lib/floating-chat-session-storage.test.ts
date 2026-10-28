@@ -1,6 +1,5 @@
-// @vitest-environment happy-dom
-
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import {
   clearAllFloatingChatSessionIds,
@@ -8,6 +7,7 @@ import {
   readFloatingChatSessionId,
   storeFloatingChatSessionId,
 } from '@/lib/floating-chat-session-storage';
+// Test environment: happy-dom
 
 const NOW = Date.parse('2026-08-21T12:00:00.000Z');
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;

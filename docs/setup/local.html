@@ -13,7 +13,7 @@
       <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-23</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
-        <code>pnpm dev</code> for app + worker hot reload.
+        <code>bun run dev</code> for app + worker hot reload.
       </p>
 
       <p>
@@ -23,15 +23,12 @@
 
       <h2 id="prerequisites">Prerequisites</h2>
       <ul>
-        <li>Node 24.22.1 (LTS — see <code>.nvmrc</code>)</li>
-        <li>pnpm 11.8+</li>
+        <li>Bun 1.4.4 (see <code>.bun-version</code>)</li>
         <li>Docker Desktop (or compatible)</li>
       </ul>
 
       <h2 id="first-time-setup">First-time setup</h2>
-      <pre><code>nvm install
-nvm use
-corepack enable
+      <pre><code>bun --version # must match .bun-version
 cp .env.example .env
 # Next.js dev server reads env from the app dir, so symlink:
 ln -sf ../../.env apps/web/.env
@@ -98,32 +95,32 @@ docker compose ps           # all services should be "healthy"
         does not fail with overlayfs <code>EXDEV</code> / CrossesDevices on some Cloud Agent hosts.
         New collections store original vectors and payload on disk with scalar int8 quantization in
         RAM. An existing in-RAM <code>events</code> collection is not rewritten in place; copy it
-        with <code>pnpm --filter @timeline/worker qdrant-migrate-collection</code> (see
+        with <code>bun run --filter @timeline/worker qdrant-migrate-collection</code> (see
         <a href="./openrouter.html#qdrant-storage">OpenRouter setup</a>) before expecting the lower
         memory footprint.
       </p>
 
       <p>Install deps, run migrations, and optionally seed demo data:</p>
-      <pre><code>pnpm install
+      <pre><code>bun run deps
 set -a
 . ./.env
 set +a
 
-pnpm db:generate            # only if you changed schema
-pnpm db:migrate
-pnpm demo:seed              # optional Acme Labs demo corpus; indexes vectors and verifies evidence
-pnpm dev:seed:heavy         # optional extra volume for infinite-scroll / virtualization
+bun run db:generate            # only if you changed schema
+bun run db:migrate
+bun run demo:seed              # optional Acme Labs demo corpus; indexes vectors and verifies evidence
+bun run dev:seed:heavy         # optional extra volume for infinite-scroll / virtualization
 </code></pre>
       <p>
         Exporting the root environment is required for the database and worker commands. The root
-        <code>pnpm dev</code> script runs Turbo in loose env mode so those exported values reach the
-        worker; Next.js reads the same values through <code>apps/web/.env</code>.
+        <code>bun run dev</code> script runs Turbo in loose env mode so those exported values reach
+        the worker; Next.js reads the same values through <code>apps/web/.env</code>.
       </p>
       <p>
-        <code>pnpm demo:seed</code> runs the idempotent dev seed, indexes every fixture-version raw
-        event, fact, document chunk, and meeting chunk through the production embed worker path, and
-        then runs <code>pnpm demo:verify</code>. The commands refuse production and only use local
-        database and Qdrant hosts unless <code>ALLOW_DEV_SEED</code> is exactly
+        <code>bun run demo:seed</code> runs the idempotent dev seed, indexes every fixture-version
+        raw event, fact, document chunk, and meeting chunk through the production embed worker path,
+        and then runs <code>bun run demo:verify</code>. The commands refuse production and only use
+        local database and Qdrant hosts unless <code>ALLOW_DEV_SEED</code> is exactly
         <code>I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS</code>. Before writing fixture
         documents, the seed also requires a loopback <code>S3_ENDPOINT</code> and the
         <code>timeline-documents</code> bucket. Another isolated development store requires the
@@ -152,13 +149,14 @@ pnpm dev:seed:heavy         # optional extra volume for infinite-scroll / virtua
         confirms applied point writes. Seeded canonical objects and document versions leave legacy
         <code>source_event_id</code> empty and expose demo provenance through reconciliation
         evidence, associations, and applied outputs. The glossary, story, and fake credentials live
-        in <a href="../demo-corpus.md">docs/demo-corpus.md</a>. <code>pnpm demo:reset</code> wipes
-        the local stack and seeds again. <code>pnpm dev:seed:heavy</code> adds enough extra Acme
-        Labs rows to force infinite-scroll fetches and virtualization on collection feeds.
+        in <a href="../demo-corpus.md">docs/demo-corpus.md</a>.
+        <code>bun run demo:reset</code> wipes the local stack and seeds again.
+        <code>bun run dev:seed:heavy</code> adds enough extra Acme Labs rows to force
+        infinite-scroll fetches and virtualization on collection feeds.
       </p>
 
       <p>Run the app:</p>
-      <pre><code>pnpm dev
+      <pre><code>bun run dev
 </code></pre>
 
       <p>Open <a href="http://localhost:3000">http://localhost:3000</a>.</p>
@@ -194,8 +192,8 @@ pnpm dev:seed:heavy         # optional extra volume for infinite-scroll / virtua
           <code>RustFS buckets ready.</code>
         </li>
         <li>
-          <code>pnpm dev</code> runs both Next.js and the BullMQ worker (<code>apps/worker</code>)
-          in watch mode.
+          <code>bun run dev</code> runs both Next.js and the BullMQ worker
+          (<code>apps/worker</code>) in watch mode.
         </li>
         <li>
           Open <code>/app</code>, click <strong>Record</strong>, speak for a few seconds, click
@@ -231,32 +229,32 @@ pnpm dev:seed:heavy         # optional extra volume for infinite-scroll / virtua
       </ol>
 
       <h2 id="useful-commands">Useful commands</h2>
-      <pre><code>pnpm dev                              # next + worker, watch mode
-pnpm validate                         # format, typecheck, lint, knip
-pnpm test                             # unit + integration tests (package suites run sequentially)
-pnpm test:eval                        # fast deterministic agent/dashboard/retrieval/summary/proposal evals
-AGENT_LIVE_ENV_FILE=/path/.env pnpm test:agent-eval:live
+      <pre><code>bun run dev                              # next + worker, watch mode
+bun run validate                         # format, typecheck, lint, knip
+bun run test                             # unit + integration tests (package suites run sequentially)
+bun run test:eval                        # fast deterministic agent/dashboard/retrieval/summary/proposal evals
+AGENT_LIVE_ENV_FILE=/path/.env bun run test:agent-eval:live
                                       # opt-in live LLM askAgent durable-state + provider/document retrieval eval
-SUGGESTIONS_LIVE_ENV_FILE=/path/.env pnpm test:suggestions-eval:live
+SUGGESTIONS_LIVE_ENV_FILE=/path/.env bun run test:suggestions-eval:live
                                       # opt-in live LLM suggestion extraction/projection eval
-PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/.env pnpm test:proposal-engine:live
+PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/.env bun run test:proposal-engine:live
                                       # opt-in live messy proposal-engine eval (real models + vectors; not CI; implicit done, fallback mint)
-pnpm test:reconciliation-eval         # deterministic reconciliation domain/eval checks + sampling CLI gate
-RECONCILIATION_LIVE_ENV_FILE=/path/.env pnpm test:reconciliation-eval:live
+bun run test:reconciliation-eval         # deterministic reconciliation domain/eval checks + sampling CLI gate
+RECONCILIATION_LIVE_ENV_FILE=/path/.env bun run test:reconciliation-eval:live
                                       # opt-in live LLM planner + judge matrix
 # optional: RECONCILIATION_LIVE_ARTIFACT_DIR=/tmp/eval-run writes one exact output dir
 # optional: RECONCILIATION_LIVE_ARTIFACT_ROOT_DIR=eval-runs/reconciliation writes timestamped runs
 # optional: RECONCILIATION_LIVE_CALL_TIMEOUT_MS=90000 tunes each live planner/judge call
 # optional: RECONCILIATION_LIVE_MAX_ATTEMPTS=3 retries transient planner,
 # judge, and judge-consistency failures
-pnpm test:e2e-env                     # deterministic E2E env/port contract check
-pnpm test:dist-imports                # build db/shared and import compiled runtime modules with Node
-pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit
-pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit --fail-on-release-gate
+bun run test:e2e-env                     # deterministic E2E env/port contract check
+bun run test:dist-imports                # build db/shared and import compiled runtime modules with Node
+bun run --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit
+bun run --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=audit --fail-on-release-gate
 # optional: repeat --allow-degraded-source=&lt;event_source&gt; for known historical degraded replay rows
-pnpm --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=backfill --dry-run --page-size=500
-TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-legacy-provenance -- --team=&lt;uuid&gt; --fail-on-legacy
-TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=&lt;uuid&gt; --run-kind=closed_beta --fail-on-failures
+bun run --filter @timeline/worker reconciliation-evidence -- --team=&lt;uuid&gt; --mode=backfill --dry-run --page-size=500
+TIMELINE_ENV_FILE=/path/to/.env bun run --filter @timeline/worker reconciliation-legacy-provenance -- --team=&lt;uuid&gt; --fail-on-legacy
+TIMELINE_ENV_FILE=/path/to/.env bun run --filter @timeline/worker reconciliation-production-sampling -- --input=/tmp/eval-run --out=/tmp/reconciliation-production-sampling.json --team=&lt;uuid&gt; --run-kind=closed_beta --fail-on-failures
 # production sampling accepts repeated --input paths; --run-kind defaults to manual
 # and may be manual, closed_beta, or post_deploy. Use --fail-on-failures for
 # release gates that should stop on any failed sample. Repeat
@@ -264,26 +262,26 @@ TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker reconciliation-pr
 # that should become deterministic fixtures. Team-persisted runs retain the
 # required scenario policy and promotion blockers; Team → Reconciliation shows
 # promotion readiness separately from fixture failures.
-# pnpm dev also starts the reconciliation queue consumer for enqueued
+# bun run dev also starts the reconciliation queue consumer for enqueued
 # evidence_audit/evidence_backfill/scope_reconcile jobs. Admins can enqueue
 # source-scoped audit/backfill and repair scoped team/object/cluster evidence
 # plus approval projections from /app/team/reconciliation. Completed
 # audit/backfill jobs persist reconciliation_runs metrics, including
 # release-gate failures for audit runs.
-pnpm check:web-bundle                 # scan built Next server chunks after a web build
-pnpm e2e                              # Playwright core journeys; requires compose infra + migrations + 4 GiB free disk space
-pnpm e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
-pnpm e2e:setup / pnpm e2e:cleanup     # seed/remove deterministic e2e users and team
-pnpm dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
-pnpm demo:seed                        # seed, production-path index, and verify the private/local fictional demo corpus
-pnpm demo:reset                       # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed again
-pnpm dev:seed:heavy                   # extra Acme Labs volume for infinite-scroll / virtualization after the corpus
-pnpm demo:index                       # re-index fixture vectors through the real embed worker path
-pnpm demo:verify                      # verify logins, downloaded document bytes, scoped Qdrant points, and corpus floors
-pnpm lint &amp;&amp; pnpm typecheck           # quick static checks
-pnpm knip                             # dead code / unused deps
-pnpm format                           # prettier write
-pnpm db:studio                        # drizzle studio at localhost:4983
+bun run check:web-bundle                 # scan built Next server chunks after a web build
+bun run e2e                              # Playwright core journeys; requires compose infra + migrations + 4 GiB free disk space
+bun run e2e:prod-smoke                   # build + standalone-server smoke; requires compose infra + migrations
+bun run e2e:setup / bun run e2e:cleanup     # seed/remove deterministic e2e users and team
+bun run dev:seed                         # seed local demo data with disabled fake integrations and reconciliation provenance
+bun run demo:seed                        # seed, production-path index, and verify the private/local fictional demo corpus
+bun run demo:reset                       # wipe local Postgres/Qdrant/S3/Redis, migrate, and seed again
+bun run dev:seed:heavy                   # extra Acme Labs volume for infinite-scroll / virtualization after the corpus
+bun run demo:index                       # re-index fixture vectors through the real embed worker path
+bun run demo:verify                      # verify logins, downloaded document bytes, scoped Qdrant points, and corpus floors
+bun run lint &amp;&amp; bun run typecheck           # quick static checks
+bun run knip                             # dead code / unused deps
+bun run format                           # prettier write
+bun run db:studio                        # drizzle studio at localhost:4983
 docker compose logs -f postgres       # tail a service
 docker compose down -v                # nuke local data
 </code></pre>
@@ -293,14 +291,22 @@ docker compose down -v                # nuke local data
         <code>localhost:5432</code>, <code>6379</code>, <code>9000</code>, and
         <code>6333</code> ports. Set <code>DATABASE_URL</code>, <code>REDIS_URL</code>,
         <code>S3_ENDPOINT</code>, or <code>QDRANT_URL</code> explicitly to override this, or set
-        <code>E2E_USE_DOCKER_PORTS=0</code> to force the fallback defaults.
+        <code>E2E_USE_DOCKER_PORTS=0</code> to force the fallback defaults. Remote fixture services
+        require the explicit <code>E2E_REMOTE_FIXTURES=isolated</code>
+        opt-in; use only disposable synthetic data. Ordinary exported application secrets are
+        replaced with fixture defaults. Configure custom fixture secrets with
+        <code>E2E_AUTH_SECRET</code>, <code>E2E_SECRETS_ENCRYPTION_KEY</code>,
+        <code>E2E_S3_ACCESS_KEY_ID</code>, <code>E2E_S3_SECRET_ACCESS_KEY</code>, and
+        <code>E2E_QDRANT_API_KEY</code>. Setup and cleanup enforce the service guard before opening
+        a database transaction.
       </p>
       <p>
-        GitHub PR CI intentionally skips <code>pnpm build</code> and
-        <code>pnpm check:web-bundle</code>. The required CI proof is formatting, TypeScript
-        compilation, linting, Knip, deterministic reconciliation evals, and the compiled-package
-        import smoke check. Run broader relevant test commands separately, including
-        <code>pnpm test:eval</code> for agent, retrieval, summary, dashboard chat, or proposal
+        The static CI job runs formatting, TypeScript compilation, linting, Knip, the offline Bun
+        suite, runtime smoke checks, React Doctor, deterministic reconciliation evaluations,
+        environment contracts, and compiled-package import checks. The separate production browser
+        smoke job builds the web application. Run broader relevant test commands separately,
+        including
+        <code>bun run test:eval</code> for agent, retrieval, summary, dashboard chat, or proposal
         changes, and run the production build and bundle hygiene checks manually when changing
         deploy output, bundling, or server/client import boundaries.
       </p>
@@ -308,7 +314,7 @@ docker compose down -v                # nuke local data
       <h2 id="resetting-local-data">Resetting local data</h2>
       <p>To recreate the Docker volumes:</p>
       <pre><code>docker compose down -v &amp;&amp; docker compose up -d
-pnpm db:migrate
+bun run db:migrate
 </code></pre>
 
       <h2 id="troubleshooting">Troubleshooting</h2>

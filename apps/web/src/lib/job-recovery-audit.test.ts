@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { singleRecoveryAuditRecord } from '@/lib/job-recovery-audit';
-
 const ARTIFACT_ID = '11111111-1111-4111-8111-111111111111';
 
 function recoveryId(artifactId: string): string {

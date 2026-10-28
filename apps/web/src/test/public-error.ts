@@ -1,4 +1,4 @@
-import { expect } from 'vitest';
+import { expect } from '@timeline/test-support';
 
 interface ReportMock {
   mock: { calls: unknown[][] };

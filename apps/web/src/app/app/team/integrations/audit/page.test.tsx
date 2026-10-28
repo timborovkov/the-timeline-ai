@@ -1,8 +1,6 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { integrationAuditSummary } from '@/app/app/team/integrations/audit/integration-audit-summary';
-import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),
@@ -14,20 +12,46 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
-  redirect: fakes.redirect,
-  useRouter: () => ({ back: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
-    integrations: { listAudit: fakes.integrationAuditList },
-    requireMembership: fakes.requireMembership,
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+    useRouter: () => ({ back: vi.fn() }),
   }),
-}));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      integrations: { listAudit: fakes.integrationAuditList },
+      requireMembership: fakes.requireMembership,
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { integrationAuditSummary } =
+  await import('@/app/app/team/integrations/audit/integration-audit-summary');
+const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 
 const { default: IntegrationAuditPage } = await import('@/app/app/team/integrations/audit/page');
 

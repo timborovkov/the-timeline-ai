@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   attentionCategoryForHealthKind,
@@ -9,7 +10,6 @@ import {
   highestCountedHealthKind,
   integrationHealthPauseAfterMs,
 } from '#src/integrations/health.js';
-
 describe('integration health classification', () => {
   it('counts 401/403/404 and lost GitHub access as access_revoked', () => {
     expect(classifyIntegrationHealthFailure('GitHub GET /repos/acme/app: 403 forbidden')).toEqual({

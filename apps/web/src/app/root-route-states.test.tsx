@@ -1,20 +1,29 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn(), auth: vi.fn() }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
-import { RootNotFoundContent } from '@/app/_root-not-found-content';
-import AppNotFound from '@/app/app/not-found';
-import GlobalError from '@/app/global-error';
-import HelpNotFound from '@/app/help/not-found';
-import NotFound from '@/app/not-found';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { RootNotFoundContent } = await import('@/app/_root-not-found-content');
+const { default: AppNotFound } = await import('@/app/app/not-found');
+const { default: GlobalError } = await import('@/app/global-error');
+const { default: HelpNotFound } = await import('@/app/help/not-found');
+const { default: NotFound } = await import('@/app/not-found');
 
 afterEach(() => {
   cleanup();

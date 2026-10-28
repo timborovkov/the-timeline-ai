@@ -1,10 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   createObjectDiscussionDeliveryAdapter,
   parseObjectDiscussionKey,
 } from '#src/conversation-surfaces/object-discussion.js';
-
 describe('object discussion delivery', () => {
   it('parses object conversation keys and ignores other surfaces', () => {
     expect(parseObjectDiscussionKey('object:11111111-1111-1111-1111-111111111111')).toBe(

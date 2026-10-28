@@ -8,13 +8,14 @@ import {
   isExpectedSpeechTranscriptionCanaryText,
 } from '@timeline/shared/integrations';
 import { transcribeAudio } from '@timeline/shared/llm';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processTranscribeJobForTests, type TranscribeWorkerIO } from '#src/workers/transcribe.js';
-
 if (process.env.TRANSCRIBE_LIVE_ENV_FILE) {
   loadEnvFile(process.env.TRANSCRIBE_LIVE_ENV_FILE);
   resetEnvForTests();

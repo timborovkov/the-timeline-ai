@@ -1,11 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal-versions';
-import { runSentryServerAction } from '@/lib/sentry-action';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 type ServerActionInstrumentation = (
   operation: string,
   options: { headers: Headers | Promise<Headers> },
@@ -21,30 +19,54 @@ const mocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: mocks.auth }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: mocks.auth }),
+  () => import('@/lib/auth'),
+);
 
-vi.mock('@/lib/auth.config', () => ({
-  hasCurrentLegalSession: (user: {
-    legalTermsVersion?: string | null;
-    legalPrivacyVersion?: string | null;
-    legalAcceptedAt?: string | null;
-  }) =>
-    user.legalTermsVersion === TERMS_VERSION &&
-    user.legalPrivacyVersion === PRIVACY_VERSION &&
-    Boolean(user.legalAcceptedAt),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/auth.config'),
+  () => ({
+    hasCurrentLegalSession: (user: {
+      legalTermsVersion?: string | null;
+      legalPrivacyVersion?: string | null;
+      legalAcceptedAt?: string | null;
+    }) =>
+      user.legalTermsVersion === TERMS_VERSION &&
+      user.legalPrivacyVersion === PRIVACY_VERSION &&
+      Boolean(user.legalAcceptedAt),
+  }),
+  () => import('@/lib/auth.config'),
+);
 
-vi.mock('next/headers', () => ({
-  headers: mocks.headers,
-}));
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({
+    headers: mocks.headers,
+  }),
+  () => import('next/headers'),
+);
 
-vi.mock('next/navigation', () => ({
-  redirect: mocks.redirect,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: mocks.redirect,
+  }),
+  () => import('next/navigation'),
+);
 
-vi.mock('@sentry/nextjs', () => ({
-  withServerActionInstrumentation: mocks.withServerActionInstrumentation,
-}));
+await vi.mock(
+  import.meta.resolve('@sentry/nextjs'),
+  () => ({
+    withServerActionInstrumentation: mocks.withServerActionInstrumentation,
+  }),
+  () => import('@sentry/nextjs'),
+);
+
+const { PRIVACY_VERSION, TERMS_VERSION } = await import('@/lib/legal-versions');
+const { runSentryServerAction } = await import('@/lib/sentry-action');
 
 describe('runSentryServerAction', () => {
   beforeEach(() => {

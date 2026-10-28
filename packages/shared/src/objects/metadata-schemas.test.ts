@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   humanizeMetadataKey,
@@ -7,7 +8,6 @@ import {
   readableMetadataEntries,
   slugifyMetadataLabel,
 } from '#src/objects/metadata-schemas.js';
-
 describe('object metadata schemas', () => {
   it('merges metadata patches and removes empty values', () => {
     expect(

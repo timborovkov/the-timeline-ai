@@ -17,6 +17,12 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./chunk": {
+      "types": "./src/chunk.ts",
+      "development": "./src/chunk.ts",
+      "import": "./dist/chunk.js",
+      "default": "./dist/chunk.js"
+    },
     "./integrations": {
       "types": "./src/integrations/index.ts",
       "development": "./src/integrations/index.ts",
@@ -488,11 +494,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-email-templates.mjs",
-    "dev": "tsc -p tsconfig.json --watch",
-    "lint": "eslint src",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "NODE_OPTIONS=--conditions=development node scripts/run-tests.mjs"
+    "build": "bun x --bun --no-install tsc -p tsconfig.json && bun scripts/copy-email-templates.mjs",
+    "dev": "bun x --bun --no-install tsc -p tsconfig.json --watch",
+    "lint": "bun x --bun --no-install eslint src",
+    "typecheck": "bun x --bun --no-install tsc -p tsconfig.json --noEmit",
+    "test": "bun ../../scripts/testing/run.ts packages/shared"
   },
   "dependencies": {
     "@ai-sdk/openai-compatible": "3.0.75",
@@ -522,6 +528,7 @@
     "@electric-sql/pglite": "^0.5.11",
     "@types/node": "^24.19.2",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.9"
+    "@timeline/test-support": "workspace:*",
+    "@types/bun": "1.4.4"
   }
 }

@@ -142,7 +142,7 @@ RECALL_RETENTION=
 
       <h2 id="live-canary">2. Live canary</h2>
       <p>
-        <code>pnpm canary:integrations</code> checks <code>RECALL_API_KEY</code> and
+        <code>bun run canary:integrations</code> checks <code>RECALL_API_KEY</code> and
         <code>RECALL_BASE_URL</code> with a read-only future bot list probe. It calls Recall's
         <code>GET /bot/</code> endpoint with a one-row limit and does not create, schedule, join, or
         delete any bot. A green row proves the configured key, region URL, and workspace access are

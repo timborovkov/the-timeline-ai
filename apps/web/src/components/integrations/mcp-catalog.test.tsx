@@ -1,24 +1,40 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 // The MCP catalog is an operator recovery surface: filtering must keep its selected
 // state and remaining connection options understandable without a pointer or sight.
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { McpCatalog } from '@/components/integrations/mcp-catalog';
+await vi.mock(
+  import.meta.resolve('next/image'),
+  () => ({
+    default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt="" />,
+  }),
+  () => import('next/image'),
+);
 
-vi.mock('next/image', () => ({
-  default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt="" />,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+    notifyError: vi.fn(),
+  }),
+  () => import('@/lib/notify'),
+);
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
-  notifyError: vi.fn(),
-}));
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { McpCatalog } = await import('@/components/integrations/mcp-catalog');
 
 const entries = [
   {

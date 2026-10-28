@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { clientIpFromHeaders, isIpAllowed, parseCidrList } from '#src/email/ip-allowlist.js';
-
 describe('parseCidrList', () => {
   it('parses bare ip and /N', () => {
     const list = parseCidrList('1.2.3.4, 10.0.0.0/8, garbage, 999.0.0.0, 5.5.5.5/40');

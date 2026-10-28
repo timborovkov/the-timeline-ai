@@ -1,19 +1,30 @@
-import { PGlite } from '@electric-sql/pglite';
-import { rawEvents, reconciliationEvidence, reconciliationEvidenceAnchors } from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { recordMcpToolResultEvidence } from '#src/reconciliation/mcp-capture.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 const queueMocks = vi.hoisted(() => ({
   enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueEmbedJob: queueMocks.enqueueEmbedJob,
-}));
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueEmbedJob: queueMocks.enqueueEmbedJob,
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const { rawEvents, reconciliationEvidence, reconciliationEvidenceAnchors } =
+  await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { recordMcpToolResultEvidence } = await import('#src/reconciliation/mcp-capture.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';

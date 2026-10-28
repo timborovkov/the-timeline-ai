@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { QdrantClient, SearchHit } from '#src/qdrant/client.js';
 
@@ -13,7 +15,6 @@ import {
   teamScopedScrollFilter,
   waitForQuantizedIndex,
 } from '#src/qdrant/measure.js';
-
 const TEAM = 'team-A';
 const USER = 'user-1';
 

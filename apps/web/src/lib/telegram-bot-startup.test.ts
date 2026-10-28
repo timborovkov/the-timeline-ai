@@ -1,5 +1,7 @@
 import { TELEGRAM_BOT_COMMAND_REGISTRATIONS } from '@timeline/shared/telegram/commands';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import {
   registerTelegramCommandMenu,
@@ -8,7 +10,6 @@ import {
   telegramBotStartupActions,
   type TelegramBotApiPost,
 } from '@/lib/telegram-bot-startup';
-
 describe('telegram bot startup', () => {
   afterEach(() => {
     vi.useRealTimers();

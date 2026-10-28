@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { SuggestionBundle } from '@timeline/shared/suggestions';
 
 import { serializeSuggestionBundle } from '@/lib/suggestions';
-
 describe('serializeSuggestionBundle', () => {
   it('preserves approval evidence source-ref metadata for client provenance', () => {
     const rawEventId = '11111111-1111-4111-8111-111111111111';

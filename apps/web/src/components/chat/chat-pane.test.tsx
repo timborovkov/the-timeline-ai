@@ -1,12 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement, StrictMode } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { chatHandoffKey } from '@/lib/chat-handoff';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   useChat: vi.fn(),
@@ -18,28 +13,55 @@ const fakes = vi.hoisted(() => ({
   }[],
 }));
 
-vi.mock('@ai-sdk/react', () => ({ useChat: fakes.useChat }));
-vi.mock('ai', () => ({
-  DefaultChatTransport: class DefaultChatTransport {
-    constructor(
-      public options: {
-        body?: () => unknown;
-        fetch?: (url: string, init?: RequestInit) => Promise<Response>;
-      },
-    ) {
-      fakes.transports.push({ options });
-    }
-  },
-  lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(() => true),
-}));
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
-}));
-vi.mock('@/app/actions/chat', () => ({ unpinChatSessionAction: vi.fn() }));
-vi.mock('@/components/chat/tool-step', () => ({
-  ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
-}));
+await vi.mock(
+  import.meta.resolve('@ai-sdk/react'),
+  () => ({ useChat: fakes.useChat }),
+  () => import('@ai-sdk/react'),
+);
+await vi.mock(
+  import.meta.resolve('ai'),
+  () => ({
+    DefaultChatTransport: class DefaultChatTransport {
+      constructor(
+        public options: {
+          body?: () => unknown;
+          fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+        },
+      ) {
+        fakes.transports.push({ options });
+      }
+    },
+    lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(() => true),
+  }),
+  () => import('ai'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+    useSearchParams: () => new URLSearchParams(),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/chat'),
+  () => ({ unpinChatSessionAction: vi.fn() }),
+  () => import('@/app/actions/chat'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/chat/tool-step'),
+  () => ({
+    ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
+  }),
+  () => import('@/components/chat/tool-step'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement, StrictMode, useEffect } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { chatHandoffKey } = await import('@/lib/chat-handoff');
 
 const { ChatPane, ChatSurface } = await import('./chat-pane.js');
 
@@ -197,13 +219,19 @@ describe('ChatPane', () => {
     expect(sendMessage).toHaveBeenCalledWith({ text: 'What changed?' });
   });
 
-  it('consumes a Home handoff and sends it exactly once', async () => {
-    const sendMessage = vi.fn();
-    fakes.useChat.mockReturnValue({
-      messages: [],
-      sendMessage,
-      status: 'ready',
-      error: null,
+  it('consumes a Home handoff and sends it exactly once after SDK effect cleanup', async () => {
+    const lifecycle: string[] = [];
+    const sendMessage = vi.fn(() => {
+      lifecycle.push('send');
+    });
+    fakes.useChat.mockImplementation(function useChatWithLifecycle() {
+      useEffect(
+        () => () => {
+          lifecycle.push('stop');
+        },
+        [],
+      );
+      return { messages: [], sendMessage, status: 'ready', error: null };
     });
     window.sessionStorage.setItem(
       chatHandoffKey('team-1'),
@@ -228,6 +256,7 @@ describe('ChatPane', () => {
     await waitFor(() => {
       expect(sendMessage).toHaveBeenCalledTimes(1);
     });
+    expect(lifecycle.slice(0, 2)).toEqual(['stop', 'send']);
     expect(sendMessage).toHaveBeenCalledWith({ text: 'What changed?' });
     expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
   });
@@ -265,6 +294,7 @@ describe('ChatPane', () => {
     );
 
     await waitFor(() => {
+      expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
       expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
         startNewSession: true,
         pinnedEntityId: '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f',
@@ -318,6 +348,7 @@ describe('ChatPane', () => {
     );
 
     await waitFor(() => {
+      expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
       expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
         startNewSession: true,
         pinnedEntityId: '44444444-4444-4444-8444-444444444444',
@@ -363,6 +394,7 @@ describe('ChatPane', () => {
     );
 
     await waitFor(() => {
+      expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
       expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
         startNewSession: true,
         pinnedEntityId: '66666666-6666-4666-8666-666666666666',
@@ -696,6 +728,7 @@ describe('ChatPane', () => {
     );
 
     await waitFor(() => {
+      expect(window.sessionStorage.getItem(chatHandoffKey('team-1'))).toBeNull();
       expect(fakes.transports.at(-1)?.options.body?.()).toMatchObject({
         sessionId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         startNewSession: false,

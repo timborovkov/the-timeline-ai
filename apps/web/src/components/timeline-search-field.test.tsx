@@ -1,14 +1,21 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const router = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => router,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => router,
+  }),
+  () => import('next/navigation'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { DebouncedFilterForm } = await import('@/components/debounced-filter-form');
 const { TimelineSearchField } = await import('./timeline-search-field.js');

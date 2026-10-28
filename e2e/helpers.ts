@@ -1,4 +1,5 @@
-import { mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -61,6 +62,12 @@ function authStatePath(user: E2eUserKey): string {
   return path.join('test-results', '.auth', `${E2E_RUN_ID}-${user}.json`);
 }
 
+export async function clearSavedAuthStates(): Promise<void> {
+  await Promise.all(
+    (Object.keys(e2eUsers) as E2eUserKey[]).map((user) => rm(authStatePath(user), { force: true })),
+  );
+}
+
 export async function signInAndSaveState(
   page: Page,
   user: E2eUserKey,
@@ -81,10 +88,16 @@ export async function newSignedInContext(
   options: SignedInContextOptions = {},
 ): Promise<BrowserContext> {
   const { signInTimeoutMs = 30_000, ...contextOptions } = options;
-  const bootstrap = await browser.newContext();
-  const page = await bootstrap.newPage();
-  const file = await signInAndSaveState(page, user, signInTimeoutMs);
-  await bootstrap.close();
+  const file = authStatePath(user);
+  if (!existsSync(file)) {
+    const bootstrap = await browser.newContext();
+    try {
+      const page = await bootstrap.newPage();
+      await signInAndSaveState(page, user, signInTimeoutMs);
+    } finally {
+      await bootstrap.close();
+    }
+  }
   return browser.newContext({ ...contextOptions, storageState: file });
 }
 

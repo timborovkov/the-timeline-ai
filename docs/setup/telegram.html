@@ -121,7 +121,7 @@ curl -H 'content-type: application/json' \
 
       <h2 id="live-canary">6. Live canary</h2>
       <p>
-        <code>pnpm canary:integrations</code> calls Telegram's Bot API <code>getMe</code> when
+        <code>bun run canary:integrations</code> calls Telegram's Bot API <code>getMe</code> when
         <code>TELEGRAM_BOT_TOKEN</code> is set. To prove capture end to end, configure a linked
         Telegram user canary:
       </p>
@@ -155,12 +155,12 @@ TELEGRAM_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
         you need a public URL.
       </p>
       <pre><code># Terminal 1: run the web app
-pnpm dev
+bun run dev
 
 # Terminal 2: expose it
 ngrok http 3000
 
-# Terminal 3: register the webhook with the secret (command menu is registered by pnpm dev)
+# Terminal 3: register the webhook with the secret (command menu is registered by bun run dev)
 curl -F "url=https://&lt;ngrok-id&gt;.ngrok-free.app/api/telegram/webhook" \
      -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
      -F 'allowed_updates=["message","edited_message","callback_query"]' \

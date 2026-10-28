@@ -1,7 +1,8 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 // The dedicated queue must distinguish pending decisions from retryable failures so every count
 // leads to the same set of reviewable approval items.
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -12,33 +13,55 @@ const fakes = vi.hoisted(() => ({
   withCalendarResolutionHints: vi.fn(),
 }));
 
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
-    suggestions: {
-      getApprovalItemCounts: fakes.getApprovalItemCounts,
-      listSuggestions: fakes.listSuggestions,
-      withCalendarResolutionHints: fakes.withCalendarResolutionHints,
-    },
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+      suggestions: {
+        getApprovalItemCounts: fakes.getApprovalItemCounts,
+        listSuggestions: fakes.listSuggestions,
+        withCalendarResolutionHints: fakes.withCalendarResolutionHints,
+      },
+    }),
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/components/approvals/approvals-client', () => ({
-  ApprovalsClient: ({
-    suggestions,
-    emptyState,
-  }: {
-    suggestions: { items: { title: string }[] }[];
-    emptyState: { title: string; body: string };
-  }) => (
-    <div>
-      <span>{emptyState.title}</span>
-      {suggestions.flatMap((bundle) => bundle.items.map((item) => item.title)).join(', ')}
-    </div>
-  ),
-}));
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/approvals/approvals-client'),
+  () => ({
+    ApprovalsClient: ({
+      suggestions,
+      emptyState,
+    }: {
+      suggestions: { items: { title: string }[] }[];
+      emptyState: { title: string; body: string };
+    }) => (
+      <div>
+        <span>{emptyState.title}</span>
+        {suggestions.flatMap((bundle) => bundle.items.map((item) => item.title)).join(', ')}
+      </div>
+    ),
+  }),
+  () => import('@/components/approvals/approvals-client'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: ApprovalsPage } = await import('./page.js');
 

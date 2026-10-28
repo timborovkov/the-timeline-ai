@@ -72,7 +72,7 @@
           RAM, 0.5 vCPU, 4 GB disk, no credit card). Do not use that free cluster for production: it
           is a single node, has no high availability, and unused clusters are suspended after a
           week. Copy an existing in-RAM collection with
-          <code>pnpm --filter @timeline/worker qdrant-migrate-collection</code> before lowering a
+          <code>bun run --filter @timeline/worker qdrant-migrate-collection</code> before lowering a
           Railway memory limit; the procedure is in
           <a href="./openrouter.html#qdrant-storage">OpenRouter setup</a>.
         </li>
@@ -100,18 +100,17 @@
         <code>document-extract-orchestrator</code> services pointing at this repo. Use
         <code>/apps/web/railway.json</code>, <code>/apps/worker/railway.json</code>, and
         <code>/apps/worker/railway.extract.json</code> respectively as each service's custom config
-        path. All three use Railpack build commands that install the pnpm workspace and build the
-        packages they run. App services also run the shared DB migrator in
+        path. All three select the repository Dockerfiles, which install the frozen Bun workspace
+        and compile the packages they run. App services also run the shared DB migrator in
         <code>preDeployCommand</code>; the advisory lock makes overlapping deploys safe. Portable
         app Dockerfiles live in <code>docker/</code>; do not add a root <code>Dockerfile</code> for
         these services.
       </p>
       <p>
-        Node.js is pinned to <code>24.22.1</code> in the root
-        <code>package.json</code> (<code>engines.node</code>) and <code>.nvmrc</code>. Railpack
-        reads that engine pin; remove any conflicting <code>RAILPACK_NODE_VERSION</code> override.
-        Rebuild and redeploy each app service to update an existing runtime. The portable
-        Dockerfiles pin the same Node.js release.
+        Bun is pinned to <code>1.4.4</code> in <code>.bun-version</code>, <code>package.json</code>,
+        and the Debian-based Dockerfiles. Railway uses the repository Dockerfiles for all three
+        application services; remove old Railpack build commands and Node start-command overrides.
+        See the <a href="../bun-migration.md">migration and rollback runbook</a>.
       </p>
       <p>
         The <code>document-extract-orchestrator</code> service is the credential-thin
@@ -137,12 +136,13 @@
         Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>. On
         the main <code>worker</code>, set <code>DOCUMENT_EXTRACT_ENABLED=false</code> so only
         <code>document-extract-orchestrator</code> consumes that queue. Local/CI ensure:
-        <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
+        <code>bun run --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
       <p>
-        Extract startup enforces a raw-env allowlist. Standard Railway Railpack / MISE runtime keys
-        are supported, but a copied app secret or unknown service variable intentionally stops the
-        process. Remove the extra variable instead of sharing the web/worker variable group with
+        Extract startup enforces a raw-env allowlist. The pinned Bun image runtime paths and
+        explicitly listed Railway metadata are supported, but a copied app secret or unknown service
+        variable intentionally stops the process. Remove the extra variable instead of sharing the
+        web/worker variable group with
         <code>document-extract-orchestrator</code>.
       </p>
 

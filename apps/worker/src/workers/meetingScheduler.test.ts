@@ -1,15 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { PGlite } from '@electric-sql/pglite';
-import { meetings, savedMeetings, teamMeetingSettings } from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as SharedModule from '@timeline/shared';
-
-import { applyDbMigrations } from '#src/test/pglite.js';
-import { processMeetingSchedulerTick } from '#src/workers/meetingScheduler.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 /**
  * Scheduler tests use a real pglite database and a mocked meeting provider.
@@ -21,24 +15,36 @@ import { processMeetingSchedulerTick } from '#src/workers/meetingScheduler.js';
 const joinMeetingMock = vi.hoisted(() => vi.fn());
 const leaveMeetingMock = vi.hoisted(() => vi.fn());
 
-vi.mock('@timeline/shared', async () => {
-  const actual = await vi.importActual<typeof SharedModule>('@timeline/shared');
-  return {
-    ...actual,
-    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-    meetingBots: {
-      ...actual.meetingBots,
-      getMeetingBotProvider: vi.fn(() => ({
-        name: 'recall',
-        joinMeeting: joinMeetingMock,
-        leaveMeeting: leaveMeetingMock,
-      })),
-      resolveTranscriptWebhookUrl: vi.fn(
-        () => 'https://timeline.test/api/webhooks/recall/transcript',
-      ),
-    },
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  async () => {
+    const actual = await import('@timeline/shared');
+    return {
+      ...actual,
+      childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+      meetingBots: {
+        ...actual.meetingBots,
+        getMeetingBotProvider: vi.fn(() => ({
+          name: 'recall',
+          joinMeeting: joinMeetingMock,
+          leaveMeeting: leaveMeetingMock,
+        })),
+        resolveTranscriptWebhookUrl: vi.fn(
+          () => 'https://timeline.test/api/webhooks/recall/transcript',
+        ),
+      },
+    };
+  },
+  () => import('@timeline/shared'),
+);
+
+const { randomUUID } = await import('node:crypto');
+const { PGlite } = await import('@electric-sql/pglite');
+const { meetings, savedMeetings, teamMeetingSettings } = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
+const { processMeetingSchedulerTick } = await import('#src/workers/meetingScheduler.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

@@ -1,30 +1,39 @@
-import { Buffer } from 'node:buffer';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { PGlite } from '@electric-sql/pglite';
-import {
+import type { AgentTurnObservability } from '#src/agent/observability.js';
+import type { TelegramApi } from '#src/telegram/api.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: (input: string | URL, init?: RequestInit) => fetch(input, init),
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
+
+const { Buffer } = await import('node:buffer');
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   rawEvents,
   slackUsers,
   slackUserTeams,
   slackWorkspaces,
   slackWorkspaceTeams,
   telegramChatBindings,
-} from '@timeline/db';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { AgentTurnObservability } from '#src/agent/observability.js';
-import type { TelegramApi } from '#src/telegram/api.js';
-
-import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
-import { resetEnvForTests } from '#src/env.js';
-import { handleSlackSlashCommand } from '#src/slack/dispatcher.js';
-import { handleUpdate } from '#src/telegram/dispatcher.js';
-import { buildSearchHit, makeAskAgentToolRoundModel } from '#src/test/agent-eval-harness.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => fetch(input, init),
-}));
+} = await import('@timeline/db');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { encryptJson, resetSecretsKeyCacheForTests } = await import('#src/crypto/secrets.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { handleSlackSlashCommand } = await import('#src/slack/dispatcher.js');
+const { handleUpdate } = await import('#src/telegram/dispatcher.js');
+const { buildSearchHit, makeAskAgentToolRoundModel } =
+  await import('#src/test/agent-eval-harness.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 // Surface evals keep Slack and Telegram `/ask` wired to the real non-browser
 // agent path. Success means a dispatcher can route identity/team context into

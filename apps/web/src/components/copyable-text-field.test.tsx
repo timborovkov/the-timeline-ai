@@ -1,9 +1,10 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { CopyableTextField } from '@/components/copyable-text-field';
+// Test environment: happy-dom
 
 describe('CopyableTextField', () => {
   beforeEach(() => {

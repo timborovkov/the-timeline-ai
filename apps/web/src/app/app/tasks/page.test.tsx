@@ -1,8 +1,8 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
-
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -28,100 +28,145 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/shared/env', () => ({
-  getEnv: () => ({ TASK_CATEGORY_UI_ENABLED: true }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    objects: {
-      listObjects: fakes.listObjects,
-      countObjects: fakes.countObjects,
-      getObject: fakes.getObject,
-      isObjectPinned: fakes.isObjectPinned,
-      listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
-      getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
-    },
-    suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
-    timeline: { listMembers: fakes.listMembers },
-    pins: { isPinned: fakes.isPinned, isPinnedMany: fakes.isPinnedMany },
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/components/approvals/approvals-client', () => ({
-  ApprovalsClient: ({
-    suggestions,
-    folded,
-  }: {
-    suggestions: { title: string }[];
-    folded?: { title: string; summary: { singular: string; plural: string } };
-  }) => (
-    <div data-testid="approvals">
-      {folded ? `${folded.title}: 1 ${folded.summary.singular}. ` : null}
-      {suggestions.map((suggestion) => suggestion.title).join(', ')}
-    </div>
-  ),
-}));
-vi.mock('@/components/tasks/task-board', () => ({
-  TaskBoard: ({
-    rows,
-    columns,
-    selectedTaskId,
-    view,
-    members,
-    totalCount,
-    nextCursor,
-  }: {
-    rows: { canonicalName: string }[];
-    columns: string[];
-    selectedTaskId: string | null;
-    view: 'kanban' | 'list';
-    members: { label: string }[];
-    totalCount: number;
-    nextCursor: string | null;
-  }) => (
-    <div data-testid="task-board">
-      columns {columns.join(', ')} · {rows.map((row) => row.canonicalName).join(', ')} · selected{' '}
-      {selectedTaskId ?? 'none'} · view {view} · members{' '}
-      {members.map((member) => member.label).join(', ')} · total {totalCount} · cursor{' '}
-      {nextCursor ?? 'none'}
-    </div>
-  ),
-}));
-vi.mock('@/components/tasks/task-category-filter-refresh', () => ({
-  TaskCategoryFilterRefresh: (props: {
-    surface: string;
-    filters: { category: string };
-    baselineToken: string;
-  }) => {
-    fakes.categoryRefresh = props;
-    return <div data-testid="task-category-filter-refresh" />;
-  },
-}));
-vi.mock('@/components/work-filter-bar', () => ({
-  WorkFilterBar: ({
-    resultCount,
-    totalCount,
-    projects = [],
-    viewControls,
-  }: {
-    resultCount: number;
-    totalCount: number;
-    projects?: { label: string }[];
-    viewControls?: ReactNode;
-  }) => {
-    fakes.filterProjects = projects;
-    return (
-      <div data-testid="work-filter-bar">
-        {resultCount}/{totalCount}
-        {viewControls}
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({
+    getEnv: () => ({ TASK_CATEGORY_UI_ENABLED: true }),
+  }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      objects: {
+        listObjects: fakes.listObjects,
+        countObjects: fakes.countObjects,
+        getObject: fakes.getObject,
+        isObjectPinned: fakes.isObjectPinned,
+        listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
+        getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
+      },
+      suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+      timeline: { listMembers: fakes.listMembers },
+      pins: { isPinned: fakes.isPinned, isPinnedMany: fakes.isPinnedMany },
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/approvals/approvals-client'),
+  () => ({
+    ApprovalsClient: ({
+      suggestions,
+      folded,
+    }: {
+      suggestions: { title: string }[];
+      folded?: { title: string; summary: { singular: string; plural: string } };
+    }) => (
+      <div data-testid="approvals">
+        {folded ? `${folded.title}: 1 ${folded.summary.singular}. ` : null}
+        {suggestions.map((suggestion) => suggestion.title).join(', ')}
       </div>
-    );
-  },
-}));
+    ),
+  }),
+  () => import('@/components/approvals/approvals-client'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/tasks/task-board'),
+  () => ({
+    TaskBoard: ({
+      rows,
+      columns,
+      selectedTaskId,
+      view,
+      members,
+      totalCount,
+      nextCursor,
+    }: {
+      rows: { canonicalName: string }[];
+      columns: string[];
+      selectedTaskId: string | null;
+      view: 'kanban' | 'list';
+      members: { label: string }[];
+      totalCount: number;
+      nextCursor: string | null;
+    }) => (
+      <div data-testid="task-board">
+        columns {columns.join(', ')} · {rows.map((row) => row.canonicalName).join(', ')} · selected{' '}
+        {selectedTaskId ?? 'none'} · view {view} · members{' '}
+        {members.map((member) => member.label).join(', ')} · total {totalCount} · cursor{' '}
+        {nextCursor ?? 'none'}
+      </div>
+    ),
+  }),
+  () => import('@/components/tasks/task-board'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/tasks/task-category-filter-refresh'),
+  () => ({
+    TaskCategoryFilterRefresh: (props: {
+      surface: string;
+      filters: { category: string };
+      baselineToken: string;
+    }) => {
+      fakes.categoryRefresh = props;
+      return <div data-testid="task-category-filter-refresh" />;
+    },
+  }),
+  () => import('@/components/tasks/task-category-filter-refresh'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/work-filter-bar'),
+  () => ({
+    WorkFilterBar: ({
+      resultCount,
+      totalCount,
+      projects = [],
+      viewControls,
+    }: {
+      resultCount: number;
+      totalCount: number;
+      projects?: { label: string }[];
+      viewControls?: ReactNode;
+    }) => {
+      fakes.filterProjects = projects;
+      return (
+        <div data-testid="work-filter-bar">
+          {resultCount}/{totalCount}
+          {viewControls}
+        </div>
+      );
+    },
+  }),
+  () => import('@/components/work-filter-bar'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: TasksPage } = await import('@/app/app/tasks/page');
 

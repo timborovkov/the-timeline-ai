@@ -4,7 +4,7 @@ import { buildE2eEnv } from './e2e-env.js';
 
 const [command, ...args] = process.argv.slice(2);
 if (!command) {
-  console.error('Usage: tsx scripts/run-e2e-command.ts <command> [...args]');
+  console.error('Usage: bun scripts/run-e2e-command.ts <command> [...args]');
   process.exit(1);
 }
 

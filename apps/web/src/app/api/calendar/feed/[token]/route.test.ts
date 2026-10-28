@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import type * as TestModule1 from '@timeline/db';
 // Calendar apps fetch this route without cookies, so the token must authorize
 // only the subscribing member's visible calendar surface inside the feed window.
 const fakes = vi.hoisted<{
@@ -24,102 +25,119 @@ const fakes = vi.hoisted<{
   updateWhere: null,
 }));
 
-vi.mock('@timeline/db', async (importOriginal) => {
-  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-  const actual = await importOriginal<typeof import('@timeline/db')>();
-  return {
-    ...actual,
-    calendarEvents: {
-      table: 'calendar_events',
-      teamId: 'calendar_team_id',
-      visibility: 'calendar_visibility',
-      createdByUserId: 'calendar_created_by_user_id',
-      visibilityUserIds: 'calendar_visibility_user_ids',
-      deletedAt: 'calendar_deleted_at',
-      endAt: 'calendar_end_at',
-      startAt: 'calendar_start_at',
-    },
-    teamCalendarSubscriptions: {
-      table: 'team_calendar_subscriptions',
-      id: 'subscription_id',
-      teamId: 'subscription_team_id',
-      userId: 'subscription_user_id',
-      tokenHash: 'subscription_token_hash',
-      lastUsedAt: 'subscription_last_used_at',
-      updatedAt: 'subscription_updated_at',
-    },
-    teamMembers: {
-      table: 'team_members',
-      teamId: 'member_team_id',
-      userId: 'member_user_id',
-      removedAt: 'member_removed_at',
-    },
-    teams: { table: 'teams', id: 'team_id', name: 'team_name' },
-  };
-});
-vi.mock('drizzle-orm', () => ({
-  and: (...args: unknown[]) => ({ op: 'and', args }),
-  asc: (arg: unknown) => ({ op: 'asc', arg }),
-  eq: (...args: unknown[]) => ({ op: 'eq', args }),
-  gte: (...args: unknown[]) => ({ op: 'gte', args }),
-  isNull: (arg: unknown) => ({ op: 'isNull', arg }),
-  lt: (...args: unknown[]) => ({ op: 'lt', args }),
-  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
-    op: 'sql',
-    strings: Array.from(strings),
-    values,
-  }),
-}));
-vi.mock('next/server', () => ({
-  after: (callback: () => unknown) => {
-    fakes.afterCallbacks.push(callback);
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof TestModule1>();
+    return {
+      ...actual,
+      calendarEvents: {
+        table: 'calendar_events',
+        teamId: 'calendar_team_id',
+        visibility: 'calendar_visibility',
+        createdByUserId: 'calendar_created_by_user_id',
+        visibilityUserIds: 'calendar_visibility_user_ids',
+        deletedAt: 'calendar_deleted_at',
+        endAt: 'calendar_end_at',
+        startAt: 'calendar_start_at',
+      },
+      teamCalendarSubscriptions: {
+        table: 'team_calendar_subscriptions',
+        id: 'subscription_id',
+        teamId: 'subscription_team_id',
+        userId: 'subscription_user_id',
+        tokenHash: 'subscription_token_hash',
+        lastUsedAt: 'subscription_last_used_at',
+        updatedAt: 'subscription_updated_at',
+      },
+      teamMembers: {
+        table: 'team_members',
+        teamId: 'member_team_id',
+        userId: 'member_user_id',
+        removedAt: 'member_removed_at',
+      },
+      teams: { table: 'teams', id: 'team_id', name: 'team_name' },
+    };
   },
-}));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: () => ({
-      from: (table: { table: string }) => {
-        if (table.table === 'team_calendar_subscriptions') {
-          const chain = {
-            innerJoin: (joinedTable: unknown, on: unknown) => {
-              fakes.subscriptionJoins.push({ joinedTable, on });
-              return chain;
-            },
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('drizzle-orm'),
+  () => ({
+    and: (...args: unknown[]) => ({ op: 'and', args }),
+    asc: (arg: unknown) => ({ op: 'asc', arg }),
+    eq: (...args: unknown[]) => ({ op: 'eq', args }),
+    gte: (...args: unknown[]) => ({ op: 'gte', args }),
+    isNull: (arg: unknown) => ({ op: 'isNull', arg }),
+    lt: (...args: unknown[]) => ({ op: 'lt', args }),
+    sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({
+      op: 'sql',
+      strings: Array.from(strings),
+      values,
+    }),
+  }),
+  () => import('drizzle-orm'),
+);
+await vi.mock(
+  import.meta.resolve('next/server'),
+  () => ({
+    after: (callback: () => unknown) => {
+      fakes.afterCallbacks.push(callback);
+    },
+  }),
+  () => import('next/server'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: () => ({
+        from: (table: { table: string }) => {
+          if (table.table === 'team_calendar_subscriptions') {
+            const chain = {
+              innerJoin: (joinedTable: unknown, on: unknown) => {
+                fakes.subscriptionJoins.push({ joinedTable, on });
+                return chain;
+              },
+              where: (where: unknown) => {
+                fakes.subscriptionWhere = where;
+                return {
+                  limit: vi.fn().mockResolvedValue(fakes.subscriptionRows),
+                };
+              },
+            };
+            return {
+              innerJoin: chain.innerJoin,
+              where: chain.where,
+            };
+          }
+          return {
             where: (where: unknown) => {
-              fakes.subscriptionWhere = where;
+              fakes.eventWhere = where;
               return {
-                limit: vi.fn().mockResolvedValue(fakes.subscriptionRows),
+                orderBy: vi.fn().mockResolvedValue(fakes.eventRows),
               };
             },
           };
+        },
+      }),
+      update: (table: unknown) => ({
+        set: (value: unknown) => {
+          fakes.updateSet = { table, value };
           return {
-            innerJoin: chain.innerJoin,
-            where: chain.where,
+            where: (where: unknown) => {
+              fakes.updateWhere = where;
+              return Promise.resolve();
+            },
           };
-        }
-        return {
-          where: (where: unknown) => {
-            fakes.eventWhere = where;
-            return {
-              orderBy: vi.fn().mockResolvedValue(fakes.eventRows),
-            };
-          },
-        };
-      },
-    }),
-    update: (table: unknown) => ({
-      set: (value: unknown) => {
-        fakes.updateSet = { table, value };
-        return {
-          where: (where: unknown) => {
-            fakes.updateWhere = where;
-            return Promise.resolve();
-          },
-        };
-      },
-    }),
-  },
-}));
+        },
+      }),
+    },
+  }),
+  () => import('@/lib/db'),
+);
+
+const { createHash } = await import('node:crypto');
 
 const { GET } = await import('./route.js');
 

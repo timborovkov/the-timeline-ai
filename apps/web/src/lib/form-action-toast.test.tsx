@@ -1,7 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const toast = vi.hoisted(() => ({
   loading: vi.fn(),
@@ -10,7 +10,13 @@ const toast = vi.hoisted(() => ({
   dismiss: vi.fn(),
 }));
 
-vi.mock('sonner', () => ({ toast }));
+await vi.mock(
+  import.meta.resolve('sonner'),
+  () => ({ toast }),
+  () => import('sonner'),
+);
+
+const { cleanup, render } = await import('@testing-library/react');
 
 const { useFormActionToast } = await import('@/lib/form-action-toast');
 

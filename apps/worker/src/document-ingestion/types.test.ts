@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   DaytonaNotConfiguredError,
@@ -8,7 +9,6 @@ import {
   resolveAnydocFormatHint,
   shouldAcceptSandboxPdfText,
 } from '#src/document-ingestion/types.js';
-
 describe('shouldAcceptSandboxPdfText', () => {
   it('accepts non-sparse plausible text', () => {
     expect(

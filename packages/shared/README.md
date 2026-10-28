@@ -66,8 +66,8 @@ const { object } = await llm.chatStructured({
 Workspace commands:
 
 ```bash
-pnpm --filter @timeline/shared build
-pnpm --filter @timeline/shared test
+bun run --filter @timeline/shared build
+bun run --filter @timeline/shared test
 ```
 
 ## Where it fits

@@ -1,7 +1,6 @@
-import { createHmac } from 'node:crypto';
-
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const AUTH_SECRET = 'test-auth-secret-at-least-sixteen-characters';
 
 const fakes = vi.hoisted(() => ({
@@ -15,29 +14,63 @@ const fakes = vi.hoisted(() => ({
   loggerWarn: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@timeline/shared/env', () => ({
-  getEnv: () => ({ AUTH_SECRET }),
-  requireAuthSecret: () => AUTH_SECRET,
-}));
-vi.mock('@timeline/shared/integrations', () => ({ getProvider: fakes.getProvider }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    integrations: {
-      upsertProviderConnection: fakes.upsertProviderConnection,
-      recordAudit: fakes.recordAudit,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
   }),
-}));
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({
+    getEnv: () => ({ AUTH_SECRET }),
+    requireAuthSecret: () => AUTH_SECRET,
+  }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({ getProvider: fakes.getProvider }),
+  () => import('@timeline/shared/integrations'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      integrations: {
+        upsertProviderConnection: fakes.upsertProviderConnection,
+        recordAudit: fakes.recordAudit,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+
+const { createHmac } = await import('node:crypto');
 
 const { GET } = await import('./route.js');
 

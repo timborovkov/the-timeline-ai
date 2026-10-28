@@ -1,51 +1,83 @@
-// @vitest-environment happy-dom
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render as testingRender, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as boards from '@timeline/shared/boards';
 import type { PropsWithChildren, ReactElement, ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   loadTaskCategoryStatesAction: vi.fn(),
   updateBoardItemAction: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('@/app/actions/boards', () => ({ updateBoardItemAction: fakes.updateBoardItemAction }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
-    try {
-      return await run();
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'failed' };
-    }
-  },
-}));
-vi.mock('@/app/actions/objects', () => ({
-  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/boards'),
+  () => ({ updateBoardItemAction: fakes.updateBoardItemAction }),
+  () => import('@/app/actions/boards'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : 'failed' };
+      }
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+const {
+  cleanup,
+  render: testingRender,
+  screen,
+  waitFor,
+  within,
+} = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
 
 const { CuratedKanbanBoard } = await import('./curated-kanban-board.js');
 

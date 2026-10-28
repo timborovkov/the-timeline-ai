@@ -1,13 +1,9 @@
-/**
- * The quality bake-off must reject incomplete or unapproved corpora before any
- * provider call. These unit tests use synthetic metadata only and touch no files,
- * customer data, or external services.
- */
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   parseTranscriptionEvalManifest,
@@ -15,6 +11,11 @@ import {
   TranscriptionEvalManifestError,
 } from '#src/transcription-eval/manifest.js';
 import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
+/**
+ * The quality bake-off must reject incomplete or unapproved corpora before any
+ * provider call. These unit tests use synthetic metadata only and touch no files,
+ * customer data, or external services.
+ */
 
 describe('transcription eval manifest', () => {
   it('accepts an approved 24-language corpus covering every required dimension', () => {

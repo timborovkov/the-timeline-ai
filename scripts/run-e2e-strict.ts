@@ -39,8 +39,8 @@ assertE2eDiskCapacity();
 
 const env = buildE2eEnv();
 
-const args = ['exec', 'playwright', 'test', ...process.argv.slice(2)];
-const child = spawn('pnpm', args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+const args = ['x', '--bun', '--no-install', 'playwright', 'test', ...process.argv.slice(2)];
+const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
 
 let output = '';
 child.stdout.on('data', (chunk: Buffer) => {

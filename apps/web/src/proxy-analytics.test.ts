@@ -1,5 +1,10 @@
-import { NextRequest, type NextFetchEvent } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
+
+import type { NextRequest as NextRequestType } from 'next/server';
+import type { NextFetchEvent } from 'next/server';
+type NextRequest = NextRequestType;
 
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
@@ -11,23 +16,48 @@ const mocks = vi.hoisted(() => ({
     ((request: NextRequest, event: NextFetchEvent) => Promise<Response>) | undefined,
 }));
 
-vi.mock('next-auth', () => ({
-  default: () => ({
-    auth: (middleware: (request: NextRequest, event: NextFetchEvent) => Promise<Response>) => {
-      mocks.wrappedAuthMiddleware = middleware;
-      return mocks.auth;
-    },
+await vi.mock(
+  import.meta.resolve('next-auth'),
+  () => ({
+    default: () => ({
+      auth: (middleware: (request: NextRequest, event: NextFetchEvent) => Promise<Response>) => {
+        mocks.wrappedAuthMiddleware = middleware;
+        return mocks.auth;
+      },
+    }),
   }),
-}));
-vi.mock('@/lib/active-team-cookie-migration', () => ({
-  migrateLegacyActiveTeamCookie: mocks.migrateActiveTeamCookie,
-}));
-vi.mock('@/lib/auth.config', () => ({ authConfig: {} }));
-vi.mock('@/lib/canonical-host', () => ({ canonicalHostRedirect: () => null }));
-vi.mock('@/lib/multipart-request', () => ({ rejectInvalidMultipartRequest: () => null }));
-vi.mock('@/lib/analytics', () => ({ capturePersonlessSurfaceRequest: mocks.capture }));
+  () => import('next-auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team-cookie-migration'),
+  () => ({
+    migrateLegacyActiveTeamCookie: mocks.migrateActiveTeamCookie,
+  }),
+  () => import('@/lib/active-team-cookie-migration'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth.config'),
+  () => ({ authConfig: {} }),
+  () => import('@/lib/auth.config'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/canonical-host'),
+  () => ({ canonicalHostRedirect: () => null }),
+  () => import('@/lib/canonical-host'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/multipart-request'),
+  () => ({ rejectInvalidMultipartRequest: () => null }),
+  () => import('@/lib/multipart-request'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({ capturePersonlessSurfaceRequest: mocks.capture }),
+  () => import('@/lib/analytics'),
+);
 
-import { proxy } from '@/proxy';
+const { NextRequest } = await import('next/server');
+const { proxy } = await import('@/proxy');
 
 function request(path: string) {
   return new NextRequest(`https://thetimeline.cc${path}`, {
@@ -43,7 +73,9 @@ function context() {
   };
 }
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe('proxy personless app-surface integration', () => {
   it.each([

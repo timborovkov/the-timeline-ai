@@ -1,16 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type { OnboardingChecklistState } from '@timeline/shared/onboarding';
-
 const fakes = vi.hoisted(() => ({
   cachedJson: vi.fn(async (_key: string, _ttl: number, load: () => Promise<unknown>) => load()),
   cacheKey: vi.fn((parts: unknown[]) => parts.join(':')),
 }));
 
-vi.mock('@timeline/shared/cache', () => ({
-  cacheKey: fakes.cacheKey,
-  cachedJson: fakes.cachedJson,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/cache'),
+  () => ({
+    cacheKey: fakes.cacheKey,
+    cachedJson: fakes.cachedJson,
+  }),
+  () => import('@timeline/shared/cache'),
+);
 
 const {
   ONBOARDING_CHECKLIST_CACHE_TTL_SECONDS,

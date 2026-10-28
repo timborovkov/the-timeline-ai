@@ -1,11 +1,9 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   useDocumentSearchQuery: vi.fn(),
@@ -13,27 +11,39 @@ const fakes = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useDocumentSearchQuery: fakes.useDocumentSearchQuery,
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { documentChunkId: string }[];
-    renderItem: (item: { documentChunkId: string }, index: number) => ReactNode;
-    getItemKey: (item: { documentChunkId: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useDocumentSearchQuery: fakes.useDocumentSearchQuery,
+  }),
+  () => import('@/lib/use-paginated-queries'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { documentChunkId: string }[];
+      renderItem: (item: { documentChunkId: string }, index: number) => ReactNode;
+      getItemKey: (item: { documentChunkId: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
 
 const { DocumentSearch } = await import('./document-search.js');
 

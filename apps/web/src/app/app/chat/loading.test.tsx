@@ -1,8 +1,8 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import ChatLoading from '@/app/app/chat/loading';
-
 describe('ChatLoading', () => {
   it('hides the desktop session rail and mirrors the mobile session control', () => {
     const html = renderToStaticMarkup(<ChatLoading />);

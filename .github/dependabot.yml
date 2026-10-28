@@ -3,8 +3,8 @@
 # Major updates stay ungrouped. The open-PR cap is per ecosystem.
 version: 2
 updates:
-  # pnpm workspace — root package.json + pnpm-lock.yaml cover apps/* and packages/*.
-  - package-ecosystem: npm
+  # Bun workspace — root package.json + bun.lock cover apps/* and packages/*.
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: weekly

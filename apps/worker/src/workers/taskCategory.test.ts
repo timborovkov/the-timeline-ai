@@ -1,6 +1,7 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /** Business intent: the worker classifies only the exact pending task packet and applies it once. */
-import { resetEnvForTests } from '@timeline/shared/env';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   withTeam: vi.fn(),
@@ -12,27 +13,49 @@ const fakes = vi.hoisted(() => ({
   worker: vi.fn(),
 }));
 
-vi.mock('@timeline/shared', () => ({
-  llm: { TIMELINE_MODELS: { taskCategorization: { id: 'test-model' } } },
-  queue: {
-    QUEUE_NAMES: { taskCategory: 'task-category' },
-    getRedisConnection: vi.fn(),
-    enqueueTaskCategoryJob: fakes.enqueue,
-  },
-}));
-vi.mock('@timeline/shared/task-categories', () => ({ classifyTaskCategory: vi.fn() }));
-vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.withTeam }));
-vi.mock('bullmq', () => ({
-  Worker: class Worker {
-    on = vi.fn();
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  () => ({
+    llm: { TIMELINE_MODELS: { taskCategorization: { id: 'test-model' } } },
+    queue: {
+      QUEUE_NAMES: { taskCategory: 'task-category' },
+      getRedisConnection: vi.fn(),
+      enqueueTaskCategoryJob: fakes.enqueue,
+    },
+  }),
+  () => import('@timeline/shared'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/task-categories'),
+  () => ({ classifyTaskCategory: vi.fn() }),
+  () => import('@timeline/shared/task-categories'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({ withTeam: fakes.withTeam }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({
+    Worker: class Worker {
+      on = vi.fn();
 
-    constructor(...args: unknown[]) {
-      fakes.worker(...args);
-    }
-  },
-  DelayedError: class DelayedError extends Error {},
-}));
-vi.mock('#src/monitoring.js', () => ({ captureWorkerJobFailure: vi.fn() }));
+      constructor(...args: unknown[]) {
+        fakes.worker(...args);
+      }
+    },
+    DelayedError: class DelayedError extends Error {},
+  }),
+  () => import('bullmq'),
+);
+await vi.mock(
+  import.meta.resolve('#src/monitoring.js'),
+  () => ({ captureWorkerJobFailure: vi.fn() }),
+  () => import('#src/monitoring.js'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { processTaskCategoryJobForTests, startTaskCategoryWorker } =
   await import('#src/workers/taskCategory.js');

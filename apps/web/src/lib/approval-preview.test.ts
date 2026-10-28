@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { buildApprovalPreviewFields } from '@/lib/approval-preview';
-
 describe('buildApprovalPreviewFields', () => {
   it('treats every proposed field as new on create', () => {
     const { fields, timestamps } = buildApprovalPreviewFields({

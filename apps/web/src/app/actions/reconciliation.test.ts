@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -11,21 +12,60 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@/lib/sentry-action', () => ({
-  runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
-}));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.revalidatePath }));
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/shared/queue', () => ({
-  enqueueReconciliationJob: fakes.enqueueReconciliationJob,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.requireMembership }),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-action'),
+  () => ({
+    runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
+  }),
+  () => import('@/lib/sentry-action'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.revalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/queue'),
+  () => ({
+    enqueueReconciliationJob: fakes.enqueueReconciliationJob,
+  }),
+  () => import('@timeline/shared/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { queueReconciliationJobAction, queueReconciliationJobFormAction } =
   await import('./reconciliation.js');

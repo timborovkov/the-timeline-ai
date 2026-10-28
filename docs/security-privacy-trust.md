@@ -304,7 +304,7 @@ the change owner must:
    model behavior; and
 7. bump the privacy-policy version whenever the hosted model/privacy contract
    changes, regenerate `OPENROUTER_PRIVACY_POLICY_ATTESTATION` with
-   `pnpm openrouter:attestation`, then update deployment evidence and public
+   `bun run openrouter:attestation`, then update deployment evidence and public
    copy from the registry.
 
 The generated attestation is a local drift detector, not proof that OpenRouter

@@ -3,9 +3,9 @@
  *
  * Usage:
  *   DAYTONA_ACTIVE_SNAPSHOTS=timeline-document-extract-<hash> \
- *     pnpm --filter @timeline/worker cleanup-document-extract-snapshots
+ *     bun run --filter @timeline/worker cleanup-document-extract-snapshots
  *   DAYTONA_ACTIVE_SNAPSHOTS=timeline-document-extract-<hash> \
- *     pnpm --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3
+ *     bun run --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3
  *
  * Only exact `timeline-document-extract-<12-char-hex>` names are eligible.
  * All declared deployed snapshots, the current snapshot, and the newest

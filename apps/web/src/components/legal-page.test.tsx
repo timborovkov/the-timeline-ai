@@ -1,9 +1,15 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { LegalPage } = await import('@/components/legal-page');
 

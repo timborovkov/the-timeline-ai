@@ -1,10 +1,11 @@
-// @vitest-environment happy-dom
-
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { CopyButton } from '@/components/copy-button';
 import { copyAnnouncement } from '@/lib/copy-announcement';
+// Test environment: happy-dom
 
 describe('copyAnnouncement', () => {
   it('names the copied value when the label has a noun', () => {

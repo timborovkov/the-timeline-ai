@@ -1,14 +1,21 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const replace = vi.hoisted(() => vi.fn());
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace }),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ replace }),
+  }),
+  () => import('next/navigation'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { DebouncedFilterForm } = await import('./debounced-filter-form.js');
 
@@ -34,6 +41,19 @@ describe('DebouncedFilterForm', () => {
       expect(replace).toHaveBeenCalledTimes(2);
     });
     expect(replace).toHaveBeenLastCalledWith('/app/timeline?source=slack', { scroll: false });
+  });
+
+  it('retains pending filter values when a popover unmounts its controls', async () => {
+    const user = userEvent.setup();
+    const view = render(<FilterForm resetKey="initial" />);
+
+    await user.type(screen.getByLabelText('Source'), 'slack');
+    view.rerender(<FilterForm resetKey="initial" showFilters={false} />);
+    expect(screen.queryByLabelText('Source')).toBeNull();
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith('/app/timeline?source=slack', { scroll: false });
+    });
   });
 
   it('cancels pending filter navigation when a link outside the form is clicked', async () => {
@@ -63,14 +83,16 @@ async function waitForDebounce(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 350));
 }
 
-function FilterForm({ resetKey }: { resetKey: string }) {
+function FilterForm({ resetKey, showFilters = true }: { resetKey: string; showFilters?: boolean }) {
   return (
     <>
       <DebouncedFilterForm basePath="/app/timeline">
-        <label>
-          Source
-          <input key={resetKey} name="source" defaultValue="" />
-        </label>
+        {showFilters ? (
+          <label>
+            Source
+            <input key={resetKey} name="source" defaultValue="" />
+          </label>
+        ) : null}
       </DebouncedFilterForm>
       <a href="#clear">Clear</a>
     </>

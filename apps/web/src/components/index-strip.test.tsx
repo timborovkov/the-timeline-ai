@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { IndexStrip } from '@/components/index-strip';
+// Test environment: happy-dom
 
 describe('IndexStrip', () => {
   it('renders leading navigation before the title and trailing actions after metadata', () => {

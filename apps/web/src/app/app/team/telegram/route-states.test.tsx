@@ -1,18 +1,30 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 // Telegram settings must remain understandable and recoverable while route data is unavailable.
 
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
 const fakes = vi.hoisted(() => ({ back: vi.fn(), reportCaughtError: vi.fn() }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ back: fakes.back }) }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: fakes.back }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
-import TelegramError from '@/app/app/team/telegram/error';
-import TelegramLoading from '@/app/app/team/telegram/loading';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: TelegramError } = await import('@/app/app/team/telegram/error');
+const { default: TelegramLoading } = await import('@/app/app/team/telegram/loading');
 
 afterEach(() => {
   cleanup();

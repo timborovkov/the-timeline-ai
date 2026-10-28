@@ -1,11 +1,12 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import {
   activeTeamCookieOptions,
   parseActiveTeamCookie,
   serializeActiveTeamCookie,
 } from '@/lib/active-team-cookie';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
 afterEach(() => {

@@ -1,10 +1,11 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { BoardStageEditor, type EditableBoardStage } from '@/components/boards/board-stage-editor';
+// Test environment: happy-dom
 
 describe('BoardStageEditor', () => {
   it('renames, reorders, adds, and removes stages', async () => {

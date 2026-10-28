@@ -1,8 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   push: vi.fn(),
@@ -11,18 +10,54 @@ const fakes = vi.hoisted(() => ({
   getDocumentDownloadUrlAction: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ back: fakes.back, push: fakes.push, refresh: fakes.refresh }),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
-  notifyError: vi.fn(),
-}));
-vi.mock('@/app/actions/documents', () => ({
-  deleteDocumentAction: vi.fn(),
-  getDocumentDownloadUrlAction: fakes.getDocumentDownloadUrlAction,
-  renameDocumentAction: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: fakes.back, push: fakes.push, refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: vi.fn(async ({ run }: { run: () => Promise<{ error?: string }> }) => run()),
+    notifyError: vi.fn(),
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/documents'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    createFolderAction: vi.fn(() => {
+      throw new Error('Unexpected createFolderAction call in this test');
+    }),
+    deleteFolderAction: vi.fn(() => {
+      throw new Error('Unexpected deleteFolderAction call in this test');
+    }),
+    requestDocumentUploadAction: vi.fn(() => {
+      throw new Error('Unexpected requestDocumentUploadAction call in this test');
+    }),
+    finalizeDocumentVersionAction: vi.fn(() => {
+      throw new Error('Unexpected finalizeDocumentVersionAction call in this test');
+    }),
+    promoteCapturedFileAction: vi.fn(() => {
+      throw new Error('Unexpected promoteCapturedFileAction call in this test');
+    }),
+    getDocumentPreviewUrlAction: vi.fn(() => {
+      throw new Error('Unexpected getDocumentPreviewUrlAction call in this test');
+    }),
+    deleteDocumentAction: vi.fn(),
+    getDocumentDownloadUrlAction: fakes.getDocumentDownloadUrlAction,
+    renameDocumentAction: vi.fn(),
+  }),
+  () => import('@/app/actions/documents'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { DocumentDetail } = await import('./document-detail.js');
 

@@ -1,8 +1,9 @@
 import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { turnstileHostnameFromHeaders, verifyTurnstileToken } from '@/lib/turnstile';
-
 const ENV_BACKUP = { ...process.env };
 
 function setEnv(overrides: Record<string, string | undefined>): void {

@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import {
@@ -16,7 +17,6 @@ import {
   verifyCollectionCounts,
   verifyCollectionIdentity,
 } from '#src/qdrant/copy-points.js';
-
 const ENV_BACKUP = { ...process.env };
 
 const payload: QdrantPayload = {
@@ -75,14 +75,16 @@ function memoryQdrant(
   initial: Record<string, StoredPoint[]>,
   vectorSize = 4,
 ): {
-  fetcher: typeof fetch;
+  fetcher: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   store: Record<string, StoredPoint[]>;
 } {
   const store: Record<string, StoredPoint[]> = Object.fromEntries(
     Object.entries(initial).map(([name, points]) => [name, [...points]]),
   );
 
-  const fetcher: typeof fetch = (input, init) => {
+  const fetcher: (
+    ...args: Parameters<typeof globalThis.fetch>
+  ) => ReturnType<typeof globalThis.fetch> = (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
@@ -240,7 +242,9 @@ describe('copyCollectionPoints', () => {
     };
     const { fetcher, store } = memoryQdrant({ events: [first], events_ondisk: [] });
     let completedScrolls = 0;
-    const wrappingFetcher: typeof fetch = async (input, init) => {
+    const wrappingFetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = async (input, init) => {
       const response = await fetcher(input, init);
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const method = init?.method ?? 'GET';

@@ -1,8 +1,8 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
-
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -12,41 +12,76 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({
-  redirect: fakes.redirect,
-  useRouter: () => ({ back: vi.fn(), push: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    objects: { getObjectMergePreview: fakes.getObjectMergePreview },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+    useRouter: () => ({ back: vi.fn(), push: vi.fn() }),
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/components/objects/object-merge-form', () => ({
-  ObjectMergeForm: ({
-    factSamplesByObjectId,
-  }: {
-    factSamplesByObjectId: Record<string, { statement: string }[]>;
-  }) => (
-    <div data-testid="object-merge-form">
-      {Object.values(factSamplesByObjectId)
-        .flat()
-        .map((fact) => fact.statement)
-        .join(',')}
-    </div>
-  ),
-}));
-vi.mock('@/components/objects/object-merge-route-modal', () => ({
-  ObjectMergeRouteModalForm: () => <div data-testid="object-merge-modal-form" />,
-  ObjectMergeRouteModalFrame: ({ children }: { children: ReactNode }) => (
-    <div data-testid="object-merge-modal-frame">{children}</div>
-  ),
-}));
-vi.mock('@/components/history-back-link', () => ({
-  HistoryBackLink: ({ label }: { label: string }) => <a href="/app/objects">{label}</a>,
-}));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      objects: { getObjectMergePreview: fakes.getObjectMergePreview },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-merge-form'),
+  () => ({
+    ObjectMergeForm: ({
+      factSamplesByObjectId,
+    }: {
+      factSamplesByObjectId: Record<string, { statement: string }[]>;
+    }) => (
+      <div data-testid="object-merge-form">
+        {Object.values(factSamplesByObjectId)
+          .flat()
+          .map((fact) => fact.statement)
+          .join(',')}
+      </div>
+    ),
+  }),
+  () => import('@/components/objects/object-merge-form'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-merge-route-modal'),
+  () => ({
+    ObjectMergeRouteModalForm: () => <div data-testid="object-merge-modal-form" />,
+    ObjectMergeRouteModalFrame: ({ children }: { children: ReactNode }) => (
+      <div data-testid="object-merge-modal-frame">{children}</div>
+    ),
+  }),
+  () => import('@/components/objects/object-merge-route-modal'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/history-back-link'),
+  () => ({
+    HistoryBackLink: ({ label }: { label: string }) => <a href="/app/objects">{label}</a>,
+  }),
+  () => import('@/components/history-back-link'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: MergeObjectsPage } = await import('./page.js');
 

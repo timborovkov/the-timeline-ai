@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   GITHUB_TASK_PROPOSAL_COALESCE_MS,
@@ -9,7 +10,6 @@ import {
   isDelayedIngestResult,
   takeConnectionIngestSlot,
 } from '#src/integrations/ingest-processing.js';
-
 describe('structured ingest processing', () => {
   it('skips LLM ingest by envelope signal class, not by OAuth app name alone', () => {
     expect(integrationSkipsLlmIngest('github')).toBe(true);

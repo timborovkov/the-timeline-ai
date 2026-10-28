@@ -1,28 +1,41 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   clientIpFromHeaders: vi.fn(),
   reportHandledEvent: vi.fn(),
 }));
 
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: {
-    signIn: { capacity: 10, refillPerSec: 10 / 60 },
-  },
-  checkRateLimit: fakes.checkRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: {
+      signIn: { capacity: 10, refillPerSec: 10 / 60 },
+    },
+    checkRateLimit: fakes.checkRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
 
-vi.mock('@/lib/request-ip', () => ({
-  clientIpFromHeaders: fakes.clientIpFromHeaders,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/request-ip'),
+  () => ({
+    clientIpFromHeaders: fakes.clientIpFromHeaders,
+  }),
+  () => import('@/lib/request-ip'),
+);
 
-vi.mock('@/lib/sentry-report', () => ({
-  reportHandledEvent: fakes.reportHandledEvent,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({
+    reportHandledEvent: fakes.reportHandledEvent,
+  }),
+  () => import('@/lib/sentry-report'),
+);
 
-import { checkCredentialsSignInRateLimit } from '@/lib/sign-in-rate-limit';
+const { checkCredentialsSignInRateLimit } = await import('@/lib/sign-in-rate-limit');
 
 describe('checkCredentialsSignInRateLimit', () => {
   beforeEach(() => {

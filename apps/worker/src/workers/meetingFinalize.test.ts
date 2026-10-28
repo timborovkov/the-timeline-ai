@@ -10,13 +10,14 @@ import {
   savedMeetings,
 } from '@timeline/db';
 import { TimelineAiError } from '@timeline/shared/llm';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processMeetingFinalizeJob } from '#src/workers/meetingFinalize.js';
-
 /**
  * Integration tests for the meeting-finalize worker handler. Uses pglite
  * for Postgres + an injected LLM stub so no OpenRouter / Redis is required.

@@ -1,112 +1,260 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('@/app/actions/boards', () => ({
-  updateBoardItemAction: vi.fn(() => Promise.resolve({ ok: true })),
-}));
-vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: vi.fn() }));
-vi.mock('@/components/boards/board-add-item-form', () => ({
-  BoardAddItemForm: (props: {
-    onOptimisticItem?: (item: boards.BoardItemRow) => void;
-    onItemAdded?: (item: boards.BoardItemRow, optimisticId: string) => void;
-  }) => {
-    const optimisticItem = testBoardItem({
-      id: 'optimistic-item-2',
-      entityId: 'object-2',
-      canonicalName: 'Beta',
-    });
-    const persistedItem = testBoardItem({
-      id: 'item-2',
-      entityId: 'object-2',
-      canonicalName: 'Beta',
-    });
-    return (
-      <>
-        <button type="button">Add item</button>
-        <button
-          type="button"
-          onClick={() => {
-            props.onOptimisticItem?.(optimisticItem);
-          }}
-        >
-          Fake optimistic add
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            props.onOptimisticItem?.(optimisticItem);
-            props.onItemAdded?.(persistedItem, optimisticItem.id);
-          }}
-        >
-          Fake committed add
-        </button>
-      </>
-    );
-  },
-}));
-vi.mock('@/components/boards/board-card-detail', () => ({
-  BoardCardDetail: (props: {
-    item: boards.BoardItemRow | null;
-    onUpdateItem?: (itemId: string, patch: { priority: number }) => Promise<unknown>;
-    onItemRemoved?: (itemId: string, entityId: string) => void;
-  }) =>
-    props.item ? (
-      <>
-        <button
-          type="button"
-          onClick={() => {
-            void props.onUpdateItem?.(props.item?.id ?? '', { priority: 1 });
-          }}
-        >
-          Set P1
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (props.item) props.onItemRemoved?.(props.item.id, props.item.entityId);
-          }}
-        >
-          Remove local item
-        </button>
-      </>
-    ) : null,
-}));
-vi.mock('@/components/boards/board-actions-menu', () => ({
-  BoardActionsMenu: (props: { purpose: string }) => (
-    <output aria-label="board settings purpose">{props.purpose}</output>
-  ),
-}));
-vi.mock('@/components/boards/curated-kanban-board', () => ({
-  CuratedKanbanBoard: () => null,
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
-      ),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/boards'),
+  () => ({
+    updateBoardItemAction: vi.fn(() => Promise.resolve({ ok: true })),
+  }),
+  () => import('@/app/actions/boards'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    searchAddableObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected searchAddableObjectsAction call in this test');
+    }),
+    loadTaskRowsAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskRowsAction call in this test');
+    }),
+    loadObjectRowsAction: vi.fn(() => {
+      throw new Error('Unexpected loadObjectRowsAction call in this test');
+    }),
+    createObjectAction: vi.fn(() => {
+      throw new Error('Unexpected createObjectAction call in this test');
+    }),
+    updateObjectAction: vi.fn(() => {
+      throw new Error('Unexpected updateObjectAction call in this test');
+    }),
+    setTaskCategoryAction: vi.fn(() => {
+      throw new Error('Unexpected setTaskCategoryAction call in this test');
+    }),
+    undoTaskCategoryChangeAction: vi.fn(() => {
+      throw new Error('Unexpected undoTaskCategoryChangeAction call in this test');
+    }),
+    resetTaskCategoryAction: vi.fn(() => {
+      throw new Error('Unexpected resetTaskCategoryAction call in this test');
+    }),
+    retryTaskCategoryAction: vi.fn(() => {
+      throw new Error('Unexpected retryTaskCategoryAction call in this test');
+    }),
+    setTaskProjectAction: vi.fn(() => {
+      throw new Error('Unexpected setTaskProjectAction call in this test');
+    }),
+    updateObjectMetadataAction: vi.fn(() => {
+      throw new Error('Unexpected updateObjectMetadataAction call in this test');
+    }),
+    createIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected createIdentityFacetAction call in this test');
+    }),
+    archiveIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected archiveIdentityFacetAction call in this test');
+    }),
+    setPersonCompanyAction: vi.fn(() => {
+      throw new Error('Unexpected setPersonCompanyAction call in this test');
+    }),
+    structureContactFromBoardNotesAction: vi.fn(() => {
+      throw new Error('Unexpected structureContactFromBoardNotesAction call in this test');
+    }),
+    loadTaskCategoryFilterStateAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskCategoryFilterStateAction call in this test');
+    }),
+    loadTaskPrimaryProjectsAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskPrimaryProjectsAction call in this test');
+    }),
+    unarchiveObjectAction: vi.fn(() => {
+      throw new Error('Unexpected unarchiveObjectAction call in this test');
+    }),
+    archiveObjectAction: vi.fn(() => {
+      throw new Error('Unexpected archiveObjectAction call in this test');
+    }),
+    pinObjectAction: vi.fn(() => {
+      throw new Error('Unexpected pinObjectAction call in this test');
+    }),
+    unpinObjectAction: vi.fn(() => {
+      throw new Error('Unexpected unpinObjectAction call in this test');
+    }),
+    bulkArchiveObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected bulkArchiveObjectsAction call in this test');
+    }),
+    mergeObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected mergeObjectsAction call in this test');
+    }),
+    findObjectCleanupSuggestionsAction: vi.fn(() => {
+      throw new Error('Unexpected findObjectCleanupSuggestionsAction call in this test');
+    }),
+    repairObjectMemoryAction: vi.fn(() => {
+      throw new Error('Unexpected repairObjectMemoryAction call in this test');
+    }),
+    addRelationshipAction: vi.fn(() => {
+      throw new Error('Unexpected addRelationshipAction call in this test');
+    }),
+    removeRelationshipAction: vi.fn(() => {
+      throw new Error('Unexpected removeRelationshipAction call in this test');
+    }),
+    createNoteAction: vi.fn(() => {
+      throw new Error('Unexpected createNoteAction call in this test');
+    }),
+    updateNoteAction: vi.fn(() => {
+      throw new Error('Unexpected updateNoteAction call in this test');
+    }),
+    deleteNoteAction: vi.fn(() => {
+      throw new Error('Unexpected deleteNoteAction call in this test');
+    }),
+    generateObjectSummaryAction: vi.fn(() => {
+      throw new Error('Unexpected generateObjectSummaryAction call in this test');
+    }),
+    markNotificationReadAction: vi.fn(() => {
+      throw new Error('Unexpected markNotificationReadAction call in this test');
+    }),
+    markAllNotificationsReadAction: vi.fn(() => {
+      throw new Error('Unexpected markAllNotificationsReadAction call in this test');
+    }),
+    acceptObjectChangeAction: vi.fn(() => {
+      throw new Error('Unexpected acceptObjectChangeAction call in this test');
+    }),
+    rejectObjectChangeAction: vi.fn(() => {
+      throw new Error('Unexpected rejectObjectChangeAction call in this test');
+    }),
+    loadTaskCategoryStatesAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskCategoryStatesAction call in this test');
+    }),
+    searchObjectsAction: vi.fn(),
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/boards/board-add-item-form'),
+  () => ({
+    BoardAddItemForm: (props: {
+      onOptimisticItem?: (item: boards.BoardItemRow) => void;
+      onItemAdded?: (item: boards.BoardItemRow, optimisticId: string) => void;
+    }) => {
+      const optimisticItem = testBoardItem({
+        id: 'optimistic-item-2',
+        entityId: 'object-2',
+        canonicalName: 'Beta',
+      });
+      const persistedItem = testBoardItem({
+        id: 'item-2',
+        entityId: 'object-2',
+        canonicalName: 'Beta',
+      });
+      return (
+        <>
+          <button type="button">Add item</button>
+          <button
+            type="button"
+            onClick={() => {
+              props.onOptimisticItem?.(optimisticItem);
+            }}
+          >
+            Fake optimistic add
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              props.onOptimisticItem?.(optimisticItem);
+              props.onItemAdded?.(persistedItem, optimisticItem.id);
+            }}
+          >
+            Fake committed add
+          </button>
+        </>
+      );
+    },
+  }),
+  () => import('@/components/boards/board-add-item-form'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/boards/board-card-detail'),
+  () => ({
+    BoardCardDetail: (props: {
+      item: boards.BoardItemRow | null;
+      onUpdateItem?: (itemId: string, patch: { priority: number }) => Promise<unknown>;
+      onItemRemoved?: (itemId: string, entityId: string) => void;
+    }) =>
+      props.item ? (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              void props.onUpdateItem?.(props.item?.id ?? '', { priority: 1 });
+            }}
+          >
+            Set P1
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (props.item) props.onItemRemoved?.(props.item.id, props.item.entityId);
+            }}
+          >
+            Remove local item
+          </button>
+        </>
+      ) : null,
+  }),
+  () => import('@/components/boards/board-card-detail'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/boards/board-actions-menu'),
+  () => ({
+    BoardActionsMenu: (props: { purpose: string }) => (
+      <output aria-label="board settings purpose">{props.purpose}</output>
     ),
-}));
+  }),
+  () => import('@/components/boards/board-actions-menu'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/boards/curated-kanban-board'),
+  () => ({
+    CuratedKanbanBoard: () => null,
+  }),
+  () => import('@/components/boards/curated-kanban-board'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
+      ),
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { BoardDetailClient } = await import('./board-detail-client.js');
 const { CuratedBoardList } = await import('./curated-board-views.js');

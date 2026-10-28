@@ -1,6 +1,6 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -20,50 +20,77 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({
-  notFound: fakes.notFound,
-  redirect: fakes.redirect,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    boards: {
-      getBoard: fakes.getBoard,
-      listBoardItemHistory: fakes.listBoardItemHistory,
-    },
-    objects: {
-      listObjects: fakes.listObjects,
-      getObject: fakes.getObject,
-    },
-    timeline: {
-      listMembers: fakes.listMembers,
-    },
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    notFound: fakes.notFound,
+    redirect: fakes.redirect,
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/components/boards/board-detail-client', () => ({
-  BoardDetailClient: ({
-    selectedItemId,
-    history,
-    initialCandidates,
-    projectOptions,
-  }: {
-    selectedItemId: string | null;
-    history: unknown[];
-    initialCandidates: { id: string }[];
-    projectOptions?: { id: string }[];
-  }) => {
-    fakes.candidateIds = initialCandidates.map((candidate) => candidate.id);
-    fakes.projectOptionIds = (projectOptions ?? []).map((project) => project.id);
-    return (
-      <div data-testid="board-detail-client">
-        selected:{selectedItemId ?? 'none'} history:{history.length}
-      </div>
-    );
-  },
-}));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      boards: {
+        getBoard: fakes.getBoard,
+        listBoardItemHistory: fakes.listBoardItemHistory,
+      },
+      objects: {
+        listObjects: fakes.listObjects,
+        getObject: fakes.getObject,
+      },
+      timeline: {
+        listMembers: fakes.listMembers,
+      },
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/boards/board-detail-client'),
+  () => ({
+    BoardDetailClient: ({
+      selectedItemId,
+      history,
+      initialCandidates,
+      projectOptions,
+    }: {
+      selectedItemId: string | null;
+      history: unknown[];
+      initialCandidates: { id: string }[];
+      projectOptions?: { id: string }[];
+    }) => {
+      fakes.candidateIds = initialCandidates.map((candidate) => candidate.id);
+      fakes.projectOptionIds = (projectOptions ?? []).map((project) => project.id);
+      return (
+        <div data-testid="board-detail-client">
+          selected:{selectedItemId ?? 'none'} history:{history.length}
+        </div>
+      );
+    },
+  }),
+  () => import('@/components/boards/board-detail-client'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: BoardDetailPage } = await import('./page.js');
 

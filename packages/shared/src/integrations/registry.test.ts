@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import {
@@ -17,7 +18,6 @@ import {
   providerSyncPolicy,
 } from '#src/integrations/types.js';
 import { validateMcpUrl } from '#src/mcp/auth.js';
-
 const ENV_BACKUP = { ...process.env };
 
 function resetEnv(overrides: NodeJS.ProcessEnv = {}): void {

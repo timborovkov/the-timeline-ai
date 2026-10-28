@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   buildTimelineMoments,
@@ -6,7 +7,6 @@ import {
   timelineMomentLookupPlan,
   type TimelineMomentEvent,
 } from '#src/timeline-moments/index.js';
-
 function event(input: Partial<TimelineMomentEvent> & Pick<TimelineMomentEvent, 'id' | 'source'>) {
   return {
     id: input.id,

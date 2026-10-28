@@ -1,5 +1,59 @@
-import {
-  type Db,
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
+import { z } from 'zod';
+
+import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
+import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
+/**
+ * Real-DB integration tests for workspace objects. This module owns a large
+ * part of the product contract: object CRUD, audit rows, notes, suggestions,
+ * notifications, chat sessions, and team/user isolation. These tests exercise
+ * persisted behavior through `withTeam(...).objects`, not private helpers.
+ */
+
+const qdrantFakes = vi.hoisted(() => ({
+  deletePoints: vi.fn().mockResolvedValue(undefined),
+  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
+  getQdrantClient: vi.fn(),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/conversation-surfaces/runtime.js'),
+  () => ({
+    acceptDirectAgentTurn: vi.fn().mockResolvedValue({
+      status: 'queued',
+      turnId: '00000000-0000-4000-8000-000000000001',
+      sessionId: '00000000-0000-4000-8000-000000000002',
+    }),
+  }),
+  () => import('#src/conversation-surfaces/runtime.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+    enqueueTaskCategoryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'category-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/qdrant/client.js'),
+  () => ({
+    getQdrantClient: qdrantFakes.getQdrantClient,
+  }),
+  () => import('#src/qdrant/client.js'),
+);
+
+const {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -33,62 +87,21 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
   userPins,
-} from '@timeline/db';
-import { and, eq, inArray, or } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
-
-import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
-import type { PGlite } from '@electric-sql/pglite';
-
-import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
-import { resetEnvForTests } from '#src/env.js';
-import { chatStructured } from '#src/llm/chat.js';
-import { TimelineAiError } from '#src/llm/errors.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
-import {
-  generateAndStoreObjectSummary,
-  invalidateObjectSummariesForRawEvent,
-} from '#src/objects/summaries.js';
-import { encodeCursor } from '#src/pagination.js';
-import * as queue from '#src/queue/queues.js';
-import { withTeam } from '#src/team-scope.js';
-import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-/**
- * Real-DB integration tests for workspace objects. This module owns a large
- * part of the product contract: object CRUD, audit rows, notes, suggestions,
- * notifications, chat sessions, and team/user isolation. These tests exercise
- * persisted behavior through `withTeam(...).objects`, not private helpers.
- */
-
-const qdrantFakes = vi.hoisted(() => ({
-  deletePoints: vi.fn().mockResolvedValue(undefined),
-  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
-  getQdrantClient: vi.fn(),
-}));
-
-vi.mock('#src/conversation-surfaces/runtime.js', () => ({
-  acceptDirectAgentTurn: vi.fn().mockResolvedValue({
-    status: 'queued',
-    turnId: '00000000-0000-4000-8000-000000000001',
-    sessionId: '00000000-0000-4000-8000-000000000002',
-  }),
-}));
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-  enqueueTaskCategoryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'category-job' }),
-}));
-vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: qdrantFakes.getQdrantClient,
-}));
+} = await import('@timeline/db');
+const { and, eq, inArray, or } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { acceptDirectAgentTurn } = await import('#src/conversation-surfaces/runtime.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { chatStructured } = await import('#src/llm/chat.js');
+const { TimelineAiError } = await import('#src/llm/errors.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
+const { buildObjectDirectWriteSourceContext } = await import('#src/objects/index.js');
+const { generateAndStoreObjectSummary, invalidateObjectSummariesForRawEvent } =
+  await import('#src/objects/summaries.js');
+const { encodeCursor } = await import('#src/pagination.js');
+const queue = await import('#src/queue/queues.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { createResettablePGliteTestDb } = await import('#src/test/pglite.js');
 
 type AnyDb = Db;
 
@@ -5322,7 +5335,9 @@ describe('object scope — merge cleanup', () => {
       body: 'Schema Limit Co has enough human-authored context to generate an object summary.',
     });
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(
