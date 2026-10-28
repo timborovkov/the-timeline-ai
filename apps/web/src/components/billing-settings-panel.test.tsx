@@ -5,7 +5,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { BillingSettingsPanelProps } from '@/components/billing-settings-panel';
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 
-
 await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({

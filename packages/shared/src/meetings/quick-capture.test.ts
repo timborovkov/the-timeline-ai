@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 
-
 const joinMeetingMock = vi.hoisted(() => vi.fn());
 
 await vi.mock(

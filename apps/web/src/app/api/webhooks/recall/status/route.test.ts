@@ -3,7 +3,6 @@ import { createHmac } from 'node:crypto';
 import { expect, vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-
 /**
  * Route-level tests for the Recall status webhook. These cover the
  * state-machine logic that the unit tests can't reach:

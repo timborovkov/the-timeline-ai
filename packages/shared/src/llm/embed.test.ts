@@ -6,7 +6,6 @@ import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
 import type { OpenRouterFinishEvent } from '#src/billing/openrouter-usage.js';
 import type { EmbeddingModel } from 'ai';
 
-
 const { embeddingFinishes } = vi.hoisted(() => ({
   embeddingFinishes: [] as unknown[],
 }));

@@ -1,7 +1,6 @@
 import { expect, vi } from '@timeline/test-support';
 import { beforeEach, describe, it } from 'bun:test';
 
-
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
   fakeResolveActiveTeam: vi.fn(),
