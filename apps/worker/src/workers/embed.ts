@@ -11,6 +11,7 @@ import {
   qdrant,
   queue,
 } from '@timeline/shared';
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 import { eq, sql } from 'drizzle-orm';
 
@@ -323,6 +324,7 @@ async function embedTextBatch(
   try {
     return await embedMany({ texts });
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     if (texts.length <= 1 || !shouldSplitEmbeddingBatch(err, attempt)) throw err;
     const midpoint = Math.ceil(texts.length / 2);
     const first = await embedTextBatch(embedMany, texts.slice(0, midpoint), attempt);

@@ -617,6 +617,27 @@ describe('processMeetingFinalizeJob', () => {
     });
   });
 
+  it('keeps billing admission retryable instead of completing transcript-only', async () => {
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');
+    const chat = vi.fn().mockRejectedValue(new BillingAdmissionError('costly_worker_busy'));
+
+    await expect(
+      processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        { chatStructured: chat as never },
+      ),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('processing');
+    const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(events).toHaveLength(0);
+  });
+
   it('keeps transient summary failures retryable instead of completing transcript-only', async () => {
     await seedMeeting(db as never);
     await seedChunk(db as never, 0, 'We should follow up on the launch plan.', 'Alice');

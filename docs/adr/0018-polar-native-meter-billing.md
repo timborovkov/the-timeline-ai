@@ -302,9 +302,11 @@ credit hides margin and confuses prospects.
    (`metadata.source=worker`) count against `costlyWorkerConcurrency`; a busy
    workspace delays the BullMQ job instead of failing it. Polar customers are
    resolved with get-by-external-id. Creation runs only after a real 404, and a
-   returned `external_id` must match the workspace. Generate-and-store helpers
-   and other AI catches rethrow `BillingAdmissionError` so that delay still
-   runs. Janitor storage
+   returned `external_id` must match the workspace.    Generate-and-store helpers,
+   meeting summary fallbacks, embedding batch splits, and other AI catches
+   rethrow `BillingAdmissionError` before returning a degraded result, so that
+   delay still runs. A busy meeting summary stays unfinalized instead of
+   completing transcript-only. Non-admission summary failures still do. Janitor storage
    snapshots backfill missed days across the full 31-day lookback, including the
    previous calendar month, from absent storage operation ids. Each day is priced
    on the plan effective that day and counted in that day's month. A missed day,

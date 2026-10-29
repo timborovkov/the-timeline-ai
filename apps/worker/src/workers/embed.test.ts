@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEvents, rawEvents } from '@timeline/db';
 import { llm, qdrant, type queue } from '@timeline/shared';
+import { BillingAdmissionError } from '@timeline/shared/billing';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -591,6 +592,52 @@ describe('processEmbedJobForTests', () => {
       embedWorkerInternals.embeddingChunksPerJob / 2,
     ]);
     expect(upsertVector).toHaveBeenCalledTimes(embedWorkerInternals.embeddingChunksPerJob);
+  });
+
+  it('rethrows billing admission instead of splitting the embedding batch', async () => {
+    const rawEventId = '16161616-2222-4333-8444-555555555555';
+    const longText = Array.from(
+      { length: 10_000 },
+      (_, i) => `Admission batch sentence ${String(i)} with detail.`,
+    ).join(' ');
+    await db.insert(rawEvents).values({
+      id: rawEventId,
+      teamId: TEAM_ID,
+      authorUserId: USER_ID,
+      source: 'web',
+      contentText: longText,
+      occurredAt: new Date('2026-05-27T12:00:00Z'),
+      visibility: 'team',
+      visibilityOwnerUserId: USER_ID,
+      sourceMetadata: {},
+    });
+    const embedMany = vi.fn<
+      (input: { texts: string[] }) => Promise<{ vectors: number[][]; model: string }>
+    >(() => Promise.reject(new BillingAdmissionError('costly_worker_busy')));
+    const upsertVector = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSource = vi.fn().mockResolvedValue(undefined);
+    const deletePointsForSourceFromChunk = vi
+      .fn<DeletePointsForSourceFromChunk>()
+      .mockResolvedValue(undefined);
+
+    await expect(
+      processEmbedJobForTests(
+        { db: db as never },
+        { scope: 'raw_event', teamId: TEAM_ID, rawEventId },
+        {
+          getEnv: () =>
+            ({ OPENROUTER_API_KEY: 'test-key', QDRANT_URL: 'http://qdrant.test' }) as never,
+          embedMany,
+          getQdrantClient: vi.fn(
+            () =>
+              ({ deletePointsForSource, deletePointsForSourceFromChunk, upsertVector }) as never,
+          ),
+        },
+      ),
+    ).rejects.toBeInstanceOf(BillingAdmissionError);
+
+    expect(embedMany).toHaveBeenCalledOnce();
+    expect(upsertVector).not.toHaveBeenCalled();
   });
 
   it('splits provider API batch failures on the final queue attempt', async () => {

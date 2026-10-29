@@ -21,6 +21,7 @@ import { bucketAnalyticsCount, bucketMeetingDuration } from '@timeline/shared/an
 import {
   admitMeetingSourceEnrichment,
   BILLING_SYSTEM_USER_ID,
+  isBillingAdmissionError,
   recallBillableMinutes,
   settleElapsedRecallMeetingMinutes,
   settleRecallMeetingMinutes,
@@ -648,6 +649,9 @@ async function summarizeTranscript(
       summaryFailure: null,
     };
   } catch (err) {
+    // Admission must leave the job. A transcript-only completion is permanent:
+    // the retry sees already_completed and never summarizes again.
+    if (isBillingAdmissionError(err)) throw err;
     if (isRetryableSummaryError(err)) throw err;
     log.warn({ err, meetingId: meeting.id }, 'meeting_summary_failed_transcript_only');
     return {

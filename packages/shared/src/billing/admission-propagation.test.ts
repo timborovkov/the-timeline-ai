@@ -7,10 +7,12 @@ import { describe, it } from 'bun:test';
 
 /**
  * BillingAdmissionError only delays a worker when it leaves the job. This scan
- * fails when a catch around an AI call records an ordinary failure instead.
+ * fails when a catch around an AI call, a withWorkerAiBilling / withAiMetering
+ * caller, or an LLM helper returns a degraded result. A conditional `throw err`
+ * is not propagation when another path returns.
  */
 const AI_CALL =
-  /\b(?:chatStructured|generateAndStore[A-Za-z]*|embedMany|embedTextBatch|transcribeAudio|extractTextFromMedia|planReconciliation|classifyTaskCategor[A-Za-z]*|askAgent|streamChat|withAiMetering|generateStructuredObject|generateJsonObjectFallback)\s*\(|\bawait\s+structured\s*\(/;
+  /\b(?:chatStructured|chat|generateAndStore[A-Za-z]*|embedMany|embedTextBatch|transcribeAudio|extractTextFromMedia|planReconciliation|classifyTaskCategor[A-Za-z]*|askAgent|streamChat|withAiMetering|withWorkerAiBilling|generateStructuredObject|generateJsonObjectFallback)\s*\(|\bawait\s+structured\s*\(/;
 
 const SCAN_ROOTS = ['apps/worker/src', 'apps/web/src', 'packages/shared/src'];
 
@@ -157,6 +159,8 @@ function propagatesAdmission(catchBody: string, binding: string | null): boolean
   if (catchBody.includes('isBillingAdmissionError(')) return true;
   if (catchBody.includes('rethrowBillingAdmission(')) return true;
   if (!binding) return false;
+  // `if (isRetryable(err)) throw err; return degraded` still completes the job.
+  if (/\breturn\b/.test(catchBody)) return false;
   return new RegExp(String.raw`\bthrow\s+${binding}\b`).test(catchBody);
 }
 
@@ -353,6 +357,58 @@ describe('billing admission propagation', () => {
         throw new AggregateError([fallbackErr], 'fallback failed');
       });
     `;
+    expect(aiCatchFindings(source)).toEqual([]);
+  });
+
+  it('flags a fallback that returns a degraded result after rethrowing only some errors', () => {
+    const source = [
+      'try {',
+      '  await chat({ schema });',
+      '} catch (err) {',
+      '  if (isRetryableSummaryError(err)) throw err;',
+      '  return { summary: null };',
+      '}',
+    ].join('\n');
+    expect(aiCatchFindings(source)).toEqual([
+      'fixture.ts:3 catch does not rethrow BillingAdmissionError',
+    ]);
+  });
+
+  it('flags a metering wrapper whose catch returns a degraded result', () => {
+    const source = [
+      'try {',
+      '  await withWorkerAiBilling(db, teamId, "meeting_finalize", work);',
+      '} catch (err) {',
+      '  return { completed: true, summary: null };',
+      '}',
+      'try {',
+      '  await withAiMetering({ operationClass: "embedding" }, embed);',
+      '} catch (err) {',
+      '  if (shouldSplit(err)) return { vectors: [] };',
+      '  throw err;',
+      '}',
+    ].join('\n');
+    expect(aiCatchFindings(source)).toEqual([
+      'fixture.ts:3 catch does not rethrow BillingAdmissionError',
+      'fixture.ts:8 catch does not rethrow BillingAdmissionError',
+    ]);
+  });
+
+  it('accepts a degraded summary fallback that rethrows billing admission first', () => {
+    const source = [
+      'try {',
+      '  await chat({ schema });',
+      '} catch (err) {',
+      '  if (isBillingAdmissionError(err)) throw err;',
+      '  if (isRetryableSummaryError(err)) throw err;',
+      '  return { summary: null };',
+      '}',
+      'try {',
+      '  await withWorkerAiBilling(db, teamId, "task_category", work);',
+      '} catch (error) {',
+      '  throw error;',
+      '}',
+    ].join('\n');
     expect(aiCatchFindings(source)).toEqual([]);
   });
 
