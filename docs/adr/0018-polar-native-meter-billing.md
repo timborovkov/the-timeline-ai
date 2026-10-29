@@ -279,7 +279,9 @@ credit hides margin and confuses prospects.
    workspace.    OpenRouter
    `usage.cost` is converted through FX then ×4 with no extra 5.5% markup.
    Embedding calls read that cost from the raw response body, because the
-   compatible adapter reports only token counts on `usage`.
+   compatible adapter reports only token counts on `usage`. A rejected embedding
+   vector or a transcript payload with no text still settles that cost on the
+   failed-attempt path before the work reservation is released.
    Janitor included-discount resets lock the billing account and refuse to
    overwrite a newer Polar plan or period. A missed renewal advances by calendar
    months from the subscription anchor day. A short month keeps the stored

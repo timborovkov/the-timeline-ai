@@ -45,6 +45,17 @@ function costFromUsageField(usage: unknown): number {
   return costFromUsageLike(row.raw) + costFromUsageLike(row);
 }
 
+function costFromResponseBodies(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  let cost = 0;
+  for (const item of value) {
+    const row = asRecord(item);
+    if (!row) continue;
+    cost += costFromUsageLike(row.usage) + costFromUsageField(row.body);
+  }
+  return cost;
+}
+
 export interface OpenRouterFinishEvent {
   providerMetadata?: unknown;
   usage?: unknown;
@@ -79,13 +90,20 @@ export function openRouterFinishFromCaughtError(err: unknown): OpenRouterFinishE
   const providerMetadata = row.providerMetadata ?? row.provider_metadata;
   const response = asRecord(row.response);
   const responseUsage = response?.usage;
-  if (usage !== undefined || providerMetadata !== undefined || responseUsage !== undefined) {
-    return openRouterFinishFromAiResult({
-      usage: usage ?? responseUsage,
-      providerMetadata,
-      totalUsage: row.totalUsage ?? usage ?? responseUsage,
-    });
-  }
+  const direct =
+    usage !== undefined || providerMetadata !== undefined || responseUsage !== undefined
+      ? openRouterFinishFromAiResult({
+          usage: usage ?? responseUsage,
+          providerMetadata,
+          totalUsage: row.totalUsage ?? usage ?? responseUsage,
+        })
+      : undefined;
+  if (direct && openRouterUsdCostFromFinishEvent(direct) > 0) return direct;
+  const listedCost = Array.isArray(row.responses)
+    ? costFromResponseBodies(row.responses)
+    : costFromUsageField(response?.body);
+  if (listedCost > 0) return openRouterFinishFromUsdCost(listedCost);
+  if (direct) return direct;
   if (err instanceof AggregateError) {
     for (const inner of err.errors) {
       const finish = openRouterFinishFromCaughtError(inner);
@@ -96,6 +114,21 @@ export function openRouterFinishFromCaughtError(err: unknown): OpenRouterFinishE
     return openRouterFinishFromCaughtError(err.cause);
   }
   return undefined;
+}
+
+/** Stamp provider cost onto an error so a failed attempt settles it. */
+export function attachOpenRouterFinish(err: unknown, finish: OpenRouterFinishEvent): void {
+  if (!err || typeof err !== 'object') return;
+  const usd = openRouterUsdCostFromFinishEvent(finish);
+  if (!(usd > 0)) return;
+  const row = err as { openRouterUsd?: unknown; providerMetadata?: unknown; usage?: unknown };
+  if (typeof row.openRouterUsd !== 'number' || !(row.openRouterUsd > usd)) {
+    row.openRouterUsd = usd;
+  }
+  if (row.usage === undefined && finish.usage !== undefined) row.usage = finish.usage;
+  if (row.providerMetadata === undefined && finish.providerMetadata !== undefined) {
+    row.providerMetadata = finish.providerMetadata;
+  }
 }
 
 export function openRouterFinishFromUsdCost(usd: number): OpenRouterFinishEvent {

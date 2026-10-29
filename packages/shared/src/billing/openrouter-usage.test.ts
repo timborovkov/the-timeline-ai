@@ -88,6 +88,13 @@ describe('openRouterUsdCostFromFinishEvent', () => {
     expect(openRouterUsdForCompletedStream({ stepUsd: 0 })).toBe(0);
   });
 
+  it('reads cost from a transcript response body when the error has no usage field', () => {
+    const err = Object.assign(new Error('No transcript generated'), {
+      responses: [{ body: { usage: { cost: 0.02 } } }],
+    });
+    expect(openRouterUsdCostFromFinishEvent(openRouterFinishFromCaughtError(err) ?? {})).toBe(0.02);
+  });
+
   it('walks AggregateError causes for nested usage', () => {
     const inner = Object.assign(new Error('invalid JSON'), {
       usage: { raw: { cost: 0.01 } },

@@ -1,7 +1,10 @@
 import { type TranscriptionModel } from 'ai';
 
 import { digestAiBytes } from '#src/billing/ai-call.js';
-import { openRouterFinishFromAiResult } from '#src/billing/openrouter-usage.js';
+import {
+  attachOpenRouterFinish,
+  openRouterFinishFromAiResult,
+} from '#src/billing/openrouter-usage.js';
 import { withAiMetering } from '#src/billing/runtime.js';
 import { getEnv } from '#src/env.js';
 import { wrapAiFailure } from '#src/llm/errors.js';
@@ -138,11 +141,6 @@ async function transcribeWithOpenRouterJson(
     throw new OpenRouterTranscriptionHttpError(response.status);
   }
   const json: unknown = await response.json();
-  const text =
-    json && typeof json === 'object' && 'text' in json && typeof json.text === 'string'
-      ? json.text
-      : null;
-  if (text === null) throw new Error('OpenRouter transcription response did not include text');
   const usage =
     json &&
     typeof json === 'object' &&
@@ -152,6 +150,22 @@ async function transcribeWithOpenRouterJson(
     !Array.isArray(json.usage)
       ? (json.usage as Record<string, unknown>)
       : null;
+  const text =
+    json && typeof json === 'object' && 'text' in json && typeof json.text === 'string'
+      ? json.text
+      : null;
+  if (text === null) {
+    const err = new Error('OpenRouter transcription response did not include text');
+    attachOpenRouterFinish(
+      err,
+      openRouterFinishFromAiResult({
+        usage,
+        providerMetadata: undefined,
+        totalUsage: undefined,
+      }),
+    );
+    throw err;
+  }
   const costUsd = finiteNonNegative(usage?.cost);
   const generationId = response.headers.get('x-generation-id');
   return {

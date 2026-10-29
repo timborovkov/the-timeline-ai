@@ -179,8 +179,10 @@ PLATFORM_ADMIN_EMAILS=
       <p>
         Background workers attach a billing context so OpenRouter wrappers settle the
         <code>ai</code> meter from exact <code>usage.cost</code>. Embedding calls read that cost
-        from the raw response body. Ask and Recall keep their own reserve/settle path and skip the
-        wrapper meter to avoid double-counting.
+        from the raw response body before they reject a bad vector. A transcript response with no
+        text does the same. That cost settles as a failed attempt, and then the work reservation is
+        released. Ask and Recall keep their own reserve/settle path and skip the wrapper meter to
+        avoid double-counting.
       </p>
 
       <h2>Webhook</h2>

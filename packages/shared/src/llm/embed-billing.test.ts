@@ -1,5 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { billingUsageLedger, type Db } from '@timeline/db';
+import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
 import { expect } from '@timeline/test-support';
 import { MockEmbeddingModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
@@ -95,5 +95,127 @@ describe('embedding billing operation ids', () => {
       ),
     ).toBe(true);
     expect(new Set(operationIds).size).toBe(2);
+  });
+
+  it('settles provider cost when a batch vector fails validation and bills the retry', async () => {
+    let calls = 0;
+    const model = new MockEmbeddingModelV3({
+      doEmbed: (() => {
+        calls += 1;
+        return Promise.resolve({
+          embeddings: [[1, 2, 3, 4]],
+          usage: { tokens: 4 },
+          warnings: [],
+          response: { body: { usage: { cost: calls === 1 ? 0.02 : 0.03 } } },
+        });
+      }) as never,
+    });
+    const embedBatch = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () => embedMany({ texts: ['alpha'] }, { model, maxRetries: 0 }),
+        { operationId: 'embedding:invalid-vector' },
+      );
+
+    await expect(embedBatch()).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      operation: 'llm.embedMany',
+      causeMessage: 'Embedding provider returned vector 0 with 4 dimensions; expected 1536',
+    });
+    await expect(embedBatch()).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      operation: 'llm.embedMany',
+      causeMessage: 'Embedding provider returned vector 0 with 4 dimensions; expected 1536',
+    });
+
+    expect(calls).toBe(2);
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const attempts = ledger.filter((row) => row.operationId.includes(':failed:'));
+    expect(attempts).toHaveLength(2);
+    expect(attempts.map((row) => row.metadata.openrouter_usd)).toEqual(
+      expect.arrayContaining([0.02, 0.03]),
+    );
+    const reservations = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.teamId, TEAM_ID));
+    expect(reservations.every((row) => row.state === 'released')).toBe(true);
+  });
+
+  it('settles provider cost when the embedding count is rejected before the result returns', async () => {
+    const model = new MockEmbeddingModelV3({
+      doEmbed: (() =>
+        Promise.resolve({
+          embeddings: [],
+          usage: { tokens: 4 },
+          warnings: [],
+          response: { body: { usage: { cost: 0.05 } } },
+        })) as never,
+    });
+
+    await expect(
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () => embedMany({ texts: ['alpha'] }, { model, maxRetries: 0 }),
+        { operationId: 'embedding:invalid-count' },
+      ),
+    ).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      operation: 'llm.embedMany',
+    });
+
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const attempt = ledger.find((row) => row.operationId.includes(':failed:'));
+    expect(attempt?.metadata).toMatchObject({ openrouter_usd: 0.05 });
+    const [reservation] = await db
+      .select()
+      .from(billingUsageReservations)
+      .where(eq(billingUsageReservations.teamId, TEAM_ID));
+    expect(reservation?.state).toBe('released');
+  });
+
+  it('settles provider cost when a batch vector contains a non-finite value', async () => {
+    const vector = Array.from({ length: TIMELINE_MODELS.embedding.embeddingDimensions }, () => 0);
+    vector[3] = Number.NaN;
+    const model = new MockEmbeddingModelV3({
+      doEmbed: (() =>
+        Promise.resolve({
+          embeddings: [vector],
+          usage: { tokens: 4 },
+          warnings: [],
+          response: { body: { usage: { cost: 0.04 } } },
+        })) as never,
+    });
+
+    await expect(
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () => embedMany({ texts: ['alpha'] }, { model, maxRetries: 0 }),
+        { operationId: 'embedding:non-finite' },
+      ),
+    ).rejects.toMatchObject({
+      name: 'TimelineAiError',
+      operation: 'llm.embedMany',
+      causeMessage: 'Embedding provider returned non-finite value at vector 0, dimension 3',
+    });
+
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const attempt = ledger.find((row) => row.operationId.includes(':failed:'));
+    expect(attempt?.metadata).toMatchObject({ openrouter_usd: 0.04 });
   });
 });

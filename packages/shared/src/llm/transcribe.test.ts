@@ -1,13 +1,18 @@
-import { expect } from '@timeline/test-support';
-import { vi } from '@timeline/test-support';
+import { PGlite } from '@electric-sql/pglite';
+import { billingUsageLedger, billingUsageReservations, type Db } from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
 import { MockTranscriptionModelV3 } from 'ai/test';
 import { afterEach, beforeEach, describe, it } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/pglite';
 
 import type { TranscriptionModel } from 'ai';
 
+import { runWorkerBilling } from '#src/billing/runtime.js';
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { transcribeAudio } from '#src/llm/transcribe.js';
+import { applyDbMigrations } from '#src/test/pglite.js';
 // Tests for the transcribe wrapper. The production path calls OpenRouter's
 // JSON/base64 STT endpoint; tests also inject a mock TranscriptionModel for
 // deterministic SDK-level wrapper coverage. AUTH_SECRET and DATABASE_URL are
@@ -183,5 +188,70 @@ describe('transcribeAudio', () => {
       model: TIMELINE_MODELS.transcription.id,
       causeName: 'Error',
     });
+  });
+
+  it('settles provider cost when a transcript payload has no text', async () => {
+    const pg = new PGlite();
+    const teamId = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const userId = '11111111-2222-4333-8444-555555555555';
+    await applyDbMigrations(pg);
+    await pg.exec(`
+      INSERT INTO teams (id, slug, name)
+      VALUES ('${teamId}', 'transcribe-billing', 'Transcribe Billing');
+      INSERT INTO users (id, email)
+      VALUES ('${userId}', 'owner@example.test');
+      INSERT INTO team_members (team_id, user_id, role)
+      VALUES ('${teamId}', '${userId}', 'owner');
+    `);
+    const db = drizzle(pg) as unknown as Db;
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ usage: { cost: 0.02, total_tokens: 8 } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+
+    try {
+      await expect(
+        runWorkerBilling(
+          db,
+          teamId,
+          'transcription',
+          () =>
+            transcribeAudio(
+              {
+                audio: Buffer.from('fake-audio'),
+                format: 'm4a',
+                operationId: 'transcription:no-text',
+              },
+              { fetch },
+            ),
+          { operationId: 'transcription:no-text' },
+        ),
+      ).rejects.toMatchObject({
+        name: 'TimelineAiError',
+        operation: 'llm.transcribeAudio',
+        causeMessage: 'OpenRouter transcription response did not include text',
+      });
+
+      const ledger = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.teamId, teamId));
+      const attempt = ledger.find((row) => row.operationId.includes(':failed:'));
+      expect(attempt?.metadata).toMatchObject({ openrouter_usd: 0.02 });
+      const [reservation] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.teamId, teamId));
+      expect(reservation?.state).toBe('released');
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      await pg.close();
+    }
   });
 });
