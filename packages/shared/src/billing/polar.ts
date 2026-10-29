@@ -21,6 +21,41 @@ export function isPolarBillingConfigured(): boolean {
   return Boolean(env.POLAR_ACCESS_TOKEN && env.POLAR_PRODUCT_ID_PAYG);
 }
 
+/** Polar's get-by-external-id route. List Customers does not filter on this id. */
+export function polarCustomerByExternalIdPath(externalId: string): string {
+  return `/customers/external/${encodeURIComponent(externalId)}`;
+}
+
+/**
+ * Use a Polar customer only when the record is the one this workspace asked for.
+ * A list row, a mismatched lookup, or a create response for someone else is refused.
+ */
+export function polarCustomerIdForExternalId(
+  customer: { id?: unknown; external_id?: unknown },
+  externalId: string,
+): string {
+  if (typeof customer.id !== 'string' || customer.id.length === 0) {
+    throw new Error('Polar customer response is missing an id');
+  }
+  if (customer.external_id !== externalId) {
+    throw new Error('Polar customer external_id does not match this workspace');
+  }
+  return customer.id;
+}
+
+async function readPolarCustomerByExternalId(
+  polarFetch: (path: string, init?: RequestInit) => Promise<Response>,
+  externalId: string,
+): Promise<{ id: string } | null> {
+  const lookedUp = await polarFetch(polarCustomerByExternalIdPath(externalId));
+  if (lookedUp.status === 404) return null;
+  if (!lookedUp.ok) {
+    throw new Error(`Polar customer lookup failed: ${lookedUp.status}`);
+  }
+  const body = (await lookedUp.json()) as { id?: unknown; external_id?: unknown };
+  return { id: polarCustomerIdForExternalId(body, externalId) };
+}
+
 export function createPolarBillingProvider(options?: {
   accessToken?: string;
   server?: PolarServer;
@@ -44,13 +79,8 @@ export function createPolarBillingProvider(options?: {
 
   return {
     async ensureCustomer(input) {
-      const list = await polarFetch(
-        `/customers/?external_id=${encodeURIComponent(input.externalId)}&limit=1`,
-      );
-      if (list.ok) {
-        const body = (await list.json()) as { items?: { id: string }[] };
-        if (body.items?.[0]?.id) return { id: body.items[0].id };
-      }
+      const lookedUp = await readPolarCustomerByExternalId(polarFetch, input.externalId);
+      if (lookedUp) return lookedUp;
       const created = await polarFetch('/customers/', {
         method: 'POST',
         body: JSON.stringify({
@@ -59,11 +89,15 @@ export function createPolarBillingProvider(options?: {
           name: input.name,
         }),
       });
+      if (created.status === 409 || created.status === 422) {
+        const raced = await readPolarCustomerByExternalId(polarFetch, input.externalId);
+        if (raced) return raced;
+      }
       if (!created.ok) {
         throw new Error(`Polar create customer failed: ${created.status}`);
       }
-      const row = (await created.json()) as { id: string };
-      return { id: row.id };
+      const row = (await created.json()) as { id?: unknown; external_id?: unknown };
+      return { id: polarCustomerIdForExternalId(row, input.externalId) };
     },
 
     async createCheckoutSession(input: CreateCheckoutInput) {
