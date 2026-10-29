@@ -16,6 +16,7 @@ await vi.mock(
     enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
     enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
     enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
+    enqueueDocumentExtractJob: vi.fn().mockResolvedValue(undefined),
   }),
   () => import('#src/queue/queues.js'),
 );
@@ -44,8 +45,14 @@ const {
   flushDeferredAudioTranscription,
   writeIntegrationEvents,
 } = await import('#src/integrations/event-writer.js');
-const { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob, enqueueTranscribeJob } =
-  await import('#src/queue/queues.js');
+const {
+  enqueueDocumentExtractJob,
+  enqueueEmbedJob,
+  enqueueExtractJob,
+  enqueueObjectSummaryJob,
+  enqueueSuggestionJob,
+  enqueueTranscribeJob,
+} = await import('#src/queue/queues.js');
 const { AUTHORITY_POLICY_VERSION } = await import('#src/reconciliation/authority.js');
 const { withTeam } = await import('#src/team-scope.js');
 const { applyDbMigrations } = await import('#src/test/pglite.js');
@@ -1835,6 +1842,96 @@ describe('writeIntegrationEvents visibility', () => {
     });
     const [clearedAudio] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
     expect(clearedAudio?.sourceMetadata).toMatchObject({ transcription_deferred: false });
+  });
+
+  it('flushes deferred Slack enrichment with suggestions, then pending document extract', async () => {
+    const eventId = '00000000-0000-4000-8000-0000000000b1';
+    const documentId = '00000000-0000-4000-8000-0000000000b2';
+    const versionId = '00000000-0000-4000-8000-0000000000b3';
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_text, source_metadata)
+      VALUES (
+        '${eventId}',
+        '${TEAM_ID}',
+        'slack',
+        'Slack note that was stored before allowance returned',
+        '{"billing_enrichment_deferred": true}'::jsonb
+      );
+      INSERT INTO documents (id, team_id, file_kind, name, source_raw_event_id)
+      VALUES ('${documentId}', '${TEAM_ID}', 'captured', 'notes.pdf', '${eventId}');
+      INSERT INTO document_versions (
+        id, team_id, document_id, version, object_key, source_event_id, processing_status
+      )
+      VALUES (
+        '${versionId}',
+        '${TEAM_ID}',
+        '${documentId}',
+        1,
+        'documents/${TEAM_ID}/${documentId}/v1/notes.pdf',
+        '${eventId}',
+        'pending'
+      );
+    `);
+
+    const flushed = await flushDeferredAcceptedSourceEnrichment(db as never);
+    expect(flushed).toBe(1);
+    expect(enqueueExtractJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId: eventId });
+    expect(enqueueEmbedJob).toHaveBeenCalledWith({
+      scope: 'raw_event',
+      teamId: TEAM_ID,
+      rawEventId: eventId,
+    });
+    expect(enqueueSuggestionJob).toHaveBeenCalledWith({ teamId: TEAM_ID, rawEventId: eventId });
+    expect(enqueueDocumentExtractJob).toHaveBeenCalledWith({
+      documentVersionId: versionId,
+      teamId: TEAM_ID,
+    });
+    const [cleared] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(cleared?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: false });
+  });
+
+  it('meters non-email audio before flushing a deferred transcription', async () => {
+    const eventId = '00000000-0000-4000-8000-0000000000c1';
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    await pg.exec(`
+      INSERT INTO raw_events (id, team_id, source, content_audio_url, source_metadata)
+      VALUES (
+        '${eventId}',
+        '${TEAM_ID}',
+        'slack',
+        'audio/${TEAM_ID}/slack.m4a',
+        '{"transcription_deferred": true}'::jsonb
+      );
+    `);
+
+    const blocked = await flushDeferredAudioTranscription(db as never);
+    expect(blocked).toBe(0);
+    expect(enqueueTranscribeJob).not.toHaveBeenCalled();
+    const [kept] = await db.select().from(rawEvents).where(eq(rawEvents.id, eventId));
+    expect(kept?.sourceMetadata).toMatchObject({ transcription_deferred: true });
+
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET billing_state = 'free', spend_cap_cents = 0
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const flushed = await flushDeferredAudioTranscription(db as never);
+    expect(flushed).toBe(1);
+    expect(enqueueTranscribeJob).toHaveBeenCalledWith({
+      rawEventId: eventId,
+      teamId: TEAM_ID,
+      audioKey: `audio/${TEAM_ID}/slack.m4a`,
+    });
+    const ledger = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    expect(
+      ledger.some(
+        (row) =>
+          row.meterId === 'accepted_sources' && row.operationId === `accepted_source:${eventId}`,
+      ),
+    ).toBe(true);
   });
 
   it('keeps deferred transcription eligible when enqueue fails', async () => {

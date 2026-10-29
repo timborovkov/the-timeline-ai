@@ -1,8 +1,11 @@
 import {
   artifactEvidenceAssociations,
+  calendarEvents,
   type Db,
+  documentVersions,
   entities,
   integrations,
+  meetingTranscriptChunks,
   mondayConversationTombstoneInvalidations,
   mondayConversationTombstones,
   rawEvents,
@@ -25,7 +28,7 @@ import {
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
-import { meterAcceptedSources } from '#src/billing/runtime.js';
+import { meterAcceptedSourceOperation, meterAcceptedSources } from '#src/billing/runtime.js';
 import { createBillingScope } from '#src/billing/scope.js';
 import { sourceMetadataWithConversationArtifacts } from '#src/conversational/contact-artifacts.js';
 import {
@@ -44,7 +47,13 @@ import {
 import { compactObjectMap, resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import { childLogger } from '#src/logger.js';
 import { invalidateObjectSummariesForRawEvent } from '#src/objects/summaries.js';
-import { enqueueEmbedJob, enqueueExtractJob, enqueueTranscribeJob } from '#src/queue/queues.js';
+import {
+  enqueueDocumentExtractJob,
+  enqueueEmbedJob,
+  enqueueExtractJob,
+  enqueueSuggestionJob,
+  enqueueTranscribeJob,
+} from '#src/queue/queues.js';
 import {
   AUTHORITY_POLICY_VERSION,
   authorityDecisionPayload,
@@ -837,6 +846,8 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
       .select({
         id: rawEvents.id,
         teamId: rawEvents.teamId,
+        source: rawEvents.source,
+        contentText: rawEvents.contentText,
         sourceMetadata: rawEvents.sourceMetadata,
       })
       .from(rawEvents)
@@ -856,11 +867,19 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
     let progressed = false;
     for (const row of rows) {
       scanned += 1;
-      const metered = await meterAcceptedSources({
-        db,
-        teamId: row.teamId,
-        rawEventIds: [row.id],
-      });
+      const meetingId = meetingIdFromMetadata(row.sourceMetadata);
+      const metered =
+        row.source === 'meeting' && meetingId
+          ? await meterAcceptedSourceOperation({
+              db,
+              teamId: row.teamId,
+              operationId: `accepted_source:meeting:${meetingId}`,
+            })
+          : await meterAcceptedSources({
+              db,
+              teamId: row.teamId,
+              rawEventIds: [row.id],
+            });
       if (!metered.ok) {
         const stamp = JSON.stringify({
           [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
@@ -885,7 +904,93 @@ export async function flushDeferredAcceptedSourceEnrichment(db: Db, limit = 50):
           ),
         );
       }
+      if (deferredFlushIncludesSuggestions(row)) {
+        jobs.push(
+          enqueueIntegrationProcessingJob(db, row.id, 'suggestions', () =>
+            enqueueSuggestionJob({ teamId: row.teamId, rawEventId: row.id }),
+          ),
+        );
+      }
+      if (row.source === 'meeting') {
+        const chunks = await db
+          .select({ id: meetingTranscriptChunks.id })
+          .from(meetingTranscriptChunks)
+          .where(
+            and(
+              eq(meetingTranscriptChunks.teamId, row.teamId),
+              eq(meetingTranscriptChunks.rawEventId, row.id),
+            ),
+          );
+        for (const chunk of chunks) {
+          jobs.push(
+            enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
+              enqueueEmbedJob({
+                scope: 'meeting_chunk',
+                teamId: row.teamId,
+                meetingChunkId: chunk.id,
+              }),
+            ),
+          );
+        }
+        if (meetingId) {
+          const [calendar] = await db
+            .select({ id: calendarEvents.id })
+            .from(calendarEvents)
+            .where(
+              and(
+                eq(calendarEvents.teamId, row.teamId),
+                sql`(${calendarEvents.metadata} ->> 'meeting_id') = ${meetingId}`,
+              ),
+            )
+            .limit(1);
+          if (calendar) {
+            jobs.push(
+              enqueueIntegrationProcessingJob(db, row.id, 'embedding', () =>
+                enqueueEmbedJob({
+                  scope: 'calendar_event',
+                  teamId: row.teamId,
+                  calendarEventId: calendar.id,
+                }),
+              ),
+            );
+          }
+        }
+      }
+      const pendingDocuments = await db
+        .select({ id: documentVersions.id })
+        .from(documentVersions)
+        .where(
+          and(
+            eq(documentVersions.teamId, row.teamId),
+            eq(documentVersions.sourceEventId, row.id),
+            eq(documentVersions.processingStatus, 'pending'),
+          ),
+        );
+      let documentsQueued = true;
+      for (const version of pendingDocuments) {
+        try {
+          await enqueueDocumentExtractJob({ documentVersionId: version.id, teamId: row.teamId });
+        } catch (err) {
+          documentsQueued = false;
+          log.warn(
+            { err, rawEventId: row.id, documentVersionId: version.id },
+            'deferred document extract enqueue failed',
+          );
+        }
+      }
       const enqueued = await Promise.all(jobs);
+      if (!documentsQueued) {
+        const stamp = JSON.stringify({
+          [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
+        });
+        await db
+          .update(rawEvents)
+          .set({
+            sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+          })
+          .where(eq(rawEvents.id, row.id));
+        continue;
+      }
       if (enqueued.some((ok) => !ok)) {
         const stamp = JSON.stringify({
           [BILLING_ENRICHMENT_CHECKED_AT]: new Date().toISOString(),
@@ -929,6 +1034,24 @@ function metadataFlagIsTrue(metadata: unknown, key: string): boolean {
   return value === true || value === 'true';
 }
 
+function meetingIdFromMetadata(metadata: unknown): string | null {
+  const meetingId = metadataRecord(metadata).meeting_id;
+  return typeof meetingId === 'string' && meetingId.length > 0 ? meetingId : null;
+}
+
+function deferredFlushIncludesSuggestions(row: {
+  source: string;
+  contentText: string | null;
+  sourceMetadata: unknown;
+}): boolean {
+  if (!row.contentText?.trim()) return false;
+  if (row.source === 'slack' || row.source === 'telegram' || row.source === 'web') return true;
+  return (
+    row.source === 'ingest_webhook' &&
+    metadataFlagIsTrue(row.sourceMetadata, 'proposal_generation_enabled')
+  );
+}
+
 /**
  * Email audio is a child of the inbound message. Releasing it while that
  * parent is still `billing_enrichment_deferred` spends AI allowance without
@@ -959,6 +1082,7 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
       .select({
         id: rawEvents.id,
         teamId: rawEvents.teamId,
+        source: rawEvents.source,
         contentAudioUrl: rawEvents.contentAudioUrl,
         sourceMetadata: rawEvents.sourceMetadata,
       })
@@ -982,6 +1106,25 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
       const audioKey = row.contentAudioUrl;
       if (!audioKey) {
         continue;
+      }
+      if (row.source !== 'email') {
+        const metered = await meterAcceptedSources({
+          db,
+          teamId: row.teamId,
+          rawEventIds: [row.id],
+        });
+        if (!metered.ok) {
+          const stamp = JSON.stringify({
+            [TRANSCRIPTION_DEFERRED_CHECKED_AT]: new Date().toISOString(),
+          });
+          await db
+            .update(rawEvents)
+            .set({
+              sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${stamp}::jsonb`,
+            })
+            .where(eq(rawEvents.id, row.id));
+          continue;
+        }
       }
       if (await deferredEmailParentBlocksAudio(db, row.teamId, row.sourceMetadata)) {
         const stamp = JSON.stringify({
@@ -1057,7 +1200,7 @@ export async function flushDeferredAudioTranscription(db: Db, limit = 50): Promi
 async function enqueueIntegrationProcessingJob(
   db: Db,
   rawEventId: string,
-  stage: 'extraction' | 'embedding',
+  stage: 'extraction' | 'embedding' | 'suggestions',
   enqueue: () => Promise<unknown>,
 ): Promise<boolean> {
   try {

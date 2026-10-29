@@ -197,6 +197,15 @@ export async function assertTeamWriteCapacity(input: {
  * the advisory lock covers the subsequent insert. Hash key 4 is reserved for
  * member seats (0 Recall, 1 document writes, 2 chunks, 3 MCP).
  */
+/**
+ * A pending invite holds a seat only while it is unexpired. Reactivating an
+ * expired invite must pass `additionalSeats: 1`; a still-open invite already
+ * holds its seat, so a resend or role edit passes `0`.
+ */
+export function expiredInviteNeedsSeat(expiresAt: Date, now = new Date()): boolean {
+  return expiresAt.getTime() <= now.getTime();
+}
+
 export async function assertTeamMemberSeatCapacity(input: {
   db: Db;
   teamId: string;

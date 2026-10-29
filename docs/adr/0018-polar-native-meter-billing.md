@@ -39,7 +39,13 @@ credit hides margin and confuses prospects.
      meeting's `createdAt` as the recording clock.
    - `email_units` — inbound unique messages and outbound Postmark recipients.
    - `accepted_sources` — unique ingested source items (raw row is kept; AI
-     enrichment pauses when the meter is exhausted).
+     enrichment pauses when the meter is exhausted). Slack, Telegram, team web
+     notes, MCP tool results, ingest webhooks, and meetings admit this meter
+     before extract, embed, or suggestions. A meeting is one source
+     (`accepted_source:meeting:<id>`), shared by live chunks and finalize.
+     Audio captures stamp `transcription_deferred` and retry the same meter.
+     User document uploads stay on write capacity. Inbound email stays on
+     `email_units`.
    - `storage_gb_month` — daily GB-month snapshot from original document bytes.
    - `member_days` — extra active-member proration on paid plans. Counted on the
      local spend cap and ingested as `timeline_extra_member_days` (member-month
@@ -332,10 +338,15 @@ credit hides margin and confuses prospects.
    has transcript chunks leaves it `processing` for finalize; only an empty capture is marked
    cancelled.
    Deferred accepted-source flush
-   rotates past still-blocked rows. Orphan reconcile, job recovery, visibility
+   rotates past still-blocked rows and, once admitted, also retries chat
+   suggestions, meeting chunk and calendar embeds, and pending captured-document
+   extracts. Non-email audio flush meters `accepted_sources` before transcribe.
+   The jobs dashboard refuses a manual retry of a deferred row. Orphan reconcile, job recovery, visibility
    promotion, planner replay, and the reextract/reembed/resuggest scripts leave
    `billing_enrichment_deferred` and `transcription_deferred` rows for those
-   flushes. Document restore rechecks storage,
+   flushes. An expired invite does not hold a member seat. Re-sending it, or
+   saving the same email again, reserves a seat before the expiry moves forward.
+   Accept and signup still claim one seat and do not count pending invites twice. Document restore rechecks storage,
    document, and indexed-chunk capacity under advisory lock key 1 then key 2
    (chunk admission reuses key 2). Storage-cap finalization deletes the uploaded
    object when admission fails. Captured Slack/Telegram/email attachments assert

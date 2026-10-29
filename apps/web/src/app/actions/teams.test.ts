@@ -64,7 +64,6 @@ await vi.mock(
     insertRestrictedFreeBillingAccount: vi.fn().mockResolvedValue(undefined),
     assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),
     releaseFreeGrantIfOwnerLeaves: vi.fn().mockResolvedValue(undefined),
-    isBillingAdmissionError: () => false,
   }),
   () => import('@timeline/shared/billing'),
 );
@@ -170,7 +169,8 @@ await vi.mock(
   () => import('@timeline/shared/slug'),
 );
 
-const { releaseFreeGrantIfOwnerLeaves } = await import('@timeline/shared/billing');
+const { assertTeamMemberSeatCapacity, BillingAdmissionError, releaseFreeGrantIfOwnerLeaves } =
+  await import('@timeline/shared/billing');
 const { db } = await import('@/lib/db');
 const {
   changeMemberRoleAction,
@@ -807,6 +807,52 @@ describe('inviteMemberAction', () => {
     });
     expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
   });
+
+  it('reserves a seat when an expired invite is reactivated', async () => {
+    const { tx } = makeTx([
+      [],
+      [
+        {
+          id: INVITE_ID,
+          role: 'member',
+          expiresAt: new Date(Date.now() - 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    const reactivated = await inviteMemberAction(
+      {},
+      form({ email: 'expired@example.test', role: 'member' }),
+    );
+    expect(reactivated.inviteUrl).toContain('/accept-invite/');
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 1 }),
+    );
+  });
+
+  it('does not reserve another seat for a still-open invite', async () => {
+    const { tx } = makeTx([
+      [],
+      [
+        {
+          id: INVITE_ID,
+          role: 'member',
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    const refreshed = await inviteMemberAction(
+      {},
+      form({ email: 'open@example.test', role: 'member' }),
+    );
+    expect(refreshed.inviteUrl).toContain('/accept-invite/');
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 0 }),
+    );
+  });
 });
 
 describe('resendInviteAction', () => {
@@ -831,11 +877,21 @@ describe('resendInviteAction', () => {
 
   it('resets token state, sends email, records delivery, and revalidates', async () => {
     const { tx, updates } = makeTx([
-      [{ id: INVITE_ID, email: 'new@example.test', role: 'member' }],
+      [
+        {
+          id: INVITE_ID,
+          email: 'new@example.test',
+          role: 'member',
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      ],
     ]);
     mockTransactionWithTx(tx);
 
     await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 0 }),
+    );
 
     expect(updates).toEqual([
       expect.objectContaining({ token: 'invite-token', sendStatus: 'pending' }),
@@ -853,6 +909,51 @@ describe('resendInviteAction', () => {
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+  });
+
+  it('reserves a seat when resending an expired invite', async () => {
+    const { tx } = makeTx([
+      [
+        {
+          id: INVITE_ID,
+          email: 'new@example.test',
+          role: 'member',
+          expiresAt: new Date(Date.now() - 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({ ok: true });
+    expect(assertTeamMemberSeatCapacity).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: TEAM_ID, additionalSeats: 1 }),
+    );
+  });
+
+  it('refuses to reactivate an expired invite when the member cap is full', async () => {
+    vi.mocked(assertTeamMemberSeatCapacity).mockRejectedValueOnce(
+      new BillingAdmissionError(
+        'free_allowance_reached',
+        'Active member limit reached for this plan',
+      ),
+    );
+    const { tx } = makeTx([
+      [
+        {
+          id: INVITE_ID,
+          email: 'new@example.test',
+          role: 'member',
+          expiresAt: new Date(Date.now() - 86_400_000),
+        },
+      ],
+    ]);
+    mockTransactionWithTx(tx);
+
+    await expect(resendInviteAction(form({ inviteId: INVITE_ID }))).resolves.toEqual({
+      error:
+        'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
+    });
+    expect(fakes.fakeSendMessage).not.toHaveBeenCalled();
   });
 
   it('prevents admins from resending admin invites', async () => {

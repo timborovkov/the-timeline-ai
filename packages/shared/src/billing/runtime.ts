@@ -7,6 +7,7 @@ import {
   billingUsageReservations,
   documentVersions,
   documents,
+  rawEvents,
   teamBillingAccounts,
   teamMembers,
   teams,
@@ -237,6 +238,137 @@ export async function meterAcceptedSources(input: {
     previous = next;
   }
   return { ok: true, duplicate };
+}
+
+/**
+ * One accepted-source settlement under a caller-chosen operation id.
+ * Meeting capture uses `accepted_source:meeting:<id>` so live utterance
+ * embeds and the consolidated transcript share one source item.
+ */
+export async function meterAcceptedSourceOperation(input: {
+  db: Db;
+  teamId: string;
+  userId?: string;
+  operationId: string;
+}): Promise<{ ok: true; duplicate: boolean } | { ok: false; code: BillingReserveFailureCode }> {
+  const previous = await currentMeterNativeUnits(input.db, input.teamId, 'accepted_sources');
+  return settleTeamMeter({
+    db: input.db,
+    teamId: input.teamId,
+    ...(input.userId ? { userId: input.userId } : {}),
+    operationId: input.operationId,
+    meterId: 'accepted_sources',
+    nativeUnits: 1,
+    customerChargeCents: cumulativeChargeDeltaCents({
+      meterId: 'accepted_sources',
+      previousNativeUnits: previous,
+      nextNativeUnits: previous + 1,
+    }),
+    operationClass: 'ingest',
+    source: 'event_writer',
+  });
+}
+
+async function mergeRawEventMetadata(
+  db: Db,
+  rawEventId: string,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const json = JSON.stringify(patch);
+  await db
+    .update(rawEvents)
+    .set({
+      sourceMetadata: sql`COALESCE(${rawEvents.sourceMetadata}, '{}'::jsonb) || ${json}::jsonb`,
+    })
+    .where(eq(rawEvents.id, rawEventId));
+}
+
+/**
+ * Count one ingested raw event before AI enrichment. A denied meter keeps the
+ * row and stamps `billing_enrichment_deferred` for the janitor flush.
+ */
+export async function admitAcceptedSourceEnrichment(input: {
+  db: Db;
+  teamId: string;
+  userId?: string;
+  rawEventId: string;
+}): Promise<boolean> {
+  const metered = await meterAcceptedSources({
+    db: input.db,
+    teamId: input.teamId,
+    ...(input.userId ? { userId: input.userId } : {}),
+    rawEventIds: [input.rawEventId],
+  });
+  if (!metered.ok) {
+    log.warn(
+      { teamId: input.teamId, code: metered.code, rawEventId: input.rawEventId },
+      'accepted-source billing admission failed; storing raw event without AI enrichment',
+    );
+    await mergeRawEventMetadata(input.db, input.rawEventId, {
+      billing_enrichment_deferred: true,
+    });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * One accepted source for a meeting, shared by live chunk embeds and the
+ * consolidated transcript. When `rawEventId` is set, denial defers that row.
+ */
+export async function admitMeetingSourceEnrichment(input: {
+  db: Db;
+  teamId: string;
+  meetingId: string;
+  userId?: string;
+  rawEventId?: string;
+}): Promise<boolean> {
+  const metered = await meterAcceptedSourceOperation({
+    db: input.db,
+    teamId: input.teamId,
+    ...(input.userId ? { userId: input.userId } : {}),
+    operationId: `accepted_source:meeting:${input.meetingId}`,
+  });
+  if (!metered.ok) {
+    log.warn(
+      { teamId: input.teamId, code: metered.code, meetingId: input.meetingId },
+      'meeting accepted-source admission failed; skipping transcript enrichment',
+    );
+    if (input.rawEventId) {
+      await mergeRawEventMetadata(input.db, input.rawEventId, {
+        billing_enrichment_deferred: true,
+      });
+    }
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Count an audio capture before transcription. Denial stamps
+ * `transcription_deferred` so the audio flush can retry the same meter.
+ */
+export async function admitAudioTranscription(input: {
+  db: Db;
+  teamId: string;
+  userId?: string;
+  rawEventId: string;
+}): Promise<boolean> {
+  const metered = await meterAcceptedSources({
+    db: input.db,
+    teamId: input.teamId,
+    ...(input.userId ? { userId: input.userId } : {}),
+    rawEventIds: [input.rawEventId],
+  });
+  if (!metered.ok) {
+    log.warn(
+      { teamId: input.teamId, code: metered.code, rawEventId: input.rawEventId },
+      'accepted-source billing admission failed; deferring audio transcription',
+    );
+    await mergeRawEventMetadata(input.db, input.rawEventId, { transcription_deferred: true });
+    return false;
+  }
+  return true;
 }
 
 export async function reserveEmailUnits(input: {

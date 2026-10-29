@@ -207,4 +207,25 @@ describe('/api/jobs/dashboard', () => {
     fakes.getEvent.mockResolvedValueOnce({ id: EVENT_ID, contentAudioUrl: null });
     expect((await POST(post({ kind: 'transcription', id: EVENT_ID }))).status).toBe(400);
   });
+
+  it('refuses manual retries while billing enrichment or transcription is deferred', async () => {
+    fakes.getEvent.mockResolvedValueOnce({
+      id: EVENT_ID,
+      contentAudioUrl: 'audio/key.webm',
+      sourceMetadata: { billing_enrichment_deferred: true },
+    });
+    const enrichment = await POST(post({ kind: 'extraction', id: EVENT_ID }));
+    expect(enrichment.status).toBe(409);
+    await expect(enrichment.json()).resolves.toEqual({ error: 'billing_deferred' });
+
+    fakes.getEvent.mockResolvedValueOnce({
+      id: EVENT_ID,
+      contentAudioUrl: 'audio/key.webm',
+      sourceMetadata: { transcription_deferred: 'true' },
+    });
+    const transcription = await POST(post({ kind: 'transcription', id: EVENT_ID }));
+    expect(transcription.status).toBe(409);
+    expect(fakes.queue.enqueueExtractJob).not.toHaveBeenCalled();
+    expect(fakes.queue.enqueueTranscribeJob).not.toHaveBeenCalled();
+  });
 });

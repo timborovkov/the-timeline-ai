@@ -18,6 +18,7 @@ import { type AgentToolErrorReporter } from '#src/agent/tools.js';
 import { askBillingUserMessage } from '#src/billing/admission.js';
 import { assertTeamWriteCapacity } from '#src/billing/capacity.js';
 import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { admitAcceptedSourceEnrichment, admitAudioTranscription } from '#src/billing/runtime.js';
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
 import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
 import { resetSurfaceSessionInTransaction } from '#src/conversation-surfaces/scope.js';
@@ -1465,6 +1466,18 @@ async function processSlackAttachments(
     sourceOwnerUserId: string | null;
   },
 ): Promise<void> {
+  if (input.files.length === 0) return;
+  let parentAdmitted: boolean | null = null;
+  const parentIsAdmitted = async (): Promise<boolean> => {
+    if (parentAdmitted !== null) return parentAdmitted;
+    parentAdmitted = await admitAcceptedSourceEnrichment({
+      db: deps.db,
+      teamId: input.teamId,
+      ...(input.parentAuthorUserId ? { userId: input.parentAuthorUserId } : {}),
+      rawEventId: input.parentRawEventId,
+    });
+    return parentAdmitted;
+  };
   let processed = 0;
   const skipped: Record<string, unknown>[] = [];
   for (const file of input.files) {
@@ -1553,11 +1566,19 @@ async function processSlackAttachments(
       const row = rows[0];
       if (row) {
         await normalizeRawEventEvidence(deps.db, row);
-        await deps.audio.enqueueTranscribe({
-          rawEventId: row.id,
+        const transcribe = await admitAudioTranscription({
+          db: deps.db,
           teamId: row.teamId,
-          audioKey: key,
+          ...(input.parentAuthorUserId ? { userId: input.parentAuthorUserId } : {}),
+          rawEventId: row.id,
         });
+        if (transcribe) {
+          await deps.audio.enqueueTranscribe({
+            rawEventId: row.id,
+            teamId: row.teamId,
+            audioKey: key,
+          });
+        }
       }
     } else {
       if (!deps.documents) continue;
@@ -1567,6 +1588,7 @@ async function processSlackAttachments(
         filename,
         bytes,
         contentType,
+        enqueueExtract: await parentIsAdmitted(),
       });
     }
   }
@@ -1697,6 +1719,7 @@ async function createSlackDocumentAttachment(
     filename: string;
     bytes: Buffer;
     contentType: string;
+    enqueueExtract: boolean;
   },
 ): Promise<void> {
   const documentDeps = deps.documents;
@@ -1775,13 +1798,21 @@ async function createSlackDocumentAttachment(
     body: input.bytes,
     contentType: input.contentType,
   });
+  if (!input.enqueueExtract) return;
   await documentDeps.enqueueExtract({ documentVersionId: created.versionId, teamId: input.teamId });
 }
 
 async function enqueueTextPipelines(
   deps: SlackIngestDeps,
-  row: { id: string; teamId: string },
+  row: { id: string; teamId: string; authorUserId?: string | null },
 ): Promise<void> {
+  const admitted = await admitAcceptedSourceEnrichment({
+    db: deps.db,
+    teamId: row.teamId,
+    ...(row.authorUserId ? { userId: row.authorUserId } : {}),
+    rawEventId: row.id,
+  });
+  if (!admitted) return;
   await deps.extract
     ?.enqueueExtract({ rawEventId: row.id, teamId: row.teamId })
     .catch((err: unknown) => {

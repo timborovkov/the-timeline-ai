@@ -28,6 +28,7 @@ const fakes = vi.hoisted(() => ({
   fakeRateLimit: vi.fn(),
   fakeWithTeam: vi.fn(),
   fakeReportHandledEvent: vi.fn(),
+  fakeAdmitMeeting: vi.fn(),
 }));
 
 await vi.mock(
@@ -76,6 +77,14 @@ await vi.mock(
   () => import('@/lib/sentry-report'),
 );
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/billing'),
+  async () => ({
+    ...(await import('@timeline/shared/billing')),
+    admitMeetingSourceEnrichment: fakes.fakeAdmitMeeting,
+  }),
+  () => import('@timeline/shared/billing'),
+);
 await vi.mock(
   import.meta.resolve('@timeline/shared/meetings'),
   async () => {
@@ -166,6 +175,7 @@ beforeEach(() => {
   resetEnvForTests();
   vi.clearAllMocks();
   fakes.fakeRateLimit.mockResolvedValue({ ok: true });
+  fakes.fakeAdmitMeeting.mockResolvedValue(true);
   fakes.fakeLookup.mockResolvedValue({
     id: 'meeting-1',
     teamId: TEAM_ID,
@@ -522,6 +532,24 @@ describe('POST /api/webhooks/recall/transcript — happy path', () => {
     expect(json.reason).toBe('duplicate');
     expect(fakes.fakeEnqueueExtract).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueEmbed).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueMeetingChunk).not.toHaveBeenCalled();
+    expect(fakes.fakeEnqueueCalendarEvent).not.toHaveBeenCalled();
+  });
+
+  it('keeps the chunk and skips embeds when the meeting source is not admitted', async () => {
+    fakes.fakeAdmitMeeting.mockResolvedValue(false);
+    const r = await POST(
+      makeRequest(
+        transcriptBody({
+          words: [{ text: 'held', startSec: 0, endSec: 1 }],
+          transcriptId: 'utt-held',
+        }),
+      ),
+    );
+    expect(r.status).toBe(200);
+    const json = (await r.json()) as { enrichment?: string; chunkId?: string };
+    expect(json.chunkId).toBe('chunk-1');
+    expect(json.enrichment).toBe('deferred');
     expect(fakes.fakeEnqueueMeetingChunk).not.toHaveBeenCalled();
     expect(fakes.fakeEnqueueCalendarEvent).not.toHaveBeenCalled();
   });

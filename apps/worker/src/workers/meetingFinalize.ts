@@ -19,6 +19,7 @@ import {
 } from '@timeline/shared';
 import { bucketAnalyticsCount, bucketMeetingDuration } from '@timeline/shared/analytics';
 import {
+  admitMeetingSourceEnrichment,
   BILLING_SYSTEM_USER_ID,
   recallBillableMinutes,
   settleElapsedRecallMeetingMinutes,
@@ -177,6 +178,33 @@ async function enqueueRawEventPipeline(
   await Promise.all([
     enqueueExtractJob({ rawEventId, teamId }),
     enqueueEmbedJob({ scope: 'raw_event', rawEventId, teamId }),
+  ]);
+}
+
+async function enqueueAdmittedMeetingEnrichment(input: {
+  env: ReturnType<typeof getEnv>;
+  io: MeetingFinalizeIO;
+  db: Db;
+  teamId: string;
+  meetingId: string;
+  rawEventId: string;
+  meetingChunkIds: string[];
+  calendarEventId: string | null | undefined;
+  embedCalendar: boolean;
+}): Promise<void> {
+  const admitted = await admitMeetingSourceEnrichment({
+    db: input.db,
+    teamId: input.teamId,
+    meetingId: input.meetingId,
+    rawEventId: input.rawEventId,
+  });
+  if (!admitted) return;
+  await Promise.all([
+    enqueueRawEventPipeline(input.env, input.io, input.rawEventId, input.teamId),
+    enqueueMeetingChunkEmbeds(input.env, input.io, input.meetingChunkIds, input.teamId),
+    input.embedCalendar
+      ? enqueueCalendarEventPipeline(input.env, input.io, input.calendarEventId, input.teamId)
+      : Promise.resolve(),
   ]);
 }
 
@@ -682,18 +710,17 @@ export async function processMeetingFinalizeJob(
     const calendarEventId = await findMeetingCalendarEventId(deps.db, meetingId, teamId);
     if (rawEventId) {
       const chunks = await loadMeetingChunks(deps.db, meetingId, teamId);
-      await Promise.all([
-        enqueueRawEventPipeline(env, io, rawEventId, teamId),
-        enqueueMeetingChunkEmbeds(
-          env,
-          io,
-          chunks.map((c) => c.id),
-          teamId,
-        ),
-        meeting.defaultVisibility === 'team'
-          ? enqueueCalendarEventPipeline(env, io, calendarEventId, teamId)
-          : Promise.resolve(),
-      ]);
+      await enqueueAdmittedMeetingEnrichment({
+        env,
+        io,
+        db: deps.db,
+        teamId,
+        meetingId,
+        rawEventId,
+        meetingChunkIds: chunks.map((c) => c.id),
+        calendarEventId,
+        embedCalendar: meeting.defaultVisibility === 'team',
+      });
     }
     const [usage] = await deps.db
       .select({ minutes: meetingUsage.minutes })
@@ -978,13 +1005,17 @@ export async function processMeetingFinalizeJob(
           teamId,
           rawEventIds: [finalized.rawEventId],
         });
-        await Promise.all([
-          enqueueRawEventPipeline(env, io, finalized.rawEventId, teamId),
-          enqueueMeetingChunkEmbeds(env, io, finalized.meetingChunkIds, teamId),
-          meeting.defaultVisibility === 'team'
-            ? enqueueCalendarEventPipeline(env, io, finalized.calendarEventId, teamId)
-            : Promise.resolve(),
-        ]);
+        await enqueueAdmittedMeetingEnrichment({
+          env,
+          io,
+          db: deps.db,
+          teamId,
+          meetingId,
+          rawEventId: finalized.rawEventId,
+          meetingChunkIds: finalized.meetingChunkIds,
+          calendarEventId: finalized.calendarEventId,
+          embedCalendar: meeting.defaultVisibility === 'team',
+        });
       }
 
       trackProductEventBestEffort(

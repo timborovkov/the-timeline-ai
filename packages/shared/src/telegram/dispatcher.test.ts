@@ -41,6 +41,7 @@ const {
 } = await import('@timeline/db');
 const { eq } = await import('drizzle-orm');
 const { drizzle } = await import('drizzle-orm/pglite');
+const { insertRestrictedFreeBillingAccount } = await import('#src/billing/capacity.js');
 const { resetEnvForTests } = await import('#src/env.js');
 const { resetMeetingBotProviderForTests } = await import('#src/meeting-bots/index.js');
 const { TELEGRAM_DM_COMMANDS, TELEGRAM_GROUP_COMMANDS } = await import('#src/telegram/commands.js');
@@ -804,6 +805,41 @@ describe('handleUpdate telegram edit visibility', () => {
     expect(enqueueExtract).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueEmbed).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
     expect(enqueueSuggestion).toHaveBeenCalledWith({ rawEventId, teamId: TEAM_ID });
+  });
+
+  it('keeps a Telegram capture and skips enrichment when the accepted-source meter denies it', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    const enqueueExtract = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbed = vi.fn().mockResolvedValue(undefined);
+    const enqueueSuggestion = vi.fn().mockResolvedValue(undefined);
+
+    await handleUpdate(
+      {
+        db: db as never,
+        tg: fakeTg,
+        extract: { enqueueExtract },
+        embed: { enqueueEmbed },
+        suggestions: { enqueueSuggestion },
+      },
+      {
+        update_id: 205,
+        message: {
+          message_id: 25,
+          date: 1700000000,
+          chat: { id: 42, type: 'private' },
+          from: { id: TG_USER_ID, username: 'alice' },
+          text: '/note Hold this until the workspace has accepted-source allowance.',
+        },
+      },
+    );
+
+    const rows = await activeTelegramRows(pg);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.content_text).toContain('accepted-source allowance');
+    expect(rows[0]?.source_metadata).toMatchObject({ billing_enrichment_deferred: true });
+    expect(enqueueExtract).not.toHaveBeenCalled();
+    expect(enqueueEmbed).not.toHaveBeenCalled();
+    expect(enqueueSuggestion).not.toHaveBeenCalled();
   });
 
   it('lists every supported DM command in /help', async () => {

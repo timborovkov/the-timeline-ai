@@ -23,6 +23,7 @@ import {
 import {
   applyOwnedTeamFreeGrant,
   assertTeamMemberSeatCapacity,
+  expiredInviteNeedsSeat,
   insertRestrictedFreeBillingAccount,
   isBillingAdmissionError,
   releaseFreeGrantIfOwnerLeaves,
@@ -783,7 +784,11 @@ export async function inviteMemberAction(
         if (activeMembers[0]) throw new Error('already-member');
 
         const openInvites = await tx
-          .select({ id: teamInvites.id, role: teamInvites.role })
+          .select({
+            id: teamInvites.id,
+            role: teamInvites.role,
+            expiresAt: teamInvites.expiresAt,
+          })
           .from(teamInvites)
           .where(
             and(
@@ -802,7 +807,7 @@ export async function inviteMemberAction(
         await assertTeamMemberSeatCapacity({
           db: tx as unknown as typeof db,
           teamId: active.teamId,
-          additionalSeats: existing ? 0 : 1,
+          additionalSeats: !existing || expiredInviteNeedsSeat(existing.expiresAt) ? 1 : 0,
         });
         const rows = existing
           ? await tx
@@ -901,51 +906,68 @@ export async function resendInviteAction(formData: FormData): Promise<TeamMutati
     const token = randomToken(24);
     const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
     const inviterName = session.user.name ?? session.user.email ?? 'A teammate';
-    const delivery = await db.transaction(
-      async (tx): Promise<{ ok: true; input: InviteDeliveryInput } | TeamMutationResult> => {
-        const rows = await tx
-          .select({
-            id: teamInvites.id,
-            email: teamInvites.email,
-            role: teamInvites.role,
-          })
-          .from(teamInvites)
-          .where(
-            and(
-              eq(teamInvites.id, inviteId),
-              eq(teamInvites.teamId, active.teamId),
-              isNull(teamInvites.acceptedAt),
-              isNull(teamInvites.revokedAt),
-            ),
-          )
-          .limit(1)
-          .for('update');
-        const invite = rows[0];
-        if (!invite) return { error: 'Invite is no longer available' };
-        if (invite.role === 'owner') return { error: 'This invite cannot be resent' };
-        if (invite.role === 'admin' && callerRole !== 'owner') {
-          return { error: 'Only owners can resend admin invites' };
-        }
-        await tx
-          .update(teamInvites)
-          .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
-          .where(eq(teamInvites.id, invite.id));
-        return {
-          ok: true,
-          input: {
-            id: invite.id,
+    let delivery: { ok: true; input: InviteDeliveryInput } | TeamMutationResult;
+    try {
+      delivery = await db.transaction(
+        async (tx): Promise<{ ok: true; input: InviteDeliveryInput } | TeamMutationResult> => {
+          const rows = await tx
+            .select({
+              id: teamInvites.id,
+              email: teamInvites.email,
+              role: teamInvites.role,
+              expiresAt: teamInvites.expiresAt,
+            })
+            .from(teamInvites)
+            .where(
+              and(
+                eq(teamInvites.id, inviteId),
+                eq(teamInvites.teamId, active.teamId),
+                isNull(teamInvites.acceptedAt),
+                isNull(teamInvites.revokedAt),
+              ),
+            )
+            .limit(1)
+            .for('update');
+          const invite = rows[0];
+          if (!invite) return { error: 'Invite is no longer available' };
+          if (invite.role === 'owner') return { error: 'This invite cannot be resent' };
+          if (invite.role === 'admin' && callerRole !== 'owner') {
+            return { error: 'Only owners can resend admin invites' };
+          }
+          await assertTeamMemberSeatCapacity({
+            db: tx as unknown as typeof db,
             teamId: active.teamId,
-            inviterUserId: session.user.id,
-            email: invite.email,
-            role: invite.role,
-            token,
-            expiresAt,
-            teamName: active.teamName,
-            inviterName,
-          },
+            additionalSeats: expiredInviteNeedsSeat(invite.expiresAt) ? 1 : 0,
+          });
+          await tx
+            .update(teamInvites)
+            .set({ token, expiresAt, sendStatus: 'pending', sendError: null, lastSentAt: null })
+            .where(eq(teamInvites.id, invite.id));
+          return {
+            ok: true,
+            input: {
+              id: invite.id,
+              teamId: active.teamId,
+              inviterUserId: session.user.id,
+              email: invite.email,
+              role: invite.role,
+              token,
+              expiresAt,
+              teamName: active.teamName,
+              inviterName,
+            },
+          };
+        },
+      );
+    } catch (err) {
+      if (isBillingAdmissionError(err)) {
+        return {
+          error:
+            'This plan’s member limit is reached. Add a payment method or choose a larger plan to invite more people.',
         };
-      },
-    );
+      }
+      throw err;
+    }
     if (!('input' in delivery)) return { error: delivery.error ?? 'Couldn’t resend invite' };
     await deliverInviteEmail(delivery.input);
     revalidatePath('/app/team');

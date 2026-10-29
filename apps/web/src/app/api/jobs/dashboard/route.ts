@@ -24,6 +24,12 @@ const retrySchema = z.object({
   id: z.string().regex(UUID_RE),
 });
 
+function metadataFlagIsTrue(metadata: unknown, key: string): boolean {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return false;
+  const value = (metadata as Record<string, unknown>)[key];
+  return value === true || value === 'true';
+}
+
 export async function GET(): Promise<Response> {
   const session = await auth();
   if (!session?.user) return Response.json({ error: 'unauthenticated' }, { status: 401 });
@@ -203,6 +209,12 @@ export async function POST(req: Request): Promise<Response> {
 
   const event = await scope.timeline.getEvent(parsed.data.id);
   if (!event) return Response.json({ error: 'not_found' }, { status: 404 });
+  if (
+    metadataFlagIsTrue(event.sourceMetadata, 'billing_enrichment_deferred') ||
+    metadataFlagIsTrue(event.sourceMetadata, 'transcription_deferred')
+  ) {
+    return Response.json({ error: 'billing_deferred' }, { status: 409 });
+  }
   if (parsed.data.kind === 'transcription') {
     if (!event.contentAudioUrl) return Response.json({ error: 'not_audio' }, { status: 400 });
     await queue.enqueueTranscribeJob({

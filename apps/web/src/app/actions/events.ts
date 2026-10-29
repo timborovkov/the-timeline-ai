@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 
 import { rawEvents } from '@timeline/db';
 import { bucketCaptureDuration } from '@timeline/shared/analytics';
+import { admitAcceptedSourceEnrichment, admitAudioTranscription } from '@timeline/shared/billing';
 import { cacheKey, deleteCacheKey } from '@timeline/shared/cache';
 import { childLogger } from '@timeline/shared/logger';
 import { getAudioBucket, getS3PresignClient, getSignedPutObjectUrl } from '@timeline/shared/s3';
@@ -124,6 +125,22 @@ export async function createTextEventAction(
       revalidatePath('/app');
       revalidatePath('/app/timeline');
       return { ok: true, at: Date.now() };
+    }
+
+    const admitted = await admitAcceptedSourceEnrichment({
+      db,
+      teamId: event.teamId,
+      userId: session.user.id,
+      rawEventId: event.id,
+    });
+    if (!admitted) {
+      revalidatePath('/app');
+      revalidatePath('/app/timeline');
+      return {
+        ok: true,
+        at: Date.now(),
+        warning: 'Saved. Enrichment is paused until this workspace has accepted-source allowance.',
+      };
     }
 
     const processingWarnings: string[] = [];
@@ -388,6 +405,22 @@ export async function createAudioEventAction(
         step: 'first_note',
         source: 'automatic',
       });
+    }
+
+    const admitted = await admitAudioTranscription({
+      db,
+      teamId: event.teamId,
+      userId: session.user.id,
+      rawEventId: event.id,
+    });
+    if (!admitted) {
+      revalidatePath('/app/timeline');
+      revalidatePath('/app');
+      return {
+        ok: true,
+        warning:
+          'Saved. Transcription is paused until this workspace has accepted-source allowance.',
+      };
     }
 
     try {

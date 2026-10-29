@@ -9,6 +9,10 @@ import {
   reconciliationEvidence,
   savedMeetings,
 } from '@timeline/db';
+import {
+  BillingAdmissionError,
+  insertRestrictedFreeBillingAccount,
+} from '@timeline/shared/billing';
 import { TimelineAiError } from '@timeline/shared/llm';
 import { expect } from '@timeline/test-support';
 import { vi } from '@timeline/test-support';
@@ -428,6 +432,32 @@ describe('processMeetingFinalizeJob', () => {
       meetingChunkId: chunk?.id,
       teamId: TEAM_ID,
     });
+  });
+
+  it('keeps the meeting transcript and skips enrichment when the source is not admitted', async () => {
+    await insertRestrictedFreeBillingAccount({ db: db as never, teamId: TEAM_ID });
+    await seedMeeting(db as never);
+    await seedChunk(db as never, 0, 'Hello, this is Alice.', 'Alice');
+    const enqueueExtractJob = vi.fn().mockResolvedValue(undefined);
+    const enqueueEmbedJob = vi.fn().mockResolvedValue(undefined);
+    try {
+      await processMeetingFinalizeJob(
+        { db: db as never },
+        { meetingId: MEETING_ID, teamId: TEAM_ID },
+        {
+          chatStructured: makeChatStub() as never,
+          enqueueExtractJob: enqueueExtractJob as never,
+          enqueueEmbedJob: enqueueEmbedJob as never,
+        },
+      );
+    } catch (err) {
+      expect(err).toBeInstanceOf(BillingAdmissionError);
+    }
+    expect(enqueueExtractJob).not.toHaveBeenCalled();
+    expect(enqueueEmbedJob).not.toHaveBeenCalled();
+    const [event] = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
+    expect(event?.contentText).toContain('Hello, this is Alice.');
+    expect(event?.sourceMetadata).toMatchObject({ billing_enrichment_deferred: true });
   });
 
   it('idempotent: re-running on a completed meeting is a no-op', async () => {
