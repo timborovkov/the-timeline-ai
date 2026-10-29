@@ -270,6 +270,48 @@ export function billingStateFromPolarSubscriptionStatus(
   }
 }
 
+/**
+ * Bounds written by a subscription upsert. A late or retried `subscription.updated`
+ * can describe the period before a local renewal roll. Keep the advanced window
+ * for the same subscription and plan so the next reservation does not refill
+ * the allowance and drop usage already deducted. Status, product, and the
+ * Polar clock still follow the event.
+ */
+export function paidSubscriptionPeriodBounds(input: {
+  existing:
+    | {
+        planId: BillingPlanId;
+        polarSubscriptionId: string | null;
+        periodStartedAt: Date | null;
+        periodEndsAt: Date | null;
+      }
+    | undefined;
+  planId: BillingPlanId;
+  polarSubscriptionId: string | null;
+  incomingStartedAt: Date | null;
+  incomingEndsAt: Date | null;
+  now: Date;
+}): { periodStartedAt: Date; periodEndsAt: Date | null } {
+  const existing = input.existing;
+  if (
+    existing?.planId === input.planId &&
+    existing.polarSubscriptionId !== null &&
+    existing.polarSubscriptionId === input.polarSubscriptionId &&
+    existing.periodStartedAt &&
+    input.incomingStartedAt &&
+    input.incomingStartedAt.getTime() < existing.periodStartedAt.getTime()
+  ) {
+    return {
+      periodStartedAt: existing.periodStartedAt,
+      periodEndsAt: existing.periodEndsAt,
+    };
+  }
+  return {
+    periodStartedAt: input.incomingStartedAt ?? existing?.periodStartedAt ?? input.now,
+    periodEndsAt: input.incomingEndsAt ?? existing?.periodEndsAt ?? null,
+  };
+}
+
 export function shouldResetIncludedDiscount(input: {
   existing: typeof teamBillingAccounts.$inferSelect | undefined;
   planId: BillingPlanId;
@@ -489,6 +531,7 @@ async function upsertPaidSubscription(input: {
       preserveLocalFreeze: true,
     });
     const included = PLAN_CATALOG[input.plan].includedUsageDiscountCents;
+    const now = new Date();
     const resetDiscount = shouldResetIncludedDiscount({
       existing,
       planId: input.plan,
@@ -496,9 +539,14 @@ async function upsertPaidSubscription(input: {
       periodStartedAt: period.periodStartedAt,
       periodEndsAt: period.periodEndsAt,
     });
-    const now = new Date();
-    const periodStartedAt = period.periodStartedAt ?? existing?.periodStartedAt ?? now;
-    const periodEndsAt = period.periodEndsAt ?? existing?.periodEndsAt ?? null;
+    const { periodStartedAt, periodEndsAt } = paidSubscriptionPeriodBounds({
+      existing,
+      planId: input.plan,
+      polarSubscriptionId,
+      incomingStartedAt: period.periodStartedAt,
+      incomingEndsAt: period.periodEndsAt,
+      now,
+    });
     const polarEventModifiedAtValue =
       polarEventModifiedAt(input.data) ?? existing?.polarEventModifiedAt ?? now;
     const scheduledCancel =

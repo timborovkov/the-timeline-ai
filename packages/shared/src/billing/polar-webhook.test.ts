@@ -13,6 +13,7 @@ import {
   handlePolarWebhookEvent,
   RETIRED_TOPUP_ALERT_REASON_PREFIX,
   isRetiredPaidTopupOrder,
+  paidSubscriptionPeriodBounds,
   shouldApplyPaidSubscriptionUpdate,
   shouldResetIncludedDiscount,
   spendCapCentsForPaidActivation,
@@ -159,6 +160,51 @@ describe('Polar webhook helpers', () => {
         periodEndsAt: new Date('2026-09-01T00:00:00Z'),
       }),
     ).toBe(true);
+  });
+
+  it('keeps a rolled allowance window when a retried update describes the previous period', () => {
+    const existing = {
+      planId: 'team' as const,
+      polarSubscriptionId: 'sub_1',
+      periodStartedAt: new Date('2026-10-01T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-11-01T00:00:00.000Z'),
+    };
+    expect(
+      paidSubscriptionPeriodBounds({
+        existing,
+        planId: 'team',
+        polarSubscriptionId: 'sub_1',
+        incomingStartedAt: new Date('2026-09-01T00:00:00.000Z'),
+        incomingEndsAt: new Date('2026-10-01T00:00:00.000Z'),
+        now: new Date('2026-10-20T00:00:00.000Z'),
+      }),
+    ).toEqual({
+      periodStartedAt: existing.periodStartedAt,
+      periodEndsAt: existing.periodEndsAt,
+    });
+    expect(
+      paidSubscriptionPeriodBounds({
+        existing,
+        planId: 'team',
+        polarSubscriptionId: 'sub_1',
+        incomingStartedAt: new Date('2026-11-01T00:00:00.000Z'),
+        incomingEndsAt: new Date('2026-12-01T00:00:00.000Z'),
+        now: new Date('2026-11-02T00:00:00.000Z'),
+      }),
+    ).toEqual({
+      periodStartedAt: new Date('2026-11-01T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-12-01T00:00:00.000Z'),
+    });
+    expect(
+      paidSubscriptionPeriodBounds({
+        existing,
+        planId: 'business',
+        polarSubscriptionId: 'sub_1',
+        incomingStartedAt: new Date('2026-09-01T00:00:00.000Z'),
+        incomingEndsAt: new Date('2026-10-01T00:00:00.000Z'),
+        now: new Date('2026-10-20T00:00:00.000Z'),
+      }).periodStartedAt,
+    ).toEqual(new Date('2026-09-01T00:00:00.000Z'));
   });
 
   it('preserves a paid spend cap of 0 and only defaults when activating from Free', () => {
@@ -1640,6 +1686,80 @@ describe('handlePolarWebhookEvent', () => {
         incomingModifiedAt: new Date('2026-08-01T00:00:00Z'),
       }),
     ).toBe(false);
+  });
+
+  it('keeps a locally rolled window when a pre-renewal subscription.updated is retried', async () => {
+    const now = new Date();
+    const rolledStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const rolledEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const expiredStart = new Date(
+      Date.UTC(rolledStart.getUTCFullYear(), rolledStart.getUTCMonth() - 1, 1),
+    );
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.active',
+        data: {
+          id: 'sub_team',
+          status: 'active',
+          product_id: 'prod_team',
+          current_period_start: expiredStart.toISOString(),
+          current_period_end: rolledStart.toISOString(),
+          modified_at: expiredStart.toISOString(),
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET included_discount_remaining_cents = 4500,
+          period_started_at = '${rolledStart.toISOString()}',
+          period_ends_at = '${rolledEnd.toISOString()}',
+          polar_event_modified_at = '${expiredStart.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    await handlePolarWebhookEvent({
+      db,
+      chargesEnabled: true,
+      products: PRODUCTS,
+      payload: {
+        type: 'subscription.updated',
+        data: {
+          id: 'sub_team',
+          status: 'past_due',
+          product_id: 'prod_team',
+          current_period_start: expiredStart.toISOString(),
+          current_period_end: rolledStart.toISOString(),
+          modified_at: rolledStart.toISOString(),
+          customer: { id: 'cus_1', external_id: TEAM_ID },
+        },
+      },
+    });
+    const billing = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    const kept = await billing.getAccount();
+    expect(kept.billingState).toBe('past_due');
+    expect(kept.includedDiscountRemainingCents).toBe(4_500);
+    expect(kept.periodStartedAt?.toISOString()).toBe(rolledStart.toISOString());
+    expect(kept.periodEndsAt?.toISOString()).toBe(rolledEnd.toISOString());
+
+    const reserved = await billing.reserve({
+      operationId: 'ai:after-stale-renewal-webhook',
+      meterId: 'ai',
+      reservedNativeUnits: 40,
+      reservedChargeCents: 40,
+    });
+    expect(reserved.ok).toBe(false);
+    const afterReserve = await billing.getAccount();
+    expect(afterReserve.includedDiscountRemainingCents).toBe(4_500);
+    expect(afterReserve.periodStartedAt?.toISOString()).toBe(rolledStart.toISOString());
+    expect(afterReserve.periodEndsAt?.toISOString()).toBe(rolledEnd.toISOString());
   });
 
   it('recognizes a retired top-up and ignores a subscription order', () => {
