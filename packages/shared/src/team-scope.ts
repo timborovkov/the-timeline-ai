@@ -4078,7 +4078,7 @@ export function withTeam(db: Db, teamId: string, userId: string, deps: TeamScope
           });
 
         const limit = Math.min(Math.max(input.limit ?? 10, 1), 20);
-        const { vector } = await embedFn({ text: input.query });
+        const { vector } = await withSearchEmbeddingBilling(() => embedFn({ text: input.query }));
         const hits = await searchFn(teamId, userId, vector, {
           limit: limit * 3,
           sourceKind: 'object_note',
