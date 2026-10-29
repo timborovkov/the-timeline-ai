@@ -6,6 +6,7 @@ import {
   entities,
   messagePreferences,
   objectChanges,
+  teamBillingAccounts,
   teamCalendarSettings,
   teamMembers,
   teams,
@@ -21,6 +22,10 @@ import type {
 } from '#src/messaging/types.js';
 import type { TeamScope } from '#src/team-scope.js';
 
+import { CAPACITY_BY_PLAN } from '#src/billing/catalog.js';
+import { getBillingContext } from '#src/billing/context.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
+import { effectiveBillingPlanId } from '#src/billing/operator.js';
 import { chatStructured } from '#src/llm/chat.js';
 import { childLogger } from '#src/logger.js';
 import {
@@ -257,6 +262,86 @@ function digestTextHasBannedInventory(text: DigestText): boolean {
   );
 }
 
+function rethrowBillingAdmission(results: PromiseSettledResult<unknown>[]): void {
+  for (const result of results) {
+    if (result.status === 'rejected' && isBillingAdmissionError(result.reason)) {
+      throw result.reason;
+    }
+  }
+}
+
+/**
+ * In-flight worker LLM calls share the plan's costly-worker slots. A Free
+ * workspace has one slot, so map-reduce batches must not start together or
+ * the losers are saved as a short digest. Null means no billing limit.
+ */
+async function digestCostlyWorkerConcurrency(): Promise<number | null> {
+  const ctx = getBillingContext();
+  if (ctx?.source !== 'worker') return null;
+  const [account] = await ctx.db
+    .select({
+      planId: teamBillingAccounts.planId,
+      billingState: teamBillingAccounts.billingState,
+      spendCapCents: teamBillingAccounts.spendCapCents,
+      arrangement: teamBillingAccounts.arrangement,
+      compExpiresAt: teamBillingAccounts.compExpiresAt,
+    })
+    .from(teamBillingAccounts)
+    .where(eq(teamBillingAccounts.teamId, ctx.teamId))
+    .limit(1);
+  if (!account) return CAPACITY_BY_PLAN.free.costlyWorkerConcurrency;
+  return CAPACITY_BY_PLAN[effectiveBillingPlanId(account)].costlyWorkerConcurrency;
+}
+
+async function summarizeDigestBatches(
+  ctx: DigestPromptContext,
+  batches: MomentBrief[][],
+): Promise<PromiseSettledResult<DigestText>[]> {
+  const limit = await digestCostlyWorkerConcurrency();
+  const runBatch = (batch: MomentBrief[], index: number) =>
+    callStructuredDigest(
+      buildDigestPrompt(ctx, batch, { index, total: batches.length }),
+      SUMMARIZE_SYSTEM_PROMPT,
+    );
+  if (limit === null || limit >= batches.length) {
+    const settled = await Promise.allSettled(batches.map((batch, index) => runBatch(batch, index)));
+    rethrowBillingAdmission(settled);
+    return settled;
+  }
+
+  const settled = new Map<number, PromiseSettledResult<DigestText>>();
+  let cursor = 0;
+  let admission: unknown;
+  const worker = async () => {
+    while (admission === undefined) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= batches.length) return;
+      const batch = batches[index];
+      if (!batch) return;
+      try {
+        settled.set(index, { status: 'fulfilled', value: await runBatch(batch, index) });
+      } catch (err) {
+        settled.set(index, { status: 'rejected', reason: err });
+        if (isBillingAdmissionError(err)) {
+          admission = err;
+          return;
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, limit) }, () => worker()));
+  if (isBillingAdmissionError(admission)) throw admission;
+  return batches.map((_, index) => {
+    const result = settled.get(index);
+    if (result) return result;
+    return {
+      status: 'rejected',
+      reason: new Error('digest batch did not run'),
+    };
+  });
+}
+
 async function callStructuredDigest(prompt: string, systemPrompt: string): Promise<DigestText> {
   const first = await requestStructuredDigest(prompt, systemPrompt);
   if (!digestTextHasBannedInventory(first)) return first;
@@ -284,6 +369,7 @@ async function summarizeMomentBriefs(
     try {
       return await callStructuredDigest(buildDigestPrompt(ctx, briefs), SUMMARIZE_SYSTEM_PROMPT);
     } catch (err) {
+      if (isBillingAdmissionError(err)) throw err;
       log.warn(
         { err, momentCount: briefs.length, promptLength: buildDigestPrompt(ctx, briefs).length },
         'digest summarizer failed; returning fallback summary',
@@ -298,14 +384,7 @@ async function summarizeMomentBriefs(
     'digest summarizer using map-reduce for large moment volume',
   );
 
-  const batchResults = await Promise.allSettled(
-    batches.map((batch, index) =>
-      callStructuredDigest(
-        buildDigestPrompt(ctx, batch, { index, total: batches.length }),
-        SUMMARIZE_SYSTEM_PROMPT,
-      ),
-    ),
-  );
+  const batchResults = await summarizeDigestBatches(ctx, batches);
 
   const successful: DigestText[] = [];
   let failedCount = 0;
@@ -336,6 +415,7 @@ async function summarizeMomentBriefs(
   try {
     return await callStructuredDigest(buildReducePrompt(ctx, successful), SUMMARIZE_SYSTEM_PROMPT);
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     log.warn(
       { err, batchCount: successful.length },
       'digest reduce phase failed; concatenating batch summaries',

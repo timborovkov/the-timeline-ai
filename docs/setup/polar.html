@@ -241,12 +241,17 @@ PLATFORM_ADMIN_EMAILS=
         receives a stable event id, and a failed ingest does not undo a committed charge. Janitor
         included-discount resets lock the billing account so they cannot overwrite a newer Polar
         plan or period, and a missed renewal advances by calendar months from the subscription
-        anchor. Ask streams that abort after work starts settle at least the reserved customer
+        anchor. A late or retried <code>subscription.updated</code> for an earlier period of the
+        same subscription and plan keeps that rolled window. Status changes from the event still
+        apply. Ask streams that abort after work starts settle at least the reserved customer
         charge. Failed structured-output attempts still contribute OpenRouter
         <code>usage.cost</code>. Recall minutes that cross a UTC month are attributed to each month
-        they span. Document create serializes capacity under advisory lock key 1; restore takes key
-        1 then key 2 so restored chunks serialize with extraction writes. Worker AI reservations
-        count against plan <code>costlyWorkerConcurrency</code> and delay the job when busy.
+        they span. A meeting that also crosses a subscription renewal spends each window's included
+        discount separately, and the ledger records the window each discount used. Document create
+        serializes capacity under advisory lock key 1; restore takes key 1 then key 2 so restored
+        chunks serialize with extraction writes. Worker AI reservations count against plan
+        <code>costlyWorkerConcurrency</code> and delay the job when busy. Digest map-reduce stays
+        within that concurrency. A busy slot delays the digest instead of sending a partial one.
         Background AI metering keeps the reservation when settle fails after a successful provider
         call and reuses the BullMQ job id. A thrown call that already reported OpenRouter usage
         stores that attempt on the reservation before settle and keeps it until the ledger row

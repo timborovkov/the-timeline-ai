@@ -104,7 +104,9 @@ credit hides margin and confuses prospects.
    window under the billing-account lock before pricing current-period usage, and
    the janitor does the same refill. A settlement whose usage instant is earlier
    than that window uses the earlier window's remaining discount and leaves the
-   refilled balance unchanged. The instant is the settlement usage time or the
+   refilled balance unchanged. A Recall meeting that crosses the boundary spends
+   each window's discount separately, and the ledger records the window each
+   discount used. The instant is the settlement usage time or the
    reservation's creation time. That remaining discount is read inside the
    settlement transaction after the account lock. Settlement prices the plan that admitted the usage. Reserve stores
    that plan on the reservation. A row without it uses plan history when the
@@ -157,7 +159,9 @@ credit hides margin and confuses prospects.
    still follow the incoming subscription status, so a later active event clears
    a failed-payment pause. Subscription upserts and cancels lock the
    billing account and recheck Polar `modified_at` in the same transaction so an
-   older event cannot overwrite a newer one. Polar webhook bodies are bounded to
+   older event cannot overwrite a newer one. A late or retried update that describes
+   an earlier period of the same subscription and plan does not rewind a locally
+   rolled allowance window. Status changes from that event still apply. Polar webhook bodies are bounded to
    the integration webhook size limit before signature verify. Settlement that
    exceeds the current UTC period's paid spend cap still records the full ledger
    charge and freezes the workspace (`read_only`, spend cap €0). A prior month's

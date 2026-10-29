@@ -18,6 +18,8 @@ await vi.mock(
 );
 
 const { generateDailyDigest } = await import('#src/messaging/digest.js');
+const { BillingAdmissionError } = await import('#src/billing/errors.js');
+const { runWithBillingContext } = await import('#src/billing/context.js');
 
 function chainResult(rows: unknown[]) {
   const thenable = {
@@ -664,5 +666,123 @@ describe('digest map-reduce summarization', () => {
     expect(result.payload.summary).toMatch(/3 new moments/);
     expect(result.payload.summary).not.toMatch(/#\d+/);
     expect(result.payload.sections).toEqual([]);
+  });
+
+  it('does not save a digest when a batch loses the costly-worker slot', async () => {
+    const events = Array.from({ length: 60 }, (_, i) => makeEventBrief(i));
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    fakes.chatStructured
+      .mockResolvedValueOnce(makeDigestResult('Batch 1 summary.'))
+      .mockRejectedValueOnce(new BillingAdmissionError('costly_worker_busy'));
+
+    const db = makeDb([
+      chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+      chainResult([]),
+      chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+      chainResult([]),
+    ]);
+
+    await expect(
+      generateDailyDigest({
+        db: db as never,
+        teamId: 'team-1',
+        userId: 'user-1',
+        windowStart: new Date('2026-06-13T11:00:00Z'),
+        windowEnd: new Date('2026-06-14T12:00:00Z'),
+        now: new Date('2026-06-14T12:05:00Z'),
+      }),
+    ).rejects.toMatchObject({ code: 'costly_worker_busy' });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it('runs Free digest batches one at a time and lets a higher cap overlap', async () => {
+    const events = Array.from({ length: 51 }, (_, i) => makeEventBrief(i));
+    const planDb = (planId: 'free' | 'team') => ({
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: () =>
+              Promise.resolve([
+                {
+                  planId,
+                  arrangement: 'standard',
+                  billingState: planId === 'free' ? 'free' : 'team_active',
+                  spendCapCents: 0,
+                  compExpiresAt: null,
+                },
+              ]),
+          }),
+        }),
+      }),
+    });
+    const run = (planId: 'free' | 'team') => {
+      let started = 0;
+      let release: () => void = () => {
+        throw new Error('digest batch gate was not installed');
+      };
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      fakes.chatStructured.mockImplementation(() => {
+        started += 1;
+        const call = started;
+        return gate.then(() => makeDigestResult(`Summary ${String(call)}`));
+      });
+      const db = makeDb([
+        chainResult([{ dailyDigestEnabled: true, dailyDigestHour: 12, timezone: 'UTC' }]),
+        chainResult([]),
+        chainResult([{ name: 'Tim', email: 'tim@example.test' }]),
+        chainResult([]),
+      ]);
+      const pending = runWithBillingContext(
+        {
+          db: planDb(planId) as never,
+          teamId: 'team-1',
+          userId: '00000000-0000-0000-0000-000000000000',
+          operationClass: 'digest',
+          source: 'worker',
+        },
+        () =>
+          generateDailyDigest({
+            db: db as never,
+            teamId: 'team-1',
+            userId: 'user-1',
+            windowStart: new Date('2026-06-13T11:00:00Z'),
+            windowEnd: new Date('2026-06-14T12:00:00Z'),
+            now: new Date('2026-06-14T12:05:00Z'),
+          }),
+      );
+      return { started: () => started, release, pending };
+    };
+
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    const free = run('free');
+    for (let attempt = 0; attempt < 50 && free.started() < 1; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(free.started()).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(free.started()).toBe(1);
+    free.release();
+    await free.pending;
+    expect(fakes.chatStructured).toHaveBeenCalledTimes(3);
+
+    vi.clearAllMocks();
+    fakes.withTeam.mockReturnValue(makeScope(events));
+    const team = run('team');
+    const overlapped = await Promise.race([
+      (async () => {
+        while (team.started() < 2) await new Promise((resolve) => setTimeout(resolve, 10));
+        return true;
+      })(),
+      new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          resolve(false);
+        }, 500);
+      }),
+    ]);
+    team.release();
+    await team.pending;
+    expect(overlapped).toBe(true);
   });
 });
