@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { buildTaskCategoryConfusionMatrix } from '#src/task-categories/eval-report.js';
 import { TASK_CATEGORIES } from '#src/task-categories/types.js';
-
 describe('task category eval report', () => {
   it('builds a complete expected-by-predicted confusion matrix', () => {
     const matrix = buildTaskCategoryConfusionMatrix([

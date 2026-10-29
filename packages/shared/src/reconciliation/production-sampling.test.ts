@@ -4,9 +4,10 @@ import path from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
 import { reconciliationRuns } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { describe, expect, it } from 'vitest';
 
 import type { DeterministicEvalCase } from '#src/reconciliation/index.js';
 
@@ -27,7 +28,6 @@ import {
 } from '#src/reconciliation/production-sampling.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 const BASE_CASE: DeterministicEvalCase = {

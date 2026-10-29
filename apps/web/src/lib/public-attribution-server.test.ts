@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { PUBLIC_ANALYTICS_CONSENT_MAX_AGE_SECONDS } from '@/lib/public-analytics-consent';
 import { readConsentedPublicAttributionCookie } from '@/lib/public-attribution-server';
-
 const NOW = Date.UTC(2026, 7, 21, 12);
 
 function cookies(values: Record<string, string>) {

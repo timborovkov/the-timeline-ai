@@ -1,5 +1,32 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type * as QueueModule from '#src/queue/queues.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof QueueModule>();
+    const enqueue = vi.fn(() => Promise.resolve(undefined));
+    return {
+      ...actual,
+      enqueueCalendarEventEmbedJob: enqueue,
+      enqueueEmbedJob: enqueue,
+      enqueueObjectEmbedJob: enqueue,
+      enqueueObjectNoteEmbedJob: enqueue,
+      enqueueObjectSummaryJob: vi.fn(() =>
+        Promise.resolve({ enqueued: true, jobId: 'summary-job' }),
+      ),
+    };
+  },
+  () => import('#src/queue/queues.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -9,28 +36,11 @@ import {
   reconciliationOutputs,
   reconciliationProjectionOutbox,
   reconciliationRuns,
-} from '@timeline/db';
-import { asc, eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as QueueModule from '#src/queue/queues.js';
-
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-vi.mock('#src/queue/queues.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof QueueModule>();
-  const enqueue = vi.fn(() => Promise.resolve(undefined));
-  return {
-    ...actual,
-    enqueueCalendarEventEmbedJob: enqueue,
-    enqueueEmbedJob: enqueue,
-    enqueueObjectEmbedJob: enqueue,
-    enqueueObjectNoteEmbedJob: enqueue,
-    enqueueObjectSummaryJob: vi.fn(() => Promise.resolve({ enqueued: true, jobId: 'summary-job' })),
-  };
-});
+} = await import('@timeline/db');
+const { asc, eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

@@ -1,24 +1,10 @@
-import { PGlite } from '@electric-sql/pglite';
-import { rawEvents } from '@timeline/db';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
 import type * as TimelineDb from '@timeline/db';
-
-import {
-  askAgent,
-  formatBotPlainTextAnswer,
-  parseExplicitRetrievalContract,
-  selectExplicitlyRequestedNativeTools,
-} from '#src/agent/ask.js';
-import { resetEnvForTests } from '#src/env.js';
-import {
-  makeAskAgentTextModel,
-  makeAskAgentToolRoundModel,
-  makeFailingAskAgentModel,
-  runAskAgentEval,
-} from '#src/test/agent-eval-harness.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+type PGlite = PGliteType;
 
 // askAgent is the non-browser entry point for Slack/Telegram/email-style asks.
 // These tests keep the wrapper honest while deeper agent behavior stays in the
@@ -50,21 +36,52 @@ const fakes = vi.hoisted(
   }),
 );
 
-vi.mock('@timeline/db', async (importOriginal) => {
-  const actual = await importOriginal<typeof TimelineDb>();
-  return { ...actual, getDb: () => fakes.currentDb };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof TimelineDb>();
+    return { ...actual, getDb: () => fakes.currentDb };
+  },
+  () => import('@timeline/db'),
+);
 
-vi.mock('#src/mcp/client.js', () => ({
-  getMcpManager: () => ({
-    connectForTeam: fakes.connectForTeam,
-    callTool: fakes.callTool,
+await vi.mock(
+  import.meta.resolve('#src/mcp/client.js'),
+  () => ({
+    getMcpManager: () => ({
+      connectForTeam: fakes.connectForTeam,
+      callTool: fakes.callTool,
+    }),
   }),
-}));
+  () => import('#src/mcp/client.js'),
+);
 
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueEmbedJob: fakes.enqueueEmbedJob,
-}));
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueEmbedJob: fakes.enqueueEmbedJob,
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const { rawEvents } = await import('@timeline/db');
+const { drizzle } = await import('drizzle-orm/pglite');
+const {
+  askAgent,
+  formatBotPlainTextAnswer,
+  parseExplicitRetrievalContract,
+  selectExplicitlyRequestedNativeTools,
+} = await import('#src/agent/ask.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const {
+  makeAskAgentTextModel,
+  makeAskAgentToolRoundModel,
+  makeFailingAskAgentModel,
+  runAskAgentEval,
+} = await import('#src/test/agent-eval-harness.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 async function seed(pg: PGlite): Promise<void> {
   await pg.exec(`

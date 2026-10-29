@@ -1,13 +1,18 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('@/app/oauth/actions'),
+  () => ({
+    revokeMcpOAuthGrantAction: '/test/revoke-grant',
+  }),
+  () => import('@/app/oauth/actions'),
+);
 
-import { McpOAuthGrants } from '@/components/mcp-oauth-grants';
-
-vi.mock('@/app/oauth/actions', () => ({
-  revokeMcpOAuthGrantAction: '/test/revoke-grant',
-}));
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { McpOAuthGrants } = await import('@/components/mcp-oauth-grants');
 
 afterEach(() => {
   cleanup();

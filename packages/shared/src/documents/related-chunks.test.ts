@@ -1,8 +1,9 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, documentChunks, documents, documentVersions } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   listRelatedCuratedDocumentChunks,
@@ -10,7 +11,6 @@ import {
   relatedDocumentChunkCitation,
 } from '#src/documents/related-chunks.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 type AnyDb = Db;
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';

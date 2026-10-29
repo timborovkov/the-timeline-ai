@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { expectPublicActionErrorReport } from '@/test/public-error';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   archiveChatSession: vi.fn(),
   getChatSession: vi.fn(),
@@ -12,21 +11,45 @@ const fakes = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 
-vi.mock('@/lib/action-scope', async () => {
-  const { z } = await import('zod');
-  return {
-    resolveScope: fakes.resolveScope,
-    uuidSchema: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
-  };
-});
-vi.mock('@/lib/chat-session', () => ({
-  hydrateChatSessionMessages: fakes.hydrateChatSessionMessages,
-}));
-vi.mock('@/lib/sentry-action', () => ({
-  runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.revalidatePath }));
+await vi.mock(
+  import.meta.resolve('@/lib/action-scope'),
+  async () => {
+    const { z } = await import('zod');
+    return {
+      resolveScope: fakes.resolveScope,
+      uuidSchema: z
+        .string()
+        .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+    };
+  },
+  () => import('@/lib/action-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/chat-session'),
+  () => ({
+    hydrateChatSessionMessages: fakes.hydrateChatSessionMessages,
+  }),
+  () => import('@/lib/chat-session'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-action'),
+  () => ({
+    runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
+  }),
+  () => import('@/lib/sentry-action'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.revalidatePath }),
+  () => import('next/cache'),
+);
+
+const { expectPublicActionErrorReport } = await import('@/test/public-error');
 
 const { archiveChatSessionAction, loadChatSessionAction, unpinChatSessionAction } =
   await import('./chat.js');

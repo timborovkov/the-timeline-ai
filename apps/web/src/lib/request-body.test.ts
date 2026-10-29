@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { readCappedBinaryBody, readCappedTextBody } from '@/lib/request-body';
-
 /** Public request bodies must be rejected while streaming, not after buffering. */
 describe('readCappedTextBody', () => {
   it('rejects a declared oversized body before reading it', async () => {

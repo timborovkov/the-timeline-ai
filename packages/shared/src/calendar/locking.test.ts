@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { calendarEventMutationTargetId } from '#src/calendar/locking.js';
-
 describe('calendarEventMutationTargetId', () => {
   it('uses the parent series for occurrence-wide mutations', () => {
     expect(calendarEventMutationTargetId('occurrence', 'parent', 'series')).toBe('parent');

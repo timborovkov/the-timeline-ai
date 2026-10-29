@@ -35,7 +35,7 @@ export interface TranscribeDeps {
    * chat.ts/embed.ts so the three LLM ops have a consistent test pattern.
    */
   model?: TranscriptionModel;
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   /** Explicit inference key so eval callers can skip the shared env loader. */
   apiKey?: string;
   baseURL?: string;
@@ -99,7 +99,12 @@ function inferAudioFormat(audio: Buffer): AudioFormat {
 
 async function transcribeWithOpenRouterJson(
   input: TranscribeInput,
-  opts: { modelId: string; fetch: typeof globalThis.fetch; apiKey?: string; baseURL?: string },
+  opts: {
+    modelId: string;
+    fetch: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
+    apiKey?: string;
+    baseURL?: string;
+  },
 ): Promise<TranscribeResult> {
   const { apiKey, baseURL } = resolveOpenRouterTranscriptionConfig(opts);
   const response = await opts.fetch(`${baseURL}/audio/transcriptions`, {

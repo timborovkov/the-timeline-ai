@@ -1,5 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi, freshModuleUrl } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import type * as TestModule1 from '#src/queue/index.js';
 /**
  * Queue contract tests. The product relies on job payloads and retry policy
  * staying stable across web routes, workers, and recovery scripts; BullMQ and
@@ -86,24 +89,32 @@ class FakeQueue {
   }
 }
 
-vi.mock('bullmq', () => ({ Queue: FakeQueue }));
-vi.mock('ioredis', () => ({
-  default: class FakeRedis {
-    constructor(
-      public url: string,
-      public options: Record<string, unknown>,
-    ) {
-      fakes.redisInstances.push(this);
-    }
-    quit = vi.fn(() => Promise.resolve());
-  },
-}));
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({ Queue: FakeQueue }),
+  () => import('bullmq'),
+);
+await vi.mock(
+  import.meta.resolve('ioredis'),
+  () => ({
+    default: class FakeRedis {
+      constructor(
+        public url: string,
+        public options: Record<string, unknown>,
+      ) {
+        fakes.redisInstances.push(this);
+      }
+      quit = vi.fn(() => Promise.resolve());
+    },
+  }),
+  () => import('ioredis'),
+);
 
 async function importQueues() {
   process.env.AUTH_SECRET = 'test-secret-at-least-sixteen-characters';
   process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
   process.env.REDIS_URL = 'redis://localhost:6379';
-  return import('./index.js');
+  return import(freshModuleUrl(import.meta.resolve('./index.js'))) as Promise<typeof TestModule1>;
 }
 
 beforeEach(() => {
@@ -1237,7 +1248,9 @@ describe('queue wrappers', () => {
     process.env.AUTH_SECRET = 'test-secret-at-least-sixteen-characters';
     process.env.DATABASE_URL = 'postgres://test:test@localhost:5432/test';
     delete process.env.REDIS_URL;
-    const queues = await import('./index.js');
+    const queues = await (import(freshModuleUrl(import.meta.resolve('./index.js'))) as Promise<
+      typeof TestModule1
+    >);
 
     expect(() => queues.getExtractQueue()).toThrow('REDIS_URL is required');
   });

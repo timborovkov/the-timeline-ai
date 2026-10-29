@@ -1,8 +1,8 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
-
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -25,95 +25,142 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/shared/env', () => ({
-  getEnv: () => ({ TASK_CATEGORY_UI_ENABLED: true }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    objects: {
-      listObjects: fakes.listObjects,
-      countObjects: fakes.countObjects,
-      getObjectMergePreview: fakes.getObjectMergePreview,
-      getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
-    },
-    suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
-    timeline: { listMembers: fakes.listMembers },
-    pins: { isPinnedMany: fakes.isPinnedMany },
-    calendar: { getCalendarSettings: fakes.getCalendarSettings },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => Promise.resolve(fakes.userRows)),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({
+    getEnv: () => ({ TASK_CATEGORY_UI_ENABLED: true }),
+  }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      objects: {
+        listObjects: fakes.listObjects,
+        countObjects: fakes.countObjects,
+        getObjectMergePreview: fakes.getObjectMergePreview,
+        getTaskCategoryFilterRefreshState: fakes.getTaskCategoryFilterRefreshState,
+      },
+      suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+      timeline: { listMembers: fakes.listMembers },
+      pins: { isPinnedMany: fakes.isPinnedMany },
+      calendar: { getCalendarSettings: fakes.getCalendarSettings },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => Promise.resolve(fakes.userRows)),
+        })),
       })),
-    })),
-  },
-}));
-vi.mock('@/components/objects/object-cleanup-list', () => ({
-  ObjectCleanupList: ({
-    pageInfo,
-    nextCursor,
-    sectionMoreHrefs,
-  }: {
-    pageInfo?: {
-      shownCount: number;
-      nextHref: string | null;
-    };
-    nextCursor?: string | null;
-    sectionMoreHrefs?: Record<string, string>;
-  }) => (
-    <div data-testid="object-cleanup-list">
-      {pageInfo
-        ? `${pageInfo.shownCount}|${pageInfo.nextHref ?? 'none'}`
-        : nextCursor
-          ? `cursor:${nextCursor}`
-          : `sections:${JSON.stringify(sectionMoreHrefs ?? {})}`}
-    </div>
-  ),
-}));
-vi.mock('@/components/objects/object-cleanup-suggestions', () => ({
-  ObjectCleanupSuggestions: ({
-    mergePreviewsByItemId,
-  }: {
-    mergePreviewsByItemId: Record<string, unknown>;
-  }) => <div data-testid="cleanup-suggestions">{Object.keys(mergePreviewsByItemId).join(',')}</div>,
-}));
-vi.mock('@/components/tasks/task-category-filter-refresh', () => ({
-  TaskCategoryFilterRefresh: (props: {
-    surface: string;
-    filters: { category: string };
-    baselineToken: string;
-  }) => {
-    fakes.categoryRefresh = props;
-    return <div data-testid="task-category-filter-refresh" />;
-  },
-}));
-vi.mock('@/components/work-filter-bar', () => ({
-  WorkFilterBar: ({
-    resultCount,
-    totalCount,
-    hiddenParams,
-    members = [],
-    actions,
-  }: {
-    resultCount: number;
-    totalCount: number;
-    hiddenParams?: Record<string, string>;
-    members?: { id: string; label: string }[];
-    actions?: ReactNode;
-  }) => (
-    <div data-testid="work-filter-bar">
-      {resultCount}/{totalCount}|hidden:{JSON.stringify(hiddenParams ?? {})}|members:
-      {members.map((member) => member.label).join(',')}
-      {actions}
-    </div>
-  ),
-}));
+    },
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-cleanup-list'),
+  () => ({
+    ObjectCleanupList: ({
+      pageInfo,
+      nextCursor,
+      sectionMoreHrefs,
+    }: {
+      pageInfo?: {
+        shownCount: number;
+        nextHref: string | null;
+      };
+      nextCursor?: string | null;
+      sectionMoreHrefs?: Record<string, string>;
+    }) => (
+      <div data-testid="object-cleanup-list">
+        {pageInfo
+          ? `${pageInfo.shownCount}|${pageInfo.nextHref ?? 'none'}`
+          : nextCursor
+            ? `cursor:${nextCursor}`
+            : `sections:${JSON.stringify(sectionMoreHrefs ?? {})}`}
+      </div>
+    ),
+  }),
+  () => import('@/components/objects/object-cleanup-list'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-cleanup-suggestions'),
+  () => ({
+    ObjectCleanupSuggestions: ({
+      mergePreviewsByItemId,
+    }: {
+      mergePreviewsByItemId: Record<string, unknown>;
+    }) => (
+      <div data-testid="cleanup-suggestions">{Object.keys(mergePreviewsByItemId).join(',')}</div>
+    ),
+  }),
+  () => import('@/components/objects/object-cleanup-suggestions'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/tasks/task-category-filter-refresh'),
+  () => ({
+    TaskCategoryFilterRefresh: (props: {
+      surface: string;
+      filters: { category: string };
+      baselineToken: string;
+    }) => {
+      fakes.categoryRefresh = props;
+      return <div data-testid="task-category-filter-refresh" />;
+    },
+  }),
+  () => import('@/components/tasks/task-category-filter-refresh'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/work-filter-bar'),
+  () => ({
+    WorkFilterBar: ({
+      resultCount,
+      totalCount,
+      hiddenParams,
+      members = [],
+      actions,
+    }: {
+      resultCount: number;
+      totalCount: number;
+      hiddenParams?: Record<string, string>;
+      members?: { id: string; label: string }[];
+      actions?: ReactNode;
+    }) => (
+      <div data-testid="work-filter-bar">
+        {resultCount}/{totalCount}|hidden:{JSON.stringify(hiddenParams ?? {})}|members:
+        {members.map((member) => member.label).join(',')}
+        {actions}
+      </div>
+    ),
+  }),
+  () => import('@/components/work-filter-bar'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: ObjectsIndexPage } = await import('./page.js');
 

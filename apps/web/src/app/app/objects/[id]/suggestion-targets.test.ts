@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { suggestionTargetsObject } from '@/app/app/objects/[id]/suggestion-targets';
-
 describe('suggestionTargetsObject', () => {
   it('matches object suggestions by target id', () => {
     expect(

@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for starting inbound MCP OAuth. Shared MCP helpers own
  * OAuth protocol details; this route owns auth/team gates, server ownership
@@ -21,29 +22,53 @@ const fakes = vi.hoisted(() => ({
   loggerWarn: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    mcp: {
-      getServer: fakes.getServer,
-      persistOauthPending: fakes.persistOauthPending,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
   }),
-}));
-vi.mock('@timeline/shared/mcp', () => ({
-  discoverOAuth: fakes.discoverOAuth,
-  findPreregisteredClient: fakes.findPreregisteredClient,
-  registerClient: fakes.registerClient,
-  generatePkcePair: fakes.generatePkcePair,
-  signOAuthState: fakes.signOAuthState,
-  buildAuthorizeUrl: fakes.buildAuthorizeUrl,
-}));
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      mcp: {
+        getServer: fakes.getServer,
+        persistOauthPending: fakes.persistOauthPending,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/mcp'),
+  () => ({
+    discoverOAuth: fakes.discoverOAuth,
+    findPreregisteredClient: fakes.findPreregisteredClient,
+    registerClient: fakes.registerClient,
+    generatePkcePair: fakes.generatePkcePair,
+    signOAuthState: fakes.signOAuthState,
+    buildAuthorizeUrl: fakes.buildAuthorizeUrl,
+  }),
+  () => import('@timeline/shared/mcp'),
+);
 
 const { POST } = await import('./route.js');
 

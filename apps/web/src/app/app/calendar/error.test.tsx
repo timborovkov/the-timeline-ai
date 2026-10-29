@@ -1,35 +1,45 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reset: vi.fn() }));
 
-vi.mock('@/components/error-state', () => ({
-  ErrorState: ({
-    title,
-    description,
-    reset,
-  }: {
-    title: string;
-    description: string;
-    reset: () => void;
-  }) => (
-    <section aria-label="Calendar error">
-      <h2>{title}</h2>
-      <p>{description}</p>
-      <button type="button" onClick={reset}>
-        Retry
-      </button>
-    </section>
-  ),
-}));
-vi.mock('@/components/work-subnav', () => ({
-  WorkSubnav: ({ current }: { current: string }) => (
-    <nav aria-label="Work navigation">{current}</nav>
-  ),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/error-state'),
+  () => ({
+    ErrorState: ({
+      title,
+      description,
+      reset,
+    }: {
+      title: string;
+      description: string;
+      reset: () => void;
+    }) => (
+      <section aria-label="Calendar error">
+        <h2>{title}</h2>
+        <p>{description}</p>
+        <button type="button" onClick={reset}>
+          Retry
+        </button>
+      </section>
+    ),
+  }),
+  () => import('@/components/error-state'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/work-subnav'),
+  () => ({
+    WorkSubnav: ({ current }: { current: string }) => (
+      <nav aria-label="Work navigation">{current}</nav>
+    ),
+  }),
+  () => import('@/components/work-subnav'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { default: CalendarError } = await import('./error.js');
 

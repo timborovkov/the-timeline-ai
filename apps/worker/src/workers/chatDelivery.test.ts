@@ -1,6 +1,7 @@
 import { encryptJson, resetSecretsKeyCacheForTests } from '@timeline/shared/crypto';
 import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { processChatDelivery } from '#src/workers/chatDelivery.js';
 

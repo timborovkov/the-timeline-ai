@@ -1,7 +1,9 @@
 import { expect, type Page, test } from '@playwright/test';
+import { closeDb, getDb } from '@timeline/db';
+import { withTeam } from '@timeline/shared/team-scope';
 
 import { newSignedInPage } from './helpers.js';
-import { E2E_PREFIX, E2E_RUN_ID } from './test-data.js';
+import { E2E_PREFIX, E2E_RUN_ID, e2eTeam, e2eUsers } from './test-data.js';
 
 /**
  * Curated Quiet Archive visual coverage.
@@ -20,6 +22,17 @@ test.beforeEach(() => {
     !VISUAL_BASELINES_ENABLED,
     'Visual baselines are Linux Chromium only; set E2E_VISUAL_FORCE=1 to run/update via Docker.',
   );
+});
+
+let collectionBoardId: string | undefined;
+test.afterEach(async () => {
+  if (!collectionBoardId) return;
+  try {
+    await withTeam(getDb(), e2eTeam.id, e2eUsers.owner.id).boards.archiveBoard(collectionBoardId);
+  } finally {
+    collectionBoardId = undefined;
+    await closeDb();
+  }
 });
 
 async function stabilize(page: Page) {
@@ -87,47 +100,55 @@ test('authenticated Quiet Archive surfaces', async ({ browser }) => {
   await page.context().close();
 });
 
-test('unified collection surfaces', async ({ browser }) => {
-  const page = await newSignedInPage(browser, 'owner');
-  await page.addInitScript(() => {
-    window.localStorage.setItem('theme', 'dark');
-  });
-  await page.emulateMedia({ colorScheme: 'dark' });
-  await page.setViewportSize({ width: 1440, height: 1000 });
-
-  await page.goto('/app/tasks');
-  await capture(page, 'collections-tasks-dark-desktop.png', false);
-  await page.goto('/app/objects');
-  await capture(page, 'collections-objects-dark-desktop.png', false);
-  await page.goto('/app/boards');
-  const boardHref = await page.locator('a[href^="/app/boards/"]').first().getAttribute('href');
-  expect(boardHref).toBeTruthy();
-  await page.goto(`${boardHref ?? '/app/boards'}?view=kanban`);
-  await capture(page, 'collections-board-kanban-dark-desktop.png', false);
-  await page.goto(`${boardHref ?? '/app/boards'}?view=list`);
-  await capture(page, 'collections-board-list-dark-desktop.png', false);
-  await page.goto('/app/timeline');
-  await capture(page, 'collections-timeline-dark-desktop.png', false);
-  await page.goto('/app/documents/captured');
-  await capture(page, 'collections-captured-files-dark-desktop.png', false);
-
-  await page.addInitScript(() => {
-    window.localStorage.setItem('theme', 'light');
-  });
-  await page.emulateMedia({ colorScheme: 'light' });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/app/tasks');
-  await capture(page, 'collections-tasks-light-mobile.png', false);
-  await page.goto('/app/objects');
-  await capture(page, 'collections-objects-light-mobile.png', false);
-  await page.goto(`${boardHref ?? '/app/boards'}?view=kanban`);
-  await capture(page, 'collections-board-kanban-light-mobile.png', false);
-  await page.goto(`${boardHref ?? '/app/boards'}?view=list`);
-  await capture(page, 'collections-board-list-light-mobile.png', false);
-  await page.goto('/app/timeline');
-  await capture(page, 'collections-timeline-light-mobile.png', false);
-  await page.goto('/app/meetings');
-  await capture(page, 'collections-meetings-light-mobile.png', false);
-
-  await page.context().close();
-});
+for (const mode of ['dark-desktop', 'light-mobile'] as const) {
+  for (const surface of [
+    'tasks',
+    'objects',
+    'board-kanban',
+    'board-list',
+    'timeline',
+    'files-or-meetings',
+  ] as const) {
+    test(`unified collection surfaces — ${mode} — ${surface}`, async ({ browser }) => {
+      const page = await newSignedInPage(browser, 'owner');
+      const mobile = mode === 'light-mobile';
+      const theme = mobile ? 'light' : 'dark';
+      await page.addInitScript((value) => {
+        window.localStorage.setItem('theme', value);
+      }, theme);
+      await page.emulateMedia({ colorScheme: theme });
+      await page.setViewportSize(
+        mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 },
+      );
+      try {
+        let route = `/app/${surface}`;
+        let screenshot = `collections-${surface}-${mode}.png`;
+        if (surface === 'board-kanban' || surface === 'board-list') {
+          const board = await withTeam(getDb(), e2eTeam.id, e2eUsers.owner.id).boards.createBoard({
+            name: 'E2E Visual Board',
+            templateKind: 'task_board',
+            lanes: [],
+          });
+          collectionBoardId = board.id;
+          await page.goto('/app/boards');
+          const boardHref = await page
+            .locator('a[href^="/app/boards/"]')
+            .first()
+            .getAttribute('href');
+          expect(boardHref).toBeTruthy();
+          expect(boardHref).toBe(`/app/boards/${board.id}`);
+          route = `${boardHref}?view=${surface === 'board-kanban' ? 'kanban' : 'list'}`;
+        } else if (surface === 'files-or-meetings') {
+          route = mobile ? '/app/meetings' : '/app/documents/captured';
+          screenshot = mobile
+            ? 'collections-meetings-light-mobile.png'
+            : 'collections-captured-files-dark-desktop.png';
+        }
+        await page.goto(route);
+        await capture(page, screenshot, false);
+      } finally {
+        await page.context().close();
+      }
+    });
+  }
+}

@@ -1,9 +1,10 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { SettingsNav } from '@/components/settings-nav';
+// Test environment: happy-dom
 
 const items = [
   { value: 'members', label: 'Members' },

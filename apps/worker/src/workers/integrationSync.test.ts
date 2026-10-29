@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as TimelineDb from '@timeline/db';
 import type * as TimelineShared from '@timeline/shared';
-
 type TestSyncContinuation = TimelineShared.integrations.SyncContinuation;
 type TestCheckpointInput = TimelineShared.integrations.CommitIntegrationSyncCheckpointInput;
 
@@ -68,62 +69,71 @@ const fakes = vi.hoisted(() => {
   };
 });
 
-vi.mock('@timeline/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof TimelineDb>()),
-  getDbClient: fakes.getDbClient,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof TimelineDb>()),
+    getDbClient: fakes.getDbClient,
+  }),
+  () => import('@timeline/db'),
+);
 
-vi.mock('@timeline/shared', async (importOriginal) => {
-  const actual = await importOriginal<typeof TimelineShared>();
-  return {
-    ...actual,
-    childLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-    integrations: {
-      ...actual.integrations,
-      adminLoadIntegration: fakes.adminLoadIntegration,
-      adminListEnabledIntegrations: fakes.adminListEnabledIntegrations,
-      adminVerifyTeamMember: fakes.adminVerifyTeamMember,
-      adminRecordError: fakes.adminRecordError,
-      adminRecordConnectionAttention: fakes.adminRecordConnectionAttention,
-      adminDecryptIntegrationTokens: fakes.adminDecryptIntegrationTokens,
-      adminListSelections: fakes.adminListSelections,
-      adminRecordAudit: fakes.adminRecordAudit,
-      adminLoadCursor: fakes.adminLoadCursor,
-      adminSaveCursor: fakes.adminSaveCursor,
-      adminPersistTokens: fakes.adminPersistTokens,
-      adminMarkSynced: fakes.adminMarkSynced,
-      adminCommitIntegrationSyncCheckpoint: fakes.adminCommitIntegrationSyncCheckpoint,
-      adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
-      adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
-      adminRecordIntegrationSyncPause: fakes.adminRecordIntegrationSyncPause,
-      adminRecordPendingIntegrationSyncContinuations:
-        fakes.adminRecordPendingIntegrationSyncContinuations,
-      adminClaimPendingIntegrationSyncContinuations:
-        fakes.adminClaimPendingIntegrationSyncContinuations,
-      adminHasPendingIntegrationSyncContinuations:
-        fakes.adminHasPendingIntegrationSyncContinuations,
-      adminAcknowledgePendingIntegrationSyncContinuation:
-        fakes.adminAcknowledgePendingIntegrationSyncContinuation,
-      adminReleasePendingIntegrationSyncContinuation:
-        fakes.adminReleasePendingIntegrationSyncContinuation,
-      adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
-      adminRecordProviderBudgetPause: fakes.adminRecordProviderBudgetPause,
-      adminReconcileExpiringWebhookSubscriptions: fakes.adminReconcileExpiringWebhookSubscriptions,
-      adminReconcileIntegrationWebhookSubscriptions:
-        fakes.adminReconcileIntegrationWebhookSubscriptions,
-      adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
-      adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
-      adminRecordCountedHealthFailure: fakes.adminRecordCountedHealthFailure,
-      adminResetIntegrationHealth: fakes.adminResetIntegrationHealth,
-      writeIntegrationEvents: fakes.writeIntegrationEvents,
-      getProvider: fakes.getProvider,
-    },
-    queue: {
-      ...actual.queue,
-      enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
-    },
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof TimelineShared>();
+    return {
+      ...actual,
+      childLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+      integrations: {
+        ...actual.integrations,
+        adminLoadIntegration: fakes.adminLoadIntegration,
+        adminListEnabledIntegrations: fakes.adminListEnabledIntegrations,
+        adminVerifyTeamMember: fakes.adminVerifyTeamMember,
+        adminRecordError: fakes.adminRecordError,
+        adminRecordConnectionAttention: fakes.adminRecordConnectionAttention,
+        adminDecryptIntegrationTokens: fakes.adminDecryptIntegrationTokens,
+        adminListSelections: fakes.adminListSelections,
+        adminRecordAudit: fakes.adminRecordAudit,
+        adminLoadCursor: fakes.adminLoadCursor,
+        adminSaveCursor: fakes.adminSaveCursor,
+        adminPersistTokens: fakes.adminPersistTokens,
+        adminMarkSynced: fakes.adminMarkSynced,
+        adminCommitIntegrationSyncCheckpoint: fakes.adminCommitIntegrationSyncCheckpoint,
+        adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
+        adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
+        adminRecordIntegrationSyncPause: fakes.adminRecordIntegrationSyncPause,
+        adminRecordPendingIntegrationSyncContinuations:
+          fakes.adminRecordPendingIntegrationSyncContinuations,
+        adminClaimPendingIntegrationSyncContinuations:
+          fakes.adminClaimPendingIntegrationSyncContinuations,
+        adminHasPendingIntegrationSyncContinuations:
+          fakes.adminHasPendingIntegrationSyncContinuations,
+        adminAcknowledgePendingIntegrationSyncContinuation:
+          fakes.adminAcknowledgePendingIntegrationSyncContinuation,
+        adminReleasePendingIntegrationSyncContinuation:
+          fakes.adminReleasePendingIntegrationSyncContinuation,
+        adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
+        adminRecordProviderBudgetPause: fakes.adminRecordProviderBudgetPause,
+        adminReconcileExpiringWebhookSubscriptions:
+          fakes.adminReconcileExpiringWebhookSubscriptions,
+        adminReconcileIntegrationWebhookSubscriptions:
+          fakes.adminReconcileIntegrationWebhookSubscriptions,
+        adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
+        adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
+        adminRecordCountedHealthFailure: fakes.adminRecordCountedHealthFailure,
+        adminResetIntegrationHealth: fakes.adminResetIntegrationHealth,
+        writeIntegrationEvents: fakes.writeIntegrationEvents,
+        getProvider: fakes.getProvider,
+      },
+      queue: {
+        ...actual.queue,
+        enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+      },
+    };
+  },
+  () => import('@timeline/shared'),
+);
 
 const { handleTick, runOneIntegration } = await import('./integrationSync.js');
 const { integrations } = await import('@timeline/shared');
@@ -1816,39 +1826,41 @@ describe('runOneIntegration attention classification', () => {
     fakes.getProvider.mockReturnValueOnce(integrations.slackProvider);
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input, init) => {
-        if (typeof input !== 'string') throw new Error('expected Slack URL string');
-        if (!input.endsWith('/conversations.history')) {
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input, init) => {
+          if (typeof input !== 'string') throw new Error('expected Slack URL string');
+          if (!input.endsWith('/conversations.history')) {
+            return Promise.resolve(
+              new Response(JSON.stringify({ ok: true, messages: [] }), {
+                headers: { 'content-type': 'application/json' },
+              }),
+            );
+          }
+          const body = init?.body;
+          if (typeof body !== 'string') throw new Error('expected Slack form body');
+          const params = new URLSearchParams(body);
+          expect(params.get('channel')).toBe('C123');
+          expect(Number(params.get('oldest'))).toBeCloseTo((Date.now() - 48 * 3600_000) / 1000, 0);
           return Promise.resolve(
-            new Response(JSON.stringify({ ok: true, messages: [] }), {
-              headers: { 'content-type': 'application/json' },
-            }),
+            new Response(
+              JSON.stringify({
+                ok: true,
+                messages: [
+                  {
+                    type: 'message',
+                    user: 'U123',
+                    username: 'Ada',
+                    text: 'Slack-native worker sync captured the customer handoff',
+                    ts: '1782000000.000100',
+                  },
+                ],
+                response_metadata: {},
+              }),
+              { headers: { 'content-type': 'application/json' } },
+            ),
           );
-        }
-        const body = init?.body;
-        if (typeof body !== 'string') throw new Error('expected Slack form body');
-        const params = new URLSearchParams(body);
-        expect(params.get('channel')).toBe('C123');
-        expect(Number(params.get('oldest'))).toBeCloseTo((Date.now() - 48 * 3600_000) / 1000, 0);
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              ok: true,
-              messages: [
-                {
-                  type: 'message',
-                  user: 'U123',
-                  username: 'Ada',
-                  text: 'Slack-native worker sync captured the customer handoff',
-                  ts: '1782000000.000100',
-                },
-              ],
-              response_metadata: {},
-            }),
-            { headers: { 'content-type': 'application/json' } },
-          ),
-        );
-      }),
+        },
+      ),
     );
 
     await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');

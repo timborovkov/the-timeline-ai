@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { fenceExternalContent } from '#src/agent/external-content.js';
-
 describe('fenceExternalContent', () => {
   it('removes nested fence markers and escapes structural attributes', () => {
     expect(

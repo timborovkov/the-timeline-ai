@@ -1,12 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, mcpServers } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { pingMcpServer, processMcpHealthTick } from '#src/workers/mcpHealth.js';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const TEAM_SERVER_ID = '33333333-3333-4333-8333-333333333333';
@@ -135,7 +136,8 @@ describe('MCP health worker', () => {
     try {
       result = await pingMcpServer(db as never as Db, UNSAFE_SERVER_ID, manager);
     } finally {
-      process.env.NODE_ENV = previousNodeEnv;
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
     }
 
     expect(result).toMatchObject({ ok: false });

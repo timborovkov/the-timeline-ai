@@ -1,5 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
+import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
 const externalFetchMock = vi.hoisted(() =>
   vi.fn(
     (
@@ -10,14 +13,17 @@ const externalFetchMock = vi.hoisted(() =>
   ),
 );
 
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: externalFetchMock,
-}));
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: externalFetchMock,
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
 
-import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
-
-import { resetEnvForTests } from '#src/env.js';
-import { googleDriveProvider } from '#src/integrations/providers/google-drive.js';
+const { resetEnvForTests } = await import('#src/env.js');
+const { googleDriveProvider } = await import('#src/integrations/providers/google-drive.js');
 
 const ORIGINAL_ENV = {
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
@@ -32,7 +38,11 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
-function requestUrl(input: Parameters<typeof fetch>[0]): URL {
+function requestUrl(
+  input: Parameters<
+    (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+  >[0],
+): URL {
   return new URL(
     typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url,
   );
@@ -194,7 +204,9 @@ describe('googleDriveProvider', () => {
   });
 
   it('follows Drive changes pagination and saves the final start page token', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = requestUrl(input);
       if (url.pathname.endsWith('/changes')) {
         const pageToken = url.searchParams.get('pageToken');
@@ -293,7 +305,9 @@ describe('googleDriveProvider', () => {
 
   it('uses the provider 20 MB cap when harvesting Drive file bodies', async () => {
     const body = new Uint8Array(9 * 1024 * 1024);
-    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = requestUrl(input);
       if (url.pathname.endsWith('/changes')) {
         return Promise.resolve(
@@ -352,7 +366,9 @@ describe('googleDriveProvider', () => {
   });
 
   it('audits Drive bodies that exceed the harvest cap as skipped instead of failed', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = requestUrl(input);
       if (url.pathname.endsWith('/changes')) {
         return Promise.resolve(
@@ -412,7 +428,9 @@ describe('googleDriveProvider', () => {
   });
 
   it('persists a Drive changes resume token when the page safety cap is hit', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = requestUrl(input);
       if (url.pathname.endsWith('/changes')) {
         const page = Number(url.searchParams.get('pageToken')?.replace('page-', '') ?? '1');

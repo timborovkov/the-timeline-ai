@@ -1,26 +1,38 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { AddCustomMcpServerLauncher, McpServersUi } from '@/components/integrations/mcp-servers';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const routerRefresh = vi.hoisted(() => vi.fn());
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: routerRefresh }),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: routerRefresh }),
+  }),
+  () => import('next/navigation'),
+);
 const notify = vi.hoisted(() => ({
   notifyAction: vi.fn(async ({ run }: { id?: string; run: () => Promise<{ error?: string }> }) =>
     run(),
   ),
   notifyError: vi.fn(),
 }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: notify.notifyAction,
-  notifyError: notify.notifyError,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: notify.notifyAction,
+    notifyError: notify.notifyError,
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { AddCustomMcpServerLauncher, McpServersUi } =
+  await import('@/components/integrations/mcp-servers');
 
 const SERVER_ID = '33333333-3333-4333-8333-333333333333';
 

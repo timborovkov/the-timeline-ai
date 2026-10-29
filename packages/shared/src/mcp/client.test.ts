@@ -1,10 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 const externalFetch = vi.hoisted(() => vi.fn());
 
-vi.mock('#src/http/external-fetch.js', () => ({ externalFetch }));
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch,
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
 
-import { McpClientManager } from '#src/mcp/client.js';
+const { McpClientManager } = await import('#src/mcp/client.js');
 
 describe('McpClientManager Timeline-agent delegation', () => {
   it('reuses saved discovery during the daily cooldown without contacting any server', async () => {

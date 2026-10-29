@@ -1,35 +1,53 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as ReactModule from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   action: vi.fn(),
   useActionState: vi.fn(),
 }));
 
-vi.mock('react', async (importOriginal) => {
-  const actual = await importOriginal<typeof ReactModule>();
-  return {
-    ...actual,
-    useActionState: fakes.useActionState,
-  };
-});
+await vi.mock(
+  import.meta.resolve('react'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ReactModule>();
+    return {
+      ...actual,
+      useActionState: fakes.useActionState,
+    };
+  },
+  () => import('react'),
+);
 
-vi.mock('@/app/actions/support', () => ({
-  submitSupportRequestAction: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/support'),
+  () => ({
+    submitSupportRequestAction: vi.fn(),
+  }),
+  () => import('@/app/actions/support'),
+);
 
-vi.mock('@/components/turnstile-widget', () => ({
-  TurnstileWidget: ({ action, siteKey }: { action: string; siteKey?: string }) => (
-    <div data-testid="turnstile-widget" data-action={action} data-site-key={siteKey} />
-  ),
-}));
-vi.mock('@/components/form-action-toast', () => ({
-  FormActionToast: () => null,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/turnstile-widget'),
+  () => ({
+    TurnstileWidget: ({ action, siteKey }: { action: string; siteKey?: string }) => (
+      <div data-testid="turnstile-widget" data-action={action} data-site-key={siteKey} />
+    ),
+  }),
+  () => import('@/components/turnstile-widget'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/form-action-toast'),
+  () => ({
+    FormActionToast: () => null,
+  }),
+  () => import('@/components/form-action-toast'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
 
 const { SupportForm } = await import('./support-form.js');
 

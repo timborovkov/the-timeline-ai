@@ -1,8 +1,9 @@
-/** Business intent: the release eval manifest is balanced, versioned, and covers safety boundaries. */
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { TASK_CATEGORY_EVAL_CASES } from '#src/task-categories/eval-cases.js';
 import { TASK_CATEGORIES } from '#src/task-categories/types.js';
+/** Business intent: the release eval manifest is balanced, versioned, and covers safety boundaries. */
 
 describe('task category eval manifest', () => {
   it('contains 120 unique labeled cases with at least six examples per category', () => {

@@ -1,16 +1,27 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: vi.fn(), refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-merge-form'),
+  () => ({
+    ObjectMergeForm: () => null,
+  }),
+  () => import('@/components/objects/object-merge-form'),
+);
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ back: vi.fn(), refresh: vi.fn() }),
-}));
-vi.mock('@/components/objects/object-merge-form', () => ({
-  ObjectMergeForm: () => null,
-}));
-
-import MergeObjectModalLoading from '@/app/app/@modal/(.)objects/merge/loading';
+const { cleanup, render, screen, within } = await import('@testing-library/react');
+const { default: MergeObjectModalLoading } =
+  await import('@/app/app/@modal/(.)objects/merge/loading');
 
 afterEach(() => {
   cleanup();

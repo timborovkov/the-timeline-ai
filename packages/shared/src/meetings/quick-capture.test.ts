@@ -1,31 +1,36 @@
-import { PGlite } from '@electric-sql/pglite';
-import { meetingCaptureConfirmations, meetings, teamMeetingSettings } from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import type * as MeetingBotsModule from '#src/meeting-bots/index.js';
-
-import {
-  confirmRawUrlQuickJoin,
-  createRawUrlQuickJoinConfirmation,
-} from '#src/meetings/quick-capture.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 const joinMeetingMock = vi.hoisted(() => vi.fn());
 
-vi.mock('#src/meeting-bots/index.js', async () => {
-  const actual = await vi.importActual<typeof MeetingBotsModule>('#src/meeting-bots/index.js');
-  return {
-    ...actual,
-    isMeetingBotConfigured: vi.fn(() => true),
-    getMeetingBotProvider: vi.fn(() => ({ name: 'recall', joinMeeting: joinMeetingMock })),
-    resolveTranscriptWebhookUrl: vi.fn(
-      () => 'https://timeline.test/api/webhooks/recall/transcript',
-    ),
-  };
-});
+await vi.mock(
+  import.meta.resolve('#src/meeting-bots/index.js'),
+  async () => {
+    const actual = await import('#src/meeting-bots/index.js');
+    return {
+      ...actual,
+      isMeetingBotConfigured: vi.fn(() => true),
+      getMeetingBotProvider: vi.fn(() => ({ name: 'recall', joinMeeting: joinMeetingMock })),
+      resolveTranscriptWebhookUrl: vi.fn(
+        () => 'https://timeline.test/api/webhooks/recall/transcript',
+      ),
+    };
+  },
+  () => import('#src/meeting-bots/index.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const { meetingCaptureConfirmations, meetings, teamMeetingSettings } = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { confirmRawUrlQuickJoin, createRawUrlQuickJoinConfirmation } =
+  await import('#src/meetings/quick-capture.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

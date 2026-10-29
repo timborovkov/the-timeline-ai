@@ -11,7 +11,7 @@ import { getEnv } from '#src/env.js';
 //
 // Key format: `SECRETS_ENCRYPTION_KEY` is a 32-byte AES-256 key,
 // base64-encoded (44 chars with padding). Generate with:
-//   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+//   bun -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
@@ -31,7 +31,7 @@ function resolveKey(): Buffer {
   if (!raw) {
     throw new Error(
       'SECRETS_ENCRYPTION_KEY is required to encrypt/decrypt integration secrets. ' +
-        "Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
+        "Generate with: bun -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
     );
   }
   const key = Buffer.from(raw, 'base64');

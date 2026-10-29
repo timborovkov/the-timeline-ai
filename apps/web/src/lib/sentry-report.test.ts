@@ -1,17 +1,22 @@
-import * as Sentry from '@sentry/nextjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
+await vi.mock(
+  import.meta.resolve('@sentry/nextjs'),
+  () => ({
+    captureException: vi.fn(),
+    captureMessage: vi.fn(),
+  }),
+  () => import('@sentry/nextjs'),
+);
 
-import {
+const Sentry = await import('@sentry/nextjs');
+const {
   reportCaughtError,
   reportHandledEvent,
   resetHandledEventThrottleForTests,
   shouldReportToSentry,
-} from '@/lib/sentry-report';
-
-vi.mock('@sentry/nextjs', () => ({
-  captureException: vi.fn(),
-  captureMessage: vi.fn(),
-}));
+} = await import('@/lib/sentry-report');
 
 describe('Sentry caught-error reporting', () => {
   beforeEach(() => {

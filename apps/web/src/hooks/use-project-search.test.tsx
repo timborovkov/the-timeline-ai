@@ -1,11 +1,17 @@
-// @vitest-environment happy-dom
-
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ searchObjectsAction: vi.fn() }));
 
-vi.mock('@/app/actions/objects', () => ({ searchObjectsAction: fakes.searchObjectsAction }));
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({ searchObjectsAction: fakes.searchObjectsAction }),
+  () => import('@/app/actions/objects'),
+);
+
+const { act, cleanup, fireEvent, render, screen } = await import('@testing-library/react');
 
 const { useProjectSearch } = await import('./use-project-search.js');
 

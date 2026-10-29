@@ -1,8 +1,6 @@
-/**
- * Business intent: task category inputs stay small, deterministic, and resistant
- * to untrusted task text so automatic labels are safe to retry and evaluate.
- */
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   buildTaskCategoryPacket,
@@ -12,6 +10,10 @@ import {
   classifyTaskCategory,
   taskCategoryInputHash,
 } from '#src/task-categories/classifier.js';
+/**
+ * Business intent: task category inputs stay small, deterministic, and resistant
+ * to untrusted task text so automatic labels are safe to retry and evaluate.
+ */
 
 describe('task category classifier', () => {
   it('builds the same hash for semantically identical metadata key order', () => {

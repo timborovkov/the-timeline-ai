@@ -1,17 +1,24 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pathname: vi.fn(() => '/app/objects/44444444-4444-4444-8444-444444444444'),
   searchParams: vi.fn(() => new URLSearchParams()),
 }));
 
-vi.mock('next/navigation', () => ({
-  usePathname: fakes.pathname,
-  useSearchParams: fakes.searchParams,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: fakes.pathname,
+    useSearchParams: fakes.searchParams,
+  }),
+  () => import('next/navigation'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
 
 const { ChatViewContextBinder, ChatViewProvider, useCurrentChatView } =
   await import('./chat-view-context.js');

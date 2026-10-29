@@ -1,19 +1,31 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { McpShareUi } from '@/components/integrations/mcp-share';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const routerRefresh = vi.hoisted(() => vi.fn());
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: routerRefresh }),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: routerRefresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor, within } =
+  await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { McpShareUi } = await import('@/components/integrations/mcp-share');
 
 const MCP_URL = 'https://timeline.test/api/mcp/server';
 const ACTIVE_KEY = {

@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { getProvider, listRegisteredNativeProviderIds } from '#src/integrations/registry.js';
 import {
@@ -10,7 +11,6 @@ import {
   type ProviderSyncPolicy,
   providerSyncPolicy,
 } from '#src/integrations/types.js';
-
 const requiredAdapterMethods = [
   'startOAuth',
   'handleOAuthCallback',

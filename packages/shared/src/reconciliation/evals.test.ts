@@ -1,6 +1,7 @@
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   RECONCILIATION_DETERMINISTIC_EVAL_CASES,
@@ -19,7 +20,6 @@ import {
   buildProductionSamplingEvalReport,
   loadProductionSamplingEvalArtifacts,
 } from '#src/reconciliation/production-sampling.js';
-
 const TEAM_VISIBILITY = { visibility: 'team' as const };
 const PRIVATE_OWNER = {
   visibility: 'private' as const,

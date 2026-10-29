@@ -1,22 +1,28 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: ({ count }: { count: number }) => ({
-    getTotalSize: () => count * 40,
-    getVirtualItems: () =>
-      Array.from({ length: count }, (_, index) => ({
-        key: String(index),
-        index,
-        start: index * 40,
-        size: 40,
-        end: (index + 1) * 40,
-      })),
-    measureElement: vi.fn(),
+await vi.mock(
+  import.meta.resolve('@tanstack/react-virtual'),
+  () => ({
+    useVirtualizer: ({ count }: { count: number }) => ({
+      getTotalSize: () => count * 40,
+      getVirtualItems: () =>
+        Array.from({ length: count }, (_, index) => ({
+          key: String(index),
+          index,
+          start: index * 40,
+          size: 40,
+          end: (index + 1) * 40,
+        })),
+      measureElement: vi.fn(),
+    }),
   }),
-}));
+  () => import('@tanstack/react-virtual'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
 
 const { VirtualList } = await import('./virtual-list.js');
 

@@ -1,19 +1,37 @@
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as objects from '@timeline/shared/objects/types';
-
 const fakes = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => fakes }));
-vi.mock('@/app/actions/objects', () => ({ mergeObjectsAction: vi.fn() }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => fakes,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({ mergeObjectsAction: vi.fn() }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectMergeForm } = await import('./object-merge-form.js');
 

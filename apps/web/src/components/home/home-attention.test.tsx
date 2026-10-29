@@ -1,10 +1,10 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen } from '@testing-library/react';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 import { CircleAlert } from 'lucide-react';
-import { afterEach, describe, expect, it } from 'vitest';
 
 import { HomeAttention, type AttentionGroup } from '@/components/home/home-attention';
+// Test environment: happy-dom
 
 function group(label: string, count: number): AttentionGroup {
   return { href: `/app/${label}`, label, count, action: `Open ${label}`, icon: <CircleAlert /> };

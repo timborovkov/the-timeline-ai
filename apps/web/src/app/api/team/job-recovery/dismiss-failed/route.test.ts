@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
   fakeResolveActiveTeam: vi.fn(),
@@ -8,16 +9,32 @@ const fakes = vi.hoisted(() => ({
   fakeAuditRecord: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    jobRecovery: { dismissFailedRecoverableJobs: fakes.fakeDismissFailed },
-    audit: { record: fakes.fakeAuditRecord },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      jobRecovery: { dismissFailedRecoverableJobs: fakes.fakeDismissFailed },
+      audit: { record: fakes.fakeAuditRecord },
+    }),
   }),
-}));
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { POST } = await import('./route.js');
 

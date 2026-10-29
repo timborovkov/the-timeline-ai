@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 function repoFile(path: string): string {
   return readFileSync(resolve(process.cwd(), '../..', path), 'utf8');
 }

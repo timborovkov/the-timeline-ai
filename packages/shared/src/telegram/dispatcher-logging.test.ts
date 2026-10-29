@@ -1,6 +1,10 @@
-import { PGlite } from '@electric-sql/pglite';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { TelegramApi } from '#src/telegram/api.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 const log = vi.hoisted(() => ({
   debug: vi.fn(),
@@ -9,19 +13,20 @@ const log = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
-vi.mock('#src/logger.js', () => ({
-  childLogger: () => log,
-  logger: log,
-}));
+await vi.mock(
+  import.meta.resolve('#src/logger.js'),
+  () => ({
+    childLogger: () => log,
+    logger: log,
+  }),
+  () => import('#src/logger.js'),
+);
 
-import type { TelegramApi } from '#src/telegram/api.js';
-
-import {
-  handleUpdate,
-  resetTelegramUnboundGroupLogForTests,
-  telegramChatFingerprint,
-} from '#src/telegram/dispatcher.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+const { PGlite } = await import('@electric-sql/pglite');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { handleUpdate, resetTelegramUnboundGroupLogForTests, telegramChatFingerprint } =
+  await import('#src/telegram/dispatcher.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const fakeTg: TelegramApi = {
   sendMessage: () => Promise.resolve(),

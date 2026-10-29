@@ -1,25 +1,35 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/components/help/support-form', () => ({
-  SupportForm: (props: {
-    defaultSurface?: string;
-    defaultErrorReference?: string;
-    defaultName?: string;
-    defaultEmail?: string;
-  }) => (
-    <div
-      data-testid="support-form"
-      data-surface={props.defaultSurface ?? ''}
-      data-error-reference={props.defaultErrorReference ?? ''}
-      data-name={props.defaultName ?? ''}
-      data-email={props.defaultEmail ?? ''}
-    />
-  ),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/help/support-form'),
+  () => ({
+    SupportForm: (props: {
+      defaultSurface?: string;
+      defaultErrorReference?: string;
+      defaultName?: string;
+      defaultEmail?: string;
+    }) => (
+      <div
+        data-testid="support-form"
+        data-surface={props.defaultSurface ?? ''}
+        data-error-reference={props.defaultErrorReference ?? ''}
+        data-name={props.defaultName ?? ''}
+        data-email={props.defaultEmail ?? ''}
+      />
+    ),
+  }),
+  () => import('@/components/help/support-form'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: SupportPage } = await import('./page.js');
 

@@ -1,7 +1,26 @@
-import { Buffer } from 'node:buffer';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { PGlite } from '@electric-sql/pglite';
-import {
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+    enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const { Buffer } = await import('node:buffer');
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   artifactClusterAnchors,
   artifactClusters,
   artifactEvidenceAssociations,
@@ -17,24 +36,15 @@ import {
   reconciliationRuns,
   slackConversationBindings,
   slackWorkspaces,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
-import { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob } from '#src/queue/queues.js';
-import { AUTHORITY_POLICY_VERSION } from '#src/reconciliation/authority.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-  enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
-}));
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { writeIntegrationEvents } = await import('#src/integrations/event-writer.js');
+const { enqueueEmbedJob, enqueueExtractJob, enqueueObjectSummaryJob } =
+  await import('#src/queue/queues.js');
+const { AUTHORITY_POLICY_VERSION } = await import('#src/reconciliation/authority.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

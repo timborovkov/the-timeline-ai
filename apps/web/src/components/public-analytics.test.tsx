@@ -1,23 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { StrictMode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { CookieSettingsButton, PublicAnalyticsBoundary } from '@/components/public-analytics';
-import {
-  clearPublicAnalyticsConsent,
-  PUBLIC_ANALYTICS_CONSENT_COOKIE,
-  readDocumentCookie,
-  readPublicAnalyticsConsent,
-  writePublicAnalyticsConsent,
-} from '@/lib/public-analytics-consent';
-import {
-  clearPublicAttributionCookie,
-  parsePublicAttributionCookie,
-  PUBLIC_ATTRIBUTION_COOKIE,
-} from '@/lib/public-attribution';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const route = vi.hoisted(() => ({ pathname: '/' }));
 const analytics = vi.hoisted(() => ({
@@ -30,19 +14,45 @@ const analytics = vi.hoisted(() => ({
   withdraw: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ usePathname: () => route.pathname }));
-vi.mock('@/lib/public-browser-analytics', () => ({
-  activatePublicBrowserAnalytics: analytics.activate,
-  capturePublicCta: analytics.captureCta,
-  capturePublicPageView: analytics.capturePageView,
-  clearLegacyPublicTrackerStorage: analytics.clearLegacy,
-  deactivatePublicBrowserAnalytics: analytics.deactivate,
-  isPublicAnalyticsCta: (value: unknown) =>
-    ['try_project', 'sign_in', 'open_dashboard'].includes(String(value)),
-  isPublicBrowserAnalyticsConfigured: true,
-  pausePublicBrowserAnalytics: analytics.pause,
-  withdrawPublicBrowserAnalytics: analytics.withdraw,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => route.pathname,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/public-browser-analytics'),
+  () => ({
+    activatePublicBrowserAnalytics: analytics.activate,
+    capturePublicCta: analytics.captureCta,
+    capturePublicPageView: analytics.capturePageView,
+    clearLegacyPublicTrackerStorage: analytics.clearLegacy,
+    deactivatePublicBrowserAnalytics: analytics.deactivate,
+    isPublicAnalyticsCta: (value: unknown) =>
+      ['try_project', 'sign_in', 'open_dashboard'].includes(String(value)),
+    isPublicBrowserAnalyticsConfigured: true,
+    pausePublicBrowserAnalytics: analytics.pause,
+    withdrawPublicBrowserAnalytics: analytics.withdraw,
+  }),
+  () => import('@/lib/public-browser-analytics'),
+);
+
+const { cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { StrictMode } = await import('react');
+const { CookieSettingsButton, PublicAnalyticsBoundary } =
+  await import('@/components/public-analytics');
+const {
+  clearPublicAnalyticsConsent,
+  PUBLIC_ANALYTICS_CONSENT_COOKIE,
+  readDocumentCookie,
+  readPublicAnalyticsConsent,
+  writePublicAnalyticsConsent,
+} = await import('@/lib/public-analytics-consent');
+const { clearPublicAttributionCookie, parsePublicAttributionCookie, PUBLIC_ATTRIBUTION_COOKIE } =
+  await import('@/lib/public-attribution');
 
 beforeEach(() => {
   route.pathname = '/';
@@ -69,7 +79,8 @@ describe('PublicAnalyticsBoundary', () => {
       expect(analytics.capturePageView).toHaveBeenCalledOnce();
     });
     view.rerender(element);
-    expect(analytics.capturePageView).toHaveBeenCalledExactlyOnceWith('home');
+    expect(analytics.capturePageView).toHaveBeenCalledOnce();
+    expect(analytics.capturePageView).toHaveBeenCalledWith('home');
   });
 
   it('captures nothing before consent, then only the reviewed page and marked CTA', async () => {

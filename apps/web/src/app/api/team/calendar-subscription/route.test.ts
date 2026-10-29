@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 // Member-managed calendar subscriptions are bearer URLs, so the API must guard
 // membership while revealing plaintext only at create/reset time.
 const fakes = vi.hoisted<{
@@ -30,66 +31,102 @@ const fakes = vi.hoisted<{
   insertError: null,
 }));
 
-vi.mock('@timeline/db', () => ({
-  teamCalendarSubscriptions: {
-    table: 'team_calendar_subscriptions',
-    teamId: 'team_id',
-    userId: 'user_id',
-    tokenPrefix: 'token_prefix',
-    lastUsedAt: 'last_used_at',
-    createdAt: 'created_at',
-    updatedAt: 'updated_at',
-  },
-}));
-vi.mock('drizzle-orm', () => ({
-  and: (...args: unknown[]) => ({ op: 'and', args }),
-  eq: (...args: unknown[]) => ({ op: 'eq', args }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: fakes.loggerError }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.requireMembership }),
-}));
-vi.mock('@timeline/shared/calendar', () => ({
-  mintCalendarSubscriptionToken: fakes.mintToken,
-}));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: vi.fn().mockImplementation(() => Promise.resolve(fakes.selectRows)),
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({
+    teamCalendarSubscriptions: {
+      table: 'team_calendar_subscriptions',
+      teamId: 'team_id',
+      userId: 'user_id',
+      tokenPrefix: 'token_prefix',
+      lastUsedAt: 'last_used_at',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    },
+  }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('drizzle-orm'),
+  () => ({
+    and: (...args: unknown[]) => ({ op: 'and', args }),
+    eq: (...args: unknown[]) => ({ op: 'eq', args }),
+  }),
+  () => import('drizzle-orm'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: fakes.loggerError }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/calendar'),
+  () => ({
+    mintCalendarSubscriptionToken: fakes.mintToken,
+  }),
+  () => import('@timeline/shared/calendar'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: vi.fn().mockImplementation(() => Promise.resolve(fakes.selectRows)),
+          }),
         }),
       }),
-    }),
-    insert: (table: unknown) => ({
-      values: (value: unknown) => {
-        fakes.insertValues.push({ table, value });
-        return {
-          onConflictDoUpdate: (input: unknown) => {
-            fakes.conflictSet = input;
-            return {
-              returning: vi.fn().mockImplementation(() => {
-                if (fakes.insertError) throw fakes.insertError;
-                return fakes.returningRows;
-              }),
-            };
-          },
-        };
-      },
-    }),
-    delete: (table: unknown) => ({
-      where: (where: unknown) => {
-        fakes.deleted = true;
-        return Promise.resolve({ table, where });
-      },
-    }),
-  },
-}));
+      insert: (table: unknown) => ({
+        values: (value: unknown) => {
+          fakes.insertValues.push({ table, value });
+          return {
+            onConflictDoUpdate: (input: unknown) => {
+              fakes.conflictSet = input;
+              return {
+                returning: vi.fn().mockImplementation(() => {
+                  if (fakes.insertError) throw fakes.insertError;
+                  return fakes.returningRows;
+                }),
+              };
+            },
+          };
+        },
+      }),
+      delete: (table: unknown) => ({
+        where: (where: unknown) => {
+          fakes.deleted = true;
+          return Promise.resolve({ table, where });
+        },
+      }),
+    },
+  }),
+  () => import('@/lib/db'),
+);
 
 const { DELETE, GET, POST } = await import('./route.js');
 

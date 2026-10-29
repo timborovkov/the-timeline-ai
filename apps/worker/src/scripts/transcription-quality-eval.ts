@@ -2,7 +2,7 @@
  * Compare the retained quality baseline with currently ZDR-listed OpenRouter STT candidates.
  *
  * Usage:
- *   pnpm eval:transcription-quality:live -- --manifest=/approved/corpus/manifest.json \
+ *   bun run eval:transcription-quality:live -- --manifest=/approved/corpus/manifest.json \
  *     --out=/secure/evidence/transcription-eval-2026-08-21.json \
  *     --candidate=google/chirp-3 --candidate=mistralai/voxtral-mini-transcribe
  *
@@ -265,7 +265,7 @@ export async function runTranscriptionQualityEvalCli(
 }
 
 function usage(): string {
-  return 'Usage: pnpm eval:transcription-quality:live -- --manifest=<approved-corpus-manifest.json> --out=<new-evidence-file.json> [--baseline=<current-production-model>] --candidate=<model-id> [--candidate=<model-id>] [--request-budget-ms=120000] [--concurrency=2] [--require-passing-candidate | --allow-no-passing-candidate]';
+  return 'Usage: bun run eval:transcription-quality:live -- --manifest=<approved-corpus-manifest.json> --out=<new-evidence-file.json> [--baseline=<current-production-model>] --candidate=<model-id> [--candidate=<model-id>] [--request-budget-ms=120000] [--concurrency=2] [--require-passing-candidate | --allow-no-passing-candidate]';
 }
 
 async function main(): Promise<void> {

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   displayArtifactLabel,
@@ -9,7 +10,6 @@ import {
   displaySourceLabel,
   isInternalIdentifier,
 } from '@/lib/display-labels';
-
 const UUID = '8e5b28ae-4ba1-4a52-9d8f-7e9fb57be7a4';
 const UUID_V7 = '018f22e2-7a9b-7cc3-98c4-3a2b1c0d9e8f';
 const NIL_UUID = '00000000-0000-0000-0000-000000000000';

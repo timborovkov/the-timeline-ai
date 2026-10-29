@@ -1,32 +1,51 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ back: vi.fn(), refresh: vi.fn() }),
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@/components/objects/object-merge-form', () => ({
-  ObjectMergeForm: () => null,
-}));
-vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({ children }: { children: ReactNode }) => (
-    <dialog open aria-label="Review merge">
-      {children}
-    </dialog>
-  ),
-  DialogContent: ({ children }: { children: ReactNode }) => (
-    <div data-slot="dialog-content">{children}</div>
-  ),
-  DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
-  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: vi.fn(), refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-merge-form'),
+  () => ({
+    ObjectMergeForm: () => null,
+  }),
+  () => import('@/components/objects/object-merge-form'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/ui/dialog'),
+  () => ({
+    Dialog: ({ children }: { children: ReactNode }) => (
+      <dialog open aria-label="Review merge">
+        {children}
+      </dialog>
+    ),
+    DialogContent: ({ children }: { children: ReactNode }) => (
+      <div data-slot="dialog-content">{children}</div>
+    ),
+    DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+    DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+  }),
+  () => import('@/components/ui/dialog'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: MergeObjectModalError } = await import('./error.js');
 const { default: MergeObjectModalLoading } = await import('./loading.js');

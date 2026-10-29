@@ -37,9 +37,9 @@ export function DebouncedFilterForm({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const navigate = useCallback(
-    (form: HTMLFormElement) => {
+    (values: FormData) => {
       const params = new URLSearchParams(preservedParams);
-      for (const [key, raw] of new FormData(form).entries()) {
+      for (const [key, raw] of values.entries()) {
         if (key.startsWith('__')) continue;
         const value = typeof raw === 'string' ? raw.trim() : '';
         if (value) params.set(key, value);
@@ -55,9 +55,12 @@ export function DebouncedFilterForm({
   const scheduleNavigation = useCallback(
     (form: HTMLFormElement) => {
       clearPendingTimer(timerRef);
+      // Popover controls may unmount before the debounce expires. Preserve the
+      // values from this change instead of reading an emptied form later.
+      const values = new FormData(form);
       timerRef.current = setTimeout(() => {
         timerRef.current = null;
-        navigate(form);
+        navigate(values);
       }, FILTER_DEBOUNCE_MS);
     },
     [navigate],
@@ -85,7 +88,7 @@ export function DebouncedFilterForm({
   function onSubmit(event: SyntheticEvent<HTMLFormElement>): void {
     event.preventDefault();
     clearPendingTimer(timerRef);
-    navigate(event.currentTarget);
+    navigate(new FormData(event.currentTarget));
   }
 
   return (

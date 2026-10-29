@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { dateInputValue, isoTimestamp, toDateOrNull } from '@/lib/iso-timestamp';
-
 describe('isoTimestamp', () => {
   it('keeps already-serialized RSC date strings', () => {
     expect(isoTimestamp('2026-07-19T12:00:00.000Z')).toBe('2026-07-19T12:00:00.000Z');

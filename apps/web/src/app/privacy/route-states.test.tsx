@@ -1,22 +1,31 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('@/components/theme-toggle'),
+  () => ({
+    ThemeToggle: () => <button type="button">Theme</button>,
+  }),
+  () => import('@/components/theme-toggle'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
 
-vi.mock('@/components/theme-toggle', () => ({
-  ThemeToggle: () => <button type="button">Theme</button>,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-
-import CookiesError from '@/app/cookies/error';
-import CookiesLoading from '@/app/cookies/loading';
-import PrivacyError from '@/app/privacy/error';
-import PrivacyLoading from '@/app/privacy/loading';
-import TermsError from '@/app/terms/error';
-import TermsLoading from '@/app/terms/loading';
-import TrustError from '@/app/trust/error';
-import TrustLoading from '@/app/trust/loading';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: CookiesError } = await import('@/app/cookies/error');
+const { default: CookiesLoading } = await import('@/app/cookies/loading');
+const { default: PrivacyError } = await import('@/app/privacy/error');
+const { default: PrivacyLoading } = await import('@/app/privacy/loading');
+const { default: TermsError } = await import('@/app/terms/error');
+const { default: TermsLoading } = await import('@/app/terms/loading');
+const { default: TrustError } = await import('@/app/trust/error');
+const { default: TrustLoading } = await import('@/app/trust/loading');
 
 afterEach(() => {
   cleanup();

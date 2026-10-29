@@ -11,13 +11,14 @@ import {
   mcpOutboundOAuthTokens,
   taskCategoryProjectInvalidations,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { janitorTickIsIdle, processJanitorTick } from '#src/workers/janitor.js';
-
 /**
  * Integration tests for the janitor tick. Uses pglite for Postgres + stub
  * enqueue functions so we can assert exactly which rows were re-enqueued

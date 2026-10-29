@@ -1,12 +1,9 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   createFolderAction: vi.fn(),
@@ -19,48 +16,85 @@ const fakes = vi.hoisted(() => ({
   useDocumentListQuery: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('@tanstack/react-query', () => ({ useQueryClient: fakes.useQueryClient }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
-    fakes.notifyAction(options);
-    return options.run();
-  },
-  notifyError: (id: string, message: string) => {
-    fakes.notifyError(id, message);
-  },
-}));
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useDocumentListQuery: fakes.useDocumentListQuery,
-}));
-vi.mock('@/app/actions/documents', () => ({
-  createFolderAction: fakes.createFolderAction,
-  deleteFolderAction: fakes.deleteFolderAction,
-  finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,
-  requestDocumentUploadAction: fakes.requestDocumentUploadAction,
-}));
-vi.mock('@/app/actions/pins', () => ({
-  pinTargetAction: vi.fn(),
-  unpinTargetAction: vi.fn(),
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@tanstack/react-query'),
+  () => ({ useQueryClient: fakes.useQueryClient }),
+  () => import('@tanstack/react-query'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+      fakes.notifyAction(options);
+      return options.run();
+    },
+    notifyError: (id: string, message: string) => {
+      fakes.notifyError(id, message);
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useDocumentListQuery: fakes.useDocumentListQuery,
+  }),
+  () => import('@/lib/use-paginated-queries'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/documents'),
+  () => ({
+    createFolderAction: fakes.createFolderAction,
+    deleteFolderAction: fakes.deleteFolderAction,
+    finalizeDocumentVersionAction: fakes.finalizeDocumentVersionAction,
+    requestDocumentUploadAction: fakes.requestDocumentUploadAction,
+  }),
+  () => import('@/app/actions/documents'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    pinTargetAction: vi.fn(),
+    unpinTargetAction: vi.fn(),
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { DocumentDrive } = await import('./document-drive.js');
 

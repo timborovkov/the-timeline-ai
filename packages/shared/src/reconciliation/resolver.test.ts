@@ -10,14 +10,14 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { normalizeRawEventsToEvidence } from '#src/reconciliation/normalization.js';
 import { resolveEvidenceAssociations } from '#src/reconciliation/resolver.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-1111-8111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const USER_B_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

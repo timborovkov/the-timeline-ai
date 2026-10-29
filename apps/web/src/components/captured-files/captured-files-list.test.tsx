@@ -1,11 +1,9 @@
-// @vitest-environment happy-dom
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   promoteCapturedFileAction: vi.fn(),
@@ -14,51 +12,86 @@ const fakes = vi.hoisted(() => ({
   notifyError: vi.fn(),
 }));
 
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
-    fakes.notifyAction(options);
-    return options.run();
-  },
-  notifyError: (id: string, message: string) => {
-    fakes.notifyError(id, message);
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async (options: { run: () => Promise<{ error?: string }> }) => {
+      fakes.notifyAction(options);
+      return options.run();
+    },
+    notifyError: (id: string, message: string) => {
+      fakes.notifyError(id, message);
+    },
+  }),
+  () => import('@/lib/notify'),
+);
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: fakes.routerPush, refresh: vi.fn() }),
-}));
-vi.mock('@/app/actions/documents', () => ({
-  promoteCapturedFileAction: fakes.promoteCapturedFileAction,
-}));
-vi.mock('@/app/actions/pins', () => ({
-  pinTargetAction: vi.fn(),
-  unpinTargetAction: vi.fn(),
-}));
-vi.mock('@/components/documents/document-preview', () => ({
-  DocumentPreview: () => createElement('button', { type: 'button' }, 'Preview'),
-}));
-vi.mock('@/components/evidence-link', () => ({
-  EvidenceLink: ({ children }: { children: ReactNode }) =>
-    createElement('a', { href: '/app/timeline?event=event-1#ev-event-1' }, children),
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ push: fakes.routerPush, refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/documents'),
+  () => ({
+    promoteCapturedFileAction: fakes.promoteCapturedFileAction,
+  }),
+  () => import('@/app/actions/documents'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    pinTargetAction: vi.fn(),
+    unpinTargetAction: vi.fn(),
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/documents/document-preview'),
+  () => ({
+    DocumentPreview: () => createElement('button', { type: 'button' }, 'Preview'),
+  }),
+  () => import('@/components/documents/document-preview'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/evidence-link'),
+  () => ({
+    EvidenceLink: ({ children }: { children: ReactNode }) =>
+      createElement('a', { href: '/app/timeline?event=event-1#ev-event-1' }, children),
+  }),
+  () => import('@/components/evidence-link'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, render, screen, waitFor, within } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { CapturedFilesList } = await import('./captured-files-list.js');
 

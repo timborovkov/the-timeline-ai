@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { SkipLink } from '@/components/skip-link';
+// Test environment: happy-dom
 
 describe('SkipLink', () => {
   it('retains its fixed overlay positioning and padding when focused', () => {

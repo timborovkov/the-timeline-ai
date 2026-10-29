@@ -116,12 +116,12 @@ because they are evidence, not product transcription.
 Keep the API key and manifest outside source control. The ignored environment
 file must contain `OPENROUTER_API_KEY`, `OPENROUTER_GUARDRAIL_ID`, and the
 current generated `OPENROUTER_PRIVACY_POLICY_ATTESTATION`. Generate that
-non-secret `orpa1` token with `pnpm openrouter:attestation --
+non-secret `orpa1` token with `bun run openrouter:attestation --
 --env-file=/secure/operator.env`, then point the eval to the complete file:
 
 ```bash
 TRANSCRIPTION_QUALITY_EVAL_ENV_FILE=/secure/eval.env \
-pnpm eval:transcription-quality:live -- \
+bun run eval:transcription-quality:live -- \
   --manifest=/secure/corpus/manifest.json \
   --out=/secure/evidence/transcription-eval-2026-08-21T1000Z.json \
   --baseline=openai/gpt-4o-transcribe \

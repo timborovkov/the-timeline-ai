@@ -4,13 +4,13 @@ import {
   buildTimelineMomentPresentationCacheKey,
   type TimelineMomentPresentationCacheRecord,
 } from '@timeline/shared/timeline-moments/presentation';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   parseArgs,
   planTimelineMomentPresentationBackfill,
 } from '#src/scripts/timeline-moment-presentations.js';
-
 const TEAM_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000002';
 

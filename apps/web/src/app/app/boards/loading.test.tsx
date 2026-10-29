@@ -1,21 +1,33 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   reportCaughtError: vi.fn(),
   searchParams: new URLSearchParams(),
 }));
 
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('next/navigation', () => ({ useSearchParams: () => fakes.searchParams }));
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useSearchParams: () => fakes.searchParams,
+  }),
+  () => import('next/navigation'),
+);
 
-import BoardError from '@/app/app/boards/[id]/error';
-import BoardDetailLoading from '@/app/app/boards/[id]/loading';
-import BoardsError from '@/app/app/boards/error';
-import BoardsLoading from '@/app/app/boards/loading';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: BoardError } = await import('@/app/app/boards/[id]/error');
+const { default: BoardDetailLoading } = await import('@/app/app/boards/[id]/loading');
+const { default: BoardsError } = await import('@/app/app/boards/error');
+const { default: BoardsLoading } = await import('@/app/app/boards/loading');
 
 afterEach(() => {
   cleanup();
@@ -109,7 +121,7 @@ describe('Boards route states', () => {
       render(<Component error={new Error('route failed')} reset={reset} />);
 
       expect(screen.getAllByRole('heading', { level: 1, name: heading })).toHaveLength(1);
-      if (subtitle) expect(screen.getByText(subtitle)).toBeTruthy();
+      expect(screen.getByText(subtitle)).toBeTruthy();
       expect(screen.getByRole('navigation', { name: 'Work' })).toBeTruthy();
       expect(screen.getByRole('link', { name: 'Boards' }).getAttribute('aria-current')).toBe(
         'page',

@@ -1,27 +1,18 @@
 # syntax=docker/dockerfile:1.7
-
-# ---- Base ----
-FROM node:24.22.1-alpine AS base
-RUN apk add --no-cache libc6-compat
-RUN corepack enable && corepack prepare pnpm@11.8.0 --activate
+FROM oven/bun:1.4.4-debian AS base
 WORKDIR /app
 
-# ---- Pruner ----
-FROM base AS pruner
+FROM base AS dependencies
+COPY package.json bun.lock bunfig.toml ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker/package.json ./apps/worker/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/test-support/package.json ./packages/test-support/package.json
+RUN bun run deps --frozen-lockfile
+
+FROM dependencies AS builder
 COPY . .
-RUN pnpm dlx turbo@2.1.0 prune @timeline/web --docker
-
-# ---- Deps ----
-FROM base AS deps
-COPY --from=pruner /app/out/json/ .
-RUN pnpm install --frozen-lockfile
-
-# ---- Builder ----
-FROM base AS builder
-COPY --from=deps /app/ .
-COPY --from=pruner /app/out/full/ .
-# turbo prune excludes root-level config; copy it explicitly
-COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
 ARG SENTRY_AUTH_TOKEN
 ARG SENTRY_ORG
 ARG SENTRY_PROJECT
@@ -37,46 +28,36 @@ ENV SENTRY_RELEASE=$SENTRY_RELEASE
 ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 ENV NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=$NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE
 ENV NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE=$NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE
-RUN pnpm --filter @timeline/db build
-RUN pnpm --filter @timeline/shared build
-RUN pnpm --filter @timeline/web build
+RUN bun run --filter @timeline/db build
+RUN bun run --filter @timeline/shared build
+# Auth initialization runs before Next detects dynamic pages. These build-only
+# placeholders are never retained in the runtime image or used for connections.
+RUN AUTH_SECRET=build-only-secret-at-least-sixteen-characters \
+    DATABASE_URL=postgres://build_only@127.0.0.1:5432/build_only \
+    bun run --filter @timeline/web build
 
-# ---- DB deployer ----
-# `pnpm deploy --prod` creates a self-contained directory for @timeline/db
-# with a flat node_modules (no pnpm symlinks). This is what we ship to the
-# runner so Railway's preDeployCommand can run `node packages/db/dist/migrate.js`
-# and have it resolve `drizzle-orm` and `postgres` cleanly.
-#
-# Why not rely on Next.js standalone tracing? Next bundles drizzle-orm/postgres
-# into webpack server chunks and only emits intermittent pnpm-style symlinks
-# in the standalone output — not reliable for a sibling Node entrypoint.
-FROM base AS db-deployer
-COPY --from=builder /app/ .
-RUN pnpm deploy --filter @timeline/db --prod /prod/db
+FROM base AS production-dependencies
+COPY package.json bun.lock bunfig.toml ./
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/worker/package.json ./apps/worker/package.json
+COPY packages/db/package.json ./packages/db/package.json
+COPY packages/shared/package.json ./packages/shared/package.json
+COPY packages/test-support/package.json ./packages/test-support/package.json
+RUN bun run deps --frozen-lockfile --production
 
-# ---- Runner ----
-FROM node:24.22.1-alpine AS runner
-WORKDIR /app
-
+FROM base AS runner
 ENV NODE_ENV=production
+COPY --from=production-dependencies --chown=bun:bun /app/ ./
+COPY --from=builder --chown=bun:bun /app/packages/db/dist ./packages/db/dist
+COPY --from=builder --chown=bun:bun /app/packages/db/drizzle ./packages/db/drizzle
+COPY --from=builder --chown=bun:bun /app/packages/shared/dist ./packages/shared/dist
+COPY --from=builder --chown=bun:bun /app/apps/web/.next/standalone ./
+COPY --from=builder --chown=bun:bun /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=bun:bun /app/apps/web/public ./apps/web/public
+COPY --from=builder --chown=bun:bun /app/apps/web/start.mjs ./apps/web/start.mjs
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
-
-RUN addgroup --system --gid 1001 nodejs \
- && adduser --system --uid 1001 nextjs
-
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/public ./apps/web/public
-COPY --from=builder --chown=nextjs:nodejs /app/apps/web/start.mjs ./apps/web/start.mjs
-
-# Self-contained @timeline/db with its own node_modules (postgres, drizzle-orm,
-# drizzle/*.sql, meta/_journal.json). Sits alongside the Next standalone tree
-# so Railway's preDeployCommand resolves modules from packages/db/node_modules/.
-COPY --from=db-deployer --chown=nextjs:nodejs /prod/db ./packages/db
-
-USER nextjs
+USER bun
 EXPOSE 3000
-
-CMD ["node", "apps/web/start.mjs"]
+CMD ["bun", "--no-env-file", "apps/web/start.mjs"]

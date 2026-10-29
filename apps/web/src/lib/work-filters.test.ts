@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   boardItemFilterFromWorkFilters,
@@ -6,7 +7,6 @@ import {
   parseWorkFilters,
   taskObjectFilterFromWorkFilters,
 } from '@/lib/work-filters';
-
 const USER_ID = '00000000-0000-4000-8000-000000000001';
 const LANE_ID = '00000000-0000-4000-8000-000000000002';
 const PROJECT_ID = '00000000-0000-4000-8000-000000000003';

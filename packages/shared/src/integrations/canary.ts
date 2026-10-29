@@ -78,7 +78,7 @@ export interface OpenRouterZdrCanaryOutcome {
 
 export interface RunOpenRouterZdrCanariesInput {
   apiKey: string;
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   signal?: AbortSignal;
   now?: () => number;
 }

@@ -1,17 +1,27 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('@/components/rail-nav'),
+  () => ({
+    RailNav: () => createElement('nav', null, 'Primary navigation'),
+  }),
+  () => import('@/components/rail-nav'),
+);
 
-vi.mock('@/components/rail-nav', () => ({
-  RailNav: () => createElement('nav', null, 'Primary navigation'),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/team-switcher'),
+  () => ({
+    TeamSwitcher: () => createElement('div', null, 'Team switcher'),
+  }),
+  () => import('@/components/team-switcher'),
+);
 
-vi.mock('@/components/team-switcher', () => ({
-  TeamSwitcher: () => createElement('div', null, 'Team switcher'),
-}));
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
 
 const { DesktopSidebar } = await import('./desktop-sidebar.js');
 const { TooltipProvider } = await import('./ui/tooltip.js');

@@ -1,8 +1,8 @@
 import { Temporal } from '@js-temporal/polyfill';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { calendarEventListWindow } from '@/lib/calendar-event-list-range';
-
 describe('calendarEventListWindow', () => {
   it('moves by local calendar days instead of fixed UTC days', () => {
     const window = calendarEventListWindow(

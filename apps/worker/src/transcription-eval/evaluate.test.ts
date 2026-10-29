@@ -1,13 +1,9 @@
-/**
- * The provider-backed bake-off must spend only on ZDR-listed candidates, enforce
- * every quality/latency/error gate against the retained baseline, and rank passing
- * models without persisting transcript-bearing case evidence. The transport and
- * corpus reader are pure fakes; no files, customer data, or network calls are used.
- */
 import path from 'node:path';
 
 import { TIMELINE_MODELS, buildOpenRouterPrivacyAttestationPayload } from '@timeline/shared/llm';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type {
   TranscriptionEvalTransport,
@@ -17,6 +13,12 @@ import type { LoadedTranscriptionEvalManifest } from '#src/transcription-eval/ma
 
 import { runTranscriptionQualityEval } from '#src/transcription-eval/evaluate.js';
 import { buildValidTranscriptionEvalManifest } from '#src/transcription-eval/test-fixtures.js';
+/**
+ * The provider-backed bake-off must spend only on ZDR-listed candidates, enforce
+ * every quality/latency/error gate against the retained baseline, and rank passing
+ * models without persisting transcript-bearing case evidence. The transport and
+ * corpus reader are pure fakes; no files, customer data, or network calls are used.
+ */
 
 const BASELINE_MODEL_ID = TIMELINE_MODELS.transcription.id;
 const PRIVACY_ATTESTATION = buildOpenRouterPrivacyAttestationPayload({

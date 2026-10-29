@@ -1,0 +1,13 @@
+# Preserve explicit environment loading; never preload credentials into tests.
+env = false
+
+[run]
+bun = true
+
+[install]
+linker = "hoisted"
+exact = true
+
+[test]
+# The canonical runner selects files and isolates each in its own process.
+timeout = 120000

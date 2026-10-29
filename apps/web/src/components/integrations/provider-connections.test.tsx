@@ -1,16 +1,9 @@
-// @vitest-environment happy-dom
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactElement } from 'react';
-
-import {
-  PersonalConnectionsUi,
-  TeamSourcesUi,
-} from '@/components/integrations/provider-connections';
+// Test environment: happy-dom
 
 const notify = vi.hoisted(() => ({
   notifyAction: vi.fn(
@@ -24,8 +17,25 @@ const notify = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock('@/lib/notify', () => notify);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  () => notify,
+  () => import('@/lib/notify'),
+);
+
+const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { PersonalConnectionsUi, TeamSourcesUi } =
+  await import('@/components/integrations/provider-connections');
 
 function installNotifyAction() {
   notify.notifyAction.mockImplementation(

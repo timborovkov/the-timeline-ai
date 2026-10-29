@@ -1,74 +1,132 @@
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { TeamMembership } from '@/lib/active-team';
 import type { ReactNode } from 'react';
+await vi.mock(
+  import.meta.resolve('@/components/app-document-scroll-lock'),
+  () => ({
+    AppDocumentScrollLock: () =>
+      createElement('div', { 'data-testid': 'app-document-scroll-lock' }),
+  }),
+  () => import('@/components/app-document-scroll-lock'),
+);
 
-import { AppShell } from '@/components/app-shell';
+await vi.mock(
+  import.meta.resolve('@/components/chat/chat-view-context'),
+  () => ({
+    ChatViewProvider: ({ children }: { children: ReactNode }) =>
+      createElement('div', { 'data-testid': 'chat-view-provider' }, children),
+  }),
+  () => import('@/components/chat/chat-view-context'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/chat/floating-agent-chat'),
+  () => ({
+    FloatingAgentChat: () => createElement('div', { 'data-testid': 'floating-agent-chat' }),
+  }),
+  () => import('@/components/chat/floating-agent-chat'),
+);
 
-vi.mock('@/components/app-document-scroll-lock', () => ({
-  AppDocumentScrollLock: () => createElement('div', { 'data-testid': 'app-document-scroll-lock' }),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/app-shell-scroll-restoration'),
+  () => ({
+    AppMainScrollRestoration: () => null,
+  }),
+  () => import('@/components/app-shell-scroll-restoration'),
+);
 
-vi.mock('@/components/chat/chat-view-context', () => ({
-  ChatViewProvider: ({ children }: { children: ReactNode }) =>
-    createElement('div', { 'data-testid': 'chat-view-provider' }, children),
-}));
-vi.mock('@/components/chat/floating-agent-chat', () => ({
-  FloatingAgentChat: () => createElement('div', { 'data-testid': 'floating-agent-chat' }),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/desktop-sidebar'),
+  () => ({
+    DesktopSidebar: ({ initialExpanded }: { initialExpanded: boolean }) =>
+      createElement('aside', {
+        'data-testid': 'desktop-sidebar',
+        'data-expanded': initialExpanded,
+      }),
+  }),
+  () => import('@/components/desktop-sidebar'),
+);
 
-vi.mock('@/components/app-shell-scroll-restoration', () => ({
-  AppMainScrollRestoration: () => null,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/global-search-palette'),
+  () => ({
+    GlobalSearchPalette: () => createElement('div', { 'data-testid': 'global-search-palette' }),
+  }),
+  () => import('@/components/global-search-palette'),
+);
 
-vi.mock('@/components/desktop-sidebar', () => ({
-  DesktopSidebar: ({ initialExpanded }: { initialExpanded: boolean }) =>
-    createElement('aside', {
-      'data-testid': 'desktop-sidebar',
-      'data-expanded': initialExpanded,
-    }),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/inbox/inbox-bell'),
+  () => ({
+    InboxBell: () => createElement('button', { type: 'button' }, 'Inbox'),
+  }),
+  () => import('@/components/inbox/inbox-bell'),
+);
 
-vi.mock('@/components/global-search-palette', () => ({
-  GlobalSearchPalette: () => createElement('div', { 'data-testid': 'global-search-palette' }),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/inspector-context'),
+  () => ({
+    InspectorProvider: ({ children }: { children: ReactNode }) =>
+      createElement('div', { 'data-testid': 'inspector-provider' }, children),
+  }),
+  () => import('@/components/inspector-context'),
+);
 
-vi.mock('@/components/inbox/inbox-bell', () => ({
-  InboxBell: () => createElement('button', { type: 'button' }, 'Inbox'),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/inspector-pane'),
+  () => ({
+    InspectorPane: () => createElement('aside', { 'data-testid': 'inspector-pane' }),
+    InspectorToggle: () => createElement('button', { type: 'button' }, 'Inspector'),
+  }),
+  () => import('@/components/inspector-pane'),
+);
 
-vi.mock('@/components/inspector-context', () => ({
-  InspectorProvider: ({ children }: { children: ReactNode }) =>
-    createElement('div', { 'data-testid': 'inspector-provider' }, children),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/mobile-nav'),
+  () => ({
+    MobileNav: () => createElement('button', { type: 'button' }, 'Menu'),
+  }),
+  () => import('@/components/mobile-nav'),
+);
 
-vi.mock('@/components/inspector-pane', () => ({
-  InspectorPane: () => createElement('aside', { 'data-testid': 'inspector-pane' }),
-  InspectorToggle: () => createElement('button', { type: 'button' }, 'Inspector'),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/team-setup-checklist-chip'),
+  () => ({
+    TeamSetupChecklistChip: () => null,
+  }),
+  () => import('@/components/team-setup-checklist-chip'),
+);
 
-vi.mock('@/components/mobile-nav', () => ({
-  MobileNav: () => createElement('button', { type: 'button' }, 'Menu'),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/theme-toggle'),
+  () => ({
+    ThemeToggle: () => createElement('button', { type: 'button' }, 'Theme'),
+  }),
+  () => import('@/components/theme-toggle'),
+);
 
-vi.mock('@/components/team-setup-checklist-chip', () => ({
-  TeamSetupChecklistChip: () => null,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/ui/tooltip'),
+  () => ({
+    TooltipProvider: ({ children }: { children: ReactNode }) =>
+      createElement('div', { 'data-testid': 'tooltip-provider' }, children),
+  }),
+  () => import('@/components/ui/tooltip'),
+);
 
-vi.mock('@/components/theme-toggle', () => ({
-  ThemeToggle: () => createElement('button', { type: 'button' }, 'Theme'),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/user-menu'),
+  () => ({
+    UserMenu: () => createElement('button', { type: 'button' }, 'User'),
+  }),
+  () => import('@/components/user-menu'),
+);
 
-vi.mock('@/components/ui/tooltip', () => ({
-  TooltipProvider: ({ children }: { children: ReactNode }) =>
-    createElement('div', { 'data-testid': 'tooltip-provider' }, children),
-}));
-
-vi.mock('@/components/user-menu', () => ({
-  UserMenu: () => createElement('button', { type: 'button' }, 'User'),
-}));
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { AppShell } = await import('@/components/app-shell');
 
 describe('AppShell', () => {
   const active: TeamMembership = {

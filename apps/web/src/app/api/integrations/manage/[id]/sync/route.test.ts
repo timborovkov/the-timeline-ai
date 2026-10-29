@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -13,24 +14,48 @@ const fakes = vi.hoisted(() => ({
   providerBudgetKeyForIntegration: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
-vi.mock('@timeline/shared/integrations', () => ({
-  adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
-  adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
-  providerBudgetKeyForIntegration: fakes.providerBudgetKeyForIntegration,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    integrations: {
-      getIntegration: fakes.getIntegration,
-      recordAudit: fakes.recordAudit,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.requireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({
+    adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
+    adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
+    providerBudgetKeyForIntegration: fakes.providerBudgetKeyForIntegration,
   }),
-}));
+  () => import('@timeline/shared/integrations'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      integrations: {
+        getIntegration: fakes.getIntegration,
+        recordAudit: fakes.recordAudit,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { POST } = await import('./route.js');
 

@@ -3,11 +3,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { expect } from '@timeline/test-support';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { getTableConfig, PgDialect } from 'drizzle-orm/pg-core';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { entities } from '#src/schema/entities.js';
-
 /**
  * Database contract tests. These protect schema-level invariants that the app
  * and worker tests rely on: migrations boot, tenant rows cascade correctly,

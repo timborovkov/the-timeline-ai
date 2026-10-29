@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
+import { expect, vi } from '@timeline/test-support';
 import { Queue } from 'bullmq';
+import { afterAll, beforeAll, describe, it } from 'bun:test';
 import IORedis from 'ioredis';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { ChatDeliveryJobData } from '#src/queue/queues.js';
 
@@ -11,7 +12,11 @@ import { decryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.j
 import { resetEnvForTests } from '#src/env.js';
 
 const fake = vi.hoisted(() => ({ queue: null as Queue<ChatDeliveryJobData> | null }));
-vi.mock('#src/queue/queues.js', () => ({ getChatDeliveryQueue: () => fake.queue }));
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  () => ({ getChatDeliveryQueue: () => fake.queue }),
+  () => import('#src/queue/queues.js'),
+);
 
 describe.skipIf(!process.env.TEST_REDIS_URL)('durable quota-delayed chat', () => {
   const connection = new IORedis(process.env.TEST_REDIS_URL ?? 'redis://localhost:6379', {

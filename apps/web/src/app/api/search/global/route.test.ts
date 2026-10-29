@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for global search's federated product boundary.
  *
@@ -29,41 +30,69 @@ const fakes = vi.hoisted(() => ({
   trackProductEventBestEffort: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    timeline: {
-      searchEvents: fakes.fakeSearchEvents,
-      searchObjectNotes: fakes.fakeSearchObjectNotes,
-      getEventsByIds: fakes.fakeGetEventsByIds,
-    },
-    documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
-    objects: {
-      listObjects: fakes.fakeListObjects,
-      searchObjects: fakes.fakeSearchObjects,
-      searchObjectsBySummary: fakes.fakeSearchObjectsBySummary,
-      listReadyObjectSummaries: fakes.fakeListReadyObjectSummaries,
-    },
-    boards: { listBoards: fakes.fakeListBoards },
-    calendar: {
-      listCalendarEvents: fakes.fakeListCalendarEvents,
-      getCalendarSettings: fakes.fakeGetCalendarSettings,
-    },
-    pins: { isPinnedMany: fakes.fakeIsPinnedMany },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
   }),
-}));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { search: { capacity: 30, refillPerSec: 0.5 } },
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-  checkRateLimit: fakes.fakeCheckRateLimit,
-}));
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: fakes.fakeGetEnv }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      timeline: {
+        searchEvents: fakes.fakeSearchEvents,
+        searchObjectNotes: fakes.fakeSearchObjectNotes,
+        getEventsByIds: fakes.fakeGetEventsByIds,
+      },
+      documents: { searchDocumentChunksPage: fakes.fakeSearchDocumentChunksPage },
+      objects: {
+        listObjects: fakes.fakeListObjects,
+        searchObjects: fakes.fakeSearchObjects,
+        searchObjectsBySummary: fakes.fakeSearchObjectsBySummary,
+        listReadyObjectSummaries: fakes.fakeListReadyObjectSummaries,
+      },
+      boards: { listBoards: fakes.fakeListBoards },
+      calendar: {
+        listCalendarEvents: fakes.fakeListCalendarEvents,
+        getCalendarSettings: fakes.fakeGetCalendarSettings,
+      },
+      pins: { isPinnedMany: fakes.fakeIsPinnedMany },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { search: { capacity: 30, refillPerSec: 0.5 } },
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+    checkRateLimit: fakes.fakeCheckRateLimit,
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
 
 const { POST } = await import('./route.js');
 

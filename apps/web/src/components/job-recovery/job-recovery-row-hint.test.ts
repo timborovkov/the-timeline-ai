@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { jobRecoveryRowHint } from '@/components/job-recovery/job-recovery-row-hint';
-
 describe('jobRecoveryRowHint', () => {
   it('names job and artifact ids and includes the formatted time', () => {
     const hint = jobRecoveryRowHint(

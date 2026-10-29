@@ -1,13 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
 import { auditLog, type Db, teamExports } from '@timeline/db';
 import { buildTeamExportObjectKey, type TeamExportManifest } from '@timeline/shared';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processTeamExportJob, type TeamExportWorkerIO } from '#src/workers/teamExport.js';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const EXPORT_ID = '33333333-3333-4333-8333-333333333333';
@@ -156,7 +157,7 @@ describe('team export worker', () => {
         { db: db as never as Db, io },
         { teamExportId: EXPORT_ID, teamId: TEAM_ID, requestedByUserId: USER_ID },
       ),
-    ).rejects.toThrow(/Invalid time value|invalid input syntax/i);
+    ).rejects.toThrow(/Invalid time value|Invalid Date|invalid input syntax/i);
 
     expect(io.putArchive).toHaveBeenCalledOnce();
     expect(io.deleteArchive).toHaveBeenCalledWith({
@@ -166,7 +167,7 @@ describe('team export worker', () => {
     const row = await loadExport(db);
     expect(row.status).toBe('failed');
     expect(row.objectKey).toBeNull();
-    expect(row.error).toMatch(/Invalid time value|invalid input syntax/i);
+    expect(row.error).toMatch(/Invalid time value|Invalid Date|invalid input syntax/i);
     expect(row.completedAt).toBeInstanceOf(Date);
   });
 

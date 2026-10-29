@@ -133,20 +133,30 @@ function ChatSurfaceContent({
 
   // react-doctor-disable-next-line react-doctor/no-event-handler -- One-time sessionStorage handoff can only run after mount; sending a Home prompt is that hydration, not a click handler.
   useEffect(() => {
-    if (!consumeHandoff || handoffConsumedRef.current) return;
-    handoffConsumedRef.current = true;
-    let handoff: ChatHandoff | null = null;
-    try {
-      handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
-    } catch {
-      return;
-    }
-    if (!handoff) return;
-    chatHandoffRef.current = handoff;
-    // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
-    setConsumedHandoff(handoff);
-    // react-doctor-disable-next-line react-doctor/no-event-handler -- Home Ask stores the prompt in sessionStorage; sending it after mount is hydration, not a click handler.
-    if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
+    if (!consumeHandoff) return;
+    // The SDK stops its chat during Strict Mode's effect cleanup. Consume and
+    // send only after that setup/cleanup cycle, otherwise it cancels the prompt
+    // before the request starts and the one-time handoff is already gone.
+    let active = true;
+    queueMicrotask(() => {
+      if (!active || handoffConsumedRef.current) return;
+      handoffConsumedRef.current = true;
+      let handoff: ChatHandoff | null = null;
+      try {
+        handoff = consumeChatHandoffEntry(window.sessionStorage, teamId);
+      } catch {
+        return;
+      }
+      if (!handoff) return;
+      chatHandoffRef.current = handoff;
+      // react-doctor-disable-next-line react-doctor/no-adjust-state-on-prop-change, react-doctor/no-chain-state-updates -- This hydrates a consumed one-time sessionStorage message after SSR; it does not mirror a prop or chain derived state.
+      setConsumedHandoff(handoff);
+      // react-doctor-disable-next-line react-doctor/no-event-handler -- Home Ask stores the prompt in sessionStorage; sending it after mount is hydration, not a click handler.
+      if (!initialSessionId && handoff.prompt) void sendMessage({ text: handoff.prompt });
+    });
+    return () => {
+      active = false;
+    };
   }, [consumeHandoff, initialMessages.length, initialSessionId, sendMessage, teamId]);
 
   useEffect(() => {
@@ -283,44 +293,47 @@ function useChatSessionTransport({
             contextTrail: contextTrailRef.current,
           };
         },
-        fetch: async (url, init) => {
-          try {
-            const res = await fetch(url, init);
-            if (!res.ok) {
-              const data = (await res
-                .clone()
-                .json()
-                .catch(() => null)) as { error?: string } | null;
-              throw new Error(chatErrorMessage(data?.error, res.status));
-            }
-            const id = res.headers.get('x-tl-session-id');
-            if (id) {
-              if (requestAskedForNewSession.current) chatHandoffRef.current = null;
-              if (id !== sessionIdRef.current) {
-                sessionIdRef.current = id;
-                setSessionId(id);
-                onSessionIdChangeRef.current?.(id);
-                if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
-                  window.history.replaceState(
-                    null,
-                    '',
-                    `/app/chat?session=${encodeURIComponent(id)}`,
-                  );
-                }
+        fetch: Object.assign(
+          async (url: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
+            try {
+              const res = await fetch(url, init);
+              if (!res.ok) {
+                const data = (await res
+                  .clone()
+                  .json()
+                  .catch(() => null)) as { error?: string } | null;
+                throw new Error(chatErrorMessage(data?.error, res.status));
               }
-            } else if (requestAskedForNewSession.current && sessionIdRef.current === null) {
-              sessionCreateAttempted.current = false;
+              const id = res.headers.get('x-tl-session-id');
+              if (id) {
+                if (requestAskedForNewSession.current) chatHandoffRef.current = null;
+                if (id !== sessionIdRef.current) {
+                  sessionIdRef.current = id;
+                  setSessionId(id);
+                  onSessionIdChangeRef.current?.(id);
+                  if (updateUrlOnSessionCreate && typeof window !== 'undefined') {
+                    window.history.replaceState(
+                      null,
+                      '',
+                      `/app/chat?session=${encodeURIComponent(id)}`,
+                    );
+                  }
+                }
+              } else if (requestAskedForNewSession.current && sessionIdRef.current === null) {
+                sessionCreateAttempted.current = false;
+              }
+              requestAskedForNewSession.current = false;
+              return res;
+            } catch (error) {
+              if (requestAskedForNewSession.current && sessionIdRef.current === null) {
+                sessionCreateAttempted.current = false;
+              }
+              requestAskedForNewSession.current = false;
+              throw error;
             }
-            requestAskedForNewSession.current = false;
-            return res;
-          } catch (error) {
-            if (requestAskedForNewSession.current && sessionIdRef.current === null) {
-              sessionCreateAttempted.current = false;
-            }
-            requestAskedForNewSession.current = false;
-            throw error;
-          }
-        },
+          },
+          { preconnect: globalThis.fetch.preconnect },
+        ),
       }),
     [chatHandoffRef, updateUrlOnSessionCreate],
   );

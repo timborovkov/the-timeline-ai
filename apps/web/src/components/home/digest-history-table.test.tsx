@@ -1,12 +1,12 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 
 import { DigestHistoryTable } from '@/components/home/digest-history-table';
+// Test environment: happy-dom
 
 const PAYLOAD: DailyDigestPayload = {
   teamName: 'Acme',

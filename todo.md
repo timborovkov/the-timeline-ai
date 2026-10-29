@@ -192,7 +192,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       (down from 13+); redirects + keymap updates.
 - [x] U6 — Quiet Archive polish and verification: curated Linux visual baselines
       for a few high-value routes (not a full surface×theme matrix), full
-      browser QA, `pnpm validate`, and React Doctor 100.
+      browser QA, `bun run validate`, and React Doctor 100.
 - [x] U7 — Universal personal pinning: replace separate board/object pins with
       one ordered mixed collection for objects, boards, documents, meetings,
       calendar series, and timeline moments; add Home preview, Work management,
@@ -286,7 +286,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       [`docs/relational-memory.md`](./docs/relational-memory.md)
       (Path from here to the ideal engine).
 - [x] Opt-in live messy proposal-engine eval
-      (`pnpm test:proposal-engine:live`): real models, real embeddings/Qdrant
+      (`bun run test:proposal-engine:live`): real models, real embeddings/Qdrant
       when configured, realistic noisy payloads (~90% messy: Sentry spikes,
       GitHub Actions pulses, Bugbot findings, buried ids, typo fragments,
       mention soup, truncated paste, silent calendar-linked meetings, outcome
@@ -322,7 +322,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Timeline tasks. GitHub PRs and GitHub CI differ without a core
       `if (provider === "github")`. Linear/Monday item completion reuses the
       GitHub living-pending matcher. Opt-in live eval
-      (`pnpm test:proposal-engine:live`) stays messy-first and is not CI.
+      (`bun run test:proposal-engine:live`) stays messy-first and is not CI.
 - [ ] Ship the cross-source evidence pack north star in
       [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) (rollout
       and copy; engine behavior is
@@ -645,7 +645,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       before lowering it or performing full reindexing (see
       [production memory measurements](docs/railway.html#qdrant-memory)). New
       collections already store original vectors on disk; copy any older in-RAM
-      collection with `pnpm --filter @timeline/worker qdrant-migrate-collection`
+      collection with `bun run --filter @timeline/worker qdrant-migrate-collection`
       (`--writers-paused --all-teams` after pausing all vector writers; production also
       requires the snapshot-backed `--production` maintenance flow in
       [OpenRouter setup](docs/setup/openrouter.html#qdrant-production-copy)) before lowering the

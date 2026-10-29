@@ -1,9 +1,9 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
-
 const fakes = vi.hoisted(() => ({
   back: vi.fn(),
   refresh: vi.fn(),
@@ -16,37 +16,52 @@ const fakes = vi.hoisted(() => ({
     | undefined,
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ back: fakes.back, refresh: fakes.refresh }),
-}));
-vi.mock('@/components/objects/object-merge-form', () => ({
-  ObjectMergeForm: ({
-    onCancel,
-    onMerged,
-  }: {
-    onCancel?: () => void;
-    onMerged?: (survivorId: string) => void;
-  }) => {
-    fakes.mergeCallbacks = { onCancel, onMerged };
-    return <div data-testid="object-merge-form" />;
-  },
-}));
-vi.mock('@/components/ui/dialog', () => ({
-  Dialog: ({
-    children,
-    onOpenChange,
-  }: {
-    children: ReactNode;
-    onOpenChange?: (open: boolean) => void;
-  }) => {
-    fakes.onOpenChange = onOpenChange;
-    return <div>{children}</div>;
-  },
-  DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
-  DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: fakes.back, refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-merge-form'),
+  () => ({
+    ObjectMergeForm: ({
+      onCancel,
+      onMerged,
+    }: {
+      onCancel?: () => void;
+      onMerged?: (survivorId: string) => void;
+    }) => {
+      fakes.mergeCallbacks = { onCancel, onMerged };
+      return <div data-testid="object-merge-form" />;
+    },
+  }),
+  () => import('@/components/objects/object-merge-form'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/ui/dialog'),
+  () => ({
+    Dialog: ({
+      children,
+      onOpenChange,
+    }: {
+      children: ReactNode;
+      onOpenChange?: (open: boolean) => void;
+    }) => {
+      fakes.onOpenChange = onOpenChange;
+      return <div>{children}</div>;
+    },
+    DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
+    DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+  }),
+  () => import('@/components/ui/dialog'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectMergeRouteModalForm, ObjectMergeRouteModalFrame } =
   await import('./object-merge-route-modal.js');

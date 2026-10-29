@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   defaultDigestWindow: vi.fn(),
   getDigestPreference: vi.fn(),
@@ -14,29 +15,41 @@ const fakes = vi.hoisted(() => ({
   enqueueDailyDigestWorkspaceSendJob: vi.fn(),
 }));
 
-vi.mock('@timeline/shared', () => ({
-  childLogger: () => ({ info: vi.fn(), error: vi.fn() }),
-  messaging: {
-    defaultDigestWindow: fakes.defaultDigestWindow,
-    getDigestPreference: fakes.getDigestPreference,
-    listDailyDigestRecipients: fakes.listDailyDigestRecipients,
-    generateDailyDigest: fakes.generateDailyDigest,
-    sendDailyDigest: fakes.sendDailyDigest,
-    sendWorkspaceDailyDigest: fakes.sendWorkspaceDailyDigest,
-    listWorkspaceDigestTeamIds: fakes.listWorkspaceDigestTeamIds,
-    getWorkspaceDigestSchedule: fakes.getWorkspaceDigestSchedule,
-  },
-  queue: {
-    QUEUE_NAMES: { dailyDigest: 'daily-digest' },
-    getRedisConnection: vi.fn(),
-    enqueueDailyDigestRecipientJob: fakes.enqueueDailyDigestRecipientJob,
-    enqueueDailyDigestSendJob: fakes.enqueueDailyDigestSendJob,
-    enqueueDailyDigestWorkspaceSendJob: fakes.enqueueDailyDigestWorkspaceSendJob,
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  () => ({
+    childLogger: () => ({ info: vi.fn(), error: vi.fn() }),
+    messaging: {
+      defaultDigestWindow: fakes.defaultDigestWindow,
+      getDigestPreference: fakes.getDigestPreference,
+      listDailyDigestRecipients: fakes.listDailyDigestRecipients,
+      generateDailyDigest: fakes.generateDailyDigest,
+      sendDailyDigest: fakes.sendDailyDigest,
+      sendWorkspaceDailyDigest: fakes.sendWorkspaceDailyDigest,
+      listWorkspaceDigestTeamIds: fakes.listWorkspaceDigestTeamIds,
+      getWorkspaceDigestSchedule: fakes.getWorkspaceDigestSchedule,
+    },
+    queue: {
+      QUEUE_NAMES: { dailyDigest: 'daily-digest' },
+      getRedisConnection: vi.fn(),
+      enqueueDailyDigestRecipientJob: fakes.enqueueDailyDigestRecipientJob,
+      enqueueDailyDigestSendJob: fakes.enqueueDailyDigestSendJob,
+      enqueueDailyDigestWorkspaceSendJob: fakes.enqueueDailyDigestWorkspaceSendJob,
+    },
+  }),
+  () => import('@timeline/shared'),
+);
 
-vi.mock('bullmq', () => ({ Worker: vi.fn() }));
-vi.mock('#src/monitoring.js', () => ({ captureWorkerJobFailure: vi.fn() }));
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({ Worker: vi.fn() }),
+  () => import('bullmq'),
+);
+await vi.mock(
+  import.meta.resolve('#src/monitoring.js'),
+  () => ({ captureWorkerJobFailure: vi.fn() }),
+  () => import('#src/monitoring.js'),
+);
 
 const { processDailyDigestJob } = await import('#src/workers/dailyDigest.js');
 

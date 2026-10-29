@@ -180,7 +180,7 @@ startup image per device size and orientation. Those images are the same dark
 field with the centered mark — no wordmark, no extra chrome, no light-mode
 variant. Keep them in lockstep with
 [`apps/web/src/app/icon.svg`](apps/web/src/app/icon.svg); regenerate with
-`pnpm exec tsx apps/web/scripts/generate-pwa-splash.ts`.
+`bun apps/web/scripts/generate-pwa-splash.ts`.
 
 ## Shared components
 

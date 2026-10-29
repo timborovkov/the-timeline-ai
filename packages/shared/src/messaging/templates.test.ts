@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { renderMessage } from '#src/messaging/templates.js';
-
 describe('messaging templates', () => {
   it('renders minimized support context without a raw page URL', () => {
     const message = renderMessage('support_request', {

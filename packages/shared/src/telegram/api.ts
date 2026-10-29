@@ -219,7 +219,10 @@ export class HttpTelegramApi implements TelegramApi {
       return buf;
     }
 
-    const reader: ReadableStreamDefaultReader<Uint8Array> = res.body.getReader();
+    const reader: Pick<
+      ReadableStreamDefaultReader<Uint8Array>,
+      'read' | 'cancel' | 'releaseLock'
+    > = res.body.getReader();
     const chunks: Buffer[] = [];
     let total = 0;
     for (;;) {

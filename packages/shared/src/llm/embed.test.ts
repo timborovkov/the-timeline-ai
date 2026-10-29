@@ -1,13 +1,14 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
 import { MockEmbeddingModelV3 } from 'ai/test';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { EmbeddingModel } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
 import { embed, embedMany, truncateEmbeddingTextToTokenBudget } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-
 const ENV_BACKUP = { ...process.env };
 
 function embeddingVector(seed: number): number[] {
@@ -59,7 +60,9 @@ describe('llm.embed', () => {
     let requestBody: unknown;
     let requestHeaders: Headers | undefined;
     const vector = embeddingVector(1);
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
       requestBody = JSON.parse(init.body) as unknown;
       requestHeaders = new Headers(init.headers);

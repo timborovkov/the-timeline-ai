@@ -1,8 +1,6 @@
-import { readFileSync } from 'node:fs';
-
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -12,42 +10,80 @@ const fakes = vi.hoisted(() => ({
   redirect: vi.fn(),
 }));
 
-vi.mock('@timeline/shared/mcp-server', () => {
-  class McpOAuthError extends Error {
-    constructor(
-      readonly code: string,
-      message: string,
-      readonly trustedAuthorizationRedirect?: { redirectUri: string; state?: string },
-    ) {
-      super(message);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/mcp-server'),
+  () => {
+    class McpOAuthError extends Error {
+      constructor(
+        readonly code: string,
+        message: string,
+        readonly trustedAuthorizationRedirect?: { redirectUri: string; state?: string },
+      ) {
+        super(message);
+      }
     }
-  }
-  return {
-    McpOAuthError,
-    MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
-    validateMcpAuthorizationRequest: fakes.validate,
-    isLoopbackHostname: (hostname: string) =>
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname === '::1' ||
-      hostname === '[::1]',
-  };
-});
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: { name: 'db' } }));
-vi.mock('@/lib/legal', () => ({
-  getUserLegalAcceptance: fakes.getUserLegalAcceptance,
-  hasCurrentLegalAcceptance: fakes.hasCurrentLegalAcceptance,
-}));
-vi.mock('@/app/oauth/actions', () => ({
-  approveMcpOAuthAction: '/test/approve',
-  denyMcpOAuthAction: '/test/deny',
-}));
-vi.mock('@/components/theme-toggle', () => ({
-  ThemeToggle: () => <button type="button">Theme</button>,
-}));
+    return {
+      McpOAuthError,
+      MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
+      validateMcpAuthorizationRequest: fakes.validate,
+      isLoopbackHostname: (hostname: string) =>
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === '::1' ||
+        hostname === '[::1]',
+    };
+  },
+  () => import('@timeline/shared/mcp-server'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { name: 'db' } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    getUserLegalAcceptance: fakes.getUserLegalAcceptance,
+    hasCurrentLegalAcceptance: fakes.hasCurrentLegalAcceptance,
+  }),
+  () => import('@/lib/legal'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/oauth/actions'),
+  () => ({
+    approveMcpOAuthAction: '/test/approve',
+    denyMcpOAuthAction: '/test/deny',
+  }),
+  () => import('@/app/oauth/actions'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/theme-toggle'),
+  () => ({
+    ThemeToggle: () => <button type="button">Theme</button>,
+  }),
+  () => import('@/components/theme-toggle'),
+);
+
+const { readFileSync } = await import('node:fs');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { McpOAuthError } = await import('@timeline/shared/mcp-server');
 const { default: McpOAuthAuthorizePage } = await import('@/app/oauth/authorize/page');

@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { HttpTelegramApi } from '#src/telegram/api.js';
-
 describe('HttpTelegramApi file downloads', () => {
   afterEach(() => {
     vi.unstubAllGlobals();

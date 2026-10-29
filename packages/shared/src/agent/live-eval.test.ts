@@ -1,27 +1,11 @@
 import { loadEnvFile } from 'node:process';
 
-import { PGlite } from '@electric-sql/pglite';
-import {
-  calendarEvents,
-  documentChunks,
-  documents,
-  documentVersions,
-  entities,
-  meetings,
-  meetingTranscriptChunks,
-  rawEvents,
-} from '@timeline/db';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { askAgent } from '#src/agent/ask.js';
-import { resetEnvForTests } from '#src/env.js';
-import {
-  buildDocumentSearchHit,
-  buildMeetingSearchHit,
-  buildSearchHit,
-} from '#src/test/agent-eval-harness.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 const fakes = vi.hoisted(
   (): {
@@ -35,16 +19,43 @@ const fakes = vi.hoisted(
   }),
 );
 
-vi.mock('#src/mcp/client.js', () => ({
-  getMcpManager: () => ({
-    connectForTeam: fakes.connectForTeam,
-    callTool: fakes.callTool,
+await vi.mock(
+  import.meta.resolve('#src/mcp/client.js'),
+  () => ({
+    getMcpManager: () => ({
+      connectForTeam: fakes.connectForTeam,
+      callTool: fakes.callTool,
+    }),
   }),
-}));
+  () => import('#src/mcp/client.js'),
+);
 
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueEmbedJob: fakes.enqueueEmbedJob,
-}));
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueEmbedJob: fakes.enqueueEmbedJob,
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
+  calendarEvents,
+  documentChunks,
+  documents,
+  documentVersions,
+  entities,
+  meetings,
+  meetingTranscriptChunks,
+  rawEvents,
+} = await import('@timeline/db');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { askAgent } = await import('#src/agent/ask.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { buildDocumentSearchHit, buildMeetingSearchHit, buildSearchHit } =
+  await import('#src/test/agent-eval-harness.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 if (process.env.AGENT_LIVE_ENV_FILE) {
   loadEnvFile(process.env.AGENT_LIVE_ENV_FILE);

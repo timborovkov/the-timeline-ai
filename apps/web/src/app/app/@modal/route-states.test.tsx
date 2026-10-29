@@ -1,8 +1,8 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import ModalDefault from '@/app/app/@modal/default';
-
 describe('authenticated modal default state', () => {
   it('keeps the underlying route as the only announced page when no modal is active', () => {
     const html = renderToStaticMarkup(

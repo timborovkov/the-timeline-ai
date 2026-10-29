@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { Skeleton } from '@/components/ui/skeleton';
+// Test environment: happy-dom
 
 describe('Skeleton', () => {
   it('disables its pulse animation when reduced motion is preferred', () => {

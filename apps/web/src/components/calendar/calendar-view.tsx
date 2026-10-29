@@ -998,7 +998,8 @@ function CalendarEventList({
         </CollectionToolbar.View>
       </CollectionToolbar>
       <CalendarEventListPages
-        key={`${scope}:${query}`}
+        // A refreshed server page invalidates cached later pages after mutations.
+        key={JSON.stringify([scope, query, total, nextOffset, events])}
         events={events}
         nextOffset={nextOffset}
         timezone={timezone}

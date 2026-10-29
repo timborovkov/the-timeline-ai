@@ -35,7 +35,7 @@ exploit.
 
 ## Development expectations
 
-- Use Node.js 24.22.1 (see `.nvmrc`), pnpm 11.8+, and `pnpm` only.
+- Use Bun 1.4.4 (see `.bun-version`) for installation, scripts, and tests.
 - Read [AGENTS.md](./AGENTS.md) and the documentation relevant to the changed
   subsystem.
 - Preserve team isolation, item visibility, secret handling, and the privacy
@@ -47,8 +47,8 @@ exploit.
 Before handing a change back, run:
 
 ```bash
-pnpm validate
-pnpm run doctor
+bun run validate
+bun run doctor
 ```
 
 React Doctor must report a score of 100. Also run the nearest focused tests and

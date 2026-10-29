@@ -12,6 +12,7 @@ import {
 import { z } from 'zod';
 
 import { getEnv } from '#src/env.js';
+import { asBunFetch } from '#src/http/fetch.js';
 import {
   TimelineAiError,
   toTimelineAiError,
@@ -69,7 +70,7 @@ export interface ChatDeps {
   /** Inject a pre-built LanguageModel — used by tests with MockLanguageModelV3. */
   model?: LanguageModel;
   /** Inject fetch for provider-boundary tests. */
-  fetch?: typeof globalThis.fetch;
+  fetch?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }
 
 export interface ChatStructuredResult<TSchema extends z.ZodType> {
@@ -306,7 +307,7 @@ export function buildOpenRouterLanguageModel(
     baseURL,
     headers: OPENROUTER_DISABLE_CACHE_HEADERS,
     supportsStructuredOutputs: options.supportsStructuredOutputs ?? true,
-    ...(deps.fetch ? { fetch: deps.fetch } : {}),
+    ...(deps.fetch ? { fetch: asBunFetch(deps.fetch) } : {}),
   });
   return provider(modelId);
 }

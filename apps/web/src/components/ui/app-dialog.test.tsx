@@ -1,11 +1,11 @@
-// @vitest-environment happy-dom
-
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 import { useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
 
 import { useAppDialog } from './app-dialog.js';
+// Test environment: happy-dom
 
 afterEach(() => {
   cleanup();

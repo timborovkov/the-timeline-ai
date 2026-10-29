@@ -3,8 +3,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { afterAll, beforeAll, describe, it } from 'bun:test';
 const MIGRATION_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
   '../drizzle/0064_chat_message_sequence.sql',

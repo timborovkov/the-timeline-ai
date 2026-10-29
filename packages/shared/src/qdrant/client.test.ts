@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
@@ -8,7 +9,6 @@ import {
   resetQdrantClientCacheForTests,
   type QdrantPayload,
 } from '#src/qdrant/client.js';
-
 const ENV_BACKUP = { ...process.env };
 
 interface CapturedCall {
@@ -25,7 +25,7 @@ function makeFetcher(
     teamIndexIsTenant?: boolean;
   } = {},
 ): {
-  fetcher: typeof fetch;
+  fetcher: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
   calls: CapturedCall[];
   setSearchResult: (hits: { id: string; score: number; payload: QdrantPayload }[]) => void;
   setStoredVectorResult: (
@@ -40,7 +40,9 @@ function makeFetcher(
   let searchResult: { id: string; score: number; payload: QdrantPayload }[] = [];
   let storedVectorResult: { id: string; vector: number[]; payload: QdrantPayload }[] | null = null;
 
-  const fetcher: typeof fetch = (input, init) => {
+  const fetcher: (
+    ...args: Parameters<typeof globalThis.fetch>
+  ) => ReturnType<typeof globalThis.fetch> = (input, init) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
@@ -441,7 +443,7 @@ describe('createQdrantClient', () => {
     let response: unknown = { result: snapshot };
     const client = createQdrantClient({
       fetcher: async (url, init) => {
-        const requestUrl = typeof url === 'string' ? url : new Request(url).url;
+        const requestUrl = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
         if (requestUrl.endsWith('/snapshots?wait=true')) {
           expect(init?.method).toBe('POST');
           expect(init?.headers).toMatchObject({ 'api-key': 'test-key' });
@@ -720,7 +722,10 @@ describe('createQdrantClient', () => {
   });
 
   it('getQdrantClient bypasses the cache when a custom fetcher is injected (test isolation)', () => {
-    const noopFetcher: typeof fetch = () => Promise.resolve(new Response('{}', { status: 200 }));
+    const noopFetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = () =>
+      Promise.resolve(new Response('{}', { status: 200 }));
     const a = getQdrantClient({ fetcher: noopFetcher });
     const b = getQdrantClient({ fetcher: noopFetcher });
     expect(a).not.toBe(b);
@@ -879,7 +884,9 @@ describe('createQdrantClient', () => {
 
   it('sets the api-key header when QDRANT_API_KEY is configured', async () => {
     let capturedHeaders: Headers | undefined;
-    const fetcher: typeof fetch = (_input, init) => {
+    const fetcher: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_input, init) => {
       capturedHeaders = new Headers(init?.headers);
       return Promise.resolve(
         new Response(JSON.stringify({ result: { status: 'green' } }), { status: 200 }),

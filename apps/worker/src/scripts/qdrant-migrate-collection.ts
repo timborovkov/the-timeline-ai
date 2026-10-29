@@ -11,7 +11,7 @@
  * to counts.
  *
  * Usage:
- *   pnpm --filter @timeline/worker qdrant-migrate-collection -- \
+ *   bun run --filter @timeline/worker qdrant-migrate-collection -- \
  *     --source-collection=events \
  *     --target-collection=events_ondisk \
  *     --create-target --copy --verify --writers-paused --all-teams

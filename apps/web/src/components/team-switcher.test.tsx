@@ -1,18 +1,27 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('@/app/actions/invites'),
+  () => ({
+    acceptRecipientInviteAction: vi.fn(),
+    declineInviteAction: vi.fn(),
+  }),
+  () => import('@/app/actions/invites'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/team-forms'),
+  () => ({
+    CreateTeamForm: () => <div>Create team form</div>,
+  }),
+  () => import('@/components/team-forms'),
+);
 
-vi.mock('@/app/actions/invites', () => ({
-  acceptRecipientInviteAction: vi.fn(),
-  declineInviteAction: vi.fn(),
-}));
-vi.mock('@/components/team-forms', () => ({
-  CreateTeamForm: () => <div>Create team form</div>,
-}));
-
-import { TeamSwitcher } from '@/components/team-switcher';
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { TeamSwitcher } = await import('@/components/team-switcher');
 
 afterEach(() => {
   cleanup();

@@ -1,5 +1,6 @@
+import { expect } from '@timeline/test-support';
 import * as ai from 'ai';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import {
@@ -10,7 +11,6 @@ import {
   streamText,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
-
 const ENV_BACKUP = { ...process.env };
 
 beforeEach(() => {

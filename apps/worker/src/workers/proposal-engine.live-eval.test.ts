@@ -14,13 +14,13 @@ import {
 } from '@timeline/db';
 import { embedding, llm, qdrant, suggestions } from '@timeline/shared';
 import { withTeam } from '@timeline/shared/team-scope';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
-
 if (process.env.PROPOSAL_ENGINE_LIVE_ENV_FILE) {
   loadEnvFile(process.env.PROPOSAL_ENGINE_LIVE_ENV_FILE);
 }

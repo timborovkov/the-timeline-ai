@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 // A daily digest should only consume summarization and email capacity when the
 // recipient has fresh activity or useful actionable context to catch up on.
 const fakes = vi.hoisted(() => ({
@@ -7,8 +8,16 @@ const fakes = vi.hoisted(() => ({
   chatStructured: vi.fn(),
 }));
 
-vi.mock('#src/team-scope.js', () => ({ withTeam: fakes.withTeam }));
-vi.mock('#src/llm/chat.js', () => ({ chatStructured: fakes.chatStructured }));
+await vi.mock(
+  import.meta.resolve('#src/team-scope.js'),
+  () => ({ withTeam: fakes.withTeam }),
+  () => import('#src/team-scope.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/llm/chat.js'),
+  () => ({ chatStructured: fakes.chatStructured }),
+  () => import('#src/llm/chat.js'),
+);
 
 const { generateDailyDigest } = await import('#src/messaging/digest.js');
 

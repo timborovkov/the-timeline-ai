@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   chooseContentText,
@@ -15,7 +16,6 @@ import {
 } from '#src/email/parser.js';
 import { postmarkInboundSchema } from '#src/email/postmark-schema.js';
 import { verifyPostmarkBasicAuth } from '#src/email/secret.js';
-
 // Pure-function tests that don't require Postgres. End-to-end ingest is
 // verified manually via the Postmark test inbox documented in
 // docs/setup/postmark.md (requires a real Postmark account + signed payload).

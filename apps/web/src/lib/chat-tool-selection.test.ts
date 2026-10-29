@@ -1,5 +1,6 @@
 import { buildAgentTools } from '@timeline/shared/agent';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { TeamScope } from '@timeline/shared/team-scope';
 
@@ -9,7 +10,6 @@ import {
   selectAgentToolGroups,
   selectedNativeToolNames,
 } from '@/lib/chat-tool-selection';
-
 const BOARD_ID = '66666666-6666-4666-8666-666666666666';
 const BOARD_ITEM_ID = '77777777-7777-4777-8777-777777777777';
 

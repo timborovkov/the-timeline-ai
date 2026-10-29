@@ -343,7 +343,7 @@
           <tr>
             <td>Repo</td>
             <td>
-              pnpm + Turborepo monorepo (<code>apps/web</code>, <code>apps/worker</code>,
+              bun run + Turborepo monorepo (<code>apps/web</code>, <code>apps/worker</code>,
               <code>packages/*</code>)
             </td>
           </tr>
@@ -353,7 +353,7 @@
           </tr>
           <tr>
             <td>Backend</td>
-            <td>Next.js API routes / server actions, Node.js workers (BullMQ)</td>
+            <td>Next.js API routes / server actions, Bun workers (BullMQ)</td>
           </tr>
           <tr>
             <td>Database</td>
@@ -392,7 +392,7 @@
           </tr>
           <tr>
             <td>Hosting</td>
-            <td>Railway (staging + production environments)</td>
+            <td>Railway (single production environment)</td>
           </tr>
         </tbody>
       </table>
@@ -538,13 +538,16 @@
       <h3 id="local-development">Local development</h3>
       <p>
         Docker Compose brings up the full stack: Postgres, Redis, Qdrant, RustFS (with auto bucket
-        initialization). App and workers run on the host with hot reload via <code>pnpm dev</code>.
-        A <code>--profile app</code> flag in compose runs everything containerized when prod parity
-        matters.
+        initialization). App and workers run on the host with hot reload via
+        <code>bun run dev</code>. A <code>--profile app</code> flag in compose runs everything
+        containerized when prod parity matters.
       </p>
 
       <h3 id="production-staging-on-railway">Production / staging on Railway</h3>
-      <p>Two Railway environments per project. Each runs:</p>
+      <p>
+        The current project uses one Railway environment, <code>production</code>, for development
+        and deployment verification while there are no users. The environment runs:
+      </p>
       <ul>
         <li>
           <strong><code>web</code></strong> — Next.js app, public domain, Telegram + Postmark
@@ -685,9 +688,9 @@
           re-embed procedure from v1; never silent migration.
         </li>
         <li>
-          <strong>Railway lock-in.</strong> App services use Railpack via <code>railway.json</code>;
-          local Compose and Dockerfiles remain available for portable builds. Migration cost to bare
-          cloud is moderate but not zero.
+          <strong>Railway lock-in.</strong> App services use pinned Bun Dockerfiles via
+          <code>railway.json</code>; local Compose uses the same portable build definitions.
+          Migration cost to bare cloud is moderate but not zero.
         </li>
       </ul>
 

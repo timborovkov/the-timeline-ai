@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   parseErrorReference,
@@ -7,7 +8,6 @@ import {
   supportSurfaceForPath,
   supportSurfacePath,
 } from '@/lib/support-context';
-
 describe('support context', () => {
   it.each([
     ['/app', 'app_home'],

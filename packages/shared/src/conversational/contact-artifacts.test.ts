@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   contactMetadata,
   extractContactsFromText,
   sourceMetadataWithContacts,
 } from '#src/conversational/contact-artifacts.js';
-
 describe('conversational contact artifacts', () => {
   it('extracts emails, Slack mailto links, phones, Slack tel links, and labeled addresses', () => {
     const contacts = extractContactsFromText(

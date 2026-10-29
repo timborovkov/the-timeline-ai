@@ -53,22 +53,24 @@
           <tr>
             <td><code>web</code></td>
             <td>App</td>
-            <td><code>apps/web/railway.json</code> (Railpack)</td>
-            <td><code>NODE_ENV=production node apps/web/start.mjs</code></td>
+            <td><code>apps/web/railway.json</code> (Dockerfile)</td>
+            <td><code>env NODE_ENV=production bun --no-env-file apps/web/start.mjs</code></td>
           </tr>
           <tr>
             <td><code>worker</code></td>
             <td>App</td>
-            <td><code>apps/worker/railway.json</code> (Railpack)</td>
-            <td><code>NODE_ENV=production node apps/worker/dist/index.js</code></td>
+            <td><code>apps/worker/railway.json</code> (Dockerfile)</td>
+            <td>
+              <code>env NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code>
+            </td>
           </tr>
           <tr>
             <td><code>document-extract-orchestrator</code></td>
             <td>App</td>
-            <td><code>apps/worker/railway.extract.json</code> (Railpack)</td>
+            <td><code>apps/worker/railway.extract.json</code> (Dockerfile)</td>
             <td>
               <code
-                >NODE_ENV=production WORKER_MODE=document-extract node
+                >env NODE_ENV=production WORKER_MODE=document-extract bun --no-env-file
                 apps/worker/dist/extract-main.js</code
               >
             </td>
@@ -104,7 +106,7 @@
         customer-operated services rather than managed databases. Qdrant and RustFS are deployed as
         custom services using their official Docker images. Portable app Dockerfiles live under
         <code>docker/</code> for local/container-platform builds; keep the repo root free of an app
-        <code>Dockerfile</code> so Railpack follows the service <code>railway.json</code> files.
+        <code>Dockerfile</code>; each service selects its image through <code>railway.json</code>.
       </p>
 
       <h2 id="initial-setup">Initial setup</h2>
@@ -160,7 +162,7 @@
         Telegram/Slack/integration OAuth tokens on <code>document-extract-orchestrator</code>.
         Snapshot lifecycle (CI ensure, manual deployed-hash-aware retention, sandbox-aware pruning,
         and optional boot create-once): ADR 0013 and
-        <code>pnpm --filter @timeline/worker create-document-extract-snapshot</code>.
+        <code>bun run --filter @timeline/worker create-document-extract-snapshot</code>.
       </p>
       <p>
         Push CI never prunes snapshots because an idle deployed extractor has no persistent Daytona
@@ -172,10 +174,11 @@
         variable; it is a maintenance-command input only.
       </p>
       <p>
-        Extract startup checks the raw environment against a strict credential-thin allowlist.
-        Railway's normal Railpack / MISE runtime variables are accepted automatically. If startup
-        reports an unexpected variable, remove that copied service variable or deliberately add an
-        exact non-secret platform key in code; do not widen the allowlist by prefix.
+        Extract startup checks the raw environment against a strict credential-thin allowlist. The
+        pinned Bun image's runtime paths and explicitly listed Railway metadata are accepted
+        automatically. If startup reports an unexpected variable, remove that copied service
+        variable or deliberately add an exact non-secret platform key in code; do not widen the
+        allowlist by prefix.
       </p>
 
       <h2 id="environment-variables">Environment variables</h2>
@@ -351,22 +354,19 @@ LOG_LEVEL=info
         after verification when the portal no longer requires it.
       </p>
       <p>
-        Railway uses the checked-in Railpack manifests for web and worker deploys. The Dockerfiles
-        are kept for local production-parity runs and now accept the same Sentry build/runtime
-        variables, but Railway source-map upload depends on the variables above being available at
-        build time in each Railway service.
+        Railway uses the checked-in Dockerfiles for web and worker deploys. They accept the Sentry
+        build/runtime variables above; source-map upload requires those values at build time.
       </p>
       <p>
-        App runtimes are pinned to Node.js <code>24.22.1</code> through the root
-        <code>package.json</code> (<code>engines.node</code>) and <code>.nvmrc</code>; portable
-        Dockerfiles use <code>node:24.22.1-alpine</code>. Remove any conflicting
-        <code>RAILPACK_NODE_VERSION</code> override and rebuild and redeploy each app service to
-        replace an older runtime. Changing a version pin does not patch an already running service.
+        App runtimes use Bun <code>1.4.4</code>, pinned in <code>.bun-version</code>,
+        <code>package.json</code>, and <code>oven/bun:1.4.4-debian</code> Docker images. Railway
+        builds the repository Dockerfiles. Remove old Railpack and Node command overrides before the
+        coordinated release. See the <a href="bun-migration.md">Bun runbook</a>.
       </p>
       <p>
         Keep <code>NODE_ENV</code> set to <code>production</code> in both staging and production
         Railway environments. Use Railway's environment name and <code>SENTRY_ENVIRONMENT</code> for
-        labels such as <code>staging</code>; Node.js and the app env schema only accept
+        labels such as <code>staging</code>; the framework and the app env schema only accept
         <code>development</code>, <code>test</code>, or <code>production</code>. Set
         <code>TIMELINE_DEPLOYMENT_MODE=hosted</code> on every Timeline-operated service; only a
         separately licensed and operated deployment may select <code>self-managed</code> and assume
@@ -409,17 +409,14 @@ LOG_LEVEL=info
 
       <h2 id="staging-vs-production">Staging vs production</h2>
       <p>
-        Two Railway environments on the same project: <code>staging</code> and
-        <code>production</code>. Each gets its own Postgres, Redis, Qdrant, RustFS instances.
-        Domains:
+        The current project has only <code>production</code>, deployed from <code>main</code> at
+        <code>thetimeline.cc</code>. With no users, it also serves as the development and
+        deployment-verification environment.
       </p>
-      <ul>
-        <li><code>staging.thetimeline.cc</code> → staging web</li>
-        <li><code>thetimeline.cc</code> → production web</li>
-      </ul>
       <p>
-        Branch deploys: <code>main</code> → production, <code>staging</code> → staging. Configure
-        via Railway service settings.
+        If a separate staging environment is introduced later, give it isolated Postgres, Redis,
+        Qdrant, RustFS, and provider credentials. Configure its branch and domain then; a staging
+        deployment does not currently exist.
       </p>
 
       <h2 id="volumes-and-persistence">Volumes and persistence</h2>
@@ -565,13 +562,13 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
       <ol>
         <li>Push to <code>main</code> (production) or <code>staging</code> branch.</li>
         <li>
-          Railway builds each app service with Railpack using the service's
-          <code>railway.json</code> build command. The build installs the full pnpm workspace, so
-          operational scripts are available in <code>railway ssh</code>. The web build and deploy
-          images run with <code>NODE_ENV=production</code>; deploy commands use
-          <code>node</code> directly because Corepack's <code>pnpm</code> shims are not active
-          there. The <code>@timeline/web</code> build also runs
-          <code>apps/web/scripts/prepare-standalone.mjs</code>, which copies
+          Railway builds each app service using the Dockerfile selected by its
+          <code>railway.json</code>. The runner contains production dependencies and compiled
+          workspace packages; worker maintenance scripts run from
+          <code>apps/worker/dist/scripts</code>. The web build and deploy images run with
+          <code>NODE_ENV=production</code>; deploy commands use <code>bun</code> directly;
+          package-manager shims are not required there. The <code>@timeline/web</code> build also
+          runs <code>apps/web/scripts/prepare-standalone.mjs</code>, which copies
           <code>.next/static</code>, <code>public</code>, and the shared
           <code>dist/messaging/email-templates</code> runtime assets into both the standalone root
           and app subtree so Railway serves the hashed CSS, JavaScript chunks, connector icons,
@@ -584,11 +581,11 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
           restart. The pre-deploy command is already wired in
           <code>apps/web/railway.json</code> and <code>apps/worker/railway.json</code>:
           <pre><code>"preDeployCommand": [
-  "NODE_ENV=production node packages/db/dist/migrate.js"
+  "env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js"
 ]
 </code></pre>
           The script (<code>packages/db/src/migrate.ts</code>) is built before deploy, and the
-          Railpack runtime keeps the workspace files and installed dependencies available to the
+          Docker runtime keeps the compiled packages and production dependencies available to the
           release command. The same migrate entrypoint is called by
           <code>apps/web/start.mjs</code> before <code>apps/web/server.js</code> and by
           <code>apps/worker/src/index.ts</code> before queues start consuming jobs. It applies any
@@ -618,9 +615,10 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
           <p>
             <strong>SSL note.</strong> Inside a Railway project, <code>DATABASE_URL</code> resolves
             to the PostgreSQL service's internal hostname and uses plain TCP. If you ever point this
-            at the <em>external</em> Postgres proxy (e.g., to run <code>pnpm db:migrate</code> from
-            your laptop against staging), append <code>?sslmode=require</code> to the URL —
-            <code>postgres-js</code> follows the connection string, not an out-of-band env var.
+            at the <em>external</em> Postgres proxy (e.g., to run
+            <code>bun run db:migrate</code> from your laptop against staging), append
+            <code>?sslmode=require</code> to the URL — <code>postgres-js</code> follows the
+            connection string, not an out-of-band env var.
           </p>
         </li>
         <li>

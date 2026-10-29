@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   attachUniqueHubsToBundles,
@@ -13,7 +14,6 @@ import {
   stripAmbiguousLifecycleUpdates,
   type WorkspaceHub,
 } from '#src/suggestions/hub-context.js';
-
 const fabaCompany: WorkspaceHub = {
   id: 'company-faba',
   type: 'company',

@@ -9,14 +9,14 @@ import {
   savedMeetingAliases,
   savedMeetings,
 } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { detectMeetingPlatform, lookupMeetingByBotId } from '#src/meetings/scope.js';
 import { withTeam } from '#src/team-scope.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const TEAM_ID_B = '22222222-2222-2222-2222-222222222222';
 const USER_A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

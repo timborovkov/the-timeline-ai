@@ -1,13 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as objects from '@timeline/shared/objects/types';
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
@@ -20,38 +17,67 @@ const fakes = vi.hoisted(() => ({
   notifySuccess: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: fakes.refresh }) }));
-vi.mock('@/app/actions/objects', () => ({
-  findObjectCleanupSuggestionsAction: fakes.findObjectCleanupSuggestionsAction,
-  mergeObjectsAction: vi.fn(),
-}));
-vi.mock('@/app/actions/suggestions', () => ({
-  acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
-  rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: (options: { id?: string; run: () => Promise<{ error?: string }> }) =>
-    fakes.notifyAction(options),
-  notifySuccess: fakes.notifySuccess,
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { item: { id: string } }[];
-    renderItem: (entry: { item: { id: string } }, index: number) => ReactNode;
-    getItemKey: (entry: { item: { id: string } }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((entry, index) =>
-        createElement('div', { key: getItemKey(entry, index) }, renderItem(entry, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.refresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    findObjectCleanupSuggestionsAction: fakes.findObjectCleanupSuggestionsAction,
+    mergeObjectsAction: vi.fn(),
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/suggestions'),
+  () => ({
+    acceptSuggestionItemAction: fakes.acceptSuggestionItemAction,
+    rejectSuggestionItemAction: fakes.rejectSuggestionItemAction,
+  }),
+  () => import('@/app/actions/suggestions'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: (options: { id?: string; run: () => Promise<{ error?: string }> }) =>
+      fakes.notifyAction(options),
+    notifySuccess: fakes.notifySuccess,
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { item: { id: string } }[];
+      renderItem: (entry: { item: { id: string } }, index: number) => ReactNode;
+      getItemKey: (entry: { item: { id: string } }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((entry, index) =>
+          createElement('div', { key: getItemKey(entry, index) }, renderItem(entry, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectCleanupSuggestions } = await import('./object-cleanup-suggestions.js');
 

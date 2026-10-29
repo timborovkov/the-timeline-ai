@@ -24,9 +24,11 @@ import { conversationReview, evidencePacks, llm, suggestions } from '@timeline/s
 import { resetEnvForTests } from '@timeline/shared/env';
 import { RECONCILIATION_PLANNER_PROMPT_VERSION } from '@timeline/shared/reconciliation/planner';
 import { withTeam } from '@timeline/shared/team-scope';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import {
@@ -35,7 +37,6 @@ import {
   processSuggestionJobForTests,
   SUGGESTION_PROMPT_MAX_INPUT_TOKENS,
 } from '#src/workers/suggestions.js';
-
 /**
  * Agentic-core worker tests. These exercise the background suggestion
  * processor against a real migrated PGlite database with injected LLM/env

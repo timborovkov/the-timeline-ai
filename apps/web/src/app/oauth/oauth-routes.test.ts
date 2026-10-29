@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   register: vi.fn(),
   exchange: vi.fn(),
@@ -8,30 +9,46 @@ const fakes = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
 }));
 
-vi.mock('@timeline/shared/mcp-server', () => {
-  class McpOAuthError extends Error {
-    constructor(
-      readonly code: string,
-      message: string,
-    ) {
-      super(message);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/mcp-server'),
+  () => {
+    class McpOAuthError extends Error {
+      constructor(
+        readonly code: string,
+        message: string,
+      ) {
+        super(message);
+      }
     }
-  }
-  return {
-    McpOAuthError,
-    MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
-    registerMcpOAuthClient: fakes.register,
-    exchangeMcpAuthorizationCode: fakes.exchange,
-    rotateMcpRefreshToken: fakes.rotate,
-    revokeMcpOAuthToken: fakes.revoke,
-  };
-});
-vi.mock('@timeline/shared/rate-limit', () => ({
-  checkRateLimit: fakes.checkRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
-vi.mock('@timeline/shared/email', () => ({ clientIpFromHeaders: () => '203.0.113.10' }));
-vi.mock('@/lib/db', () => ({ db: { name: 'db' } }));
+    return {
+      McpOAuthError,
+      MCP_OAUTH_SCOPES: ['read', 'agent:ask'],
+      registerMcpOAuthClient: fakes.register,
+      exchangeMcpAuthorizationCode: fakes.exchange,
+      rotateMcpRefreshToken: fakes.rotate,
+      revokeMcpOAuthToken: fakes.revoke,
+    };
+  },
+  () => import('@timeline/shared/mcp-server'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    checkRateLimit: fakes.checkRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/email'),
+  () => ({ clientIpFromHeaders: () => '203.0.113.10' }),
+  () => import('@timeline/shared/email'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { name: 'db' } }),
+  () => import('@/lib/db'),
+);
 
 const { McpOAuthError } = await import('@timeline/shared/mcp-server');
 const { OPTIONS: registerOptions, POST: register } = await import('@/app/oauth/register/route');

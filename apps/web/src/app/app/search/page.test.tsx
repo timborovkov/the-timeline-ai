@@ -1,22 +1,28 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   props: vi.fn(),
 }));
 
-vi.mock('@/components/global-search-page', () => ({
-  GlobalSearchPage: (props: {
-    initialQuery: string;
-    initialType?: string;
-    initialSource?: string;
-    initialFrom?: string;
-    initialTo?: string;
-  }) => {
-    fakes.props(props);
-    return <div data-testid="global-search-page">{props.initialQuery}</div>;
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@/components/global-search-page'),
+  () => ({
+    GlobalSearchPage: (props: {
+      initialQuery: string;
+      initialType?: string;
+      initialSource?: string;
+      initialFrom?: string;
+      initialTo?: string;
+    }) => {
+      fakes.props(props);
+      return <div data-testid="global-search-page">{props.initialQuery}</div>;
+    },
+  }),
+  () => import('@/components/global-search-page'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: SearchPage } = await import('./page.js');
 

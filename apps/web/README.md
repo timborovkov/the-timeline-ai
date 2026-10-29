@@ -28,9 +28,9 @@ Single user-facing surface. All UI, API routes, and server actions live here. Ba
 From the repo root:
 
 ```bash
-pnpm dev          # starts Next.js + worker in watch mode
-pnpm --filter @timeline/web build
-pnpm --filter @timeline/web typecheck
+bun run dev          # starts Next.js + worker in watch mode
+bun run --filter @timeline/web build
+bun run --filter @timeline/web typecheck
 ```
 
 Local dev requires the Docker Compose stack from the repo root (`docker compose up -d`).

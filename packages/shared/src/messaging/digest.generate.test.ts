@@ -1,10 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   withTeam: vi.fn(),
 }));
 
-vi.mock('#src/team-scope.js', () => ({ withTeam: fakes.withTeam }));
+await vi.mock(
+  import.meta.resolve('#src/team-scope.js'),
+  () => ({ withTeam: fakes.withTeam }),
+  () => import('#src/team-scope.js'),
+);
 
 const { generateDailyDigest } = await import('#src/messaging/digest.js');
 

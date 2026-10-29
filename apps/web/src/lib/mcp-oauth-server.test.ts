@@ -1,5 +1,7 @@
 import { McpOAuthError } from '@timeline/shared/mcp-server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { GET as getAuthorizationServerMetadata } from '@/app/.well-known/oauth-authorization-server/route';
 import { GET as getPathProtectedResourceMetadata } from '@/app/.well-known/oauth-protected-resource/api/mcp/server/route';
@@ -11,7 +13,6 @@ import {
   oauthJsonResponse,
   oauthPreflightResponse,
 } from '@/lib/mcp-oauth-server';
-
 afterEach(() => {
   vi.unstubAllEnvs();
 });

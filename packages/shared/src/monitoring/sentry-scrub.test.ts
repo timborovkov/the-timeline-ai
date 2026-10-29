@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   RESTRICTED_SENTRY_DATA_COLLECTION,
@@ -9,7 +10,6 @@ import {
   scrubSentryRequestEvent,
   scrubSentrySpan,
 } from '#src/monitoring/sentry-scrub.js';
-
 describe('Sentry scrubber', () => {
   it('removes the complete request-header map and request cookies', () => {
     const event = scrubSentryRequestEvent({

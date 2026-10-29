@@ -1,14 +1,18 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
 
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
-
-import {
-  currentProviderRequestContext,
-  withProviderRequestContext,
-} from '#src/integrations/request.js';
-import { SlackApi } from '#src/slack/api.js';
+const { currentProviderRequestContext, withProviderRequestContext } =
+  await import('#src/integrations/request.js');
+const { SlackApi } = await import('#src/slack/api.js');
 
 describe('SlackApi message posting', () => {
   afterEach(() => {

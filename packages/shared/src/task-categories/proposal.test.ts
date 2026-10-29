@@ -1,11 +1,12 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import {
   enrichTaskProposalCategories,
   enrichTaskProposalCategory,
 } from '#src/task-categories/proposal.js';
-
 const ORIGINAL_ENV = { ...process.env };
 
 afterEach(() => {

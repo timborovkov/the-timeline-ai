@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   chooseSurvivor,
@@ -13,7 +15,6 @@ import {
   aiDuplicateClusters,
   buildAiDuplicateBatches,
 } from '#src/scripts/dedupe-calendar-events.js';
-
 const START = new Date('2026-06-17T11:00:00.000Z');
 const END = new Date('2026-06-17T12:00:00.000Z');
 

@@ -1,12 +1,6 @@
-import { createHmac } from 'node:crypto';
-
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as EmailModule from '@timeline/shared/email';
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-import type * as SlackModule from '@timeline/shared/slack';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
@@ -15,35 +9,62 @@ const fakes = vi.hoisted(() => ({
   reportCaughtError: vi.fn(),
 }));
 
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/sentry-report', () => ({
-  reportCaughtError: fakes.reportCaughtError,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({
+    reportCaughtError: fakes.reportCaughtError,
+  }),
+  () => import('@/lib/sentry-report'),
+);
 
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
 
-vi.mock('@timeline/shared/email', async () => {
-  const actual = await vi.importActual<typeof EmailModule>('@timeline/shared/email');
-  return { ...actual, clientIpFromHeaders: () => '203.0.113.10' };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/email'),
+  async () => {
+    const actual = await import('@timeline/shared/email');
+    return { ...actual, clientIpFromHeaders: () => '203.0.113.10' };
+  },
+  () => import('@timeline/shared/email'),
+);
 
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return {
-    ...actual,
-    checkRateLimit: fakes.checkRateLimit,
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return {
+      ...actual,
+      checkRateLimit: fakes.checkRateLimit,
+    };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
 
-vi.mock('@timeline/shared/slack', async () => {
-  const actual = await vi.importActual<typeof SlackModule>('@timeline/shared/slack');
-  return {
-    ...actual,
-    handleSlackSlashCommand: fakes.handleSlackSlashCommand,
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slack'),
+  async () => {
+    const actual = await import('@timeline/shared/slack');
+    return {
+      ...actual,
+      handleSlackSlashCommand: fakes.handleSlackSlashCommand,
+    };
+  },
+  () => import('@timeline/shared/slack'),
+);
+
+const { createHmac } = await import('node:crypto');
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 

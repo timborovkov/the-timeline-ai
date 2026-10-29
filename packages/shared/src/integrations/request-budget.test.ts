@@ -1,17 +1,22 @@
 import { randomUUID } from 'node:crypto';
 
+import { expect, vi } from '@timeline/test-support';
+import { afterAll, describe, it } from 'bun:test';
 import IORedis from 'ioredis';
-import { afterAll, describe, expect, it, vi } from 'vitest';
 
 const connection = vi.hoisted(() => ({ current: null as IORedis | null }));
-vi.mock('#src/queue/connection.js', () => ({ getRedisConnection: () => connection.current }));
+await vi.mock(
+  import.meta.resolve('#src/queue/connection.js'),
+  () => ({ getRedisConnection: () => connection.current }),
+  () => import('#src/queue/connection.js'),
+);
 
-import {
+const {
   pauseProviderRequests,
   observeProviderCapacity,
   requestBudgetIdentity,
   reserveProviderRequest,
-} from '#src/integrations/request-budget.js';
+} = await import('#src/integrations/request-budget.js');
 
 // Real Lua execution is opt-in for this suite; use an isolated key prefix, never FLUSHDB.
 describe.skipIf(!process.env.TEST_REDIS_URL)('shared request budget with Redis', () => {

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { kanbanCollisionDetection } from '@/lib/kanban-collision';
-
 function rect(left: number, top: number, width: number, height: number) {
   return { left, top, width, height, right: left + width, bottom: top + height };
 }

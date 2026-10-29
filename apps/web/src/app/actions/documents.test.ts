@@ -1,20 +1,6 @@
-import { resetEnvForTests } from '@timeline/shared/env';
-import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-
-import {
-  createFolderAction,
-  deleteDocumentAction,
-  deleteFolderAction,
-  finalizeDocumentVersionAction,
-  getDocumentPreviewUrlAction,
-  promoteCapturedFileAction,
-  renameDocumentAction,
-  requestDocumentUploadAction,
-} from '@/app/actions/documents';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for `documents.ts`. Mocks the auth chokepoint
  * (auth + resolveActiveTeam) and the shared IO surface
@@ -71,40 +57,97 @@ const fakes = vi.hoisted(() => ({
   trackProductEventBestEffort: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn().mockResolvedValue({
-    enqueueDocumentExtractJob: fakes.fakeEnqueueDocExtract,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: vi.fn().mockResolvedValue({
+      enqueueDocumentExtractJob: fakes.fakeEnqueueDocExtract,
+    }),
   }),
-}));
-vi.mock('@/lib/onboarding', () => ({
-  safeMarkOnboardingStep: fakes.fakeSafeMarkOnboardingStep,
-}));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/onboarding'),
+  () => ({
+    safeMarkOnboardingStep: fakes.fakeSafeMarkOnboardingStep,
+  }),
+  () => import('@/lib/onboarding'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
 
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ documents: fakes.fakeScope, audit: { record: fakes.fakeAuditRecord } }),
-}));
-vi.mock('@timeline/shared/s3', () => ({
-  getDocumentsBucket: () => 'test-documents',
-  getS3Client: () => ({}) as unknown,
-  getS3PresignClient: () => ({}) as unknown,
-  getSignedPutObjectUrl: fakes.fakeGetSignedPutUrl,
-  getSignedGetObjectUrl: fakes.fakeGetSignedGetUrl,
-  headObject: fakes.fakeHeadObject,
-}));
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return { ...actual, checkRateLimit: fakes.fakeCheckRateLimit };
-});
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ documents: fakes.fakeScope, audit: { record: fakes.fakeAuditRecord } }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/s3'),
+  () => ({
+    getDocumentsBucket: () => 'test-documents',
+    getS3Client: () => ({}) as unknown,
+    getS3PresignClient: () => ({}) as unknown,
+    getSignedPutObjectUrl: fakes.fakeGetSignedPutUrl,
+    getSignedGetObjectUrl: fakes.fakeGetSignedGetUrl,
+    headObject: fakes.fakeHeadObject,
+  }),
+  () => import('@timeline/shared/s3'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return { ...actual, checkRateLimit: fakes.fakeCheckRateLimit };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
+const { PRIVACY_VERSION, TERMS_VERSION } = await import('@timeline/shared/legal-versions');
+const {
+  createFolderAction,
+  deleteDocumentAction,
+  deleteFolderAction,
+  finalizeDocumentVersionAction,
+  getDocumentPreviewUrlAction,
+  promoteCapturedFileAction,
+  renameDocumentAction,
+  requestDocumentUploadAction,
+} = await import('@/app/actions/documents');
 
 // Aliases for ergonomic use in test bodies.
 const {

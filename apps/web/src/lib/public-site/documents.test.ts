@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { PUBLIC_DOCUMENT_REGISTRY } from '@/lib/public-site/documents';
 import { buildPublicStructuredData } from '@/lib/public-site/structured-data';
-
 describe('core public documents', () => {
   it('keeps the home search metadata concise and names the product entity explicitly', () => {
     const home = PUBLIC_DOCUMENT_REGISTRY.get('/');

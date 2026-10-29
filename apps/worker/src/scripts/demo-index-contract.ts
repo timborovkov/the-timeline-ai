@@ -72,7 +72,7 @@ export function assertDemoVectorIndexEnvironment(input: {
   }
   if (!input.openRouterApiKey) {
     throw new Error(
-      'OPENROUTER_API_KEY is required to create genuine demo embeddings; configure a development key and rerun pnpm demo:seed',
+      'OPENROUTER_API_KEY is required to create genuine demo embeddings; configure a development key and rerun bun run demo:seed',
     );
   }
   if (!input.qdrantUrl) {
@@ -131,7 +131,7 @@ function assertVectorIdFamily(
   }
   if (corpus < family.corpusMinimum) {
     throw new Error(
-      `Demo vector source set is incomplete: ${kind} expected at least ${String(family.corpusMinimum)} corpus ids, found ${String(corpus)}. Rerun pnpm dev:seed and inspect the deterministic fixture rows.`,
+      `Demo vector source set is incomplete: ${kind} expected at least ${String(family.corpusMinimum)} corpus ids, found ${String(corpus)}. Rerun bun run dev:seed and inspect the deterministic fixture rows.`,
     );
   }
 }
@@ -141,7 +141,7 @@ export function assertExpectedDemoVectorSources(rows: DemoVectorRows): void {
     const actual = rows[kind as keyof DemoVectorRows].length;
     if (actual < minimum) {
       throw new Error(
-        `Demo vector source set is incomplete: ${kind} expected at least ${String(minimum)}, found ${String(actual)}. Rerun pnpm dev:seed and inspect the deterministic fixture rows.`,
+        `Demo vector source set is incomplete: ${kind} expected at least ${String(minimum)}, found ${String(actual)}. Rerun bun run dev:seed and inspect the deterministic fixture rows.`,
       );
     }
   }

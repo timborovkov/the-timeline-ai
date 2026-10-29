@@ -1,13 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as boards from '@timeline/shared/boards';
 import type * as objects from '@timeline/shared/objects/types';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   addBoardItemAction: vi.fn(),
@@ -15,22 +12,40 @@ const fakes = vi.hoisted(() => ({
   searchAddableObjectsAction: vi.fn(),
 }));
 
-vi.mock('@/app/actions/boards', () => ({
-  addBoardItemAction: fakes.addBoardItemAction,
-  quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
-}));
-vi.mock('@/app/actions/objects', () => ({
-  searchAddableObjectsAction: fakes.searchAddableObjectsAction,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
-    try {
-      return await run();
-    } catch (error) {
-      return { error: error instanceof Error ? error.message : 'failed' };
-    }
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/boards'),
+  () => ({
+    addBoardItemAction: fakes.addBoardItemAction,
+    quickCreateBoardItemAction: fakes.quickCreateBoardItemAction,
+  }),
+  () => import('@/app/actions/boards'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    searchAddableObjectsAction: fakes.searchAddableObjectsAction,
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : 'failed' };
+      }
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { BoardAddItemForm } = await import('./board-add-item-form.js');
 

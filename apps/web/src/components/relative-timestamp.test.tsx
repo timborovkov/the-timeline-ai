@@ -1,11 +1,12 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { RelativeTimestamp } from '@/components/relative-timestamp';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
 import { formatDisplayDateTime, formatRelativeAge } from '@/lib/display-dates';
+// Test environment: happy-dom
 
 afterEach(() => {
   cleanup();

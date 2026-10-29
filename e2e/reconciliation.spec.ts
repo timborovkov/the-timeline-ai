@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { JobType } from 'bullmq';
 
 import { expect, test, type Page } from '@playwright/test';
 import { getDb, getDbClient } from '@timeline/db';
@@ -85,8 +86,9 @@ const runHistoryIds = Array.from({ length: 13 }, () => randomUUID());
 
 type ReconciliationQueueFilter = (data: ReconciliationJobData) => boolean;
 
-function queuedReconciliationJobStates() {
-  return ['waiting', 'delayed', 'prioritized', 'paused'] as const;
+function queuedReconciliationJobStates(): JobType[] {
+  // BullMQ includes paused waiting jobs in the waiting state.
+  return ['waiting', 'delayed', 'prioritized'];
 }
 
 async function queuedReconciliationJobs(
@@ -274,10 +276,11 @@ async function seedReconciliationState(): Promise<void> {
     const sourceRef = [{ source: 'integration', rawEventId: fixture.rawEvent }];
     const sourcePayloadRef = `inline://e2e/reconciliation/${fixture.rawEvent}`;
     const evidenceKey = fixture.rawEvent.replaceAll('-', '');
-    const visibilityUserIds = fixture.userIds?.[0]
-      ? sql`ARRAY[${fixture.userIds[0]}]::uuid[]`
-      : sql`NULL::uuid[]`;
-    const ownerUserId = fixture.ownerUserId ?? null;
+    const visibilityUserIds =
+      'userIds' in fixture && fixture.userIds[0]
+        ? sql`ARRAY[${fixture.userIds[0]}]::uuid[]`
+        : sql`NULL::uuid[]`;
+    const ownerUserId = 'ownerUserId' in fixture ? fixture.ownerUserId : null;
 
     await sql`
       INSERT INTO raw_events (
@@ -569,7 +572,9 @@ async function seedApprovalCrossLinkState(): Promise<void> {
       },
     ],
   });
-  const outputId = bundle.items[0]?.metadata.reconciliation_output_id;
+  const approvalItem = bundle.items[0];
+  if (!approvalItem) throw new Error('expected approval item');
+  const outputId = approvalItem.metadata.reconciliation_output_id;
   if (typeof outputId !== 'string') throw new Error('expected approval reconciliation output id');
 
   await sql`
@@ -592,7 +597,7 @@ async function seedApprovalCrossLinkState(): Promise<void> {
       reconciliation_cluster_id: fixtures.team.cluster,
     })}::jsonb
     WHERE team_id = ${e2eTeam.id}
-      AND id = ${bundle.items[0]?.id}
+      AND id = ${approvalItem.id}
   `;
 }
 
@@ -789,14 +794,26 @@ test.describe.serial('reconciliation dashboard', () => {
     await expect(page.getByRole('button', { name: 'Check coverage' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Preview repair' })).toBeVisible();
     await expect(page.getByText(fixtures.team.title).first()).toBeVisible();
-    await expect(page.getByText('Customer project').first()).toBeVisible();
+    await expect(
+      page.getByText('Customer project').filter({ visible: true }).first(),
+    ).toBeVisible();
     await openAdvancedTools(page);
-    await expect(page.getByText('customer_project').first()).toBeVisible();
-    await expect(page.getByText('observed_association').first()).toBeVisible();
-    await expect(page.getByText('approval_bundle').first()).toBeVisible();
-    await expect(page.getByText('failed').first()).toBeVisible();
-    await expect(page.getByText('evidence').first()).toBeVisible();
-    await expect(page.getByText('projections').first()).toBeVisible();
+    await expect(
+      page.getByText('Customer project').filter({ visible: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Related evidence').filter({ visible: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText('Approval request').filter({ visible: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByText('Failed').filter({ visible: true }).first()).toBeVisible();
+    await expect(
+      page.locator('[title*="evidence 1"]').filter({ visible: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.locator('[title*="projections 1"]').filter({ visible: true }).first(),
+    ).toBeVisible();
     await expect(page.getByText(fixtures.workerRepair.title).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Check coverage' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Preview repair' })).toBeVisible();
@@ -873,12 +890,12 @@ test.describe.serial('reconciliation dashboard', () => {
     await signIn(page, e2eUsers.owner.email);
     await page.goto('/app/approvals');
 
-    const approval = page.locator('article').filter({ hasText: fixtures.approval.title });
+    const approval = page.locator('article').filter({ hasText: fixtures.approval.itemTitle });
     await expect(approval).toBeVisible();
     await expect(approval.getByText('Technical details')).toHaveCount(0);
     await expect(approval.getByText('Open processing record')).toHaveCount(0);
     await approval
-      .getByRole('button', { name: new RegExp(`Preview ${fixtures.approval.title}`) })
+      .getByRole('button', { name: new RegExp(`Preview ${fixtures.approval.itemTitle}`) })
       .click();
     await expect(page.getByText(/Proposed record|Current record/)).toBeVisible();
 
@@ -905,7 +922,7 @@ test.describe.serial('reconciliation dashboard', () => {
 
     const acceptApproval = page
       .locator('article')
-      .filter({ hasText: fixtures.approvalActions.acceptTitle });
+      .filter({ hasText: fixtures.approvalActions.acceptItemTitle });
     await expect(acceptApproval).toBeVisible();
     await acceptApproval
       .getByRole('button', { name: `Accept ${fixtures.approvalActions.acceptItemTitle}` })
@@ -920,7 +937,7 @@ test.describe.serial('reconciliation dashboard', () => {
 
     const rejectApproval = page
       .locator('article')
-      .filter({ hasText: fixtures.approvalActions.rejectTitle });
+      .filter({ hasText: fixtures.approvalActions.rejectItemTitle });
     await expect(rejectApproval).toBeVisible();
     await rejectApproval
       .getByRole('button', { name: `Reject ${fixtures.approvalActions.rejectItemTitle}` })
@@ -960,7 +977,7 @@ test.describe.serial('reconciliation dashboard', () => {
     await page.goto('/app/approvals?status=failed');
     const failedApproval = page
       .locator('article')
-      .filter({ hasText: fixtures.approvalBulkPartial.title });
+      .filter({ hasText: fixtures.approvalBulkPartial.calendarTitle });
     await expect(
       failedApproval.getByText(fixtures.approvalBulkPartial.calendarTitle, { exact: true }),
     ).toBeVisible();
@@ -986,7 +1003,7 @@ test.describe.serial('reconciliation dashboard', () => {
 
     await openAdvancedTools(page);
     await page.getByLabel('Scope').selectOption('cluster');
-    await page.getByLabel('Target id').fill(fixtures.team.cluster);
+    await page.getByLabel('Object or cluster ID').fill(fixtures.team.cluster);
     await page.getByRole('button', { name: 'Reconcile' }).click();
     await expect(page).toHaveURL(/reconciliationNotice=queued/);
     await expect(
@@ -1049,11 +1066,31 @@ test.describe.serial('reconciliation dashboard', () => {
     await page.goto('/app/team/reconciliation');
     await openAdvancedTools(page);
     await expect(page.getByText('evidence_audit:email')).toBeVisible();
-    await expect(page.getByText('release passed')).toBeVisible();
-    await expect(page.getByText('missing').first()).toBeVisible();
+    await expect(
+      page
+        .getByTitle(/release passed/)
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByTitle(/missing \d/)
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible();
     await expect(page.getByText('evidence_backfill:integration')).toBeVisible();
-    await expect(page.getByText('candidates')).toBeVisible();
-    await expect(page.getByText('normalized').first()).toBeVisible();
+    await expect(
+      page
+        .getByTitle(/candidates \d/)
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByTitle(/normalized \d/)
+        .filter({ visible: true })
+        .first(),
+    ).toBeVisible();
   });
 
   test('filters private and specific-user clusters for the active viewer', async ({ browser }) => {
@@ -1096,7 +1133,11 @@ test.describe.serial('reconciliation dashboard', () => {
     await page.goto('/app/team/reconciliation');
 
     await expect(page.getByText(fixtures.team.title).first()).toBeVisible();
-    await expect(page.getByLabel('Open floating agent chat')).toBeHidden();
+    await expect(page.getByLabel('Open floating agent chat')).toBeVisible();
+    await expect(page.getByLabel('Open floating agent chat')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
     await expect(page.getByRole('button', { name: 'Check coverage' })).toBeVisible();
 
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);

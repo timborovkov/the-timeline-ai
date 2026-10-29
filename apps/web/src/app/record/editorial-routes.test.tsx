@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs';
 
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import SentryIncidentGuidePage from '@/app/guides/connect-sentry-incidents-to-releases-discussions-and-fixes/page';
 import SlackAndDriveGuidePage from '@/app/guides/search-slack-and-google-drive-together/page';
@@ -13,7 +14,6 @@ import {
   GUIDE_ROUTES,
 } from '@/components/marketing/editorial/content';
 import { EditorialShell } from '@/components/marketing/editorial/editorial-shell';
-
 const GUIDE_PAGES = [
   {
     guide: findEditorialGuideByRoute(GUIDE_ROUTES.slackAndDrive),

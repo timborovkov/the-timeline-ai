@@ -11,11 +11,11 @@ is red.
 
 After **any** code, configuration, or documentation change:
 
-1. Run `pnpm validate`.
+1. Run `bun run validate`.
    - This is the canonical static gate and must pass.
    - It runs Prettier formatting checks, TypeScript compilation/typecheck,
      ESLint, and Knip.
-2. Run `pnpm run doctor`.
+2. Run `bun run doctor`.
    - React Doctor must report a 100 score before handoff.
    - The root script runs `scripts/run-react-doctor.mjs`, which executes the
      real React Doctor analyzer in JSON mode and posts diagnostics to the
@@ -27,31 +27,31 @@ After **any** code, configuration, or documentation change:
 3. Run tests appropriate to the change.
    - For code changes, run the nearest targeted test command for the behavior
      touched.
-   - Run `pnpm test:dist-imports` when a change touches shared package exports,
-     compiled output, or Node runtime loader boundaries.
-   - Run `pnpm test:eval` when a change touches agent tools, retrieval,
+   - Run `bun run test:dist-imports` when a change touches shared package exports,
+     compiled output, or Bun runtime loader boundaries.
+   - Run `bun run test:eval` when a change touches agent tools, retrieval,
      visibility filters, MCP tool handling, or answer synthesis.
-   - Run `pnpm test:proposal-engine:live` with
+   - Run `bun run test:proposal-engine:live` with
      `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when proposal-engine
      qualify/attach, container-label hubs, or messy live fixtures change **and**
      a real `OPENROUTER_API_KEY` (and Qdrant, for the vector cases) is
      available. This is an opt-in live eval, not CI.
-   - Run `pnpm test:task-category-eval:live` with
+   - Run `bun run test:task-category-eval:live` with
      `TASK_CATEGORY_LIVE_ENV_FILE=/path/to/.env` when the task-category
      taxonomy, classifier packet, prompt, schema, or pinned model changes.
-   - Run `pnpm eval:transcription-quality:live -- --manifest=/path/to/manifest.json
+   - Run `bun run eval:transcription-quality:live -- --manifest=/path/to/manifest.json
      --out=/path/to/new-evidence.json --candidate=<model-id>` before changing the
      non-meeting transcription pin. The approved corpus must contain no customer
      data and satisfy the 24-language quality gate documented in
      [docs/research/transcription-quality-eval.md](docs/research/transcription-quality-eval.md).
      A live registry entry or single-language smoke test is not promotion evidence.
-   - Run `pnpm test:reconciliation-eval` when a change touches reconciliation
+   - Run `bun run test:reconciliation-eval` when a change touches reconciliation
      schema, source refs, evidence associations, visibility floors, authority
      policy, or reconciliation output planning. Run
-     `pnpm test:reconciliation-eval:live` when prompts or live-model
+     `bun run test:reconciliation-eval:live` when prompts or live-model
      reconciliation behavior changed and the required env vars are available.
-   - Run broader suites such as `pnpm test`, `pnpm e2e`, or a package-filtered
-     Vitest/e2e command when the blast radius is shared, cross-package,
+   - Run broader suites such as `bun run test`, `bun run e2e`, or a package-filtered
+     Bun/e2e command when the blast radius is shared, cross-package,
      user-facing, or hard to localize.
    - For docs-only changes, tests may be skipped only when no executable
      behavior, scripts, examples, or generated artifacts changed.
@@ -69,7 +69,7 @@ If any completion gate fails:
 - Escalate only after a serious root-cause attempt, with the exact failing
   command, error, what you tried, and what blocks completion.
 
-Use `pnpm` only. Do not use `npm` or `yarn`.
+Use `bun` only. Do not use `pnpm`, `npm`, or `yarn`.
 
 ## Handoff protocol — run `/document-release` before handing back
 
@@ -176,15 +176,15 @@ Treat this file as an operating contract for agents, not a loose README.
 - **One inference layer.** `llm.chatStructured()`, `llm.streamChat()`, `llm.embed()`,
   `llm.embedMany()`, `llm.transcribeAudio()`, `llm.extractTextFromMedia()` (Phase 9 vision OCR) in `packages/shared`.
   No direct OpenAI / OpenRouter SDK calls from app or worker code.
-- **`pnpm` only** (no `npm` / `yarn`). Workspace packages are wired via
-  Turborepo; `pnpm -r build` is the canonical build.
-- **Use the verified demo seed for recorded demos and local regression checks.** `pnpm demo:seed`
-  runs the idempotent `pnpm dev:seed`, indexes every deterministic fixture source through the real
-  embed worker/OpenRouter/Qdrant path, and then runs `pnpm demo:verify`. It creates the
+- **`bun` only** (no `pnpm` / `npm` / `yarn`). Workspace packages are wired via
+  Turborepo; `bun run build` is the canonical build.
+- **Use the verified demo seed for recorded demos and local regression checks.** `bun run demo:seed`
+  runs the idempotent `bun run dev:seed`, indexes every deterministic fixture source through the real
+  embed worker/OpenRouter/Qdrant path, and then runs `bun run demo:verify`. It creates the
   documented Acme Labs team, eight fake login users, a month of timeline events, objects, custom
   boards, documents, meetings, Ask history, pending proposals, digest history, and the
   deterministic fictional Northstar evidence corpus with encrypted fake integration credentials after
-  migrations. `pnpm demo:reset` is `pnpm dev:wipe && pnpm demo:seed`. `pnpm demo:verify` fails closed on all eight login identities, active memberships,
+  migrations. `bun run demo:reset` is `bun run dev:wipe && bun run demo:seed`. `bun run demo:verify` fails closed on all eight login identities, active memberships,
   password usability, current legal-version snapshots with matching immutable acceptance evidence,
   downloaded document-byte checksums, scoped Qdrant
   discoverability for Northstar raw events/facts/document chunks/meeting chunks, expanded-corpus
@@ -192,21 +192,21 @@ Treat this file as an operating contract for agents, not a loose README.
   visibility, source links, canonical support drift, or expanded-corpus volume floors. The commands refuse production and
   unapproved remote databases/Qdrant; S3 writes additionally require the local endpoint and
   `timeline-documents` bucket unless `ALLOW_DEV_SEED_STORAGE` carries the documented explicit
-  isolated-storage acknowledgement. `pnpm dev:seed:heavy` adds extra Acme Labs rows after that
+  isolated-storage acknowledgement. `bun run dev:seed:heavy` adds extra Acme Labs rows after that
   corpus so infinite-scroll fetches and virtualization have enough volume. The fake
   integrations stay disabled for sync so local workers do not call real
   providers. Live daily-digest send stays off; historical digest rows are still seeded.
   Keep the credential list in [README.md](README.md) and the glossary in
   [docs/demo-corpus.md](docs/demo-corpus.md) current when
   the seed changes.
-- **Monday helper-board repair is dry-run first.** Use `pnpm repair:monday --
+- **Monday helper-board repair is dry-run first.** Use `bun run repair:monday --
   --env-file=/path/to/.env --team-id=<uuid> --user-id=<uuid>` to inspect stale
   classic helper-board state. Add `--apply` only after reviewing the team-scoped
   identifier/count report; the command must never delete captured raw events.
   Apply-mode backfill and webhook follow-ups are durable: rerun the same apply
   command to resume any failed step without repeating one already completed.
 - **Daytona snapshot cleanup requires deployed-hash protection.** Run
-  `pnpm --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3`
+  `bun run --filter @timeline/worker cleanup-document-extract-snapshots -- --retain=3`
   only with `DAYTONA_ACTIVE_SNAPSHOTS` listing every snapshot used by a deployed
   production or staging extractor. Cleanup retains those deployed hashes plus
   the current and two rollback hashes, skips sandbox-referenced snapshots, and
@@ -368,13 +368,17 @@ Phased build plan and current state: [todo.md](todo.md). Product vision:
 ### Local stack for this environment
 
 - Infra (Postgres, Redis, Qdrant, RustFS) is started with `docker compose up -d` from the repo root. Dockerd is not managed by systemd here — if containers are down, ensure `dockerd` is running first, then compose up. Confirm health with `docker compose ps`.
-- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [README.md](README.md) (`pnpm dev`, `pnpm db:migrate`, `pnpm demo:seed`, `pnpm demo:verify`, `pnpm demo:reset`, `pnpm validate`, `pnpm test`, `pnpm run doctor`).
-- Seeded demo logins (after `pnpm db:migrate` + `pnpm demo:seed`): `owner@timeline.dev`, `member@timeline.dev`, `jordan@timeline.dev`, `sam@timeline.dev`, `riley@timeline.dev`, `casey@timeline.dev`, `quinn@timeline.dev`, `harper@timeline.dev`, password `timeline-dev`. Full glossary: [docs/demo-corpus.md](docs/demo-corpus.md).
+- App processes: web (`apps/web`, Next.js on `:3000`) + worker (`apps/worker`, BullMQ). Standard commands are in [README.md](README.md) (`bun run dev`, `bun run db:migrate`, `bun run demo:seed`, `bun run demo:verify`, `bun run demo:reset`, `bun run validate`, `bun run test`, `bun run doctor`).
+- Seeded demo logins (after `bun run db:migrate` + `bun run demo:seed`): `owner@timeline.dev`, `member@timeline.dev`, `jordan@timeline.dev`, `sam@timeline.dev`, `riley@timeline.dev`, `casey@timeline.dev`, `quinn@timeline.dev`, `harper@timeline.dev`, password `timeline-dev`. Full glossary: [docs/demo-corpus.md](docs/demo-corpus.md).
 
 ### Non-obvious env / startup gotchas
 
-- **Use the exact Node version in `.nvmrc`.** Keep `engines.node` and every Docker stage aligned with that pin. This Cloud Agent image may put an older Node on `/exec-daemon` ahead of nvm on `PATH`; run `nvm install && nvm use` and verify `node --version` before checks. Use `pnpm` via Corepack on that Node (`packageManager` pins `pnpm@11.8.0`).
-- **Root `.env` is not auto-loaded by the worker or by `drizzle-kit`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `pnpm db:migrate`, `pnpm demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
-- **The root `pnpm dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `pnpm --filter @timeline/web dev` and `pnpm --filter @timeline/worker dev`.
+- **Use Bun 1.4.4 from `.bun-version`.** Keep `engines.bun`, `packageManager`, CI, and every Docker stage aligned with that pin. Run `bun --version` before checks. Application execution and tests must not fall back to Node; record any required build/analysis exception in `docs/bun-migration.md`.
+- **The repository disables Bun’s automatic `.env` loading with `bunfig.toml` (`env = false`); offline tests also use `--no-env-file` and an environment allowlist. Production commands use `--no-env-file`.** Next.js loads `apps/web/.env` (symlink to `../../.env`). Before `bun run db:migrate`, `bun run demo:seed`, or running the worker, export the root env into the shell, e.g. `set -a; . ./.env; set +a`. Quote any values that contain spaces (for example `RECALL_BOT_DISPLAY_NAME="Timeline Bot"`) or bash will try to execute the trailing words when sourcing.
+- **The root `bun run dev` script must keep `--env-mode=loose`.** Turbo's strict default strips unlisted env vars from the worker task even after sourcing `.env`. Alternatively run packages separately with env already exported: `bun run --filter @timeline/web dev` and `bun run --filter @timeline/worker dev`.
 - Optional URL keys left blank in `.env.example` must use `emptyStringAsUnset` in the shared env schema so the documented shell export flow remains valid.
-- Keep a real `OPENROUTER_API_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` for chat/extraction/embeddings and for `pnpm demo:seed` (seed encrypts fake integration credentials).
+- Keep a real `OPENROUTER_API_KEY` and `SECRETS_ENCRYPTION_KEY` in `.env` for chat/extraction/embeddings and for `bun run demo:seed` (seed encrypts fake integration credentials).
+
+- **E2E fixture isolation:** remote service URLs require `E2E_REMOTE_FIXTURES=isolated` and disposable synthetic fixtures. E2E ignores ordinary exported authentication, encryption, S3 and Qdrant secrets; custom fixture credentials must use the corresponding `E2E_`-prefixed variables documented in `docs/setup/local.html`. Never use production services for fixture setup or cleanup.
+
+- **Install with `bun run deps` (add `--frozen-lockfile` in CI).** Plain `bun install` can execute dependency lifecycle scripts with a host Node installation. The `deps` script inherits `[run].bun = true`, forcing those scripts through Bun without changing the global Node binary.

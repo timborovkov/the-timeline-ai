@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   EDITORIAL_CANONICAL_ROUTES,
@@ -10,7 +11,6 @@ import {
   HOW_IT_WORKS_ROUTE,
   NATIVE_EDITORIAL_PROVIDERS,
 } from '@/components/marketing/editorial/content';
-
 describe('editorial content model', () => {
   it('exports stable canonical routes and machine-readable summaries', () => {
     expect(EDITORIAL_PUBLICATION_NAME).toBe('How Timeline works');

@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   stampUniqueWorkItemAliasesOntoBundles,
   uniqueWorkItemAliasesFromText,
 } from '#src/suggestions/work-item-aliases.js';
-
 describe('uniqueWorkItemAliasesFromText', () => {
   it('stamps a unique GitHub repo#n and refuses two ids', () => {
     expect(uniqueWorkItemAliasesFromText('please take acme/app#88 after lunch')).toEqual([

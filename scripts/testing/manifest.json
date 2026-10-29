@@ -1,0 +1,1895 @@
+{
+  "apps/web/src/app/(landing)/page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/(landing)/route-group.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/(landing)/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/.well-known/openai-apps-challenge/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/accept-invite/[token]/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/actions/auth.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/boards.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/calendar.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/chat.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/events.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/invites.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/legal.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/meetings.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/objects.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/onboarding.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/reconciliation.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/slack.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/suggestions.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/support.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/team-exports.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/teams.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/telegram.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/actions/visibility.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/artifacts/preview/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/calendar/feed/[token]/route.integration.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/calendar/feed/[token]/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/chat/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/connections/[id]/resources/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/connections/[id]/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/cron/reconcile/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/documents/list/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/documents/search/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/email/inbound/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/integrations/[provider]/callback/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/integrations/[provider]/start/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/integrations/manage/[id]/disconnect/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/integrations/manage/[id]/resume/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/integrations/manage/[id]/selections/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/integrations/manage/[id]/sync/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/jobs/dashboard/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/mcp/oauth/callback/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/mcp/oauth/start/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/mcp/server/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/objects/[id]/sections/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/objects/search/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/onboarding/checklist/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/search/global/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/slack/commands/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/slack/events/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/slack/install/callback/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/slack/install/start/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/slack/interactions/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/slack/user-link/callback/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/slack/user-link/start/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/calendar-subscription/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/ingest-webhooks/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/integrations/activate/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/job-recovery/[id]/dismiss/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/job-recovery/[id]/retry/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/job-recovery/dismiss-failed/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/job-recovery/dismiss-matching/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/job-recovery/finished/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/job-recovery/resuggest/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/job-recovery/retry-failed/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/mcp-keys/[id]/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/mcp-keys/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/mcp-servers/[id]/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/mcp-servers/[id]/tools/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/team/mcp-servers/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/telegram/webhook/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/timeline/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/github/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/google-drive/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/ingest/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/linear/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/monday/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/recall/status/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/recall/transcript/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/api/webhooks/sentry/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/@modal/(.)objects/merge/loading.portal.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/@modal/(.)objects/merge/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/@modal/route-states.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/approvals/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/approvals/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/boards/[id]/page-filter-selection.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/boards/[id]/page.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/boards/loading.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/boards/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/calendar/error.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/calendar/loading.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/calendar/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/calendar/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/chat/loading.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/chat/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/digests/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/documents/[id]/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/documents/captured/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/documents/loading.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/entities/redirects.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/entities/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/inbox/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/layout.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/me/connections/page-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/me/mcp-servers/page-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/me/mcp-servers/page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/meetings/[id]/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/meetings/[id]/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/meetings/page-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/meetings/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/objects/[id]/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/objects/[id]/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/objects/[id]/suggestion-targets.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/objects/merge/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/objects/merge/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/objects/new/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/objects/new/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/objects/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/objects/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/route-errors.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/search/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/search/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/sources/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/sources/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/tasks/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/tasks/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/audit/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/team/audit/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/chat-settings-route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/integrations/audit/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/team/integrations/audit/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/integrations/page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/integrations/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/jobs/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/team/jobs/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/mcp-servers/page-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/mcp-share/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/page-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/reconciliation/clusters/[id]/page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/reconciliation/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/team/reconciliation/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/slack/page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/team/switch/[teamId]/route.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/team/telegram/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/timeline/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/app/work/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/app/work/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/auth-route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/cookies/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/help/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/help/support/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/integrations/route.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/layout-analytics.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/legal/accept/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/legal/accept/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/manifest.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/oauth/actions.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/oauth/authorize/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/oauth/oauth-routes.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/privacy/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/privacy/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/record/editorial-routes.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/robots.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/root-route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/app/sitemap.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/app/terms/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/trust/page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/app/verify-email/[token]/route-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/app-document-scroll-lock.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/app-shell-scroll-restoration.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/app-shell.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/approvals/approvals-client.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/approvals/suggestion-change-dialog.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/artifact-reference-chip.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/auth-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/auth-shell.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/boards/board-add-item-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/boards/board-card-detail.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/boards/board-detail-client.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/boards/board-stage-editor.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/boards/curated-board-views.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/boards/curated-kanban-board.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/boards/curated-kanban-state.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/boards/object-text-filter.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/breadcrumb.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/calendar/calendar-subscription-panel.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/calendar/calendar-view.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/components/capture-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/captured-files/captured-files-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/chat/ask-header.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/chat/chat-pane.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/chat/chat-view-context.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/chat/citation.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/chat/floating-agent-chat.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/chat/session-sidebar.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/chat/tool-step.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/coachmark.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/collections/collections.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/collections/infinite-scroll.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/collections/virtual-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/copy-button.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/copyable-text-field.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/debounced-filter-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/desktop-sidebar-brand.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/desktop-sidebar.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/digest-destinations.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/documents/document-detail.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/documents/document-drive.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/documents/document-preview.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/documents/document-search.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/due-date-display.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/empty-state.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/error-state.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/event-visibility-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/evidence-link.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/filter-multi-select.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/global-search-page.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/global-search-palette.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/help/support-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/history-back-link.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/home/capture-dialog.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/home/daily-digest-block.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/home/digest-history-table.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/home/home-ask-composer.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/home/home-attention.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/home/home-team-email.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/inbox/inbox-bell.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/inbox/mark-all-read-button.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/inbox/notification-row.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/index-strip.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/inline-error.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/inspector-context.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/inspector-pane.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/catalog.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/connected.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/mcp-catalog.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/mcp-servers.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/mcp-share.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/integrations/provider-connections.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/job-recovery/job-recovery-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/job-recovery/job-recovery-row-hint.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/jobs/job-dashboard.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/legal-acceptance-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/legal-page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/loading-states.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/marketing/editorial/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/editorial/metadata.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/editorial/public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/home/timeline-flow-diagram.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/marketing/home/timeline-flow-motion.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/marketing/integrations/capture-surface-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/connector-content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/connector-public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/connector-seo.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/integrations/records-to-answer.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/solutions/content.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/solutions/public-documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/marketing/solutions/solution-page.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/mcp-oauth-grants.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/meeting-forms.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/mobile-nav.team-switcher.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/mobile-nav.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/nav-items.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/objects/new-object-form.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/objects/object-cleanup-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/objects/object-cleanup-suggestions.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/objects/object-detail-client.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/objects/object-merge-form.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/objects/object-merge-route-modal.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/objects/object-pin-button.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/objects/object-section-feed.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/onboarding-checklist.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/page-header.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/pins/pin-controls.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/pins/pinned-workspace-manager.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/public-analytics-unconfigured.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/public-analytics.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/public-navigation.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/public-shell.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/rail-nav.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/reconciliation/presentation.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/reconciliation/repair-copy.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/reconciliation/row-hint.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/reconciliation/run-metric-hint.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/components/relative-timestamp.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/section-heading.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/settings-nav.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/skip-link.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/status-badge.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/tasks/task-board.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/tasks/task-category-filter-refresh.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/tasks/task-category-select.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/tasks/task-project-select.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/tasks/task-view-toggle.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/team-forms.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/team-member-actions.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/team-members-settings.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/team-setup-checklist-chip.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/team-switcher.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/technical-details.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/telegram-forms.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/timeline-feed.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/timeline-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/timeline-search-field.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/timeline-source-filter-controls.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/turnstile-widget.test.tsx": {
+    "group": "unit"
+  },
+  "apps/web/src/components/ui/app-dialog.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/ui/card.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/ui/item-actions.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/ui/show-more-list.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/ui/skeleton.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/ui/undo-toast-button.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/work-filter-bar.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/work-subnav.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/components/work/work-queue-row.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/hooks/use-project-search.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/active-team-cookie-migration.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/active-team-cookie.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/analytics.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/app-analytics-routes.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/app-metadata.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/app-scroll.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/approval-preview.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/auth-redirect.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/auth.config.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/board-add-item-candidates.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/calendar-event-list-range.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/chat-handoff.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/chat-session-list.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/chat-tool-selection.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/chat-view.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/collection-count.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/display-dates.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/display-labels.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/document-detail-provenance.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/email-verification.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/floating-chat-session-storage.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/form-action-toast.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/hub-status.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/iso-timestamp.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/job-recovery-audit.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/kanban-collision.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/legal-publication.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/legal.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/llms-text.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/mcp-oauth-server.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/meeting-transcript-export.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/multipart-request.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/notification-href.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/notification-labels.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/notify.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/object-filter.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/object-merge.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/object-title.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/onboarding-checklist.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/paginated-api.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/project-filter-options.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-analytics-consent.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/public-analytics-routes.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-attribution-server.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-attribution.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/public-browser-analytics.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/public-error.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-metadata.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-site/documents.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-site/metadata.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-site/registry.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/public-site/structured-data.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/pwa-splash.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/reconcile-jobs.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/request-body.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/request-ip.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/resource-labels.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/safe-redirect.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/sentry-action.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/sentry-report.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/sentry-tunnel.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/sign-in-rate-limit.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/sign-out-session.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/site-url.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/source-original.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/stale-server-action.test.ts": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/suggestions.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/support-context.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/surface-request-analytics.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/task-statuses.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/telegram-bot-startup.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/timeline-controls.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/timeline-moments.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/timeline-page.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/trust-claims.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/turnstile.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/use-hydrated.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/use-onboarding-checklist-query.test.tsx": {
+    "group": "dom"
+  },
+  "apps/web/src/lib/ux-errors.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/work-filters.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/lib/work-queue.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/no-browser-dialogs.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/proxy-analytics.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/proxy-auth.integration.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/proxy.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/railway-config.test.ts": {
+    "group": "unit"
+  },
+  "apps/web/src/sentry.shared.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/document-ingestion/daytona.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/document-ingestion/document-extract-snapshot.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/document-ingestion/full-worker-extract-gate.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/document-ingestion/types.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/monitoring.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/railway-config.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/dedupe-calendar-events.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/demo-index-contract.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/qdrant-migrate-collection.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/reconciliation-evidence.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/reconciliation-legacy-provenance.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/reconciliation-production-sampling.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/resuggest.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/task-category-backfill.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/timeline-moment-presentations.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/scripts/transcription-quality-eval.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/transcription-eval/evaluate.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/transcription-eval/manifest.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/transcription-eval/metrics.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/transcription-eval/openrouter.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/calendarRecurrence.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/chatDelivery.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/conversationAgent.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/dailyDigest.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/documentExtract.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/embed.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/extract.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/integrationSync.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/integrationSyncHarvest.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/janitor.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/mcpHealth.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/meetingFinalize.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/meetingScheduler.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/objectSummary.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/overdue.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/proposal-engine.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/worker/src/workers/reconciliation.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/suggestions.evals.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/suggestions.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/worker/src/workers/suggestions.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/taskCategory.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/teamExport.test.ts": {
+    "group": "integration"
+  },
+  "apps/worker/src/workers/timelineMomentPresentation.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/transcribe.live-eval.test.ts": {
+    "group": "live"
+  },
+  "apps/worker/src/workers/transcribe.test.ts": {
+    "group": "unit"
+  },
+  "apps/worker/src/workers/webhookDelivery.test.ts": {
+    "group": "unit"
+  },
+  "packages/db/src/chat-message-sequence-migration.test.ts": {
+    "group": "unit"
+  },
+  "packages/db/src/client.test.ts": {
+    "group": "unit"
+  },
+  "packages/db/src/schema-contracts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent/ask.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/agent/evals.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/agent/external-content.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent/live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/agent/mcp-evals.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent/observability.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent/presentation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent/retrieval.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent/surface-evals.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/agent/system-prompt.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/agent/tools.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/analytics/events.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/analytics/posthog-node-transport.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/analytics/posthog-node.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/app-guide.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/artifacts/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/audit/scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/boards/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/calendar/locking.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/calendar/raw-events.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/calendar/recurrence.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/calendar/scope.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/calendar/subscription-token.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/chat-context.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/chunk.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/citation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversation-review/index.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversation-surfaces/deferred-delivery.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversation-surfaces/object-discussion.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversation-surfaces/privacy.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversation-surfaces/scope.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/conversational/attachments.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversational/contact-artifacts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversational/link-artifacts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/crypto/secrets.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/documents/object-key.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/documents/presentation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/documents/related-chunks.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/documents/scope.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/email/dispatcher-logging.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/email/dispatcher.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/email/ip-allowlist.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/email/package-export.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/email/parser.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/embedding/sources.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/env-reset.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/env.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/event-class.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/evidence-pack/index.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/extract/noise.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/extract/prompt.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/extract/resolve.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/extract/schema.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/http/error-cause.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/http/external-fetch.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/ingest-webhooks/keys.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/canary.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/continuation-handoffs.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/event-writer.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/github-task-proposals.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/health-scope.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/health.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/ingest-processing.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/monday-budget.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/monday-repair.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/provider-budget.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/provider-contracts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/github-logging.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/github.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/google-drive.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/linear.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/monday.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/sentry.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/providers/slack.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/registry.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/request-budget.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/request.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/scope.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/signal-class.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/slack-ingress.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/integrations/webhooks.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/job-recovery/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/llm/chat.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/embed.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/errors.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/memory.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/models.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/privacy-attestation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/privacy.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/tracing.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/transcribe.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/llm/vision.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/mcp-server/handler.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/mcp-server/oauth.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/mcp/auth.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/mcp/client.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/mcp/oauth-state.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/mcp/tool-namespace.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/meeting-bots/recall.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/meeting-bots/resolve-url.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/meeting-bots/svix.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/meetings/quick-capture.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/meetings/scope.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/messaging/delivery.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/destinations.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/digest-format.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/digest.generate.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/digest.integration.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/messaging/digest.mapreduce.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/digest.suppression.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/digest.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/messaging/templates.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/monitoring/sentry-scrub.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/objects/export-contract.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/objects/identity-facets.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/objects/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/objects/mentions.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/objects/metadata-schemas.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/objects/summary-evals.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/onboarding/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/pagination.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/qdrant/client.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/qdrant/collection-config.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/qdrant/copy-points.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/qdrant/measure.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/qdrant/migrate-safety.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/qdrant/point-id.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/queue/queues.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/rate-limit/token-bucket.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/reconciliation/authority.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/reconciliation/backfill.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/reconciliation/dashboard.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/reconciliation/dev-seed-contract.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/reconciliation/evals.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/reconciliation/index.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/reconciliation/live-artifacts.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/reconciliation/live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/reconciliation/mcp-capture.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/reconciliation/normalization.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/reconciliation/planner.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/reconciliation/production-sampling.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/reconciliation/resolver.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/reconciliation/stable-json.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/s3/client.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/s3/objects.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/search/index.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/slack/api.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/slack/dispatcher.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/slack/security.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/hub-context.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/suggestions/linked-hubs.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/suggestions/proposal-payload.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/suggestions/reconciliation-projection.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/suggestions/work-item-aliases.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/classifier.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/eval-report.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/evals.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/task-categories/live-eval.test.ts": {
+    "group": "live"
+  },
+  "packages/shared/src/task-categories/model-output.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/proposal.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/task-categories/state.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/task-categories/types.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/team-exports/index.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/team-scope.search.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/team-scope.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/telegram/api.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/telegram/commands.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/telegram/dispatcher-logging.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/telegram/dispatcher.test.ts": {
+    "group": "integration"
+  },
+  "packages/shared/src/time/index.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/timeline-moments/index.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/timeline-moments/presentation.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/visibility.test.ts": {
+    "group": "unit"
+  },
+  "packages/test-support/runtime.test.ts": {
+    "group": "unit"
+  },
+  "scripts/demo-fixture.test.ts": {
+    "group": "script"
+  },
+  "scripts/e2e-env.test.ts": {
+    "group": "script"
+  },
+  "scripts/testing/runner.test.ts": {
+    "group": "script"
+  }
+}

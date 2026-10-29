@@ -9,9 +9,10 @@ import {
   teams,
   users,
 } from '@timeline/db';
+import { expect, vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { and, eq, isNull } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import * as secrets from '#src/crypto/secrets.js';
 import {
@@ -27,7 +28,6 @@ import {
   recordWebhookDeliveryTargets,
 } from '#src/integrations/webhooks.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const CONNECTION_ID = '33333333-3333-4333-8333-333333333333';

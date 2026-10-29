@@ -1,11 +1,11 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { DailyDigestPayload } from '@timeline/shared/messaging/format';
 
 import { DailyDigestBlock } from '@/components/home/daily-digest-block';
+// Test environment: happy-dom
 
 const DIGEST: DailyDigestPayload = {
   teamName: 'Acme',

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   OPENROUTER_DISABLE_CACHE_HEADERS,
@@ -7,7 +8,6 @@ import {
   openRouterPrivateProviderOptions,
   openRouterPrivateProviderRouting,
 } from '#src/llm/privacy.js';
-
 describe('OpenRouter privacy routing', () => {
   it('enforces private, unpinned fallback routing after caller options', () => {
     expect(

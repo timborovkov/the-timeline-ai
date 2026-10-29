@@ -1,15 +1,21 @@
-import { createHmac } from 'node:crypto';
-
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { IntegrationEvent, SyncContext } from '#src/integrations/types.js';
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
 
-import { resetEnvForTests } from '#src/env.js';
-import { linearProvider, verifyLinearSignature } from '#src/integrations/providers/linear.js';
+const { createHmac } = await import('node:crypto');
+const { resetEnvForTests } = await import('#src/env.js');
+const { linearProvider, verifyLinearSignature } =
+  await import('#src/integrations/providers/linear.js');
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -340,7 +346,9 @@ describe('linearProvider.handleWebhook', () => {
 
 describe('linearProvider.listSyncableResources', () => {
   it('paginates Linear teams so source selection can see teams beyond page one', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       expect(body.query).toContain('teams(first: 100');
       if (body.variables.after === null) {
@@ -387,7 +395,9 @@ describe('linearProvider.incrementalSync', () => {
   it('retains completed collections when a later collection hits quota', async () => {
     const states = new Map<string, unknown>();
     let failComment = true;
-    const fetch = vi.fn<typeof globalThis.fetch>((_url, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_url, init) => {
       const query = requestPayload(init).query;
       const collection = query.includes('issues(first')
         ? 'issues'
@@ -433,7 +443,9 @@ describe('linearProvider.incrementalSync', () => {
   });
 
   it('paginates Linear issues, comments, and projects before advancing cursors', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((_input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
       const body = requestPayload(init);
       expect(body.variables.teamIds).toEqual(['team-1']);
       expect(body.variables.since).toBe('2026-06-19T23:59:59.000Z');

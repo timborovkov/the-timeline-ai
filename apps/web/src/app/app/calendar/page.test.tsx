@@ -1,6 +1,6 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getCalendarSettings: vi.fn(),
@@ -19,75 +19,120 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    calendar: {
-      getCalendarSettings: fakes.getCalendarSettings,
-      listCalendarEventPage: fakes.listCalendarEventPage,
-      listCalendarEvents: fakes.listCalendarEvents,
-      listLinkedObjectsForEvents: fakes.listLinkedObjectsForEvents,
-    },
-    suggestions: {
-      listPendingSuggestions: fakes.listPendingSuggestions,
-      withCalendarResolutionHints: fakes.withCalendarResolutionHints,
-    },
-    timeline: {
-      listMembers: fakes.listMembers,
-      resolveVisibilityDefault: fakes.resolveVisibilityDefault,
-    },
-    pins: { isPinnedMany: fakes.isPinnedMany },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: vi.fn(() => ({
-      from: vi.fn(() => ({
-        where: vi.fn(() => ({ limit: vi.fn(() => Promise.resolve([])) })),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      calendar: {
+        getCalendarSettings: fakes.getCalendarSettings,
+        listCalendarEventPage: fakes.listCalendarEventPage,
+        listCalendarEvents: fakes.listCalendarEvents,
+        listLinkedObjectsForEvents: fakes.listLinkedObjectsForEvents,
+      },
+      suggestions: {
+        listPendingSuggestions: fakes.listPendingSuggestions,
+        withCalendarResolutionHints: fakes.withCalendarResolutionHints,
+      },
+      timeline: {
+        listMembers: fakes.listMembers,
+        resolveVisibilityDefault: fakes.resolveVisibilityDefault,
+      },
+      pins: { isPinnedMany: fakes.isPinnedMany },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({ limit: vi.fn(() => Promise.resolve([])) })),
+        })),
       })),
-    })),
-  },
-}));
-vi.mock('@/lib/suggestions', () => ({ serializeSuggestionBundle: (bundle: unknown) => bundle }));
-vi.mock('@/components/approvals/approvals-client', () => ({
-  ApprovalsClient: ({ suggestions }: { suggestions: { items: { title: string }[] }[] }) => (
-    <div data-testid="calendar-approvals">
-      {suggestions.flatMap((bundle) => bundle.items.map((item) => item.title)).join(', ')}
-    </div>
-  ),
-}));
-vi.mock('@/components/calendar/calendar-view', () => ({
-  CalendarView: ({
-    events,
-  }: {
-    events: {
-      id: string;
-      title: string;
-      redacted: boolean;
-      linkedObjects?: { title: string }[];
-    }[];
-  }) => (
-    <div data-testid="calendar-view">
-      {events.map((event) => (
-        <div
-          key={event.id}
-          data-event-id={event.id}
-          data-redacted={String(event.redacted)}
-          data-linked={event.linkedObjects?.map((object) => object.title).join(',') ?? ''}
-        >
-          {event.title}
-        </div>
-      ))}
-    </div>
-  ),
-}));
-vi.mock('@/components/calendar/calendar-subscription-panel', () => ({
-  CalendarSubscriptionPanel: () => <div />,
-}));
-vi.mock('@/components/page-header', () => ({ PageHeader: () => <h1>Calendar</h1> }));
+    },
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/suggestions'),
+  () => ({ serializeSuggestionBundle: (bundle: unknown) => bundle }),
+  () => import('@/lib/suggestions'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/approvals/approvals-client'),
+  () => ({
+    ApprovalsClient: ({ suggestions }: { suggestions: { items: { title: string }[] }[] }) => (
+      <div data-testid="calendar-approvals">
+        {suggestions.flatMap((bundle) => bundle.items.map((item) => item.title)).join(', ')}
+      </div>
+    ),
+  }),
+  () => import('@/components/approvals/approvals-client'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/calendar/calendar-view'),
+  () => ({
+    CalendarView: ({
+      events,
+    }: {
+      events: {
+        id: string;
+        title: string;
+        redacted: boolean;
+        linkedObjects?: { title: string }[];
+      }[];
+    }) => (
+      <div data-testid="calendar-view">
+        {events.map((event) => (
+          <div
+            key={event.id}
+            data-event-id={event.id}
+            data-redacted={String(event.redacted)}
+            data-linked={event.linkedObjects?.map((object) => object.title).join(',') ?? ''}
+          >
+            {event.title}
+          </div>
+        ))}
+      </div>
+    ),
+  }),
+  () => import('@/components/calendar/calendar-view'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/calendar/calendar-subscription-panel'),
+  () => ({
+    CalendarSubscriptionPanel: () => <div />,
+  }),
+  () => import('@/components/calendar/calendar-subscription-panel'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/page-header'),
+  () => ({ PageHeader: () => <h1>Calendar</h1> }),
+  () => import('@/components/page-header'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: CalendarPage } = await import('./page.js');
 

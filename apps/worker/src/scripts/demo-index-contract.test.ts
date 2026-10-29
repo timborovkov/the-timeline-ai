@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   assertDemoVectorIndexEnvironment,
@@ -8,7 +9,6 @@ import {
   DEMO_VECTOR_SOURCE_MINIMUMS,
   type DemoVectorRows,
 } from '#src/scripts/demo-index-contract.js';
-
 const TEAM_ID = '20000000-0000-4000-8000-000000000001';
 
 function padded(n: number): string {

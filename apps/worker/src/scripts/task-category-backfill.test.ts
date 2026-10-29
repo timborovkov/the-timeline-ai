@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   assertTaskCategoryBackfillCost,
@@ -9,7 +11,6 @@ import {
   parseMaxQueueAgeSeconds,
   TASK_CATEGORY_BACKFILL_MAX_BATCH_COST_USD,
 } from '#src/scripts/task-category-backfill.js';
-
 describe('task category backfill script', () => {
   it('allows a dry run while operational flags are disabled', () => {
     const disabled = {

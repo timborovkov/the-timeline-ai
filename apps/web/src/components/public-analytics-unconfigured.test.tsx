@@ -1,34 +1,42 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { CookieSettingsButton, PublicAnalyticsBoundary } from '@/components/public-analytics';
-import {
-  clearPublicAnalyticsConsent,
-  readPublicAnalyticsConsent,
-  writePublicAnalyticsConsent,
-} from '@/lib/public-analytics-consent';
-import {
-  clearPublicAttributionCookie,
-  storeFirstTouchPublicAttribution,
-} from '@/lib/public-attribution';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const analytics = vi.hoisted(() => ({ clearLegacy: vi.fn(), withdraw: vi.fn() }));
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/' }));
-vi.mock('@/lib/public-browser-analytics', () => ({
-  activatePublicBrowserAnalytics: vi.fn(() => false),
-  capturePublicCta: vi.fn(),
-  capturePublicPageView: vi.fn(),
-  clearLegacyPublicTrackerStorage: analytics.clearLegacy,
-  deactivatePublicBrowserAnalytics: vi.fn(),
-  isPublicAnalyticsCta: vi.fn(() => false),
-  isPublicBrowserAnalyticsConfigured: false,
-  pausePublicBrowserAnalytics: vi.fn(),
-  withdrawPublicBrowserAnalytics: analytics.withdraw,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => '/',
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/public-browser-analytics'),
+  () => ({
+    activatePublicBrowserAnalytics: vi.fn(() => false),
+    capturePublicCta: vi.fn(),
+    capturePublicPageView: vi.fn(),
+    clearLegacyPublicTrackerStorage: analytics.clearLegacy,
+    deactivatePublicBrowserAnalytics: vi.fn(),
+    isPublicAnalyticsCta: vi.fn(() => false),
+    isPublicBrowserAnalyticsConfigured: false,
+    pausePublicBrowserAnalytics: vi.fn(),
+    withdrawPublicBrowserAnalytics: analytics.withdraw,
+  }),
+  () => import('@/lib/public-browser-analytics'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { CookieSettingsButton, PublicAnalyticsBoundary } =
+  await import('@/components/public-analytics');
+const { clearPublicAnalyticsConsent, readPublicAnalyticsConsent, writePublicAnalyticsConsent } =
+  await import('@/lib/public-analytics-consent');
+const { clearPublicAttributionCookie, storeFirstTouchPublicAttribution } =
+  await import('@/lib/public-attribution');
 
 beforeEach(() => {
   vi.clearAllMocks();

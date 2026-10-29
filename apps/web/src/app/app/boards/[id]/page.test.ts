@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { boardViewHref, normalizeBoardView } from '@/lib/board-links';
-
 describe('boardViewHref', () => {
   it('preserves the selected item while switching board views', () => {
     expect(boardViewHref('board-1', 'list', 'item-1')).toBe(
