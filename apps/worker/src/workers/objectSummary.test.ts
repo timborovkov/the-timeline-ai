@@ -45,6 +45,7 @@ await vi.mock(
 await vi.mock(
   import.meta.resolve('bullmq'),
   () => ({
+    Queue: vi.fn(),
     Worker: fakes.Worker,
   }),
   () => import('bullmq'),
@@ -173,6 +174,19 @@ describe('object summary worker', () => {
       `${stableId}:${String(firstGeneration)}`,
       `${stableId}:${String(refreshGeneration)}`,
     ]);
+  });
+
+  it('propagates billing admission so a busy costly-worker slot can delay the job', async () => {
+    const { BillingAdmissionError } = await import('@timeline/shared/billing');
+    const admission = new BillingAdmissionError('costly_worker_busy');
+    fakes.generateAndStoreObjectSummary.mockRejectedValue(admission);
+
+    await expect(
+      processObjectSummaryJobForTests(
+        { db: {} as never },
+        { teamId: 'team-1', objectId: 'object-1' },
+      ),
+    ).rejects.toBe(admission);
   });
 
   it('throws retryable failed generations so BullMQ can retry transient failures', async () => {

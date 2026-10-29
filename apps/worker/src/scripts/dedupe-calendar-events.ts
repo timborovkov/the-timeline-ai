@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 
 import { closeDb, getDb } from '@timeline/db';
 import { llm, suggestions, withTeam } from '@timeline/shared';
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { z } from 'zod';
 
 import {
@@ -244,6 +245,7 @@ export async function aiDuplicateClusters(input: {
         clusters.push(group.event_ids);
       }
     } catch (err) {
+      if (isBillingAdmissionError(err)) throw err;
       failedBatches += 1;
       console.warn(
         `[dedupe-calendar-events] ai batch failed; retaining ${clusters.length} cluster(s) from earlier batches`,

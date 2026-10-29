@@ -9,6 +9,7 @@ import {
   withTeam,
 } from '@timeline/shared';
 import { bucketAnalyticsCount } from '@timeline/shared/analytics';
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import { Worker, type Job } from 'bullmq';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
@@ -322,6 +323,7 @@ export async function processConversationAgentJob(
     );
     return { turnId: turn.id, status: 'delivered' };
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     if (responseCached) throw err;
     if (err === timeoutError || abortController.signal.reason === timeoutError) {
       await cacheAndDeliverFailure(

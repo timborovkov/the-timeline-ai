@@ -24,6 +24,7 @@ import { z } from 'zod';
 
 import type { TeamScopeCore } from '#src/team-scope.js';
 
+import { rethrowBillingAdmission } from '#src/billing/errors.js';
 import { artifactRefCitation } from '#src/citation.js';
 import { listRelatedCuratedDocumentChunks } from '#src/documents/related-chunks.js';
 import { chatStructured } from '#src/llm/chat.js';
@@ -1140,6 +1141,7 @@ export async function generateAndStoreObjectSummary(
     await (deps.enqueueObjectEmbedJob ?? queue.enqueueObjectEmbedJob)(scope.teamId, entityId);
     return { status: 'ready' };
   } catch (err) {
+    rethrowBillingAdmission(err);
     const errorCode = err instanceof Error ? err.message.slice(0, 120) : 'generation_failed';
     const retryable = isRetryableObjectSummaryError(err);
     await db

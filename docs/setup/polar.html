@@ -252,17 +252,22 @@ PLATFORM_ADMIN_EMAILS=
         chunks serialize with extraction writes. Worker AI reservations count against plan
         <code>costlyWorkerConcurrency</code> and delay the job when busy. Digest map-reduce stays
         within that concurrency. A busy slot delays the digest instead of sending a partial one.
-        Background AI metering keeps the reservation when settle fails after a successful provider
-        call and reuses the BullMQ job id. A thrown call that already reported OpenRouter usage
-        stores that attempt on the reservation before settle and keeps it until the ledger row
-        commits. A retry records the saved attempt before calling the provider again. Each
-        transcription chunk gets its own operation id. Every other metered model call appends its
-        stage and a digest of the model, prompt, schema, and input to the worker operation id, so a
-        later call in that job does not replay an earlier result. A retry of the same call still
-        reuses its settlement. Aborting a Recall join after the bot is accepted keeps the
-        reservation when leave fails so the janitor can retry. Terminal Recall settlement errors
-        propagate so the status webhook can 503 and retry. Re-accepting a removed member stamps a
-        new membership <code>createdAt</code> and appends the previous interval to
+        Polar customers are loaded by external id. A customer is created only after that lookup
+        returns 404, and the returned <code>external_id</code> must match the workspace before it is
+        stored. Object summaries, suggestion extraction, suggestion planning, calendar-dedupe
+        adjudication, structured-output fallback, Ask presentation, conversation-agent turns, and
+        Slack answers rethrow billing admission so a busy costly-worker slot delays the job instead
+        of being stored as an ordinary failure. Background AI metering keeps the reservation when
+        settle fails after a successful provider call and reuses the BullMQ job id. A thrown call
+        that already reported OpenRouter usage stores that attempt on the reservation before settle
+        and keeps it until the ledger row commits. A retry records the saved attempt before calling
+        the provider again. Each transcription chunk gets its own operation id. Every other metered
+        model call appends its stage and a digest of the model, prompt, schema, and input to the
+        worker operation id, so a later call in that job does not replay an earlier result. A retry
+        of the same call still reuses its settlement. Aborting a Recall join after the bot is
+        accepted keeps the reservation when leave fails so the janitor can retry. Terminal Recall
+        settlement errors propagate so the status webhook can 503 and retry. Re-accepting a removed
+        member stamps a new membership <code>createdAt</code> and appends the previous interval to
         <code>prior_intervals</code>. A leftover Free team stays unrestricted while another owner's
         grant remains assigned. Storage snapshots backfill missed days across the 31-day lookback,
         price each day on the plan in force then, and count that day in its own month. A missed day,

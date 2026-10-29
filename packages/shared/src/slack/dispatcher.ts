@@ -142,6 +142,7 @@ export async function handleSlackEnvelope(
     }
     await handleMessageEvent(deps, api, workspace, envelope.event_id, event);
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     log.error({ err: redactConversationError(err) }, 'slack dispatch failed');
     return { ok: false };
   }
@@ -202,6 +203,7 @@ export async function handleSlackSlashCommand(
       const answer = handleSlackAskCommand(deps, api, workspace.id, input);
       if (options.deferStatelessAsk) {
         void answer.catch((err: unknown) => {
+          if (isBillingAdmissionError(err)) throw err;
           const safeError = redactConversationError(err);
           log.error({ err: safeError }, 'slack slash command background answer failed');
           deps.onAgentError?.(safeError);
@@ -342,6 +344,7 @@ async function handleSlackAskCommand(
           : 'Timeline could not answer that right now.',
     );
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     log.error({ err: redactConversationError(err) }, 'slack slash command answer failed');
     await replyToSlackCommand(api, input, 'Timeline could not answer that right now.').catch(
       (postErr: unknown) => {
@@ -1029,6 +1032,7 @@ async function handleAppMention(
           : 'Timeline could not answer that right now.',
     });
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     log.error({ err: redactConversationError(err) }, 'slack app mention answer failed');
     await api
       .postMessage({

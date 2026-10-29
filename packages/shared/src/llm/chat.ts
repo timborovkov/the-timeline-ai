@@ -11,6 +11,7 @@ import {
 } from 'ai';
 import { z } from 'zod';
 
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import {
   openRouterFinishFromAiResult,
   openRouterFinishFromCaughtError,
@@ -535,6 +536,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
             const object: z.infer<TSchema> = input.schema.parse(result.object);
             return { object, model: candidateModelId };
           } catch (err) {
+            if (isBillingAdmissionError(err)) throw err;
             captureFinish(openRouterFinishFromCaughtError(err));
             if (deps.model || !shouldFallbackToJsonObject(err)) return fail(err);
             const fallbackModel = buildOpenRouterLanguageModel(candidateModelId, deps, {
@@ -549,6 +551,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
               maxOutputTokens,
               ...(input.abortSignal ? { abortSignal: input.abortSignal } : {}),
             }).catch((fallbackErr: unknown) => {
+              if (isBillingAdmissionError(fallbackErr)) throw fallbackErr;
               captureFinish(openRouterFinishFromCaughtError(fallbackErr));
               return fail(
                 new AggregateError(
@@ -574,6 +577,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
           const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
           return finish ? { value: titled, finish } : { value: titled };
         } catch (err) {
+          if (isBillingAdmissionError(err)) throw err;
           const fallbackModelId = TIMELINE_MODELS.structuredFallback.id;
           if (deps.model || fallbackModelId === modelId || !shouldFallbackToAlternateModel(err)) {
             return fail(err);
@@ -584,6 +588,7 @@ export async function chatStructured<TSchema extends z.ZodType>(
             const titled = accumulatedUsd > 0 ? { ...value, openRouterUsd: accumulatedUsd } : value;
             return finish ? { value: titled, finish } : { value: titled };
           } catch (fallbackErr: unknown) {
+            if (isBillingAdmissionError(fallbackErr)) throw fallbackErr;
             return fail(
               new AggregateError(
                 [err, fallbackErr],

@@ -62,6 +62,7 @@ import {
   type EvidenceRole,
   type EvidenceStrength,
 } from '#src/artifacts/index.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import {
   calendarEventMutationLockKey,
   calendarEventMutationTargetId,
@@ -3564,6 +3565,7 @@ export function createSuggestionScope(deps: SuggestionScopeDeps) {
       });
       return result.object;
     } catch (err) {
+      if (isBillingAdmissionError(err)) throw err;
       log.warn(
         {
           err,

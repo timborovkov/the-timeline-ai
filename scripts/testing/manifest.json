@@ -1433,6 +1433,9 @@
   "packages/shared/src/audit/scope.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/billing/admission-propagation.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/billing/admission.test.ts": {
     "group": "integration"
   },

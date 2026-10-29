@@ -34,6 +34,7 @@ import {
   time,
   withTeam,
 } from '@timeline/shared';
+import { isBillingAdmissionError } from '@timeline/shared/billing';
 import {
   RECONCILIATION_PLANNER_PROMPT_VERSION,
   planReconciliation,
@@ -3347,7 +3348,7 @@ async function runSuggestionExtraction(
       prompt,
     });
   } catch (err) {
-    if (evidencePackEnforced) throw err;
+    if (isBillingAdmissionError(err) || evidencePackEnforced) throw err;
     log.warn(
       { err, rawEventId, teamId },
       'suggestion extraction failed; using commitment fallback',
@@ -4053,6 +4054,7 @@ async function proposalPlannerMetadataFor(args: {
       reconciliation_planner_result: result,
     };
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     return {
       reconciliation_planner_version: RECONCILIATION_PLANNER_PROMPT_VERSION,
       reconciliation_planner_status: 'failed',

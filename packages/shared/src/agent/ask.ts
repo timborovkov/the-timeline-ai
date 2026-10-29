@@ -31,6 +31,7 @@ import {
   type AskBillingError,
 } from '#src/billing/admission.js';
 import { ASK_AI_RESERVE_CUSTOMER_CHARGE_CENTS } from '#src/billing/catalog.js';
+import { isBillingAdmissionError } from '#src/billing/errors.js';
 import {
   openRouterUsdCostFromFinishEvent,
   openRouterUsdForCompletedStream,
@@ -545,6 +546,7 @@ export async function askAgent(
           );
         }
       } catch (err) {
+        if (isBillingAdmissionError(err)) throw err;
         const safeError = deps.sanitizeError?.(err) ?? err;
         log.warn(
           { err: safeError, teamId: input.teamId, presentation, draftChars: draft.length },
@@ -599,6 +601,7 @@ export async function askAgent(
       ...attribution,
     };
   } catch (err) {
+    if (isBillingAdmissionError(err)) throw err;
     const aborted = isAskAbortError(err);
     if (aborted || openRouterUsd + streamedOpenRouterUsd > 0) {
       await settleBilling(undefined, { conservative: aborted });
