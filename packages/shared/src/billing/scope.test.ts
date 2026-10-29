@@ -2887,6 +2887,172 @@ describe('billing scope', () => {
     ]);
   });
 
+  it('splits Recall discount at a renewal the meeting crosses', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const now = new Date();
+    const windowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const windowEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const previousStart = new Date(
+      Date.UTC(windowStart.getUTCFullYear(), windowStart.getUTCMonth() - 1, 1),
+    );
+    const meetingStart = new Date(windowStart.getTime() - 60_000);
+    const spentAt = new Date(windowStart.getTime() - 10 * 24 * 60 * 60 * 1000);
+    const currentUsageAt = new Date(windowStart.getTime() + 10 * 24 * 60 * 60 * 1000);
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:previous-window-almost-spent',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '5997',
+      customerChargeCents: 5_997,
+      metadata: { discount_cents: 5_997, usage_at: spentAt.toISOString() },
+      occurredAt: spentAt,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 3, spend_cap_cents = 100000,
+          period_started_at = '${windowStart.toISOString()}',
+          period_ends_at = '${windowEnd.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'recall:across-renewal',
+      meterId: 'recall_minutes',
+      nativeUnits: 2,
+      customerChargeCents: 6,
+      usageAt: meetingStart,
+    });
+    expect(settled.ok).toBe(true);
+    expect(settled.duplicate).toBe(false);
+    if (settled.duplicate) return;
+    expect(settled.ledger.customerChargeCents).toBe(6);
+    expect(settled.ledger.metadata).toMatchObject({
+      discount_cents: 6,
+      invoice_cents: 0,
+      discount_windows: [
+        {
+          started_at: previousStart.toISOString(),
+          ends_at: windowStart.toISOString(),
+          discount_cents: 3,
+          native_units: 1,
+        },
+        {
+          started_at: windowStart.toISOString(),
+          ends_at: windowEnd.toISOString(),
+          discount_cents: 3,
+          native_units: 1,
+        },
+      ],
+    });
+    expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(0);
+    const bounds = { periodStartedAt: windowStart, periodEndsAt: windowEnd };
+    await expect(
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: meetingStart,
+        ...bounds,
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: currentUsageAt,
+        ...bounds,
+      }),
+    ).resolves.toBe(5_997);
+  });
+
+  it('splits Recall discount on a mid-month renewal inside one UTC month', async () => {
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await scope.getAccount();
+    enableLiveCharging();
+    const now = new Date();
+    const renewal = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 15));
+    if (now.getTime() < renewal.getTime()) renewal.setUTCMonth(renewal.getUTCMonth() - 1);
+    const windowEnd = new Date(renewal);
+    windowEnd.setUTCMonth(windowEnd.getUTCMonth() + 1);
+    const previousStart = new Date(renewal);
+    previousStart.setUTCMonth(previousStart.getUTCMonth() - 1);
+    const meetingStart = new Date(renewal.getTime() - 60_000);
+    const spentAt = new Date(renewal.getTime() - 10 * 24 * 60 * 60 * 1000);
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'ai:midmonth-previous-almost-spent',
+      kind: 'settlement',
+      meterId: 'ai',
+      nativeUnits: '5997',
+      customerChargeCents: 5_997,
+      metadata: { discount_cents: 5_997, usage_at: spentAt.toISOString() },
+      occurredAt: spentAt,
+    });
+    await pg.exec(`
+      UPDATE team_billing_accounts
+      SET shadow_billing = false, plan_id = 'team', billing_state = 'team_active',
+          included_discount_remaining_cents = 3, spend_cap_cents = 100000,
+          period_started_at = '${renewal.toISOString()}',
+          period_ends_at = '${windowEnd.toISOString()}'
+      WHERE team_id = '${TEAM_ID}';
+    `);
+    const settled = await scope.settle({
+      operationId: 'recall:across-midmonth-renewal',
+      meterId: 'recall_minutes',
+      nativeUnits: 2,
+      customerChargeCents: 6,
+      usageAt: meetingStart,
+    });
+    expect(settled.ok).toBe(true);
+    expect(settled.duplicate).toBe(false);
+    if (settled.duplicate) return;
+    expect(settled.ledger.metadata).not.toHaveProperty('period_segments');
+    expect(settled.ledger.metadata).toMatchObject({
+      discount_cents: 6,
+      invoice_cents: 0,
+      discount_windows: [
+        {
+          started_at: previousStart.toISOString(),
+          ends_at: renewal.toISOString(),
+          discount_cents: 3,
+          native_units: 1,
+        },
+        {
+          started_at: renewal.toISOString(),
+          ends_at: windowEnd.toISOString(),
+          discount_cents: 3,
+          native_units: 1,
+        },
+      ],
+    });
+    expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(0);
+    const counters = await pg.query<{ period_ym: string; native_units: string }>(
+      `SELECT period_ym, native_units::text
+       FROM billing_usage_counters
+       WHERE team_id = '${TEAM_ID}' AND meter_id = 'recall_minutes'`,
+    );
+    expect(counters.rows).toEqual([
+      {
+        period_ym: `${meetingStart.getUTCFullYear()}-${String(meetingStart.getUTCMonth() + 1).padStart(2, '0')}`,
+        native_units: '2.000000',
+      },
+    ]);
+  });
+
   it('holds Enterprise usage that has no subscription price and does not freeze', async () => {
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({

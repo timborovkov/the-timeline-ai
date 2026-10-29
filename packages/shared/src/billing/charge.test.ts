@@ -24,6 +24,8 @@ import {
   settlementSegmentsForMeter,
   shouldIngestPolarMeteredUsage,
   splitDiscountAndWallet,
+  recallDiscountWindowShares,
+  splitDurationNativeUnitsByDiscountWindow,
   splitDurationNativeUnitsByUtcMonth,
 } from '#src/billing/charge.js';
 import { applyMeteredDiscountCents } from '#src/billing/operator.js';
@@ -912,6 +914,60 @@ describe('settlement period attribution', () => {
     ).toEqual([
       { periodYm: '2026-08', nativeUnits: 60 },
       { periodYm: '2026-09', nativeUnits: 60 },
+    ]);
+  });
+
+  it('splits a meeting that crosses a renewal into each subscription window', () => {
+    const renewal = {
+      periodStartedAt: new Date('2026-10-01T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-11-01T00:00:00.000Z'),
+    };
+    expect(
+      splitDurationNativeUnitsByDiscountWindow({
+        startedAt: new Date('2026-09-30T23:59:00.000Z'),
+        nativeUnits: 2,
+        unitMs: 60_000,
+        ...renewal,
+      }),
+    ).toEqual([
+      {
+        periodYm: '2026-09',
+        nativeUnits: 1,
+        usageAt: new Date('2026-09-30T23:59:00.000Z'),
+        windowStartedAt: new Date('2026-09-01T00:00:00.000Z'),
+        windowEndsAt: new Date('2026-10-01T00:00:00.000Z'),
+      },
+      {
+        periodYm: '2026-10',
+        nativeUnits: 1,
+        usageAt: new Date('2026-10-01T00:00:00.000Z'),
+        windowStartedAt: new Date('2026-10-01T00:00:00.000Z'),
+        windowEndsAt: new Date('2026-11-01T00:00:00.000Z'),
+      },
+    ]);
+    expect(
+      recallDiscountWindowShares({
+        startedAt: new Date('2026-10-14T23:59:00.000Z'),
+        nativeUnits: 2,
+        periodStartedAt: new Date('2026-10-15T00:00:00.000Z'),
+        periodEndsAt: new Date('2026-11-15T00:00:00.000Z'),
+        segments: [{ periodYm: '2026-10', nativeUnits: 2, actualChargeCents: 6 }],
+      }),
+    ).toEqual([
+      {
+        usageAt: new Date('2026-10-14T23:59:00.000Z'),
+        windowStartedAt: new Date('2026-09-15T00:00:00.000Z'),
+        windowEndsAt: new Date('2026-10-15T00:00:00.000Z'),
+        nativeUnits: 1,
+        chargeCents: 3,
+      },
+      {
+        usageAt: new Date('2026-10-15T00:00:00.000Z'),
+        windowStartedAt: new Date('2026-10-15T00:00:00.000Z'),
+        windowEndsAt: new Date('2026-11-15T00:00:00.000Z'),
+        nativeUnits: 1,
+        chargeCents: 3,
+      },
     ]);
   });
 

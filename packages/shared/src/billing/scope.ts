@@ -43,6 +43,7 @@ import {
   polarIngestDisposition,
   polarSubscriptionCoversMeter,
   POLAR_INGEST_BLOCK_MISSING_PRICE,
+  recallDiscountWindowShares,
   settlementSegmentsForMeter,
   splitDiscountAndWallet,
   type PolarIngestDisposition,
@@ -1267,22 +1268,84 @@ export function createBillingScope(deps: BillingScopeDeps) {
             (sum, row) => sum + row.actualChargeCents,
             0,
           );
-          const historicalDiscount = await includedDiscountCentsBeforeCurrentWindow({
-            db: tx,
-            teamId,
-            account,
-            usageAt: startedAt,
-            now,
-            pricingPlanId: entitlementsPlanId,
-            livePlanId,
-          });
           const freeAllowanceSettlement = entitlementsPlanId === 'free' && !enterpriseContract;
-          const { discountCents, invoiceCents } = splitDiscountAndWallet({
-            chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,
-            includedDiscountRemainingCents:
-              historicalDiscount ?? account.includedDiscountRemainingCents,
-            meterId: input.meterId,
-          });
+          const windowShares =
+            input.meterId === 'recall_minutes'
+              ? recallDiscountWindowShares({
+                  startedAt,
+                  nativeUnits: Math.max(0, input.nativeUnits),
+                  periodStartedAt: account.periodStartedAt,
+                  periodEndsAt: account.periodEndsAt,
+                  segments: segmentCharges.map((row) => ({
+                    periodYm: row.periodYm,
+                    nativeUnits: row.nativeUnits,
+                    actualChargeCents: row.actualChargeCents,
+                  })),
+                })
+              : [];
+          const discountAcrossWindows = windowShares.length > 1;
+          let discountCents = 0;
+          let invoiceCents = 0;
+          let currentWindowDiscountCents = 0;
+          let discountWindows:
+            | {
+                started_at: string;
+                ends_at: string;
+                discount_cents: number;
+                native_units: number;
+              }[]
+            | undefined;
+          if (discountAcrossWindows) {
+            discountWindows = [];
+            let liveRemaining = account.includedDiscountRemainingCents;
+            for (const share of windowShares) {
+              const historicalDiscount = await includedDiscountCentsBeforeCurrentWindow({
+                db: tx,
+                teamId,
+                account,
+                usageAt: share.usageAt,
+                now,
+                pricingPlanId: entitlementsPlanId,
+                livePlanId,
+              });
+              const split = splitDiscountAndWallet({
+                chargeCents: freeAllowanceSettlement ? 0 : share.chargeCents,
+                includedDiscountRemainingCents: historicalDiscount ?? liveRemaining,
+                meterId: input.meterId,
+              });
+              discountCents += split.discountCents;
+              invoiceCents += split.invoiceCents;
+              if (historicalDiscount === undefined) {
+                currentWindowDiscountCents += split.discountCents;
+                liveRemaining -= split.discountCents;
+              }
+              discountWindows.push({
+                started_at: share.windowStartedAt.toISOString(),
+                ends_at: share.windowEndsAt.toISOString(),
+                discount_cents: split.discountCents,
+                native_units: share.nativeUnits,
+              });
+            }
+          } else {
+            const historicalDiscount = await includedDiscountCentsBeforeCurrentWindow({
+              db: tx,
+              teamId,
+              account,
+              usageAt: startedAt,
+              now,
+              pricingPlanId: entitlementsPlanId,
+              livePlanId,
+            });
+            const split = splitDiscountAndWallet({
+              chargeCents: freeAllowanceSettlement ? 0 : actualChargeCents,
+              includedDiscountRemainingCents:
+                historicalDiscount ?? account.includedDiscountRemainingCents,
+              meterId: input.meterId,
+            });
+            discountCents = split.discountCents;
+            invoiceCents = split.invoiceCents;
+            if (historicalDiscount === undefined) currentWindowDiscountCents = discountCents;
+          }
           const eventName = polarEventNameForMeter(input.meterId);
           const unitsToInvoice = polarCatalogUnitsForInvoiceCents(input.meterId, invoiceCents);
           const coverageInput = {
@@ -1335,11 +1398,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
 
           const applyCharges = !accountUsesShadowBilling(account);
           const collectDiscount =
-            historicalDiscount === undefined &&
-            applyCharges &&
-            !enterpriseContract &&
-            !comped &&
-            discountCents > 0;
+            currentWindowDiscountCents > 0 && applyCharges && !enterpriseContract && !comped;
           const spendCapExceeded =
             localChargeSpendCapApplies({
               shadowBilling: !applyCharges,
@@ -1390,6 +1449,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 list_charge_cents: listChargeCents,
                 discount_cents: discountCents,
                 invoice_cents: invoiceCents,
+                ...(discountWindows ? { discount_windows: discountWindows } : {}),
                 cap_eligible_cents: segmentCharges.reduce(
                   (sum, row) => sum + row.capEligibleChargeCents,
                   0,
@@ -1482,7 +1542,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   : {}),
                 ...(collectDiscount
                   ? {
-                      includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${discountCents})`,
+                      includedDiscountRemainingCents: sql`GREATEST(0, ${teamBillingAccounts.includedDiscountRemainingCents} - ${currentWindowDiscountCents})`,
                     }
                   : {}),
                 ...(freezeAccount ? { billingState: 'read_only' as const, spendCapCents: 0 } : {}),

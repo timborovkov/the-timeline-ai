@@ -420,11 +420,55 @@ export async function includedDiscountRemainingForReplay(input: {
     );
   let used = 0;
   for (const row of rows) {
-    const cents = row.metadata.discount_cents;
-    if (typeof cents !== 'number' || cents <= 0) continue;
-    if (settlementInDiscountWindow(row, window)) used += cents;
+    used += discountCentsAttributedToWindow(row, window);
   }
   return Math.max(0, budget - used);
+}
+
+/**
+ * Discount cents this settlement spent in `window`. A duration that crosses a
+ * renewal records one entry per window. Older rows keep a single `discount_cents`
+ * on the usage instant.
+ */
+function discountCentsAttributedToWindow(
+  row: {
+    operationId: string;
+    occurredAt: Date;
+    metadata: Record<string, unknown>;
+  },
+  window: { startedAt: Date; endsAt: Date },
+): number {
+  const raw = row.metadata.discount_windows;
+  if (Array.isArray(raw)) {
+    let matchedBounds = false;
+    let used = 0;
+    for (const entry of raw) {
+      if (!entry || typeof entry !== 'object') continue;
+      const record = entry as Record<string, unknown>;
+      const startedAt = typeof record.started_at === 'string' ? new Date(record.started_at) : null;
+      const endsAt = typeof record.ends_at === 'string' ? new Date(record.ends_at) : null;
+      if (
+        !startedAt ||
+        !endsAt ||
+        Number.isNaN(startedAt.getTime()) ||
+        Number.isNaN(endsAt.getTime())
+      ) {
+        continue;
+      }
+      matchedBounds = true;
+      if (
+        startedAt.getTime() === window.startedAt.getTime() &&
+        endsAt.getTime() === window.endsAt.getTime()
+      ) {
+        const cents = record.discount_cents;
+        if (typeof cents === 'number' && cents > 0) used += cents;
+      }
+    }
+    if (matchedBounds) return used;
+  }
+  const cents = row.metadata.discount_cents;
+  if (typeof cents !== 'number' || cents <= 0) return 0;
+  return settlementInDiscountWindow(row, window) ? cents : 0;
 }
 
 /**

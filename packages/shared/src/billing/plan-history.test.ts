@@ -308,6 +308,50 @@ describe('included discount remaining for replay', () => {
     await expect(remaining('2026-10-05T08:15:00.000Z')).resolves.toBe(5_900);
     await expect(remaining('2026-10-20T12:00:00.000Z')).resolves.toBe(5_950);
   });
+
+  it('attributes a straddling Recall discount to the window that spent it', async () => {
+    await db.insert(billingUsageLedger).values({
+      teamId: TEAM_ID,
+      operationId: 'recall:across-renewal',
+      kind: 'settlement',
+      meterId: 'recall_minutes',
+      nativeUnits: '2',
+      customerChargeCents: 6,
+      metadata: {
+        discount_cents: 6,
+        usage_at: '2026-09-30T23:59:00.000Z',
+        discount_windows: [
+          {
+            started_at: '2026-09-01T00:00:00.000Z',
+            ends_at: '2026-10-01T00:00:00.000Z',
+            discount_cents: 3,
+            native_units: 1,
+          },
+          {
+            started_at: '2026-10-01T00:00:00.000Z',
+            ends_at: '2026-11-01T00:00:00.000Z',
+            discount_cents: 3,
+            native_units: 1,
+          },
+        ],
+      },
+      occurredAt: new Date('2026-10-01T00:01:00.000Z'),
+    });
+    const bounds = {
+      periodStartedAt: new Date('2026-10-01T00:00:00.000Z'),
+      periodEndsAt: new Date('2026-11-01T00:00:00.000Z'),
+    };
+    const remaining = (usageAt: string) =>
+      includedDiscountRemainingForReplay({
+        db,
+        teamId: TEAM_ID,
+        planId: 'team',
+        usageAt: new Date(usageAt),
+        ...bounds,
+      });
+    await expect(remaining('2026-09-30T23:59:00.000Z')).resolves.toBe(5_997);
+    await expect(remaining('2026-10-15T12:00:00.000Z')).resolves.toBe(5_997);
+  });
 });
 
 describe('free plan baseline', () => {
