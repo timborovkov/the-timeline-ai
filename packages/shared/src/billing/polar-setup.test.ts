@@ -459,6 +459,62 @@ describe('planPolarSetup', () => {
     );
   });
 
+  it('leaves a correctly configured webhook unchanged when Polar stores no metadata', () => {
+    const stored = webhook({ metadata: {}, apiVersion: null });
+    const byUrl = planPolarSetup({ ...readySnapshot(), webhooks: [stored] }, request);
+    expect(byUrl.actions).toEqual([]);
+
+    const byId = planPolarSetup(
+      { ...readySnapshot(), webhooks: [stored] },
+      { ...request, webhookId: stored.id },
+    );
+    expect(byId.actions).toEqual([]);
+  });
+
+  it('updates a Timeline webhook when its stored events drift', () => {
+    const snapshot = readySnapshot();
+    snapshot.webhooks = [
+      webhook({
+        metadata: {},
+        apiVersion: null,
+        events: ['order.paid'],
+      }),
+    ];
+    const plan = planPolarSetup(snapshot, { ...request, webhookId: 'wh-timeline' });
+    expect(plan.actions.map((action) => action.kind)).toEqual(['patch_webhook']);
+    const patch = plan.actions[0];
+    expect(patch?.kind).toBe('patch_webhook');
+    if (patch?.kind !== 'patch_webhook') return;
+    expect(patch.id).toBe('wh-timeline');
+    expect(patch.body.events).toEqual([...TIMELINE_POLAR_WEBHOOK_EVENTS]);
+  });
+
+  it('ignores a foreign webhook instead of treating it as Timeline', () => {
+    const foreign = webhook({
+      id: 'irmin-hook',
+      url: 'https://irmin.example/api/v1/webhooks/polar',
+      metadata: {},
+      apiVersion: null,
+      events: ['order.paid'],
+    });
+    const onlyForeign = planPolarSetup({ ...readySnapshot(), webhooks: [foreign] }, request);
+    expect(onlyForeign.actions.map((action) => action.kind)).toEqual(['create_webhook']);
+    expect(JSON.stringify(onlyForeign.actions)).not.toContain('irmin-hook');
+    const created = onlyForeign.actions[0];
+    expect(created?.kind).toBe('create_webhook');
+    if (created?.kind !== 'create_webhook') return;
+    expect(created.body.url).toBe(DEFAULT_TIMELINE_POLAR_WEBHOOK_URL);
+
+    const besideTimeline = planPolarSetup(
+      {
+        ...readySnapshot(),
+        webhooks: [webhook({ metadata: {}, apiVersion: null }), foreign],
+      },
+      { ...request, webhookId: 'wh-timeline' },
+    );
+    expect(besideTimeline.actions).toEqual([]);
+  });
+
   it('updates the webhook selected by id and ignores a similar path', () => {
     const snapshot = readySnapshot();
     snapshot.webhooks = [

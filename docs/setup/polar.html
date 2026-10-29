@@ -57,7 +57,8 @@
         with <code>Timeline</code>, metadata <code>timeline_key</code>, or a meter whose event name
         starts with <code>timeline_</code>. It does not match or skip other projects by host or
         path. A webhook is updated only when its id is <code>POLAR_WEBHOOK_ID</code> or its URL is
-        exactly the configured Timeline URL. A disabled
+        exactly the configured Timeline URL. Polar does not store webhook metadata, so a later run
+        compares only the endpoint url, format, events, and enabled flag. A disabled
         <code>example.com/api/webhooks/polar</code> placeholder is removed only when it carries
         Timeline metadata and it is not the selected endpoint. An active product named Timeline
         Top-up, or stamped <code>timeline_key=topup</code>, is archived and is not recreated.

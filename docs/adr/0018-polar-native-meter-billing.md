@@ -71,7 +71,9 @@ credit hides margin and confuses prospects.
    product and does not create one. It prints the resulting ids and does not
    write `.env`. It only changes objects identified as Timeline's by a `Timeline`
    name prefix or `timeline_key` metadata, and it only updates the webhook
-   selected by `POLAR_WEBHOOK_ID` or the exact configured URL. A stray `order.paid` for the Timeline Top-up product, or any other one-time
+   selected by `POLAR_WEBHOOK_ID` or the exact configured URL. Polar webhook
+   endpoints do not store metadata, so that comparison is url, format, events,
+   and enabled. A stray `order.paid` for the Timeline Top-up product, or any other one-time
    purchase that is not a subscription product, is recorded on the usage ledger
    and opens an unbilled alert for the platform operator. It does not credit
    `walletBalanceCents`. The spend cap is the risk control: €0 or metered spend at

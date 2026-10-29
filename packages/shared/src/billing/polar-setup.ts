@@ -825,6 +825,8 @@ function selectWebhook(
   webhooks: readonly PolarSetupWebhook[],
   request: PolarSetupRequest,
 ): PolarSetupWebhook | null {
+  // Identity is configuration, not a name or metadata rule. Polar does not
+  // return webhook metadata, so another project's endpoint must not match.
   if (request.webhookId) {
     const byId = webhooks.find((webhook) => webhook.id === request.webhookId);
     if (byId) return byId;
@@ -867,6 +869,9 @@ function webhookWrite(
 }
 
 function webhookNeedsWrite(webhook: PolarSetupWebhook, request: PolarSetupRequest): boolean {
+  // Polar webhook endpoints do not store metadata, and modified_at stays null.
+  // Ownership is the saved id or the exact configured URL. A repeat run compares
+  // only the fields Polar keeps: url, format, events, and enabled.
   const next = webhookWrite(webhook, request);
   let sameUrl = false;
   try {
@@ -877,10 +882,8 @@ function webhookNeedsWrite(webhook: PolarSetupWebhook, request: PolarSetupReques
   return (
     !sameUrl ||
     webhook.format !== 'raw' ||
-    webhook.apiVersion !== TIMELINE_POLAR_WEBHOOK_API_VERSION ||
     !webhook.enabled ||
-    !sameEvents(webhook.events, next.events) ||
-    webhook.metadata[TIMELINE_METADATA_KEY] !== WEBHOOK_METADATA_KEY
+    !sameEvents(webhook.events, next.events)
   );
 }
 
