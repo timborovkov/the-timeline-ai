@@ -508,7 +508,7 @@ const baseSchema = z.object({
   // on first encrypt/decrypt if unset.
   //
   // Generate with:
-  //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  //   bun -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
   SECRETS_ENCRYPTION_KEY: z.string().optional(),
 
   // Per-team integrations. The catalog hides any native provider whose

@@ -25,17 +25,20 @@
       <ol>
         <li>Create a new Railway project.</li>
         <li>
-          In <strong>Settings → Environments</strong>, create <code>staging</code> and
-          <code>production</code>.
+          Use the default <code>production</code> environment. The current project has no users and
+          uses this environment for development and deployment verification.
         </li>
         <li>
           <strong>Settings → Git</strong> — connect the repo. Branch deploys:
           <ul>
             <li><code>main</code> → <code>production</code></li>
-            <li><code>staging</code> → <code>staging</code></li>
           </ul>
         </li>
       </ol>
+      <p>
+        A separate staging environment is optional. If introduced, provision isolated services and
+        credentials for release validation.
+      </p>
 
       <h2 id="database-templates">2. Database templates</h2>
       <p>Add via <strong>+ New → Database</strong>:</p>

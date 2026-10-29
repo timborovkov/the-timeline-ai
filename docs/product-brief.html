@@ -392,7 +392,7 @@
           </tr>
           <tr>
             <td>Hosting</td>
-            <td>Railway (staging + production environments)</td>
+            <td>Railway (single production environment)</td>
           </tr>
         </tbody>
       </table>
@@ -544,7 +544,10 @@
       </p>
 
       <h3 id="production-staging-on-railway">Production / staging on Railway</h3>
-      <p>Two Railway environments per project. Each runs:</p>
+      <p>
+        The current project uses one Railway environment, <code>production</code>, for development
+        and deployment verification while there are no users. The environment runs:
+      </p>
       <ul>
         <li>
           <strong><code>web</code></strong> — Next.js app, public domain, Telegram + Postmark

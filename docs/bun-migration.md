@@ -84,6 +84,20 @@ shared email templates, Next.js standalone assets, and extractor sources are ret
 images run as the non-root `bun` user. The extractor retains its database migration command and its
 existing restricted environment allowlist. The image's `node` compatibility command resolves to Bun.
 
+Railway's Dockerfile builder rejects `RUN --mount=type=secret`, including optional local
+`proxy_ca` mounts. The deployable Dockerfiles use the base image's CA trust and ordinary frozen
+installs. Do not disable TLS verification to accommodate a local proxy.
+
+Railway Docker commands use `env NODE_ENV=production bun ...` (and
+`WORKER_MODE=document-extract` for the extractor). The explicit `env` executable also works
+without a shell; a bare `NODE_ENV=production` assignment is not an executable. Keep pre-deploy
+migrations and service start commands aligned in all three Railway configuration files.
+
+As of October 28, 2026, the project's only Railway environment is `production`, used for
+development and deployment verification while there are no users. The owner authorized the Bun
+rollout there without a separate staging environment. The staging comparison and soak below are
+future user-facing release requirements, not completed evidence for this development rollout.
+
 1. Save the current Node release image identifiers and all service configurations. Do not combine
    the runtime switch with database-schema or payload changes.
 2. Deploy the complete Bun release to the designated staging environment. Verify migrations, web
@@ -140,14 +154,17 @@ longer-warm-up pairs and CPU profiles. Warmed median timeline latency was close 
 paired results and CPU costs remained variable. The report retains both favorable and unfavorable
 samples. These local measurements do not establish staging parity.
 
-The complete stack has not been deployed to staging or production. Railway staging access and the
-target environment must be supplied before the matched staging measurements and 24-hour soak can be
-completed. Those release gates, including investigation of repeatable degradation over 10%, remain
-open. Production deployment requires explicit authorization and the coordinated release/rollback
-procedure above.
+At the migration PR's completion, the complete stack had not been deployed to Railway. Its first
+automatic builds failed on the unsupported Dockerfile secret mounts. The follow-up removes those
+mounts and aligns service settings with Bun. A subsequent pre-deploy failure exposed shell-only
+environment assignments in the Docker commands; explicit `env` invocations fixed startup. On
+October 28, all three corrected Railway deployments reached `SUCCESS`, and the public health
+endpoint returned `{"ok":true,"db":"up"}`. Matched staging measurements and the 24-hour soak,
+including investigation of repeatable degradation over 10%, remain unperformed; the current
+development rollout does not establish those performance claims.
 
-The repository mentions `/document-release`, but that skill was absent from the available catalog
-and searched repository locations. The equivalent manual audit checked the Markdown guides, README,
+During the original migration, `/document-release` was absent from the available catalog
+and searched repository locations. Its equivalent manual audit checked the Markdown guides, README,
 AGENTS, design and roadmap references, Railway/setup HTML, executable commands, runtime pins, and
 migration-document links. No public API, database-schema, queue-payload, or persisted-format change
 is introduced by the runtime switch.
