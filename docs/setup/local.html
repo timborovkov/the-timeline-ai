@@ -78,7 +78,7 @@ ln -sf ../../.env apps/web/.env
         <code>docker compose ps qdrant</code> before starting the updated Compose stack. Back up the
         stopped container's <code>/qdrant/storage</code> directory and upgrade through the latest
         patch of each intermediate minor version; a persisted 1.12 collection must not jump directly
-        to 1.19.2. See the
+        to 1.20.0. See the
         <a href="https://qdrant.tech/documentation/operations/upgrades/">Qdrant upgrade guide</a>.
         Recreating the container keeps its data volume and existing collection layout. After the
         server upgrade, use the collection-copy command below to adopt on-disk vectors without
