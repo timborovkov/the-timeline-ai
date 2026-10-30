@@ -1,14 +1,10 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 // Legacy Team MCP bookmarks must continue to reach Integrations, while their
 // transition and recovery states tell people where their settings live.
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import McpServersError from '@/app/app/team/mcp-servers/error';
-import McpServersLoading from '@/app/app/team/mcp-servers/loading';
-import McpServersRedirect from '@/app/app/team/mcp-servers/page';
 
 const fakes = vi.hoisted(() => ({
   back: vi.fn(),
@@ -17,12 +13,27 @@ const fakes = vi.hoisted(() => ({
   searchParams: new URLSearchParams('connected=server-1&error=retry'),
 }));
 
-vi.mock('next/navigation', () => ({
-  redirect: fakes.redirect,
-  useRouter: () => ({ back: fakes.back }),
-  useSearchParams: () => fakes.searchParams,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+    useRouter: () => ({ back: fakes.back }),
+    useSearchParams: () => fakes.searchParams,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: McpServersError } = await import('@/app/app/team/mcp-servers/error');
+const { default: McpServersLoading } = await import('@/app/app/team/mcp-servers/loading');
+const { default: McpServersRedirect } = await import('@/app/app/team/mcp-servers/page');
 
 afterEach(() => {
   cleanup();
@@ -68,7 +79,7 @@ describe('Team MCP servers route states', () => {
       '/app/team/integrations?connected=server-1&error=retry',
     );
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     expect(document.activeElement).toBe(retry);
     await user.keyboard('{Enter}');

@@ -1,12 +1,12 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
-    "builder": "RAILPACK",
-    "buildCommand": "corepack enable && pnpm install --frozen-lockfile && pnpm --filter @timeline/db build && pnpm --filter @timeline/shared build && NODE_ENV=production pnpm --filter @timeline/web build"
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "docker/web.Dockerfile"
   },
   "deploy": {
-    "preDeployCommand": ["NODE_ENV=production node packages/db/dist/migrate.js"],
-    "startCommand": "NODE_ENV=production node apps/web/start.mjs",
+    "preDeployCommand": ["env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js"],
+    "startCommand": "env NODE_ENV=production bun --no-env-file apps/web/start.mjs",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { buildChatView, chatViewLabel } from '@/lib/chat-view';
-
 describe('buildChatView', () => {
   it('reads object, document, meeting, and task ids from the route', () => {
     expect(

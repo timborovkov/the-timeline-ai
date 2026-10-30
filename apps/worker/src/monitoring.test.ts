@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 const init = vi.fn();
 const setTag = vi.fn();
 const setScopeTag = vi.fn();
@@ -32,20 +33,35 @@ interface WorkerBreadcrumb {
 
 interface WorkerSentryInitOptions {
   beforeSend?: (event: WorkerBeforeSendEvent) => WorkerBeforeSendEvent;
+  beforeSendSpan?: (span: { name?: string; attributes?: Record<string, unknown> }) => {
+    name?: string;
+    attributes?: Record<string, unknown>;
+  };
   beforeBreadcrumb?: (breadcrumb: WorkerBreadcrumb) => WorkerBreadcrumb;
 }
 
-vi.mock('@sentry/node', () => ({
-  init,
-  setTag,
-  withScope,
-  captureException,
-  flush,
-}));
+await vi.mock(
+  import.meta.resolve('@sentry/node'),
+  () => ({
+    init,
+    setTag,
+    withScope,
+    captureException,
+    flush,
+  }),
+  () => import('@sentry/node'),
+);
 
-vi.mock('bullmq', () => ({
-  UnrecoverableError: MockUnrecoverableError,
-}));
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({
+    UnrecoverableError: MockUnrecoverableError,
+  }),
+  () => import('bullmq'),
+);
+
+const { RESTRICTED_SENTRY_DATA_COLLECTION } =
+  await import('@timeline/shared/monitoring/sentry-scrub');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -80,7 +96,11 @@ describe('worker Sentry monitoring', () => {
     monitoring.captureWorkerException(new Error('boom'), { jobName: 'meeting-finalize' });
     await expect(monitoring.flushWorkerSentry()).resolves.toBe(true);
 
-    expect(init).toHaveBeenCalledWith(expect.objectContaining({ sendDefaultPii: false }));
+    expect(init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dataCollection: RESTRICTED_SENTRY_DATA_COLLECTION,
+      }),
+    );
     expect(setTag).toHaveBeenCalledWith('component', 'worker');
     expect(setScopeTag).toHaveBeenCalledWith('jobName', 'meeting-finalize');
     expect(captureException).toHaveBeenCalledOnce();
@@ -111,7 +131,7 @@ describe('worker Sentry monitoring', () => {
     expect(setScopeTag).not.toHaveBeenCalledWith('prompt', expect.anything());
   });
 
-  it('scrubs request auth material case-insensitively', async () => {
+  it('removes request headers and cookies before sending an event', async () => {
     process.env.SENTRY_DSN = 'https://example@sentry.invalid/1';
     const monitoring = await import('#src/monitoring.js');
 
@@ -133,7 +153,19 @@ describe('worker Sentry monitoring', () => {
 
     expect(event?.request?.url).toBe('https://app.timeline.test/api/mcp/oauth/callback');
     expect(event?.request?.cookies).toBeUndefined();
-    expect(event?.request?.headers).toEqual({ 'x-request-id': 'req-1' });
+    expect(event?.request?.headers).toBeUndefined();
+
+    const span = initOptions?.beforeSendSpan?.({
+      name: 'GET /api/mcp/oauth/callback?code=secret',
+      attributes: {
+        'http.url': 'https://app.timeline.test/api/mcp/oauth/callback?code=secret',
+        'http.request.header.authorization': 'Bearer token',
+      },
+    });
+    expect(span?.name).toBe('GET /api/mcp/oauth/callback');
+    expect(span?.attributes).toEqual({
+      'http.url': 'https://app.timeline.test/api/mcp/oauth/callback',
+    });
   });
 
   it('redacts invite token path segments from request URLs', async () => {

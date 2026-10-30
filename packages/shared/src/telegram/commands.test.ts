@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   registerTelegramBotCommands,
@@ -8,7 +10,6 @@ import {
   TELEGRAM_GROUP_COMMANDS,
   TELEGRAM_GROUP_HELP,
 } from '#src/telegram/commands.js';
-
 const COMMAND_NAME_RE = /^[a-z0-9_]{1,32}$/;
 
 describe('Telegram bot command catalog', () => {

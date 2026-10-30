@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Team integration activation is admin-only. This route turns previously shared
  * personal provider resources into active team source paths and records the
@@ -12,10 +13,12 @@ const fakes = vi.hoisted(() => ({
   requireMembership: vi.fn(),
   activateSharedResources: vi.fn(),
   recordAudit: vi.fn(),
+  recordError: vi.fn(),
   recordConnectionAttention: vi.fn(),
   resolveConnectionAttention: vi.fn(),
   listConnectionAttention: vi.fn(),
   adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
+  adminRecordPendingIntegrationSyncContinuations: vi.fn(),
   missingRequiredProviderScopes: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
   trackProductEventBestEffort: vi.fn(),
@@ -23,31 +26,73 @@ const fakes = vi.hoisted(() => ({
   enqueueIntegrationSyncJob: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
-vi.mock('@timeline/shared/integrations', () => ({
-  adminReconcileIntegrationWebhookSubscriptions:
-    fakes.adminReconcileIntegrationWebhookSubscriptions,
-  missingRequiredProviderScopes: fakes.missingRequiredProviderScopes,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    integrations: {
-      activateSharedResources: fakes.activateSharedResources,
-      recordAudit: fakes.recordAudit,
-      recordConnectionAttention: fakes.recordConnectionAttention,
-      resolveConnectionAttention: fakes.resolveConnectionAttention,
-      listConnectionAttention: fakes.listConnectionAttention,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
   }),
-}));
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/onboarding'),
+  () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }),
+  () => import('@/lib/onboarding'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.requireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({
+    ProviderRateLimitError: class ProviderRateLimitError extends Error {
+      retryAt: Date;
+      constructor(input: { message?: string; retryAt: Date }) {
+        super(input.message);
+        this.retryAt = input.retryAt;
+      }
+    },
+    adminReconcileIntegrationWebhookSubscriptions:
+      fakes.adminReconcileIntegrationWebhookSubscriptions,
+    adminRecordPendingIntegrationSyncContinuations:
+      fakes.adminRecordPendingIntegrationSyncContinuations,
+    missingRequiredProviderScopes: fakes.missingRequiredProviderScopes,
+  }),
+  () => import('@timeline/shared/integrations'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      integrations: {
+        activateSharedResources: fakes.activateSharedResources,
+        recordAudit: fakes.recordAudit,
+        recordError: fakes.recordError,
+        recordConnectionAttention: fakes.recordConnectionAttention,
+        resolveConnectionAttention: fakes.resolveConnectionAttention,
+        listConnectionAttention: fakes.listConnectionAttention,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { POST } = await import('./route.js');
 
@@ -74,8 +119,10 @@ beforeEach(() => {
     provider: 'github',
     providerConnectionId: CONNECTION_ID,
     addedSelectionCount: 1,
+    removedSelectionCount: 0,
   });
   fakes.recordAudit.mockResolvedValue(undefined);
+  fakes.recordError.mockResolvedValue(undefined);
   fakes.recordConnectionAttention.mockResolvedValue(undefined);
   fakes.resolveConnectionAttention.mockResolvedValue(undefined);
   fakes.listConnectionAttention.mockResolvedValue([]);
@@ -84,6 +131,7 @@ beforeEach(() => {
     deprovisioned: 0,
     skipped: true,
   });
+  fakes.adminRecordPendingIntegrationSyncContinuations.mockResolvedValue(undefined);
   fakes.missingRequiredProviderScopes.mockReturnValue([]);
   fakes.safeMarkOnboardingStep.mockResolvedValue(true);
   fakes.requireRedisQueue.mockResolvedValue({
@@ -141,18 +189,19 @@ describe('POST /api/team/integrations/activate', () => {
       'first_integration',
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'integration_connected',
-      expect.objectContaining({
-        teamId: TEAM_ID,
-        integrationId: INTEGRATION_ID,
-        provider: 'github',
-      }),
+      { provider: 'github' },
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'activate', kind: 'native', provider: 'github' },
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'onboarding_step_completed',
-      expect.objectContaining({ step: 'first_integration', source: 'automatic' }),
+      { step: 'first_integration', source: 'automatic' },
     );
   });
 
@@ -162,6 +211,7 @@ describe('POST /api/team/integrations/activate', () => {
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 1,
+      removedSelectionCount: 0,
     });
     fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
       new Error('MONDAY_WEBHOOK_SECRET not configured'),
@@ -182,8 +232,7 @@ describe('POST /api/team/integrations/activate', () => {
     );
     expect(fakes.recordConnectionAttention).toHaveBeenCalledTimes(1);
     const attentionInput = fakes.recordConnectionAttention.mock.calls[0]?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(attentionInput).toMatchObject({
       providerConnectionId: CONNECTION_ID,
       integrationId: INTEGRATION_ID,
@@ -194,13 +243,47 @@ describe('POST /api/team/integrations/activate', () => {
     );
   });
 
+  it('reports a monday provider limit as paused integration health during activation', async () => {
+    const { ProviderRateLimitError } = await import('@timeline/shared/integrations');
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+      addedSelectionCount: 1,
+      removedSelectionCount: 0,
+    });
+    const limit = new ProviderRateLimitError({
+      provider: 'monday',
+      retryAt: new Date(Date.now() + 60_000),
+      retryAfterSeconds: 60,
+      scope: 'daily',
+      reason: 'daily_limit_exceeded',
+      message: 'monday_rate_limited',
+    });
+    fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(limit);
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.recordError).toHaveBeenCalledWith(INTEGRATION_ID, limit.message);
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      {},
+      INTEGRATION_ID,
+      [{ resourceType: 'monday.webhook', externalId: INTEGRATION_ID, retryAt: limit.retryAt }],
+    );
+  });
+
   it('does not enqueue another full backfill when active sources are unchanged', async () => {
     fakes.activateSharedResources.mockResolvedValueOnce({
       id: INTEGRATION_ID,
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 0,
+      removedSelectionCount: 0,
     });
+    fakes.safeMarkOnboardingStep.mockResolvedValueOnce(false);
 
     const response = await POST(
       request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [SHARE_ID] }),
@@ -214,6 +297,30 @@ describe('POST /api/team/integrations/activate', () => {
       syncQueued: false,
     });
     expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+  });
+
+  it('records source deactivation only when a saved selection is removed', async () => {
+    fakes.activateSharedResources.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: CONNECTION_ID,
+      addedSelectionCount: 0,
+      removedSelectionCount: 1,
+    });
+    fakes.safeMarkOnboardingStep.mockResolvedValueOnce(false);
+
+    const response = await POST(
+      request({ providerConnectionId: CONNECTION_ID, resourceShareIds: [] }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledOnce();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'deactivate', kind: 'native', provider: 'monday' },
+    );
   });
 
   it('keeps saved sources retryable when the initial backfill cannot be queued', async () => {
@@ -222,6 +329,7 @@ describe('POST /api/team/integrations/activate', () => {
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 1,
+      removedSelectionCount: 0,
     });
     fakes.enqueueIntegrationSyncJob.mockRejectedValueOnce(new Error('redis unavailable'));
 
@@ -258,6 +366,7 @@ describe('POST /api/team/integrations/activate', () => {
       provider: 'monday',
       providerConnectionId: CONNECTION_ID,
       addedSelectionCount: 0,
+      removedSelectionCount: 0,
     });
     fakes.listConnectionAttention.mockResolvedValueOnce([
       { integrationId: INTEGRATION_ID, category: 'sync_error' },

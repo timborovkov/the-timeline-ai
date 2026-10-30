@@ -1,12 +1,14 @@
-// @vitest-environment happy-dom
+import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+
+import { ObjectTextFilter } from '@/components/boards/object-text-filter';
+// Test environment: happy-dom
 
 // The shared board filter needs a reliably reachable clear action on every
 // surface that reuses it, including narrow task-board layouts.
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { ObjectTextFilter } from '@/components/boards/object-text-filter';
 
 afterEach(cleanup);
 

@@ -1,20 +1,29 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import PersonalConnectionsError from '@/app/app/me/connections/error';
-import PersonalConnectionsLoading from '@/app/app/me/connections/loading';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('@/components/history-back-link', () => ({
-  HistoryBackLink: ({ fallbackHref, label }: { fallbackHref: string; label: string }) => (
-    <a href={fallbackHref}>{label}</a>
-  ),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/history-back-link'),
+  () => ({
+    HistoryBackLink: ({ fallbackHref, label }: { fallbackHref: string; label: string }) => (
+      <a href={fallbackHref}>{label}</a>
+    ),
+  }),
+  () => import('@/components/history-back-link'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: PersonalConnectionsError } = await import('@/app/app/me/connections/error');
+const { default: PersonalConnectionsLoading } = await import('@/app/app/me/connections/loading');
 
 afterEach(() => {
   cleanup();
@@ -64,7 +73,7 @@ describe('Personal Connections route states', () => {
       ),
     ).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
 
     expect(reset).toHaveBeenCalledTimes(1);
   });

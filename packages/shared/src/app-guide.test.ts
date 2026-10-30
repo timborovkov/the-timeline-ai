@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { getAppGuideRoute, searchAppGuide } from '#src/app-guide.js';
-
 describe('app guide route metadata', () => {
   it('looks up exact route metadata with role and href', () => {
     expect(getAppGuideRoute('team/invites')).toMatchObject({

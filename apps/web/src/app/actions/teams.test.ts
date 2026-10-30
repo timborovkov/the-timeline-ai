@@ -1,17 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  changeMemberRoleAction,
-  createTeamAction,
-  inviteMemberAction,
-  removeMemberAction,
-  renameTeamAction,
-  resendInviteAction,
-  revokeInviteAction,
-  updateInboundEmailWhitelistAction,
-  updateTeamTimezoneAction,
-} from '@/app/actions/teams';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for team management. These pin the action-level contract
  * for auth, validation, owner/admin permissions, invite delivery status,
@@ -26,6 +15,7 @@ const fakes = vi.hoisted(() => ({
   fakeTransaction: vi.fn(),
   fakeDbUpdate: vi.fn(),
   fakeDbInsert: vi.fn(),
+  fakeDbSelect: vi.fn(),
   fakeSendMessage: vi.fn(),
   fakeAssertNotLastOwner: vi.fn(),
   fakeAdminRecordConnectionAttention: vi.fn(),
@@ -33,69 +23,153 @@ const fakes = vi.hoisted(() => ({
   fakeGetCalendarSettings: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeCookieSet: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeRedirect: vi.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({
-  ACTIVE_TEAM_COOKIE: 'timeline_active_team',
-  resolveActiveTeam: fakes.fakeResolveActiveTeam,
-}));
-vi.mock('@/lib/db', () => ({
-  db: {
-    transaction: fakes.fakeTransaction,
-    update: fakes.fakeDbUpdate,
-    insert: fakes.fakeDbInsert,
-  },
-}));
-vi.mock('@timeline/shared/integrations', () => ({
-  adminRecordConnectionAttention: fakes.fakeAdminRecordConnectionAttention,
-}));
-vi.mock('@/lib/site-url', () => ({ getSiteUrl: () => 'https://timeline.test' }));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('next/headers', () => ({
-  cookies: vi.fn().mockResolvedValue({ set: fakes.fakeCookieSet }),
-}));
-vi.mock('next/navigation', () => ({ redirect: fakes.fakeRedirect }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    calendar: {
-      getCalendarSettings: fakes.fakeGetCalendarSettings,
-      upsertCalendarSettings: fakes.fakeUpsertCalendarSettings,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({
+    ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+    activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+    resolveActiveTeam: fakes.fakeResolveActiveTeam,
+    serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+  }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      transaction: fakes.fakeTransaction,
+      update: fakes.fakeDbUpdate,
+      insert: fakes.fakeDbInsert,
+      select: fakes.fakeDbSelect,
     },
   }),
-}));
-vi.mock('@/lib/onboarding', () => ({
-  safeMarkOnboardingStep: vi.fn().mockResolvedValue(false),
-}));
-vi.mock('@timeline/shared/messaging', () => ({
-  sendMessage: fakes.fakeSendMessage,
-  insertDefaultDigestDestination: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock('@timeline/shared/slack', () => ({
-  hasSlackInstallForTeam: vi.fn(),
-  listSlackConversationsForTeam: vi.fn(),
-}));
-vi.mock('@timeline/shared/team-roles', () => ({
-  assertNotLastOwner: fakes.fakeAssertNotLastOwner,
-}));
-vi.mock('@timeline/shared/slug', () => {
-  return {
-    buildInboundEmail: (slug: string, domain: string | undefined) =>
-      `${slug}@${domain ?? 'inbound.invalid'}`,
-    randomSlugSuffix: () => 'sluggy',
-    randomToken: () => 'invite-token',
-    slugify: (value: string) =>
-      value
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, ''),
-  };
-});
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({
+    adminRecordConnectionAttention: fakes.fakeAdminRecordConnectionAttention,
+  }),
+  () => import('@timeline/shared/integrations'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/site-url'),
+  () => ({ getSiteUrl: () => 'https://timeline.test' }),
+  () => import('@/lib/site-url'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({
+    cookies: vi.fn().mockResolvedValue({ set: fakes.fakeCookieSet }),
+  }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.fakeRedirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      calendar: {
+        getCalendarSettings: fakes.fakeGetCalendarSettings,
+        upsertCalendarSettings: fakes.fakeUpsertCalendarSettings,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/onboarding'),
+  () => ({
+    safeMarkOnboardingStep: vi.fn().mockResolvedValue(false),
+  }),
+  () => import('@/lib/onboarding'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/messaging'),
+  async () => ({
+    ...(await import('@timeline/shared/messaging')),
+    sendMessage: fakes.fakeSendMessage,
+    insertDefaultDigestDestination: vi.fn().mockResolvedValue(undefined),
+  }),
+  () => import('@timeline/shared/messaging'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slack'),
+  () => ({
+    hasSlackInstallForTeam: vi.fn(),
+    listSlackConversationsForTeam: vi.fn(),
+  }),
+  () => import('@timeline/shared/slack'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-roles'),
+  () => ({
+    assertNotLastOwner: fakes.fakeAssertNotLastOwner,
+  }),
+  () => import('@timeline/shared/team-roles'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slug'),
+  () => {
+    return {
+      buildInboundEmail: (slug: string, domain: string | undefined) =>
+        `${slug}@${domain ?? 'inbound.invalid'}`,
+      randomSlugSuffix: () => 'sluggy',
+      randomToken: () => 'invite-token',
+      slugify: (value: string) =>
+        value
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, ''),
+    };
+  },
+  () => import('@timeline/shared/slug'),
+);
+
+const {
+  changeMemberRoleAction,
+  createTeamAction,
+  inviteMemberAction,
+  removeMemberAction,
+  renameTeamAction,
+  resendInviteAction,
+  revokeInviteAction,
+  updateDigestPreferenceAction,
+  updateInboundEmailWhitelistAction,
+  updateTeamTimezoneAction,
+} = await import('@/app/actions/teams');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -160,11 +234,15 @@ function selectChain(rows: unknown[]) {
   };
 }
 
-function mutationChain(records: unknown[]) {
+function mutationChain(records: unknown[], returnedRows: unknown[] = [{ id: TEAM_ID }]) {
   return {
     set: vi.fn((values: unknown) => {
       records.push(values);
-      return { where: vi.fn(() => Promise.resolve()) };
+      return {
+        where: vi.fn(() => ({
+          returning: vi.fn().mockResolvedValue(returnedRows),
+        })),
+      };
     }),
     values: vi.fn((values: unknown) => {
       records.push(values);
@@ -177,16 +255,19 @@ function mutationChain(records: unknown[]) {
   };
 }
 
-function makeTx(selectRows: unknown[][]) {
+function makeTx(selectRows: unknown[][], updateReturnRows: unknown[][] = []) {
   const updates: unknown[] = [];
   const inserts: unknown[] = [];
   const deletes: unknown[] = [];
   let selectIndex = 0;
+  let updateIndex = 0;
   return {
     tx: {
       execute: vi.fn(() => Promise.resolve()),
       select: vi.fn(() => selectChain(selectRows[selectIndex++] ?? [])),
-      update: vi.fn(() => mutationChain(updates)),
+      update: vi.fn(() =>
+        mutationChain(updates, updateReturnRows[updateIndex++] ?? [{ id: TEAM_ID }]),
+      ),
       insert: vi.fn(() => mutationChain(inserts)),
       delete: vi.fn((table: unknown) => {
         deletes.push(table);
@@ -218,7 +299,7 @@ beforeEach(() => {
   fakes.fakeAssertNotLastOwner.mockResolvedValue(undefined);
   fakes.fakeAdminRecordConnectionAttention.mockResolvedValue(undefined);
   fakes.fakeGetCalendarSettings.mockResolvedValue({
-    defaultTimezone: 'Europe/Tallinn',
+    defaultTimezone: 'Europe/Helsinki',
   });
   fakes.fakeUpsertCalendarSettings.mockResolvedValue(undefined);
   fakes.fakeTransaction.mockImplementation((fn: (tx: unknown) => unknown) =>
@@ -226,6 +307,7 @@ beforeEach(() => {
   );
   okUpdateChain();
   okInsertChain();
+  fakes.fakeDbSelect.mockReturnValue(selectChain([]));
 });
 
 describe('createTeamAction', () => {
@@ -250,7 +332,7 @@ describe('createTeamAction', () => {
     expect(fakes.fakeTransaction).toHaveBeenCalledOnce();
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
@@ -274,7 +356,11 @@ describe('renameTeamAction', () => {
       Promise.resolve(
         fn({
           update: vi.fn(() => ({
-            set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+            set: vi.fn(() => ({
+              where: vi.fn(() => ({
+                returning: vi.fn().mockResolvedValue([{ id: TEAM_ID }]),
+              })),
+            })),
           })),
           insert: vi.fn(() => ({ values: vi.fn().mockResolvedValue(undefined) })),
         }),
@@ -288,6 +374,35 @@ describe('renameTeamAction', () => {
     });
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+  });
+
+  it('does not audit, track, or revalidate an unchanged name', async () => {
+    const insert = vi.fn();
+    fakes.fakeTransaction.mockImplementation((fn: (tx: unknown) => unknown) =>
+      Promise.resolve(
+        fn({
+          update: vi.fn(() => ({
+            set: vi.fn(() => ({
+              where: vi.fn(() => ({ returning: vi.fn().mockResolvedValue([]) })),
+            })),
+          })),
+          insert,
+        }),
+      ),
+    );
+
+    await expect(
+      renameTeamAction({}, form({ teamId: TEAM_ID, name: 'New name' })),
+    ).resolves.toEqual({ ok: true });
+
+    expect(insert).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
 
@@ -387,6 +502,57 @@ describe('updateInboundEmailWhitelistAction', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+  });
+
+  it('does not audit, track, or revalidate an unchanged whitelist', async () => {
+    const tx = makeTx([], [[]]);
+    mockTransactionWithTx(tx.tx);
+
+    await expect(
+      updateInboundEmailWhitelistAction(
+        {},
+        form({ enabled: 'on', senders: 'vendor@example.test' }),
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(tx.inserts).toEqual([]);
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+  });
+});
+
+describe('updateDigestPreferenceAction', () => {
+  it('treats the implicit enabled default as an unchanged preference', async () => {
+    fakes.fakeDbSelect.mockReturnValueOnce(selectChain([]));
+
+    await expect(
+      updateDigestPreferenceAction({}, form({ dailyDigestEnabled: 'on' })),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeDbInsert).not.toHaveBeenCalled();
+    expect(fakes.fakeDbUpdate).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
+  });
+
+  it('tracks an explicit disable when no preference row exists', async () => {
+    fakes.fakeDbSelect.mockReturnValueOnce(selectChain([]));
+
+    await expect(updateDigestPreferenceAction({}, form({}))).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeDbInsert).toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app');
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
 });
 
@@ -465,6 +631,25 @@ describe('updateTeamTimezoneAction', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/meetings');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/timeline');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/approvals');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'settings_update' },
+    );
+  });
+
+  it('does not write, track, or revalidate an unchanged timezone', async () => {
+    fakes.fakeGetCalendarSettings.mockResolvedValueOnce({
+      defaultTimezone: 'Europe/Tallinn',
+    });
+
+    await expect(
+      updateTeamTimezoneAction({}, form({ timezone: 'Europe/Tallinn' })),
+    ).resolves.toEqual({ ok: true });
+
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
   it('reports write failures without masking them as permission failures', async () => {
@@ -551,6 +736,11 @@ describe('inviteMemberAction', () => {
       }),
     );
     expect(fakes.fakeDbUpdate).toHaveBeenCalledOnce();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'invite_create' },
+    );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
   });
 
@@ -575,6 +765,11 @@ describe('inviteMemberAction', () => {
       sendStatus: 'failed',
       sendError: 'postmark down',
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'team_management_action_completed',
+      { action: 'invite_create' },
+    );
   });
 
   it('does not mark an invite sent when messaging dedupe skips provider delivery', async () => {
@@ -746,6 +941,8 @@ describe('changeMemberRoleAction', () => {
 
     expect(missing.updates).toEqual([]);
     expect(noChange.updates).toEqual([]);
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 
   it('protects the last owner before demotion', async () => {
@@ -785,6 +982,11 @@ describe('changeMemberRoleAction', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/team');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'team_management_action_completed',
+      { action: 'member_role_change' },
+    );
   });
 });
 
@@ -940,8 +1142,12 @@ describe('removeMemberAction', () => {
         },
       }),
     );
+    const attentionDb = fakes.fakeAdminRecordConnectionAttention.mock.calls[0]?.[0] as
+      { select: unknown } | undefined;
+    expect(attentionDb?.select).toBe(fakes.fakeDbSelect);
+    expect(attentionDb?.select).not.toBe(tx.select);
     expect(fakes.fakeAdminRecordConnectionAttention).toHaveBeenCalledWith(
-      expect.not.objectContaining({ select: tx.select }),
+      expect.anything(),
       TEAM_ID,
       {
         providerConnectionId: 'provider-connection-id',

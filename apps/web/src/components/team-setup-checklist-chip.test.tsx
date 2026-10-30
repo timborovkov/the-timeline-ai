@@ -1,21 +1,32 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   useOnboardingChecklistQuery: vi.fn(),
   pathname: '/app/sources',
 }));
 
-vi.mock('next/navigation', () => ({
-  usePathname: () => fakes.pathname,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => fakes.pathname,
+  }),
+  () => import('next/navigation'),
+);
 
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useOnboardingChecklistQuery: fakes.useOnboardingChecklistQuery,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useOnboardingChecklistQuery: fakes.useOnboardingChecklistQuery,
+  }),
+  () => import('@/lib/use-paginated-queries'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { TeamSetupChecklistChip } = await import('./team-setup-checklist-chip.js');
 

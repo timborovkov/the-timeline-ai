@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   normalizeIdentityFacet,
   validateIdentityFacetValue,
 } from '#src/objects/identity-facets.js';
-
 describe('identity facets', () => {
   it('normalizes provider identifiers consistently', () => {
     expect(normalizeIdentityFacet('email', ' Ada@Example.COM ')).toBe('ada@example.com');

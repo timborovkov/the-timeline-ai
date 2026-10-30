@@ -1,5 +1,6 @@
+import { expect } from '@timeline/test-support';
 import * as ai from 'ai';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import {
@@ -10,7 +11,6 @@ import {
   streamText,
   withLangSmithProviderOptions,
 } from '#src/llm/tracing.js';
-
 const ENV_BACKUP = { ...process.env };
 
 beforeEach(() => {
@@ -18,7 +18,9 @@ beforeEach(() => {
     ...ENV_BACKUP,
     AUTH_SECRET: 'a'.repeat(32),
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
+    NODE_ENV: 'test',
   };
+  delete process.env.LANGSMITH_PROJECT;
   resetEnvForTests();
 });
 
@@ -65,7 +67,7 @@ describe('llm LangSmith tracing', () => {
   it('enables LangSmith provider options when configured', () => {
     process.env = {
       ...process.env,
-      NODE_ENV: 'production',
+      NODE_ENV: 'test',
       LANGSMITH_TRACING: 'true',
       LANGSMITH_API_KEY: 'lsv2_test_key',
       LANGSMITH_PROJECT: 'timeline-production',
@@ -102,8 +104,8 @@ describe('llm LangSmith tracing', () => {
               filename: 'contract.pdf',
             },
             {
-              type: 'image',
-              image: Buffer.from([0xff, 0xd8, 0xff]),
+              type: 'file',
+              data: Buffer.from([0xff, 0xd8, 0xff]),
               mediaType: 'image/jpeg',
             },
           ],
@@ -120,9 +122,9 @@ describe('llm LangSmith tracing', () => {
       data: { redacted: true, kind: 'buffer', bytes: 8 },
     });
     expect(message?.content[2]).toEqual({
-      type: 'image',
+      type: 'file',
       mediaType: 'image/jpeg',
-      image: { redacted: true, kind: 'buffer', bytes: 3 },
+      data: { redacted: true, kind: 'buffer', bytes: 3 },
     });
     expect(JSON.stringify(inputs)).not.toContain('%PDF-1.4');
   });

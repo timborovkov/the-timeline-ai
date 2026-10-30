@@ -1,12 +1,11 @@
-// @vitest-environment happy-dom
-
-/** Business intent: each pending task detail gets its own bounded freshness window. */
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render as testingRender, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { PropsWithChildren, ReactElement } from 'react';
+// Test environment: happy-dom
+
+/** Business intent: each pending task detail gets its own bounded freshness window. */
 
 const fakes = vi.hoisted(() => {
   const refresh = vi.fn();
@@ -18,14 +17,35 @@ const fakes = vi.hoisted(() => {
   };
 });
 
-vi.mock('next/navigation', () => ({ useRouter: () => fakes.router }));
-vi.mock('@/app/actions/objects', () => ({
-  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
-  resetTaskCategoryAction: vi.fn(),
-  retryTaskCategoryAction: vi.fn(),
-  setTaskCategoryAction: fakes.setTaskCategoryAction,
-  undoTaskCategoryChangeAction: vi.fn(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => fakes.router,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+    resetTaskCategoryAction: vi.fn(),
+    retryTaskCategoryAction: vi.fn(),
+    setTaskCategoryAction: fakes.setTaskCategoryAction,
+    undoTaskCategoryChangeAction: vi.fn(),
+  }),
+  () => import('@/app/actions/objects'),
+);
+
+const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+const {
+  act,
+  cleanup,
+  render: testingRender,
+  screen,
+  waitFor,
+} = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const [
   { LiveTaskCategoryBadge, TaskCategoryBadge, TaskCategoryPollingProvider },

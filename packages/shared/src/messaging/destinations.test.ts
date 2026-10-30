@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   digestDestinationDedupeKey,
@@ -9,7 +10,6 @@ import {
   personalDigestDestinations,
   sharedDigestDestinations,
 } from '#src/messaging/destinations.js';
-
 describe('digest destinations', () => {
   it('classifies personal fan-out versus shared chat destinations', () => {
     expect(isPersonalDigestDestination('email_members')).toBe(true);

@@ -1,12 +1,9 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as jobRecovery from '@timeline/shared/job-recovery';
-
-import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   fetchNextPage: vi.fn(),
@@ -19,30 +16,48 @@ const fakes = vi.hoisted(() => ({
   useFinishedJobsInfiniteQuery: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ refresh: fakes.routerRefresh }),
-}));
-
-vi.mock('sonner', () => ({
-  toast: {
-    error: fakes.toastError,
-    loading: fakes.toastLoading,
-    success: fakes.toastSuccess,
-    warning: fakes.toastWarning,
-  },
-}));
-
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useFinishedJobsInfiniteQuery: fakes.useFinishedJobsInfiniteQuery,
-  useJobDashboardQuery: () => ({
-    data: undefined,
-    error: null,
-    isError: false,
-    isFetching: false,
-    isPending: true,
-    refetch: vi.fn(),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: fakes.routerRefresh }),
   }),
-}));
+  () => import('next/navigation'),
+);
+
+await vi.mock(
+  import.meta.resolve('sonner'),
+  () => ({
+    toast: {
+      error: fakes.toastError,
+      loading: fakes.toastLoading,
+      success: fakes.toastSuccess,
+      warning: fakes.toastWarning,
+    },
+  }),
+  () => import('sonner'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useFinishedJobsInfiniteQuery: fakes.useFinishedJobsInfiniteQuery,
+    useJobDashboardQuery: () => ({
+      data: undefined,
+      error: null,
+      isError: false,
+      isFetching: false,
+      isPending: true,
+      refetch: vi.fn(),
+    }),
+  }),
+  () => import('@/lib/use-paginated-queries'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor, within } =
+  await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { WorkspaceTimezoneProvider } = await import('@/components/workspace-timezone-context');
 
 const { JobRecoveryList } = await import('./job-recovery-list.js');
 

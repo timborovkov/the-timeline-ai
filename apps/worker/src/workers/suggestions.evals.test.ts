@@ -1,13 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
 import { agentSuggestions, conversationReviews, entities, rawEvents, type Db } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
-
 // Background proposal evals exercise the worker path that turns captured
 // conversations into approval-queue proposals. Success means the review window
 // is visibility-safe, the model can propose grounded work, and stored evidence

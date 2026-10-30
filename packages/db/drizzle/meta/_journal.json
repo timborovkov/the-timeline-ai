@@ -512,6 +512,34 @@
       "when": 1795654680000,
       "tag": "0072_object_discussions",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795654740000,
+      "tag": "0073_legal_acceptance_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795654800000,
+      "tag": "0074_recall_join_metadata_minimization",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795654860000,
+      "tag": "0075_mcp_oauth_server",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795654920000,
+      "tag": "0076_integration_health_pause",
+      "breakpoints": true
     }
   ]
 }

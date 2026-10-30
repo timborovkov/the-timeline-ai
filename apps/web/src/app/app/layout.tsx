@@ -7,7 +7,6 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
-import { AnalyticsProvider } from '@/components/analytics-provider';
 import { AppShell } from '@/components/app-shell';
 import { QueryProvider } from '@/components/query-provider';
 import { resolveActiveTeam } from '@/lib/active-team';
@@ -16,6 +15,7 @@ import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { getNavAttentionSummary } from '@/lib/hub-status';
 import { getUserLegalAcceptance, hasCurrentLegalAcceptance } from '@/lib/legal';
+import { isLegalPublicationReady } from '@/lib/legal-publication';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { SIDEBAR_COOKIE_KEY, sidebarExpandedFromCookie } from '@/lib/sidebar-preference';
 import { DEFAULT_TIMEZONE } from '@/lib/timezones';
@@ -50,7 +50,7 @@ export default async function AppLayout({
       .limit(1),
     cookies(),
   ]);
-  if (!legal || !hasCurrentLegalAcceptance(legal)) {
+  if (isLegalPublicationReady() && (!legal || !hasCurrentLegalAcceptance(legal))) {
     redirect('/legal/accept');
   }
 
@@ -140,32 +140,30 @@ export default async function AppLayout({
   );
 
   return (
-    <AnalyticsProvider userId={session.user.id} teamId={active.teamId}>
-      <QueryProvider>
-        <AppShell
-          active={active}
-          memberships={memberships}
-          recipientInvites={recipientInvites.map((invite) => ({
-            id: invite.id,
-            teamName: invite.teamName,
-            role: invite.role === 'owner' ? 'member' : invite.role,
-            expiresAt: invite.expiresAt.toISOString(),
-            invitedBy: invite.inviterName ?? invite.inviterEmail,
-          }))}
-          user={{
-            name: session.user.name,
-            email: currentUser?.email ?? session.user.email,
-            emailVerified: currentUser?.emailVerified ?? null,
-          }}
-          badges={badges}
-          inbox={inbox}
-          workspaceTimezone={workspaceTimezone}
-          sidebarInitiallyExpanded={sidebarInitiallyExpanded}
-        >
-          {children}
-          {modal}
-        </AppShell>
-      </QueryProvider>
-    </AnalyticsProvider>
+    <QueryProvider>
+      <AppShell
+        active={active}
+        memberships={memberships}
+        recipientInvites={recipientInvites.map((invite) => ({
+          id: invite.id,
+          teamName: invite.teamName,
+          role: invite.role === 'owner' ? 'member' : invite.role,
+          expiresAt: invite.expiresAt.toISOString(),
+          invitedBy: invite.inviterName ?? invite.inviterEmail,
+        }))}
+        user={{
+          name: session.user.name,
+          email: currentUser?.email ?? session.user.email,
+          emailVerified: currentUser?.emailVerified ?? null,
+        }}
+        badges={badges}
+        inbox={inbox}
+        workspaceTimezone={workspaceTimezone}
+        sidebarInitiallyExpanded={sidebarInitiallyExpanded}
+      >
+        {children}
+        {modal}
+      </AppShell>
+    </QueryProvider>
   );
 }

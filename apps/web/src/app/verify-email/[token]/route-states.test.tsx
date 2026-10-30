@@ -1,18 +1,35 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+await vi.mock(
+  import.meta.resolve('@/components/theme-toggle'),
+  () => ({
+    ThemeToggle: () => <button type="button">Theme</button>,
+  }),
+  () => import('@/components/theme-toggle'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/email-verification'),
+  () => ({ verifyEmailToken: vi.fn() }),
+  () => import('@/lib/email-verification'),
+);
 
-import { verifyEmailToken } from '@/lib/email-verification';
-
-vi.mock('@/components/theme-toggle', () => ({
-  ThemeToggle: () => <button type="button">Theme</button>,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/email-verification', () => ({ verifyEmailToken: vi.fn() }));
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { verifyEmailToken } = await import('@/lib/email-verification');
 
 const { default: VerifyEmailError } = await import('./error.js');
 const { default: VerifyEmailLoading } = await import('./loading.js');
@@ -77,11 +94,11 @@ describe('VerifyEmail route states', () => {
     expect(screen.getByText('Confirm the email address for your Timeline account.')).toBeTruthy();
     expect(screen.getByRole('heading', { level: 2, name: 'Unable to verify email' })).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain(
-      'Unable to verify emailEmail verification could not be confirmed. If you just opened this link, it may already have succeeded. Check your connection, then try again.Try again',
+      'Unable to verify emailEmail verification could not be confirmed. If you just opened this link, it may already have succeeded. Check your connection, then try again.RetryGet support',
     );
     expect(screen.getByRole('link', { name: 'Open dashboard' }).getAttribute('href')).toBe('/app');
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     await user.keyboard('[Space]');

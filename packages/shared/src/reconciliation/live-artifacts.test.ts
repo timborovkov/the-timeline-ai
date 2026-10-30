@@ -2,7 +2,8 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { RECONCILIATION_DETERMINISTIC_EVAL_CASES } from '#src/reconciliation/eval-cases.js';
 import {
@@ -14,7 +15,6 @@ import {
   type LiveEvalJudgeResult,
   type LiveEvalModelResult,
 } from '#src/reconciliation/live-artifacts.js';
-
 const [TEST_CASE] = RECONCILIATION_DETERMINISTIC_EVAL_CASES;
 if (!TEST_CASE) {
   throw new Error('Expected at least one reconciliation eval case');

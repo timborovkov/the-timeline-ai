@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -13,29 +14,69 @@ const fakes = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    insert: fakes.dbInsert,
-    delete: fakes.dbDelete,
-  },
-}));
-vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/sentry-action', () => ({
-  runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.revalidatePath }));
-vi.mock('@timeline/shared/slug', () => ({ randomToken: fakes.randomToken }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      insert: fakes.dbInsert,
+      delete: fakes.dbDelete,
+    },
   }),
-}));
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/onboarding'),
+  () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }),
+  () => import('@/lib/onboarding'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-action'),
+  () => ({
+    runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
+  }),
+  () => import('@/lib/sentry-action'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.revalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slug'),
+  () => ({ randomToken: fakes.randomToken }),
+  () => import('@timeline/shared/slug'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const {
   generateGroupLinkTokenAction,
@@ -149,11 +190,9 @@ describe('Telegram server actions', () => {
       'telegram',
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'onboarding_step_completed',
       {
-        teamId: TEAM_ID,
-        userId: USER_ID,
         step: 'telegram',
         source: 'automatic',
       },

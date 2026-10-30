@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   documentVersions,
   documents,
@@ -67,6 +69,29 @@ import {
 
 const log = childLogger('telegram');
 const TELEGRAM_SOURCE_SNAPSHOT_VERSION = 'telegram-source-snapshot-2026-07';
+const UNBOUND_GROUP_LOG_INTERVAL_MS = 10 * 60 * 1000;
+const unboundGroupLogAt = new Map<string, number>();
+
+export function telegramChatFingerprint(chatId: number): string {
+  return createHash('sha256').update(String(chatId)).digest('hex').slice(0, 12);
+}
+
+function shouldLogUnboundGroup(fingerprint: string, now = Date.now()): boolean {
+  const last = unboundGroupLogAt.get(fingerprint);
+  if (last !== undefined && now - last < UNBOUND_GROUP_LOG_INTERVAL_MS) return false;
+  unboundGroupLogAt.set(fingerprint, now);
+  if (unboundGroupLogAt.size > 2_000) {
+    const cutoff = now - UNBOUND_GROUP_LOG_INTERVAL_MS;
+    for (const [key, seenAt] of unboundGroupLogAt) {
+      if (seenAt < cutoff) unboundGroupLogAt.delete(key);
+    }
+  }
+  return true;
+}
+
+export function resetTelegramUnboundGroupLogForTests(): void {
+  unboundGroupLogAt.clear();
+}
 
 type DbTx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type DbOrTx = Db | DbTx;
@@ -165,6 +190,18 @@ export async function handleUpdate(
   const parsed = tgUpdateSchema.safeParse(rawUpdate);
   if (!parsed.success) return { ok: false };
   const update: TgUpdate = parsed.data;
+  const chat =
+    update.message?.chat ?? update.edited_message?.chat ?? update.callback_query?.message?.chat;
+  if (chat) {
+    log.debug(
+      {
+        updateId: update.update_id,
+        chatType: chat.type,
+        chatFingerprint: telegramChatFingerprint(chat.id),
+      },
+      'telegram webhook update',
+    );
+  }
 
   try {
     if (update.message) {
@@ -1345,10 +1382,22 @@ async function handleGroup(ctx: GroupContext, isEdit: boolean): Promise<void> {
     return;
   }
 
-  // Unbound group: drop new messages silently (Phase 2 behavior). Edits
-  // still flow through so an edit of a previously-recorded message can land
-  // on its original team even after /unlink.
-  if (!ctx.binding && !isEdit) return;
+  // Unbound group: drop new messages (Phase 2 behavior). Edits still flow
+  // through so an edit of a previously-recorded message can land on its
+  // original team even after /unlink.
+  if (!ctx.binding && !isEdit) {
+    const chatFingerprint = telegramChatFingerprint(ctx.message.chat.id);
+    if (shouldLogUnboundGroup(chatFingerprint)) {
+      log.info(
+        {
+          chatFingerprint,
+          chatType: ctx.message.chat.type,
+        },
+        'telegram group message ignored: chat not linked',
+      );
+    }
+    return;
+  }
 
   // Audio takes precedence over text/caption — see handleDm for rationale.
   const audio = ctx.message.voice ?? ctx.message.audio;

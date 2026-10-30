@@ -3,7 +3,9 @@ import { defineConfig, devices } from '@playwright/test';
 import { buildE2eEnv, buildE2eWebServerConfig } from './scripts/e2e-env.js';
 
 const e2eEnv = buildE2eEnv();
-delete process.env.NO_COLOR;
+for (const key of Object.keys(process.env)) {
+  if (!(key in e2eEnv)) delete process.env[key];
+}
 Object.assign(process.env, e2eEnv);
 
 const { baseURL, command: webServerCommand } = buildE2eWebServerConfig(e2eEnv);
@@ -32,11 +34,15 @@ export default defineConfig({
     stdout: 'pipe',
     stderr: 'pipe',
     env: {
+      HOSTNAME: '127.0.0.1',
+      NODE_OPTIONS: process.env.E2E_PROD_SMOKE === '1' ? '' : e2eEnv.NODE_OPTIONS,
       AUTH_URL: baseURL,
       NEXTAUTH_URL: baseURL,
       PORT: e2eEnv.E2E_WEB_PORT,
       E2E_NAMESPACE: e2eEnv.E2E_NAMESPACE,
       AUTH_SECRET: e2eEnv.AUTH_SECRET,
+      AUTH_GITHUB_ID: 'e2e-auth-github-client-id',
+      AUTH_GITHUB_SECRET: 'e2e-auth-github-client-secret',
       SECRETS_ENCRYPTION_KEY: e2eEnv.SECRETS_ENCRYPTION_KEY,
       DATABASE_URL: e2eEnv.DATABASE_URL,
       REDIS_URL: e2eEnv.REDIS_URL,
@@ -48,6 +54,8 @@ export default defineConfig({
       S3_FORCE_PATH_STYLE: e2eEnv.S3_FORCE_PATH_STYLE,
       S3_BUCKET_AUDIO: process.env.S3_BUCKET_AUDIO ?? 'timeline-audio',
       S3_BUCKET_DOCUMENTS: e2eEnv.S3_BUCKET_DOCUMENTS,
+      NEXT_PUBLIC_POSTHOG_KEY: e2eEnv.NEXT_PUBLIC_POSTHOG_KEY,
+      NEXT_PUBLIC_POSTHOG_HOST: e2eEnv.NEXT_PUBLIC_POSTHOG_HOST,
       E2E_DETERMINISTIC_CHAT: process.env.E2E_DETERMINISTIC_CHAT ?? '1',
       E2E_DETERMINISTIC_EMBEDDINGS: e2eEnv.E2E_DETERMINISTIC_EMBEDDINGS,
       E2E_DETERMINISTIC_GITHUB_OAUTH: process.env.E2E_DETERMINISTIC_GITHUB_OAUTH ?? '1',

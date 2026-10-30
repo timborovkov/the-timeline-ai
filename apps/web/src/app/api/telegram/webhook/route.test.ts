@@ -1,9 +1,6 @@
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-import type * as TelegramModule from '@timeline/shared/telegram';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const ENV_BACKUP = { ...process.env };
 
 interface TelegramDispatcherDeps {
@@ -45,37 +42,63 @@ const fakes = vi.hoisted(() => ({
   getS3Client: vi.fn(() => ({})),
 }));
 
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: fakes.requireRedisQueue,
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: fakes.requireRedisQueue,
+  }),
+  () => import('@/lib/queue'),
+);
 
-vi.mock('@timeline/shared/s3', () => ({
-  getAudioBucket: () => 'audio-bucket',
-  getDocumentsBucket: () => 'documents-bucket',
-  getS3Client: fakes.getS3Client,
-  putObject: fakes.putObject,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/s3'),
+  () => ({
+    getAudioBucket: () => 'audio-bucket',
+    getDocumentsBucket: () => 'documents-bucket',
+    getS3Client: fakes.getS3Client,
+    putObject: fakes.putObject,
+  }),
+  () => import('@timeline/shared/s3'),
+);
 
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
 
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return {
-    ...actual,
-    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return {
+      ...actual,
+      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+    };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
 
-vi.mock('@timeline/shared/telegram', async () => {
-  const actual = await vi.importActual<typeof TelegramModule>('@timeline/shared/telegram');
-  return {
-    ...actual,
-    handleUpdate: fakes.handleUpdate,
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/telegram'),
+  async () => {
+    const actual = await import('@timeline/shared/telegram');
+    return {
+      ...actual,
+      handleUpdate: fakes.handleUpdate,
+    };
+  },
+  () => import('@timeline/shared/telegram'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 

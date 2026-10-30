@@ -1,14 +1,9 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
-
-import { formatDisplayDateTime } from '@/lib/display-dates';
-import { DEFAULT_TIMEZONE } from '@/lib/timezones';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   archive: vi.fn(),
@@ -17,42 +12,74 @@ const fakes = vi.hoisted(() => ({
   refresh: vi.fn(),
 }));
 
-vi.mock('@/app/actions/chat', () => ({ archiveChatSessionAction: fakes.archive }));
-vi.mock('@/app/actions/collection-pages', () => ({
-  loadChatSessionsPageAction: vi.fn(() => Promise.resolve({ sessions: [], nextCursor: null })),
-}));
-vi.mock('@/components/collections/virtual-list', async () => {
-  const { createElement: h } = await import('react');
-  return {
-    VirtualList: ({
-      items,
-      renderItem,
-      getItemKey,
-    }: {
-      items: { id: string }[];
-      renderItem: (item: { id: string }, index: number) => ReactNode;
-      getItemKey: (item: { id: string }, index: number) => string;
-    }) =>
-      h(
-        'div',
-        null,
-        items.map((item, index) =>
-          h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('@/app/actions/chat'),
+  () => ({ archiveChatSessionAction: fakes.archive }),
+  () => import('@/app/actions/chat'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/collection-pages'),
+  () => ({
+    loadChatSessionsPageAction: vi.fn(() => Promise.resolve({ sessions: [], nextCursor: null })),
+  }),
+  () => import('@/app/actions/collection-pages'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  async () => {
+    const { createElement: h } = await import('react');
+    return {
+      VirtualList: ({
+        items,
+        renderItem,
+        getItemKey,
+      }: {
+        items: { id: string }[];
+        renderItem: (item: { id: string }, index: number) => ReactNode;
+        getItemKey: (item: { id: string }, index: number) => string;
+      }) =>
+        h(
+          'div',
+          null,
+          items.map((item, index) =>
+            h('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+          ),
         ),
-      ),
-  };
-});
-vi.mock('@/components/ui/app-dialog', () => ({
-  useAppDialog: () => ({ confirm: fakes.confirm, node: null }),
-}));
-vi.mock('next/navigation', () => ({
-  usePathname: () => '/app/chat',
-  useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
-  useSearchParams: () => new URLSearchParams('session=session-1'),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-}));
+    };
+  },
+  () => import('@/components/collections/virtual-list'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/ui/app-dialog'),
+  () => ({
+    useAppDialog: () => ({ confirm: fakes.confirm, node: null }),
+  }),
+  () => import('@/components/ui/app-dialog'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => '/app/chat',
+    useRouter: () => ({ push: fakes.push, refresh: fakes.refresh }),
+    useSearchParams: () => new URLSearchParams('session=session-1'),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
+const { formatDisplayDateTime } = await import('@/lib/display-dates');
+const { DEFAULT_TIMEZONE } = await import('@/lib/timezones');
 
 const { MobileSessionNav, SessionSidebar } = await import('./session-sidebar.js');
 

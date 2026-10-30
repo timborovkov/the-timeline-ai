@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { WriteProductionSamplingEvalReportInput } from '@timeline/shared/reconciliation/production-sampling';
 
@@ -7,7 +9,6 @@ import {
   ReconciliationProductionSamplingUsageError,
   runReconciliationProductionSamplingCli,
 } from '#src/scripts/reconciliation-production-sampling.js';
-
 describe('reconciliation production sampling script', () => {
   it('parses repeatable inputs and the failure gate', () => {
     expect(
@@ -239,8 +240,7 @@ describe('reconciliation production sampling script', () => {
     );
 
     const reportInput = writeReport.mock.calls[0]?.[0] as
-      | WriteProductionSamplingEvalReportInput
-      | undefined;
+      WriteProductionSamplingEvalReportInput | undefined;
     expect(reportInput).toMatchObject({
       inputPaths: ['/tmp/run'],
       outputPath: '/tmp/report.json',

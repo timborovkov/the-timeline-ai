@@ -1,7 +1,9 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, createSign } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
-import { externalFetch as fetch } from '#src/http/external-fetch.js';
+import { formatErrorCause } from '#src/http/error-cause.js';
+import { ExternalHttpError, externalFetch as fetch } from '#src/http/external-fetch.js';
 import { resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import {
   attachSyncContinuation,
@@ -43,6 +45,48 @@ import { childLogger } from '#src/logger.js';
 // content-hashed.
 
 const log = childLogger('integrations:github');
+
+const githubLogStore = new AsyncLocalStorage<{
+  integrationId?: string | undefined;
+  installationId?: string | undefined;
+}>();
+
+function githubLogKind(err: unknown): string {
+  const text = err instanceof Error ? err.message : String(err);
+  if (/rate limit|github_rate_limited|provider_rate_limited/i.test(text)) return 'rate_limited';
+  if (
+    /\b(?:401|403|404)\b/.test(text) ||
+    /bad credentials|not found|resource not accessible/i.test(text)
+  ) {
+    return 'access_revoked';
+  }
+  if (err instanceof ExternalHttpError) return err.code;
+  return 'fetch_error';
+}
+
+function warnGithubFetch(
+  event: string,
+  fields: { err: unknown; repo?: string; state?: string; surface?: string; pr?: number },
+): void {
+  const ctx = githubLogStore.getStore();
+  const kind = githubLogKind(fields.err);
+  const integrationId = ctx?.integrationId ?? 'none';
+  const installationId = ctx?.installationId ?? 'none';
+  const repo = fields.repo ?? 'none';
+  log.warn(
+    {
+      err: fields.err,
+      repo: fields.repo,
+      integrationId: ctx?.integrationId,
+      installationId: ctx?.installationId,
+      githubErrorKind: kind,
+      ...(fields.state ? { state: fields.state } : {}),
+      ...(fields.surface ? { surface: fields.surface } : {}),
+      ...(fields.pr !== undefined ? { pr: fields.pr } : {}),
+    },
+    `${event}: ${kind} integration=${integrationId} installation=${installationId} repo=${repo} ${formatErrorCause(fields.err)}`,
+  );
+}
 
 const AUTH_URL = 'https://github.com/login/oauth/authorize';
 const TOKEN_URL = 'https://github.com/login/oauth/access_token';
@@ -2166,7 +2210,7 @@ async function syncPullRequestsSurface(
               }
             } catch (err) {
               if (isGithubRateLimitError(err)) throw err;
-              log.warn({ err, repo, pr: pr.number }, 'fetching reviews failed');
+              warnGithubFetch('fetching reviews failed', { err, repo, pr: pr.number });
               failures.push({
                 repo,
                 surface: 'prs',
@@ -2188,7 +2232,7 @@ async function syncPullRequestsSurface(
       }
     } catch (err) {
       if (isGithubRateLimitError(err)) throw err;
-      log.warn({ err, repo, state }, 'github PR fetch failed');
+      warnGithubFetch('github PR fetch failed', { err, repo, state });
       failures.push({
         repo,
         surface: 'prs',
@@ -2278,7 +2322,7 @@ async function syncIssuesSurface(
     }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
-    log.warn({ err, repo }, 'github issues fetch failed');
+    warnGithubFetch('github issues fetch failed', { err, repo });
     failures.push({
       repo,
       surface: 'issues',
@@ -2297,8 +2341,7 @@ async function syncIssuesSurface(
 type GithubConversationSurface = 'issue_comments' | 'pr_review_comments';
 type GithubConversationCursorKey = 'issue_comments_since' | 'pr_review_comments_since';
 type GithubConversationContinuationKey =
-  | 'issue_comments_continuation'
-  | 'pr_review_comments_continuation';
+  'issue_comments_continuation' | 'pr_review_comments_continuation';
 
 function githubConversationSurface(
   value: string | undefined,
@@ -2518,7 +2561,7 @@ async function syncTimestampedConversationSurface<T extends { updated_at: string
         surface,
       });
     }
-    log.warn({ err, repo, surface }, 'github conversation comment fetch failed');
+    warnGithubFetch('github conversation comment fetch failed', { err, repo, surface });
     failures.push({
       repo,
       surface,
@@ -2672,7 +2715,7 @@ async function syncReleasesSurface(
     }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
-    log.warn({ err, repo }, 'github releases fetch failed');
+    warnGithubFetch('github releases fetch failed', { err, repo });
     failures.push({
       repo,
       surface: 'releases',
@@ -2797,7 +2840,7 @@ async function syncCommitsSurface(
       delete next.last_sha;
       clearCommitGap(next);
     } else {
-      log.warn({ err, repo }, 'github commits fetch failed');
+      warnGithubFetch('github commits fetch failed', { err, repo });
       failures.push({
         repo,
         surface: 'commits',
@@ -2875,7 +2918,7 @@ async function syncWorkflowRunsSurface(
     }
   } catch (err) {
     if (isGithubRateLimitError(err)) throw err;
-    log.warn({ err, repo }, 'github workflow runs fetch failed');
+    warnGithubFetch('github workflow runs fetch failed', { err, repo });
     failures.push({
       repo,
       surface: 'workflow_runs',
@@ -3012,7 +3055,7 @@ export const githubProvider: IntegrationProvider = {
       login = me.login;
       sub = String(me.id);
     } catch (err) {
-      log.warn({ err }, 'failed to fetch GitHub /user');
+      warnGithubFetch('failed to fetch GitHub /user', { err });
       throw new Error(
         'github_user_lookup_failed: could not resolve the authenticated user id from /user — reconnect and try again',
       );
@@ -3021,7 +3064,7 @@ export const githubProvider: IntegrationProvider = {
       const installations = await loadGithubAppInstallations(tokens);
       if (installations.length > 0) tokens.github_app_installations = installations;
     } catch (err) {
-      log.warn({ err }, 'failed to fetch GitHub App installations for OAuth user');
+      warnGithubFetch('failed to fetch GitHub App installations for OAuth user', { err });
     }
     return {
       externalAccountId: sub,
@@ -3061,7 +3104,7 @@ export const githubProvider: IntegrationProvider = {
       );
     } catch (err) {
       if (isGithubRateLimitError(err)) throw err;
-      log.warn({ err }, 'listing github orgs failed');
+      warnGithubFetch('listing github orgs failed', { err });
     }
     const all: GhRepo[] = [];
     for (let page = 1; page <= 20; page++) {
@@ -3081,7 +3124,7 @@ export const githubProvider: IntegrationProvider = {
     ];
   },
 
-  async backfill({ tokens, selections, ctx }) {
+  async backfill({ integration, tokens, selections, ctx }) {
     const input = tokens as GithubTokens;
     let fresh = await ensureGithubAccessToken(input);
     fresh = await persistUpdatedGithubTokens(ctx, input, fresh);
@@ -3089,20 +3132,28 @@ export const githubProvider: IntegrationProvider = {
     const repos = await expandGithubSelections(fresh, selections, ctx, budget);
     const failures: GithubSurfaceFailure[] = [];
     const continuations: SyncContinuation[] = [];
-    for (const repo of repos) {
-      try {
-        const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
-        fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
-        const result = await syncRepo(repoTokens, repo, ctx, { mode: 'backfill' }, budget);
-        failures.push(...result.failures);
-        continuations.push(...result.continuations);
-      } catch (err) {
-        if (err instanceof Error && continuations.length > 0) {
-          throw attachSyncContinuations(err, continuations);
+    const logContext = {
+      integrationId: integration.id,
+      installationId: fresh.github_installation_id,
+    };
+    await githubLogStore.run(logContext, async () => {
+      for (const repo of repos) {
+        try {
+          const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
+          logContext.installationId =
+            repoTokens.github_installation_id ?? logContext.installationId;
+          fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
+          const result = await syncRepo(repoTokens, repo, ctx, { mode: 'backfill' }, budget);
+          failures.push(...result.failures);
+          continuations.push(...result.continuations);
+        } catch (err) {
+          if (err instanceof Error && continuations.length > 0) {
+            throw attachSyncContinuations(err, continuations);
+          }
+          throw err;
         }
-        throw err;
       }
-    }
+    });
     if (failures.length > 0 || continuations.length > 0) {
       if (failures.length > 0) {
         await ctx.recordAudit('github_backfill_partial', summarizeIntegrationFailures(failures));
@@ -3114,7 +3165,7 @@ export const githubProvider: IntegrationProvider = {
     }
   },
 
-  async incrementalSync({ tokens, selections, ctx, target }) {
+  async incrementalSync({ integration, tokens, selections, ctx, target }) {
     const input = tokens as GithubTokens;
     let fresh = await ensureGithubAccessToken(input);
     fresh = await persistUpdatedGithubTokens(ctx, input, fresh);
@@ -3126,33 +3177,41 @@ export const githubProvider: IntegrationProvider = {
       target?.resourceType === 'github.repo'
         ? githubConversationSurface(target.surface)
         : undefined;
-    for (const repo of repos) {
-      try {
-        const legacyCursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
-        const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
-        fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
-        const result = await syncRepo(
-          repoTokens,
-          repo,
-          ctx,
-          {
-            mode: 'incremental',
-            legacyCursor,
-            ...(targetConversationSurface
-              ? { conversationSurface: targetConversationSurface }
-              : {}),
-          },
-          budget,
-        );
-        failures.push(...result.failures);
-        continuations.push(...result.continuations);
-      } catch (err) {
-        if (err instanceof Error && continuations.length > 0) {
-          throw attachSyncContinuations(err, continuations);
+    const logContext = {
+      integrationId: integration.id,
+      installationId: fresh.github_installation_id,
+    };
+    await githubLogStore.run(logContext, async () => {
+      for (const repo of repos) {
+        try {
+          const legacyCursor = (await ctx.loadCursor(`github.repo:${repo}`)) as RepoCursor;
+          const repoTokens = await ensureGithubInstallationAccessToken(fresh, repo);
+          logContext.installationId =
+            repoTokens.github_installation_id ?? logContext.installationId;
+          fresh = await persistUpdatedGithubTokens(ctx, fresh, repoTokens);
+          const result = await syncRepo(
+            repoTokens,
+            repo,
+            ctx,
+            {
+              mode: 'incremental',
+              legacyCursor,
+              ...(targetConversationSurface
+                ? { conversationSurface: targetConversationSurface }
+                : {}),
+            },
+            budget,
+          );
+          failures.push(...result.failures);
+          continuations.push(...result.continuations);
+        } catch (err) {
+          if (err instanceof Error && continuations.length > 0) {
+            throw attachSyncContinuations(err, continuations);
+          }
+          throw err;
         }
-        throw err;
       }
-    }
+    });
     if (failures.length > 0 || continuations.length > 0) {
       if (failures.length > 0) {
         await ctx.recordAudit('github_incremental_partial', summarizeIntegrationFailures(failures));

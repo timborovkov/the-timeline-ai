@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { Redis } from 'ioredis';
 
 import { checkRateLimit, rateLimitKey } from '#src/rate-limit/token-bucket.js';
-
 interface BucketState {
   tokens: number;
   ts: number;
@@ -86,6 +86,20 @@ describe('checkRateLimit', () => {
       { redis: broken, now: () => 1 },
     );
     expect(r.ok).toBe(true);
+  });
+
+  it('can fail closed for security-sensitive mutation endpoints', async () => {
+    const broken = {
+      defineCommand: () => undefined,
+      tokenBucket: () => {
+        throw new Error('connection refused');
+      },
+    } as unknown as Redis;
+    const r = await checkRateLimit(
+      { key: 'rl:oauth:register', capacity: 1, refillPerSec: 1, failureMode: 'closed' },
+      { redis: broken, now: () => 1 },
+    );
+    expect(r).toEqual({ ok: false, retryAfterMs: 1_000, remaining: 0 });
   });
 
   it('rateLimitKey skips empty parts', () => {

@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { PublicDocument } from '@/lib/public-site';
 
 import {
   TIMELINE_AGENT_ACCESS_FAQS,
+  TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND,
   TIMELINE_MCP_COMMAND,
   TIMELINE_PLUGIN_INSTALL_PROMPT,
   TIMELINE_SKILL_INSTALL_PROMPT,
@@ -15,7 +17,7 @@ import {
   definePublicDocuments,
   PUBLIC_DOCUMENT_REGISTRY,
 } from '@/lib/public-site';
-
+import { TRUST_AI_ROUTES } from '@/lib/trust-claims';
 const ENV_BACKUP = { ...process.env };
 
 afterEach(() => {
@@ -32,6 +34,8 @@ describe('llms text files', () => {
 
     expect(text).toContain('# The Timeline');
     expect(text).toContain('[Landing page](https://thetimeline.cc/)');
+    expect(text).toContain('[Trust and security](https://thetimeline.cc/trust)');
+    expect(text).toContain('[Cookies and similar technologies](https://thetimeline.cc/cookies)');
     expect(text).toContain('[llms-full.txt](https://thetimeline.cc/llms-full.txt)');
     expect(text).toContain('Signed-in app routes, auth routes, invite routes, and API routes');
     for (const page of HELP_PAGES) {
@@ -48,15 +52,29 @@ describe('llms text files', () => {
 
     expect(text).toContain('## Product positioning');
     expect(text).toContain('## Search and citation guidance for AI systems');
+    expect(text).toContain('### Trust, security, and data privacy');
+    expect(text).toContain('AI without training on customer content');
+    expect(text).toContain(
+      '[Cookies and similar technologies](https://thetimeline.cc/cookies): Cookie, local-storage, and session-storage inventory',
+    );
+    expect(text).toContain('notice-versus-consent boundary');
+    for (const route of TRUST_AI_ROUTES) {
+      expect(text).toContain(route.job);
+      expect(text).toContain(route.model);
+    }
     for (const page of HELP_PAGES) {
       expect(text).toContain(`### ${page.title}`);
       expect(text).toContain(`URL: https://thetimeline.cc/help/${page.slug}`);
       expect(text).toContain(page.description);
     }
     expect(text).toContain(
-      '[Open installation guide](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin)',
+      '[Install in Codex](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex)',
+    );
+    expect(text).toContain(
+      '[Install in Claude Code](https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code)',
     );
     expect(text).toContain(TIMELINE_PLUGIN_INSTALL_PROMPT);
+    expect(text).toContain(TIMELINE_CLAUDE_PLUGIN_INSTALL_COMMAND);
     expect(text).toContain(TIMELINE_SKILL_INSTALL_PROMPT);
     expect(text).toContain(TIMELINE_MCP_COMMAND);
     for (const faq of TIMELINE_AGENT_ACCESS_FAQS) {
@@ -67,12 +85,12 @@ describe('llms text files', () => {
 
   it('tracks machine-document changes in their registry dates', () => {
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/llms-full.txt')?.dates).toEqual({
-      modified: '2026-08-21',
-      reviewed: '2026-08-21',
+      modified: '2026-08-26',
+      reviewed: '2026-08-26',
     });
     expect(PUBLIC_DOCUMENT_REGISTRY.get('/sitemap.xml')?.dates).toEqual({
-      modified: '2026-08-21',
-      reviewed: '2026-08-21',
+      modified: '2026-08-26',
+      reviewed: '2026-08-26',
     });
   });
 

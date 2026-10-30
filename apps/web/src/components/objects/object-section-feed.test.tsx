@@ -1,12 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { ReactNode } from 'react';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 interface ObjectSectionQueryData {
   pages: { items: Record<string, unknown>[] }[];
@@ -172,27 +167,18 @@ function emptyEventResponse() {
   );
 }
 
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useObjectSectionQuery: () => fakes.query,
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: Record<string, unknown>[];
-    renderItem: (item: Record<string, unknown>, index: number) => ReactNode;
-    getItemKey: (item: Record<string, unknown>, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
-      ),
-    ),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useObjectSectionQuery: () => fakes.query,
+  }),
+  () => import('@/lib/use-paginated-queries'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { ObjectSectionFeed } = await import('./object-section-feed.js');
 
@@ -219,13 +205,19 @@ describe('ObjectSectionFeed', () => {
     );
 
     expect(html).toContain('Atlas rollout depends on Northwind approval.');
+    expect(html).toContain('text-[13px] font-semibold');
+    expect(html).toContain('text-sm font-medium leading-[1.35]');
+    expect(html).toContain('Observed ');
     expect(html).toContain(
-      `Observed ${new Date('2026-06-14T12:45:00.000Z').toLocaleString(undefined, {
+      new Date('2026-06-14T12:45:00.000Z').toLocaleString(undefined, {
         dateStyle: 'medium',
         timeStyle: 'short',
         timeZone: 'Europe/Helsinki',
-      })} · telegram · confidence 0.91`,
+      }),
     );
+    expect(html).toContain(' · telegram · confidence 0.91');
+    expect(html).toContain('font-mono text-[11px]');
+    expect(html).not.toContain('text-fg-faint');
     expect(html).toContain('Fact (2)');
     expect(html).toContain('Objects sharing this fact');
     expect(html).toContain('/app/objects/object-2');
@@ -325,6 +317,38 @@ describe('ObjectSectionFeed', () => {
     expect(screen.getByRole('button', { name: 'Load more' })).toBeTruthy();
   });
 
+  it('folds long evidence lists behind Show more', () => {
+    fakes.query.data = {
+      pages: [
+        {
+          items: Array.from({ length: 5 }, (_, index) => ({
+            id: `event-${index + 1}`,
+            contentText: `Evidence snippet ${index + 1}`,
+            occurredAt: '2026-06-14T12:00:00.000Z',
+            source: 'slack',
+          })),
+        },
+      ],
+    };
+
+    const { container } = render(
+      createElement(ObjectSectionFeed, {
+        objectId: 'object-1',
+        section: 'events',
+        title: 'Evidence',
+      }),
+    );
+
+    expect(screen.getByRole('heading', { name: /Evidence/ })).toBeTruthy();
+    expect(screen.getByText('Evidence snippet 1')).toBeTruthy();
+    expect(screen.getByText('Evidence snippet 3')).toBeTruthy();
+    const fold = screen.getByText('Show 2 more').closest('details');
+    expect(fold?.open).toBe(false);
+    expect(
+      container.querySelectorAll('section > div > ul')[0]?.querySelectorAll('li'),
+    ).toHaveLength(3);
+  });
+
   it('keeps empty-event placeholder out of the evidence quick-view body', async () => {
     fakes.query.data = emptyEventData();
     vi.stubGlobal(
@@ -341,8 +365,8 @@ describe('ObjectSectionFeed', () => {
     );
 
     expect(screen.getByText('[empty event]')).toBeTruthy();
-    expect(screen.getByText('[empty event]').className).toContain('line-clamp-5');
-    await userEvent.click(screen.getByRole('button', { name: 'View evidence' }));
+    expect(screen.getByText('[empty event]').className).toContain('line-clamp-2');
+    await userEvent.click(screen.getByRole('button', { name: 'View' }));
 
     expect(await screen.findByText('This reference has no text preview.')).toBeTruthy();
   });

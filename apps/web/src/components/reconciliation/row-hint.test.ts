@@ -1,11 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   reconciliationClusterRowHint,
   reconciliationEvidenceRowHint,
   reconciliationOutputRowHint,
 } from '@/components/reconciliation/row-hint';
-
 describe('reconciliation row hints', () => {
   it('names cluster ids and keeps raw keys off the primary line', () => {
     const hint = reconciliationClusterRowHint({

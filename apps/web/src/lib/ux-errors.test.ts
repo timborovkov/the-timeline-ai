@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { chatErrorMessage, connectionErrorMessage, searchErrorMessage } from '@/lib/ux-errors';
-
 describe('UX error messages', () => {
   it('maps search configuration failures to human recovery copy', () => {
     expect(searchErrorMessage('search_unconfigured')).toContain('Search is not configured yet');
@@ -48,6 +48,7 @@ describe('UX error messages', () => {
       ),
     ).toContain('temporary error');
     expect(connectionErrorMessage('not_found')).toContain('no longer exists');
+    expect(connectionErrorMessage('health_paused')).toContain('Reconnect or resume');
     expect(connectionErrorMessage(undefined, 500)).toBe('Connection failed (500).');
   });
 });

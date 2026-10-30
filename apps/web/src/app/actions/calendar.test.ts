@@ -1,11 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  createCalendarEventAction,
-  deleteCalendarEventAction,
-  updateCalendarEventAction,
-} from '@/app/actions/calendar';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for calendar events. The calendar scope owns real DB
  * persistence; these tests pin auth/no-team handling, date validation,
@@ -18,6 +13,7 @@ const fakes = vi.hoisted(() => ({
   fakeResolveActiveTeam: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeReportCaughtError: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeCalendar: {
     createCalendarEvent: vi.fn(),
     updateCalendarEvent: vi.fn(),
@@ -28,17 +24,55 @@ const fakes = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ calendar: fakes.fakeCalendar, suggestions: fakes.fakeSuggestions }),
-}));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.fakeReportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ calendar: fakes.fakeCalendar, suggestions: fakes.fakeSuggestions }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+
+const { createCalendarEventAction, deleteCalendarEventAction, updateCalendarEventAction } =
+  await import('@/app/actions/calendar');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -132,6 +166,11 @@ describe('calendar create/update/delete behavior', () => {
       }),
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/calendar');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'calendar_action_completed',
+      { action: 'create' },
+    );
   });
 
   it('forwards recurring tentative create fields to the calendar scope', async () => {

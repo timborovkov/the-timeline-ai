@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   loadWebhookDeliveryWork: vi.fn(),
   markWebhookDeliveryStatus: vi.fn(),
@@ -16,31 +17,43 @@ const fakes = vi.hoisted(() => ({
   enqueueIntegrationSyncJob: vi.fn(),
 }));
 
-vi.mock('@timeline/shared', () => ({
-  childLogger: () => ({ info: vi.fn(), error: vi.fn() }),
-  integrations: {
-    loadWebhookDeliveryWork: fakes.loadWebhookDeliveryWork,
-    markWebhookDeliveryStatus: fakes.markWebhookDeliveryStatus,
-    markWebhookDeliveryTargetProcessing: fakes.markWebhookDeliveryTargetProcessing,
-    markWebhookDeliveryTargetProcessed: fakes.markWebhookDeliveryTargetProcessed,
-    markWebhookDeliveryTargetIgnored: fakes.markWebhookDeliveryTargetIgnored,
-    markWebhookDeliveryTargetFailed: fakes.markWebhookDeliveryTargetFailed,
-    markWebhookDeliveryDeadLettered: fakes.markWebhookDeliveryDeadLettered,
-    adminRecordConnectionAttention: fakes.adminRecordConnectionAttention,
-    getProvider: fakes.getProvider,
-    isNativeProviderId: fakes.isNativeProviderId,
-    providerSyncPolicy: fakes.providerSyncPolicy,
-    writeIntegrationEvents: fakes.writeIntegrationEvents,
-  },
-  queue: {
-    QUEUE_NAMES: { webhookDelivery: 'webhook-delivery' },
-    getRedisConnection: vi.fn(),
-    enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
-  },
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  () => ({
+    childLogger: () => ({ info: vi.fn(), error: vi.fn() }),
+    integrations: {
+      loadWebhookDeliveryWork: fakes.loadWebhookDeliveryWork,
+      markWebhookDeliveryStatus: fakes.markWebhookDeliveryStatus,
+      markWebhookDeliveryTargetProcessing: fakes.markWebhookDeliveryTargetProcessing,
+      markWebhookDeliveryTargetProcessed: fakes.markWebhookDeliveryTargetProcessed,
+      markWebhookDeliveryTargetIgnored: fakes.markWebhookDeliveryTargetIgnored,
+      markWebhookDeliveryTargetFailed: fakes.markWebhookDeliveryTargetFailed,
+      markWebhookDeliveryDeadLettered: fakes.markWebhookDeliveryDeadLettered,
+      adminRecordConnectionAttention: fakes.adminRecordConnectionAttention,
+      getProvider: fakes.getProvider,
+      isNativeProviderId: fakes.isNativeProviderId,
+      providerSyncPolicy: fakes.providerSyncPolicy,
+      writeIntegrationEvents: fakes.writeIntegrationEvents,
+    },
+    queue: {
+      QUEUE_NAMES: { webhookDelivery: 'webhook-delivery' },
+      getRedisConnection: vi.fn(),
+      enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+    },
+  }),
+  () => import('@timeline/shared'),
+);
 
-vi.mock('bullmq', () => ({ Worker: vi.fn() }));
-vi.mock('#src/monitoring.js', () => ({ captureWorkerJobFailure: vi.fn() }));
+await vi.mock(
+  import.meta.resolve('bullmq'),
+  () => ({ Worker: vi.fn() }),
+  () => import('bullmq'),
+);
+await vi.mock(
+  import.meta.resolve('#src/monitoring.js'),
+  () => ({ captureWorkerJobFailure: vi.fn() }),
+  () => import('#src/monitoring.js'),
+);
 
 const { deadLetterWebhookDeliveryJobIfExhausted, processWebhookDeliveryJob } =
   await import('#src/workers/webhookDelivery.js');

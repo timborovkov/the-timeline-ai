@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
 const { publicActionError, publicApiError, publicApiErrorResponse } =
   await import('@/lib/public-error');

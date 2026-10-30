@@ -200,7 +200,7 @@ export async function classifyTaskCategory(
   const modelId = deps.modelId ?? TIMELINE_MODELS.taskCategorization.id;
   const result = await call({
     schema: taskCategoryClassificationSchema,
-    system: TASK_CATEGORY_SYSTEM_PROMPT,
+    instructions: TASK_CATEGORY_SYSTEM_PROMPT,
     prompt: buildTaskCategoryPrompt(packet),
     model: modelId,
     ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
@@ -229,15 +229,25 @@ export async function classifyTaskCategories(
   const modelId = deps.modelId ?? TIMELINE_MODELS.taskCategorization.id;
   const result = await call({
     schema: taskCategoryBatchClassificationSchema,
-    system: TASK_CATEGORY_SYSTEM_PROMPT,
+    instructions: TASK_CATEGORY_SYSTEM_PROMPT,
     prompt: buildTaskCategoryBatchPrompt(items),
     model: modelId,
     ...(deps.abortSignal ? { abortSignal: deps.abortSignal } : {}),
   });
   const seen = new Set<string>();
-  return result.object.predictions.flatMap((prediction) => {
-    if (!keys.has(prediction.key) || seen.has(prediction.key)) return [];
+  const predictions: TaskCategoryBatchPrediction[] = [];
+  for (const prediction of result.object.predictions) {
+    if (!keys.has(prediction.key)) continue;
+    if (seen.has(prediction.key)) {
+      throw new Error('Task category classification returned a duplicate proposal key');
+    }
     seen.add(prediction.key);
-    return [{ ...prediction, model: result.model }];
-  });
+    predictions.push({ ...prediction, model: result.model });
+  }
+  if (seen.size !== keys.size) {
+    throw new Error(
+      `Task category classification omitted ${String(keys.size - seen.size)} of ${String(keys.size)} proposals`,
+    );
+  }
+  return predictions;
 }

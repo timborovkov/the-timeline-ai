@@ -1,10 +1,10 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { DueDateDisplay } from '@/components/due-date-display';
 import { WorkspaceTimezoneProvider } from '@/components/workspace-timezone-context';
+// Test environment: happy-dom
 
 const NOW = new Date('2026-07-20T12:00:00.000Z');
 

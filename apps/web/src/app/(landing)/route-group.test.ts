@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 const landingRouteFile = (name: string) => new URL(`./${name}`, import.meta.url);
 const rootRouteFile = (name: string) => new URL(`../${name}`, import.meta.url);
 

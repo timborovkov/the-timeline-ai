@@ -1,9 +1,10 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, fireEvent } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { InlineError } from '@/components/inline-error';
+// Test environment: happy-dom
 
 afterEach(() => {
   cleanup();

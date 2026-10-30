@@ -14,13 +14,13 @@
  *     transaction, so a partial mid-flight crash leaves no orphans.
  *
  * Usage:
- *   pnpm --filter @timeline/worker redocument-extract -- \
+ *   bun run --filter @timeline/worker redocument-extract -- \
  *     --team=<uuid> \
  *     [--status=<comma-separated>] [--limit=N] [--dry-run] [--force]
  */
 import { closeDb, documentVersions, getDb } from '@timeline/db';
 import { queue } from '@timeline/shared';
-import { and, asc, eq, gt, inArray, or, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, or, type SQL } from 'drizzle-orm';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const PAGE_SIZE = 500;
@@ -146,7 +146,4 @@ main()
     void closeDb();
     void queue.closeDocumentExtractQueue();
     void queue.closeRedisConnection();
-    // Silence the "unused sql import" hint — sql is reserved for the
-    // optional --since predicate if a later flag adds one.
-    void sql;
   });

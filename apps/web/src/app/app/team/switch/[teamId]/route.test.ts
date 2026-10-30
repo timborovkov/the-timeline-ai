@@ -1,8 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { POST } from '@/app/app/team/switch/[teamId]/route';
-import { ACTIVE_TEAM_COOKIE } from '@/lib/active-team';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   fakeAuth: vi.fn(),
   fakeCookies: vi.fn(),
@@ -10,11 +8,31 @@ const fakes = vi.hoisted(() => ({
   cookieSet: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => {
-  return { ACTIVE_TEAM_COOKIE: 'tl_active_team', verifyMembership: fakes.fakeVerifyMembership };
-});
-vi.mock('next/headers', () => ({ cookies: fakes.fakeCookies }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => {
+    return {
+      ACTIVE_TEAM_COOKIE: 'tl_active_team',
+      activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+      serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+      verifyMembership: fakes.fakeVerifyMembership,
+    };
+  },
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({ cookies: fakes.fakeCookies }),
+  () => import('next/headers'),
+);
+
+const { POST } = await import('@/app/app/team/switch/[teamId]/route');
+const { ACTIVE_TEAM_COOKIE } = await import('@/lib/active-team');
 
 const ENV_BACKUP = { ...process.env };
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
@@ -44,7 +62,7 @@ describe('team switch route', () => {
 
     expect(fakes.cookieSet).toHaveBeenCalledWith(
       ACTIVE_TEAM_COOKIE,
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
     expect(response.headers.get('location')).toBe('https://thetimeline.cc/app');

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { curatedKanbanSaveState } from '@/components/boards/curated-kanban-state';
-
 describe('curatedKanbanSaveState', () => {
   it('does not report saved after the final move in a failed batch settles', () => {
     expect(curatedKanbanSaveState(0, true)).toBe('idle');

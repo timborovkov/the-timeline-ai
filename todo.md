@@ -10,7 +10,10 @@ surfaces, workers, extraction, embeddings, agent chat, objects, curated boards,
 tasks, documents, meeting bots, calendar basics/subscriptions,
 integrations/custom MCPs, Slack, onboarding, visibility controls, exports, job
 recovery, public help/legal, approval-backed object and board memory, and
-personal universal pinning across durable workspace content. Telegram and Slack
+personal universal pinning across durable workspace content. Public Trust,
+detailed Terms and Privacy surfaces, immutable per-user legal acceptance
+evidence, and current-version gates across human product routes are also shipped.
+Telegram and Slack
 direct text now share the durable agent runtime and web-visible private chat
 history; trusted groups and channels remain ingestion-first while also exposing
 the scoped, proposal-only team agent through explicit ask commands.
@@ -153,10 +156,9 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       grouping with uniform pulse weight. The
       `timeline-moment-presentations` worker script now provides bounded,
       dry-run-first production prewarming for missing AI presentation cache jobs.
-      Timeline page/API reads now emit privacy-safe `timeline_moments_viewed`
-      counters for mode, filters, row-count reduction, scan pressure, missing
-      grouping metadata, AI presentation cache status, and visibility cache
-      partitioning without exposing raw content. Timeline browsing now ends at
+      Timeline page reads contribute only to the fixed, personless `timeline`
+      surface-request stream; filter and cache diagnostics are not correlated
+      to a user or team in product analytics. Timeline browsing now ends at
       the current instant by default; an explicit upcoming control and future
       date filters are bounded to seven days so recurrence materialization
       cannot crowd historical work out of the archive.
@@ -190,7 +192,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       (down from 13+); redirects + keymap updates.
 - [x] U6 — Quiet Archive polish and verification: curated Linux visual baselines
       for a few high-value routes (not a full surface×theme matrix), full
-      browser QA, `pnpm validate`, and React Doctor 100.
+      browser QA, `bun run validate`, and React Doctor 100.
 - [x] U7 — Universal personal pinning: replace separate board/object pins with
       one ordered mixed collection for objects, boards, documents, meetings,
       calendar series, and timeline moments; add Home preview, Work management,
@@ -284,7 +286,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       [`docs/relational-memory.md`](./docs/relational-memory.md)
       (Path from here to the ideal engine).
 - [x] Opt-in live messy proposal-engine eval
-      (`pnpm test:proposal-engine:live`): real models, real embeddings/Qdrant
+      (`bun run test:proposal-engine:live`): real models, real embeddings/Qdrant
       when configured, realistic noisy payloads (~90% messy: Sentry spikes,
       GitHub Actions pulses, Bugbot findings, buried ids, typo fragments,
       mention soup, truncated paste, silent calendar-linked meetings, outcome
@@ -320,7 +322,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       Timeline tasks. GitHub PRs and GitHub CI differ without a core
       `if (provider === "github")`. Linear/Monday item completion reuses the
       GitHub living-pending matcher. Opt-in live eval
-      (`pnpm test:proposal-engine:live`) stays messy-first and is not CI.
+      (`bun run test:proposal-engine:live`) stays messy-first and is not CI.
 - [ ] Ship the cross-source evidence pack north star in
       [`docs/cross-source-evidence.md`](./docs/cross-source-evidence.md) (rollout
       and copy; engine behavior is
@@ -364,13 +366,51 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 ## Agent Reliability
 
 - [x] Expose the stateless Timeline team agent through opt-in outbound MCP keys,
-      with scope-filtered discovery/calls, cited structured answers, proposal ID
-      reporting, team-shared MCP evidence, bounded delegation, and the same
-      proposal-only identity for unlinked trusted Telegram groups and Slack
-      channels.
-- [x] Ship the repository Codex plugin and marketplace entry with the hosted
-      Timeline MCP connection, one general cited-workspace skill,
+      with scope-annotated discovery and call-time enforcement, cited structured
+      answers, proposal ID reporting, team-shared MCP evidence, bounded
+      delegation, and the same proposal-only identity for unlinked trusted
+      Telegram groups and Slack channels.
+- [x] Add repository plugin and marketplace packaging for Codex and Claude Code
+      with the hosted Timeline MCP connection, one general cited-workspace skill,
       standalone installation guidance, and links from public help and MCP setup.
+- [x] Implement the outbound MCP OAuth and current transport path in the repository:
+      RFC 9728/8414 discovery, CIMD-first client resolution with constrained DCR,
+      PKCE S256, member/team consent and revocation, `read` plus owner/admin-only
+      `agent:ask`, official MCP SDK v2 Streamable HTTP negotiation, tool
+      annotations/output schemas, and standards-compatible 401 discovery.
+- [ ] Deploy this marketplace-readiness release, apply migration 0075, and pass
+      the production OAuth/MCP smoke matrix from every intended host.
+- [ ] Submit one OpenAI universal Plugins Directory **With MCP** draft containing
+      the production remote MCP connection and Timeline skill, and separately
+      submit the Claude plugin and any Claude.ai Connector listing intended for
+      launch. Use `docs/marketplace-submissions.md` as the field-by-field runbook
+      and evidence ledger; track submission, approval, and visible publication
+      independently.
+- [ ] Decide whether ChatGPT Enterprise verified-domain compatibility is needed.
+      If it is, implement and verify OIDC discovery, `openid email`, and UserInfo
+      with a verified email before making that claim; base OAuth does not depend
+      on this optional gate.
+- [ ] Before provider submission, obtain legal-owner approval for member-visible
+      OAuth access, static-key team visibility, provider-side retention/copies,
+      and revocation wording; verify public privacy/terms/support links, staffed
+      support and security channels, and reviewer accounts with sample data.
+- [ ] Write an ADR or expand the `mcp_outbound_oauth_*` schema comment stating
+      that those tables and their hashed tokens are only for Timeline acting as
+      the MCP OAuth *server*. Provider tokens (HubSpot, Slack, Attio, Pipedrive,
+      and other native integrations) need a separate encrypted, reversible store
+      with per-workspace installs and uninstall webhooks; do not reuse the
+      hashed MCP grant/token tables for them.
+- [ ] Keep `MCP_OAUTH_SCOPES` MCP-only (`read`, `agent:ask`). Do not add CRM or
+      other provider-app scopes to the outbound MCP authorization server.
+- [ ] After testing with real ChatGPT and Claude against production, consider
+      leniency on OAuth `state` and `resource` for less strict hosts. Do not
+      loosen those checks from local evidence alone.
+- [ ] Clean up OAuth clients that registered through DCR but never received a
+      grant, so unused `mcp_outbound_oauth_clients` rows do not accumulate.
+- [ ] Before any HubSpot, Slack, Attio, or Pipedrive app listing, make the
+      public privacy and terms pages cover CRM write-back, subprocessors,
+      retention, and deletion. Those listings are separate from the
+      OpenAI/Anthropic MCP-server runbook in `docs/marketplace-submissions.md`.
 - [x] Let reviewers revise unresolved approval proposals with plain-language
       feedback while preserving their operation, target, evidence, source
       records, and bounded revision history. Route chat corrections between
@@ -512,6 +552,59 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 - [ ] Extend overdue/missed alerts to calendar events past `start_at` with no
       attendance or completion signal.
 
+## Trust, Privacy, And Legal
+
+- [x] Add the public Trust, Privacy, Terms, and Cookies surfaces; per-user
+      versioned legal acceptance with immutable acceptance history; and
+      non-analytics browser-storage hardening. The Cookies notice inventories
+      the implemented optional public-browser analytics choice and withdrawal
+      controls while keeping provider-account and production evidence explicit.
+- [x] Land the analytics-owned runtime against
+      [`docs/privacy-analytics-interface.md`](./docs/privacy-analytics-interface.md):
+      fixed-stream personless public/app surface requests,
+      affirmative-consent-only public PostHog, no browser analytics in private
+      routes, HMAC-pseudonymous minimized server/worker events, working
+      withdrawal, strict route/property allowlists, separate minimized Sentry
+      handling, and source removal of the legacy Convex tracker.
+- [x] Expand Help into a support-channel router with a minimized private form,
+      direct email, structured non-sensitive GitHub bug reporting, private
+      vulnerability reporting, issue-first contribution guidance, aligned
+      desktop/mobile navigation, and contextual Get support actions on shared
+      error states.
+- [x] Review the PostHog Cloud EU account: enable IP discard; disable
+      autocapture, replay, heatmaps, web-vitals, dead-click, and exception
+      capture; restrict current membership; create and pin the Launch dashboard
+      shell; and queue deletion of the 127-event legacy development dataset.
+      The dated evidence memo records the pay-as-you-go retention and billing
+      constraints without storing account secrets or member details.
+- [ ] Complete the external analytics rollout and evidence: obtain
+      privacy/counsel approval for the legal basis and the seven-year
+      pay-as-you-go retention mismatch; verify deletion completion, DPA,
+      transfers, and provider access; configure the production environment; run
+      the real-browser and production payload canaries; populate the Launch
+      dashboard; and retain dated release evidence.
+- [ ] Inspect, export if necessary, and delete the legacy Convex deployment or
+      data only after confirming it is tracker-only and safe to remove.
+- [ ] Choose and commit a repository license and contribution terms after
+      founder/counsel review. Until then, describe the repository as public
+      source—not open source—and do not promise unrestricted self-hosting.
+- [ ] Capture production OpenRouter evidence: the key-to-guardrail assignment,
+      prompt logging, input/output sharing, response caching, current DPA and
+      subprocessors. Schedule the ZDR-registry/transcription canary and run the
+      multilingual live transcription evaluation before launch.
+- [ ] Have qualified counsel review the published Terms and Privacy Policy, and
+      bind future acceptance events to an immutable rendered legal-text snapshot
+      or digest in addition to the version, timestamp, source, IP, and user agent.
+- [ ] Draft and counsel-review a GDPR Article 28 customer DPA plus an
+      organization-level execution/acceptance path. Per-user Terms acceptance
+      and Privacy notice acknowledgement do not replace that processor contract.
+- [ ] Close the operating gaps tracked in
+      [`docs/security-privacy-trust.md`](./docs/security-privacy-trust.md):
+      provider DPAs/regions/settings, Railway backup and restore evidence,
+      end-to-end deletion verification, operator-access logging and break-glass
+      controls, and investigation/deletion of any data collected by the legacy
+      Convex analytics script.
+
 ## Backup And Operations
 
 - [ ] Add a RustFS backup cron service on Railway: nightly `rclone sync` to
@@ -544,8 +637,19 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
 ## Standing Items
 
 - [ ] Verify backups weekly and run restore drills quarterly.
-- [ ] Monitor Qdrant RAM usage and plan a move to sharded or managed Qdrant
-      before it becomes painful.
+- [ ] Monitor production CPU and RAM against the
+      [per-service caps](docs/railway.html#resource-caps), including Qdrant after the on-disk + int8 layout, and
+      plan a move to sharded or managed Qdrant before it becomes painful. The
+      2026-10-24 restart and search/ingestion probes informed an initial 3 GB
+      production RAM limit (plus a 2 vCPU cap) with the rollback collection retained; remeasure peaks
+      before lowering it or performing full reindexing (see
+      [production memory measurements](docs/railway.html#qdrant-memory)). New
+      collections already store original vectors on disk; copy any older in-RAM
+      collection with `bun run --filter @timeline/worker qdrant-migrate-collection`
+      (`--writers-paused --all-teams` after pausing all vector writers; production also
+      requires the snapshot-backed `--production` maintenance flow in
+      [OpenRouter setup](docs/setup/openrouter.html#qdrant-production-copy)) before lowering the
+      Railway memory limit.
 - [ ] Maintain an OpenRouter spend dashboard with per-feature cost tracking.
 - [ ] Rotate API keys quarterly.
 - [ ] Audit team isolation on every schema, integration, MCP, or data-access

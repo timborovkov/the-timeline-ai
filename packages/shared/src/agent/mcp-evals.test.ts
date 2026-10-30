@@ -1,10 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
+import type { TeamScope } from '#src/team-scope.js';
 import type * as TimelineDb from '@timeline/db';
-
-import { buildMcpTools } from '#src/agent/tools.js';
-import { type TeamScope } from '#src/team-scope.js';
-
 // Fast MCP safety evals: custom MCP servers are admin-connected but external,
 // so their tool output is untrusted. These tests exercise the real agent MCP
 // tool wrapper with a fake manager and assert prompt-injection content is
@@ -16,19 +15,35 @@ const fakes = vi.hoisted(() => ({
   loggerWarn: vi.fn(),
 }));
 
-vi.mock('@timeline/db', async (importOriginal) => {
-  const actual = await importOriginal<typeof TimelineDb>();
-  return { ...actual, getDb: () => ({}) };
-});
-vi.mock('#src/logger.js', () => ({
-  childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
-}));
-vi.mock('#src/mcp/client.js', () => ({
-  getMcpManager: () => ({
-    connectForTeam: fakes.connectForTeam,
-    callTool: fakes.callTool,
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof TimelineDb>();
+    return { ...actual, getDb: () => ({}) };
+  },
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('#src/logger.js'),
+  () => ({
+    childLogger: () => ({ warn: fakes.loggerWarn, error: vi.fn(), info: vi.fn() }),
   }),
-}));
+  () => import('#src/logger.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/mcp/client.js'),
+  () => ({
+    getMcpManager: () => ({
+      connectForTeam: fakes.connectForTeam,
+      callTool: fakes.callTool,
+    }),
+  }),
+  () => import('#src/mcp/client.js'),
+);
+
+const { buildMcpTools } = await import('#src/agent/tools.js');
+
+const {} = await import('#src/team-scope.js');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';

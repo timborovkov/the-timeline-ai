@@ -1,10 +1,10 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { StatusBadge } from '@/components/status-badge';
 import { statusLabel } from '@/lib/status-labels';
+// Test environment: happy-dom
 
 describe('StatusBadge', () => {
   it('maps enum values to sentence-case labels', () => {

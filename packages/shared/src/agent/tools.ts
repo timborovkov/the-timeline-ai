@@ -1279,6 +1279,27 @@ async function resolveTaskProposalProject(
   };
 }
 
+export const USER_APPROVAL_TOOL_NAMES = [
+  'execute_object_create',
+  'execute_object_update',
+  'execute_object_archive',
+  'execute_object_merge',
+  'execute_board_add_item',
+  'execute_board_update_item',
+  'execute_board_remove_item',
+  'execute_calendar_create',
+  'execute_calendar_update',
+  'execute_calendar_cancel',
+] as const;
+
+export function userApprovalForTools(tools: ToolSet): Record<string, 'user-approval'> | undefined {
+  const approval: Record<string, 'user-approval'> = {};
+  for (const name of USER_APPROVAL_TOOL_NAMES) {
+    if (Object.hasOwn(tools, name)) approval[name] = 'user-approval';
+  }
+  return Object.keys(approval).length > 0 ? approval : undefined;
+}
+
 export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}): ToolSet {
   const runSafe = <T>(label: string, fn: () => Promise<T>): Promise<T | { error: string }> =>
     safe(label, fn, options.onToolError, options.sanitizeError);
@@ -1398,7 +1419,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly create a canonical object/task after the user approves in chat. Use only for explicit commands like "create a project called X" or "add a task to follow up with Y". This writes canonical state through createObject and does NOT create a background approval queue item.',
       inputSchema: executeObjectCreateInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_object_create', async () => {
           const input = executeObjectCreateInput.parse(raw);
@@ -1433,7 +1453,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly update one field on an existing object after the user approves in chat. Use only for explicit user commands like "set this deal status to won" or "move this task due date to tomorrow". First call get_object or retrieve_workspace_context, then pass the observed current value as expectedCurrentValue so stale state is rejected. This does NOT create a background approval queue item.',
       inputSchema: executeObjectUpdateInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_object_update', async () => {
           const input = executeObjectUpdateInput.parse(raw);
@@ -1487,7 +1506,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly archive one existing object/task after the user approves in chat. Use only for explicit archive/cancel commands. First resolve the object with search_objects/get_object/retrieve_workspace_context and show the user the object citation. This runs canonical archiveObject, reconciles duplicate archive suggestions, and does NOT create a background approval queue item.',
       inputSchema: executeObjectArchiveInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_object_archive', async () => {
           const input = executeObjectArchiveInput.parse(raw);
@@ -1539,7 +1557,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly merge duplicate objects after the user approves in chat. Use only for explicit merge commands. First resolve and preview all target objects with search_objects/get_object/retrieve_workspace_context; then pass all objectIds and the survivorId. This re-previews before executing, rejects stale/resolved ids, runs the canonical merge path, and does NOT create a background approval queue item.',
       inputSchema: executeObjectMergeInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_object_merge', async () => {
           const input = executeObjectMergeInput.parse(raw);
@@ -1602,7 +1619,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly add an existing object/task to a board lane after the user approves in chat. Use only for explicit commands like "add this company to the New lane" or after execute_object_create when the user asked to create an object and place it on the current board. First resolve the board/lane/object with search_boards/search_objects/dashboard context. This writes canonical board state and does NOT create a background approval queue item.',
       inputSchema: executeBoardAddItemInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_board_add_item', async () => {
           const input = executeBoardAddItemInput.parse(raw);
@@ -1639,7 +1655,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly update or move one board card after the user approves in chat. Use for explicit board commands like "move this card to Proposal", "set the board card priority to 2", or "add next step X". First read the current card with search_boards, then pass observed fields in expectedCurrent so stale state is rejected. This writes canonical board state and does NOT create a background approval queue item.',
       inputSchema: executeBoardUpdateItemInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_board_update_item', async () => {
           const input = executeBoardUpdateItemInput.parse(raw);
@@ -1675,23 +1690,14 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
               stale_fields: staleFields,
             };
           }
-          const item = await scope.boards.updateBoardItem(
+          const update = await scope.boards.updateBoardItem(
             input.itemId,
             buildBoardItemPatch(input.patch),
             { kind: 'agent', userId: scope.userId },
           );
-          if (!item) return { ok: false, error: 'not_found' };
-          const changedFields = Object.keys(input.patch).filter((field) => {
-            const previous = normalizeBoardItemComparableValue(
-              field,
-              currentBoardItemValue(current, field),
-            );
-            const next = normalizeBoardItemComparableValue(
-              field,
-              currentBoardItemValue(item, field),
-            );
-            return !valuesMatchForApproval(previous, next);
-          });
+          if (!update) return { ok: false, error: 'not_found' };
+          const { item } = update;
+          const changedFields = update.changedFields;
           return {
             ok: true,
             board_id: item.boardId,
@@ -1717,7 +1723,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly remove one card from a board after the user approves in chat. Use only for explicit board removal commands, not for archiving the underlying object. First read the current card with search_boards and pass boardId/objectId/laneId in expectedCurrent so stale state is rejected.',
       inputSchema: executeBoardRemoveItemInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_board_remove_item', async () => {
           const input = executeBoardRemoveItemInput.parse(raw);
@@ -3347,7 +3352,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly create a canonical calendar event after the user approves in chat. Use only for explicit scheduling commands. Resolves all-day local dates with the workspace timezone and does NOT create a background approval queue item.',
       inputSchema: executeCalendarCreateInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_calendar_create', async () => {
           const input = executeCalendarCreateInput.parse(raw);
@@ -3368,7 +3372,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly update an existing calendar event after the user approves in chat. Use only for explicit update/move/reschedule commands. First call get_calendar_event, then pass expectedCurrent values for every field in patch so stale state is rejected. This does NOT create a background approval queue item.',
       inputSchema: executeCalendarUpdateInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_calendar_update', async () => {
           const input = executeCalendarUpdateInput.parse(raw);
@@ -3447,7 +3450,6 @@ export function buildAgentTools(scope: TeamScope, options: AgentToolOptions = {}
       description:
         'Approval-required dashboard action. Directly cancel/delete an existing calendar event after the user approves in chat. Use only for explicit cancellation commands. First call get_calendar_event, then pass expected title/start/end so stale state is rejected. This does NOT create a background approval queue item.',
       inputSchema: executeCalendarCancelInput,
-      needsApproval: true,
       execute: async (raw) =>
         runSafe('execute_calendar_cancel', async () => {
           const input = executeCalendarCancelInput.parse(raw);

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { publicMetadata } from '@/lib/public-metadata';
-
 describe('publicMetadata', () => {
   it('sets page-specific canonical, OpenGraph, and Twitter metadata', () => {
     const metadata = publicMetadata({

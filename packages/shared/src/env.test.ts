@@ -1,8 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { getEnv, isAllowedDocumentExtractProcessEnvKey, resetEnvForTests } from '#src/env.js';
-
+import { buildOpenRouterPrivacyAttestationToken } from '#src/llm/privacy-attestation.js';
 const ENV_BACKUP = { ...process.env };
+const TEST_OPENROUTER_API_KEY = 'sk-or-test';
+const TEST_OPENROUTER_GUARDRAIL_ID = 'guardrail-test-production';
+
+function testOpenRouterAttestation(
+  apiKey = TEST_OPENROUTER_API_KEY,
+  guardrailId = TEST_OPENROUTER_GUARDRAIL_ID,
+): string {
+  return buildOpenRouterPrivacyAttestationToken({ apiKey, guardrailId });
+}
 
 function setBaseEnv(overrides: Record<string, string | undefined> = {}): void {
   const next: Record<string, string | undefined> = {
@@ -30,7 +40,9 @@ function setExtractProductionEnv(overrides: Record<string, string | undefined> =
     DATABASE_URL: 'postgres://x:y@localhost:5432/x',
     REDIS_URL: 'redis://localhost:6379',
     DAYTONA_API_KEY: 'dtn_test',
-    OPENROUTER_API_KEY: 'sk-or-test',
+    OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+    OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+    OPENROUTER_PRIVACY_POLICY_ATTESTATION: testOpenRouterAttestation(),
     S3_ENDPOINT: 'http://localhost:9000',
     S3_REGION: 'us-east-1',
     S3_ACCESS_KEY_ID: 'key',
@@ -63,7 +75,102 @@ describe('getEnv', () => {
       VISION_MODEL: undefined,
     });
 
-    expect(getEnv().OPENROUTER_API_KEY).toBeUndefined();
+    const env = getEnv();
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
+    expect(env.OPENROUTER_GUARDRAIL_ID).toBeUndefined();
+    expect(env.OPENROUTER_PRIVACY_POLICY_ATTESTATION).toBeUndefined();
+    expect(env.TIMELINE_DEPLOYMENT_MODE).toBe('hosted');
+    expect(env.LEGAL_PUBLICATION_READY).toBe(false);
+  });
+
+  it('requires a guardrail id and generated model/privacy attestation in hosted production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: undefined,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: undefined,
+    });
+    expect(() => getEnv()).toThrow(/OPENROUTER_GUARDRAIL_ID/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: undefined,
+    });
+    expect(() => getEnv()).toThrow(/OPENROUTER_PRIVACY_POLICY_ATTESTATION/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: '2026-08-21.1',
+    });
+    expect(() => getEnv()).toThrow(/must be regenerated/u);
+
+    const attestation = testOpenRouterAttestation();
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: attestation,
+    });
+    expect(getEnv().OPENROUTER_PRIVACY_POLICY_ATTESTATION).toBe(attestation);
+  });
+
+  it('invalidates the production attestation on key rotation or guardrail change', () => {
+    const staleAttestation = testOpenRouterAttestation();
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: `${TEST_OPENROUTER_API_KEY}-rotated`,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: staleAttestation,
+    });
+    expect(() => getEnv()).toThrow(/must be regenerated/u);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: `${TEST_OPENROUTER_GUARDRAIL_ID}-replacement`,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: staleAttestation,
+    });
+    expect(() => getEnv()).toThrow(/must be regenerated/u);
+  });
+
+  it('allows only the official OpenRouter API boundary in hosted production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: testOpenRouterAttestation(),
+      OPENROUTER_BASE_URL: 'https://proxy.example.test/api/v1',
+    });
+    expect(() => getEnv()).toThrow(/OPENROUTER_BASE_URL/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: TEST_OPENROUTER_GUARDRAIL_ID,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: testOpenRouterAttestation(),
+      OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1/',
+    });
+    expect(getEnv().OPENROUTER_BASE_URL).toBe('https://openrouter.ai/api/v1/');
+  });
+
+  it('permits an operator-owned OpenRouter-compatible boundary in self-managed production', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      OPENROUTER_API_KEY: TEST_OPENROUTER_API_KEY,
+      OPENROUTER_GUARDRAIL_ID: undefined,
+      OPENROUTER_PRIVACY_POLICY_ATTESTATION: undefined,
+      OPENROUTER_BASE_URL: 'https://operator-inference.example.test/v1',
+    });
+
+    expect(getEnv()).toMatchObject({
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      OPENROUTER_BASE_URL: 'https://operator-inference.example.test/v1',
+    });
   });
 
   it('ignores legacy model env vars because model config is code-owned', () => {
@@ -95,6 +202,193 @@ describe('getEnv', () => {
     expect(getEnv().RECALL_TRANSCRIPT_WEBHOOK_URL).toBeUndefined();
   });
 
+  it('accepts canonical Recall webhook secrets and rejects malformed values', () => {
+    const workspaceSecret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    const legacyStatusSecret = `whsec_${Buffer.alloc(24, 0x62).toString('base64')}`;
+    setBaseEnv({
+      RECALL_WORKSPACE_VERIFICATION_SECRET: workspaceSecret,
+      RECALL_STATUS_WEBHOOK_SECRET: legacyStatusSecret,
+    });
+    expect(getEnv()).toMatchObject({
+      RECALL_WORKSPACE_VERIFICATION_SECRET: workspaceSecret,
+      RECALL_STATUS_WEBHOOK_SECRET: legacyStatusSecret,
+    });
+
+    for (const invalid of [
+      'plain-text',
+      'whsec_',
+      'whsec_not/base64!',
+      'whsec_YQ=',
+      'whsec_YQ==',
+      `whsec_${Buffer.alloc(23, 0x61).toString('base64')}`,
+    ]) {
+      setBaseEnv({ RECALL_WORKSPACE_VERIFICATION_SECRET: invalid });
+      expect(() => getEnv()).toThrow(/RECALL_WORKSPACE_VERIFICATION_SECRET/);
+    }
+  });
+
+  it('requires the Recall workspace verification secret with the production API key', () => {
+    setBaseEnv({
+      NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: undefined,
+      RECALL_STATUS_WEBHOOK_SECRET: `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`,
+    });
+    expect(() => getEnv()).toThrow(/RECALL_WORKSPACE_VERIFICATION_SECRET is required/);
+
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    setBaseEnv({
+      NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+    });
+    expect(getEnv().RECALL_WORKSPACE_VERIFICATION_SECRET).toBe(secret);
+  });
+
+  it('keeps server analytics credentials separate and validates the pseudonymization key', () => {
+    setBaseEnv({
+      POSTHOG_PROJECT_KEY: 'ph-server',
+      POSTHOG_HOST: 'https://eu.i.posthog.com',
+      ANALYTICS_PSEUDONYMIZATION_KEY: 'a'.repeat(32),
+      NEXT_PUBLIC_POSTHOG_KEY: 'ph-browser',
+    });
+    expect(getEnv()).toMatchObject({
+      POSTHOG_PROJECT_KEY: 'ph-server',
+      POSTHOG_HOST: 'https://eu.i.posthog.com',
+      ANALYTICS_PSEUDONYMIZATION_KEY: 'a'.repeat(32),
+      NEXT_PUBLIC_POSTHOG_KEY: 'ph-browser',
+    });
+
+    setBaseEnv({ ANALYTICS_PSEUDONYMIZATION_KEY: 'too-short' });
+    expect(() => getEnv()).toThrow(/ANALYTICS_PSEUDONYMIZATION_KEY/);
+
+    setBaseEnv({
+      POSTHOG_PROJECT_KEY: '',
+      POSTHOG_HOST: '',
+      ANALYTICS_PSEUDONYMIZATION_KEY: '',
+    });
+    expect(getEnv()).toMatchObject({ POSTHOG_HOST: 'https://eu.i.posthog.com' });
+    expect(getEnv().POSTHOG_PROJECT_KEY).toBeUndefined();
+    expect(getEnv().ANALYTICS_PSEUDONYMIZATION_KEY).toBeUndefined();
+
+    setBaseEnv({ POSTHOG_HOST: 'https://us.i.posthog.com' });
+    expect(() => getEnv()).toThrow(/reviewed EU PostHog ingestion origin/);
+  });
+
+  it('limits configured Recall media retention to one hour in Timeline-hosted production', () => {
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    setBaseEnv({
+      NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
+      TIMELINE_DEPLOYMENT_MODE: 'hosted',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+      RECALL_RETENTION: '24',
+    });
+    expect(() => getEnv()).toThrow(/RECALL_RETENTION must be unset or 1/);
+
+    setBaseEnv({
+      NODE_ENV: 'production',
+      AUTH_URL: 'https://timeline.example.test',
+      TIMELINE_DEPLOYMENT_MODE: 'hosted',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+      RECALL_RETENTION: '1',
+    });
+    expect(getEnv().RECALL_RETENTION).toBe('1');
+  });
+
+  it('allows only official Recall API regions and the app transcript ingress in hosted production', () => {
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    const base = {
+      NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'hosted',
+      AUTH_URL: 'https://timeline.example.test',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+    };
+
+    for (const recallBaseUrl of [
+      'http://us-west-2.recall.ai/api/v1',
+      'https://proxy.example.test/api/v1',
+      'https://us-west-2.recall.ai/not-api',
+    ]) {
+      setBaseEnv({ ...base, RECALL_BASE_URL: recallBaseUrl });
+      expect(() => getEnv()).toThrow(/official Recall regional/u);
+    }
+
+    setBaseEnv({
+      ...base,
+      RECALL_BASE_URL: 'https://eu-central-1.recall.ai/api/v1/',
+    });
+    expect(getEnv().RECALL_BASE_URL).toBe('https://eu-central-1.recall.ai/api/v1/');
+
+    for (const transcriptUrl of [
+      'http://timeline.example.test/api/webhooks/recall/transcript',
+      'https://ingress.example.test/api/webhooks/recall/transcript',
+      'https://timeline.example.test/api/webhooks/recall/transcript?token=secret',
+      'https://timeline.example.test/api/webhooks/recall/status',
+    ]) {
+      setBaseEnv({ ...base, RECALL_TRANSCRIPT_WEBHOOK_URL: transcriptUrl });
+      expect(() => getEnv()).toThrow(/AUTH_URL HTTPS origin/u);
+    }
+
+    setBaseEnv({
+      ...base,
+      RECALL_TRANSCRIPT_WEBHOOK_URL: 'https://timeline.example.test/api/webhooks/recall/transcript',
+    });
+    expect(getEnv().RECALL_TRANSCRIPT_WEBHOOK_URL).toBe(
+      'https://timeline.example.test/api/webhooks/recall/transcript',
+    );
+  });
+
+  it('permits deliberate Recall retention in self-managed production', () => {
+    const secret = `whsec_${Buffer.alloc(24, 0x61).toString('base64')}`;
+    setBaseEnv({
+      NODE_ENV: 'production',
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      AUTH_URL: 'http://self-managed.internal',
+      RECALL_API_KEY: 'recall-test',
+      RECALL_WORKSPACE_VERIFICATION_SECRET: secret,
+      RECALL_BASE_URL: 'http://recall-proxy.internal/api/v1',
+      RECALL_TRANSCRIPT_WEBHOOK_URL:
+        'http://webhook-ingress.internal/api/webhooks/recall/transcript',
+      RECALL_RETENTION: '24',
+    });
+
+    expect(getEnv()).toMatchObject({
+      TIMELINE_DEPLOYMENT_MODE: 'self-managed',
+      RECALL_RETENTION: '24',
+    });
+  });
+
+  it('defaults INTEGRATION_HEALTH_PAUSE_AFTER_HOURS to 72 and rejects zero', () => {
+    setBaseEnv({ INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: undefined });
+    expect(getEnv().INTEGRATION_HEALTH_PAUSE_AFTER_HOURS).toBe(72);
+
+    setBaseEnv({ INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: '1' });
+    expect(getEnv().INTEGRATION_HEALTH_PAUSE_AFTER_HOURS).toBe(1);
+
+    setBaseEnv({ INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: '0' });
+    expect(() => getEnv()).toThrow(/INTEGRATION_HEALTH_PAUSE_AFTER_HOURS/);
+  });
+
+  it('treats blank integration OAuth credentials from .env.example as unset', () => {
+    setBaseEnv({
+      GITHUB_APP_ID: '',
+      GITHUB_APP_CLIENT_ID: '',
+      SLACK_CLIENT_ID: '',
+      MONDAY_CLIENT_ID: '',
+    });
+
+    expect(getEnv().GITHUB_APP_ID).toBeUndefined();
+    expect(getEnv().GITHUB_APP_CLIENT_ID).toBeUndefined();
+    expect(getEnv().SLACK_CLIENT_ID).toBeUndefined();
+    expect(getEnv().MONDAY_CLIENT_ID).toBeUndefined();
+  });
+
   it('keeps the legacy invite sender env var available for transactional email fallback', () => {
     setBaseEnv({
       INVITE_EMAIL_FROM: 'Timeline <invites@example.test>',
@@ -115,8 +409,9 @@ describe('getEnv', () => {
     });
   });
 
-  it('keeps task category rollout controls disabled until explicitly enabled', () => {
+  it('enables task categories by default and keeps historical backfill off', () => {
     setBaseEnv({
+      TASK_CATEGORY_DISABLED: undefined,
       TASK_CATEGORY_CLASSIFICATION_ENABLED: undefined,
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: undefined,
       TASK_CATEGORY_WORKER_ENABLED: undefined,
@@ -125,12 +420,75 @@ describe('getEnv', () => {
     });
 
     expect(getEnv()).toMatchObject({
+      TASK_CATEGORY_DISABLED: false,
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: true,
+      TASK_CATEGORY_WORKER_ENABLED: true,
+      TASK_CATEGORY_BACKFILL_ENABLED: false,
+      TASK_CATEGORY_UI_ENABLED: true,
+    });
+  });
+
+  it('forces every task category control off when the kill switch is set', () => {
+    setBaseEnv({
+      TASK_CATEGORY_DISABLED: 'true',
+      TASK_CATEGORY_CLASSIFICATION_ENABLED: 'true',
+      TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: 'true',
+      TASK_CATEGORY_WORKER_ENABLED: 'true',
+      TASK_CATEGORY_BACKFILL_ENABLED: 'true',
+      TASK_CATEGORY_UI_ENABLED: 'true',
+    });
+
+    expect(getEnv()).toMatchObject({
+      TASK_CATEGORY_DISABLED: true,
       TASK_CATEGORY_CLASSIFICATION_ENABLED: false,
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false,
       TASK_CATEGORY_WORKER_ENABLED: false,
       TASK_CATEGORY_BACKFILL_ENABLED: false,
       TASK_CATEGORY_UI_ENABLED: false,
     });
+  });
+
+  it('defaults Qdrant quantization to scalar int8 with search rescore', () => {
+    setBaseEnv({
+      QDRANT_COLLECTION: undefined,
+      QDRANT_QUANTIZATION: undefined,
+      QDRANT_QUANTIZATION_RESCORE: undefined,
+      QDRANT_QUANTIZATION_OVERSAMPLING: undefined,
+    });
+    expect(getEnv()).toMatchObject({
+      QDRANT_COLLECTION: 'events',
+      QDRANT_QUANTIZATION: 'scalar',
+      QDRANT_QUANTIZATION_RESCORE: true,
+    });
+    expect(getEnv().QDRANT_QUANTIZATION_OVERSAMPLING).toBeUndefined();
+  });
+
+  it('treats blank Qdrant quantization env as the documented defaults', () => {
+    setBaseEnv({
+      QDRANT_QUANTIZATION: '',
+      QDRANT_QUANTIZATION_OVERSAMPLING: '',
+    });
+    expect(getEnv().QDRANT_QUANTIZATION).toBe('scalar');
+    expect(getEnv().QDRANT_QUANTIZATION_OVERSAMPLING).toBeUndefined();
+  });
+
+  it('accepts binary quantization and an explicit oversampling factor', () => {
+    setBaseEnv({
+      QDRANT_QUANTIZATION: 'binary',
+      QDRANT_QUANTIZATION_RESCORE: 'false',
+      QDRANT_QUANTIZATION_OVERSAMPLING: '3.5',
+    });
+    expect(getEnv()).toMatchObject({
+      QDRANT_QUANTIZATION: 'binary',
+      QDRANT_QUANTIZATION_RESCORE: false,
+      QDRANT_QUANTIZATION_OVERSAMPLING: 3.5,
+    });
+  });
+
+  it('rejects Qdrant oversampling below 1', () => {
+    setBaseEnv({ QDRANT_QUANTIZATION_OVERSAMPLING: '0.5' });
+    expect(() => getEnv()).toThrow(/QDRANT_QUANTIZATION_OVERSAMPLING/);
   });
 
   it('keeps cross-source evidence disabled until an operator selects a rollout mode', () => {
@@ -158,7 +516,7 @@ describe('getEnv', () => {
     expect(() => getEnv()).toThrow(/LANGSMITH_API_KEY/);
   });
 
-  it('accepts LangSmith production config', () => {
+  it('rejects LangSmith tracing in production', () => {
     setBaseEnv({
       NODE_ENV: 'production',
       LANGSMITH_TRACING: 'true',
@@ -169,14 +527,7 @@ describe('getEnv', () => {
       LANGSMITH_WORKSPACE_ID: 'workspace-id',
     });
 
-    expect(getEnv()).toMatchObject({
-      LANGSMITH_TRACING: true,
-      LANGSMITH_TRACING_SAMPLING_RATE: 0.05,
-      LANGSMITH_API_KEY: 'lsv2_test_key',
-      LANGSMITH_PROJECT: 'timeline-production',
-      LANGSMITH_ENDPOINT: 'https://eu.api.smith.langchain.com',
-      LANGSMITH_WORKSPACE_ID: 'workspace-id',
-    });
+    expect(() => getEnv()).toThrow(/LANGSMITH_TRACING must be false in production/);
   });
 
   it('treats a blank LangSmith endpoint as unset', () => {
@@ -282,6 +633,9 @@ describe('getEnv', () => {
     setExtractProductionEnv({ SECRETS_ENCRYPTION_KEY: 'not-for-extract' });
     expect(() => getEnv()).toThrow(/SECRETS_ENCRYPTION_KEY must not be set/);
 
+    setExtractProductionEnv({ TASK_CATEGORY_DISABLED: 'true' });
+    expect(() => getEnv()).toThrow(/TASK_CATEGORY_DISABLED must not be set/);
+
     setExtractProductionEnv({ CRON_SECRET: 'cron' });
     expect(() => getEnv()).toThrow(/CRON_SECRET must not be set/);
 
@@ -334,9 +688,11 @@ describe('getEnv', () => {
     expect(env.DAYTONA_SNAPSHOT).toBeUndefined();
   });
 
-  it('accepts non-secret runtime variables injected by Railway Railpack', () => {
+  it('accepts non-secret runtime variables injected by Bun and Railway', () => {
     setExtractProductionEnv({
       CI: 'true',
+      BUN_INSTALL_BIN: '/usr/local/bin',
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '/tmp/bun-cache',
       MISE_DATA_DIR: '/mise/data',
       MISE_SHIMS_DIR: '/mise/shims',
       MISE_CACHE_DIR: '/mise/cache',
@@ -369,12 +725,20 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_API_KEY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('DAYTONA_SNAPSHOT_ENSURE')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('S3_SECRET_ACCESS_KEY')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('OPENROUTER_GUARDRAIL_ID')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('OPENROUTER_PRIVACY_POLICY_ATTESTATION')).toBe(
+      true,
+    );
+    expect(isAllowedDocumentExtractProcessEnvKey('TIMELINE_DEPLOYMENT_MODE')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('LEGAL_PUBLICATION_READY')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILWAY_ENVIRONMENT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_VERSION')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_BUILT_AT')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('MISE_DATA_DIR')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('__MISE_SHIM')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('CI')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('BUN_INSTALL_BIN')).toBe(true);
+    expect(isAllowedDocumentExtractProcessEnvKey('BUN_RUNTIME_TRANSPILER_CACHE_PATH')).toBe(true);
     expect(isAllowedDocumentExtractProcessEnvKey('PATH')).toBe(true);
   });
 
@@ -384,5 +748,6 @@ describe('isAllowedDocumentExtractProcessEnvKey', () => {
     expect(isAllowedDocumentExtractProcessEnvKey('MCP_PREREGISTERED_X_CLIENT_SECRET')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('AUTH_SECRET')).toBe(false);
     expect(isAllowedDocumentExtractProcessEnvKey('RAILPACK_FUTURE_SECRET')).toBe(false);
+    expect(isAllowedDocumentExtractProcessEnvKey('BUN_FUTURE_SECRET')).toBe(false);
   });
 });

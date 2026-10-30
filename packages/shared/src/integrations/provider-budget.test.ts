@@ -1,6 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   adminLoadProviderBudgetPause,
@@ -12,7 +14,6 @@ import {
   missingRequiredProviderScopes,
 } from '#src/integrations/types.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 describe('provider budget pauses', () => {
   let pg: PGlite;
   let db: ReturnType<typeof drizzle>;

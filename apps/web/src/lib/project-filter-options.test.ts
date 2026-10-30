@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ObjectListFilter, ObjectRow } from '@timeline/shared/objects/types';
 
 import { loadProjectFilterRows } from '@/lib/project-filter-options';
-
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 
 describe('loadProjectFilterRows', () => {

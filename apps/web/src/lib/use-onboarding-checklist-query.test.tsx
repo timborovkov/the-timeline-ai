@@ -1,14 +1,15 @@
-// @vitest-environment happy-dom
-
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { OnboardingChecklistView } from '@/lib/onboarding-checklist';
 import type { PropsWithChildren, ReactElement } from 'react';
 
 import { queryKeys } from '@/lib/query-keys';
 import { useOnboardingChecklistQuery } from '@/lib/use-paginated-queries';
+// Test environment: happy-dom
 
 afterEach(() => {
   cleanup();

@@ -1,16 +1,29 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 // Personal MCP settings must keep their private boundary clear while loading
 // or recovering so people can safely retry without assuming team settings changed.
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import PersonalMcpServersError from '@/app/app/me/mcp-servers/error';
-import PersonalMcpServersLoading from '@/app/app/me/mcp-servers/loading';
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ back: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ back: vi.fn() }) }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: PersonalMcpServersError } = await import('@/app/app/me/mcp-servers/error');
+const { default: PersonalMcpServersLoading } = await import('@/app/app/me/mcp-servers/loading');
 
 afterEach(() => {
   cleanup();
@@ -54,7 +67,7 @@ describe('Personal MCP servers route states', () => {
       ),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     expect(document.activeElement).toBe(retry);
     await user.keyboard('{Enter}');

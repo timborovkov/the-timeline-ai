@@ -57,6 +57,11 @@ interface Props {
   defaultLaneId: string | null;
   selectedItemId: string | null;
   selectedObjectContext?: objects.ObjectDetail['connectedWork'] | null;
+  selectedObjectNotes?: objects.ObjectDetail['notes'];
+  selectedObjectRecentChanges?: objects.ObjectDetail['recentChanges'];
+  selectedObjectRelationships?: objects.ObjectDetail['relationships'];
+  selectedObjectType?: objects.ObjectType | null;
+  currentUserId?: string;
   history: boards.BoardItemChangeRow[];
   members: BoardMemberOption[];
   filters?: WorkFilterState;
@@ -87,6 +92,9 @@ const EMPTY_FILTERS: WorkFilterState = {
 };
 const EMPTY_FILTER_PARAMS: Record<string, string> = {};
 const EMPTY_TYPE_LABELS: Record<string, string> = {};
+const EMPTY_OBJECT_NOTES: objects.ObjectDetail['notes'] = [];
+const EMPTY_OBJECT_RECENT_CHANGES: objects.ObjectDetail['recentChanges'] = [];
+const EMPTY_OBJECT_RELATIONSHIPS: objects.ObjectDetail['relationships'] = [];
 
 export function BoardDetailClient({
   boardId,
@@ -103,6 +111,11 @@ export function BoardDetailClient({
   defaultLaneId,
   selectedItemId,
   selectedObjectContext = null,
+  selectedObjectNotes = EMPTY_OBJECT_NOTES,
+  selectedObjectRecentChanges = EMPTY_OBJECT_RECENT_CHANGES,
+  selectedObjectRelationships = EMPTY_OBJECT_RELATIONSHIPS,
+  selectedObjectType = null,
+  currentUserId,
   history,
   members,
   filters = EMPTY_FILTERS,
@@ -351,6 +364,11 @@ export function BoardDetailClient({
               view={view}
               item={selectedItem}
               connectedWork={selectedObjectContext}
+              notes={selectedObjectNotes}
+              recentChanges={selectedObjectRecentChanges}
+              relationships={selectedObjectRelationships}
+              objectType={selectedObjectType}
+              currentUserId={currentUserId}
               history={history}
               lanes={lanes}
               members={members}

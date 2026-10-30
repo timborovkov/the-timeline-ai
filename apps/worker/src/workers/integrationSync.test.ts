@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as TimelineDb from '@timeline/db';
 import type * as TimelineShared from '@timeline/shared';
-
 type TestSyncContinuation = TimelineShared.integrations.SyncContinuation;
 type TestCheckpointInput = TimelineShared.integrations.CommitIntegrationSyncCheckpointInput;
 
@@ -50,8 +51,11 @@ const fakes = vi.hoisted(() => {
     adminLoadProviderBudgetPause: vi.fn(),
     adminRecordProviderBudgetPause: vi.fn(),
     adminReconcileExpiringWebhookSubscriptions: vi.fn(),
+    adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
     adminResolveConnectionAttention: vi.fn(),
     adminRecordTransientSyncFailure: vi.fn(),
+    adminRecordCountedHealthFailure: vi.fn(),
+    adminResetIntegrationHealth: vi.fn(),
     writeIntegrationEvents: vi.fn(),
     getProvider: vi.fn(),
     incrementalSync: vi.fn(),
@@ -65,58 +69,71 @@ const fakes = vi.hoisted(() => {
   };
 });
 
-vi.mock('@timeline/db', async (importOriginal) => ({
-  ...(await importOriginal<typeof TimelineDb>()),
-  getDbClient: fakes.getDbClient,
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof TimelineDb>()),
+    getDbClient: fakes.getDbClient,
+  }),
+  () => import('@timeline/db'),
+);
 
-vi.mock('@timeline/shared', async (importOriginal) => {
-  const actual = await importOriginal<typeof TimelineShared>();
-  return {
-    ...actual,
-    childLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-    integrations: {
-      ...actual.integrations,
-      adminLoadIntegration: fakes.adminLoadIntegration,
-      adminListEnabledIntegrations: fakes.adminListEnabledIntegrations,
-      adminVerifyTeamMember: fakes.adminVerifyTeamMember,
-      adminRecordError: fakes.adminRecordError,
-      adminRecordConnectionAttention: fakes.adminRecordConnectionAttention,
-      adminDecryptIntegrationTokens: fakes.adminDecryptIntegrationTokens,
-      adminListSelections: fakes.adminListSelections,
-      adminRecordAudit: fakes.adminRecordAudit,
-      adminLoadCursor: fakes.adminLoadCursor,
-      adminSaveCursor: fakes.adminSaveCursor,
-      adminPersistTokens: fakes.adminPersistTokens,
-      adminMarkSynced: fakes.adminMarkSynced,
-      adminCommitIntegrationSyncCheckpoint: fakes.adminCommitIntegrationSyncCheckpoint,
-      adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
-      adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
-      adminRecordIntegrationSyncPause: fakes.adminRecordIntegrationSyncPause,
-      adminRecordPendingIntegrationSyncContinuations:
-        fakes.adminRecordPendingIntegrationSyncContinuations,
-      adminClaimPendingIntegrationSyncContinuations:
-        fakes.adminClaimPendingIntegrationSyncContinuations,
-      adminHasPendingIntegrationSyncContinuations:
-        fakes.adminHasPendingIntegrationSyncContinuations,
-      adminAcknowledgePendingIntegrationSyncContinuation:
-        fakes.adminAcknowledgePendingIntegrationSyncContinuation,
-      adminReleasePendingIntegrationSyncContinuation:
-        fakes.adminReleasePendingIntegrationSyncContinuation,
-      adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
-      adminRecordProviderBudgetPause: fakes.adminRecordProviderBudgetPause,
-      adminReconcileExpiringWebhookSubscriptions: fakes.adminReconcileExpiringWebhookSubscriptions,
-      adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
-      adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
-      writeIntegrationEvents: fakes.writeIntegrationEvents,
-      getProvider: fakes.getProvider,
-    },
-    queue: {
-      ...actual.queue,
-      enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
-    },
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof TimelineShared>();
+    return {
+      ...actual,
+      childLogger: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+      integrations: {
+        ...actual.integrations,
+        adminLoadIntegration: fakes.adminLoadIntegration,
+        adminListEnabledIntegrations: fakes.adminListEnabledIntegrations,
+        adminVerifyTeamMember: fakes.adminVerifyTeamMember,
+        adminRecordError: fakes.adminRecordError,
+        adminRecordConnectionAttention: fakes.adminRecordConnectionAttention,
+        adminDecryptIntegrationTokens: fakes.adminDecryptIntegrationTokens,
+        adminListSelections: fakes.adminListSelections,
+        adminRecordAudit: fakes.adminRecordAudit,
+        adminLoadCursor: fakes.adminLoadCursor,
+        adminSaveCursor: fakes.adminSaveCursor,
+        adminPersistTokens: fakes.adminPersistTokens,
+        adminMarkSynced: fakes.adminMarkSynced,
+        adminCommitIntegrationSyncCheckpoint: fakes.adminCommitIntegrationSyncCheckpoint,
+        adminResetTransientSyncFailures: fakes.adminResetTransientSyncFailures,
+        adminLoadIntegrationSyncPause: fakes.adminLoadIntegrationSyncPause,
+        adminRecordIntegrationSyncPause: fakes.adminRecordIntegrationSyncPause,
+        adminRecordPendingIntegrationSyncContinuations:
+          fakes.adminRecordPendingIntegrationSyncContinuations,
+        adminClaimPendingIntegrationSyncContinuations:
+          fakes.adminClaimPendingIntegrationSyncContinuations,
+        adminHasPendingIntegrationSyncContinuations:
+          fakes.adminHasPendingIntegrationSyncContinuations,
+        adminAcknowledgePendingIntegrationSyncContinuation:
+          fakes.adminAcknowledgePendingIntegrationSyncContinuation,
+        adminReleasePendingIntegrationSyncContinuation:
+          fakes.adminReleasePendingIntegrationSyncContinuation,
+        adminLoadProviderBudgetPause: fakes.adminLoadProviderBudgetPause,
+        adminRecordProviderBudgetPause: fakes.adminRecordProviderBudgetPause,
+        adminReconcileExpiringWebhookSubscriptions:
+          fakes.adminReconcileExpiringWebhookSubscriptions,
+        adminReconcileIntegrationWebhookSubscriptions:
+          fakes.adminReconcileIntegrationWebhookSubscriptions,
+        adminResolveConnectionAttention: fakes.adminResolveConnectionAttention,
+        adminRecordTransientSyncFailure: fakes.adminRecordTransientSyncFailure,
+        adminRecordCountedHealthFailure: fakes.adminRecordCountedHealthFailure,
+        adminResetIntegrationHealth: fakes.adminResetIntegrationHealth,
+        writeIntegrationEvents: fakes.writeIntegrationEvents,
+        getProvider: fakes.getProvider,
+      },
+      queue: {
+        ...actual.queue,
+        enqueueIntegrationSyncJob: fakes.enqueueIntegrationSyncJob,
+      },
+    };
+  },
+  () => import('@timeline/shared'),
+);
 
 const { handleTick, runOneIntegration } = await import('./integrationSync.js');
 const { integrations } = await import('@timeline/shared');
@@ -177,6 +194,11 @@ beforeEach(() => {
   fakes.adminResetTransientSyncFailures.mockResolvedValue(undefined);
   fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
   fakes.adminRecordIntegrationSyncPause.mockResolvedValue(undefined);
+  fakes.adminReconcileIntegrationWebhookSubscriptions.mockResolvedValue({
+    active: 1,
+    deprovisioned: 0,
+    skipped: false,
+  });
   fakes.pendingContinuationHandoffs = [];
   fakes.continuationHandoffSequence = 0;
   const stageContinuations = (continuations: readonly TestSyncContinuation[]) => {
@@ -284,6 +306,14 @@ beforeEach(() => {
     count: 1,
     shouldCreateAttention: false,
   });
+  fakes.adminRecordCountedHealthFailure.mockResolvedValue({
+    consecutiveFailures: 1,
+    firstFailedAt: new Date('2026-06-25T12:00:00.000Z'),
+    paused: false,
+    newlyPaused: false,
+    pauseKind: 'access_revoked',
+  });
+  fakes.adminResetIntegrationHealth.mockResolvedValue(undefined);
   fakes.incrementalSync.mockResolvedValue(undefined);
   fakes.getProvider.mockReturnValue({ incrementalSync: fakes.incrementalSync });
   fakes.enqueueIntegrationSyncJob.mockResolvedValue(undefined);
@@ -304,6 +334,21 @@ describe('handleTick provider reconciliation cadence', () => {
       expect.anything(),
     );
     expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+  });
+
+  it('does not enqueue health-paused integrations from the background tick', async () => {
+    fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
+      {
+        ...integration,
+        healthPausedAt: new Date('2026-06-28T12:00:00.000Z'),
+        healthPauseKind: 'access_revoked',
+      },
+    ]);
+
+    await handleTick({} as never);
+
+    expect(fakes.enqueueIntegrationSyncJob).not.toHaveBeenCalled();
+    expect(fakes.adminLoadIntegrationSyncPause).not.toHaveBeenCalled();
   });
 
   it('does not enqueue paused integrations from the background tick', async () => {
@@ -1321,7 +1366,7 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
-  it('classifies provider auth and access failures as reconnect-needed attention', async () => {
+  it('classifies GitHub 403 access failures as access_revoked attention', async () => {
     fakes.incrementalSync.mockRejectedValueOnce(
       new Error('GitHub GET /repos/acme/app: 403 forbidden'),
     );
@@ -1336,8 +1381,74 @@ describe('runOneIntegration attention classification', () => {
       expect.objectContaining({
         providerConnectionId: CONNECTION_ID,
         integrationId: INTEGRATION_ID,
-        category: 'needs_reconnect',
+        category: 'access_revoked',
       }),
+    );
+    expect(fakes.adminRecordCountedHealthFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      expect.objectContaining({
+        kind: 'access_revoked',
+        error: 'GitHub GET /repos/acme/app: 403 forbidden',
+      }),
+    );
+  });
+
+  it('skips sync for health-paused integrations', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      healthPausedAt: new Date('2026-06-28T12:00:00.000Z'),
+      healthPauseKind: 'connectivity',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminDecryptIntegrationTokens).not.toHaveBeenCalled();
+  });
+
+  it('does not throw to BullMQ when counted failures newly pause the connection', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(
+      new Error('GitHub GET /repos/acme/app: 403 forbidden'),
+    );
+    fakes.adminRecordCountedHealthFailure.mockResolvedValueOnce({
+      consecutiveFailures: 2,
+      firstFailedAt: new Date('2026-06-25T12:00:00.000Z'),
+      paused: true,
+      newlyPaused: true,
+      pauseKind: 'access_revoked',
+    });
+
+    await expect(
+      runOneIntegration({} as never, INTEGRATION_ID, 'incremental'),
+    ).resolves.toBeUndefined();
+
+    expect(fakes.adminRecordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      TEAM_ID,
+      'sync_paused:health',
+      expect.objectContaining({
+        provider: 'github',
+        pauseKind: 'access_revoked',
+        cause: 'GitHub GET /repos/acme/app: 403 forbidden',
+        providerConnectionId: CONNECTION_ID,
+      }),
+      { integrationId: INTEGRATION_ID },
+    );
+  });
+
+  it('does not count rate limits or 5xx toward the health pause clock', async () => {
+    fakes.incrementalSync.mockRejectedValueOnce(new Error('GitHub GET /repos/acme/app: 503'));
+
+    await expect(runOneIntegration({} as never, INTEGRATION_ID, 'incremental')).rejects.toThrow(
+      '503',
+    );
+
+    expect(fakes.adminRecordCountedHealthFailure).not.toHaveBeenCalled();
+    expect(fakes.adminRecordTransientSyncFailure).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      'GitHub GET /repos/acme/app: 503',
     );
   });
 
@@ -1647,46 +1758,47 @@ describe('runOneIntegration attention classification', () => {
     fakes.getProvider.mockReturnValueOnce(integrations.slackProvider);
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input, init) => {
-        if (typeof input !== 'string') throw new Error('expected Slack URL string');
-        if (!input.endsWith('/conversations.history')) {
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input, init) => {
+          if (typeof input !== 'string') throw new Error('expected Slack URL string');
+          if (!input.endsWith('/conversations.history')) {
+            return Promise.resolve(
+              new Response(JSON.stringify({ ok: true, messages: [] }), {
+                headers: { 'content-type': 'application/json' },
+              }),
+            );
+          }
+          const body = init?.body;
+          if (typeof body !== 'string') throw new Error('expected Slack form body');
+          const params = new URLSearchParams(body);
+          expect(params.get('channel')).toBe('C123');
+          expect(params.get('oldest')).toBe('1780790399.000000');
           return Promise.resolve(
-            new Response(JSON.stringify({ ok: true, messages: [] }), {
-              headers: { 'content-type': 'application/json' },
-            }),
+            new Response(
+              JSON.stringify({
+                ok: true,
+                messages: [
+                  {
+                    type: 'message',
+                    user: 'U123',
+                    username: 'Ada',
+                    text: 'Slack-native worker sync captured the customer handoff',
+                    ts: '1782000000.000100',
+                  },
+                ],
+                response_metadata: {},
+              }),
+              { headers: { 'content-type': 'application/json' } },
+            ),
           );
-        }
-        const body = init?.body;
-        if (typeof body !== 'string') throw new Error('expected Slack form body');
-        const params = new URLSearchParams(body);
-        expect(params.get('channel')).toBe('C123');
-        expect(params.get('oldest')).toBe('1780790399.000000');
-        return Promise.resolve(
-          new Response(
-            JSON.stringify({
-              ok: true,
-              messages: [
-                {
-                  type: 'message',
-                  user: 'U123',
-                  username: 'Ada',
-                  text: 'Slack-native worker sync captured the customer handoff',
-                  ts: '1782000000.000100',
-                },
-              ],
-              response_metadata: {},
-            }),
-            { headers: { 'content-type': 'application/json' } },
-          ),
-        );
-      }),
+        },
+      ),
     );
 
     await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
 
     const writeCall = fakes.writeIntegrationEvents.mock.calls[0] as
-      | [TestWriteIntegrationEventsInput]
-      | undefined;
+      [TestWriteIntegrationEventsInput] | undefined;
     const writeInput = writeCall?.[0];
     expect(writeInput?.db).toBeDefined();
     expect(writeInput?.integration).toMatchObject({
@@ -1835,6 +1947,149 @@ describe('runOneIntegration attention classification', () => {
     );
   });
 
+  it('keeps a document-only Monday backfill durable when its account budget runs out', async () => {
+    const retryAt = new Date('2026-06-25T02:02:00.000Z');
+    const err = Object.assign(new Error('Monday sync paused for Timeline API budget'), {
+      provider: 'monday',
+      retryAt,
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'timeline_daily_budget',
+      externalAccountId: 'monday-account-1',
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ],
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([{ kind: 'monday.doc', externalId: 'doc-1' }]);
+    fakes.getProvider.mockReturnValueOnce({ backfill: vi.fn().mockRejectedValue(err) });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [{ resourceType: 'monday.doc', externalId: 'doc-1', retryAt }],
+    });
+  });
+
+  it('retries only the Monday backfill resource that reported a budget pause', async () => {
+    const retryAt = new Date('2026-06-25T02:02:00.000Z');
+    const err = Object.assign(new Error('Monday sync paused for Timeline API budget'), {
+      provider: 'monday',
+      retryAt,
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'timeline_daily_budget',
+      externalAccountId: 'monday-account-1',
+      syncContinuations: [
+        {
+          resourceType: 'monday.board',
+          externalId: 'board-2',
+          surface: 'backfill_restart',
+        },
+      ],
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ],
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+      { kind: 'monday.board', externalId: 'board-2' },
+    ]);
+    fakes.getProvider.mockReturnValueOnce({ backfill: vi.fn().mockRejectedValue(err) });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'monday.board',
+          externalId: 'board-2',
+          surface: 'backfill_restart',
+          retryAt,
+        },
+      ],
+    });
+  });
+
+  it('keeps a budget-paused Monday webhook target durable with its surface', async () => {
+    const retryAt = new Date('2026-06-25T02:02:00.000Z');
+    const err = Object.assign(new Error('Monday sync paused for Timeline API budget'), {
+      provider: 'monday',
+      retryAt,
+      retryAfterSeconds: 120,
+      scope: 'daily',
+      reason: 'timeline_daily_budget',
+      externalAccountId: 'monday-account-1',
+    });
+    fakes.adminLoadIntegration.mockResolvedValueOnce({
+      ...integration,
+      provider: 'monday',
+      externalAccountId: 'monday-account-1',
+      scopes: [
+        'boards:read',
+        'users:read',
+        'updates:read',
+        'docs:read',
+        'account:read',
+        'webhooks:read',
+        'webhooks:write',
+      ],
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.incrementalSync.mockRejectedValueOnce(err);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1',
+      surface: 'column.changed',
+      reason: 'monday_item_webhook',
+    });
+
+    expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      integrationId: INTEGRATION_ID,
+      cursors: [],
+      continuations: [
+        {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1',
+          surface: 'column.changed',
+          retryAt,
+        },
+      ],
+    });
+  });
+
   it('skips provider work while a recorded sync pause is active', async () => {
     const retryAt = new Date(Date.now() + 60_000);
     fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
@@ -1886,6 +2141,148 @@ describe('runOneIntegration attention classification', () => {
       },
       { integrationId: INTEGRATION_ID },
     );
+  });
+
+  it('durably delays a Monday webhook that arrives during an account pause', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'timeline_daily_budget',
+    });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1',
+      surface: 'update.created',
+      reason: 'monday_item_webhook',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1',
+          surface: 'update.created',
+          retryAt,
+        },
+      ],
+    );
+  });
+
+  it('preserves Monday initial backfill selections while an API pause is active', async () => {
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminLoadIntegrationSyncPause.mockResolvedValueOnce({
+      retryAt,
+      reason: 'timeline_daily_budget',
+    });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+      { kind: 'monday.doc', externalId: 'doc-1' },
+    ]);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'monday.board',
+          externalId: 'board-1',
+          surface: 'backfill_restart',
+          retryAt,
+        },
+        {
+          resourceType: 'monday.doc',
+          externalId: 'doc-1',
+          surface: 'backfill_restart',
+          retryAt,
+        },
+      ],
+    );
+  });
+
+  it('preserves Monday initial backfill behind a pending webhook setup retry', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminListSelections.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    await fakes.adminRecordPendingIntegrationSyncContinuations({}, INTEGRATION_ID, [
+      { resourceType: 'monday.webhook', externalId: INTEGRATION_ID },
+    ]);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'backfill');
+
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [{ resourceType: 'monday.board', externalId: 'board-1', surface: 'backfill_restart' }],
+    );
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+  });
+
+  it('stages a Monday webhook while another worker holds a continuation lease', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+    fakes.adminHasPendingIntegrationSyncContinuations.mockResolvedValueOnce(true);
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'webhook',
+      resourceType: 'monday.item',
+      externalId: 'board-1:item-1:update-1',
+      surface: 'update.created',
+      reason: 'monday_item_webhook',
+    });
+
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+      [
+        {
+          resourceType: 'monday.item',
+          externalId: 'board-1:item-1:update-1',
+          surface: 'update.created',
+        },
+      ],
+    );
+  });
+
+  it('retries paused Monday webhook provisioning without scanning the board', async () => {
+    fakes.adminLoadIntegration.mockResolvedValueOnce({ ...integration, provider: 'monday' });
+
+    await runOneIntegration({} as never, INTEGRATION_ID, 'targeted', {
+      kind: 'targeted',
+      integrationId: INTEGRATION_ID,
+      teamId: TEAM_ID,
+      triggeredBy: 'reconcile',
+      resourceType: 'monday.webhook',
+      externalId: INTEGRATION_ID,
+      reason: 'provider_pagination_continuation',
+    });
+
+    expect(fakes.adminReconcileIntegrationWebhookSubscriptions).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+    );
+    expect(fakes.incrementalSync).not.toHaveBeenCalled();
+    expect(fakes.adminResolveConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
+      providerConnectionId: CONNECTION_ID,
+      integrationId: INTEGRATION_ID,
+      categories: ['webhook_degraded'],
+    });
   });
 
   it('skips GitHub provider work while an installation budget pause is active', async () => {
@@ -1960,10 +2357,14 @@ describe('runOneIntegration attention classification', () => {
       expect.anything(),
       INTEGRATION_ID,
     );
+    expect(fakes.adminResetIntegrationHealth).toHaveBeenCalledWith(
+      expect.anything(),
+      INTEGRATION_ID,
+    );
     expect(fakes.adminResolveConnectionAttention).toHaveBeenCalledWith(expect.anything(), TEAM_ID, {
       providerConnectionId: CONNECTION_ID,
       integrationId: INTEGRATION_ID,
-      categories: ['needs_reconnect', 'sync_error'],
+      categories: ['needs_reconnect', 'access_revoked', 'sync_error'],
     });
   });
 

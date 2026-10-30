@@ -1,6 +1,26 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
-  type Db,
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
+import type { z } from 'zod';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-eval' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+
+const {
   artifactClusters,
   artifactEvidenceAssociations,
   entities,
@@ -9,22 +29,12 @@ import {
   objectSummaries,
   rawEvents,
   reconciliationEvidence,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
-import type { z } from 'zod';
-
-import { generateAndStoreObjectSummary } from '#src/objects/summaries.js';
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-eval' }),
-}));
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { generateAndStoreObjectSummary } = await import('#src/objects/summaries.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

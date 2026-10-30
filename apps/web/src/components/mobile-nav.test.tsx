@@ -1,21 +1,32 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pathname: '/app/timeline',
 }));
 
-vi.mock('next/navigation', () => ({
-  usePathname: () => fakes.pathname,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => fakes.pathname,
+  }),
+  () => import('next/navigation'),
+);
 
-vi.mock('@/components/team-switcher', () => ({
-  TeamSwitcher: () => createElement('div', null, 'Team switcher'),
-}));
+await vi.mock(
+  import.meta.resolve('@/components/team-switcher'),
+  () => ({
+    TeamSwitcher: () => createElement('div', null, 'Team switcher'),
+  }),
+  () => import('@/components/team-switcher'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
 
 const { MobileNav } = await import('./mobile-nav.js');
 
@@ -51,7 +62,7 @@ describe('MobileNav', () => {
     expect(screen.getByRole('dialog', { name: 'Navigation' })).toBeTruthy();
     expect(document.body.style.overflow).toBe('hidden');
 
-    const helpLink = screen.getByRole('link', { name: 'Open help docs in a new tab' });
+    const helpLink = screen.getByRole('link', { name: 'Open Help & support in a new tab' });
     helpLink.addEventListener('click', (event) => {
       event.preventDefault();
     });

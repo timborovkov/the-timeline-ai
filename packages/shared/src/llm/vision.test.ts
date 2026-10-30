@@ -1,12 +1,12 @@
+import { expect } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { LanguageModel } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
 import { extractTextFromMedia, resolveVisionModelId } from '#src/llm/vision.js';
-
 // The v3 model layer in `ai` doesn't re-export its call-options type from
 // the package root. We only need the prompt + maxOutputTokens fields for
 // our assertions, so type the captured call narrowly.
@@ -40,7 +40,7 @@ function makeCapturingModel(responseText: string): {
           : { maxOutputTokens: options.maxOutputTokens }),
       });
       return Promise.resolve({
-        finishReason: 'stop',
+        finishReason: { unified: 'stop', raw: undefined },
         usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
         content: [{ type: 'text', text: responseText }],
         warnings: [],
@@ -192,6 +192,53 @@ describe('extractTextFromMedia', () => {
         : (sysContent as { text?: string }[]).map((c) => c.text ?? '').join('\n');
     expect(text).toMatch(/no commentary|no preamble|transcribe faithfully/i);
     expect(text).toMatch(/SUGGESTED_TITLE/);
+  });
+
+  it('enforces ZDR routing and disables OpenRouter response caching at the HTTP boundary', async () => {
+    let requestBody: unknown;
+    let requestHeaders: Headers | undefined;
+    const fetch: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
+      requestBody = JSON.parse(init.body) as unknown;
+      requestHeaders = new Headers(init.headers);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-vision-test',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.vision.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content:
+                    'SUGGESTED_TITLE:\nSynthetic scan\n\nSOURCE_TEXT:\nhello\n\nVISUAL_DESCRIPTION:\nA synthetic scan.',
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    };
+
+    await expect(
+      extractTextFromMedia(
+        { body: Buffer.from([0xff, 0xd8, 0xff]), mediaType: 'image/jpeg' },
+        { fetch },
+      ),
+    ).resolves.toMatchObject({ text: 'hello', model: TIMELINE_MODELS.vision.id });
+    expect(requestBody).toMatchObject({
+      model: TIMELINE_MODELS.vision.id,
+      provider: { data_collection: 'deny', zdr: true },
+    });
+    expect(requestHeaders?.get('X-OpenRouter-Cache')).toBe('false');
   });
 
   it('resolveVisionModelId uses the predefined vision model catalog entry', () => {

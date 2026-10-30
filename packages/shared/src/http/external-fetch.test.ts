@@ -1,10 +1,40 @@
-import { createServer, type RequestListener, type Server } from 'node:http';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import type { RequestListener, Server } from 'node:http';
+import type * as Undici from 'undici/index.js';
+const capturedAgentOptions = vi.hoisted(() => [] as unknown[]);
 
-import type { ExternalHttpError } from '#src/http/external-fetch.js';
+await vi.mock(
+  import.meta.resolve('undici/index.js'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof Undici>();
+    class Agent extends actual.Agent {
+      constructor(options?: ConstructorParameters<typeof actual.Agent>[0]) {
+        capturedAgentOptions.push(options);
+        super(options);
+      }
+    }
+    return { ...actual, Agent };
+  },
+  () => import('undici/index.js'),
+);
 
-import { externalFetch, resolveExternalAddresses } from '#src/http/external-fetch.js';
+const { createServer } = await import('node:http');
+const { createPinnedAddressLookup, externalFetch, resolveExternalAddresses } =
+  await import('#src/http/external-fetch.js');
+
+function lastAgentConnect(): { autoSelectFamily?: unknown; lookup?: unknown } | undefined {
+  const last = capturedAgentOptions.at(-1);
+  if (!last || typeof last !== 'object' || !('connect' in last)) return undefined;
+  const connect = last.connect;
+  if (!connect || typeof connect !== 'object') return undefined;
+  return {
+    autoSelectFamily: 'autoSelectFamily' in connect ? connect.autoSelectFamily : undefined,
+    lookup: 'lookup' in connect ? connect.lookup : undefined,
+  };
+}
 
 /**
  * The outbound HTTP boundary must reject private DNS results, pin the address
@@ -15,6 +45,7 @@ import { externalFetch, resolveExternalAddresses } from '#src/http/external-fetc
 const servers: Server[] = [];
 
 afterEach(async () => {
+  capturedAgentOptions.length = 0;
   await Promise.all(
     servers.splice(0).map(
       (server) =>
@@ -52,6 +83,61 @@ describe('external HTTP boundary', () => {
     ).rejects.toMatchObject({ code: 'blocked_address' });
   });
 
+  it('pinned lookup answers Node Happy Eyeballs all:true and two-arg forms', () => {
+    const lookup = createPinnedAddressLookup([
+      { address: '140.82.112.6', family: 4 },
+      { address: '2606:50c0:8000::153', family: 6 },
+    ]) as unknown as {
+      (hostname: string, callback: (...args: unknown[]) => void): void;
+      (hostname: string, options: object, callback: (...args: unknown[]) => void): void;
+    };
+
+    let twoArg: { address: unknown; family: unknown } | undefined;
+    lookup('api.github.com', (err, address, family) => {
+      expect(err).toBeNull();
+      twoArg = { address, family };
+    });
+    expect(twoArg).toEqual({ address: '140.82.112.6', family: 4 });
+
+    let allAddresses: unknown;
+    lookup('api.github.com', { all: true }, (err, addresses) => {
+      expect(err).toBeNull();
+      allAddresses = addresses;
+    });
+    expect(allAddresses).toEqual([
+      { address: '140.82.112.6', family: 4 },
+      { address: '2606:50c0:8000::153', family: 6 },
+    ]);
+
+    let ipv4: { address: unknown; family: unknown } | undefined;
+    lookup('api.github.com', { family: 4 }, (err, address, family) => {
+      expect(err).toBeNull();
+      ipv4 = { address, family };
+    });
+    expect(ipv4).toEqual({ address: '140.82.112.6', family: 4 });
+  });
+
+  it('puts the structured code and cause chain on ExternalHttpError.message', async () => {
+    await expect(
+      externalFetch(
+        'https://blocked.example',
+        {},
+        {
+          lookup: () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]),
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'blocked_address' });
+    await expect(
+      externalFetch(
+        'https://blocked.example',
+        {},
+        {
+          lookup: () => Promise.resolve([{ address: '127.0.0.1', family: 4 }]),
+        },
+      ),
+    ).rejects.toThrow(/code=blocked_address/);
+  });
+
   it('uses the validated lookup result for the connection', async () => {
     const port = await listen((_request, response) => {
       response.end('pinned');
@@ -70,6 +156,28 @@ describe('external HTTP boundary', () => {
     );
     expect(await response.text()).toBe('pinned');
     expect(lookups).toBe(1);
+    expect(lastAgentConnect()?.autoSelectFamily).toBe(true);
+  });
+
+  it('keeps Happy Eyeballs fallback across the validated address set', async () => {
+    const port = await listen((_request, response) => {
+      response.end('fallback');
+    });
+    const response = await externalFetch(
+      `http://pinned.test:${String(port)}`,
+      {},
+      {
+        allowPrivateNetworkInDevelopment: true,
+        lookup: () =>
+          Promise.resolve([
+            { address: '127.0.0.2', family: 4 },
+            { address: '127.0.0.1', family: 4 },
+          ]),
+      },
+    );
+    expect(await response.text()).toBe('fallback');
+    expect(lastAgentConnect()?.autoSelectFamily).toBe(true);
+    expect(typeof lastAgentConnect()?.lookup).toBe('function');
   });
 
   it('aborts a response that exceeds the streaming byte cap', async () => {
@@ -97,7 +205,7 @@ describe('external HTTP boundary', () => {
         {},
         { allowPrivateNetworkInDevelopment: true, timeoutMs: 25 },
       ),
-    ).rejects.toEqual(expect.objectContaining<Partial<ExternalHttpError>>({ code: 'timeout' }));
+    ).rejects.toEqual(expect.objectContaining({ code: 'timeout' }));
   });
 
   it('does not retry unsafe methods', async () => {

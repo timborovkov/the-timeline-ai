@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -38,6 +40,7 @@ function lookupPort(container: string, port: number): string | null {
       'AUTH_SECRET',
       'OPENROUTER_API_KEY',
       'E2E_DETERMINISTIC_EMBEDDINGS',
+      'TASK_CATEGORY_DISABLED',
       'TASK_CATEGORY_CLASSIFICATION_ENABLED',
       'TASK_CATEGORY_AUTO_ENQUEUE_ENABLED',
       'TASK_CATEGORY_WORKER_ENABLED',
@@ -54,6 +57,7 @@ function lookupPort(container: string, port: number): string | null {
       AUTH_SECRET: 'e2e-auth-secret-at-least-sixteen-characters',
       OPENROUTER_API_KEY: 'e2e-deterministic-chat',
       E2E_DETERMINISTIC_EMBEDDINGS: 'true',
+      TASK_CATEGORY_DISABLED: 'false',
       TASK_CATEGORY_CLASSIFICATION_ENABLED: 'true',
       TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: 'true',
       TASK_CATEGORY_WORKER_ENABLED: 'true',
@@ -63,6 +67,15 @@ function lookupPort(container: string, port: number): string | null {
   );
   assert.equal(env.NO_COLOR, undefined);
   assert.equal(env.NODE_OPTIONS, '--trace-warnings --conditions=development');
+}
+
+{
+  const env = buildE2eEnv(
+    { TASK_CATEGORY_DISABLED: 'true', TASK_CATEGORY_UI_ENABLED: 'false' },
+    { publishedPort: lookupPort },
+  );
+  assert.equal(env.TASK_CATEGORY_DISABLED, 'false');
+  assert.equal(env.TASK_CATEGORY_UI_ENABLED, 'false');
 }
 
 {
@@ -133,7 +146,7 @@ function lookupPort(container: string, port: number): string | null {
       REDIS_URL: 'redis://localhost:6379',
       S3_ENDPOINT: 'http://localhost:9000',
       S3_PUBLIC_ENDPOINT: 'http://localhost:9000',
-      QDRANT_URL: 'http://qdrant.e2e.invalid',
+      QDRANT_URL: 'http://localhost:6333',
       QDRANT_API_KEY: 'dev_qdrant_key',
     },
   );
@@ -154,7 +167,7 @@ function lookupPort(container: string, port: number): string | null {
     assert.equal(env.DATABASE_URL, 'postgres://timeline:timeline_dev@localhost:5432/timeline');
     assert.equal(env.REDIS_URL, 'redis://localhost:6379');
     assert.equal(env.S3_ENDPOINT, 'http://localhost:9000');
-    assert.equal(env.QDRANT_URL, 'http://qdrant.e2e.invalid');
+    assert.equal(env.QDRANT_URL, 'http://localhost:6333');
   } finally {
     if (originalPath === undefined) delete process.env.PATH;
     else process.env.PATH = originalPath;
@@ -198,7 +211,7 @@ function lookupPort(container: string, port: number): string | null {
   assert.equal(env.E2E_WEB_PORT, '43123');
   assert.deepEqual(buildE2eWebServerConfig(env), {
     baseURL: 'http://localhost:43123',
-    command: 'pnpm --filter @timeline/web exec next dev -H 127.0.0.1 -p 43123',
+    command: 'bun run --filter @timeline/web dev -H 127.0.0.1 -p 43123',
   });
 }
 
@@ -226,11 +239,110 @@ function lookupPort(container: string, port: number): string | null {
   );
 }
 
-console.log('e2e-env tests passed');
-
 function pick<T extends Record<string, unknown>, K extends keyof T>(
   input: T,
   keys: K[],
 ): Pick<T, K> {
   return Object.fromEntries(keys.map((key) => [key, input[key]])) as Pick<T, K>;
 }
+
+{
+  const env = buildE2eEnv({}, { publishedPort: () => null });
+  assert.equal(env.__NEXT_PROCESSED_ENV, 'true');
+  const dir = mkdtempSync(path.join(tmpdir(), 'timeline-e2e-next-env-'));
+  try {
+    writeFileSync(path.join(dir, '.env'), 'E2E_DOTENV_SECRET=must-not-be-loaded\n');
+    const webRequire = createRequire(path.resolve('apps/web/package.json'));
+    const nextRequire = createRequire(webRequire.resolve('next/package.json'));
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--no-env-file',
+        '-e',
+        `const { loadEnvConfig } = require(${JSON.stringify(nextRequire.resolve('@next/env'))}); loadEnvConfig(${JSON.stringify(dir)}); if (process.env.E2E_DOTENV_SECRET !== undefined) process.exit(1);`,
+      ],
+      { env, encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+{
+  const env = buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    DATABASE_URL: 'postgres://fixture@localhost:15432/fixture',
+    OPENROUTER_API_KEY: 'exported-provider-sentinel',
+    SENTRY_AUTH_TOKEN: 'exported-upload-sentinel',
+    GITHUB_TOKEN: 'exported-github-sentinel',
+    NEXT_PUBLIC_POSTHOG_KEY: 'exported-analytics-sentinel',
+  });
+  assert.equal(env.DATABASE_URL, 'postgres://fixture@localhost:15432/fixture');
+  assert.equal(env.OPENROUTER_API_KEY, 'e2e-deterministic-chat');
+  assert.equal(env.SENTRY_AUTH_TOKEN, undefined);
+  assert.equal(env.GITHUB_TOKEN, undefined);
+  assert.equal(env.NEXT_PUBLIC_POSTHOG_KEY, undefined);
+}
+
+assert.equal(
+  buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    E2E_PROD_SMOKE: '1',
+    OPENROUTER_API_KEY: 'exported-provider-sentinel',
+  }).OPENROUTER_API_KEY,
+  undefined,
+);
+
+assert.equal(
+  buildE2eEnv({ E2E_USE_DOCKER_PORTS: '0', NEXT_PUBLIC_POSTHOG_KEY: 'ph-e2e' })
+    .NEXT_PUBLIC_POSTHOG_KEY,
+  'ph-e2e',
+);
+
+for (const key of [
+  'DATABASE_URL',
+  'REDIS_URL',
+  'S3_ENDPOINT',
+  'S3_PUBLIC_ENDPOINT',
+  'QDRANT_URL',
+  'E2E_BASE_URL',
+]) {
+  const remote = { E2E_USE_DOCKER_PORTS: '0', [key]: 'https://fixture.example.com' };
+  assert.throws(() => buildE2eEnv(remote), new RegExp(`${key} points outside local test services`));
+  assert.equal(buildE2eEnv({ ...remote, E2E_REMOTE_FIXTURES: 'isolated' })[key], remote[key]);
+}
+{
+  const env = buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    AUTH_SECRET: 'live-sentinel',
+    SECRETS_ENCRYPTION_KEY: 'live-sentinel',
+    S3_ACCESS_KEY_ID: 'live-sentinel',
+    S3_SECRET_ACCESS_KEY: 'live-sentinel',
+    QDRANT_API_KEY: 'live-sentinel',
+  });
+  assert.equal(env.AUTH_SECRET, 'e2e-auth-secret-at-least-sixteen-characters');
+  assert.equal(env.SECRETS_ENCRYPTION_KEY, 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
+  assert.equal(env.S3_ACCESS_KEY_ID, 'timeline');
+  assert.equal(env.S3_SECRET_ACCESS_KEY, 'timeline_dev_secret');
+  assert.equal(env.QDRANT_API_KEY, 'dev_qdrant_key');
+  const explicit = buildE2eEnv({
+    E2E_USE_DOCKER_PORTS: '0',
+    E2E_AUTH_SECRET: 'isolated-fixture-secret',
+    E2E_QDRANT_API_KEY: 'isolated-fixture-key',
+  });
+  assert.equal(explicit.AUTH_SECRET, 'isolated-fixture-secret');
+  assert.equal(explicit.QDRANT_API_KEY, 'isolated-fixture-key');
+  assert.deepEqual(buildE2eEnv(explicit), explicit);
+}
+
+assert.throws(
+  () =>
+    buildE2eEnv({
+      E2E_USE_DOCKER_PORTS: '0',
+      DATABASE_URL: 'postgres://fixture@127.remote.example.com/fixture',
+    }),
+  /DATABASE_URL points outside local test services/,
+);
+
+console.log('e2e-env tests passed');

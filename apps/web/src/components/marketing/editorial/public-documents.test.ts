@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   EDITORIAL_CANONICAL_ROUTES,
@@ -13,7 +14,6 @@ import {
 import { buildLlmsFullTxt, buildLlmsTxt } from '@/lib/llms-text';
 import { PUBLIC_DOCUMENT_REGISTRY } from '@/lib/public-site';
 import { buildPublicSitemap } from '@/lib/public-site/sitemap';
-
 const SITE_URL = 'https://thetimeline.cc';
 
 describe('editorial public documents', () => {

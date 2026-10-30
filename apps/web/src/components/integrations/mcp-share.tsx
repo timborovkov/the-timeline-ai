@@ -46,22 +46,16 @@ function remoteJsonConfig(mcpUrl: string, mintedKey: MintedKey): string {
   );
 }
 
-function codexCommand(mcpUrl: string): string {
-  return [
-    "printf 'Timeline MCP key: '",
-    'IFS= read -r -s TIMELINE_MCP_KEY',
-    "printf '\\n'",
-    'export TIMELINE_MCP_KEY',
-    `codex mcp add timeline --url "${mcpUrl}" --bearer-token-env-var TIMELINE_MCP_KEY`,
-  ].join('\n');
+function oauthCommand(mcpUrl: string): string {
+  return `codex mcp add timeline --url "${mcpUrl}"`;
 }
 
 function chatGptConnectorDetails(mcpUrl: string): string {
   return [
-    'Settings -> Apps & Connectors -> Advanced settings -> Developer mode',
-    'Create app / connector',
-    'Connector name: Timeline',
-    `Connector URL: ${mcpUrl}`,
+    'Settings -> Apps -> Advanced Settings -> Developer Mode',
+    'Create a development app',
+    'App name: Timeline',
+    `MCP server URL: ${mcpUrl}`,
     'Protocol: Streaming HTTP / Streamable HTTP',
   ].join('\n');
 }
@@ -88,10 +82,10 @@ function McpStatusGrid() {
   return (
     <section className="grid gap-3 md:grid-cols-4">
       {[
-        ['Transport', 'Streamable HTTP URL', 'Use the URL below, not an SSE endpoint.'],
-        ['Default access', 'Retrieval only', 'Agent access is a separate permission on each key.'],
-        ['Agent access', 'Opt in per key', 'Paid turns can create proposals for human review.'],
-        ['Visibility', 'Team-visible only', 'Private and specific-user events stay out.'],
+        ['Transport', 'Streamable HTTP', 'The SDK negotiates current and legacy revisions.'],
+        ['Default OAuth', 'Member-scoped read', 'Consent follows the member’s current visibility.'],
+        ['Agent access', 'Separate consent', 'Owners and admins may approve paid agent turns.'],
+        ['Static keys', 'Team-visible only', 'Manual-client keys never inherit private access.'],
       ].map(([label, value, description]) => (
         <div key={label} className="rounded-sm border border-border bg-surface p-3">
           <div className="text-[11px] text-fg-muted">{label}</div>
@@ -113,9 +107,9 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
         </Badge>
       </div>
       <p className="text-sm text-fg-muted">
-        Configure a remote MCP client with this URL plus a bearer key from this page. Pick
-        Streamable HTTP or HTTP URL in clients that ask for a transport. Do not choose legacy SSE;
-        Timeline does not expose an <code className="font-mono">/sse</code> endpoint.
+        Give an OAuth-capable remote MCP client this URL, then sign in, choose a team, and review
+        the requested scopes in Timeline. Static bearer keys from this page remain available for
+        manual clients. Pick Streamable HTTP or HTTP URL, not legacy SSE.
       </p>
       <p className="text-sm text-fg-muted">
         Every key exposes team-level retrieval for workspace context, timeline events, entities,
@@ -129,9 +123,9 @@ function McpEndpointCard({ mcpUrl }: { mcpUrl: string }) {
         {mcpUrl ? <CopyButton value={mcpUrl} /> : null}
       </div>
       <p className="text-xs text-fg-dim">
-        Timeline currently advertises MCP protocol <code className="font-mono">2024-11-05</code>{' '}
-        during <code className="font-mono">initialize</code>. Modern clients that support Streamable
-        HTTP compatibility should use this endpoint directly.
+        The Timeline MCP SDK negotiates the current protocol revision and supported legacy revisions
+        during <code className="font-mono">initialize</code>. The endpoint also exposes OAuth
+        discovery metadata for compatible clients.
       </p>
     </section>
   );
@@ -163,7 +157,7 @@ function McpRetrievalSummary() {
 }
 
 function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: MintedKey | null }) {
-  const codexSnippet = codexCommand(mcpUrl);
+  const oauthSnippet = oauthCommand(mcpUrl);
   const jsonSnippet = mintedKey
     ? remoteJsonConfig(mcpUrl, mintedKey)
     : JSON.stringify(
@@ -185,42 +179,48 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
       <div className="text-xs text-fg-muted">Connect from clients</div>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-fg">Codex CLI (bash or zsh)</h3>
+          <h3 className="text-sm font-semibold text-fg">Agent plugins and OAuth</h3>
           <p className="text-sm text-fg-muted">
-            Codex supports Streamable HTTP MCP servers through <code>codex mcp add --url</code>. The
-            command reads the key silently from the terminal, then passes only its environment
-            variable name to Codex. Run it in the terminal you will use to launch Codex; then fully
-            exit the current process, relaunch <code>codex</code> from that terminal, and start a
-            new task.
+            The Codex and Claude Code plugins bundle this URL without an Authorization header so the
+            client can discover Timeline OAuth. Use the install guide for either plugin. For a
+            direct Codex connection, add the URL below, then complete browser sign-in and consent.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
             <pre translate="no" className="overflow-x-auto p-3 font-mono text-xs leading-5">
-              <code>{codexSnippet}</code>
+              <code>{oauthSnippet}</code>
             </pre>
           </div>
-          <CopyButton value={codexSnippet} label="Copy command" />
+          <CopyButton value={oauthSnippet} label="Copy OAuth command" />
           <div className="flex flex-wrap gap-x-3 gap-y-1">
             <Link href="/help/agents" className="text-xs font-medium text-signal hover:underline">
               Copy-ready agent install guide
             </Link>
             <a
-              href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-the-plugin"
+              href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-codex"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs font-medium text-signal hover:underline"
             >
-              Plugin source on GitHub
+              Install in Codex
+              <ExternalLink aria-hidden="true" className="size-3" />
+            </a>
+            <a
+              href="https://github.com/timborovkov/the-timeline-ai/tree/main/plugins/timeline/skills#install-in-claude-code"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-signal hover:underline"
+            >
+              Install in Claude Code
               <ExternalLink aria-hidden="true" className="size-3" />
             </a>
           </div>
         </div>
 
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-fg">Claude Desktop, Cursor, and URL clients</h3>
+          <h3 className="text-sm font-semibold text-fg">Static-key clients</h3>
           <p className="text-sm text-fg-muted">
-            Clients with remote MCP JSON config usually need a transport type, URL, and
-            Authorization header. If your client only supports local command servers, use its
-            remote-MCP bridge and point the bridge at this same URL.
+            Use a key only when a manual client cannot complete the OAuth flow. The generated JSON
+            contains the one-time bearer secret in its Authorization header.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
             <pre translate="no" className="overflow-x-auto p-3 font-mono text-xs leading-5">
@@ -245,13 +245,13 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-fg">ChatGPT</h3>
             <Badge variant="outline" className="rounded-sm">
-              Needs OAuth
+              OAuth ready
             </Badge>
           </div>
           <p className="text-sm text-fg-muted">
-            ChatGPT can create apps from remote MCP servers in Developer mode. Use this endpoint as
-            the connector URL, but note that ChatGPT&apos;s app flow expects OAuth, no-auth, or
-            mixed auth; Timeline&apos;s current outbound endpoint uses static bearer keys.
+            ChatGPT Developer Mode can create an app from this remote MCP server. Use this endpoint
+            as the MCP server URL. ChatGPT discovers Timeline&apos;s OAuth metadata, opens the
+            sign-in/team-consent flow, and uses the approved member-scoped grant.
           </p>
           <div className="overflow-hidden rounded-sm border border-border bg-surface-2">
             <pre className="overflow-x-auto p-3 font-mono text-xs leading-5">
@@ -259,8 +259,10 @@ function McpClientGuides({ mcpUrl, mintedKey }: { mcpUrl: string; mintedKey: Min
             </pre>
           </div>
           <p className="text-xs leading-5 text-fg-dim">
-            Treat this as the rollout path, not a guaranteed one-click setup, until Timeline adds an
-            OAuth-backed ChatGPT connector or bridge.
+            A private Developer Mode app and an OpenAI universal Plugins Directory
+            <strong> With MCP</strong> submission use the same remote endpoint. The public draft
+            also bundles the Timeline skill and still requires separate provider review and
+            publication.
           </p>
           <CopyButton value={chatGptConnectorDetails(mcpUrl)} label="Copy details" />
         </div>
@@ -398,8 +400,8 @@ export function McpShareUi({ keys, mcpUrl: initialMcpUrl }: { keys: KeyRow[]; mc
               once. We store only the hash; if you lose it you&apos;ll need to mint a new one.
             </p>
             <p className="mt-2 text-sm text-fg-muted">
-              For Codex CLI, copy and run the command above first. When the terminal asks for the
-              key, copy this value and paste it at the hidden prompt. Dismiss it only after Codex is
+              For a static-key client, copy the generated JSON above or store this value in the
+              client&apos;s protected credential field. Dismiss it only after that client is
               connected.
             </p>
           </div>

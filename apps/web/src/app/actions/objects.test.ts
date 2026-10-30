@@ -1,38 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  acceptObjectChangeAction,
-  addRelationshipAction,
-  archiveObjectAction,
-  bulkArchiveObjectsAction,
-  createNoteAction,
-  createObjectAction,
-  deleteNoteAction,
-  generateObjectSummaryAction,
-  loadTaskCategoryFilterStateAction,
-  loadTaskRowsAction,
-  loadObjectRowsAction,
-  markAllNotificationsReadAction,
-  markNotificationReadAction,
-  mergeObjectsAction,
-  pinObjectAction,
-  rejectObjectChangeAction,
-  removeRelationshipAction,
-  repairObjectMemoryAction,
-  resetTaskCategoryAction,
-  retryTaskCategoryAction,
-  searchAddableObjectsAction,
-  searchObjectsAction,
-  setTaskCategoryAction,
-  undoTaskCategoryChangeAction,
-  setTaskProjectAction,
-  updateNoteAction,
-  updateObjectAction,
-  unarchiveObjectAction,
-  unpinObjectAction,
-} from '@/app/actions/objects';
-import { expectPublicActionErrorReport } from '@/test/public-error';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for object actions. The shared object scope owns the
  * real database behavior; these tests pin the action boundary: validation,
@@ -101,29 +69,98 @@ const fakes = vi.hoisted(() => ({
   fakeEnqueueSuggestionJob: vi.fn(),
 }));
 
-vi.mock('@/lib/action-scope', async () => {
-  const { z } = await import('zod');
-  return {
-    resolveScope: fakes.fakeResolveScope,
-    uuidSchema: z.uuid(),
-  };
-});
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
-vi.mock('@/lib/db', () => ({ db: { transaction: fakes.fakeTransaction } }));
-vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.fakeWithTeam }));
-vi.mock('@timeline/shared/queue', () => ({
-  enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
-}));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { search: { capacity: 30, refillPerSec: 0.5 } },
-  checkRateLimit: fakes.fakeCheckRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
-vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
+await vi.mock(
+  import.meta.resolve('@/lib/action-scope'),
+  async () => {
+    const { z } = await import('zod');
+    return {
+      resolveScope: fakes.fakeResolveScope,
+      uuidSchema: z.uuid(),
+    };
+  },
+  () => import('@/lib/action-scope'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.fakeReportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { transaction: fakes.fakeTransaction } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({ withTeam: fakes.fakeWithTeam }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/queue'),
+  () => ({
+    enqueueSuggestionJob: fakes.fakeEnqueueSuggestionJob,
+  }),
+  () => import('@timeline/shared/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { search: { capacity: 30, refillPerSec: 0.5 } },
+    checkRateLimit: fakes.fakeCheckRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: fakes.fakeGetEnv }),
+  () => import('@timeline/shared/env'),
+);
+
+const {
+  acceptObjectChangeAction,
+  addRelationshipAction,
+  archiveObjectAction,
+  bulkArchiveObjectsAction,
+  createNoteAction,
+  createObjectAction,
+  deleteNoteAction,
+  generateObjectSummaryAction,
+  loadTaskCategoryFilterStateAction,
+  loadTaskRowsAction,
+  loadObjectRowsAction,
+  markAllNotificationsReadAction,
+  markNotificationReadAction,
+  mergeObjectsAction,
+  pinObjectAction,
+  rejectObjectChangeAction,
+  removeRelationshipAction,
+  repairObjectMemoryAction,
+  resetTaskCategoryAction,
+  retryTaskCategoryAction,
+  searchAddableObjectsAction,
+  searchObjectsAction,
+  setTaskCategoryAction,
+  undoTaskCategoryChangeAction,
+  setTaskProjectAction,
+  updateNoteAction,
+  updateObjectAction,
+  unarchiveObjectAction,
+  unpinObjectAction,
+} = await import('@/app/actions/objects');
+const { expectPublicActionErrorReport } = await import('@/test/public-error');
 
 const USER_ID = '22222222-2222-4222-8222-222222222222';
 const OBJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -203,6 +240,7 @@ beforeEach(() => {
   fakes.fakeObjects.unarchiveObject.mockResolvedValue({
     id: OBJECT_ID,
     type: 'task',
+    changedFields: ['archivedAt'],
   });
   fakes.fakePins.pin.mockResolvedValue({ pinId: 'pin-1', title: 'Current Object' });
   fakes.fakePins.unpin.mockResolvedValue(true);
@@ -227,7 +265,10 @@ beforeEach(() => {
   fakes.fakeObjects.addRelationship.mockResolvedValue({
     id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
   });
-  fakes.fakeObjects.removeRelationship.mockResolvedValue(undefined);
+  fakes.fakeObjects.removeRelationship.mockResolvedValue({
+    removed: true,
+    touchedIds: [OBJECT_ID, OTHER_OBJECT_ID],
+  });
   fakes.fakeObjects.createNote.mockResolvedValue({ id: NOTE_ID });
   fakes.fakeObjects.updateNote.mockResolvedValue(true);
   fakes.fakeObjects.deleteNote.mockResolvedValue(true);
@@ -635,6 +676,25 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'update' },
+    );
+  });
+
+  it('does not emit an object update event when canonical state is unchanged', async () => {
+    fakes.fakeObjects.updateObject.mockResolvedValueOnce({
+      object: { id: OBJECT_ID, type: 'task' },
+      changedFields: [],
+    });
+
+    await expect(updateObjectAction({ id: OBJECT_ID, status: 'doing' })).resolves.toEqual({
+      ok: true,
+      id: OBJECT_ID,
+    });
+
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('reports manual summary requests that are already queued', async () => {
@@ -686,6 +746,11 @@ describe('object CRUD actions', () => {
       operation: 'reconcile_object_update_after_update',
     });
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'update' },
+    );
   });
 
   it('archives an object and refreshes surfaces that hide archived rows', async () => {
@@ -704,6 +769,11 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'archive' },
+    );
   });
 
   it('unarchives an object and refreshes the same surfaces as an update', async () => {
@@ -722,6 +792,23 @@ describe('object CRUD actions', () => {
     });
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'unarchive' },
+    );
+  });
+
+  it('does not emit an unarchive event when the object is already active', async () => {
+    fakes.fakeObjects.unarchiveObject.mockResolvedValueOnce({
+      id: OBJECT_ID,
+      type: 'task',
+      changedFields: [],
+    });
+
+    await expect(unarchiveObjectAction({ id: OBJECT_ID })).resolves.toEqual({ ok: true });
+
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('pins and unpins objects and refreshes Home plus object detail', async () => {
@@ -772,6 +859,7 @@ describe('object CRUD actions', () => {
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards', 'layout');
     expectWorkRevalidated();
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
   });
 
   it('bulk archives selected objects and refreshes cleanup surfaces', async () => {
@@ -807,6 +895,11 @@ describe('object CRUD actions', () => {
     expectWorkRevalidated();
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/tasks');
     expectApprovalsRevalidated();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: '11111111-1111-4111-8111-111111111111' },
+      'object_action_completed',
+      { action: 'bulk_archive' },
+    );
   });
 
   it('returns success when one bulk post-archive reconciliation fails after archive commits', async () => {
@@ -896,13 +989,15 @@ describe('object CRUD actions', () => {
     });
     expect(fakes.fakeSuggestions.reconcileObjectMerge).not.toHaveBeenCalled();
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
-      'approval_decision_submitted',
       {
+        kind: 'user',
         teamId: '11111111-1111-4111-8111-111111111111',
         userId: USER_ID,
+      },
+      'approval_decision_submitted',
+      {
         decision: 'accepted',
-        itemCount: 1,
+        itemCountBucket: 'one',
         isBulk: false,
       },
     );
@@ -1042,6 +1137,25 @@ describe('object relationship, note, notification, and suggestion actions', () =
     expect(fakes.fakeObjects.removeRelationship).toHaveBeenCalled();
   });
 
+  it('revalidates every company touched when primary employment clear wipes secondaries', async () => {
+    const secondaryCompanyId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    fakes.fakeObjects.removeRelationship.mockResolvedValueOnce({
+      removed: true,
+      touchedIds: [OBJECT_ID, OTHER_OBJECT_ID, secondaryCompanyId],
+    });
+
+    await expect(
+      removeRelationshipAction({
+        id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+        entityId: OBJECT_ID,
+        otherEntityId: OTHER_OBJECT_ID,
+      }),
+    ).resolves.toEqual({ ok: true });
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OBJECT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${OTHER_OBJECT_ID}`);
+    expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/objects/${secondaryCompanyId}`);
+  });
+
   it('treats missing relationship rows as link failures', async () => {
     fakes.fakeObjects.addRelationship.mockResolvedValueOnce(null);
 
@@ -1148,25 +1262,29 @@ describe('object relationship, note, notification, and suggestion actions', () =
     expect(fakes.fakeObjects.rejectObjectChange).toHaveBeenCalledWith(CHANGE_ID);
     expect(fakes.trackProductEventBestEffort).toHaveBeenNthCalledWith(
       1,
-      USER_ID,
-      'approval_decision_submitted',
       {
+        kind: 'user',
         teamId: '11111111-1111-4111-8111-111111111111',
         userId: USER_ID,
+      },
+      'approval_decision_submitted',
+      {
         decision: 'accepted',
-        itemCount: 1,
+        itemCountBucket: 'one',
         isBulk: false,
       },
     );
     expect(fakes.trackProductEventBestEffort).toHaveBeenNthCalledWith(
       2,
-      USER_ID,
-      'approval_decision_submitted',
       {
+        kind: 'user',
         teamId: '11111111-1111-4111-8111-111111111111',
         userId: USER_ID,
+      },
+      'approval_decision_submitted',
+      {
         decision: 'rejected',
-        itemCount: 1,
+        itemCountBucket: 'one',
         isBulk: false,
       },
     );

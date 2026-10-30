@@ -1,7 +1,8 @@
 import { PGlite } from '@electric-sql/pglite';
 import { calendarEventEntities, calendarEvents, entities, meetings, teams } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { WorkspaceHub } from '#src/suggestions/hub-context.js';
 
@@ -10,7 +11,6 @@ import {
   mergeInheritedLinkedHubs,
 } from '#src/suggestions/linked-hubs.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const faba: WorkspaceHub = {
   id: 'company-faba',
   type: 'company',
@@ -97,7 +97,7 @@ describe('loadLinkedWorkspaceHubsForRawEvent', () => {
       entityId: FABA_ID,
       teamId: TEAM_ID,
     });
-  });
+  }, 30_000);
 
   afterEach(async () => {
     await pg.close();

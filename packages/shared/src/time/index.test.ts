@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   dateOnlyEventRange,
@@ -9,7 +10,6 @@ import {
   workspaceDueDateBoundaries,
   workspaceTimeContext,
 } from '#src/time/index.js';
-
 const REF = new Date('2026-05-27T10:00:00.000Z');
 
 describe('workspaceTimeContext', () => {

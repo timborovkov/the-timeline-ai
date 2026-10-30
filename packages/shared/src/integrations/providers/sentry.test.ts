@@ -1,34 +1,40 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-const externalFetchCalls = vi.hoisted(() => vi.fn());
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: async (
-    input: string | URL,
-    init: RequestInit = {},
-    options: { retries?: number } = {},
-  ) => {
-    externalFetchCalls(input, init, options);
-    const method = (init.method ?? 'GET').toUpperCase();
-    const retries = method === 'GET' || method === 'HEAD' ? (options.retries ?? 0) : 0;
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        return await globalThis.fetch(input, init);
-      } catch (error) {
-        const code =
-          typeof error === 'object' && error !== null && 'code' in error
-            ? (error as { code?: unknown }).code
-            : undefined;
-        if (attempt >= retries || (code !== 'timeout' && code !== 'network_failure')) throw error;
-      }
-    }
-  },
-}));
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { IntegrationEvent } from '#src/integrations/types.js';
+const externalFetchCalls = vi.hoisted(() => vi.fn());
 
-import { resetEnvForTests } from '#src/env.js';
-import { sentryProvider } from '#src/integrations/providers/sentry.js';
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: async (
+      input: string | URL,
+      init: RequestInit = {},
+      options: { retries?: number } = {},
+    ) => {
+      externalFetchCalls(input, init, options);
+      const method = (init.method ?? 'GET').toUpperCase();
+      const retries = method === 'GET' || method === 'HEAD' ? (options.retries ?? 0) : 0;
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await globalThis.fetch(input, init);
+        } catch (error) {
+          const code =
+            typeof error === 'object' && error !== null && 'code' in error
+              ? (error as { code?: unknown }).code
+              : undefined;
+          if (attempt >= retries || (code !== 'timeout' && code !== 'network_failure')) throw error;
+        }
+      }
+    },
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
+
+const { resetEnvForTests } = await import('#src/env.js');
+const { sentryProvider } = await import('#src/integrations/providers/sentry.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -53,7 +59,11 @@ describe('sentryProvider', () => {
     vi.unstubAllGlobals();
   });
 
-  function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  function requestUrl(
+    input: Parameters<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >[0],
+  ): string {
     if (typeof input === 'string') return input;
     if (input instanceof URL) return input.toString();
     return input.url;
@@ -77,13 +87,15 @@ describe('sentryProvider', () => {
   it('lists organizations and projects as syncable resources', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.endsWith('/organizations/')) {
-          return Promise.resolve(jsonResponse([{ id: 'org-1', slug: 'acme', name: 'Acme' }]));
-        }
-        return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.endsWith('/organizations/')) {
+            return Promise.resolve(jsonResponse([{ id: 'org-1', slug: 'acme', name: 'Acme' }]));
+          }
+          return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
+        },
+      ),
     );
 
     const resources = await sentryProvider.listSyncableResources({} as never, {
@@ -97,7 +109,9 @@ describe('sentryProvider', () => {
   });
 
   it('refreshes expired Sentry tokens while listing syncable resources', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const url = requestUrl(input);
       if (url === 'https://sentry.io/oauth/token/') {
         const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
@@ -145,31 +159,33 @@ describe('sentryProvider', () => {
   it('syncs issues and releases into incident events', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.includes('/issues/')) {
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.includes('/issues/')) {
+            return Promise.resolve(
+              jsonResponse([
+                {
+                  id: 'issue-1',
+                  shortId: 'WEB-1',
+                  title: 'Checkout failed',
+                  status: 'unresolved',
+                  level: 'error',
+                  lastSeen: '2026-06-20T10:00:00Z',
+                  count: '3',
+                  userCount: 2,
+                  permalink: 'https://sentry.io/issues/issue-1',
+                },
+              ]),
+            );
+          }
           return Promise.resolve(
             jsonResponse([
-              {
-                id: 'issue-1',
-                shortId: 'WEB-1',
-                title: 'Checkout failed',
-                status: 'unresolved',
-                level: 'error',
-                lastSeen: '2026-06-20T10:00:00Z',
-                count: '3',
-                userCount: 2,
-                permalink: 'https://sentry.io/issues/issue-1',
-              },
+              { version: 'web@1.2.3', dateCreated: '2026-06-20T11:00:00Z', newGroups: 1 },
             ]),
           );
-        }
-        return Promise.resolve(
-          jsonResponse([
-            { version: 'web@1.2.3', dateCreated: '2026-06-20T11:00:00Z', newGroups: 1 },
-          ]),
-        );
-      }),
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -228,7 +244,9 @@ describe('sentryProvider', () => {
   });
 
   it('refreshes expired Sentry tokens and persists the replacement before syncing', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const url = requestUrl(input);
       if (url === 'https://sentry.io/oauth/token/') {
         const body = typeof init?.body === 'string' ? new URLSearchParams(init.body) : null;
@@ -277,13 +295,15 @@ describe('sentryProvider', () => {
   it('does not advance the issue cursor when no issues are returned', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.includes('/issues/')) return Promise.resolve(jsonResponse([]));
-        return Promise.resolve(
-          jsonResponse([{ version: 'web@1.2.3', dateCreated: '2026-06-20T11:00:00Z' }]),
-        );
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.includes('/issues/')) return Promise.resolve(jsonResponse([]));
+          return Promise.resolve(
+            jsonResponse([{ version: 'web@1.2.3', dateCreated: '2026-06-20T11:00:00Z' }]),
+          );
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -310,39 +330,41 @@ describe('sentryProvider', () => {
   it('follows Sentry Link pagination for project issues', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.includes('/issues/') && !url.includes('cursor=page-2')) {
-          return Promise.resolve(
-            jsonResponse(
-              [
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.includes('/issues/') && !url.includes('cursor=page-2')) {
+            return Promise.resolve(
+              jsonResponse(
+                [
+                  {
+                    id: 'issue-1',
+                    shortId: 'WEB-1',
+                    title: 'Checkout failed',
+                    lastSeen: '2026-06-20T10:00:00Z',
+                  },
+                ],
                 {
-                  id: 'issue-1',
-                  shortId: 'WEB-1',
-                  title: 'Checkout failed',
-                  lastSeen: '2026-06-20T10:00:00Z',
+                  link: '<https://sentry.io/api/0/projects/acme/web/issues/?cursor=page-2>; rel="next"; results="true"',
                 },
-              ],
-              {
-                link: '<https://sentry.io/api/0/projects/acme/web/issues/?cursor=page-2>; rel="next"; results="true"',
-              },
-            ),
-          );
-        }
-        if (url.includes('/issues/') && url.includes('cursor=page-2')) {
-          return Promise.resolve(
-            jsonResponse([
-              {
-                id: 'issue-2',
-                shortId: 'WEB-2',
-                title: 'Cart failed',
-                lastSeen: '2026-06-20T11:00:00Z',
-              },
-            ]),
-          );
-        }
-        return Promise.resolve(jsonResponse([]));
-      }),
+              ),
+            );
+          }
+          if (url.includes('/issues/') && url.includes('cursor=page-2')) {
+            return Promise.resolve(
+              jsonResponse([
+                {
+                  id: 'issue-2',
+                  shortId: 'WEB-2',
+                  title: 'Cart failed',
+                  lastSeen: '2026-06-20T11:00:00Z',
+                },
+              ]),
+            );
+          }
+          return Promise.resolve(jsonResponse([]));
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -370,16 +392,18 @@ describe('sentryProvider', () => {
   it('filters releases by the stored release cursor', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.includes('/issues/')) return Promise.resolve(jsonResponse([]));
-        return Promise.resolve(
-          jsonResponse([
-            { version: 'web@1.2.3', dateCreated: '2026-06-20T10:00:00Z' },
-            { version: 'web@1.2.4', dateCreated: '2026-06-20T12:00:00Z' },
-          ]),
-        );
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.includes('/issues/')) return Promise.resolve(jsonResponse([]));
+          return Promise.resolve(
+            jsonResponse([
+              { version: 'web@1.2.3', dateCreated: '2026-06-20T10:00:00Z' },
+              { version: 'web@1.2.4', dateCreated: '2026-06-20T12:00:00Z' },
+            ]),
+          );
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({
@@ -409,27 +433,29 @@ describe('sentryProvider', () => {
   it('expands selected organizations to their projects before syncing', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.endsWith('/organizations/acme/projects/')) {
-          return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
-        }
-        if (url.includes('/issues/')) {
-          return Promise.resolve(
-            jsonResponse([
-              {
-                id: 'issue-1',
-                shortId: 'WEB-1',
-                title: 'Checkout failed',
-                status: 'unresolved',
-                level: 'error',
-                lastSeen: '2026-06-20T10:00:00Z',
-              },
-            ]),
-          );
-        }
-        return Promise.resolve(jsonResponse([]));
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.endsWith('/organizations/acme/projects/')) {
+            return Promise.resolve(jsonResponse([{ id: 'project-1', slug: 'web', name: 'Web' }]));
+          }
+          if (url.includes('/issues/')) {
+            return Promise.resolve(
+              jsonResponse([
+                {
+                  id: 'issue-1',
+                  shortId: 'WEB-1',
+                  title: 'Checkout failed',
+                  status: 'unresolved',
+                  level: 'error',
+                  lastSeen: '2026-06-20T10:00:00Z',
+                },
+              ]),
+            );
+          }
+          return Promise.resolve(jsonResponse([]));
+        },
+      ),
     );
     const ctx = {
       loadCursor: vi.fn().mockResolvedValue({}),
@@ -460,7 +486,9 @@ describe('sentryProvider', () => {
       code: 'timeout',
     });
     let projectAttempts = 0;
-    const fetch = vi.fn<typeof globalThis.fetch>((input) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const url = requestUrl(input);
       if (url.endsWith('/organizations/acme/projects/')) {
         projectAttempts += 1;
@@ -563,25 +591,27 @@ describe('sentryProvider', () => {
       .mockResolvedValue({});
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.includes('/issues/')) {
-          return Promise.resolve(
-            jsonResponse([
-              {
-                id: 'issue-1',
-                shortId: 'WEB-1',
-                title: 'Checkout failed',
-                status: 'unresolved',
-                level: 'error',
-                lastSeen: '2026-06-22T08:00:00Z',
-                count: '41',
-              },
-            ]),
-          );
-        }
-        return Promise.resolve(jsonResponse([]));
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.includes('/issues/')) {
+            return Promise.resolve(
+              jsonResponse([
+                {
+                  id: 'issue-1',
+                  shortId: 'WEB-1',
+                  title: 'Checkout failed',
+                  status: 'unresolved',
+                  level: 'error',
+                  lastSeen: '2026-06-22T08:00:00Z',
+                  count: '41',
+                },
+              ]),
+            );
+          }
+          return Promise.resolve(jsonResponse([]));
+        },
+      ),
     );
     const writeEvents = vi.fn().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
@@ -639,25 +669,27 @@ describe('sentryProvider', () => {
       .mockResolvedValue({});
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.includes('/issues/')) {
-          return Promise.resolve(
-            jsonResponse([
-              {
-                id: 'issue-1',
-                shortId: 'WEB-1',
-                title: 'Checkout failed',
-                status: 'unresolved',
-                level: 'error',
-                lastSeen: '2026-06-22T08:00:00Z',
-                count: '41',
-              },
-            ]),
-          );
-        }
-        return Promise.resolve(jsonResponse([]));
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.includes('/issues/')) {
+            return Promise.resolve(
+              jsonResponse([
+                {
+                  id: 'issue-1',
+                  shortId: 'WEB-1',
+                  title: 'Checkout failed',
+                  status: 'unresolved',
+                  level: 'error',
+                  lastSeen: '2026-06-22T08:00:00Z',
+                  count: '41',
+                },
+              ]),
+            );
+          }
+          return Promise.resolve(jsonResponse([]));
+        },
+      ),
     );
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     await sentryProvider.backfill({
@@ -685,34 +717,36 @@ describe('sentryProvider', () => {
   it('keeps one open-issue dedup key across lastSeen and alert timestamp churn', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn<typeof globalThis.fetch>((input) => {
-        const url = requestUrl(input);
-        if (url.includes('/issues/')) {
-          return Promise.resolve(
-            jsonResponse([
-              {
-                id: 'issue-1',
-                shortId: 'WEB-1',
-                title: 'Checkout failed',
-                status: 'unresolved',
-                level: 'error',
-                lastSeen: '2026-06-20T10:00:00Z',
-                count: '3',
-              },
-              {
-                id: 'issue-1',
-                shortId: 'WEB-1',
-                title: 'Checkout failed',
-                status: 'unresolved',
-                level: 'error',
-                lastSeen: '2026-06-21T08:00:00Z',
-                count: '40',
-              },
-            ]),
-          );
-        }
-        return Promise.resolve(jsonResponse([]));
-      }),
+      vi.fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>(
+        (input) => {
+          const url = requestUrl(input);
+          if (url.includes('/issues/')) {
+            return Promise.resolve(
+              jsonResponse([
+                {
+                  id: 'issue-1',
+                  shortId: 'WEB-1',
+                  title: 'Checkout failed',
+                  status: 'unresolved',
+                  level: 'error',
+                  lastSeen: '2026-06-20T10:00:00Z',
+                  count: '3',
+                },
+                {
+                  id: 'issue-1',
+                  shortId: 'WEB-1',
+                  title: 'Checkout failed',
+                  status: 'unresolved',
+                  level: 'error',
+                  lastSeen: '2026-06-21T08:00:00Z',
+                  count: '40',
+                },
+              ]),
+            );
+          }
+          return Promise.resolve(jsonResponse([]));
+        },
+      ),
     );
     const writeEvents = vi.fn().mockResolvedValue([]);
     await sentryProvider.backfill({

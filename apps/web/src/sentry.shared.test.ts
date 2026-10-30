@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import type { ErrorEvent } from '@sentry/nextjs';
 
@@ -6,11 +7,12 @@ import {
   parseSentrySampleRate,
   sanitizeRequestUrl,
   scrubSentryEvent,
+  scrubSentrySpanEvent,
+  scrubSentryTransactionEvent,
   sentrySampleRate,
   shouldDropBrowserExtensionEvent,
   shouldDropMalformedMultipartFormDataEvent,
 } from '@/sentry.shared';
-
 describe('Sentry web config helpers', () => {
   it('defaults invalid sample rates to zero', () => {
     process.env.SENTRY_TRACES_SAMPLE_RATE = 'nope';
@@ -23,7 +25,7 @@ describe('Sentry web config helpers', () => {
     expect(parseSentrySampleRate('0.5')).toBe(0.5);
   });
 
-  it('scrubs request auth material', () => {
+  it('removes request headers from error and transaction events', () => {
     const event = scrubSentryEvent({
       request: {
         url: 'https://app.timeline.test/api/integrations/github/callback?code=secret&state=secret#frag',
@@ -36,6 +38,8 @@ describe('Sentry web config helpers', () => {
           'x-auth-token': 'token',
           'X-Auth-Token': 'other-token',
           'x-request-id': 'req-1',
+          referer: 'https://app.timeline.test/private?token=secret',
+          'x-forwarded-for': '203.0.113.10',
         },
       },
     } as unknown as ErrorEvent);
@@ -43,7 +47,28 @@ describe('Sentry web config helpers', () => {
     expect(event).not.toBeNull();
     expect(event?.request?.url).toBe('https://app.timeline.test/api/integrations/github/callback');
     expect(event?.request?.cookies).toBeUndefined();
-    expect(event?.request?.headers).toEqual({ 'x-request-id': 'req-1' });
+    expect(event?.request?.headers).toBeUndefined();
+
+    const transaction = scrubSentryTransactionEvent({
+      request: {
+        url: 'https://app.timeline.test/app/search?q=private',
+        headers: { referer: 'private', 'x-forwarded-for': '203.0.113.10' },
+      },
+    });
+    expect(transaction.request.url).toBe('https://app.timeline.test/app/search');
+    expect(transaction.request.headers).toBeUndefined();
+
+    const span = scrubSentrySpanEvent({
+      name: 'GET /app/search?q=private',
+      attributes: {
+        'http.url': 'https://app.timeline.test/app/search?q=private',
+        'http.request.header.referer': 'https://app.timeline.test/private?token=secret',
+      },
+    });
+    expect(span.name).toBe('GET /app/search');
+    expect(span.attributes).toEqual({
+      'http.url': 'https://app.timeline.test/app/search',
+    });
   });
 
   it('strips query strings and redacts invite tokens from request URLs', () => {

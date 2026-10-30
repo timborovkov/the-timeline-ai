@@ -20,7 +20,7 @@
  *     always stamp source_kind, so their counts are reliable.
  *
  * Usage:
- *   pnpm --filter @timeline/worker embed-coverage -- --team=<uuid> \
+ *   bun run --filter @timeline/worker embed-coverage -- --team=<uuid> \
  *     [--threshold=0.01]   # default 1%
  */
 import {
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
   console.log('');
   if (exitCode !== 0) {
     console.log(
-      `[embed-coverage] drift exceeded threshold. Run: pnpm --filter @timeline/worker reembed -- --team=${args.teamId}`,
+      `[embed-coverage] drift exceeded threshold. Run: bun run --filter @timeline/worker reembed -- --team=${args.teamId}`,
     );
   } else {
     console.log('[embed-coverage] coverage within threshold');

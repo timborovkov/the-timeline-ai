@@ -2,7 +2,8 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
     ".": {
-      "project": ["*.{js,ts}"]
+      "project": ["*.{js,ts}", "scripts/testing/*.ts", "scripts/performance/*.mjs"],
+      "entry": ["scripts/testing/*.ts", "scripts/performance/*.mjs"]
     },
     "apps/web": {
       "entry": [
@@ -11,11 +12,11 @@
         "src/lib/public-site/index.ts",
         "src/proxy.{ts,tsx}",
         "scripts/*.{ts,mjs}",
-        "postcss.config.{js,mjs,cjs,ts}"
+        "postcss.config.{js,mjs,cjs,ts}",
+        "src/**/*.test.{ts,tsx}"
       ],
-      "project": ["src/**/*.{ts,tsx}"],
-      "ignore": ["src/components/ui/**"],
-      "ignoreDependencies": ["tailwindcss"]
+      "project": ["src/**/*.{ts,tsx,css}"],
+      "ignore": ["src/components/ui/**"]
     },
     "apps/worker": {
       "entry": [
@@ -23,12 +24,15 @@
         "scripts/*.ts",
         "src/scripts/*.ts",
         "src/workers/*.test.ts",
-        "src/document-ingestion/*.test.ts"
+        "src/document-ingestion/*.test.ts",
+        "src/**/*.test.{ts,tsx}",
+        "src/index.ts",
+        "src/extract-main.ts"
       ],
       "project": ["scripts/*.{mjs,ts}", "src/**/*.ts"]
     },
     "packages/db": {
-      "entry": ["src/schema/**/*.ts"],
+      "entry": ["src/schema/**/*.ts", "src/**/*.test.{ts,tsx}"],
       "project": ["src/**/*.ts"]
     },
     "packages/shared": {

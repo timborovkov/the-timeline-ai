@@ -1,27 +1,40 @@
 'use client';
 
-import { AlertTriangle, RotateCw } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { AlertTriangle, LifeBuoy, RotateCw } from 'lucide-react';
+import Link from 'next/link';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 import { TechnicalDetails } from '@/components/technical-details';
 import { Button } from '@/components/ui/button';
 import { reportCaughtError } from '@/lib/sentry-report';
 import { isStaleServerActionError, reloadForStaleServerAction } from '@/lib/stale-server-action';
+import { supportRequestHref } from '@/lib/support-context';
 
 interface Props {
   title?: string;
   description?: string;
   error?: Error & { digest?: string };
   reset?: () => void;
+  supportHref?: string;
 }
+
+const subscribeToPathname = () => () => undefined;
 
 export function ErrorState({
   title = 'Something went wrong',
   description = 'An unexpected error occurred while loading this view.',
   error,
   reset,
+  supportHref,
 }: Props) {
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const pathname = useSyncExternalStore(
+    subscribeToPathname,
+    () => window.location.pathname,
+    () => null,
+  );
+  const resolvedSupportHref = supportHref ?? supportRequestHref(pathname, error?.digest);
+  const supportOpensEmail = resolvedSupportHref.startsWith('mailto:');
 
   const staleServerAction = Boolean(error && isStaleServerActionError(error));
 
@@ -62,24 +75,39 @@ export function ErrorState({
           />
         ) : null}
       </div>
-      {reset || staleServerAction ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            if (staleServerAction) {
-              reloadForStaleServerAction();
-              return;
-            }
-            reset?.();
-          }}
-          className="gap-2"
-        >
-          <RotateCw className="size-3.5" />
-          {staleServerAction ? 'Reload' : 'Try again'}
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        {reset || staleServerAction ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (staleServerAction) {
+                reloadForStaleServerAction();
+                return;
+              }
+              reset?.();
+            }}
+            className="gap-2"
+          >
+            <RotateCw aria-hidden="true" className="size-3.5" />
+            {staleServerAction ? 'Reload' : 'Retry'}
+          </Button>
+        ) : null}
+        <Button asChild variant="outline" size="sm">
+          {supportOpensEmail ? (
+            <a href={resolvedSupportHref} className="gap-2">
+              <LifeBuoy aria-hidden="true" className="size-3.5" />
+              Get support
+            </a>
+          ) : (
+            <Link href={resolvedSupportHref} target="_blank" rel="noreferrer" className="gap-2">
+              <LifeBuoy aria-hidden="true" className="size-3.5" />
+              Get support
+            </Link>
+          )}
         </Button>
-      ) : null}
+      </div>
     </div>
   );
 }

@@ -1,11 +1,9 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   inspector: {
@@ -22,9 +20,17 @@ const fakes = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/components/inspector-context', () => ({
-  useInspector: () => fakes.inspector,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/inspector-context'),
+  () => ({
+    useInspector: () => fakes.inspector,
+  }),
+  () => import('@/components/inspector-context'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
 
 const { InspectorPane } = await import('./inspector-pane.js');
 
@@ -161,10 +167,8 @@ describe('InspectorPane', () => {
           onchange: null,
           addEventListener: vi.fn(),
           removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
           dispatchEvent: vi.fn(),
-        }) as MediaQueryList,
+        }) as unknown as MediaQueryList,
     );
     const user = userEvent.setup();
     fakes.inspector.open = true;
@@ -201,10 +205,8 @@ describe('InspectorPane', () => {
           onchange: null,
           addEventListener: vi.fn(),
           removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
           dispatchEvent: vi.fn(),
-        }) as MediaQueryList,
+        }) as unknown as MediaQueryList,
     );
     fakes.inspector.open = true;
     fakes.inspector.content = {
@@ -241,10 +243,8 @@ describe('InspectorPane', () => {
           onchange: null,
           addEventListener: vi.fn(),
           removeEventListener: vi.fn(),
-          addListener: vi.fn(),
-          removeListener: vi.fn(),
           dispatchEvent: vi.fn(),
-        }) as MediaQueryList,
+        }) as unknown as MediaQueryList,
     );
     fakes.inspector.open = true;
     fakes.inspector.content = {

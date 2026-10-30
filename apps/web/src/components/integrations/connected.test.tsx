@@ -1,20 +1,37 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { ConnectedIntegrations } from '@/components/integrations/connected';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const routerRefresh = vi.hoisted(() => vi.fn());
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: routerRefresh }) }));
-vi.mock('@/app/actions/visibility', () => ({
-  setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ refresh: routerRefresh }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/visibility'),
+  () => ({
+    setIntegrationVisibilityDefaultAction: vi.fn(() => Promise.resolve({ ok: true })),
+  }),
+  () => import('@/app/actions/visibility'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { ConnectedIntegrations } = await import('@/components/integrations/connected');
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -33,6 +50,7 @@ function connectedRow(
     lastSyncedAt: null,
     lastError: null,
     syncPause: null,
+    healthPause: null,
     attention: [],
     visibilityDefault: 'team' as const,
     visibilityDefaultUserIds: null,
@@ -241,6 +259,62 @@ describe('ConnectedIntegrations', () => {
     expect(screen.getByRole('link', { name: 'Choose replacement' }).getAttribute('href')).toBe(
       '#available-shared-sources',
     );
+  });
+
+  it('shows a Paused notice with Reconnect when access was revoked', () => {
+    render(
+      <ConnectedIntegrations
+        connected={[
+          connectedRow({
+            provider: 'github',
+            lastError: 'GitHub GET /repos/acme/app: 403 forbidden',
+            healthPause: {
+              kind: 'access_revoked',
+              pausedAt: '2026-06-28T12:00:00.000Z',
+              firstFailedAt: '2026-06-25T12:00:00.000Z',
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Paused: GitHub access was revoked.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Reconnect' }).getAttribute('href')).toBe(
+      '/app/me/connections',
+    );
+    expect(screen.queryByRole('button', { name: 'Sync now' })).toBeNull();
+    expect(screen.queryByText(/403 forbidden/)).toBeNull();
+  });
+
+  it('shows Resume for connectivity pauses and posts the resume endpoint', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <ConnectedIntegrations
+        connected={[
+          connectedRow({
+            provider: 'github',
+            lastError: 'fetch failed ETIMEDOUT',
+            healthPause: {
+              kind: 'connectivity',
+              pausedAt: '2026-06-28T12:00:00.000Z',
+              firstFailedAt: '2026-06-25T12:00:00.000Z',
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText(/Paused: GitHub hasn't responded/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Resume' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/integrations/manage/integration-1/resume', {
+        method: 'POST',
+      });
+    });
+    expect(routerRefresh).toHaveBeenCalled();
   });
 
   it('shows inline disconnect confirmation and removes the row after disconnect', async () => {

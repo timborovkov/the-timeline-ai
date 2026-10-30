@@ -1,14 +1,24 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ auth: vi.fn(), listCatalog: vi.fn() }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@timeline/shared/integrations/registry', () => ({ listCatalog: fakes.listCatalog }));
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations/registry'),
+  () => ({ listCatalog: fakes.listCatalog }),
+  () => import('@timeline/shared/integrations/registry'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: LandingPage, metadata } = await import('@/app/(landing)/page');
 
@@ -38,6 +48,7 @@ describe('LandingPage', () => {
     expect(html).toContain('https://github.com/timborovkov/the-timeline-ai');
     expect(html).toContain('aria-label="The Timeline source code on GitHub"');
     expect(html.match(/>Source on GitHub</g)).toHaveLength(1);
+    expect(html).toContain('href="/cookies"');
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).toContain('Scattered work. <em>Cited answers.</em>');
 
@@ -201,6 +212,9 @@ describe('LandingPage', () => {
     const html = renderToStaticMarkup(await LandingPage());
 
     expect(html.match(/href="\/sign-up"/g)).toHaveLength(3);
+    expect(html).toContain('data-public-analytics-cta="try_project"');
+    expect(html).toContain('data-public-analytics-cta="sign_in"');
+    expect(html).toContain('data-public-analytics-cta="contact_support"');
     expect(html).toContain('href="/how-it-works"');
     expect(html).not.toContain('<video');
     expect(html).not.toMatch(/watch (?:the )?demo|interactive demo/iu);
@@ -216,6 +230,7 @@ describe('LandingPage', () => {
     expect(html).toContain('Go to dashboard');
     expect(html).toContain('<span aria-hidden="true">→</span>');
     expect(html).toContain('href="/app"');
+    expect(html).toContain('data-public-analytics-cta="open_dashboard"');
     expect(html).not.toContain('Create team');
     expect(html).not.toContain('href="/sign-in"');
     expect(html).not.toContain('href="/sign-up"');

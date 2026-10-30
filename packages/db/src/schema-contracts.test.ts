@@ -3,11 +3,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { PGlite } from '@electric-sql/pglite';
+import { expect } from '@timeline/test-support';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { getTableConfig, PgDialect } from 'drizzle-orm/pg-core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { entities } from '#src/schema/entities.js';
-
 /**
  * Database contract tests. These protect schema-level invariants that the app
  * and worker tests rely on: migrations boot, tenant rows cascade correctly,
@@ -84,6 +84,28 @@ afterEach(async () => {
 });
 
 describe('database schema contracts', () => {
+  it('accepts only Monday providers for conversation tombstones', async () => {
+    const integrationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    await pg.exec(`
+      INSERT INTO integrations (id, team_id, provider, display_name)
+      VALUES ('${integrationId}', '${TEAM_ID}', 'monday', 'Monday test');
+      INSERT INTO monday_conversation_tombstones (
+        team_id, integration_id, provider, update_id, target_key,
+        reason, source_event_dedup_key, deleted_at
+      ) VALUES (
+        '${TEAM_ID}', '${integrationId}', 'monday', '123', 'update:123',
+        'deleted', 'monday:123', now()
+      );
+    `);
+    await expect(
+      pg.exec("UPDATE monday_conversation_tombstones SET provider = 'github'"),
+    ).rejects.toThrow(/monday_conversation_tombstones_provider_chk/);
+    const rows = await pg.query<{ provider: string }>(
+      'SELECT provider FROM monday_conversation_tombstones',
+    );
+    expect(rows.rows).toEqual([{ provider: 'monday' }]);
+  });
+
   it('applies every migration to an empty database and exposes critical tables', async () => {
     const tables = await pg.query<{ tablename: string }>(`
       SELECT tablename
@@ -91,6 +113,7 @@ describe('database schema contracts', () => {
       WHERE schemaname = 'public'
         AND tablename IN (
           'teams',
+          'legal_acceptances',
           'raw_events',
           'entities',
           'agent_suggestions',
@@ -100,6 +123,10 @@ describe('database schema contracts', () => {
           'reconciliation_projection_outbox',
           'monday_conversation_tombstones',
           'monday_conversation_tombstone_invalidations',
+          'mcp_outbound_oauth_clients',
+          'mcp_outbound_oauth_codes',
+          'mcp_outbound_oauth_grants',
+          'mcp_outbound_oauth_tokens',
           'task_category_filter_versions',
           'task_category_project_invalidations',
           'task_project_source_locks',
@@ -112,6 +139,11 @@ describe('database schema contracts', () => {
       'agent_suggestions',
       'artifact_evidence_associations',
       'entities',
+      'legal_acceptances',
+      'mcp_outbound_oauth_clients',
+      'mcp_outbound_oauth_codes',
+      'mcp_outbound_oauth_grants',
+      'mcp_outbound_oauth_tokens',
       'monday_conversation_tombstone_invalidations',
       'monday_conversation_tombstones',
       'raw_events',
@@ -126,13 +158,306 @@ describe('database schema contracts', () => {
     ]);
   });
 
-  it('backfills canonical shared-link associations at their current strengths', async () => {
+  it('enforces public-client auth and one active MCP OAuth grant per user/team/client', async () => {
+    await expect(
+      pg.exec(`
+        INSERT INTO mcp_outbound_oauth_clients
+          (client_id, client_name, redirect_uris, token_endpoint_auth_method)
+        VALUES
+          ('invalid-client', 'Invalid client', '["https://example.test/callback"]'::jsonb, 'client_secret_post')
+      `),
+    ).rejects.toThrow();
+
+    await pg.exec(`
+      INSERT INTO mcp_outbound_oauth_clients (client_id, client_name, redirect_uris)
+      VALUES ('valid-client', 'Valid client', '["https://example.test/callback"]'::jsonb);
+      INSERT INTO mcp_outbound_oauth_grants
+        (client_id, team_id, user_id, membership_authorization_epoch, scopes, resource)
+      VALUES
+        (
+          'valid-client',
+          '${TEAM_ID}',
+          '${OWNER_ID}',
+          (SELECT authorization_epoch FROM team_members WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'),
+          '["read"]'::jsonb,
+          'https://thetimeline.cc/api/mcp/server'
+        );
+    `);
+
+    await expect(
+      pg.exec(`
+        INSERT INTO mcp_outbound_oauth_grants
+          (client_id, team_id, user_id, membership_authorization_epoch, scopes, resource)
+        VALUES
+          (
+            'valid-client',
+            '${TEAM_ID}',
+            '${OWNER_ID}',
+            (SELECT authorization_epoch FROM team_members WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'),
+            '["read"]'::jsonb,
+            'https://thetimeline.cc/api/mcp/server'
+          )
+      `),
+    ).rejects.toThrow();
+  });
+
+  it('rotates the team-member authorization epoch on role and removal changes', async () => {
+    const readEpoch = async () => {
+      const result = await pg.query<{ authorization_epoch: string }>(`
+        SELECT authorization_epoch
+        FROM team_members
+        WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'
+      `);
+      return result.rows[0]?.authorization_epoch;
+    };
+
+    const initial = await readEpoch();
+    await pg.exec(`
+      UPDATE team_members
+      SET role = 'admin'
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'
+    `);
+    const afterRole = await readEpoch();
+    await pg.exec(`
+      UPDATE team_members
+      SET removed_at = now()
+      WHERE team_id = '${TEAM_ID}' AND user_id = '${OWNER_ID}'
+    `);
+    const afterRemoval = await readEpoch();
+
+    expect(initial).toBeTruthy();
+    expect(afterRole).not.toBe(initial);
+    expect(afterRemoval).not.toBe(afterRole);
+  });
+
+  it('backfills legal snapshots and preserves one acceptance event per document-version pair', async () => {
     const migrationPg = new PGlite();
     try {
+      await applyMigrations(migrationPg, { throughFile: '0072_object_discussions.sql' });
+      const userId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa73';
+      await migrationPg.exec(`
+        INSERT INTO users (
+          id,
+          email,
+          legal_terms_version,
+          legal_privacy_version,
+          legal_accepted_at
+        ) VALUES (
+          '${userId}',
+          'legal-history@example.test',
+          '2026-06-02',
+          '2026-06-02',
+          '2026-06-03T10:15:00Z'
+        )
+      `);
+
+      await applyMigrationFile(migrationPg, '0073_legal_acceptance_history.sql');
+
+      const backfilled = await migrationPg.query<{
+        terms_version: string;
+        privacy_version: string;
+        accepted_at: Date;
+        source: string;
+        ip_address: string | null;
+        user_agent: string | null;
+      }>(`
+        SELECT
+          terms_version,
+          privacy_version,
+          accepted_at,
+          source,
+          ip_address,
+          user_agent
+        FROM legal_acceptances
+        WHERE user_id = '${userId}'
+      `);
+      expect(backfilled.rows).toEqual([
+        {
+          terms_version: '2026-06-02',
+          privacy_version: '2026-06-02',
+          accepted_at: new Date('2026-06-03T10:15:00.000Z'),
+          source: 'legacy_snapshot',
+          ip_address: null,
+          user_agent: null,
+        },
+      ]);
+
+      await migrationPg.exec(`
+        INSERT INTO legal_acceptances (
+          user_id,
+          terms_version,
+          privacy_version,
+          accepted_at,
+          source
+        ) VALUES (
+          '${userId}',
+          '2026-06-02',
+          '2026-06-02',
+          '2026-06-04T10:15:00Z',
+          'legal_gate'
+        )
+        ON CONFLICT (user_id, terms_version, privacy_version) DO NOTHING;
+
+        INSERT INTO legal_acceptances (
+          user_id,
+          terms_version,
+          privacy_version,
+          accepted_at,
+          source
+        ) VALUES (
+          '${userId}',
+          '2026-08-21',
+          '2026-08-21',
+          '2026-08-21T10:15:00Z',
+          'legal_gate'
+        );
+      `);
+      const history = await migrationPg.query<{ terms_version: string; accepted_at: Date }>(`
+        SELECT terms_version, accepted_at
+        FROM legal_acceptances
+        WHERE user_id = '${userId}'
+        ORDER BY accepted_at
+      `);
+      expect(history.rows).toEqual([
+        {
+          terms_version: '2026-06-02',
+          accepted_at: new Date('2026-06-03T10:15:00.000Z'),
+        },
+        {
+          terms_version: '2026-08-21',
+          accepted_at: new Date('2026-08-21T10:15:00.000Z'),
+        },
+      ]);
+
+      await expect(
+        migrationPg.exec(`
+          UPDATE legal_acceptances
+          SET accepted_at = '2026-08-22T10:15:00Z'
+          WHERE user_id = '${userId}'
+        `),
+      ).rejects.toThrow(/legal_acceptances is append-only/);
+      await expect(
+        migrationPg.exec(`DELETE FROM legal_acceptances WHERE user_id = '${userId}'`),
+      ).rejects.toThrow(/legal_acceptances is append-only/);
+
+      await migrationPg.exec(`DELETE FROM users WHERE id = '${userId}'`);
+      const afterAccountDeletion = await migrationPg.query<{ value: number }>(`
+        SELECT COUNT(*)::int AS value
+        FROM legal_acceptances
+        WHERE user_id = '${userId}'
+      `);
+      expect(afterAccountDeletion.rows[0]?.value).toBe(0);
+    } finally {
+      await migrationPg.close();
+    }
+  });
+
+  it('removes historical Recall response and error content without deleting sibling metadata', async () => {
+    const migrationPg = new PGlite();
+    try {
+      await applyMigrations(migrationPg, { throughFile: '0073_legal_acceptance_history.sql' });
+      await seedBase(migrationPg);
+      const meetingId = '99999999-9999-4999-8999-999999999974';
+      await migrationPg.query(
+        `INSERT INTO meetings (id, team_id, created_by_user_id, platform, meeting_url, metadata)
+         VALUES ($1, $2, $3, 'meet', 'https://meet.google.com/example', $4::jsonb)`,
+        [
+          meetingId,
+          TEAM_ID,
+          OWNER_ID,
+          JSON.stringify({
+            provider_join_result: { echoed_meeting_url: 'https://meet.google.com/private' },
+            join_error: 'provider failed: https://meet.google.com/private',
+            consent_given_at: '2026-08-21T10:15:00.000Z',
+            source: 'scheduled',
+          }),
+        ],
+      );
+
+      await applyMigrationFile(migrationPg, '0074_recall_join_metadata_minimization.sql');
+
+      const rows = await migrationPg.query<{ metadata: Record<string, unknown> }>(
+        `SELECT metadata FROM meetings WHERE id = $1`,
+        [meetingId],
+      );
+      expect(rows.rows[0]?.metadata).toEqual({
+        consent_given_at: '2026-08-21T10:15:00.000Z',
+        source: 'scheduled',
+      });
+    } finally {
+      await migrationPg.close();
+    }
+  });
+
+  it('accepts access_revoked attention and paired health pause columns', async () => {
+    const integrationId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    await pg.exec(`
+      INSERT INTO integrations (id, team_id, provider, display_name)
+      VALUES ('${integrationId}', '${TEAM_ID}', 'github', 'GitHub health');
+      INSERT INTO connection_attention (
+        team_id, integration_id, category, summary
+      ) VALUES (
+        '${TEAM_ID}',
+        '${integrationId}',
+        'access_revoked',
+        'GitHub access was revoked.'
+      );
+      UPDATE integrations
+      SET
+        health_consecutive_failures = 2,
+        health_first_failed_at = '2026-06-25T12:00:00Z',
+        health_paused_at = '2026-06-28T12:00:00Z',
+        health_pause_kind = 'access_revoked'
+      WHERE id = '${integrationId}';
+    `);
+
+    await expect(
+      pg.exec(`
+        UPDATE integrations
+        SET health_paused_at = '2026-06-28T12:00:00Z', health_pause_kind = 'unknown'
+        WHERE id = '${integrationId}'
+      `),
+    ).rejects.toThrow(/integrations_health_pause_kind_chk/);
+    await expect(
+      pg.exec(`
+        UPDATE integrations
+        SET health_paused_at = '2026-06-28T12:00:00Z', health_pause_kind = NULL
+        WHERE id = '${integrationId}'
+      `),
+    ).rejects.toThrow(/integrations_health_pause_kind_chk/);
+
+    const rows = await pg.query<{
+      category: string;
+      health_pause_kind: string | null;
+    }>(`
+      SELECT
+        (SELECT category::text FROM connection_attention WHERE integration_id = '${integrationId}') AS category,
+        health_pause_kind
+      FROM integrations
+      WHERE id = '${integrationId}'
+    `);
+    expect(rows.rows[0]).toEqual({
+      category: 'access_revoked',
+      health_pause_kind: 'access_revoked',
+    });
+  });
+
+  describe('canonical shared-link migration', () => {
+    let migrationPg: PGlite;
+
+    beforeAll(async () => {
+      migrationPg = new PGlite();
       await applyMigrations(migrationPg, {
         throughFile: '0066_monday_conversation_tombstones.sql',
       });
       await seedBase(migrationPg);
+    });
+
+    afterAll(async () => {
+      await migrationPg.close();
+    });
+
+    it('backfills canonical shared-link associations at their current strengths', async () => {
       const rawEventId = '99999999-9999-4999-8999-999999999940';
       const clusterId = '99999999-9999-4999-8999-999999999941';
       const convertedEvidenceId = '99999999-9999-4999-8999-999999999942';
@@ -201,16 +526,23 @@ describe('database schema contracts', () => {
           association_source: 'structured_anchor',
         },
       ]);
-    } finally {
-      await migrationPg.close();
-    }
+    });
   });
 
-  it('backfills legacy board and object pins into one ordered personal collection', async () => {
-    const migrationPg = new PGlite();
-    try {
+  describe('universal personal pins migration', () => {
+    let migrationPg: PGlite;
+
+    beforeAll(async () => {
+      migrationPg = new PGlite();
       await applyMigrations(migrationPg, { throughFile: '0061_object_pins.sql' });
       await seedBase(migrationPg);
+    });
+
+    afterAll(async () => {
+      await migrationPg.close();
+    });
+
+    it('backfills legacy board and object pins into one ordered personal collection', async () => {
       const firstBoard = '11111111-1111-4111-8111-111111111131';
       const secondBoard = '11111111-1111-4111-8111-111111111132';
       const objectId = '11111111-1111-4111-8111-111111111133';
@@ -254,9 +586,7 @@ describe('database schema contracts', () => {
         WHERE target_kind = 'object' AND target_key = '${objectId}'
       `);
       expect(remainingObjectPins.rows[0]?.count).toBe('0');
-    } finally {
-      await migrationPg.close();
-    }
+    });
   });
 
   it('indexes the global pending task-category recovery sweep', async () => {

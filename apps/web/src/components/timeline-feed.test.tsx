@@ -1,12 +1,10 @@
-// @vitest-environment happy-dom
-
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { WebTimelineMomentDto } from '@/lib/timeline-moments';
 import type { TimelineEvent, TimelinePage } from '@/lib/use-paginated-queries';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pages: [] as TimelinePage[],
@@ -15,46 +13,58 @@ const fakes = vi.hoisted(() => ({
   timelineList: vi.fn(),
 }));
 
-vi.mock('@/lib/use-paginated-queries', () => {
-  return {
-    useTimelineInfiniteQuery: (
-      filters: Record<string, string | null | undefined>,
-      initialPage: TimelinePage,
-      options: { enabled?: boolean; timezone?: string },
-    ) => {
-      fakes.useTimelineInfiniteQuery(filters, initialPage, options);
-      return {
-        data: { pages: fakes.pages },
-        fetchNextPage: vi.fn(),
-        hasNextPage: false,
-        isError: false,
-        error: null,
-        isFetchingNextPage: false,
-        isFetchNextPageError: false,
-        isRefetching: false,
-        refetch: vi.fn(),
-        ...fakes.queryOverrides,
-      };
-    },
-  };
-});
-
-vi.mock('@/components/timeline-list', () => ({
-  TimelineList: (props: {
-    events: TimelineEvent[];
-    mode?: 'moments' | 'events';
-    serverMoments?: { id: string; title: string }[];
-  }) => {
-    fakes.timelineList(props);
-    return createElement(
-      'ol',
-      null,
-      (props.serverMoments ?? props.events).map((item) =>
-        createElement('li', { key: item.id }, 'title' in item ? item.title : item.id),
-      ),
-    );
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => {
+    return {
+      useTimelineInfiniteQuery: (
+        filters: Record<string, string | null | undefined>,
+        initialPage: TimelinePage,
+        options: { enabled?: boolean; timezone?: string },
+      ) => {
+        fakes.useTimelineInfiniteQuery(filters, initialPage, options);
+        return {
+          data: { pages: fakes.pages },
+          fetchNextPage: vi.fn(),
+          hasNextPage: false,
+          isError: false,
+          error: null,
+          isFetchingNextPage: false,
+          isFetchNextPageError: false,
+          isRefetching: false,
+          refetch: vi.fn(),
+          ...fakes.queryOverrides,
+        };
+      },
+    };
   },
-}));
+  () => import('@/lib/use-paginated-queries'),
+);
+
+await vi.mock(
+  import.meta.resolve('@/components/timeline-list'),
+  () => ({
+    TimelineList: (props: {
+      events: TimelineEvent[];
+      mode?: 'moments' | 'events';
+      serverMoments?: { id: string; title: string }[];
+    }) => {
+      fakes.timelineList(props);
+      return createElement(
+        'ol',
+        null,
+        (props.serverMoments ?? props.events).map((item) =>
+          createElement('li', { key: item.id }, 'title' in item ? item.title : item.id),
+        ),
+      );
+    },
+  }),
+  () => import('@/components/timeline-list'),
+);
+
+const { cleanup, fireEvent, render, screen } = await import('@testing-library/react');
+const { createElement } = await import('react');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { TimelineFeed } = await import('./timeline-feed.js');
 

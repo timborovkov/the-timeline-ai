@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import manifest from '@/app/manifest';
 import { PWA_BACKGROUND_COLOR } from '@/lib/pwa-splash';
-
 describe('web app manifest', () => {
   it('launches into the workspace with PNG home-screen icons', () => {
     const result = manifest();

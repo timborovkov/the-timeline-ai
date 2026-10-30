@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   finalizeGlobalSearchResult,
@@ -7,7 +8,6 @@ import {
   searchQuickLinks,
   type GlobalSearchResult,
 } from '#src/search/index.js';
-
 function result(input: {
   id: string;
   kind: GlobalSearchResult['kind'];

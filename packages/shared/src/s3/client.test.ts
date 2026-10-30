@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi, freshModuleUrl } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
+import type * as TestModule1 from '#src/s3/client.js';
 /**
  * S3 client contract tests. RustFS/S3 config is env-driven; these tests make
  * sure missing config fails early and browser-facing presign clients use the
@@ -18,9 +21,13 @@ class FakeS3Client {
   }
 }
 
-vi.mock('@aws-sdk/client-s3', () => ({
-  S3Client: FakeS3Client,
-}));
+await vi.mock(
+  import.meta.resolve('@aws-sdk/client-s3'),
+  () => ({
+    S3Client: FakeS3Client,
+  }),
+  () => import('@aws-sdk/client-s3'),
+);
 
 function setBaseEnv(): void {
   process.env.AUTH_SECRET = 'test-secret-at-least-sixteen-characters';
@@ -37,7 +44,7 @@ function setBaseEnv(): void {
 }
 
 async function importClient() {
-  return import('./client.js');
+  return import(freshModuleUrl(import.meta.resolve('./client.js'))) as Promise<typeof TestModule1>;
 }
 
 beforeEach(() => {

@@ -1,15 +1,25 @@
-import { generateKeyPairSync } from 'node:crypto';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
-
+import type * as ExternalFetch from '#src/http/external-fetch.js';
 import type { SyncContext } from '#src/integrations/index.js';
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof ExternalFetch>();
+    return {
+      ...actual,
+      externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+    };
+  },
+  () => import('#src/http/external-fetch.js'),
+);
 
-import { resetEnvForTests } from '#src/env.js';
-import { GithubRateLimitError, githubProvider } from '#src/integrations/providers/github.js';
+const { generateKeyPairSync } = await import('node:crypto');
+const { resetEnvForTests } = await import('#src/env.js');
+const { GithubRateLimitError, githubProvider } =
+  await import('#src/integrations/providers/github.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -115,8 +125,12 @@ describe('githubProvider.handleOAuthCallback', () => {
   });
 
   it('uses the deterministic E2E callback fixture without calling GitHub', async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    globalThis.fetch = fetchMock;
+    const fetchMock =
+      vi.fn<
+        (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+      >();
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     process.env.E2E_DETERMINISTIC_GITHUB_OAUTH = '1';
     resetEnvForTests();
 
@@ -139,7 +153,9 @@ describe('githubProvider.handleOAuthCallback', () => {
   });
 
   it('does not use the deterministic E2E callback fixture in production', async () => {
-    const fetchMock = vi.fn<typeof fetch>(() =>
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() =>
       Promise.resolve(
         new Response(JSON.stringify({ message: 'production path' }), {
           status: 400,
@@ -147,7 +163,8 @@ describe('githubProvider.handleOAuthCallback', () => {
         }),
       ),
     );
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     process.env.NODE_ENV = 'production';
     process.env.E2E_DETERMINISTIC_GITHUB_OAUTH = '1';
     process.env.AUTH_SECRET = 'test-auth-secret-at-least-sixteen-characters';
@@ -165,7 +182,9 @@ describe('githubProvider.handleOAuthCallback', () => {
   });
 
   it('stores GitHub App installation metadata for later installation-token sync', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -209,7 +228,8 @@ describe('githubProvider.handleOAuthCallback', () => {
         }),
       );
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     const result = await githubProvider.handleOAuthCallback({
       code: 'code',
@@ -242,7 +262,9 @@ describe('githubProvider.listSyncableResources', () => {
   });
 
   it('paginates accessible repos and returns github.repo selections', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       if (requestUrl.includes('/user/orgs')) {
@@ -274,7 +296,8 @@ describe('githubProvider.listSyncableResources', () => {
         }),
       );
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     const resources = await githubProvider.listSyncableResources({} as never, {
       access_token: 'gho_token',
@@ -307,7 +330,9 @@ describe('githubProvider.listSyncableResources', () => {
   it('surfaces GitHub primary rate limits with the provider retry time', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-25T02:00:00.000Z'));
-    const fetchMock = vi.fn<typeof fetch>(() =>
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >(() =>
       Promise.resolve(
         new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
           status: 403,
@@ -319,7 +344,8 @@ describe('githubProvider.listSyncableResources', () => {
         }),
       ),
     );
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await expect(
       githubProvider.listSyncableResources({} as never, { access_token: 'gho_token' }),
@@ -1298,7 +1324,9 @@ describe('githubProvider.backfill', () => {
   });
 
   it('normalizes REST work-item collaboration context into metadata and searchable text', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -1425,7 +1453,8 @@ describe('githubProvider.backfill', () => {
         }),
       );
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
 
@@ -1502,7 +1531,9 @@ describe('githubProvider selected-repository conversation sync', () => {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
-      const fetchMock = vi.fn<typeof fetch>((input) => {
+      const fetchMock = vi.fn<
+        (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+      >((input) => {
         const requestUrl =
           typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
         const url = new URL(requestUrl);
@@ -1584,7 +1615,8 @@ describe('githubProvider selected-repository conversation sync', () => {
         }
         return Promise.resolve(jsonResponse({ message: 'unexpected' }));
       });
-      globalThis.fetch = fetchMock;
+      /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+        Object.assign(fetchMock, { preconnect: vi.fn() });
       const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
       const saveCursor = vi.fn<SyncContext['saveCursor']>().mockResolvedValue(undefined);
       const input = {
@@ -1946,20 +1978,26 @@ describe('githubProvider.incrementalSync', () => {
       updated_at: editedAt,
       user: { login: 'reviewer' },
     };
-    globalThis.fetch = vi.fn<typeof fetch>((input) => {
-      const requestUrl =
-        typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
-      const url = new URL(requestUrl);
-      if (url.pathname === '/repos/acme/app/issues/comments') {
-        return Promise.resolve(jsonResponse([issueComment]));
-      }
-      if (url.pathname === '/repos/acme/app/pulls/comments') {
-        return Promise.resolve(jsonResponse([reviewComment]));
-      }
-      return Promise.resolve(
-        emptyGithubFetch(input) ?? jsonResponse({ message: 'unexpected' }, 404),
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(
+        vi.fn<
+          (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+        >((input) => {
+          const requestUrl =
+            typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+          const url = new URL(requestUrl);
+          if (url.pathname === '/repos/acme/app/issues/comments') {
+            return Promise.resolve(jsonResponse([issueComment]));
+          }
+          if (url.pathname === '/repos/acme/app/pulls/comments') {
+            return Promise.resolve(jsonResponse([reviewComment]));
+          }
+          return Promise.resolve(
+            emptyGithubFetch(input) ?? jsonResponse({ message: 'unexpected' }, 404),
+          );
+        }),
+        { preconnect: vi.fn() },
       );
-    });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
 
     await githubProvider.incrementalSync({
@@ -2072,7 +2110,9 @@ describe('githubProvider.incrementalSync', () => {
       body: 'Late review comment from the same second',
       html_url: 'https://github.com/acme/app/pull/7#discussion-diff-202',
     };
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2087,7 +2127,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     const replayExternalObjectIds = new Set([
       `acme/app#issue:8:comment:${String(issueReplay.id)}`,
@@ -2179,7 +2220,9 @@ describe('githubProvider.incrementalSync', () => {
       body: 'Late review comment after the dense high-water page',
       html_url: 'https://github.com/acme/app/pull/7#discussion-diff-301',
     };
-    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2206,7 +2249,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
 
@@ -2295,7 +2339,9 @@ describe('githubProvider.incrementalSync', () => {
     const initialPage = Array.from({ length: 100 }, (_, index) => comment(index + 1));
     const lateComment = comment(101);
     const mutation = comment(102);
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2317,7 +2363,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi
       .fn<SyncContext['saveCursor']>()
       .mockImplementation((resourceType, cursor) => {
@@ -2412,7 +2459,9 @@ describe('githubProvider.incrementalSync', () => {
       comment(2002, capHighWater),
       ...Array.from({ length: 2001 }, (_, index) => comment(index + 1, capHighWater)),
     ];
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2433,7 +2482,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi
       .fn<SyncContext['saveCursor']>()
       .mockImplementation((resourceType, cursor) => {
@@ -2575,7 +2625,9 @@ describe('githubProvider.incrementalSync', () => {
     });
     const fullPage = (page: number) =>
       Array.from({ length: 100 }, (_, index) => comment((page - 1) * 100 + index + 1));
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2588,7 +2640,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi
       .fn<SyncContext['saveCursor']>()
       .mockImplementation((resourceType, cursor) => {
@@ -2640,7 +2693,9 @@ describe('githubProvider.incrementalSync', () => {
     const highWater = '2026-06-10T12:00:00Z';
     const cursors = new Map<string, TestGithubCursor>();
     let id = 1;
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2660,7 +2715,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi
       .fn<SyncContext['saveCursor']>()
       .mockImplementation((resourceType, cursor) => {
@@ -2736,7 +2792,9 @@ describe('githubProvider.incrementalSync', () => {
 
   it('returns a safe continuation when a comment checkpoint hits a transient error', async () => {
     const cursors = new Map<string, TestGithubCursor>();
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2747,7 +2805,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi
       .fn<SyncContext['saveCursor']>()
       .mockImplementation((resourceType, cursor) => {
@@ -2823,7 +2882,9 @@ describe('githubProvider.incrementalSync', () => {
         },
       ],
     ]);
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2837,7 +2898,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn<SyncContext['saveCursor']>().mockResolvedValue(undefined);
 
     try {
@@ -2888,7 +2950,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('uses a targeted conversation continuation only for its requested surface', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2902,7 +2966,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await expect(
       githubProvider.incrementalSync({
@@ -2945,7 +3010,9 @@ describe('githubProvider.incrementalSync', () => {
       updated_at: highWater,
       user: { login: 'alice' },
     });
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -2966,7 +3033,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await expect(
       githubProvider.incrementalSync({
@@ -3016,7 +3084,9 @@ describe('githubProvider.incrementalSync', () => {
     });
     const fullPage = (firstId: number, updatedAt: string) =>
       Array.from({ length: 100 }, (_, index) => comment(firstId + index, updatedAt));
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3042,7 +3112,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi
       .fn<SyncContext['saveCursor']>()
       .mockImplementation((resourceType, cursor) => {
@@ -3118,9 +3189,12 @@ describe('githubProvider.incrementalSync', () => {
     process.env.GITHUB_APP_ID = '999';
     process.env.GITHUB_APP_PRIVATE_KEY = privateKey
       .export({ format: 'pem', type: 'pkcs1' })
+      .toString()
       .replaceAll('\n', '\\n');
     resetEnvForTests();
-    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3138,7 +3212,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const persistTokens = vi.fn<SyncContext['persistTokens']>().mockResolvedValue(undefined);
 
     await githubProvider.incrementalSync({
@@ -3180,7 +3255,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('paginates commit bursts so polling does not drop events beyond the first page', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3198,7 +3275,8 @@ describe('githubProvider.incrementalSync', () => {
       }
       return Promise.resolve(jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn<SyncContext['saveCursor']>().mockResolvedValue(undefined);
 
@@ -3227,7 +3305,9 @@ describe('githubProvider.incrementalSync', () => {
 
   it('uses commit ETags to skip unchanged commit reconciliation', async () => {
     const commitPath = '/repos/acme/app/commits?sha=main&per_page=100&page=1';
-    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3244,7 +3324,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
@@ -3300,7 +3381,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('treats an empty Git repository as a successful commit sync', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3310,7 +3393,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn<SyncContext['saveCursor']>().mockResolvedValue(undefined);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
@@ -3330,14 +3414,16 @@ describe('githubProvider.incrementalSync', () => {
 
     expect(result).toBeUndefined();
     expect(writeEvents).not.toHaveBeenCalled();
-    expect(savedStatus(saveCursor, 'github.repo:acme/app:commits')).not.toMatchObject({
-      lastStatus: 'error',
-    });
+    expect(savedStatus(saveCursor, 'github.repo:acme/app:commits')).not.toEqual(
+      expect.objectContaining({ lastStatus: 'error' }),
+    );
     expect(recordAudit).not.toHaveBeenCalledWith('github_incremental_partial', expect.anything());
   });
 
   it('expands org selections at sync time and de-dupes explicit repo selections', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3383,7 +3469,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
     await githubProvider.incrementalSync({
@@ -3431,7 +3518,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('uses the cached org repo expansion during steady-state syncs', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3454,7 +3543,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const loadCursor = vi.fn((resourceType: string) =>
       Promise.resolve(
@@ -3491,7 +3581,9 @@ describe('githubProvider.incrementalSync', () => {
   it('voluntarily pauses before draining the GitHub primary quota to zero', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-25T10:00:00.000Z'));
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3505,7 +3597,8 @@ describe('githubProvider.incrementalSync', () => {
       }
       return Promise.resolve(jsonResponse({ message: 'should pause before next call' }, 500));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await expect(
       githubProvider.incrementalSync({
@@ -3530,7 +3623,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('paginates PR reviews so polling replaces the removed webhook surface', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3553,7 +3648,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
 
     await githubProvider.incrementalSync({
@@ -3580,7 +3676,9 @@ describe('githubProvider.incrementalSync', () => {
   it('uses PR ETags to skip unchanged PR reconciliation by state query', async () => {
     const openPullsPath =
       '/repos/acme/app/pulls?state=open&sort=updated&direction=desc&per_page=100&page=1';
-    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3598,7 +3696,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const loadCursor = vi.fn((resourceType: string) =>
@@ -3650,7 +3749,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('maps GitHub PRs and issues to task display titles without numbers', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3665,7 +3766,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
 
     await githubProvider.incrementalSync({
@@ -3690,7 +3792,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('treats PR review fetch failures as partial sync failures', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3706,7 +3810,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
 
@@ -3742,7 +3847,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('aborts the sync immediately when GitHub returns a secondary rate limit', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3758,7 +3865,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await expect(
       githubProvider.incrementalSync({
@@ -3785,7 +3893,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('surfaces the missing GitHub App pull request permission clearly', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3796,7 +3906,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
@@ -3838,7 +3949,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('captures release publish transitions even when the release id was already seen', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3849,7 +3962,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -3878,7 +3992,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('captures a published release during legacy id cursor migration', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3889,7 +4005,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -3916,7 +4033,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('uses release ETags to skip unchanged release reconciliation', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -3938,7 +4057,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const loadCursor = vi.fn((resourceType: string) =>
@@ -3994,7 +4114,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('continues release pagination when a full page mixes old and new releases', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4017,7 +4139,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -4046,7 +4169,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('stops release pagination on a full stale page without a page-cap failure', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4061,7 +4186,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await githubProvider.incrementalSync({
       integration: {} as never,
@@ -4083,7 +4209,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('continues workflow run pagination even when an early full page contains old runs', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4107,7 +4235,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -4138,7 +4267,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('uses workflow ETags to skip unchanged workflow run reconciliation', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4156,7 +4287,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const loadCursor = vi.fn((resourceType: string) =>
@@ -4206,7 +4338,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('stops workflow run pagination on a full stale page without a page-cap failure', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4223,7 +4357,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     await githubProvider.incrementalSync({
       integration: {} as never,
@@ -4249,7 +4384,9 @@ describe('githubProvider.incrementalSync', () => {
   it('skips low-value repo surfaces when their surface cursors were polled recently', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-25T12:00:00.000Z'));
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4257,7 +4394,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const loadCursor = vi.fn((resourceType: string) =>
       Promise.resolve(
@@ -4301,7 +4439,9 @@ describe('githubProvider.incrementalSync', () => {
   it('clears the poll marker when a low-cadence surface fails', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-25T12:00:00.000Z'));
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4312,7 +4452,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const loadCursor = vi.fn((resourceType: string) =>
       Promise.resolve(
@@ -4364,7 +4505,9 @@ describe('githubProvider.incrementalSync', () => {
 
   it('keeps GitHub HTTP status visible when summarizing long commit URLs', async () => {
     const repo = 'acme/super-long-repository-name-for-status-retention-tests';
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4393,7 +4536,8 @@ describe('githubProvider.incrementalSync', () => {
       }
       return Promise.resolve(jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
 
     const result = await githubProvider.incrementalSync({
       integration: {} as never,
@@ -4420,7 +4564,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('advances the issue cursor when fetched rows are PRs filtered out of issue events', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4431,7 +4577,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -4455,7 +4602,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('mints a polling reopen dedup key when issue lifecycle history shows closed→open', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4479,7 +4628,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -4522,7 +4672,9 @@ describe('githubProvider.incrementalSync', () => {
     const bloatedLifecycles = Object.fromEntries(
       Array.from({ length: 5_001 }, (_, index) => [String(index), 'closed' as const]),
     );
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4546,7 +4698,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -4585,7 +4738,9 @@ describe('githubProvider.incrementalSync', () => {
   it('uses issue ETags to skip unchanged issue reconciliation by since query', async () => {
     const issuesPath =
       '/repos/acme/app/issues?state=all&since=2026-06-10T12%3A00%3A00Z&sort=updated&direction=desc&per_page=100&page=1';
-    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4603,7 +4758,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const loadCursor = vi.fn((resourceType: string) =>
@@ -4654,7 +4810,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('seeds the release timestamp cursor from a legacy draft release', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4665,7 +4823,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const writeEvents = vi.fn<SyncContext['writeEvents']>().mockResolvedValue([]);
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
@@ -4692,7 +4851,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('truncates oversized initial commit history and advances the high-water cursor', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4704,7 +4865,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const recordAudit = vi.fn().mockResolvedValue(undefined);
 
@@ -4731,7 +4893,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('checkpoints oversized commit gaps so later syncs can continue draining them', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4743,7 +4907,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const recordAudit = vi.fn().mockResolvedValue(undefined);
 
@@ -4780,7 +4945,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('continues a checkpointed commit gap and promotes the saved high-water sha', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4790,7 +4957,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
 
     await githubProvider.incrementalSync({
@@ -4824,7 +4992,9 @@ describe('githubProvider.incrementalSync', () => {
   });
 
   it('surfaces GitHub API failures instead of marking a broken sync healthy', async () => {
-    const fetchMock = vi.fn<typeof fetch>((input) => {
+    const fetchMock = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input) => {
       const requestUrl =
         typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
       const url = new URL(requestUrl);
@@ -4835,7 +5005,8 @@ describe('githubProvider.incrementalSync', () => {
       const base = emptyGithubFetch(input);
       return Promise.resolve(base ?? jsonResponse({ message: 'unexpected' }, 404));
     });
-    globalThis.fetch = fetchMock;
+    /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
+      Object.assign(fetchMock, { preconnect: vi.fn() });
     const saveCursor = vi.fn().mockResolvedValue(undefined);
     const recordAudit = vi.fn<SyncContext['recordAudit']>().mockResolvedValue(undefined);
 

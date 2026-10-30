@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
+
 export const LOCAL_DEV_SEED_OVERRIDE = 'I_UNDERSTAND_THIS_SEEDS_KNOWN_DEV_CREDENTIALS';
 export const LOCAL_DEV_SEED_STORAGE_OVERRIDE =
   'I_UNDERSTAND_THIS_WRITES_DEMO_DATA_TO_ISOLATED_STORAGE';
@@ -257,6 +259,9 @@ export interface DemoAssociationSnapshot {
   visibilityFloor: string;
   sourceRefs: unknown;
 }
+
+const DEMO_CURRENT_LEGAL_DATE = TERMS_VERSION >= PRIVACY_VERSION ? TERMS_VERSION : PRIVACY_VERSION;
+export const DEMO_LEGAL_ACCEPTED_AT = `${DEMO_CURRENT_LEGAL_DATE}T00:00:00.000Z`;
 
 export interface DemoLoginSnapshot {
   id: string;
@@ -827,7 +832,7 @@ export function assertDemoVectorEnvironment(env: DemoEnvironment = process.env):
   assertDemoSeedEnvironment(env);
   if (!env.OPENROUTER_API_KEY) {
     throw new Error(
-      'OPENROUTER_API_KEY is required to create and verify genuine demo embeddings; configure a development key and rerun pnpm demo:seed',
+      'OPENROUTER_API_KEY is required to create and verify genuine demo embeddings; configure a development key and rerun bun run demo:seed',
     );
   }
   if (!env.QDRANT_URL) {

@@ -1,19 +1,41 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { renderToStaticMarkup } from 'react-dom/server';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ auth: vi.fn() }));
 
-vi.mock('@/components/theme-toggle', () => ({
-  ThemeToggle: () => <button type="button">Theme</button>,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@/app/actions/invites', () => ({ acceptInviteAction: vi.fn() }));
-vi.mock('@timeline/db', () => ({ getDb: () => ({}), teamInvites: {}, teams: {} }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
+await vi.mock(
+  import.meta.resolve('@/components/theme-toggle'),
+  () => ({
+    ThemeToggle: () => <button type="button">Theme</button>,
+  }),
+  () => import('@/components/theme-toggle'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/invites'),
+  () => ({ acceptInviteAction: vi.fn() }),
+  () => import('@/app/actions/invites'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({ getDb: () => ({}), teamInvites: {}, teams: {} }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: AcceptInviteError } = await import('./error.js');
 const { default: AcceptInviteLoading } = await import('./loading.js');
@@ -70,10 +92,10 @@ describe('AcceptInvite route states', () => {
       screen.getByRole('heading', { level: 2, name: 'Unable to load invitation' }),
     ).toBeTruthy();
     expect(screen.getByRole('alert').textContent).toContain(
-      'Unable to load invitationThis failed load did not accept your invitation or change your team access. Check your connection, then try again.Try again',
+      'Unable to load invitationThis failed load did not accept your invitation or change your team access. Check your connection, then try again.RetryGet support',
     );
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
     await user.keyboard('[Space]');

@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, fireEvent } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import { Coachmark } from '@/components/coachmark';
+// Test environment: happy-dom
 
 afterEach(() => {
   cleanup();

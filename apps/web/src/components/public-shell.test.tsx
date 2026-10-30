@@ -1,8 +1,8 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import { PublicShell } from '@/components/public-shell';
-
 // Public pages must let keyboard users bypass shared navigation before any other action.
 describe('PublicShell', () => {
   it('renders the skip link first and targets the page main landmark', () => {
@@ -25,6 +25,9 @@ describe('PublicShell', () => {
     expect(html.match(/aria-label="Toggle theme"/g)).toHaveLength(2);
     expect(html).toContain('href="/sign-up"');
     expect(html).toContain('>Try one project</a>');
+    expect(html).toContain('href="/cookies"');
+    expect(html).toContain('data-public-analytics-cta="try_project"');
+    expect(html).toContain('data-public-analytics-cta="sign_in"');
     expect(html).not.toMatch(/href="(?:\/(?:app\/)?demo|\/workspace\/demo|https?:\/\/t\.me\/)/u);
   });
 

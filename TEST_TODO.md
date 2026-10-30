@@ -6,12 +6,12 @@ contracts, not private implementation structure.
 
 ## Test Status Overview
 
-Last checked in this branch: on 2026-08-20, `pnpm validate`,
-`pnpm run doctor`, `pnpm test`, `pnpm test:eval`,
-`pnpm test:reconciliation-eval`, and `pnpm test:dist-imports` pass. React Doctor
+Last checked in this branch: on 2026-08-20, `bun run validate`,
+`bun run doctor`, `bun run test`, `bun run test:eval`,
+`bun run test:reconciliation-eval`, and `bun run test:dist-imports` pass. React Doctor
 reported "No issues found!" with a 100/100 score. The previous 2026-07-19
-verification also passed those gates plus `pnpm test:e2e-env`,
-`pnpm test:task-category-eval:live`, and the full strict local Playwright suite.
+verification also passed those gates plus `bun run test:e2e-env`,
+`bun run test:task-category-eval:live`, and the full strict local Playwright suite.
 That Playwright suite passed 63 tests,
 including curated Quiet Archive Linux visual baselines (not a full surface matrix),
 Home-to-Ask private prompt handoff, capture dialog, UUID suppression, one-heading
@@ -24,15 +24,15 @@ from the workspace timezone at date boundaries. The live task-category gate
 passed 120 cases at 96.7% single-prediction accuracy, 97.5% batch accuracy, and
 100% prompt-injection accuracy.
 
-On 2026-07-08, `pnpm validate`, `pnpm run doctor`,
-`pnpm test:eval`, `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`, and
+On 2026-07-08, `bun run validate`, `bun run doctor`,
+`bun run test:eval`, `bun run test:reconciliation-eval`, `bun run test:dist-imports`, and
 the full strict local Playwright suite also passed.
 
 The 2026-07-02 verification also passed
-`pnpm test:eval`, `pnpm test:reconciliation-eval`, `pnpm test:dist-imports`,
-root `pnpm test`, `pnpm test:agent-eval:live`,
-`pnpm test:suggestions-eval:live`, `pnpm test:transcribe-eval:live`, and
-`pnpm e2e:prod-smoke` against the production build and standalone server.
+`bun run test:eval`, `bun run test:reconciliation-eval`, `bun run test:dist-imports`,
+root `bun run test`, `bun run test:agent-eval:live`,
+`bun run test:suggestions-eval:live`, `bun run test:transcribe-eval:live`, and
+`bun run e2e:prod-smoke` against the production build and standalone server.
 The full local Playwright suite then passed 50 tests against the isolated Docker
 stack, including Slack settings member/admin bind-unbind, Telegram settings
 admin token/unbind, support/team-export, onboarding checklist, global search,
@@ -46,9 +46,9 @@ partial bulk approval failure recovery, invalid manual-reconcile operator errors
 and private/specific-user cluster visibility filtering across the dashboard and
 direct cluster URLs.
 On 2026-07-07, the focused legacy-provenance cutover pass also reran
-`pnpm validate`, `pnpm run doctor`, `pnpm test:eval`,
-`pnpm test:reconciliation-eval`, `pnpm test:reconciliation-eval:live`,
-`pnpm test:dist-imports`, and `git diff --check`. React Doctor again reported
+`bun run validate`, `bun run doctor`, `bun run test:eval`,
+`bun run test:reconciliation-eval`, `bun run test:reconciliation-eval:live`,
+`bun run test:dist-imports`, and `git diff --check`. React Doctor again reported
 "No issues found" with a 100/100 score.
 On 2026-07-08, the DB schema contract added and verified migration
 `0056_legacy_provenance_cutover_guards.sql`. On 2026-07-10, follow-up migration
@@ -186,9 +186,9 @@ meeting URL host matching, generated calendar cleanup,
 quick-join/failure/capacity/reuse, partial-cancel finalize queue regressions,
 and board/search UI regressions. Current suite shape:
 
-- DB Vitest: 2 files / 14 tests, package-level PGlite schema contract suite now
-  runs under root `pnpm test`.
-- Shared Vitest: root runner covers more than 90 files, including PGlite
+- DB tests: 2 files / 14 tests, package-level PGlite schema contract suite now
+  runs under root `bun run test`.
+- Shared tests: root runner covers more than 90 files, including PGlite
   artifact reconciliation, reconciliation all-source normalization/backfill/resolution,
   authority policy, planner prompt/schema, artifact-kind and forbidden-output
   eval contracts, system-event eval surface coverage, live artifact-kind eval
@@ -201,15 +201,15 @@ and board/search UI regressions. Current suite shape:
   recovery, connection-attention, and onboarding coverage.
   The shared package runner executes unit tests once and PGlite integration
   tests in isolated chunks so long-lived PGlite state cannot starve later hooks
-  during root `pnpm test`.
-- Web Vitest: route/action/component coverage
+  during root `bun run test`.
+- Web tests: route/action/component coverage
   for search, timeline, core recovery, onboarding, object sections, board
   add-item interactions, provider-connection routes/UI, Slack events/commands/
   install/user-link routes, Slack bind/unbind actions, Telegram link-token
   actions/forms, app dialog flows, approval evidence source-ref metadata
   serialization, MCP server management/key-share states, inbound email whitelist
   states, and other high-value UI states.
-- Worker Vitest: includes extract, transcribe,
+- Worker tests: includes extract, transcribe,
   document-extract, meeting-finalize, meeting-scheduler, integration-sync
   attention, mixed partial-failure, provider document-harvest behavior with
   source payload refs/snapshots on the upload event,
@@ -296,12 +296,12 @@ Legend:
   timeline moment presentation prompt/schema can produce a concrete
   non-provider title and source-event preview IDs through the real structured
   LLM boundary;
-  `pnpm test:agent-eval:live` now runs an opt-in real-model `askAgent` eval
+  `bun run test:agent-eval:live` now runs an opt-in real-model `askAgent` eval
   against seeded durable task/calendar state, provider/document/meeting
   retrieval, launch synthesis, and email/project/incident/document renewal-risk
   synthesis through the same non-browser bot entrypoint used by Slack and
   Telegram;
-  `pnpm test:suggestions-eval:live` now runs an opt-in real-model suggestion
+  `bun run test:suggestions-eval:live` now runs an opt-in real-model suggestion
   worker eval against seeded customer email evidence and asserts approval
   projection plus source-ref provenance;
   shared moment projection tests now include persisted live-adapter metadata
@@ -327,17 +327,17 @@ Legend:
 
 ### Root Commands
 
-- `pnpm test` runs package Vitest suites through Turbo with package-level
-  concurrency set to `1`.
-- `pnpm --filter @timeline/db test` runs DB/PGlite schema contract tests.
-- `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
+- `bun run test` runs the classified Bun suite with a separate process per file,
+  serial database execution, and bounded chunks for large suites.
+- `bun run --filter @timeline/db test` runs DB/PGlite schema contract tests.
+- `bun run test:eval` runs the fast deterministic shared agent/retrieval eval
   slice, including dashboard chat route action/HITL selection and persisted
   observability, dispatcher-level Slack/Telegram `/ask` delivery through the
   real non-browser `askAgent` wrapper, web-rich versus external-chat presentation
   (including a broad weekly-plan comparison), object-summary source-ref/visibility
   coverage, and a worker-level background proposal eval for visibility-safe
   conversation reviews.
-- `pnpm test:agent-eval:live` runs an opt-in live OpenRouter `askAgent` eval
+- `bun run test:agent-eval:live` runs an opt-in live OpenRouter `askAgent` eval
   against seeded durable workspace state, Monday integration search, Sentry
   resource drill-in, document retrieval, meeting transcript retrieval, custom
   MCP customer-health tool use with evidence capture, cross-surface
@@ -349,9 +349,9 @@ Legend:
   dashboard chat action/HITL selection, Slack/Telegram ask-surface delivery,
   background proposal generation, and turn-observability capture, and
   deterministic/live agent evals share Qdrant `SearchHit` fixture builders.
-- `pnpm test:suggestions-eval:live` runs an opt-in real-model suggestion worker
+- `bun run test:suggestions-eval:live` runs an opt-in real-model suggestion worker
   eval against seeded customer email evidence.
-- `pnpm test:proposal-engine:live` runs an opt-in messy proposal-engine eval
+- `bun run test:proposal-engine:live` runs an opt-in messy proposal-engine eval
   with real models and, when Qdrant is configured, real embeddings. Isolated
   PGlite team, ~90% noisy fixtures (Sentry spikes, GitHub Actions pulses,
   Bugbot findings, buried `repo#n` / Linear keys, typo fragments, mention soup,
@@ -365,23 +365,23 @@ Legend:
   conversation review only when the window names exactly one tracked id). Set
   `PROPOSAL_ENGINE_LIVE_ENV_FILE=/path/to/.env` when the shell has not already
   loaded live credentials.
-- `pnpm test:transcribe-eval:live` runs an opt-in live OpenRouter speech
+- `bun run test:transcribe-eval:live` runs an opt-in live OpenRouter speech
   transcription eval through the worker finalization path. Set
   `TRANSCRIBE_LIVE_ENV_FILE=/path/to/.env` when the current shell has not
   already loaded the live LLM env.
-- `pnpm test:reconciliation-eval` runs deterministic reconciliation schema,
+- `bun run test:reconciliation-eval` runs deterministic reconciliation schema,
   surface/scenario matrix, source-ref, visibility-floor, authority-policy,
   planner prompt/schema, normalization, backfill, and resolver evals.
-- `pnpm test:e2e-env` runs the deterministic E2E environment and isolated
+- `bun run test:e2e-env` runs the deterministic E2E environment and isolated
   Docker-port contract check.
-- `pnpm test:dist-imports` builds `@timeline/db` and `@timeline/shared`, then
+- `bun run test:dist-imports` builds `@timeline/db` and `@timeline/shared`, then
   imports selected compiled runtime modules with Node.
-- `pnpm validate` runs format, typecheck, lint, and knip. Tests run through
-  `pnpm test`, `pnpm test:eval`, `pnpm test:reconciliation-eval`,
-  `pnpm test:e2e-env`, `pnpm test:dist-imports`, package-filtered Vitest
+- `bun run validate` runs format, typecheck, lint, and knip. Tests run through
+  `bun run test`, `bun run test:eval`, `bun run test:reconciliation-eval`,
+  `bun run test:e2e-env`, `bun run test:dist-imports`, package-filtered Bun
   commands, or E2E commands depending on the change.
-- `pnpm e2e` runs local Playwright E2E through `scripts/run-e2e-strict.ts`.
-- `pnpm e2e:prod-smoke` runs the production-ish Playwright smoke suite.
+- `bun run e2e` runs local Playwright E2E through `scripts/run-e2e-strict.ts`.
+- `bun run e2e:prod-smoke` runs the production-ish Playwright smoke suite.
 
 ### Playwright E2E
 
@@ -960,7 +960,7 @@ tests and evals carry the branch coverage and model/tool behavior.
     task/calendar state, failed-tool honesty, and private/specific-user/team
     fences.
 - Test command target:
-  - `pnpm test:eval` runs the fast deterministic shared agent/retrieval eval
+  - `bun run test:eval` runs the fast deterministic shared agent/retrieval eval
     slice, including dashboard chat action/HITL selection, Slack/Telegram
     `/ask` delivery through the real non-browser `askAgent` wrapper,
     object-summary source-ref/visibility checks, and background proposal
@@ -1142,36 +1142,36 @@ to leave untested.
 
 Once the suite is mature, split commands by layer:
 
-- `pnpm test`: fast unit and integration tests that should always pass.
-- `pnpm e2e`: local core Playwright E2E.
-- `pnpm e2e:prod-smoke`: production-ish smoke.
-- `pnpm test:eval`: fast deterministic agent evals, including dashboard chat
+- `bun run test`: fast unit and integration tests that should always pass.
+- `bun run e2e`: local core Playwright E2E.
+- `bun run e2e:prod-smoke`: production-ish smoke.
+- `bun run test:eval`: fast deterministic agent evals, including dashboard chat
   action/HITL selection, Slack/Telegram `/ask` delivery through the real
   non-browser `askAgent` wrapper, object-summary source-ref/visibility checks,
   and background proposal generation through the worker suggestion path.
-- `pnpm test:agent-eval:live`: opt-in live `askAgent` durable-state,
+- `bun run test:agent-eval:live`: opt-in live `askAgent` durable-state,
   Monday/Sentry provider-backed retrieval, document retrieval, meeting
   transcript retrieval, custom MCP customer-health tool use, and cross-surface
   launch and renewal-risk synthesis evals.
-- `pnpm test:transcribe-eval:live`: opt-in live speech transcription worker
+- `bun run test:transcribe-eval:live`: opt-in live speech transcription worker
   finalization eval.
-- `pnpm test:reconciliation-eval`: deterministic reconciliation eval matrix,
+- `bun run test:reconciliation-eval`: deterministic reconciliation eval matrix,
   replay coverage, reconciliation dashboard snapshot contracts, and
   production-sampling artifact loading/report aggregation, including
   committed redacted live-case fixture replay, artifact-kind miss reporting,
   duplicate source-ref stale-pass downgrades, operator CLI failure-gate
   coverage, legacy-provenance cutover CLI gating, and per-ref source-payload
   enforcement.
-- `pnpm test:e2e-env`: E2E environment and isolated Docker-port contract smoke.
-- `pnpm test:dist-imports`: compiled-package import smoke.
-- `pnpm validate`: format, typecheck, lint, and knip.
-- `pnpm canary:integrations`: manual secret-safe live OpenRouter structured
+- `bun run test:e2e-env`: E2E environment and isolated Docker-port contract smoke.
+- `bun run test:dist-imports`: compiled-package import smoke.
+- `bun run validate`: format, typecheck, lint, and knip.
+- `bun run canary:integrations`: manual secret-safe live OpenRouter structured
   chat, OpenRouter audio transcription, GitHub App, Sentry, Postmark, Telegram,
   Recall, optional Slack Web API `auth.test`, optional signed Slack event
   capture, optional secret-protected Telegram capture, optional DB-polled
   Postmark inbound capture, native OAuth authorize endpoint, and webhook-secret
   canary.
-- `pnpm canary:integrations:strict`: same canary, failing unless every row is
+- `bun run canary:integrations:strict`: same canary, failing unless every row is
   `OK`.
 - CI PR gate: validate, reconciliation evals, and compiled-package import
   smoke, with core E2E when stable.

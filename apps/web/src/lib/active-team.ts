@@ -2,9 +2,15 @@ import { teamMembers, teams } from '@timeline/db';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import { cookies } from 'next/headers';
 
+import { ACTIVE_TEAM_COOKIE, parseActiveTeamCookie } from '@/lib/active-team-cookie';
 import { db } from '@/lib/db';
 
-export const ACTIVE_TEAM_COOKIE = 'tl_active_team';
+export {
+  ACTIVE_TEAM_COOKIE,
+  activeTeamCookieOptions,
+  parseActiveTeamCookie,
+  serializeActiveTeamCookie,
+} from '@/lib/active-team-cookie';
 
 export interface TeamMembership {
   teamId: string;
@@ -46,7 +52,7 @@ export async function resolveActiveTeam(
   const memberships = await listMemberships(userId);
   if (memberships.length === 0) return { active: null, memberships };
   const cookieStore = await cookies();
-  const cookieTeamId = cookieStore.get(ACTIVE_TEAM_COOKIE)?.value;
+  const cookieTeamId = parseActiveTeamCookie(cookieStore.get(ACTIVE_TEAM_COOKIE)?.value)?.teamId;
   const fromCookie = cookieTeamId ? memberships.find((m) => m.teamId === cookieTeamId) : undefined;
   return { active: fromCookie ?? memberships[0] ?? null, memberships };
 }

@@ -1,4 +1,38 @@
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
+
+import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
+const qdrantFakes = vi.hoisted(() => ({
+  deletePoints: vi.fn().mockResolvedValue(undefined),
+  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
+  getQdrantClient: vi.fn(),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/qdrant/client.js'),
+  () => ({
+    getQdrantClient: qdrantFakes.getQdrantClient,
+  }),
+  () => import('#src/qdrant/client.js'),
+);
+
+const {
   boardItemChanges,
   boardItems,
   boardLanes,
@@ -9,39 +43,13 @@ import {
   rawEvents,
   reconciliationEvidence,
   reconciliationOutputs,
-  type Db,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type { PGlite } from '@electric-sql/pglite';
-
-import {
-  buildBoardDirectWriteSourceContext,
-  defaultBoardLanes,
-  defaultBoardRecommendedTypes,
-} from '#src/boards/index.js';
-import { withTeam } from '#src/team-scope.js';
-import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-const qdrantFakes = vi.hoisted(() => ({
-  deletePoints: vi.fn().mockResolvedValue(undefined),
-  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
-  getQdrantClient: vi.fn(),
-}));
-
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-}));
-vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: qdrantFakes.getQdrantClient,
-}));
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { buildBoardDirectWriteSourceContext, defaultBoardLanes, defaultBoardRecommendedTypes } =
+  await import('#src/boards/index.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { createResettablePGliteTestDb } = await import('#src/test/pglite.js');
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-2222-2222-222222222222';
@@ -425,11 +433,27 @@ describe('board scope', () => {
       }),
     ).rejects.toThrow();
 
-    await scope.boards.updateBoardItem(
+    const update = await scope.boards.updateBoardItem(
       item.id,
       { laneId: board.lanes[1]?.id ?? null, priority: 2 },
       { kind: 'user', userId: USER_OWNER },
     );
+    expect(update).toMatchObject({
+      changed: true,
+      changedFields: ['laneId', 'priority'],
+      item: { id: item.id, laneId: board.lanes[1]?.id, priority: 2 },
+    });
+
+    const noOpUpdate = await scope.boards.updateBoardItem(
+      item.id,
+      { laneId: board.lanes[1]?.id ?? null, priority: 2 },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    expect(noOpUpdate).toMatchObject({
+      changed: false,
+      changedFields: [],
+      item: { id: item.id, laneId: board.lanes[1]?.id, priority: 2 },
+    });
 
     const changes = await db
       .select()
@@ -477,8 +501,7 @@ describe('board scope', () => {
 
     const updateSourceRef = (
       updateOutput?.sourceRefs as
-        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
-        | null
+        { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[] | null
     )?.[0];
     expect(updateSourceRef?.rawEventId).toEqual(expect.any(String));
     expect(updateSourceRef?.evidenceId).toBeUndefined();
@@ -1250,8 +1273,7 @@ describe('board scope', () => {
     });
     const removeSourceRef = (
       removeOutput?.sourceRefs as
-        | { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[]
-        | null
+        { rawEventId?: string; evidenceId?: string; sourcePayloadRef?: string }[] | null
     )?.[0];
     expect(removeSourceRef?.rawEventId).toEqual(expect.any(String));
     expect(removeSourceRef?.evidenceId).toBeUndefined();

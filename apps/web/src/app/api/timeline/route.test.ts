@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for `/api/timeline`. Shared timeline scope tests own
  * database visibility semantics; this route owns auth, active-team scoping,
@@ -27,48 +28,76 @@ const fakes = vi.hoisted(() => ({
   fakeGetAudioBucket: vi.fn(),
   fakeGetSignedGetObjectUrl: vi.fn(),
   fakeListTimelineCapturedFilesByEventId: vi.fn(),
-  fakeTrackTimelineMomentsViewed: vi.fn(),
   fakeIsPinnedMany: vi.fn(),
   fakeDbSelect: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: { select: fakes.fakeDbSelect } }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }));
-vi.mock('@/lib/timeline-captured-files', () => ({
-  listTimelineCapturedFilesByEventId: fakes.fakeListTimelineCapturedFilesByEventId,
-}));
-vi.mock('@/lib/timeline-observability', () => ({
-  trackTimelineMomentsViewed: fakes.fakeTrackTimelineMomentsViewed,
-}));
-vi.mock('@timeline/shared/cache', () => ({
-  cacheKey: fakes.fakeCacheKey,
-  cachedJson: fakes.fakeCachedJson,
-}));
-vi.mock('@timeline/shared/s3', () => ({
-  getAudioBucket: fakes.fakeGetAudioBucket,
-  getS3PresignClient: fakes.fakeGetS3PresignClient,
-  getSignedGetObjectUrl: fakes.fakeGetSignedGetObjectUrl,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    calendar: {
-      getCalendarSettings: fakes.fakeGetCalendarSettings,
-    },
-    pins: { isPinnedMany: fakes.fakeIsPinnedMany },
-    timeline: {
-      listEvents: fakes.fakeListEvents,
-      listEventsForMomentLookup: fakes.fakeListEventsForMomentLookup,
-      listEventsPage: fakes.fakeListEventsPage,
-      getEventsByIds: fakes.fakeGetEventsByIds,
-      listImpactItems: fakes.fakeListImpactItems,
-      listArtifactClusters: fakes.fakeListArtifactClusters,
-      listMomentPresentations: fakes.fakeListMomentPresentations,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: { select: fakes.fakeDbSelect } }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.fakeRequireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/timeline-captured-files'),
+  () => ({
+    listTimelineCapturedFilesByEventId: fakes.fakeListTimelineCapturedFilesByEventId,
   }),
-}));
+  () => import('@/lib/timeline-captured-files'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/cache'),
+  () => ({
+    cacheKey: fakes.fakeCacheKey,
+    cachedJson: fakes.fakeCachedJson,
+  }),
+  () => import('@timeline/shared/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/s3'),
+  () => ({
+    getAudioBucket: fakes.fakeGetAudioBucket,
+    getS3PresignClient: fakes.fakeGetS3PresignClient,
+    getSignedGetObjectUrl: fakes.fakeGetSignedGetObjectUrl,
+  }),
+  () => import('@timeline/shared/s3'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      calendar: {
+        getCalendarSettings: fakes.fakeGetCalendarSettings,
+      },
+      pins: { isPinnedMany: fakes.fakeIsPinnedMany },
+      timeline: {
+        listEvents: fakes.fakeListEvents,
+        listEventsForMomentLookup: fakes.fakeListEventsForMomentLookup,
+        listEventsPage: fakes.fakeListEventsPage,
+        getEventsByIds: fakes.fakeGetEventsByIds,
+        listImpactItems: fakes.fakeListImpactItems,
+        listArtifactClusters: fakes.fakeListArtifactClusters,
+        listMomentPresentations: fakes.fakeListMomentPresentations,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { GET } = await import('./route.js');
 
@@ -235,29 +264,6 @@ describe('GET /api/timeline', () => {
       capturedFiles: {},
       audioUrls: { 'event-1': 'https://signed-audio.test/event-1' },
     });
-    expect(body).not.toHaveProperty('__timelineObservability');
-    expect(fakes.fakeTrackTimelineMomentsViewed).toHaveBeenCalledOnce();
-    expect(fakes.fakeTrackTimelineMomentsViewed.mock.calls[0]?.[0]).toMatchObject({
-      teamId: TEAM_ID,
-      userId: USER_ID,
-      surface: 'api',
-      filters: {
-        author: AUTHOR_ID,
-        source: 'integrations',
-        origin: 'monday:board-42',
-        impact: 'task',
-        cursor: 'abc',
-      },
-      diagnostics: {
-        mode: 'moments',
-        returnedRawEventCount: 1,
-        returnedMomentCount: 1,
-      },
-      presentationCacheStats: {
-        missCount: 1,
-        visibilityPartitionCount: 1,
-      },
-    });
     expect(fakes.fakeListEventsPage).toHaveBeenCalledWith(
       expect.objectContaining({
         authorUserId: [AUTHOR_ID],
@@ -269,8 +275,7 @@ describe('GET /api/timeline', () => {
       }),
     );
     const listEventsInput = fakes.fakeListEventsPage.mock.calls[0]?.[0] as
-      | { limit?: unknown }
-      | undefined;
+      { limit?: unknown } | undefined;
     expect(typeof listEventsInput?.limit).toBe('number');
     expect(fakes.fakeCacheKey).toHaveBeenCalledWith(
       expect.arrayContaining([

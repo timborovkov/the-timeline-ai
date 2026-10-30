@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { notificationHref } from '@/lib/notification-href';
-
 describe('notificationHref', () => {
   it('deep-links mention notifications into the object discussion comment', () => {
     expect(

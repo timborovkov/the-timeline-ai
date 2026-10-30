@@ -1,6 +1,7 @@
 # The Timeline — Design System
 
-**Version:** v3.27 · Installed-app splash (2026-08-26). Replaces v3.26 Dedicated animated platform flow.
+**Version:** v3.28 · Privacy-conscious analytics and support (2026-08-26).
+Replaces v3.27 Installed-app splash.
 
 This is the visual and interaction contract for the product. If a screen
 disagrees with it, fix the screen. If the language intentionally changes,
@@ -179,7 +180,7 @@ startup image per device size and orientation. Those images are the same dark
 field with the centered mark — no wordmark, no extra chrome, no light-mode
 variant. Keep them in lockstep with
 [`apps/web/src/app/icon.svg`](apps/web/src/app/icon.svg); regenerate with
-`pnpm exec tsx apps/web/scripts/generate-pwa-splash.ts`.
+`bun apps/web/scripts/generate-pwa-splash.ts`.
 
 ## Shared components
 
@@ -481,9 +482,11 @@ danger row into the work queue. Open tasks stay their own row into Tasks. Open
 objects is one generic count for people, companies, projects, deals, and
 follow-ups, linking to the Objects list rather than typed filters or dumping
 those records onto Home. “You’re caught up” replaces empty dashboard grids
-when every group is zero. Pinned work, digest, and a dense recent-moments scan
-follow as full-width sections without duplicating Timeline or Connections.
-These sections prefer horizontal rules and rows over bordered dashboard cards.
+when every group is zero. Pinned work, the team inbound email as one readonly
+copyable field (`#team-email`) with a quiet link to Team → Email settings,
+digest, and a dense recent-moments scan follow as full-width sections without
+duplicating Timeline or Connections. These sections prefer horizontal rules and
+rows over bordered dashboard cards.
 
 The latest digest stays folded until opened. Its summary and section bodies are
 readable prose, not inventories of pull requests or IDs. The generator bans
@@ -795,24 +798,41 @@ The full object page is a Linear-style issue view, not a work-index. It has no
 editable title. Board placement is a muted header line, not a standalone
 section, and those same boards are not repeated under Connected work. Pin is the shared Home-destination icon; Ask uses the
 shared floating binder. Repair memory and Add task live in the overflow
-menu. The main column uses an 8px section stack and 14px body at 1.35
+menu. The main column uses a dense section stack and 14px body at 1.35
 line-height: why this exists, a generated summary only when it has content or
 an actionable generate/retry state, then only the provenance / connected-work /
-evidence / facts groups that have items. Empty “Not enough object memory,” “No
-connected work,” and “Nothing here yet” cards are prohibited. Discussion keeps
-a borderless composer with @mentions. The right column is one Properties rail: a 6px-radius
-`--surface` panel with a hairline `--border`, not raw page canvas. Properties,
-Related, recent changes, and Archive share that one panel and divide with
-hairlines. Do not nest a card per field. The task peek uses the same rail so
-it lifts off the list in light and dark. An empty summary is a single
-Generate summary control, not a “ready to generate” block. Evidence uses a
-quiet text control, not a signal chip. Section labels, supporting copy, and
-timestamps use 12px `--fg-dim`. Body and links use 14px `--fg` at regular
-weight. Quiet actions use 12px `--fg-muted`. `--signal` is reserved for
+evidence / facts groups that have items. Top-level section titles use 13px
+semibold `--fg` (not dim) so Evidence / Connected work / Discussion read as
+structure; section counts and timestamps use Commit Mono 11px tabular
+`--fg-dim`. Nested Connected work groups use quieter 11px medium `--fg-muted`
+and hairline dividers so Open tasks / Documents / Evidence do not compete.
+Row titles are 14px medium `--fg`; body and prose stay 14px regular `--fg`;
+supporting meta is 12px `--fg-dim` and sentence case (`Create · Identity facet`,
+never raw `create · identity_facet`). Empty
+“Not enough object memory,” “No connected work,” and “Nothing here yet” cards
+are prohibited. Long Evidence, Facts, Documents, and other Connected work lists
+preview three rows, then fold the rest behind a quiet `Show N more` disclosure
+(with hairline row dividers and two-line evidence clamps) so the main column
+does not become a wall of text. Discussion keeps
+a borderless composer with @mentions. The right column is one Properties rail at
+`20rem` on xl breakpoints: a 6px-radius `--surface` panel with a hairline
+`--border`, not raw page canvas. Board context, editable contact facets (people and
+companies), type-aware Details fields (same 32px property rows as Stage/Aliases:
+`6.75rem` medium `--fg-dim` labels, 14px `--fg` values, blur-to-save inputs, `No …` placeholders;
+arbitrary Add field with human labels stored as camelCase; hover-only ghost × to clear
+custom fields; `fixture_version` and other internal keys stay hidden), Properties,
+Company (person objects), Related, recent changes, and Archive share that one panel
+and divide with hairlines. Status and Priority keep a toned icon with quiet `--fg`
+value text so they match Stage/Aliases. Do not nest a card per
+field. The task peek and board card peek use the same rail pattern so they lift
+off the list in light and dark; both include Discussion below command fields and
+before related context. An empty summary is a single Generate summary control, not a “ready to generate” block. Evidence uses a
+quiet text control, not a signal chip. Supporting copy stays 12px `--fg-dim`.
+Quiet fold/actions use 12px medium `--fg-muted`. `--signal` is reserved for
 alerts and Accept. Object ID lives in a compact 12px Technical details
 disclosure. Relationship and change metadata stay sentence case. Content is
-grouped by typography and spacing. Nested bordered boxes are not a layout
-system on these surfaces.
+grouped by typography and spacing (`object-detail-type.ts`). Nested bordered boxes
+are not a layout system on these surfaces.
 
 Approval rows use the same collection density as Tasks. One row per review
 item: selection checkbox, human title once, a short context line (`Create
@@ -1009,6 +1029,44 @@ visitors to learn an editorial publication, edition, playbook, or dossier
 taxonomy.
 The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
+
+`/trust` is the concise public assurance surface. It follows the expanded
+editorial grid, leads with the training-data boundary, then shows the data path,
+AI routing, storage and access, processor roles, permissions, current assurance
+status, and private vulnerability-reporting route. It must distinguish controls
+enforced in code from production-account, contract, and certification evidence;
+unverified badges and absolute “nothing leaves our servers” claims are
+prohibited. Privacy and Terms remain the detailed legal surfaces and cross-link
+Trust. Once legal publication is ready, `/legal/accept` is an authenticated
+blocking interstitial: one explicit acceptance covers the current Terms and
+Privacy versions for that person, and protected product access does not continue
+until it succeeds. While production publication is withheld, existing signed-in
+users retain product access and `/legal/accept` returns them to the product.
+
+`/cookies` uses the same legal-page reading surface for the exact cookie and
+browser-storage inventory. It separates necessary storage, always-on personless
+surface-request counts, optional public browser analytics, pseudonymous product
+analytics, and reliability monitoring. The first-layer banner names the purpose only, offers equal Accept analytics
+and Reject actions, and links Cookie settings. It does not name the vendor.
+Cookie settings and the cookies notice name PostHog as the processor, with
+purpose and documented retention. The working consent UI never initializes
+PostHog before acceptance and never loads browser analytics inside private
+workspace routes. Withdrawal stops capture and clears the public PostHog and
+attribution state while keeping only the necessary consent-choice record. Every
+public footer links the notice and exposes the persistent Cookie settings
+control. Public copy calls the fixed-stream totals surface requests, not
+visitors or sessions, and notes that bots and retries can contribute.
+
+`/help/support` is both a channel router and the private support form. It sends
+account-specific or sensitive requests to the private form/email, reproducible
+non-sensitive defects to the structured public issue form, vulnerabilities to
+the private security policy, and proposed contributions to the issue-first
+contribution guide. Signed-in support context is disclosed and limited to
+server-resolved account/team identifiers and role, a normalized app surface,
+release, optional error reference, and bounded browser diagnostics. Never put
+that context or workspace content in a GitHub issue. Dashboard desktop and
+mobile footers use the same “Help & support” label; shared error states pair
+Retry with a contextual Get support action.
 
 ### Administrator dashboards
 
@@ -1207,7 +1265,17 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-19 | Quiet list bounds | Replaces “No more matching …” copy with a short centered hairline. |
 | 2026-08-20 | Explicit MCP agent permission | Keeps model spend, team MCP access, and proposal authority default-off and legible at key creation while preserving cited machine-readable answers. |
 | 2026-08-20 | Copy-ready agent setup | Gives public Help one recommended install prompt, narrower skill and MCP paths, searchable setup details, and explicit secret and authority boundaries. |
+| 2026-08-21 | Evidence-gated Trust and legal acceptance | Adds a candid public Trust center, detailed legal surfaces, and a blocking per-user versioned acceptance path without presenting external account settings or future certifications as verified. |
+| 2026-08-21 | Privacy and analytics boundary | Adds an exact Cookies and similar technologies notice, separates notice from consent, and defines public-only optional browser analytics without weakening identifier-free aggregate traffic counts or private workspace routes. |
 | 2026-08-21 | Evidence-flow acquisition story | Reframes Timeline as AI team memory, introduces the reusable evidence-to-workspace-to-assistant explainer, and adds three substantive outcome-led solution pages. |
 | 2026-08-21 | Restored compact observatory | Restores the six-source orbit and official center mark, makes packets reuse their drawn curves, and adds only working-record and cited-answer outcomes after the core. |
 | 2026-08-21 | Dedicated animated platform flow | Keeps the compact observatory on home, moves the grouped full-loop explainer to `/how-it-works`, and uses exact-track signal packets plus per-stage viewport activation to make causality visible without excessive cards or page height. |
+| 2026-08-21 | Evidence-gated Trust and legal acceptance | Adds a candid public Trust center, detailed legal surfaces, and a blocking per-user versioned acceptance path without presenting external account settings or future certifications as verified. |
+| 2026-08-21 | Privacy and analytics boundary | Adds an exact Cookies and similar technologies notice, separates notice from consent, and defines a narrow public-only browser-analytics boundary without extending it into private workspace routes. |
+| 2026-08-21 | Privacy-conscious analytics and support | Implements equal-choice public analytics consent and withdrawal, personless surface-request totals, HMAC-pseudonymous product events, a private support-context boundary, safe public bug routing, and aligned desktop/mobile help actions. |
 | 2026-08-26 | Installed-app splash | Adds per-device iOS startup images of the existing mark on `#0a0e0d`, matching the Android Chrome splash from the web app manifest. |
+| 2026-08-28 | Home team email field | Surfaces the inbound address on Home below pinned work as one readonly copyable field (`#team-email`), and keeps the same control on Team → Email for every member. |
+| 2026-10-24 | Inbound placeholder notice | Team → Email flags leftover `@inbound.invalid` addresses in muted helper copy so operators can see mail will not be captured until inbound email is configured. |
+| 2026-08-28 | Object Properties rail polish | Widens the object rail to `20rem`, shares one labeled field chrome across Contact/Details/Properties, keeps status icons toned with quiet value text, and drops empty contact chrome plus boxed add forms. |
+| 2026-08-28 | Object detail list folds | Evidence, Facts, Documents, and other Connected work lists preview three rows then fold behind `Show N more`, with hairline dividers and tighter evidence clamps. |
+| 2026-08-28 | Object detail typography | Shares `object-detail-type` roles: 13px semibold section titles, medium 14px row titles, Commit Mono counts/timestamps, and medium rail labels. |

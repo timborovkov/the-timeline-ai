@@ -1,16 +1,21 @@
 export const REQUEST_BODY_LIMITS = {
   integrationWebhook: 1024 * 1024,
+  mcpServer: 256 * 1024,
   recallTranscript: 2 * 1024 * 1024,
   slackCommand: 256 * 1024,
 } as const;
 
+export type CappedBinaryBody = { tooLarge: false; body: Uint8Array } | { tooLarge: true };
 export type CappedTextBody = { tooLarge: false; text: string } | { tooLarge: true };
 
 /** Reads a request body without ever retaining more than maxBytes in memory. */
-export async function readCappedTextBody(req: Request, maxBytes: number): Promise<CappedTextBody> {
+export async function readCappedBinaryBody(
+  req: Request,
+  maxBytes: number,
+): Promise<CappedBinaryBody> {
   const declaredLength = Number(req.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return { tooLarge: true };
-  if (!req.body) return { tooLarge: false, text: '' };
+  if (!req.body) return { tooLarge: false, body: new Uint8Array() };
 
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -37,7 +42,14 @@ export async function readCappedTextBody(req: Request, maxBytes: number): Promis
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return { tooLarge: false, text: new TextDecoder().decode(body) };
+  return { tooLarge: false, body };
+}
+
+/** Reads a request body without ever retaining more than maxBytes in memory. */
+export async function readCappedTextBody(req: Request, maxBytes: number): Promise<CappedTextBody> {
+  const capped = await readCappedBinaryBody(req, maxBytes);
+  if (capped.tooLarge) return { tooLarge: true };
+  return { tooLarge: false, text: new TextDecoder().decode(capped.body) };
 }
 
 export function payloadTooLargeResponse(): Response {

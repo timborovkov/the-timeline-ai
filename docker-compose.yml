@@ -1,7 +1,7 @@
 # Local development stack. Everything runs in containers, no cloud dependencies.
 # Usage:
 #   docker compose up -d        # start infra (db, redis, qdrant, rustfs)
-#   pnpm dev                    # run app + workers on host with hot reload
+#   bun run dev                    # run app + workers on host with hot reload
 #
 # To run app + workers in containers too (closer to prod parity):
 #   docker compose --profile app up
@@ -29,7 +29,7 @@ services:
 
   # ---- Redis (for BullMQ job queues) ----
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
@@ -45,7 +45,7 @@ services:
   # ---- Qdrant (vector DB) ----
   # REST on 6333, gRPC on 6334. Use 6333 from app code via the JS client.
   qdrant:
-    image: qdrant/qdrant:v1.12.4
+    image: qdrant/qdrant:v1.19.2
     restart: unless-stopped
     ports:
       - '6333:6333'
@@ -76,8 +76,8 @@ services:
       - '9000:9000'
       - '9001:9001'
     environment:
-      RUSTFS_ROOT_USER: timeline
-      RUSTFS_ROOT_PASSWORD: timeline_dev_secret
+      RUSTFS_ACCESS_KEY: timeline
+      RUSTFS_SECRET_KEY: timeline_dev_secret
       RUSTFS_VOLUMES: /data
     volumes:
       - rustfs_data:/data
@@ -90,31 +90,31 @@ services:
   # One-shot init container: creates buckets and sets versioning.
   # Runs to completion then exits. `docker compose up` re-runs it; idempotent.
   rustfs-init:
-    image: minio/mc:latest
+    image: rustfs/rc:v0.1.36
     depends_on:
       rustfs:
         condition: service_healthy
     environment:
-      RUSTFS_ROOT_USER: timeline
-      RUSTFS_ROOT_PASSWORD: timeline_dev_secret
+      RUSTFS_ACCESS_KEY: timeline
+      RUSTFS_SECRET_KEY: timeline_dev_secret
     entrypoint:
       - /bin/sh
       - -ec
       - |
-        mc alias set local http://rustfs:9000 $$RUSTFS_ROOT_USER $$RUSTFS_ROOT_PASSWORD;
-        mc mb --ignore-existing local/timeline-audio;
-        mc mb --ignore-existing local/timeline-attachments;
-        mc mb --ignore-existing local/timeline-exports;
-        mc mb --ignore-existing local/timeline-documents;
-        mc version enable local/timeline-audio;
-        mc version enable local/timeline-attachments;
-        mc version enable local/timeline-documents;
+        rc alias set local http://rustfs:9000 $$RUSTFS_ACCESS_KEY $$RUSTFS_SECRET_KEY;
+        rc bucket create --ignore-existing local/timeline-audio;
+        rc bucket create --ignore-existing local/timeline-attachments;
+        rc bucket create --ignore-existing local/timeline-exports;
+        rc bucket create --ignore-existing local/timeline-documents;
+        rc bucket version enable local/timeline-audio;
+        rc bucket version enable local/timeline-attachments;
+        rc bucket version enable local/timeline-documents;
         printf '%s' '<CORSConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><CORSRule><AllowedOrigin>http://localhost:*</AllowedOrigin><AllowedOrigin>http://127.0.0.1:*</AllowedOrigin><AllowedMethod>GET</AllowedMethod><AllowedMethod>HEAD</AllowedMethod><AllowedMethod>PUT</AllowedMethod><AllowedHeader>*</AllowedHeader><ExposeHeader>ETag</ExposeHeader></CORSRule></CORSConfiguration>' |
-          mc cors set local/timeline-documents -;
+          rc bucket cors set local/timeline-documents -;
         echo 'RustFS buckets ready.';
 
   # ---- App services (optional, --profile app) ----
-  # For most local dev you run web/workers on host via `pnpm dev` for hot reload.
+  # For most local dev you run web/workers on host via `bun run dev` for hot reload.
   # These profiles let you exercise the full container stack when needed.
 
   web:

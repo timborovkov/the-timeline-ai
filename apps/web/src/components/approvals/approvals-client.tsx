@@ -1300,6 +1300,9 @@ function ApprovalItemRow({
         <CollectionRow.Title>{title}</CollectionRow.Title>
         <CollectionRow.Context>{context}</CollectionRow.Context>
         <CollectionRow.Metadata>
+          {item.status === 'failed' ? (
+            <span className="text-[11px] text-danger">{itemStatusLabel(item.status)}</span>
+          ) : null}
           <ApprovalRowMetadata
             bundle={bundle}
             item={item}

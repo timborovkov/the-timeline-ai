@@ -1,11 +1,12 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import ApprovalsError from '@/app/app/approvals/error';
 import ApprovalsLoading from '@/app/app/approvals/loading';
+// Test environment: happy-dom
 
 afterEach(() => {
   cleanup();
@@ -41,7 +42,7 @@ describe('Approvals route states', () => {
         ),
       ).toBeTruthy();
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard(keys);
 

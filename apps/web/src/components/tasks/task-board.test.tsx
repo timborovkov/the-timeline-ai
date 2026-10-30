@@ -1,13 +1,10 @@
-// @vitest-environment happy-dom
-
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render as testingRender, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 
 import type * as objects from '@timeline/shared/objects/types';
 import type { PropsWithChildren, ReactElement, ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => {
   const refresh = vi.fn();
@@ -30,57 +27,170 @@ const fakes = vi.hoisted(() => {
   };
 });
 
-vi.mock('next/navigation', () => ({ useRouter: () => fakes.router }));
-vi.mock('@/app/actions/objects', () => ({
-  createNoteAction: fakes.createNoteAction,
-  deleteNoteAction: fakes.deleteNoteAction,
-  updateNoteAction: fakes.updateNoteAction,
-  updateObjectAction: fakes.updateObjectAction,
-  loadTaskRowsAction: fakes.loadTaskRowsAction,
-  loadTaskPrimaryProjectsAction: fakes.loadTaskPrimaryProjectsAction,
-  loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
-  setTaskCategoryAction: fakes.setTaskCategoryAction,
-  resetTaskCategoryAction: fakes.resetTaskCategoryAction,
-  pinObjectAction: fakes.pinObjectAction,
-  unpinObjectAction: fakes.unpinObjectAction,
-  searchObjectsAction: fakes.searchObjectsAction,
-  setTaskProjectAction: fakes.setTaskProjectAction,
-}));
-vi.mock('@/app/actions/pins', () => ({
-  pinTargetAction: fakes.pinObjectAction,
-  unpinTargetAction: fakes.unpinObjectAction,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
-    try {
-      return await run();
-    } catch {
-      return { error: 'failed' };
-    }
-  },
-}));
-vi.mock('@/lib/task-board-config', () => ({
-  TASK_BOARD_PAGE_SIZE: 80,
-  TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
-}));
-vi.mock('@/components/collections/virtual-list', () => ({
-  VirtualList: ({
-    items,
-    renderItem,
-    getItemKey,
-  }: {
-    items: { id: string }[];
-    renderItem: (item: { id: string }, index: number) => ReactNode;
-    getItemKey: (item: { id: string }, index: number) => string;
-  }) =>
-    createElement(
-      'div',
-      null,
-      items.map((item, index) =>
-        createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => fakes.router,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({
+    // Bun links all named exports, including actions this suite must never invoke.
+    searchAddableObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected searchAddableObjectsAction call in this test');
+    }),
+    loadObjectRowsAction: vi.fn(() => {
+      throw new Error('Unexpected loadObjectRowsAction call in this test');
+    }),
+    createObjectAction: vi.fn(() => {
+      throw new Error('Unexpected createObjectAction call in this test');
+    }),
+    undoTaskCategoryChangeAction: vi.fn(() => {
+      throw new Error('Unexpected undoTaskCategoryChangeAction call in this test');
+    }),
+    updateObjectMetadataAction: vi.fn(() => {
+      throw new Error('Unexpected updateObjectMetadataAction call in this test');
+    }),
+    createIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected createIdentityFacetAction call in this test');
+    }),
+    archiveIdentityFacetAction: vi.fn(() => {
+      throw new Error('Unexpected archiveIdentityFacetAction call in this test');
+    }),
+    setPersonCompanyAction: vi.fn(() => {
+      throw new Error('Unexpected setPersonCompanyAction call in this test');
+    }),
+    structureContactFromBoardNotesAction: vi.fn(() => {
+      throw new Error('Unexpected structureContactFromBoardNotesAction call in this test');
+    }),
+    loadTaskCategoryFilterStateAction: vi.fn(() => {
+      throw new Error('Unexpected loadTaskCategoryFilterStateAction call in this test');
+    }),
+    unarchiveObjectAction: vi.fn(() => {
+      throw new Error('Unexpected unarchiveObjectAction call in this test');
+    }),
+    archiveObjectAction: vi.fn(() => {
+      throw new Error('Unexpected archiveObjectAction call in this test');
+    }),
+    bulkArchiveObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected bulkArchiveObjectsAction call in this test');
+    }),
+    mergeObjectsAction: vi.fn(() => {
+      throw new Error('Unexpected mergeObjectsAction call in this test');
+    }),
+    findObjectCleanupSuggestionsAction: vi.fn(() => {
+      throw new Error('Unexpected findObjectCleanupSuggestionsAction call in this test');
+    }),
+    repairObjectMemoryAction: vi.fn(() => {
+      throw new Error('Unexpected repairObjectMemoryAction call in this test');
+    }),
+    addRelationshipAction: vi.fn(() => {
+      throw new Error('Unexpected addRelationshipAction call in this test');
+    }),
+    removeRelationshipAction: vi.fn(() => {
+      throw new Error('Unexpected removeRelationshipAction call in this test');
+    }),
+    generateObjectSummaryAction: vi.fn(() => {
+      throw new Error('Unexpected generateObjectSummaryAction call in this test');
+    }),
+    markNotificationReadAction: vi.fn(() => {
+      throw new Error('Unexpected markNotificationReadAction call in this test');
+    }),
+    markAllNotificationsReadAction: vi.fn(() => {
+      throw new Error('Unexpected markAllNotificationsReadAction call in this test');
+    }),
+    acceptObjectChangeAction: vi.fn(() => {
+      throw new Error('Unexpected acceptObjectChangeAction call in this test');
+    }),
+    rejectObjectChangeAction: vi.fn(() => {
+      throw new Error('Unexpected rejectObjectChangeAction call in this test');
+    }),
+    retryTaskCategoryAction: vi.fn(() => {
+      throw new Error('Unexpected retryTaskCategoryAction call in this test');
+    }),
+    createNoteAction: fakes.createNoteAction,
+    deleteNoteAction: fakes.deleteNoteAction,
+    updateNoteAction: fakes.updateNoteAction,
+    updateObjectAction: fakes.updateObjectAction,
+    loadTaskRowsAction: fakes.loadTaskRowsAction,
+    loadTaskPrimaryProjectsAction: fakes.loadTaskPrimaryProjectsAction,
+    loadTaskCategoryStatesAction: fakes.loadTaskCategoryStatesAction,
+    setTaskCategoryAction: fakes.setTaskCategoryAction,
+    resetTaskCategoryAction: fakes.resetTaskCategoryAction,
+    pinObjectAction: fakes.pinObjectAction,
+    unpinObjectAction: fakes.unpinObjectAction,
+    searchObjectsAction: fakes.searchObjectsAction,
+    setTaskProjectAction: fakes.setTaskProjectAction,
+  }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/pins'),
+  () => ({
+    pinTargetAction: fakes.pinObjectAction,
+    unpinTargetAction: fakes.unpinObjectAction,
+  }),
+  () => import('@/app/actions/pins'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => {
+      try {
+        return await run();
+      } catch {
+        return { error: 'failed' };
+      }
+    },
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/task-board-config'),
+  () => ({
+    TASK_BOARD_PAGE_SIZE: 80,
+    TASK_OPEN_STATUSES_EXCLUDED: ['done', 'cancelled'],
+  }),
+  () => import('@/lib/task-board-config'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/collections/virtual-list'),
+  () => ({
+    VirtualList: ({
+      items,
+      renderItem,
+      getItemKey,
+    }: {
+      items: { id: string }[];
+      renderItem: (item: { id: string }, index: number) => ReactNode;
+      getItemKey: (item: { id: string }, index: number) => string;
+    }) =>
+      createElement(
+        'div',
+        null,
+        items.map((item, index) =>
+          createElement('div', { key: getItemKey(item, index) }, renderItem(item, index)),
+        ),
       ),
-    ),
-}));
+  }),
+  () => import('@/components/collections/virtual-list'),
+);
+
+const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
+const {
+  act,
+  cleanup,
+  render: testingRender,
+  screen,
+  waitFor,
+} = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { useTaskCategoryPolling } = await import('@/components/tasks/task-category-polling');
 
 const { TaskBoard } = await import('./task-board.js');
 
@@ -342,8 +452,14 @@ describe('TaskBoard', () => {
       rows: ids.map((id) => ({ id, taskCategoryStatus: 'pending' })),
     }));
 
-    renderBoard(null, rows);
-
+    function PollingProbe() {
+      const polling = useTaskCategoryPolling(
+        rows.map((row) => row.id),
+        2_500,
+      );
+      return <output aria-label="Polled tasks">{polling.data.rows.length}</output>;
+    }
+    render(<PollingProbe />);
     await waitFor(() => {
       expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledTimes(2);
     });
@@ -351,6 +467,9 @@ describe('TaskBoard', () => {
       ids: rows.slice(0, 200).map((row) => row.id),
     });
     expect(fakes.loadTaskCategoryStatesAction).toHaveBeenCalledWith({ ids: ['task-201'] });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Polled tasks').textContent).toBe('201');
+    });
   });
 
   it('applies polled category state to a previously loaded older task', async () => {
@@ -1131,8 +1250,7 @@ describe('TaskBoard', () => {
   it('ignores an older page that resolves after server filters change', async () => {
     const user = userEvent.setup();
     let resolvePage:
-      | ((page: { rows: objects.ObjectRow[]; nextCursor: string | null }) => void)
-      | undefined;
+      ((page: { rows: objects.ObjectRow[]; nextCursor: string | null }) => void) | undefined;
     fakes.loadTaskRowsAction.mockReturnValue(
       new Promise((resolve) => {
         resolvePage = resolve;

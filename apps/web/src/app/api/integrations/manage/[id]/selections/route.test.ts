@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Legacy integration selection management predates person-owned provider
  * connections. Provider-connection-backed integrations must stay on the shared
@@ -15,40 +16,76 @@ const fakes = vi.hoisted(() => ({
   listSelections: vi.fn(),
   setSelections: vi.fn(),
   recordAudit: vi.fn(),
+  recordError: vi.fn(),
   recordConnectionAttention: vi.fn(),
   resolveConnectionAttention: vi.fn(),
   listConnectionAttention: vi.fn(),
   getProvider: vi.fn(),
   adminReconcileIntegrationWebhookSubscriptions: vi.fn(),
+  adminRecordPendingIntegrationSyncContinuations: vi.fn(),
   listSyncableResources: vi.fn(),
   requireRedisQueue: vi.fn(),
   enqueueIntegrationSyncJob: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
-vi.mock('@timeline/shared/integrations', () => ({
-  getProvider: fakes.getProvider,
-  adminReconcileIntegrationWebhookSubscriptions:
-    fakes.adminReconcileIntegrationWebhookSubscriptions,
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    integrations: {
-      getIntegration: fakes.getIntegration,
-      getIntegrationTokens: fakes.getIntegrationTokens,
-      listSelections: fakes.listSelections,
-      setSelections: fakes.setSelections,
-      recordAudit: fakes.recordAudit,
-      recordConnectionAttention: fakes.recordConnectionAttention,
-      resolveConnectionAttention: fakes.resolveConnectionAttention,
-      listConnectionAttention: fakes.listConnectionAttention,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.requireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({
+    ProviderRateLimitError: class ProviderRateLimitError extends Error {
+      retryAt: Date;
+      constructor(input: { message?: string; retryAt: Date }) {
+        super(input.message);
+        this.retryAt = input.retryAt;
+      }
     },
+    getProvider: fakes.getProvider,
+    adminReconcileIntegrationWebhookSubscriptions:
+      fakes.adminReconcileIntegrationWebhookSubscriptions,
+    adminRecordPendingIntegrationSyncContinuations:
+      fakes.adminRecordPendingIntegrationSyncContinuations,
   }),
-}));
+  () => import('@timeline/shared/integrations'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      integrations: {
+        getIntegration: fakes.getIntegration,
+        getIntegrationTokens: fakes.getIntegrationTokens,
+        listSelections: fakes.listSelections,
+        setSelections: fakes.setSelections,
+        recordAudit: fakes.recordAudit,
+        recordError: fakes.recordError,
+        recordConnectionAttention: fakes.recordConnectionAttention,
+        resolveConnectionAttention: fakes.resolveConnectionAttention,
+        listConnectionAttention: fakes.listConnectionAttention,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
 
 const { GET, PUT } = await import('./route.js');
 
@@ -82,6 +119,7 @@ beforeEach(() => {
   fakes.listSelections.mockResolvedValue([]);
   fakes.setSelections.mockResolvedValue(undefined);
   fakes.recordAudit.mockResolvedValue(undefined);
+  fakes.recordError.mockResolvedValue(undefined);
   fakes.recordConnectionAttention.mockResolvedValue(undefined);
   fakes.resolveConnectionAttention.mockResolvedValue(undefined);
   fakes.listConnectionAttention.mockResolvedValue([]);
@@ -90,6 +128,7 @@ beforeEach(() => {
     deprovisioned: 0,
     skipped: true,
   });
+  fakes.adminRecordPendingIntegrationSyncContinuations.mockResolvedValue(undefined);
   fakes.getProvider.mockReturnValue({ listSyncableResources: fakes.listSyncableResources });
   fakes.listSyncableResources.mockResolvedValue([
     { kind: 'github.repo', externalId: 'acme/private' },
@@ -184,8 +223,7 @@ describe('/api/integrations/manage/[id]/selections', () => {
     expect(response.status).toBe(200);
     expect(fakes.recordConnectionAttention).toHaveBeenCalledTimes(1);
     const attentionInput = fakes.recordConnectionAttention.mock.calls[0]?.[0] as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(attentionInput).toMatchObject({
       providerConnectionId: null,
       integrationId: INTEGRATION_ID,
@@ -193,6 +231,41 @@ describe('/api/integrations/manage/[id]/selections', () => {
     });
     expect(attentionInput?.summary).toEqual(
       expect.stringContaining('Webhook provisioning failed for monday'),
+    );
+  });
+
+  it('stages retryable Monday webhook setup after a provider limit', async () => {
+    const { ProviderRateLimitError } = await import('@timeline/shared/integrations');
+    const retryAt = new Date(Date.now() + 60_000);
+    fakes.getIntegration.mockResolvedValueOnce({
+      id: INTEGRATION_ID,
+      provider: 'monday',
+      providerConnectionId: null,
+    });
+    fakes.listSyncableResources.mockResolvedValueOnce([
+      { kind: 'monday.board', externalId: 'board-1' },
+    ]);
+    fakes.adminReconcileIntegrationWebhookSubscriptions.mockRejectedValueOnce(
+      new ProviderRateLimitError({
+        provider: 'monday',
+        retryAt,
+        retryAfterSeconds: 60,
+        scope: 'daily',
+        reason: 'daily_limit_exceeded',
+      }),
+    );
+
+    const response = await PUT(
+      request({ selections: [{ kind: 'monday.board', externalId: 'board-1' }] }),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fakes.recordError).toHaveBeenCalledWith(INTEGRATION_ID, expect.any(String));
+    expect(fakes.adminRecordPendingIntegrationSyncContinuations).toHaveBeenCalledWith(
+      {},
+      INTEGRATION_ID,
+      [{ resourceType: 'monday.webhook', externalId: INTEGRATION_ID, retryAt }],
     );
   });
 

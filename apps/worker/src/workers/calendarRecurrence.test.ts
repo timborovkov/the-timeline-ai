@@ -1,18 +1,23 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { processCalendarRecurrenceTick } from '#src/workers/calendarRecurrence.js';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   withTeam: vi.fn(),
 }));
 
-vi.mock('@timeline/shared', async (importOriginal: () => Promise<Record<string, unknown>>) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    withTeam: fakes.withTeam,
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared'),
+  async (importOriginal: () => Promise<Record<string, unknown>>) => {
+    const actual = await importOriginal();
+    return {
+      ...actual,
+      withTeam: fakes.withTeam,
+    };
+  },
+  () => import('@timeline/shared'),
+);
+
+const { processCalendarRecurrenceTick } = await import('#src/workers/calendarRecurrence.js');
 
 function makeDb(pages: { teamId: string }[][]) {
   return {

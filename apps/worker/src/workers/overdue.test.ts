@@ -1,13 +1,13 @@
 import { PGlite } from '@electric-sql/pglite';
 import { type Db, entities, notifications, teamCalendarSettings } from '@timeline/db';
 import { workspaceDueDateBoundaries } from '@timeline/shared/time';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processOverdueScanTick } from '#src/workers/overdue.js';
-
 /**
  * Real-DB integration tests for the overdue scan. The contract is persisted
  * behavior: one notification per overdue task/follow-up recipient, no noise for

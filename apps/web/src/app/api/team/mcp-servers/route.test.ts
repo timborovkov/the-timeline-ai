@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for team MCP server management. The shared MCP scope
  * owns persistence and encryption; this route owns auth/team gates, input
@@ -13,21 +14,53 @@ const fakes = vi.hoisted(() => ({
   addServer: vi.fn(),
   safeMarkOnboardingStep: vi.fn(),
   listCatalog: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/onboarding', () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    mcp: {
-      listServers: fakes.listServers,
-      addServer: fakes.addServer,
-    },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
   }),
-}));
-vi.mock('@timeline/shared/integrations', () => ({ listCatalog: fakes.listCatalog }));
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/onboarding'),
+  () => ({ safeMarkOnboardingStep: fakes.safeMarkOnboardingStep }),
+  () => import('@/lib/onboarding'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      mcp: {
+        listServers: fakes.listServers,
+        addServer: fakes.addServer,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({ listCatalog: fakes.listCatalog }),
+  () => import('@timeline/shared/integrations'),
+);
 
 const { GET, POST } = await import('./route.js');
 
@@ -142,6 +175,11 @@ describe('/api/team/mcp-servers', () => {
     expect(fakes.safeMarkOnboardingStep).toHaveBeenCalledWith(
       expect.any(Object),
       'first_integration',
+    );
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'mcp_server_add', kind: 'mcp_inbound' },
     );
   });
 

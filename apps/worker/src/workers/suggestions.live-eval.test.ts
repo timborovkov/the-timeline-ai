@@ -11,13 +11,13 @@ import {
   users,
 } from '@timeline/db';
 import { withTeam } from '@timeline/shared/team-scope';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processSuggestionJobForTests } from '#src/workers/suggestions.js';
-
 if (process.env.SUGGESTIONS_LIVE_ENV_FILE) {
   loadEnvFile(process.env.SUGGESTIONS_LIVE_ENV_FILE);
 }
@@ -204,6 +204,9 @@ function requireLiveEnv(): void {
 function liveEnv() {
   return {
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    // The master switch defaults off. This eval asserts every created task
+    // carries a task-categories-v1 stamp, so classification has to run.
+    TASK_CATEGORY_CLASSIFICATION_ENABLED: true,
   } as never;
 }
 

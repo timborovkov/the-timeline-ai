@@ -1,6 +1,6 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   getRecoverableJobQueue: vi.fn(),
@@ -11,39 +11,66 @@ const fakes = vi.hoisted(() => ({
   resolveActiveTeam: vi.fn(),
 }));
 
-vi.mock('next/navigation', () => ({
-  redirect: fakes.redirect,
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('@/lib/use-paginated-queries', () => ({
-  useFinishedJobsInfiniteQuery: () => ({
-    data: undefined,
-    error: null,
-    fetchNextPage: vi.fn(),
-    hasNextPage: false,
-    isError: false,
-    isFetchingNextPage: false,
-    isPending: true,
-    refetch: vi.fn(),
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+    useRouter: () => ({ refresh: vi.fn() }),
   }),
-  useJobDashboardQuery: () => ({
-    data: undefined,
-    error: null,
-    isError: false,
-    isFetching: false,
-    isPending: true,
-    refetch: vi.fn(),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/use-paginated-queries'),
+  () => ({
+    useFinishedJobsInfiniteQuery: () => ({
+      data: undefined,
+      error: null,
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isError: false,
+      isFetchingNextPage: false,
+      isPending: true,
+      refetch: vi.fn(),
+    }),
+    useJobDashboardQuery: () => ({
+      data: undefined,
+      error: null,
+      isError: false,
+      isFetching: false,
+      isPending: true,
+      refetch: vi.fn(),
+    }),
   }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    jobRecovery: { getRecoverableJobQueue: fakes.getRecoverableJobQueue },
+  () => import('@/lib/use-paginated-queries'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      jobRecovery: { getRecoverableJobQueue: fakes.getRecoverableJobQueue },
+    }),
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: JobRecoveryPage } = await import('./page.js');
 

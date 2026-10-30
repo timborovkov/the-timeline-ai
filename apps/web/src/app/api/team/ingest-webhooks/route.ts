@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { resolveActiveTeam } from '@/lib/active-team';
+import { trackProductEventBestEffort } from '@/lib/analytics';
 import { auth } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { reportCaughtError } from '@/lib/sentry-report';
@@ -166,6 +167,11 @@ export async function POST(req: Request): Promise<Response> {
       return null;
     });
   if (!created) return NextResponse.json({ error: 'create_failed' }, { status: 500 });
+  trackProductEventBestEffort(
+    { kind: 'user', userId: gate.session.user.id, teamId: gate.active.teamId },
+    'integration_management_action_completed',
+    { action: 'webhook_create', kind: 'custom_ingest_webhook' },
+  );
   return NextResponse.json({
     id: created.webhook.id,
     name: created.webhook.name,

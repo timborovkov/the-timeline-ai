@@ -1,8 +1,8 @@
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
 
 import { AskHeader } from '@/components/chat/ask-header';
-
 describe('AskHeader', () => {
   it('keeps the Ask heading and places the selected title on the same row', () => {
     const html = renderToStaticMarkup(

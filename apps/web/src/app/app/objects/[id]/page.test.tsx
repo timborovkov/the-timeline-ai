@@ -1,6 +1,6 @@
-import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const OBJECT_ID = '44444444-4444-4444-8444-444444444444';
 
 const fakes = vi.hoisted(() => ({
@@ -25,36 +25,63 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('next/navigation', () => ({
-  redirect: fakes.redirect,
-  notFound: fakes.notFound,
-  useRouter: () => ({ back: vi.fn() }),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    objects: {
-      getObject: fakes.getObject,
-      getMergedObjectTarget: fakes.getMergedObjectTarget,
-      markVisited: fakes.markVisited,
-      isObjectPinned: fakes.isObjectPinned,
-      listObjects: fakes.listObjects,
-      listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
-    },
-    boards: { listObjectBoardContext: fakes.listObjectBoardContext },
-    suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
-    pins: { isPinned: fakes.isPinned },
-    timeline: { listMembers: fakes.listMembers },
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+    notFound: fakes.notFound,
+    useRouter: () => ({ back: vi.fn() }),
   }),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/components/objects/object-detail-client', () => ({
-  ObjectDetailClient: (props: unknown) => {
-    fakes.objectDetailClientProps(props);
-    return <div data-testid="object-detail" />;
-  },
-}));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      objects: {
+        getObject: fakes.getObject,
+        getMergedObjectTarget: fakes.getMergedObjectTarget,
+        markVisited: fakes.markVisited,
+        isObjectPinned: fakes.isObjectPinned,
+        listObjects: fakes.listObjects,
+        listPrimaryProjectsForTasks: fakes.listPrimaryProjectsForTasks,
+      },
+      boards: { listObjectBoardContext: fakes.listObjectBoardContext },
+      suggestions: { listPendingSuggestions: fakes.listPendingSuggestions },
+      pins: { isPinned: fakes.isPinned },
+      timeline: { listMembers: fakes.listMembers },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/objects/object-detail-client'),
+  () => ({
+    ObjectDetailClient: (props: unknown) => {
+      fakes.objectDetailClientProps(props);
+      return <div data-testid="object-detail" />;
+    },
+  }),
+  () => import('@/components/objects/object-detail-client'),
+);
+
+const { renderToStaticMarkup } = await import('react-dom/server');
 
 const { default: ObjectDetailPage } = await import('./page.js');
 
@@ -210,8 +237,7 @@ describe('ObjectDetailPage', () => {
     );
 
     const props = fakes.objectDetailClientProps.mock.calls.at(-1)?.[0] as
-      | { suggestions?: { items: { id: string }[] }[] }
-      | undefined;
+      { suggestions?: { items: { id: string }[] }[] } | undefined;
     expect(props?.suggestions?.[0]?.items.map((item) => item.id)).toEqual([
       'item-person',
       'item-relationship',
@@ -274,8 +300,7 @@ describe('ObjectDetailPage', () => {
     );
 
     const props = fakes.objectDetailClientProps.mock.calls.at(-1)?.[0] as
-      | { suggestions?: { items: { id: string }[] }[] }
-      | undefined;
+      { suggestions?: { items: { id: string }[] }[] } | undefined;
     expect(props?.suggestions?.[0]?.items.map((item) => item.id)).toEqual(['item-relationship']);
   });
 });

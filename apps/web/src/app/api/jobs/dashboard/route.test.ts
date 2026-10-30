@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -16,61 +17,93 @@ const fakes = vi.hoisted(() => ({
   whereArgs: [] as unknown[],
 }));
 
-vi.mock('@timeline/db', () => ({
-  documentVersions: {
-    teamId: 'team_id',
-    processingStatus: 'processing_status',
-    createdAt: 'created_at',
-  },
-  facts: { rawEventId: 'raw_event_id' },
-  integrations: { teamId: 'team_id', lastError: 'last_error' },
-  meetings: { teamId: 'team_id', status: 'status' },
-  rawEvents: {
-    id: 'id',
-    teamId: 'team_id',
-    contentAudioUrl: 'content_audio_url',
-    contentText: 'content_text',
-    createdAt: 'created_at',
-    sourceMetadata: 'source_metadata',
-    visibility: 'visibility',
-  },
-}));
-vi.mock('drizzle-orm', () => ({
-  and: (...args: unknown[]) => ({ op: 'and', args }),
-  count: () => ({ op: 'count' }),
-  eq: (...args: unknown[]) => ({ op: 'eq', args }),
-  isNotNull: (arg: unknown) => ({ op: 'isNotNull', arg }),
-  lt: (...args: unknown[]) => ({ op: 'lt', args }),
-  notExists: (arg: unknown) => ({ op: 'notExists', arg }),
-  sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({ op: 'sql', strings, values }),
-}));
-vi.mock('@timeline/shared/cache', () => ({
-  cacheKey: (parts: unknown[]) => parts.join(':'),
-  cachedJson: async (_key: string, _ttl: number, callback: () => Promise<unknown>) => callback(),
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)) }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    documents: { getDocumentVersion: fakes.getDocumentVersion },
-    timeline: { getEvent: fakes.getEvent },
+await vi.mock(
+  import.meta.resolve('@timeline/db'),
+  () => ({
+    documentVersions: {
+      teamId: 'team_id',
+      processingStatus: 'processing_status',
+      createdAt: 'created_at',
+    },
+    facts: { rawEventId: 'raw_event_id' },
+    integrations: { teamId: 'team_id', lastError: 'last_error' },
+    meetings: { teamId: 'team_id', status: 'status' },
+    rawEvents: {
+      id: 'id',
+      teamId: 'team_id',
+      contentAudioUrl: 'content_audio_url',
+      contentText: 'content_text',
+      createdAt: 'created_at',
+      sourceMetadata: 'source_metadata',
+      visibility: 'visibility',
+    },
   }),
-}));
-vi.mock('@/lib/db', () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: (arg: unknown) => {
-          fakes.whereArgs.push(arg);
-          const count = fakes.countRows.shift() ?? 0;
-          return Promise.resolve([{ count }]);
-        },
-      }),
+  () => import('@timeline/db'),
+);
+await vi.mock(
+  import.meta.resolve('drizzle-orm'),
+  () => ({
+    and: (...args: unknown[]) => ({ op: 'and', args }),
+    count: () => ({ op: 'count' }),
+    eq: (...args: unknown[]) => ({ op: 'eq', args }),
+    isNotNull: (arg: unknown) => ({ op: 'isNotNull', arg }),
+    lt: (...args: unknown[]) => ({ op: 'lt', args }),
+    notExists: (arg: unknown) => ({ op: 'notExists', arg }),
+    sql: (strings: TemplateStringsArray, ...values: unknown[]) => ({ op: 'sql', strings, values }),
+  }),
+  () => import('drizzle-orm'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/cache'),
+  () => ({
+    cacheKey: (parts: unknown[]) => parts.join(':'),
+    cachedJson: async (_key: string, _ttl: number, callback: () => Promise<unknown>) => callback(),
+  }),
+  () => import('@timeline/shared/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)) }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      documents: { getDocumentVersion: fakes.getDocumentVersion },
+      timeline: { getEvent: fakes.getEvent },
     }),
-  },
-}));
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      select: () => ({
+        from: () => ({
+          where: (arg: unknown) => {
+            fakes.whereArgs.push(arg);
+            const count = fakes.countRows.shift() ?? 0;
+            return Promise.resolve([{ count }]);
+          },
+        }),
+      }),
+    },
+  }),
+  () => import('@/lib/db'),
+);
 
 const { GET, POST } = await import('./route.js');
 

@@ -1,5 +1,12 @@
 import { z } from 'zod';
 
+import {
+  isCurrentOpenRouterPrivacyAttestation,
+  isValidOpenRouterGuardrailId,
+} from '#src/llm/privacy-attestation.js';
+import { OPENROUTER_OFFICIAL_BASE_URL, isOfficialOpenRouterBaseUrl } from '#src/llm/privacy.js';
+import { isValidRecallWebhookSecret } from '#src/meeting-bots/svix.js';
+
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
@@ -13,6 +20,59 @@ function booleanString(value: unknown): boolean | undefined {
 
 function emptyStringAsUnset(value: unknown): unknown {
   return value === '' ? undefined : value;
+}
+
+const recallWebhookSecretSchema = z.preprocess(
+  emptyStringAsUnset,
+  z
+    .string()
+    .refine(
+      isValidRecallWebhookSecret,
+      'Recall webhook secrets must use a whsec_ prefix and canonical base64 encoding of at least 24 secret bytes',
+    )
+    .optional(),
+);
+
+const reviewedPostHogServerHost = z.url().refine((value) => {
+  const url = new URL(value);
+  return !url.username && !url.password && url.origin === 'https://eu.i.posthog.com';
+}, 'POSTHOG_HOST must use the reviewed EU PostHog ingestion origin');
+
+const OFFICIAL_RECALL_API_HOSTS = new Set([
+  'us-west-2.recall.ai',
+  'us-east-1.recall.ai',
+  'eu-central-1.recall.ai',
+  'ap-northeast-1.recall.ai',
+]);
+
+function isOfficialHostedRecallBaseUrl(value: string): boolean {
+  const url = new URL(value);
+  return (
+    url.protocol === 'https:' &&
+    !url.username &&
+    !url.password &&
+    OFFICIAL_RECALL_API_HOSTS.has(url.hostname) &&
+    (url.pathname === '/api/v1' || url.pathname === '/api/v1/') &&
+    !url.search &&
+    !url.hash
+  );
+}
+
+function isHostedRecallTranscriptWebhookUrl(value: string | undefined, authUrl: string): boolean {
+  const appUrl = new URL(authUrl);
+  const callbackUrl = value
+    ? new URL(value)
+    : new URL('/api/webhooks/recall/transcript', appUrl.origin);
+  return (
+    appUrl.protocol === 'https:' &&
+    callbackUrl.protocol === 'https:' &&
+    !callbackUrl.username &&
+    !callbackUrl.password &&
+    callbackUrl.origin === appUrl.origin &&
+    callbackUrl.pathname === '/api/webhooks/recall/transcript' &&
+    !callbackUrl.search &&
+    !callbackUrl.hash
+  );
 }
 
 function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -31,6 +91,8 @@ function applyAuthAliases(raw: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
  */
 const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'NODE_ENV',
+  'TIMELINE_DEPLOYMENT_MODE',
+  'LEGAL_PUBLICATION_READY',
   'LOG_LEVEL',
   'WORKER_MODE',
   'DOCUMENT_EXTRACT_ENABLED',
@@ -46,6 +108,8 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_ALLOWLIST = new Set([
   'REDIS_URL',
   'OPENROUTER_API_KEY',
   'OPENROUTER_BASE_URL',
+  'OPENROUTER_GUARDRAIL_ID',
+  'OPENROUTER_PRIVACY_POLICY_ATTESTATION',
   'S3_ENDPOINT',
   'S3_PUBLIC_ENDPOINT',
   'S3_REGION',
@@ -87,6 +151,9 @@ const DOCUMENT_EXTRACT_PROCESS_ENV_EXACT_ALLOWLIST = new Set([
   'OLDPWD',
   'COLORTERM',
   'CI',
+  // Exact, non-secret runtime paths injected by the pinned Bun container.
+  'BUN_INSTALL_BIN',
+  'BUN_RUNTIME_TRANSPILER_CACHE_PATH',
   // Railpack's mise toolchain/runtime metadata. Keep these exact so a future
   // credential-bearing MISE_* or RAILPACK_* variable is still rejected.
   'MISE_DATA_DIR',
@@ -139,6 +206,18 @@ function assertDocumentExtractProcessEnvAllowlist(
 
 const baseSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /**
+   * Distinguishes Timeline-operated hosting from a separately operated
+   * deployment. Default to hosted so production-only provider restrictions
+   * fail closed unless a self-managed operator opts into its own boundary.
+   */
+  TIMELINE_DEPLOYMENT_MODE: z.enum(['hosted', 'self-managed']).default('hosted'),
+  /**
+   * Operator attestation that the contracting/controller identity publication
+   * blocker in docs/security-privacy-trust.md (G-20) is resolved and evidenced.
+   * The web app otherwise withholds binding terms and legal acceptance.
+   */
+  LEGAL_PUBLICATION_READY: z.preprocess(booleanString, z.boolean().default(false)),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
 
   /**
@@ -183,6 +262,7 @@ const baseSchema = z.object({
   AUTH_URL: z.url().default('http://localhost:3000'),
   AUTH_GITHUB_ID: z.string().optional(),
   AUTH_GITHUB_SECRET: z.string().optional(),
+  OPENAI_APPS_CHALLENGE_TOKEN: z.preprocess(emptyStringAsUnset, z.string().max(512).optional()),
 
   // Database
   DATABASE_URL: z.url(),
@@ -194,6 +274,28 @@ const baseSchema = z.object({
   QDRANT_URL: z.url().optional(),
   QDRANT_API_KEY: z.string().optional(),
   QDRANT_COLLECTION: z.string().default('events'),
+  /**
+   * Quantization used when auto-creating a collection. `scalar` (default)
+   * stores int8 quantized vectors in RAM with original float32 vectors on
+   * disk. `binary` is the more aggressive option; pair it with search
+   * rescore/oversampling. Existing collections are not rewritten — copy
+   * points into a new collection, then switch `QDRANT_COLLECTION`.
+   */
+  QDRANT_QUANTIZATION: z.preprocess(
+    emptyStringAsUnset,
+    z.enum(['scalar', 'binary']).default('scalar'),
+  ),
+  /** Search-time rescore of quantized hits against original vectors. */
+  QDRANT_QUANTIZATION_RESCORE: z.preprocess(booleanString, z.boolean().default(true)),
+  /**
+   * Extra quantized candidates fetched before rescore. Unset uses 2 for
+   * scalar and 4 for binary. Blank values from `.env.example` are unset.
+   * Qdrant 1.19.2 rejects oversampling below 1.
+   */
+  QDRANT_QUANTIZATION_OVERSAMPLING: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce.number().min(1).optional(),
+  ),
 
   // S3 / RustFS (Phase 3+)
   S3_ENDPOINT: z.url().optional(),
@@ -226,11 +328,36 @@ const baseSchema = z.object({
   // OpenRouter (Phase 3+)
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_BASE_URL: z.url().optional(),
-  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  /**
+   * OpenRouter's official guardrail id assigned to the shared inference key.
+   * The application uses it only to bind deployment intent; a separate
+   * management-key canary must verify the provider-side assignment/settings.
+   */
+  OPENROUTER_GUARDRAIL_ID: z.preprocess(
+    emptyStringAsUnset,
+    z
+      .string()
+      .refine(isValidOpenRouterGuardrailId, 'OPENROUTER_GUARDRAIL_ID is not a valid opaque id')
+      .optional(),
+  ),
+  /**
+   * Generated non-secret drift token for the shared production inference key.
+   * It binds policy version, model-catalog digest, inference-key fingerprint,
+   * and guardrail id. It does not prove the provider-side guardrail assignment.
+   */
+  OPENROUTER_PRIVACY_POLICY_ATTESTATION: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /**
+   * Emergency stop for task categories. When true, the env transform forces
+   * classification, enqueue, the worker, backfill, and the UI off together.
+   * Individual flags still work when this is false. Historical backfill stays
+   * default-off so a deploy cannot enqueue the backlog.
+   */
+  TASK_CATEGORY_DISABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_CLASSIFICATION_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
+  TASK_CATEGORY_WORKER_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   TASK_CATEGORY_BACKFILL_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
-  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(false)),
+  TASK_CATEGORY_UI_ENABLED: z.preprocess(booleanString, z.boolean().default(true)),
   CROSS_SOURCE_EVIDENCE_MODE: z.enum(['off', 'shadow', 'enforced']).default('off'),
   E2E_DETERMINISTIC_EMBEDDINGS: z.preprocess(booleanString, z.boolean().default(false)),
 
@@ -300,9 +427,9 @@ const baseSchema = z.object({
   TURNSTILE_SECRET_KEY: z.string().optional(),
 
   // Slack first-party conversational capture.
-  SLACK_CLIENT_ID: z.string().optional(),
-  SLACK_CLIENT_SECRET: z.string().optional(),
-  SLACK_SIGNING_SECRET: z.string().optional(),
+  SLACK_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SLACK_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SLACK_SIGNING_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
 
   /**
    * Shared secret for protected cron / admin endpoints (e.g. job reconciler).
@@ -317,6 +444,8 @@ const baseSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().optional(),
   NEXT_PUBLIC_SENTRY_DSN: z.string().optional(),
   NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
+  // Sentry JS 11 removed transaction `profilesSampleRate`. These stay accepted
+  // so existing deploys keep validating; they currently have no SDK effect.
   NEXT_PUBLIC_SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
   SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
   SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0),
@@ -325,26 +454,40 @@ const baseSchema = z.object({
   SENTRY_PROJECT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
-  // PostHog product analytics + feature flags. Browser-facing values are
-  // intentionally public; server helpers no-op when the project key is unset.
-  NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
-  NEXT_PUBLIC_POSTHOG_HOST: z.url().default('https://eu.i.posthog.com'),
+  // PostHog product analytics. Server and browser keys are deliberately
+  // separate so private product events never depend on a browser-visible key.
+  POSTHOG_PROJECT_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  POSTHOG_HOST: z.preprocess(
+    emptyStringAsUnset,
+    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+  ),
+  ANALYTICS_PSEUDONYMIZATION_KEY: z.preprocess(emptyStringAsUnset, z.string().min(32).optional()),
+  // These public values are used only by the affirmative-consent public-site
+  // client. Authenticated routes must not import or initialize that client.
+  NEXT_PUBLIC_POSTHOG_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  NEXT_PUBLIC_POSTHOG_HOST: z.preprocess(
+    emptyStringAsUnset,
+    reviewedPostHogServerHost.default('https://eu.i.posthog.com'),
+  ),
 
-  // Phase 10 — Meeting bots. Provider defaults to Recall.ai. Set
-  // RECALL_API_KEY + RECALL_STATUS_WEBHOOK_SECRET (Svix-signed status
-  // events) to enable. RECALL_TRANSCRIPT_WEBHOOK_URL is passed to the
-  // provider when starting a bot so transcripts stream back to us.
+  // Phase 10 — Meeting bots. The workspace verification secret signs both
+  // status and realtime transcript deliveries. Accounts created before
+  // 2025-12-15 may additionally need the legacy endpoint-specific status
+  // secret. RECALL_TRANSCRIPT_WEBHOOK_URL is passed to the provider when
+  // starting a bot so transcripts stream back to us.
   RECALL_API_KEY: z.string().optional(),
   RECALL_BASE_URL: z.url().default('https://us-west-2.recall.ai/api/v1'),
-  RECALL_STATUS_WEBHOOK_SECRET: z.string().optional(),
+  RECALL_WORKSPACE_VERIFICATION_SECRET: recallWebhookSecretSchema,
+  RECALL_STATUS_WEBHOOK_SECRET: recallWebhookSecretSchema,
   RECALL_TRANSCRIPT_WEBHOOK_URL: z.preprocess(emptyStringAsUnset, z.url().optional()),
   /**
    * Recall recording-media retention for meeting bots.
    *
-   * Unset / empty => timed retention for 1 hour. A positive integer is
-   * interpreted as timed retention in hours. "forever" asks Recall to retain
-   * indefinitely. Zero retention is intentionally unsupported because Recall's
-   * zero-retention mode is incompatible with prioritize_accuracy transcription.
+   * Unset / empty => timed retention for 1 hour. Development and explicitly
+   * self-managed deployments can choose another positive hour count or
+   * "forever". Timeline-hosted production is constrained below to one hour
+   * because Recall's zero-retention mode is incompatible with
+   * prioritize_accuracy.
    */
   RECALL_RETENTION: z.preprocess(emptyStringAsUnset, z.string().optional()),
   /**
@@ -365,33 +508,48 @@ const baseSchema = z.object({
   // on first encrypt/decrypt if unset.
   //
   // Generate with:
-  //   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  //   bun -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
   SECRETS_ENCRYPTION_KEY: z.string().optional(),
 
   // Per-team integrations. The catalog hides any native provider whose
   // OAuth credentials aren't set; provider-specific webhook secrets only
   // apply to providers that expose inbound webhooks.
-  GOOGLE_CLIENT_ID: z.string().optional(),
-  GOOGLE_CLIENT_SECRET: z.string().optional(),
-  LINEAR_CLIENT_ID: z.string().optional(),
-  LINEAR_CLIENT_SECRET: z.string().optional(),
-  LINEAR_WEBHOOK_SECRET: z.string().optional(),
-  GITHUB_APP_CLIENT_ID: z.string().optional(),
-  GITHUB_APP_CLIENT_SECRET: z.string().optional(),
-  GITHUB_APP_ID: z.string().optional(),
-  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
-  GITHUB_WEBHOOK_SECRET: z.string().optional(),
-  MONDAY_CLIENT_ID: z.string().optional(),
-  MONDAY_CLIENT_SECRET: z.string().optional(),
-  MONDAY_WEBHOOK_SECRET: z.string().optional(),
-  SENTRY_INTEGRATION_CLIENT_ID: z.string().optional(),
-  SENTRY_INTEGRATION_CLIENT_SECRET: z.string().optional(),
+  // Blank values from `.env.example` must stay unset so providerBudgetAppKey
+  // (and catalog visibility) fall back to the provider name defaults.
+  GOOGLE_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GOOGLE_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  LINEAR_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_APP_PRIVATE_KEY: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  GITHUB_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  MONDAY_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SENTRY_INTEGRATION_CLIENT_ID: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  SENTRY_INTEGRATION_CLIENT_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
+  /**
+   * Counted connectivity/auth/access_revoked/permanent failures pause native
+   * sync after this many hours (default 72). Minimum 1 hour.
+   */
+  INTEGRATION_HEALTH_PAUSE_AFTER_HOURS: z.preprocess(
+    emptyStringAsUnset,
+    z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(24 * 30)
+      .default(72),
+  ),
   // HMAC secret for Google Drive push-channel tokens. The Drive watch
   // registration sets channel_token = HMAC-SHA256(secret, integration.id)
   // so the /api/webhooks/google-drive handler can verify the inbound
   // x-goog-channel-token. Without it, anyone who guesses or leaks an
   // integration UUID can trigger sync jobs for that team.
-  GOOGLE_DRIVE_WEBHOOK_SECRET: z.string().optional(),
+  GOOGLE_DRIVE_WEBHOOK_SECRET: z.preprocess(emptyStringAsUnset, z.string().optional()),
 });
 
 const schema = baseSchema
@@ -401,6 +559,112 @@ const schema = baseSchema
         code: 'custom',
         path: ['LANGSMITH_API_KEY'],
         message: 'LANGSMITH_API_KEY is required when LANGSMITH_TRACING=true',
+      });
+    }
+    if (env.NODE_ENV === 'production' && env.LANGSMITH_TRACING) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['LANGSMITH_TRACING'],
+        message:
+          'LANGSMITH_TRACING must be false in production because traces may contain customer content',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.OPENROUTER_API_KEY
+    ) {
+      if (!env.OPENROUTER_GUARDRAIL_ID) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['OPENROUTER_GUARDRAIL_ID'],
+          message: 'OPENROUTER_GUARDRAIL_ID is required with OPENROUTER_API_KEY in production',
+        });
+      } else {
+        let currentAttestation = false;
+        try {
+          currentAttestation = isCurrentOpenRouterPrivacyAttestation(
+            env.OPENROUTER_PRIVACY_POLICY_ATTESTATION,
+            {
+              apiKey: env.OPENROUTER_API_KEY,
+              guardrailId: env.OPENROUTER_GUARDRAIL_ID,
+            },
+          );
+        } catch {
+          // Keep validation errors generic so neither the key nor its fingerprint
+          // can be copied into process logs.
+        }
+        if (!currentAttestation) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['OPENROUTER_PRIVACY_POLICY_ATTESTATION'],
+            message:
+              'OPENROUTER_PRIVACY_POLICY_ATTESTATION must be regenerated for the current inference key, guardrail id, model catalog, and privacy policy',
+          });
+        }
+      }
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.OPENROUTER_API_KEY &&
+      !isOfficialOpenRouterBaseUrl(env.OPENROUTER_BASE_URL ?? OPENROUTER_OFFICIAL_BASE_URL)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['OPENROUTER_BASE_URL'],
+        message: `OPENROUTER_BASE_URL must use ${OPENROUTER_OFFICIAL_BASE_URL} in hosted production`,
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.RECALL_API_KEY &&
+      env.RECALL_RETENTION !== undefined &&
+      env.RECALL_RETENTION.trim() !== '1'
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_RETENTION'],
+        message: 'RECALL_RETENTION must be unset or 1 in hosted production',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.RECALL_API_KEY &&
+      !isOfficialHostedRecallBaseUrl(env.RECALL_BASE_URL)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_BASE_URL'],
+        message:
+          'RECALL_BASE_URL must use an official Recall regional /api/v1 HTTPS endpoint in hosted production',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.TIMELINE_DEPLOYMENT_MODE === 'hosted' &&
+      env.RECALL_API_KEY &&
+      !isHostedRecallTranscriptWebhookUrl(env.RECALL_TRANSCRIPT_WEBHOOK_URL, env.AUTH_URL)
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_TRANSCRIPT_WEBHOOK_URL'],
+        message:
+          'Hosted production Recall transcripts must use the AUTH_URL HTTPS origin and exact /api/webhooks/recall/transcript path',
+      });
+    }
+    if (
+      env.NODE_ENV === 'production' &&
+      env.RECALL_API_KEY &&
+      !env.RECALL_WORKSPACE_VERIFICATION_SECRET
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RECALL_WORKSPACE_VERIFICATION_SECRET'],
+        message:
+          'RECALL_WORKSPACE_VERIFICATION_SECRET is required with RECALL_API_KEY in production so status and transcript webhooks authenticate before processing',
       });
     }
     // Web + full worker still need Auth.js secrets. The credential-thin
@@ -451,6 +715,15 @@ const schema = baseSchema
   .transform((env) => ({
     ...env,
     LANGSMITH_PROJECT: env.LANGSMITH_PROJECT ?? `timeline-${env.NODE_ENV}`,
+    ...(env.TASK_CATEGORY_DISABLED
+      ? {
+          TASK_CATEGORY_CLASSIFICATION_ENABLED: false as const,
+          TASK_CATEGORY_AUTO_ENQUEUE_ENABLED: false as const,
+          TASK_CATEGORY_WORKER_ENABLED: false as const,
+          TASK_CATEGORY_BACKFILL_ENABLED: false as const,
+          TASK_CATEGORY_UI_ENABLED: false as const,
+        }
+      : {}),
   }));
 
 export type Env = z.infer<typeof schema>;

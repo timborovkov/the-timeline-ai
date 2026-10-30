@@ -1,6 +1,7 @@
 import { loadEnvFile } from 'node:process';
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterAll, describe, it } from 'bun:test';
 import { z } from 'zod';
 
 import { chatStructured } from '#src/llm/chat.js';
@@ -32,7 +33,6 @@ import {
   type ReconciliationPlannerInput,
   type ReconciliationPlannerOutputKind,
 } from '#src/reconciliation/planner.js';
-
 if (process.env.RECONCILIATION_LIVE_ENV_FILE) {
   loadEnvFile(process.env.RECONCILIATION_LIVE_ENV_FILE);
 }
@@ -288,7 +288,7 @@ async function liveEvalJudge(
   const judgeResult = await chatStructured({
     schema: liveReconciliationJudgeSchema,
     model: TIMELINE_MODELS.summarization.id,
-    system:
+    instructions:
       'You are a strict evaluator for a workspace reconciliation eval. Return only the allowed JSON shape. Use only category codes, never free-text rationale.',
     prompt: liveEvalJudgePrompt(testCase, result, deterministicFailures),
     abortSignal: liveEvalCallAbortSignal(),

@@ -1,5 +1,7 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { z } from 'zod';
 
 import type { LanguageModel, StreamTextOnErrorCallback } from 'ai';
@@ -14,7 +16,6 @@ import {
   streamChat,
 } from '#src/llm/chat.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-
 const aiSdkGlobal = globalThis as typeof globalThis & {
   AI_SDK_LOG_WARNINGS?: boolean;
 };
@@ -32,6 +33,8 @@ const openRouterRequestSchema = z.object({
   provider: z
     .object({
       require_parameters: z.unknown(),
+      data_collection: z.literal('deny'),
+      zdr: z.literal(true),
     })
     .optional(),
   response_format: z.object({
@@ -55,11 +58,11 @@ const openRouterRequestSchema = z.object({
 function makeMockModel(text: string): LanguageModel {
   // The MockLanguageModelV3 constructor accepts any partial of the
   // LanguageModelV3 interface; `as never` shape-shifts past the strict
-  // literal-union typing the SDK enforces on `finishReason` etc.
+  // `{ unified, raw }` finishReason typing the SDK now enforces.
   return new MockLanguageModelV3({
     doGenerate: (() =>
       Promise.resolve({
-        finishReason: 'stop',
+        finishReason: { unified: 'stop', raw: undefined },
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
         content: [{ type: 'text', text }],
         warnings: [],
@@ -92,7 +95,9 @@ describe('chatStructured', () => {
 
   it('allows per-call maxOutputTokens overrides for bulk structured callers', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(
@@ -157,7 +162,9 @@ describe('chatStructured', () => {
   it('passes abortSignal through to provider fetches', async () => {
     const controller = new AbortController();
     const seenSignals: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       seenSignals.push(init?.signal);
       return Promise.resolve(
         new Response(
@@ -198,7 +205,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: The AuditAI team has a meeting scheduled for Monday.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       {
         model: makeMockModel(
@@ -233,7 +240,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for Otto.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       {
         model: makeMockModel(
@@ -329,7 +336,11 @@ describe('chatStructured', () => {
 
   it('requests OpenRouter json_schema structured output for extraction', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const requestHeaders: Headers[] = [];
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
+      requestHeaders.push(new Headers(init?.headers));
       if (typeof init?.body === 'string') {
         const parsed: unknown = JSON.parse(init.body);
         requests.push(parsed);
@@ -377,19 +388,20 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Mikael Rintala shared a Google Drive folder for AuditAI.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
 
-    expect(result.model).toBe('deepseek/deepseek-v4-flash-0731');
+    expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
     expect(result.object.facts[0]).toMatchObject({
       statement: 'Mikael Rintala shared a Google Drive folder for AuditAI.',
       mentions: [{ name: 'Mikael Rintala', type: 'person', role: 'subject' }],
     });
     expect(requests).toHaveLength(1);
+    expect(requestHeaders[0]?.get('X-OpenRouter-Cache')).toBe('false');
     const body = openRouterRequestSchema.parse(requests[0]);
-    expect(body.model).toBe('deepseek/deepseek-v4-flash-0731');
+    expect(body.model).toBe(TIMELINE_MODELS.extraction.id);
     expect(
       body.messages.some((message) => String(message.content).toLowerCase().includes('json')),
     ).toBe(true);
@@ -398,6 +410,7 @@ describe('chatStructured', () => {
       DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     );
     expect(body.provider?.require_parameters).toBe(true);
+    expect(body.provider).toMatchObject({ data_collection: 'deny', zdr: true });
     expect(body.response_format.json_schema.strict).toBe(true);
     const factSchema = body.response_format.json_schema.schema.properties.facts.items;
     expect(factSchema.required).toEqual(
@@ -407,9 +420,62 @@ describe('chatStructured', () => {
     expect(factSchema.properties).toHaveProperty('mentions');
   });
 
+  it('normalizes wrapped task-category JSON before accepting the object', async () => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = () =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            id: 'chatcmpl-task-category-repair',
+            object: 'chat.completion',
+            created: 0,
+            model: TIMELINE_MODELS.taskCategorization.id,
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: 'assistant',
+                  content:
+                    '```json\n{"reasoning":"customer work","result":{"predictions":[{"key":"0:0","category":"Customer Success","confidence":"0.91"}]}}\n```',
+                },
+                finish_reason: 'stop',
+              },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    const result = await chatStructured(
+      {
+        schema: z.object({
+          predictions: z.array(
+            z.object({
+              key: z.string(),
+              category: z.literal('customer_success'),
+              confidence: z.number(),
+            }),
+          ),
+        }),
+        prompt: 'Classify the task.',
+        instructions: 'Return schema-valid JSON.',
+        model: TIMELINE_MODELS.taskCategorization.id,
+      },
+      { fetch: fetchStub },
+    );
+
+    expect(result.object).toEqual({
+      predictions: [{ key: '0:0', category: 'customer_success', confidence: 0.91 }],
+    });
+  });
+
   it('falls back to json_object mode when OpenRouter rejects strict json_schema', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -459,7 +525,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -478,6 +544,8 @@ describe('chatStructured', () => {
         provider: z
           .object({
             require_parameters: z.unknown(),
+            data_collection: z.literal('deny'),
+            zdr: z.literal(true),
           })
           .optional(),
         max_completion_tokens: z.number().optional(),
@@ -490,6 +558,7 @@ describe('chatStructured', () => {
       DEFAULT_STRUCTURED_MAX_OUTPUT_TOKENS,
     );
     expect(fallback.provider?.require_parameters).toBe(true);
+    expect(fallback.provider).toMatchObject({ data_collection: 'deny', zdr: true });
     expect(
       fallback.messages.some((message) =>
         String(message.content).includes('Return only a JSON object matching this JSON Schema'),
@@ -499,7 +568,9 @@ describe('chatStructured', () => {
 
   it('falls back to json_object mode when structured generation returns no object', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -549,7 +620,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -572,7 +643,9 @@ describe('chatStructured', () => {
 
   it('does not retry with a fallback model for auth failures', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(
@@ -588,7 +661,7 @@ describe('chatStructured', () => {
         {
           schema: extractionResultSchema,
           prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
-          system: EXTRACTION_SYSTEM_PROMPT,
+          instructions: EXTRACTION_SYSTEM_PROMPT,
         },
         { fetch: fetchStub },
       ),
@@ -601,7 +674,9 @@ describe('chatStructured', () => {
 
   it('retries retryable provider failures on the structured fallback model', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -650,7 +725,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Acme is evaluating Timeline for Q4.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -668,7 +743,9 @@ describe('chatStructured', () => {
 
   it('retries request timeouts on the structured fallback model', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -706,7 +783,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -720,7 +797,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback hits a retryable provider failure', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -774,7 +853,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -808,7 +887,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback also returns no object', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -864,7 +945,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -888,7 +969,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback returns schema-invalid JSON', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -958,7 +1041,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -982,7 +1065,9 @@ describe('chatStructured', () => {
 
   it('retries the structured fallback model when json_object fallback returns invalid JSON text', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -1052,7 +1137,7 @@ describe('chatStructured', () => {
       {
         schema: extractionResultSchema,
         prompt: 'Extract facts from: Heading out for lunch.',
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
       },
       { fetch: fetchStub },
     );
@@ -1076,7 +1161,9 @@ describe('chatStructured', () => {
 
   it('does not try the structured fallback model when json_object fallback fails with auth error', async () => {
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       const parsed: unknown = JSON.parse(init.body);
       requests.push(parsed);
@@ -1110,7 +1197,7 @@ describe('chatStructured', () => {
         {
           schema: extractionResultSchema,
           prompt: 'Extract facts from: Heading out for lunch.',
-          system: EXTRACTION_SYSTEM_PROMPT,
+          instructions: EXTRACTION_SYSTEM_PROMPT,
         },
         { fetch: fetchStub },
       ),
@@ -1148,12 +1235,12 @@ describe('chatStructured', () => {
 
       const result = await chatStructured({
         schema: extractionResultSchema,
-        system: EXTRACTION_SYSTEM_PROMPT,
+        instructions: EXTRACTION_SYSTEM_PROMPT,
         prompt:
           'Current event: Tim met Apple about SaaS licensing. Return one explicit fact with mentions.',
       });
 
-      expect(result.model).toBe('deepseek/deepseek-v4-flash-0731');
+      expect(result.model).toBe(TIMELINE_MODELS.extraction.id);
       expect(result.object.facts.length).toBeGreaterThan(0);
       const fact = result.object.facts[0];
       expect(fact).toBeDefined();
@@ -1197,7 +1284,7 @@ describe('streamChat', () => {
             start(controller) {
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'stop',
+                finishReason: { unified: 'stop', raw: undefined },
                 usage: { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
               });
               controller.close();
@@ -1209,7 +1296,7 @@ describe('streamChat', () => {
 
     const result = streamChat(
       {
-        system: 'sys',
+        instructions: 'sys',
         messages: [{ role: 'user', content: 'hi' }],
         tools: {},
         maxOutputTokens: 900,
@@ -1231,7 +1318,7 @@ describe('streamChat', () => {
             start(controller) {
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'stop',
+                finishReason: { unified: 'stop', raw: undefined },
                 usage: { inputTokens: 1, outputTokens: 0, totalTokens: 1 },
               });
               controller.close();
@@ -1242,7 +1329,7 @@ describe('streamChat', () => {
     });
 
     const result = streamChat(
-      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
+      { instructions: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
       { model },
     );
     await result.consumeStream();
@@ -1250,6 +1337,7 @@ describe('streamChat', () => {
     expect(providerOptions).toMatchObject({
       openrouter: {
         models: [TIMELINE_MODELS.agent.id, TIMELINE_MODELS.structuredFallback.id],
+        provider: { data_collection: 'deny', zdr: true },
       },
     });
   });
@@ -1268,7 +1356,7 @@ describe('streamChat', () => {
               controller.enqueue({ type: 'text-end', id: '1' });
               controller.enqueue({
                 type: 'finish',
-                finishReason: 'stop',
+                finishReason: { unified: 'stop', raw: undefined },
                 usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
               });
               controller.close();
@@ -1277,7 +1365,7 @@ describe('streamChat', () => {
         })) as never,
     });
     const result = streamChat(
-      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
+      { instructions: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {} },
       { model },
     );
     const text = await result.text;
@@ -1294,7 +1382,7 @@ describe('streamChat', () => {
     });
 
     const result = streamChat(
-      { system: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {}, onError },
+      { instructions: 'sys', messages: [{ role: 'user', content: 'hi' }], tools: {}, onError },
       { model },
     );
 

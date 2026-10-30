@@ -10,8 +10,18 @@ import { cn } from '@/lib/utils';
 
 const PUBLIC_NAVIGATION_ITEMS = [
   { section: 'product', href: '/', label: 'Product' },
-  { section: 'integrations', href: '/integrations', label: 'Integrations' },
-  { section: 'how-it-works', href: '/how-it-works', label: 'How it works' },
+  {
+    section: 'integrations',
+    href: '/integrations',
+    label: 'Integrations',
+    analyticsCta: 'view_integrations',
+  },
+  {
+    section: 'how-it-works',
+    href: '/how-it-works',
+    label: 'How it works',
+    analyticsCta: 'view_how_it_works',
+  },
   { section: 'help', href: '/help', label: 'Help' },
 ] as const;
 
@@ -42,6 +52,7 @@ export function PublicNavigationItems({
               href={item.href}
               aria-current={active ? 'page' : undefined}
               className={cn(itemClassName, active && activeItemClassName)}
+              data-public-analytics-cta={'analyticsCta' in item ? item.analyticsCta : undefined}
               onClick={onNavigate}
             >
               {item.label}
@@ -95,6 +106,7 @@ export function PublicNavigationDisclosure({
           {showAccountActions && !isSignedIn ? (
             <Link
               href="/sign-in"
+              data-public-analytics-cta="sign_in"
               onClick={closeDisclosure}
               className="flex min-h-11 items-center rounded-sm text-sm font-medium text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             >

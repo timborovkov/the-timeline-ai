@@ -66,7 +66,12 @@ export function versionedBuckets(env: ResetEnv): string[] {
 }
 
 export async function flushRedisAll(redisUrl: string): Promise<void> {
-  const redis = new IORedis(redisUrl, { maxRetriesPerRequest: null, lazyConnect: true });
+  const redis = new IORedis(redisUrl, {
+    maxRetriesPerRequest: null,
+    lazyConnect: true,
+    protocol: 3,
+    replyMapping: 'legacy',
+  });
   try {
     await redis.flushall();
   } finally {
@@ -77,7 +82,7 @@ export async function flushRedisAll(redisUrl: string): Promise<void> {
 interface QdrantResetOptions {
   url: string;
   apiKey?: string;
-  fetcher?: typeof fetch;
+  fetcher?: (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>;
 }
 
 interface QdrantCollectionsResponse {

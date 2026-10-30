@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   CAPTURE_SURFACES,
   CAPTURE_SURFACE_SUMMARY,
 } from '@/components/marketing/integrations/capture-surface-content';
-
 describe('capture surface content', () => {
   it('keeps key capture paths visible and separate from provider record sync', () => {
     expect(CAPTURE_SURFACES.map((surface) => surface.id)).toEqual([

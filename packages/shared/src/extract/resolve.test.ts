@@ -1,13 +1,14 @@
 import { PGlite } from '@electric-sql/pglite';
 import { entities, type Db } from '@timeline/db';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
 import { MockLanguageModelV3 } from 'ai/test';
+import { describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { describe, expect, it, vi } from 'vitest';
 
 import { resolveMentions } from '#src/extract/resolve.js';
 import { applyDbMigrations } from '#src/test/pglite.js';
-
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 
 async function createTestDb(): Promise<{ pg: PGlite; db: Db }> {
@@ -83,7 +84,7 @@ describe('resolveMentions', () => {
         },
       ]);
       const doGenerate = vi.fn().mockResolvedValue({
-        finishReason: 'stop',
+        finishReason: { unified: 'stop', raw: undefined },
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
         content: [{ type: 'text', text: '{"choice":-1}' }],
         warnings: [],

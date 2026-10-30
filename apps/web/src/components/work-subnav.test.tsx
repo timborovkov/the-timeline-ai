@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
-
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { WorkSubnav } from '@/components/work-subnav';
+// Test environment: happy-dom
 
 describe('WorkSubnav', () => {
   it('preserves every work destination and marks the current route', () => {

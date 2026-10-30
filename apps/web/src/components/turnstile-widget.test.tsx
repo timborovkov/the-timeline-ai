@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { renderTurnstileWidget } from '@/lib/turnstile-widget';
-
 describe('renderTurnstileWidget', () => {
   it('renders directly without using turnstile.ready', () => {
     const container = {} as HTMLElement;

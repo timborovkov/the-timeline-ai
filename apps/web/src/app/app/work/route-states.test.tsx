@@ -1,19 +1,31 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   reportCaughtError: vi.fn(),
   searchParams: new URLSearchParams(),
 }));
 
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('next/navigation', () => ({ useSearchParams: () => fakes.searchParams }));
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useSearchParams: () => fakes.searchParams,
+  }),
+  () => import('next/navigation'),
+);
 
-import WorkError from '@/app/app/work/error';
-import WorkLoading from '@/app/app/work/loading';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: WorkError } = await import('@/app/app/work/error');
+const { default: WorkLoading } = await import('@/app/app/work/loading');
 
 afterEach(() => {
   cleanup();
@@ -48,7 +60,7 @@ describe('Work route states', () => {
         ),
       ).toBeTruthy();
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard(keys);
 

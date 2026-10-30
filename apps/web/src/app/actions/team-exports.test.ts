@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
@@ -19,36 +20,83 @@ const fakes = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    insert: fakes.dbInsert,
-    update: fakes.dbUpdate,
-    select: fakes.dbSelect,
-  },
-}));
-vi.mock('@/lib/queue', () => ({ requireRedisQueue: fakes.requireRedisQueue }));
-vi.mock('@/lib/analytics', () => ({
-  trackProductEventBestEffort: fakes.trackProductEventBestEffort,
-}));
-vi.mock('@/lib/sentry-action', () => ({
-  runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.revalidatePath }));
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.requireMembership,
-    audit: { record: fakes.auditRecord },
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      insert: fakes.dbInsert,
+      update: fakes.dbUpdate,
+      select: fakes.dbSelect,
+    },
   }),
-}));
-vi.mock('@timeline/shared/s3', () => ({
-  getExportsBucket: () => 'exports',
-  getS3PresignClient: () => ({ client: 's3' }),
-  getSignedGetObjectUrl: fakes.getSignedGetObjectUrl,
-}));
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({ requireRedisQueue: fakes.requireRedisQueue }),
+  () => import('@/lib/queue'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-action'),
+  () => ({
+    runSentryServerAction: (_name: string, callback: () => Promise<unknown>) => callback(),
+  }),
+  () => import('@/lib/sentry-action'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.revalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.requireMembership,
+      audit: { record: fakes.auditRecord },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/s3'),
+  () => ({
+    getExportsBucket: () => 'exports',
+    getS3PresignClient: () => ({ client: 's3' }),
+    getSignedGetObjectUrl: fakes.getSignedGetObjectUrl,
+  }),
+  () => import('@timeline/shared/s3'),
+);
 
 const { createTeamExportAction, downloadTeamExportAction } = await import('./team-exports.js');
 
@@ -178,9 +226,9 @@ describe('team export actions', () => {
       requestedByUserId: USER_ID,
     });
     expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
-      USER_ID,
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
       'team_export_requested',
-      { teamId: TEAM_ID, userId: USER_ID, exportId: EXPORT_ID },
+      {},
     );
     expect(fakes.revalidatePath).toHaveBeenCalledWith('/app/team');
   });

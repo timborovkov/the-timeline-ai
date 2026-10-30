@@ -1,22 +1,37 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   setVisibility: vi.fn(),
 }));
 
-vi.mock('@/app/actions/visibility', () => ({
-  setEventVisibilityAction: fakes.setVisibility,
-}));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
-}));
-vi.mock('@/components/form-action-toast', () => ({
-  FormActionToast: () => null,
-}));
+await vi.mock(
+  import.meta.resolve('@/app/actions/visibility'),
+  () => ({
+    setEventVisibilityAction: fakes.setVisibility,
+  }),
+  () => import('@/app/actions/visibility'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/form-action-toast'),
+  () => ({
+    FormActionToast: () => null,
+  }),
+  () => import('@/components/form-action-toast'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { EventVisibilityForm } = await import('./event-visibility-form.js');
 

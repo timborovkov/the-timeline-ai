@@ -1,9 +1,10 @@
-// @vitest-environment happy-dom
-
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { InfiniteScroll } from '@/components/collections/infinite-scroll';
+// Test environment: happy-dom
 
 class FakeIntersectionObserver {
   static instances: FakeIntersectionObserver[] = [];

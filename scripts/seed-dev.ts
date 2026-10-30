@@ -25,6 +25,7 @@ import {
   meetings,
   meetingTranscriptChunks,
   messagePreferences,
+  objectIdentityFacets,
   providerConnections,
   rawEvents,
   reconciliationEvidence,
@@ -37,6 +38,8 @@ import {
   users,
 } from '@timeline/db';
 import { encryptJson } from '@timeline/shared/crypto';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
+import { normalizeIdentityFacet } from '@timeline/shared/objects/identity-facets';
 import { hashPassword } from '@timeline/shared/passwords';
 import { getDocumentsBucket, getS3Client, putObject } from '@timeline/shared/s3';
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
@@ -56,15 +59,14 @@ import {
   DEMO_FIXTURE_VERSION,
   DEMO_IDS,
   DEMO_LOGIN_PASSWORD,
+  DEMO_LEGAL_ACCEPTED_AT,
   DEMO_SOURCE_REFS,
   DEMO_TIMES,
 } from './demo-fixture.js';
+import { seedCurrentLegalAcceptances } from './demo-legal.js';
 import { seedHeavyAcmeLabs } from './seed-dev-heavy.js';
 
 loadDotEnv(resolve(process.cwd(), '.env'));
-
-const TERMS_VERSION = '2026-06-02';
-const PRIVACY_VERSION = '2026-06-02';
 
 const IDS = {
   owner: '10000000-0000-4000-8000-000000000001',
@@ -196,7 +198,7 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
     const expected = CORPUS_PEOPLE.find((person) => person.email === row.email);
     if (expected && row.id !== expected.id) {
       throw new Error(
-        `Cannot seed: ${row.email} already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+        `Cannot seed: ${row.email} already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
       );
     }
     const reserved = CORPUS_PEOPLE.find((person) => person.id === row.id);
@@ -210,7 +212,7 @@ async function assertReservedSeedRowsAreCompatible(db: ReturnType<typeof getDb>)
   for (const row of reservedTeams) {
     if (row.slug === 'acme-labs' && row.id !== IDS.team) {
       throw new Error(
-        `Cannot seed: acme-labs already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+        `Cannot seed: acme-labs already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
       );
     }
     if (row.id === IDS.team && row.slug !== 'acme-labs') {
@@ -247,7 +249,7 @@ function assertReservedIntegrationRows(
           : undefined;
     if (expected && row.id !== expected) {
       throw new Error(
-        `Cannot seed: ${label} for ${row.provider}:${row.externalAccountId ?? '(none)'} already exists with id ${row.id}. Run pnpm dev:wipe or remove the conflicting dev row first.`,
+        `Cannot seed: ${label} for ${row.provider}:${row.externalAccountId ?? '(none)'} already exists with id ${row.id}. Run bun run dev:wipe or remove the conflicting dev row first.`,
       );
     }
   }
@@ -331,7 +333,7 @@ async function main(): Promise<void> {
             passwordHash,
             legalTermsVersion: TERMS_VERSION,
             legalPrivacyVersion: PRIVACY_VERSION,
-            legalAcceptedAt: now,
+            legalAcceptedAt: new Date(DEMO_LEGAL_ACCEPTED_AT),
           },
           {
             id: IDS.member,
@@ -341,7 +343,7 @@ async function main(): Promise<void> {
             passwordHash,
             legalTermsVersion: TERMS_VERSION,
             legalPrivacyVersion: PRIVACY_VERSION,
-            legalAcceptedAt: now,
+            legalAcceptedAt: new Date(DEMO_LEGAL_ACCEPTED_AT),
           },
         ])
         .onConflictDoUpdate({
@@ -356,6 +358,12 @@ async function main(): Promise<void> {
             updatedAt: now,
           },
         });
+
+      await seedCurrentLegalAcceptances(
+        tx,
+        [IDS.owner, IDS.member],
+        new Date(DEMO_LEGAL_ACCEPTED_AT),
+      );
 
       await tx
         .insert(teams)
@@ -1097,7 +1105,7 @@ async function main(): Promise<void> {
             aliases: ['Atlas beta'],
             metadata: { seed: true, summary: 'Customer timeline unification beta.' },
             status: 'open',
-            stage: 'beta_prep',
+            stage: 'Beta prep',
             priority: 1,
             ownerUserId: IDS.owner,
             sourceEventId: null,
@@ -1108,9 +1116,9 @@ async function main(): Promise<void> {
             type: 'task',
             canonicalName: 'Approve vendor security appendix',
             aliases: ['Vendor contract review'],
-            metadata: { seed: true, source: 'email' },
+            metadata: { seed: true, note: 'Captured from email' },
             status: 'open',
-            stage: 'in_progress',
+            stage: 'In progress',
             priority: 2,
             ownerUserId: IDS.member,
             assigneeUserId: IDS.member,
@@ -1153,7 +1161,7 @@ async function main(): Promise<void> {
             type: 'person',
             canonicalName: 'Mika Product',
             aliases: ['Mika'],
-            metadata: { seed: true, email: 'member@timeline.dev', role: 'Product lead' },
+            metadata: { seed: true, role: 'Product lead' },
             status: 'active',
             ownerUserId: IDS.member,
           },
@@ -1166,7 +1174,7 @@ async function main(): Promise<void> {
             metadata: {
               fixture_version: DEMO_FIXTURE_VERSION,
               customer: 'Northstar Works',
-              review_date: '2026-07-15',
+              reviewDate: '2026-07-15',
             },
             status: DEMO_ENTITIES[0].status,
             stage: DEMO_ENTITIES[0].stage,
@@ -1240,6 +1248,36 @@ async function main(): Promise<void> {
             taskCategoryUpdatedAt: sql`excluded.task_category_updated_at`,
             sourceEventId: null,
             updatedAt: now,
+          },
+        });
+
+      await tx
+        .insert(objectIdentityFacets)
+        .values([
+          {
+            id: 'a6000000-0000-4000-8000-00000000fff1',
+            teamId: IDS.team,
+            entityId: IDS.objectPerson,
+            kind: 'email',
+            value: 'member@timeline.dev',
+            normalizedValue: normalizeIdentityFacet('email', 'member@timeline.dev'),
+            source: 'system',
+            status: 'approved',
+            metadata: { seed: true },
+            createdByUserId: IDS.member,
+          },
+        ])
+        .onConflictDoUpdate({
+          target: objectIdentityFacets.id,
+          set: {
+            entityId: sql`excluded.entity_id`,
+            kind: sql`excluded.kind`,
+            value: sql`excluded.value`,
+            normalizedValue: sql`excluded.normalized_value`,
+            status: sql`excluded.status`,
+            source: sql`excluded.source`,
+            updatedAt: now,
+            archivedAt: null,
           },
         });
 

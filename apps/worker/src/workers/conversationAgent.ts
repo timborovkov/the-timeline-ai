@@ -8,6 +8,7 @@ import {
   telegram,
   withTeam,
 } from '@timeline/shared';
+import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import { Worker, type Job } from 'bullmq';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
@@ -214,10 +215,13 @@ export async function processConversationAgentJob(
   const timeoutError = new Error('conversation_agent_timeout');
   let stopDeadline = (): void => undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(timeoutError);
-      abortController.abort(timeoutError);
-    }, deps.timeoutMs ?? conversationSurfaces.DIRECT_CONVERSATION_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => {
+        reject(timeoutError);
+        abortController.abort(timeoutError);
+      },
+      deps.timeoutMs ?? conversationSurfaces.conversationTimeoutMs(turn.surface),
+    );
     timeout.unref();
     stopDeadline = () => {
       clearTimeout(timeout);
@@ -244,13 +248,15 @@ export async function processConversationAgentJob(
           abortSignal: abortController.signal,
           sanitizeError: conversationSurfaces.redactConversationError,
           onApprovalDecision: ({ teamId, userId, decision, itemCount, isBulk }) => {
-            trackProductEventBestEffort(userId, 'approval_decision_submitted', {
-              teamId,
-              userId,
-              decision,
-              itemCount,
-              isBulk,
-            });
+            trackProductEventBestEffort(
+              { kind: 'user', userId, teamId },
+              'approval_decision_submitted',
+              {
+                decision,
+                itemCountBucket: bucketAnalyticsCount(itemCount),
+                isBulk,
+              },
+            );
           },
           onTurnObservability: (value) => {
             toolObservability = value;
@@ -325,7 +331,7 @@ export async function processConversationAgentJob(
         {
           status: 'timed_out',
           errorCode: 'agent_timeout',
-          answerText: conversationSurfaces.CONVERSATION_AGENT_TIMEOUT_MESSAGE,
+          answerText: conversationSurfaces.conversationTimeoutMessage(turn.surface),
         },
         () => {
           responseCached = true;

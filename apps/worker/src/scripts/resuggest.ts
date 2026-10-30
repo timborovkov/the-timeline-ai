@@ -4,7 +4,7 @@
  * review per latest chat/thread message.
  *
  * Usage:
- *   pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01]
+ *   bun run --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01]
  *     [--until=2026-06-04] [--source=telegram|slack|all] [--limit=N] [--all] [--dry-run]
  *
  * Pagination walks the whole requested window so conversation anchors are the
@@ -180,7 +180,7 @@ async function recoverConversationReview(
         metadata: sql`${conversationReviews.metadata} || ${JSON.stringify(anchorMetadata)}::jsonb`,
         updatedAt: args.requestedAt,
       },
-      where: recoverableAnchorCondition(candidate),
+      setWhere: recoverableAnchorCondition(candidate),
     })
     .returning({ id: conversationReviews.id, teamId: conversationReviews.teamId });
   if (!review) return null;

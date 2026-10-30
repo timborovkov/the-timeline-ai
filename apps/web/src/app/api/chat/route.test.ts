@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Route-handler tests for `/api/chat`. Agent/tool implementations own their
  * own behavior; this route owns auth/config/rate gates, session persistence
@@ -42,95 +43,157 @@ const fakes = vi.hoisted(() => ({
   fakeAppendChatMessages: vi.fn(),
   fakeCreateUIMessageStream: vi.fn(),
   fakeCreateUIMessageStreamResponse: vi.fn(),
+  fakeToUIMessageStream: vi.fn(),
   fakeLoggerWarn: vi.fn(),
   fakeLoggerInfo: vi.fn(),
   fakeReportCaughtError: vi.fn(),
   fakeReportHandledEvent: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@timeline/shared/env', () => ({ getEnv: fakes.fakeGetEnv }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ info: fakes.fakeLoggerInfo, warn: fakes.fakeLoggerWarn }),
-}));
-vi.mock('@timeline/shared/rate-limit', () => ({
-  RATE_LIMITS: { aiChat: { limit: 5, windowMs: 60_000 } },
-  checkRateLimit: fakes.fakeCheckRateLimit,
-  rateLimitKey: (...parts: string[]) => parts.join(':'),
-}));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({
-    requireMembership: fakes.fakeRequireMembership,
-    timeline: {
-      team: fakes.fakeTeam,
-      currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
-    },
-    objects: {
-      chatSessionExists: fakes.fakeChatSessionExists,
-      chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
-      createChatSession: fakes.fakeCreateChatSession,
-      mergeChatSessionContextTrail: fakes.fakeMergeChatSessionContextTrail,
-      listChatSessions: fakes.fakeListChatSessions,
-      setChatSessionTitle: fakes.fakeSetChatSessionTitle,
-      setUniqueChatSessionTitle: fakes.fakeSetUniqueChatSessionTitle,
-      listObjects: fakes.fakeListObjects,
-    },
-    calendar: {
-      getCalendarSettings: fakes.fakeGetCalendarSettings,
-      listCalendarEvents: fakes.fakeListCalendarEvents,
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.fakeResolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/env'),
+  () => ({ getEnv: fakes.fakeGetEnv }),
+  () => import('@timeline/shared/env'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ info: fakes.fakeLoggerInfo, warn: fakes.fakeLoggerWarn }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  () => ({
+    RATE_LIMITS: { aiChat: { limit: 5, windowMs: 60_000 } },
+    checkRateLimit: fakes.fakeCheckRateLimit,
+    rateLimitKey: (...parts: string[]) => parts.join(':'),
+  }),
+  () => import('@timeline/shared/rate-limit'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({
+      requireMembership: fakes.fakeRequireMembership,
+      timeline: {
+        team: fakes.fakeTeam,
+        currentUserIdentityContext: fakes.fakeCurrentUserIdentityContext,
+      },
+      objects: {
+        chatSessionExists: fakes.fakeChatSessionExists,
+        chatSessionTitleStatus: fakes.fakeChatSessionTitleStatus,
+        createChatSession: fakes.fakeCreateChatSession,
+        mergeChatSessionContextTrail: fakes.fakeMergeChatSessionContextTrail,
+        listChatSessions: fakes.fakeListChatSessions,
+        setChatSessionTitle: fakes.fakeSetChatSessionTitle,
+        setUniqueChatSessionTitle: fakes.fakeSetUniqueChatSessionTitle,
+        listObjects: fakes.fakeListObjects,
+      },
+      calendar: {
+        getCalendarSettings: fakes.fakeGetCalendarSettings,
+        listCalendarEvents: fakes.fakeListCalendarEvents,
+      },
+    }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/agent'),
+  () => ({
+    AGENT_PROMPT_VERSION: 'test-prompt-v1',
+    buildSystemPrompt: fakes.fakeBuildSystemPrompt,
+    resolveAgentPresentation: fakes.fakeResolveAgentPresentation,
+    buildAgentTools: fakes.fakeBuildAgentTools,
+    buildMcpTools: fakes.fakeBuildMcpTools,
+    instrumentAgentTools: fakes.fakeInstrumentAgentTools,
+    summarizeAgentToolObservations: fakes.fakeSummarizeAgentToolObservations,
+    userApprovalForTools: (tools: Record<string, unknown> = {}) => {
+      const approval = Object.fromEntries(
+        Object.keys(tools)
+          .filter((name) => name.startsWith('execute_'))
+          .map((name) => [name, 'user-approval' as const]),
+      );
+      return Object.keys(approval).length > 0 ? approval : undefined;
     },
   }),
-}));
-vi.mock('@timeline/shared/agent', () => ({
-  AGENT_PROMPT_VERSION: 'test-prompt-v1',
-  buildSystemPrompt: fakes.fakeBuildSystemPrompt,
-  resolveAgentPresentation: fakes.fakeResolveAgentPresentation,
-  buildAgentTools: fakes.fakeBuildAgentTools,
-  buildMcpTools: fakes.fakeBuildMcpTools,
-  instrumentAgentTools: fakes.fakeInstrumentAgentTools,
-  summarizeAgentToolObservations: fakes.fakeSummarizeAgentToolObservations,
-}));
-vi.mock('@timeline/shared/time', () => ({
-  workspaceTimeContext: fakes.fakeWorkspaceTimeContext,
-}));
-vi.mock('@timeline/shared/objects', () => ({
-  appendChatMessages: fakes.fakeAppendChatMessages,
-}));
-vi.mock('@timeline/shared/llm', () => ({
-  DEFAULT_AGENT_MAX_STEPS: 20,
-  DEFAULT_CHAT_MEMORY: { maxRequestMessages: 50 },
-  TIMELINE_MODELS: {
-    agent: { contextWindowTokens: 128_000 },
-    summarization: { id: 'summarizer-model' },
-  },
-  buildOpenRouterLanguageModel: fakes.fakeBuildOpenRouterLanguageModel,
-  compressMessagesForContext: fakes.fakeCompressMessagesForContext,
-  chatStructured: fakes.fakeChatStructured,
-  resolveAgentModelId: fakes.fakeResolveAgentModelId,
-  streamChatFallbackModelIds: (modelId: string) =>
-    modelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
-  streamChatModelAttribution: (
-    event: { model?: { modelId?: string }; response?: { modelId?: string } },
-    requestedModelId?: string,
-  ) => ({
-    requestedModelId: requestedModelId ?? event.model?.modelId ?? 'agent-model',
-    responseModelId: event.response?.modelId ?? event.model?.modelId ?? requestedModelId,
-    fallbackModelIds: requestedModelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+  () => import('@timeline/shared/agent'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/time'),
+  () => ({
+    workspaceTimeContext: fakes.fakeWorkspaceTimeContext,
   }),
-  streamChat: fakes.fakeStreamChat,
-}));
-vi.mock('@/lib/sentry-report', () => ({
-  reportCaughtError: fakes.fakeReportCaughtError,
-  reportHandledEvent: fakes.fakeReportHandledEvent,
-}));
-vi.mock('ai', () => ({
-  convertToModelMessages: fakes.fakeConvertToModelMessages,
-  createUIMessageStream: fakes.fakeCreateUIMessageStream,
-  createUIMessageStreamResponse: fakes.fakeCreateUIMessageStreamResponse,
-  safeValidateUIMessages: fakes.fakeSafeValidateUIMessages,
-}));
+  () => import('@timeline/shared/time'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/objects'),
+  () => ({
+    appendChatMessages: fakes.fakeAppendChatMessages,
+  }),
+  () => import('@timeline/shared/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/llm'),
+  () => ({
+    DEFAULT_AGENT_MAX_STEPS: 20,
+    DEFAULT_CHAT_MEMORY: { maxRequestMessages: 50 },
+    TIMELINE_MODELS: {
+      agent: { contextWindowTokens: 128_000 },
+      summarization: { id: 'summarizer-model' },
+    },
+    buildOpenRouterLanguageModel: fakes.fakeBuildOpenRouterLanguageModel,
+    compressMessagesForContext: fakes.fakeCompressMessagesForContext,
+    chatStructured: fakes.fakeChatStructured,
+    resolveAgentModelId: fakes.fakeResolveAgentModelId,
+    streamChatFallbackModelIds: (modelId: string) =>
+      modelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+    streamChatModelAttribution: (
+      event: { model?: { modelId?: string }; response?: { modelId?: string } },
+      requestedModelId?: string,
+    ) => ({
+      requestedModelId: requestedModelId ?? event.model?.modelId ?? 'agent-model',
+      responseModelId: event.response?.modelId ?? event.model?.modelId ?? requestedModelId,
+      fallbackModelIds: requestedModelId === 'fallback-agent-model' ? [] : ['fallback-agent-model'],
+    }),
+    streamChat: fakes.fakeStreamChat,
+  }),
+  () => import('@timeline/shared/llm'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({
+    reportCaughtError: fakes.fakeReportCaughtError,
+    reportHandledEvent: fakes.fakeReportHandledEvent,
+  }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('ai'),
+  () => ({
+    convertToModelMessages: fakes.fakeConvertToModelMessages,
+    createUIMessageStream: fakes.fakeCreateUIMessageStream,
+    createUIMessageStreamResponse: fakes.fakeCreateUIMessageStreamResponse,
+    toUIMessageStream: fakes.fakeToUIMessageStream,
+    safeValidateUIMessages: fakes.fakeSafeValidateUIMessages,
+  }),
+  () => import('ai'),
+);
 
 const { POST } = await import('./route.js');
 
@@ -276,11 +339,11 @@ beforeEach(() => {
   fakes.fakeStreamChat.mockImplementation(
     (input: {
       onError?: (event: { error: unknown }) => void;
-      onFinish?: (event: Record<string, unknown>) => void;
+      onEnd?: (event: Record<string, unknown>) => void;
     }) => {
       capturedOnError = input.onError ?? null;
-      capturedOnFinish = input.onFinish ?? null;
-      return { toUIMessageStreamResponse: () => streamResponse() };
+      capturedOnFinish = input.onEnd ?? null;
+      return { stream: { kind: 'chat' } };
     },
   );
   fakes.fakeAppendChatMessages.mockResolvedValue(undefined);
@@ -297,9 +360,12 @@ beforeEach(() => {
       return { chunks };
     },
   );
+  fakes.fakeToUIMessageStream.mockImplementation(() => ({ kind: 'ui-stream' }));
   fakes.fakeCreateUIMessageStreamResponse.mockImplementation(
-    ({ stream }: { stream: { chunks: unknown[] } }) =>
-      Response.json({ chunks: stream.chunks }, { status: 200 }),
+    ({ stream }: { stream: { chunks?: unknown[]; kind?: string } }) =>
+      Array.isArray(stream.chunks)
+        ? Response.json({ chunks: stream.chunks }, { status: 200 })
+        : streamResponse(),
   );
 });
 
@@ -406,7 +472,7 @@ describe('POST /api/chat', () => {
     );
     expect(fakes.fakeStreamChat).toHaveBeenCalledWith(
       expect.objectContaining({
-        system: 'system prompt',
+        instructions: 'system prompt',
         messages: [{ role: 'user', content: 'What happened?' }],
         tools: {
           search_timeline: { type: 'native' },
@@ -417,8 +483,7 @@ describe('POST /api/chat', () => {
     );
     expect(fakes.fakeResolveAgentPresentation).toHaveBeenCalledWith('web');
     const streamInput = fakes.fakeStreamChat.mock.calls.at(-1)?.[0] as
-      | { maxOutputTokens?: number }
-      | undefined;
+      { maxOutputTokens?: number } | undefined;
     expect(streamInput).not.toHaveProperty('maxOutputTokens');
     expect(fakes.fakeBuildMcpTools).not.toHaveBeenCalled();
   });
@@ -440,12 +505,11 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeStreamChat).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ system?: string }]
-      | undefined;
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('/app/objects/'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('object_id'));
-    expect(streamCall?.[0].system).toEqual(
+      [{ instructions?: string }] | undefined;
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('/app/objects/'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('object_id'));
+    expect(streamCall?.[0].instructions).toEqual(
       expect.stringContaining('use tools before making claims'),
     );
   });
@@ -482,14 +546,17 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeMergeChatSessionContextTrail).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ system?: string }]
-      | undefined;
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('CURRENT VIEW (priority)'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('Q3 contract'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('EARLIER VIEWS (background)'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('Launch plan'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('query_params'));
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('notes'));
+      [{ instructions?: string }] | undefined;
+    expect(streamCall?.[0].instructions).toEqual(
+      expect.stringContaining('CURRENT VIEW (priority)'),
+    );
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('Q3 contract'));
+    expect(streamCall?.[0].instructions).toEqual(
+      expect.stringContaining('EARLIER VIEWS (background)'),
+    );
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('Launch plan'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('query_params'));
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('notes'));
   });
 
   it('adds object tools when dashboard context points at an object', async () => {
@@ -519,8 +586,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       retrieve_workspace_context: { type: 'native' },
       search_timeline: { type: 'native' },
@@ -561,8 +627,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       search_objects: { type: 'native' },
       list_pending_approvals: { type: 'native' },
@@ -596,8 +661,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       list_pending_approvals: { type: 'native' },
       revise_suggestion: { type: 'native' },
@@ -628,8 +692,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       list_pending_approvals: { type: 'native' },
       revise_suggestion: { type: 'native' },
@@ -674,8 +737,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       execute_object_update: { type: 'native' },
     });
@@ -730,9 +792,8 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ system?: string; tools?: Record<string, unknown> }]
-      | undefined;
-    expect(streamCall?.[0].system).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
+      [{ instructions?: string; tools?: Record<string, unknown> }] | undefined;
+    expect(streamCall?.[0].instructions).toEqual(expect.stringContaining('DASHBOARD CONTEXT:'));
     expect(streamCall?.[0].tools).toMatchObject({
       get_object: { type: 'native' },
       execute_object_update: { type: 'native' },
@@ -844,8 +905,7 @@ describe('POST /api/chat', () => {
 
     expect(response.status).toBe(200);
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       list_team_members: { type: 'native' },
       search_boards: { type: 'native' },
@@ -869,8 +929,7 @@ describe('POST /api/chat', () => {
     expect(response.status).toBe(200);
     expect(fakes.fakeBuildMcpTools).toHaveBeenCalled();
     const streamCall = fakes.fakeStreamChat.mock.calls.at(-1) as unknown as
-      | [{ tools?: Record<string, unknown> }]
-      | undefined;
+      [{ tools?: Record<string, unknown> }] | undefined;
     expect(streamCall?.[0].tools).toMatchObject({
       search_timeline: { type: 'native' },
       external_tool: { type: 'mcp' },
@@ -911,8 +970,7 @@ describe('POST /api/chat', () => {
       expect.objectContaining({ archived: false, limit: 50 }),
     );
     const calendarCall = fakes.fakeListCalendarEvents.mock.calls.at(0) as unknown as
-      | [{ from: Date; to: Date; limit: number }]
-      | undefined;
+      [{ from: Date; to: Date; limit: number }] | undefined;
     expect(calendarCall?.[0].from).toBeInstanceOf(Date);
     expect(calendarCall?.[0].to).toBeInstanceOf(Date);
     expect(calendarCall?.[0].limit).toBe(50);
@@ -995,8 +1053,7 @@ describe('POST /api/chat', () => {
     });
 
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
-      | [{ schema?: unknown; model?: unknown; prompt?: unknown }]
-      | undefined;
+      [{ schema?: unknown; model?: unknown; prompt?: unknown }] | undefined;
     expect(titleCall?.[0].schema).toBeDefined();
     expect(titleCall?.[0].model).toBeTypeOf('string');
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
@@ -1044,8 +1101,7 @@ describe('POST /api/chat', () => {
       );
     });
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
-      | [{ prompt?: unknown }]
-      | undefined;
+      [{ prompt?: unknown }] | undefined;
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What happened?'));
     expect(titleCall?.[0].prompt).not.toEqual(expect.stringContaining('What changed since then?'));
   });
@@ -1081,8 +1137,7 @@ describe('POST /api/chat', () => {
       );
     });
     const titleCall = fakes.fakeChatStructured.mock.calls.at(0) as unknown as
-      | [{ prompt?: unknown }]
-      | undefined;
+      [{ prompt?: unknown }] | undefined;
     expect(titleCall?.[0].prompt).toEqual(expect.stringContaining('What changed since then?'));
   });
 

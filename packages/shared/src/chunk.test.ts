@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { chunkText, estimateTokens } from '#src/chunk.js';
-
 describe('estimateTokens', () => {
   it('returns 0 for empty input', () => {
     expect(estimateTokens('')).toBe(0);

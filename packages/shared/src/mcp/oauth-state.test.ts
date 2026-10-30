@@ -1,8 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import { resetEnvForTests } from '#src/env.js';
 import { signOAuthState, verifyOAuthState } from '#src/mcp/oauth-state.js';
-
 describe('mcp/oauth-state', () => {
   const originalSecret = process.env.AUTH_SECRET;
 

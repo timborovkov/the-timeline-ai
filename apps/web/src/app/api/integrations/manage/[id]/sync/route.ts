@@ -47,10 +47,9 @@ async function enqueueBackfillAndRecordAudit(input: {
 }
 
 export async function POST(
-  req: Request,
+  _req: Request,
   ctx: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  void req;
   const [session, { id }] = await Promise.all([auth(), ctx.params]);
   if (!session?.user.id) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const { active } = await resolveActiveTeam(session.user.id);
@@ -63,6 +62,26 @@ export async function POST(
   }
   const integration = await scope.integrations.getIntegration(id);
   if (!integration) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  if (integration.healthPausedAt) {
+    await scope.integrations.recordAudit(
+      'backfill_skipped:health',
+      {
+        actor: session.user.id,
+        provider: integration.provider,
+        pauseKind: integration.healthPauseKind,
+        pausedAt: integration.healthPausedAt.toISOString(),
+      },
+      integration.id,
+    );
+    return NextResponse.json(
+      {
+        error: 'health_paused',
+        pauseKind: integration.healthPauseKind,
+        pausedAt: integration.healthPausedAt.toISOString(),
+      },
+      { status: 409 },
+    );
+  }
   const integrationPause = await integrationsLib.adminLoadIntegrationSyncPause(db, integration.id);
   if (integrationPause) {
     await scope.integrations.recordAudit(

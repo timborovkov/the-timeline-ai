@@ -1,19 +1,24 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import type { ComponentType } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
-import EntityError from '@/app/app/entities/[id]/error';
-import EntityLoading from '@/app/app/entities/[id]/loading';
-import EntitiesError from '@/app/app/entities/error';
-import EntitiesLoading from '@/app/app/entities/loading';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: EntityError } = await import('@/app/app/entities/[id]/error');
+const { default: EntityLoading } = await import('@/app/app/entities/[id]/loading');
+const { default: EntitiesError } = await import('@/app/app/entities/error');
+const { default: EntitiesLoading } = await import('@/app/app/entities/loading');
 
 afterEach(() => {
   cleanup();
@@ -57,7 +62,7 @@ describe('legacy entity route states', () => {
         expect(screen.getByRole('heading', { level: 2, name: errorHeading })).toBeTruthy();
         expect(screen.getByText(description)).toBeTruthy();
 
-        const retry = screen.getByRole('button', { name: 'Try again' });
+        const retry = screen.getByRole('button', { name: 'Retry' });
         retry.focus();
         await user.keyboard(keys);
 

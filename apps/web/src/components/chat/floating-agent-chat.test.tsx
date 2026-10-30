@@ -1,11 +1,7 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { ChatViewProvider } from '@/components/chat/chat-view-context';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pathname: vi.fn(),
@@ -22,27 +18,55 @@ const fakes = vi.hoisted(() => ({
 const boardItemId = '55555555-5555-4555-8555-555555555555';
 const objectId = '44444444-4444-4444-8444-444444444444';
 
-vi.mock('next/navigation', () => ({
-  usePathname: fakes.pathname,
-  useSearchParams: fakes.searchParams,
-  useRouter: () => ({ refresh: vi.fn() }),
-}));
-vi.mock('@ai-sdk/react', () => ({ useChat: fakes.useChat }));
-vi.mock('ai', () => ({
-  DefaultChatTransport: class DefaultChatTransport {
-    constructor(public options: { body?: () => unknown }) {
-      fakes.transports.push({ options });
-    }
-  },
-  lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(),
-}));
-vi.mock('@/app/actions/chat', () => ({
-  loadChatSessionAction: fakes.loadChatSessionAction,
-  unpinChatSessionAction: vi.fn(),
-}));
-vi.mock('@/components/chat/tool-step', () => ({
-  ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: fakes.pathname,
+    useSearchParams: fakes.searchParams,
+    useRouter: () => ({ refresh: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@ai-sdk/react'),
+  () => ({ useChat: fakes.useChat }),
+  () => import('@ai-sdk/react'),
+);
+await vi.mock(
+  import.meta.resolve('ai'),
+  () => ({
+    DefaultChatTransport: class DefaultChatTransport {
+      constructor(public options: { body?: () => unknown }) {
+        fakes.transports.push({ options });
+      }
+    },
+    lastAssistantMessageIsCompleteWithApprovalResponses: vi.fn(),
+  }),
+  () => import('ai'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/chat'),
+  () => ({
+    loadChatSessionAction: fakes.loadChatSessionAction,
+    unpinChatSessionAction: vi.fn(),
+  }),
+  () => import('@/app/actions/chat'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/chat/tool-step'),
+  () => ({
+    ToolStep: ({ name }: { name: string }) => createElement('span', null, name),
+  }),
+  () => import('@/components/chat/tool-step'),
+);
+
+const { cleanup, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { createElement } = await import('react');
+const { ChatViewProvider } = await import('@/components/chat/chat-view-context');
+const { readFloatingChatSessionId, storeFloatingChatSessionId } =
+  await import('@/lib/floating-chat-session-storage');
 
 const { FloatingAgentChat } = await import('./floating-agent-chat.js');
 
@@ -120,7 +144,7 @@ describe('FloatingAgentChat', () => {
     const user = userEvent.setup();
     const storedSession = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
     const storageKey = 'timeline:floating-agent-chat:team-1:session';
-    window.localStorage.setItem(storageKey, storedSession);
+    storeFloatingChatSessionId(window.localStorage, 'team-1', storedSession);
 
     renderChat();
     await user.click(screen.getByRole('button', { name: /Open floating agent chat/ }));
@@ -131,7 +155,7 @@ describe('FloatingAgentChat', () => {
     });
 
     await user.click(screen.getByRole('button', { name: 'Close floating agent chat' }));
-    expect(window.localStorage.getItem(storageKey)).toBe(storedSession);
+    expect(readFloatingChatSessionId(window.localStorage, 'team-1')).toBe(storedSession);
     const closedPanel = document.getElementById('floating-agent-chat-panel');
     expect(closedPanel?.hasAttribute('open')).toBe(false);
     expect(closedPanel?.inert).toBe(true);
@@ -168,7 +192,7 @@ describe('FloatingAgentChat', () => {
   it('clears stale floating session id when hydration fails', async () => {
     const staleSessionId = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
     const storageKey = 'timeline:floating-agent-chat:team-1:session';
-    window.localStorage.setItem(storageKey, staleSessionId);
+    storeFloatingChatSessionId(window.localStorage, 'team-1', staleSessionId);
     fakes.loadChatSessionAction.mockResolvedValueOnce({ ok: false, error: 'Session not found' });
 
     renderChat();
@@ -183,8 +207,8 @@ describe('FloatingAgentChat', () => {
     const user = userEvent.setup();
     const team1Session = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa';
     const team2Session = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb';
-    window.localStorage.setItem('timeline:floating-agent-chat:team-1:session', team1Session);
-    window.localStorage.setItem('timeline:floating-agent-chat:team-2:session', team2Session);
+    storeFloatingChatSessionId(window.localStorage, 'team-1', team1Session);
+    storeFloatingChatSessionId(window.localStorage, 'team-2', team2Session);
 
     const { rerender } = render(
       <ChatViewProvider>
@@ -329,10 +353,8 @@ describe('FloatingAgentChat', () => {
         onchange: null,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
         dispatchEvent: vi.fn(),
-      };
+      } as unknown as MediaQueryList;
     });
 
     try {

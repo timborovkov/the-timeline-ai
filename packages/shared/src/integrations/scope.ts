@@ -33,6 +33,14 @@ import type {
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { getEnv } from '#src/env.js';
+import {
+  formatHealthPauseNotice,
+  healthPauseNotificationDedupeKey,
+  INTEGRATION_HEALTH_PAUSE_MIN_FAILURES,
+  integrationHealthPauseAfterMs,
+  isIntegrationHealthPauseKind,
+  type IntegrationHealthPauseKind,
+} from '#src/integrations/health.js';
 import { getProvider } from '#src/integrations/registry.js';
 import { childLogger } from '#src/logger.js';
 import { sendMessage } from '#src/messaging/delivery.js';
@@ -99,7 +107,8 @@ export interface ConnectionAttentionInput {
     | 'needs_new_owner'
     | 'access_changed'
     | 'sync_error'
-    | 'webhook_degraded';
+    | 'webhook_degraded'
+    | 'access_revoked';
   summary: string;
 }
 
@@ -117,20 +126,38 @@ export interface ProviderBudgetKey {
   scope: string;
 }
 
+export interface ResumeIntegrationHealthResult {
+  resumed: boolean;
+  backfillPending: boolean;
+  previousKind: IntegrationHealthPauseKind | null;
+  previousError: string | null;
+  firstFailedAt: Date | null;
+  pausedAt: Date | null;
+}
+
 type NativeProviderName = Exclude<IntegrationProviderName, 'mcp'>;
 
 const transientSyncResourceType = 'integration.run';
+const healthResumeBackfillResourceType = 'health.resume_backfill';
 const transientSyncAttentionThreshold = 3;
 const githubRateLimitedUntilKey = 'github_rate_limited_until';
 const integrationSyncContinuationHandoffLeaseMs = 2 * 60 * 1000;
 const integrationSyncContinuationHandoffClaimLimit = 100;
 const log = childLogger('integrations:scope');
+const integrationHealthReset = {
+  healthConsecutiveFailures: 0,
+  healthFirstFailedAt: null,
+  healthPausedAt: null,
+  healthPauseKind: null,
+  healthOwnerNotifiedAt: null,
+} as const;
 const connectionAttentionCategoryValues: ConnectionAttentionInput['category'][] = [
   'needs_reconnect',
   'needs_new_owner',
   'access_changed',
   'sync_error',
   'webhook_degraded',
+  'access_revoked',
 ];
 
 function webhookSubscriptionKey(subscription: {
@@ -139,6 +166,43 @@ function webhookSubscriptionKey(subscription: {
   eventType: string;
 }): string {
   return `${subscription.resourceKind}\x00${subscription.externalResourceId}\x00${subscription.eventType}`;
+}
+
+interface HealthResumeBackfillCursor {
+  pending: true;
+  previousKind: IntegrationHealthPauseKind | null;
+  previousError: string | null;
+  firstFailedAt: string | null;
+  pausedAt: string | null;
+}
+
+function parseHealthResumeBackfillCursor(cursor: unknown): HealthResumeBackfillCursor | null {
+  if (!cursor || typeof cursor !== 'object' || Array.isArray(cursor)) return null;
+  const value = cursor as Record<string, unknown>;
+  if (value.pending !== true) return null;
+  const previousKind = typeof value.previousKind === 'string' ? value.previousKind : null;
+  return {
+    pending: true,
+    previousKind: isIntegrationHealthPauseKind(previousKind) ? previousKind : null,
+    previousError: typeof value.previousError === 'string' ? value.previousError : null,
+    firstFailedAt: typeof value.firstFailedAt === 'string' ? value.firstFailedAt : null,
+    pausedAt: typeof value.pausedAt === 'string' ? value.pausedAt : null,
+  };
+}
+
+function healthResumeBackfillCursorFromResult(input: {
+  previousKind: IntegrationHealthPauseKind | null;
+  previousError: string | null;
+  firstFailedAt: Date | null;
+  pausedAt: Date | null;
+}): HealthResumeBackfillCursor {
+  return {
+    pending: true,
+    previousKind: input.previousKind,
+    previousError: input.previousError,
+    firstFailedAt: input.firstFailedAt?.toISOString() ?? null,
+    pausedAt: input.pausedAt?.toISOString() ?? null,
+  };
 }
 
 export function createIntegrationScope(deps: {
@@ -267,11 +331,13 @@ export function createIntegrationScope(deps: {
         externalAccountId: input.externalAccountId,
         scopes: input.scopes ?? [],
         lastError: null,
+        ...integrationHealthReset,
         updatedAt: new Date(),
       })
       .where(eq(integrationsTable.providerConnectionId, row.id));
     await adminResolveProviderConnectionAttention(db, row.id, [
       'needs_reconnect',
+      'access_revoked',
       'sync_error',
       'webhook_degraded',
     ]);
@@ -455,6 +521,7 @@ export function createIntegrationScope(deps: {
             authSecretIv: encrypted?.iv ?? null,
             authSecretTag: encrypted?.tag ?? null,
             lastError: null,
+            ...integrationHealthReset,
             updatedAt: new Date(),
           },
         })
@@ -1252,7 +1319,7 @@ export function createIntegrationScope(deps: {
   async function activateSharedResources(input: {
     providerConnectionId: string;
     resourceShareIds: string[];
-  }): Promise<IntegrationRow & { addedSelectionCount: number }> {
+  }): Promise<IntegrationRow & { addedSelectionCount: number; removedSelectionCount: number }> {
     await ensureMember('admin');
     const connectionRows = await db
       .select()
@@ -1355,8 +1422,15 @@ export function createIntegrationScope(deps: {
       const existingSelectionKeys = new Set(
         existingSelections.map((row) => `${row.selectionKind}\x00${row.externalId}`),
       );
+      const selectedSelectionKeys = new Set(
+        shares.map((share) => `${share.resourceKind}\x00${share.externalId}`),
+      );
       const addedSelectionCount = shares.filter(
         (share) => !existingSelectionKeys.has(`${share.resourceKind}\x00${share.externalId}`),
+      ).length;
+      const removedSelectionCount = existingSelections.filter(
+        (selection) =>
+          !selectedSelectionKeys.has(`${selection.selectionKind}\x00${selection.externalId}`),
       ).length;
       await tx
         .delete(integrationSelections)
@@ -1412,9 +1486,9 @@ export function createIntegrationScope(deps: {
         targetVisibility: 'team',
         metadata: { field: 'active_source_paths', selection_count: shares.length },
       });
-      return { integration, addedSelectionCount };
+      return { integration, addedSelectionCount, removedSelectionCount };
     });
-    const { integration, addedSelectionCount } = activation;
+    const { integration, addedSelectionCount, removedSelectionCount } = activation;
     await adminResolveConnectionAttention(db, teamId, {
       integrationId: integration.id,
       categories: ['needs_new_owner'],
@@ -1427,7 +1501,7 @@ export function createIntegrationScope(deps: {
         }),
       ),
     );
-    return { ...integration, addedSelectionCount };
+    return { ...integration, addedSelectionCount, removedSelectionCount };
   }
 
   async function listConnectionAttention() {
@@ -1634,6 +1708,114 @@ export function createIntegrationScope(deps: {
     return { entity: ent[0] ?? null, history: events };
   }
 
+  async function resumeIntegrationHealth(id: string): Promise<ResumeIntegrationHealthResult> {
+    await ensureMember('admin');
+    return db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(integrationsTable)
+        .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
+        .limit(1);
+      const integration = rows[0];
+      if (!integration) throw new Error('Integration not found');
+
+      const [pendingRow] = await tx
+        .select({ cursor: integrationSyncState.cursor })
+        .from(integrationSyncState)
+        .where(
+          and(
+            eq(integrationSyncState.integrationId, id),
+            eq(integrationSyncState.resourceType, healthResumeBackfillResourceType),
+          ),
+        )
+        .limit(1);
+      const pending = parseHealthResumeBackfillCursor(pendingRow?.cursor);
+      const previousKind = isIntegrationHealthPauseKind(integration.healthPauseKind)
+        ? integration.healthPauseKind
+        : (pending?.previousKind ?? null);
+      const previousError = integration.lastError ?? pending?.previousError ?? null;
+      const firstFailedAt =
+        integration.healthFirstFailedAt ??
+        (pending?.firstFailedAt ? new Date(pending.firstFailedAt) : null);
+      const pausedAt =
+        integration.healthPausedAt ?? (pending?.pausedAt ? new Date(pending.pausedAt) : null);
+      const wasPaused = Boolean(integration.healthPausedAt);
+      const result: ResumeIntegrationHealthResult = {
+        resumed: wasPaused,
+        backfillPending: wasPaused || pending !== null,
+        previousKind,
+        previousError,
+        firstFailedAt,
+        pausedAt,
+      };
+      if (!result.backfillPending) return result;
+
+      if (wasPaused) {
+        const updated = await tx
+          .update(integrationsTable)
+          .set({ ...integrationHealthReset, updatedAt: new Date() })
+          .where(and(eq(integrationsTable.id, id), eq(integrationsTable.teamId, teamId)))
+          .returning({ id: integrationsTable.id });
+        if (!updated[0]) throw new Error('Integration not found');
+        await tx.insert(integrationAuditLog).values({
+          teamId,
+          integrationId: id,
+          actorUserId: userId,
+          kind: 'sync_resumed:health',
+          payload: {
+            actor: userId,
+            provider: integration.provider,
+            previousKind,
+            firstFailedAt: firstFailedAt?.toISOString() ?? null,
+            pausedAt: pausedAt?.toISOString() ?? null,
+            cause: (previousError ?? 'none').replace(/\s+/g, ' ').slice(0, 200),
+            providerConnectionId: integration.providerConnectionId,
+          },
+        });
+      }
+
+      if (!pending) {
+        const cursor = healthResumeBackfillCursorFromResult(result);
+        await tx
+          .insert(integrationSyncState)
+          .values({
+            integrationId: id,
+            resourceType: healthResumeBackfillResourceType,
+            cursor,
+            lastRunAt: new Date(),
+            lastStatus: 'pending',
+            lastError: null,
+          })
+          .onConflictDoUpdate({
+            target: [integrationSyncState.integrationId, integrationSyncState.resourceType],
+            set: {
+              cursor,
+              lastRunAt: new Date(),
+              lastStatus: 'pending',
+              lastError: null,
+              updatedAt: new Date(),
+            },
+          });
+      }
+
+      return result;
+    });
+  }
+
+  async function completeHealthResumeBackfill(id: string): Promise<void> {
+    await ensureMember('admin');
+    const integration = await getIntegration(id);
+    if (!integration) throw new Error('Integration not found');
+    await db
+      .delete(integrationSyncState)
+      .where(
+        and(
+          eq(integrationSyncState.integrationId, id),
+          eq(integrationSyncState.resourceType, healthResumeBackfillResourceType),
+        ),
+      );
+  }
+
   return {
     listIntegrations,
     getIntegration,
@@ -1671,6 +1853,8 @@ export function createIntegrationScope(deps: {
     recordAudit,
     listAudit,
     getIntegrationResource,
+    resumeIntegrationHealth,
+    completeHealthResumeBackfill,
   };
 }
 
@@ -2066,6 +2250,218 @@ export async function adminResetTransientSyncFailures(
     { transient_failure_count: 0 },
     { lastStatus: 'ok', lastError: null },
   );
+}
+
+export async function adminResetIntegrationHealth(db: Db, integrationId: string): Promise<void> {
+  await db
+    .update(integrationsTable)
+    .set({ ...integrationHealthReset, updatedAt: new Date() })
+    .where(eq(integrationsTable.id, integrationId));
+}
+
+export interface IntegrationHealthFailureResult {
+  consecutiveFailures: number;
+  firstFailedAt: Date;
+  paused: boolean;
+  newlyPaused: boolean;
+  pauseKind: IntegrationHealthPauseKind;
+}
+
+export async function adminRecordCountedHealthFailure(
+  db: Db,
+  integrationId: string,
+  input: {
+    kind: IntegrationHealthPauseKind;
+    error: string;
+    now?: Date;
+    pauseAfterMs?: number;
+  },
+): Promise<IntegrationHealthFailureResult> {
+  const now = input.now ?? new Date();
+  const pauseAfterMs =
+    input.pauseAfterMs ??
+    integrationHealthPauseAfterMs(getEnv().INTEGRATION_HEALTH_PAUSE_AFTER_HOURS);
+  const integration = await adminLoadIntegration(db, integrationId);
+  if (!integration) {
+    throw new Error(`integration not found: ${integrationId}`);
+  }
+  const existingKind = isIntegrationHealthPauseKind(integration.healthPauseKind)
+    ? integration.healthPauseKind
+    : input.kind;
+  if (integration.healthPausedAt) {
+    return {
+      consecutiveFailures: integration.healthConsecutiveFailures,
+      firstFailedAt: integration.healthFirstFailedAt ?? now,
+      paused: true,
+      newlyPaused: false,
+      pauseKind: existingKind,
+    };
+  }
+  const consecutiveFailures = integration.healthConsecutiveFailures + 1;
+  const firstFailedAt = integration.healthFirstFailedAt ?? now;
+  const shouldPause =
+    consecutiveFailures >= INTEGRATION_HEALTH_PAUSE_MIN_FAILURES &&
+    now.getTime() - firstFailedAt.getTime() >= pauseAfterMs;
+  await db
+    .update(integrationsTable)
+    .set({
+      healthConsecutiveFailures: consecutiveFailures,
+      healthFirstFailedAt: firstFailedAt,
+      ...(shouldPause
+        ? { healthPausedAt: now, healthPauseKind: input.kind }
+        : { healthPausedAt: null, healthPauseKind: null }),
+      updatedAt: now,
+    })
+    .where(eq(integrationsTable.id, integrationId));
+  if (shouldPause) {
+    try {
+      await notifyHealthPauseOwnerOnce(db, integration, input.kind, input.error, now);
+    } catch (err) {
+      log.warn({ err, integrationId }, 'health pause owner notify failed');
+    }
+  }
+  return {
+    consecutiveFailures,
+    firstFailedAt,
+    paused: shouldPause,
+    newlyPaused: shouldPause,
+    pauseKind: input.kind,
+  };
+}
+
+/** Worker-only unscoped health-pause reset. Web callers must use `scope.integrations.resumeIntegrationHealth`. */
+export async function adminResumeIntegrationHealth(
+  db: Db,
+  integrationId: string,
+): Promise<ResumeIntegrationHealthResult> {
+  const integration = await adminLoadIntegration(db, integrationId);
+  if (!integration) {
+    throw new Error(`integration not found: ${integrationId}`);
+  }
+  const previousKind = isIntegrationHealthPauseKind(integration.healthPauseKind)
+    ? integration.healthPauseKind
+    : null;
+  const result: ResumeIntegrationHealthResult = {
+    resumed: Boolean(integration.healthPausedAt),
+    backfillPending: false,
+    previousKind,
+    previousError: integration.lastError,
+    firstFailedAt: integration.healthFirstFailedAt,
+    pausedAt: integration.healthPausedAt,
+  };
+  if (!integration.healthPausedAt) return result;
+  await adminResetIntegrationHealth(db, integrationId);
+  return result;
+}
+
+async function notifyHealthPauseOwnerOnce(
+  db: Db,
+  integration: IntegrationRow,
+  kind: IntegrationHealthPauseKind,
+  error: string,
+  now: Date,
+): Promise<void> {
+  if (integration.healthOwnerNotifiedAt) return;
+  let ownerUserId: string | null = null;
+  if (integration.providerConnectionId) {
+    const connection = await adminLoadProviderConnection(db, integration.providerConnectionId);
+    if (connection) {
+      const stillMember = await adminVerifyTeamMember(
+        db,
+        integration.teamId,
+        connection.ownerUserId,
+      );
+      if (stillMember) ownerUserId = connection.ownerUserId;
+    }
+  }
+  if (!ownerUserId && integration.connectedByUserId) {
+    const stillMember = await adminVerifyTeamMember(
+      db,
+      integration.teamId,
+      integration.connectedByUserId,
+    );
+    if (stillMember) ownerUserId = integration.connectedByUserId;
+  }
+  if (!ownerUserId) {
+    const [owner] = await db
+      .select({ userId: teamMembers.userId })
+      .from(teamMembers)
+      .where(
+        and(
+          eq(teamMembers.teamId, integration.teamId),
+          isNull(teamMembers.removedAt),
+          eq(teamMembers.role, 'owner'),
+        ),
+      )
+      .limit(1);
+    ownerUserId = owner?.userId ?? null;
+  }
+  await db
+    .update(integrationsTable)
+    .set({ healthOwnerNotifiedAt: now, updatedAt: now })
+    .where(eq(integrationsTable.id, integration.id));
+  if (!ownerUserId) return;
+  const summary = `${formatHealthPauseNotice({
+    provider: integration.provider,
+    kind,
+    firstFailedAt: integration.healthFirstFailedAt ?? now,
+    now,
+  })} ${error.slice(0, 180)}`.trim();
+  await db.insert(notifications).values({
+    teamId: integration.teamId,
+    userId: ownerUserId,
+    kind: 'connection_attention',
+    summary,
+    payload: {
+      category:
+        kind === 'auth'
+          ? 'needs_reconnect'
+          : kind === 'access_revoked'
+            ? 'access_revoked'
+            : 'sync_error',
+      provider_connection_id: integration.providerConnectionId ?? null,
+      integration_id: integration.id,
+      pause_kind: kind,
+    },
+  });
+  const [teamRow] = await db
+    .select({ name: teams.name })
+    .from(teams)
+    .where(eq(teams.id, integration.teamId))
+    .limit(1);
+  const [recipient] = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(eq(users.id, ownerUserId))
+    .limit(1);
+  if (!recipient) return;
+  try {
+    await sendMessage(
+      'connection_attention',
+      {
+        to: recipient.email,
+        teamName: teamRow?.name ?? 'Timeline',
+        summary,
+        actionUrl: `${process.env.AUTH_URL ?? process.env.NEXTAUTH_URL ?? 'https://thetimeline.cc'}/app/team/integrations`,
+      },
+      {
+        db,
+        teamId: integration.teamId,
+        userId: recipient.id,
+        dedupeKey: healthPauseNotificationDedupeKey(integration.id, now),
+        metadata: {
+          integrationId: integration.id,
+          pauseKind: kind,
+          providerConnectionId: integration.providerConnectionId ?? '',
+        },
+      },
+    );
+  } catch (err) {
+    log.warn(
+      { err, integrationId: integration.id, ownerUserId },
+      'health pause owner email failed',
+    );
+  }
 }
 
 export async function adminLoadIntegrationSyncPause(
@@ -2519,7 +2915,9 @@ async function notifyConnectionAttentionActors(
 ): Promise<void> {
   const recipients = new Set<string>();
   if (
-    (input.category === 'needs_reconnect' || input.category === 'access_changed') &&
+    (input.category === 'needs_reconnect' ||
+      input.category === 'access_changed' ||
+      input.category === 'access_revoked') &&
     input.providerConnectionId
   ) {
     const connection = await adminLoadProviderConnection(db, input.providerConnectionId);

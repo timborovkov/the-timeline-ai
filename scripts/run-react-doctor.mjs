@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { fileURLToPath } from 'node:url';
 
 const outputDir = mkdtempSync(join(tmpdir(), 'react-doctor-'));
 
@@ -13,10 +14,14 @@ function exitWith(message, code = 1) {
 }
 
 try {
-  const result = spawnSync('react-doctor', ['--json', '--output-dir', outputDir], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const result = spawnSync(
+    process.execPath,
+    [fileURLToPath(import.meta.resolve('react-doctor')), '--json', '--output-dir', outputDir],
+    {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
   if (result.stderr) process.stderr.write(result.stderr);
   if (result.error) exitWith(`[react-doctor] Failed to run analyzer: ${result.error.message}`);
   if (result.status !== 0) {

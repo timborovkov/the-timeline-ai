@@ -19,9 +19,9 @@ All team-scoped reads must go through `withTeam(db, teamId, userId)` from `@time
 Workspace commands:
 
 ```bash
-pnpm db:generate   # drizzle-kit generate after schema change
-pnpm db:migrate    # apply pending migrations
-pnpm db:studio     # local schema browser
+bun run db:generate   # drizzle-kit generate after schema change
+bun run db:migrate    # apply pending migrations
+bun run db:studio     # local schema browser
 ```
 
 ## Schema guardrails
@@ -55,6 +55,13 @@ backfilled deterministically by session, creation time, and id before the
 insert default is enabled. Conversation replay and web hydration therefore
 preserve user/assistant insertion order even when one transaction gives both
 messages the same timestamp.
+
+Migration `0066_monday_conversation_tombstones.sql` restricts tombstones to the
+Monday provider using a text comparison. This preserves the constraint while
+allowing a fresh Postgres database to apply the earlier enum addition and this
+migration in the same transaction. Validate fresh migration histories against
+Postgres as well as PGlite; PGlite does not enforce Postgres's restriction on
+using newly added enum values before commit.
 
 Migration `0070_ingest_webhook_event_class.sql` adds a provider-agnostic
 `event_class` on ingest webhooks so custom sources can declare communication,

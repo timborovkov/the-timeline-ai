@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   assertProductionFullWorkerSkipsDocumentExtract,
   shouldStartDocumentExtractOnFullWorker,
 } from '#src/document-ingestion/full-worker-extract-gate.js';
-
 describe('assertProductionFullWorkerSkipsDocumentExtract', () => {
   it('throws when production full worker still has extract enabled', () => {
     expect(() => {

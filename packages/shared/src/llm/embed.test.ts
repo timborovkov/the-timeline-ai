@@ -1,13 +1,14 @@
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
 import { MockEmbeddingModelV3 } from 'ai/test';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { encode } from 'gpt-tokenizer/encoding/cl100k_base';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { EmbeddingModel } from 'ai';
 
 import { resetEnvForTests } from '#src/env.js';
 import { embed, embedMany, truncateEmbeddingTextToTokenBudget } from '#src/llm/embed.js';
 import { TIMELINE_MODELS } from '#src/llm/models.js';
-
 const ENV_BACKUP = { ...process.env };
 
 function embeddingVector(seed: number): number[] {
@@ -38,7 +39,6 @@ beforeEach(() => {
   };
   resetEnvForTests();
 });
-
 afterEach(() => {
   process.env = { ...ENV_BACKUP };
   resetEnvForTests();
@@ -54,6 +54,39 @@ describe('llm.embed', () => {
   it('uses the predefined embedding model catalog entry', async () => {
     const result = await embed({ text: 'hello' }, { model: makeMockModel([[1, 2, 3, 4]]) });
     expect(result.model).toBe(TIMELINE_MODELS.embedding.id);
+  });
+
+  it('injects no-collection and ZDR routing into the serialized OpenRouter request', async () => {
+    let requestBody: unknown;
+    let requestHeaders: Headers | undefined;
+    const vector = embeddingVector(1);
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_input, init) => {
+      if (typeof init?.body !== 'string') throw new Error('Expected a serialized JSON request');
+      requestBody = JSON.parse(init.body) as unknown;
+      requestHeaders = new Headers(init.headers);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [{ embedding: vector }],
+            usage: { prompt_tokens: 1 },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    });
+
+    await expect(embed({ text: 'synthetic' }, { fetch, maxRetries: 0 })).resolves.toEqual({
+      vector,
+      model: TIMELINE_MODELS.embedding.id,
+    });
+    expect(requestBody).toMatchObject({
+      model: TIMELINE_MODELS.embedding.id,
+      input: ['synthetic'],
+      provider: { allow_fallbacks: true, data_collection: 'deny', zdr: true },
+    });
+    expect(requestHeaders?.get('X-OpenRouter-Cache')).toBe('false');
   });
 
   it('truncates text before sending it to the embedding model budget', async () => {

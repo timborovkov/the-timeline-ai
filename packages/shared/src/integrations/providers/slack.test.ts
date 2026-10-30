@@ -1,13 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type { IntegrationEvent } from '#src/integrations/types.js';
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
 
-import { resetEnvForTests } from '#src/env.js';
-import { slackProvider } from '#src/integrations/providers/slack.js';
+const { resetEnvForTests } = await import('#src/env.js');
+const { slackProvider } = await import('#src/integrations/providers/slack.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -18,7 +24,11 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-function requestUrl(input: Parameters<typeof fetch>[0]): string {
+function requestUrl(
+  input: Parameters<
+    (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+  >[0],
+): string {
   if (typeof input === 'string') return input;
   if (input instanceof URL) return input.toString();
   return input.url;
@@ -77,7 +87,9 @@ describe('slackProvider', () => {
   });
 
   it('syncs messages, thread replies, reactions, and files into integration events', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
       const requestBody = init?.body;
       if (typeof requestBody !== 'string') throw new Error('expected form request body');
@@ -154,7 +166,9 @@ describe('slackProvider', () => {
   });
 
   it('uses the persisted integration account id as the Slack workspace id', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
       const requestBody = init?.body;
       if (typeof requestBody !== 'string') throw new Error('expected form request body');
@@ -198,7 +212,9 @@ describe('slackProvider', () => {
   });
 
   it('paginates Slack channel history until Slack returns no next cursor', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
       const requestBody = init?.body;
       if (typeof requestBody !== 'string') throw new Error('expected form request body');
@@ -259,7 +275,9 @@ describe('slackProvider', () => {
   });
 
   it('caps Slack history pages and stores a bounded backfill continuation marker', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
       const requestBody = init?.body;
       if (typeof requestBody !== 'string') throw new Error('expected form request body');
@@ -307,7 +325,9 @@ describe('slackProvider', () => {
   });
 
   it('continues older Slack backfill from the stored continuation marker', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
       const requestBody = init?.body;
       if (typeof requestBody !== 'string') throw new Error('expected form request body');
@@ -359,7 +379,9 @@ describe('slackProvider', () => {
   });
 
   it('uses an incremental lookback so older edits and reactions are not skipped', async () => {
-    const fetch = vi.fn<typeof globalThis.fetch>((input, init) => {
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((input, init) => {
       if (typeof input !== 'string') throw new Error('expected Slack URL string');
       const requestBody = init?.body;
       if (typeof requestBody !== 'string') throw new Error('expected form request body');

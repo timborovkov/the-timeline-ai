@@ -1,8 +1,6 @@
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as SlackModule from '@timeline/shared/slack';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
@@ -14,21 +12,50 @@ const fakes = vi.hoisted(() => ({
   signSlackOAuthState: vi.fn(),
 }));
 
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('next/navigation', () => ({ redirect: fakes.redirect }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.requireMembership }),
-}));
-vi.mock('@timeline/shared/slack', async () => {
-  const actual = await vi.importActual<typeof SlackModule>('@timeline/shared/slack');
-  return {
-    ...actual,
-    hasSlackInstallForTeam: fakes.hasSlackInstallForTeam,
-    signSlackOAuthState: fakes.signSlackOAuthState,
-  };
-});
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/slack'),
+  async () => {
+    const actual = await import('@timeline/shared/slack');
+    return {
+      ...actual,
+      hasSlackInstallForTeam: fakes.hasSlackInstallForTeam,
+      signSlackOAuthState: fakes.signSlackOAuthState,
+    };
+  },
+  () => import('@timeline/shared/slack'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { GET } = await import('./route.js');
 

@@ -1,11 +1,10 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 // The personal MCP route must query only the signed-in owner's overlay, even
 // when the active team has shared MCP servers available elsewhere.
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import PersonalMcpServersPage from '@/app/app/me/mcp-servers/page';
 
 const fakes = vi.hoisted(() => {
   const listPersonalServers = vi.fn();
@@ -21,21 +20,49 @@ const fakes = vi.hoisted(() => {
   };
 });
 
-vi.mock('@timeline/shared/team-scope', () => ({ withTeam: fakes.withTeam }));
-vi.mock('next/navigation', () => ({
-  redirect: fakes.redirect,
-  useRouter: () => ({ back: vi.fn() }),
-}));
-vi.mock('@/components/integrations/mcp-servers', () => ({
-  McpServersUi: ({ ownership, servers }: { ownership: string; servers: { name: string }[] }) => (
-    <output>
-      {ownership}:{servers.map((server) => server.name).join(',')}
-    </output>
-  ),
-}));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/db', () => ({ db: fakes.db }));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({ withTeam: fakes.withTeam }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.redirect,
+    useRouter: () => ({ back: vi.fn() }),
+  }),
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/components/integrations/mcp-servers'),
+  () => ({
+    McpServersUi: ({ ownership, servers }: { ownership: string; servers: { name: string }[] }) => (
+      <output>
+        {ownership}:{servers.map((server) => server.name).join(',')}
+      </output>
+    ),
+  }),
+  () => import('@/components/integrations/mcp-servers'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: fakes.db }),
+  () => import('@/lib/db'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: PersonalMcpServersPage } = await import('@/app/app/me/mcp-servers/page');
 
 afterEach(() => {
   cleanup();

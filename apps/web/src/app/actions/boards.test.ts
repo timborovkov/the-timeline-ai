@@ -1,21 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  addBoardItemAction,
-  createBoardAction,
-  deleteBoardAction,
-  pinBoardAction,
-  quickCreateBoardItemAction,
-  renameBoardAction,
-  removeBoardItemAction,
-  updateBoardSettingsAction,
-  updateBoardItemAction,
-} from '@/app/actions/boards';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 const fakes = vi.hoisted(() => ({
   fakeResolveScope: vi.fn(),
   fakeRevalidatePath: vi.fn(),
   fakeReportCaughtError: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   fakeBoards: {
     createBoard: vi.fn(),
     archiveBoard: vi.fn(),
@@ -30,26 +20,59 @@ const fakes = vi.hoisted(() => ({
   fakePins: { pin: vi.fn() },
 }));
 
-vi.mock('@/lib/action-scope', async () => {
-  const { z } = await import('zod');
-  return {
-    resolveScope: fakes.fakeResolveScope,
-    uuidSchema: z.uuid(),
-  };
-});
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.fakeReportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/lib/action-scope'),
+  async () => {
+    const { z } = await import('zod');
+    return {
+      resolveScope: fakes.fakeResolveScope,
+      uuidSchema: z.uuid(),
+    };
+  },
+  () => import('@/lib/action-scope'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.fakeReportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
+
+const {
+  addBoardItemAction,
+  createBoardAction,
+  deleteBoardAction,
+  pinBoardAction,
+  quickCreateBoardItemAction,
+  renameBoardAction,
+  removeBoardItemAction,
+  updateBoardSettingsAction,
+  updateBoardItemAction,
+} = await import('@/app/actions/boards');
 
 const BOARD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const ITEM_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ENTITY_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
+const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 
 beforeEach(() => {
   vi.clearAllMocks();
   fakes.fakeResolveScope.mockResolvedValue({
     ok: true,
     scope: { boards: fakes.fakeBoards, pins: fakes.fakePins },
+    teamId: TEAM_ID,
     userId: USER_ID,
   });
   fakes.fakeBoards.createBoard.mockResolvedValue({ id: BOARD_ID });
@@ -69,9 +92,13 @@ beforeEach(() => {
   fakes.fakeBoards.renameBoard.mockResolvedValue(true);
   fakes.fakeBoards.updateBoardSettings.mockResolvedValue(true);
   fakes.fakeBoards.updateBoardItem.mockResolvedValue({
-    id: ITEM_ID,
-    boardId: BOARD_ID,
-    entityId: ENTITY_ID,
+    changed: true,
+    changedFields: ['priority'],
+    item: {
+      id: ITEM_ID,
+      boardId: BOARD_ID,
+      entityId: ENTITY_ID,
+    },
   });
   fakes.fakeBoards.removeBoardItem.mockResolvedValue({
     id: ITEM_ID,
@@ -103,6 +130,11 @@ describe('createBoardAction', () => {
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/boards');
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith(`/app/boards/${BOARD_ID}`);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'board_action_completed',
+      { action: 'create' },
+    );
   });
 
   it('creates a board with user-defined stages', async () => {
@@ -272,6 +304,27 @@ describe('updateBoardItemAction', () => {
       { kind: 'user', userId: USER_ID },
     );
     expect(fakes.fakeRevalidatePath).toHaveBeenCalledWith('/app/work');
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', userId: USER_ID, teamId: TEAM_ID },
+      'board_action_completed',
+      { action: 'item_update' },
+    );
+  });
+
+  it('does not count or revalidate a board patch that made no durable change', async () => {
+    fakes.fakeBoards.updateBoardItem.mockResolvedValueOnce({
+      changed: false,
+      changedFields: [],
+      item: { id: ITEM_ID, boardId: BOARD_ID, entityId: ENTITY_ID },
+    });
+
+    await expect(updateBoardItemAction({ id: ITEM_ID, priority: 2 })).resolves.toEqual({
+      ok: true,
+      id: ITEM_ID,
+    });
+
+    expect(fakes.trackProductEventBestEffort).not.toHaveBeenCalled();
+    expect(fakes.fakeRevalidatePath).not.toHaveBeenCalled();
   });
 });
 

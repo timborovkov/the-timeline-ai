@@ -1,20 +1,29 @@
-// @vitest-environment happy-dom
-
-import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({ reportCaughtError: vi.fn() }));
 
-vi.mock('@/components/theme-toggle', () => ({
-  ThemeToggle: () => <button type="button">Theme</button>,
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: fakes.reportCaughtError }));
+await vi.mock(
+  import.meta.resolve('@/components/theme-toggle'),
+  () => ({
+    ThemeToggle: () => <button type="button">Theme</button>,
+  }),
+  () => import('@/components/theme-toggle'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: fakes.reportCaughtError }),
+  () => import('@/lib/sentry-report'),
+);
 
-import SignInError from '@/app/sign-in/error';
-import SignInLoading from '@/app/sign-in/loading';
-import SignUpError from '@/app/sign-up/error';
-import SignUpLoading from '@/app/sign-up/loading';
+const { cleanup, render, screen } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
+const { default: SignInError } = await import('@/app/sign-in/error');
+const { default: SignInLoading } = await import('@/app/sign-in/loading');
+const { default: SignUpError } = await import('@/app/sign-up/error');
+const { default: SignUpLoading } = await import('@/app/sign-up/loading');
 
 afterEach(() => {
   cleanup();
@@ -102,7 +111,7 @@ describe('Auth route states', () => {
         expect(screen.queryByRole('link', { name: 'Sign in' })).toBeNull();
       }
 
-      const retry = screen.getByRole('button', { name: 'Try again' });
+      const retry = screen.getByRole('button', { name: 'Retry' });
       retry.focus();
       await user.keyboard('{Enter}');
       await user.keyboard(' ');

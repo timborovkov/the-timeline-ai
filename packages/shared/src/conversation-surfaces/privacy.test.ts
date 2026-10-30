@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { redactConversationError } from '#src/conversation-surfaces/privacy.js';
-
 describe('conversation error redaction', () => {
   it('does not expose Drizzle query parameters containing private conversation text', () => {
     const original = Object.assign(

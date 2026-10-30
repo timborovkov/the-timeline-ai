@@ -2,8 +2,8 @@
  * Reconciliation evidence coverage + backfill.
  *
  * Usage:
- *   pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit
- *   pnpm --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill [--dry-run]
+ *   bun run --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=audit
+ *   bun run --filter @timeline/worker reconciliation-evidence -- --team=<uuid> --mode=backfill [--dry-run]
  *
  * Optional:
  *   --source=email|slack|integration|...

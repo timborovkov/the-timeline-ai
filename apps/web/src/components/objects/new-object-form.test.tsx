@@ -1,9 +1,9 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+// Test environment: happy-dom
 
 /** Business intent: task creation can find any active project, not only the server preload. */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fakes = vi.hoisted(() => ({
   createObjectAction: vi.fn(),
@@ -13,18 +13,41 @@ const fakes = vi.hoisted(() => ({
   projects: [{ id: 'project-remote', label: 'Legacy client migration' }],
 }));
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: fakes.push }) }));
-vi.mock('@/app/actions/objects', () => ({ createObjectAction: fakes.createObjectAction }));
-vi.mock('@/lib/notify', () => ({
-  notifyAction: async ({ run }: { run: () => Promise<{ error?: string; id?: string }> }) => run(),
-}));
-vi.mock('@/hooks/use-project-search', () => ({
-  useProjectSearch: () => ({
-    query: fakes.query,
-    setQuery: fakes.setQuery,
-    projects: fakes.projects,
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    useRouter: () => ({ push: fakes.push }),
   }),
-}));
+  () => import('next/navigation'),
+);
+await vi.mock(
+  import.meta.resolve('@/app/actions/objects'),
+  () => ({ createObjectAction: fakes.createObjectAction }),
+  () => import('@/app/actions/objects'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/notify'),
+  async () => ({
+    ...(await import('@/lib/notify')),
+    notifyAction: async ({ run }: { run: () => Promise<{ error?: string; id?: string }> }) => run(),
+  }),
+  () => import('@/lib/notify'),
+);
+await vi.mock(
+  import.meta.resolve('@/hooks/use-project-search'),
+  () => ({
+    useProjectSearch: () => ({
+      query: fakes.query,
+      setQuery: fakes.setQuery,
+      projects: fakes.projects,
+    }),
+  }),
+  () => import('@/hooks/use-project-search'),
+);
+
+const { cleanup, fireEvent, render, screen, waitFor } = await import('@testing-library/react');
+const { default: userEvent } = await import('@testing-library/user-event');
 
 const { NewObjectForm } = await import('./new-object-form.js');
 

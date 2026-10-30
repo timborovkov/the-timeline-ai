@@ -1,7 +1,43 @@
-import { randomBytes } from 'node:crypto';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { PGlite } from '@electric-sql/pglite';
-import {
+import type * as QueueModule from '#src/queue/queues.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof QueueModule>()),
+    enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const askAgentMock = vi.hoisted(() => vi.fn());
+
+await vi.mock(
+  import.meta.resolve('#src/http/external-fetch.js'),
+  async () => ({
+    ...(await import('#src/http/external-fetch.js')),
+    externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
+  }),
+  () => import('#src/http/external-fetch.js'),
+);
+
+await vi.mock(
+  import.meta.resolve('#src/agent/ask.js'),
+  () => ({
+    askAgent: askAgentMock,
+    TEAM_BOT_ACTOR_USER_ID: '00000000-0000-0000-0000-000000000000',
+  }),
+  () => import('#src/agent/ask.js'),
+);
+
+const { randomBytes } = await import('node:crypto');
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   chatSessions,
   chatSurfaceTurns,
   meetingCaptureConfirmations,
@@ -15,41 +51,21 @@ import {
   slackUserTeams,
   slackWorkspaces,
   slackWorkspaceTeams,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import type * as QueueModule from '#src/queue/queues.js';
-
-import { encryptJson, resetSecretsKeyCacheForTests } from '#src/crypto/secrets.js';
-import { resetEnvForTests } from '#src/env.js';
-import { resetMeetingBotProviderForTests } from '#src/meeting-bots/index.js';
-import {
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { encryptJson, resetSecretsKeyCacheForTests } = await import('#src/crypto/secrets.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { resetMeetingBotProviderForTests } = await import('#src/meeting-bots/index.js');
+const {
   bindSlackConversation,
   handleSlackEnvelope,
   handleSlackSlashCommand,
   linkSlackUserFromOAuth,
   unbindSlackConversation,
-} from '#src/slack/dispatcher.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-import { textQueueDeps } from '#src/test/queue-deps.js';
-
-vi.mock('#src/queue/queues.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof QueueModule>()),
-  enqueueConversationAgentJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'turn' }),
-}));
-
-const askAgentMock = vi.hoisted(() => vi.fn());
-
-vi.mock('#src/http/external-fetch.js', () => ({
-  externalFetch: (input: string | URL, init?: RequestInit) => globalThis.fetch(input, init),
-}));
-
-vi.mock('#src/agent/ask.js', () => ({
-  askAgent: askAgentMock,
-  TEAM_BOT_ACTOR_USER_ID: '00000000-0000-0000-0000-000000000000',
-}));
+} = await import('#src/slack/dispatcher.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
+const { textQueueDeps } = await import('#src/test/queue-deps.js');
 
 const TEAM_A = '11111111-1111-1111-1111-111111111111';
 const TEAM_B = '22222222-2222-2222-2222-222222222222';
@@ -236,7 +252,7 @@ describe('Slack dispatcher routing', () => {
     process.env.AUTH_URL = 'https://timeline.test';
     process.env.RECALL_API_KEY = 'recall-test-key';
     process.env.RECALL_BASE_URL = 'https://recall.test/api/v1';
-    process.env.RECALL_STATUS_WEBHOOK_SECRET = `whsec_${Buffer.from('slack-status').toString('base64')}`;
+    process.env.RECALL_WORKSPACE_VERIFICATION_SECRET = `whsec_${Buffer.from('slack-workspace-for-tests').toString('base64')}`;
     resetEnvForTests();
     resetMeetingBotProviderForTests();
     resetSecretsKeyCacheForTests();

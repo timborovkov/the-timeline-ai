@@ -1,5 +1,59 @@
-import {
-  type Db,
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'bun:test';
+import { z } from 'zod';
+
+import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
+import type { ResettablePGliteTestDb } from '#src/test/pglite.js';
+import type { PGlite } from '@electric-sql/pglite';
+import type { Db } from '@timeline/db';
+/**
+ * Real-DB integration tests for workspace objects. This module owns a large
+ * part of the product contract: object CRUD, audit rows, notes, suggestions,
+ * notifications, chat sessions, and team/user isolation. These tests exercise
+ * persisted behavior through `withTeam(...).objects`, not private helpers.
+ */
+
+const qdrantFakes = vi.hoisted(() => ({
+  deletePoints: vi.fn().mockResolvedValue(undefined),
+  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
+  getQdrantClient: vi.fn(),
+}));
+
+await vi.mock(
+  import.meta.resolve('#src/conversation-surfaces/runtime.js'),
+  () => ({
+    acceptDirectAgentTurn: vi.fn().mockResolvedValue({
+      status: 'queued',
+      turnId: '00000000-0000-4000-8000-000000000001',
+      sessionId: '00000000-0000-4000-8000-000000000002',
+    }),
+  }),
+  () => import('#src/conversation-surfaces/runtime.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+    enqueueTaskCategoryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'category-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/qdrant/client.js'),
+  () => ({
+    getQdrantClient: qdrantFakes.getQdrantClient,
+  }),
+  () => import('#src/qdrant/client.js'),
+);
+
+const {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
@@ -33,62 +87,21 @@ import {
   reconciliationOutputs,
   reconciliationRuns,
   userPins,
-} from '@timeline/db';
-import { and, eq, inArray } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
-
-import type { ChatStructuredInput, ChatStructuredResult } from '#src/llm/chat.js';
-import type { PGlite } from '@electric-sql/pglite';
-
-import { acceptDirectAgentTurn } from '#src/conversation-surfaces/runtime.js';
-import { resetEnvForTests } from '#src/env.js';
-import { chatStructured } from '#src/llm/chat.js';
-import { TimelineAiError } from '#src/llm/errors.js';
-import { TIMELINE_MODELS } from '#src/llm/models.js';
-import { buildObjectDirectWriteSourceContext } from '#src/objects/index.js';
-import {
-  generateAndStoreObjectSummary,
-  invalidateObjectSummariesForRawEvent,
-} from '#src/objects/summaries.js';
-import { encodeCursor } from '#src/pagination.js';
-import * as queue from '#src/queue/queues.js';
-import { withTeam } from '#src/team-scope.js';
-import { createResettablePGliteTestDb, type ResettablePGliteTestDb } from '#src/test/pglite.js';
-
-/**
- * Real-DB integration tests for workspace objects. This module owns a large
- * part of the product contract: object CRUD, audit rows, notes, suggestions,
- * notifications, chat sessions, and team/user isolation. These tests exercise
- * persisted behavior through `withTeam(...).objects`, not private helpers.
- */
-
-const qdrantFakes = vi.hoisted(() => ({
-  deletePoints: vi.fn().mockResolvedValue(undefined),
-  deletePointsForSource: vi.fn().mockResolvedValue(undefined),
-  getQdrantClient: vi.fn(),
-}));
-
-vi.mock('#src/conversation-surfaces/runtime.js', () => ({
-  acceptDirectAgentTurn: vi.fn().mockResolvedValue({
-    status: 'queued',
-    turnId: '00000000-0000-4000-8000-000000000001',
-    sessionId: '00000000-0000-4000-8000-000000000002',
-  }),
-}));
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEntityEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectNoteEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectChangeEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueCalendarEventEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-  enqueueTaskCategoryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'category-job' }),
-}));
-vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: qdrantFakes.getQdrantClient,
-}));
+} = await import('@timeline/db');
+const { and, eq, inArray, or } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { acceptDirectAgentTurn } = await import('#src/conversation-surfaces/runtime.js');
+const { resetEnvForTests } = await import('#src/env.js');
+const { chatStructured } = await import('#src/llm/chat.js');
+const { TimelineAiError } = await import('#src/llm/errors.js');
+const { TIMELINE_MODELS } = await import('#src/llm/models.js');
+const { buildObjectDirectWriteSourceContext } = await import('#src/objects/index.js');
+const { generateAndStoreObjectSummary, invalidateObjectSummariesForRawEvent } =
+  await import('#src/objects/summaries.js');
+const { encodeCursor } = await import('#src/pagination.js');
+const queue = await import('#src/queue/queues.js');
+const { withTeam } = await import('#src/team-scope.js');
+const { createResettablePGliteTestDb } = await import('#src/test/pglite.js');
 
 type AnyDb = Db;
 
@@ -552,8 +565,7 @@ describe('object scope — team ownership and audit behavior', () => {
       visibilityFloor: 'team',
     });
     const createSourceRefs = outputs[0]?.sourceRefs as
-      | { source?: string; rawEventId?: string; sourcePayloadRef?: string | null }[]
-      | undefined;
+      { source?: string; rawEventId?: string; sourcePayloadRef?: string | null }[] | undefined;
     const createSourceRef = createSourceRefs?.[0];
     expect(createSourceRef?.source).toBe('system');
     expect(typeof createSourceRef?.rawEventId).toBe('string');
@@ -1832,6 +1844,262 @@ describe('object scope — notes and suggestions', () => {
         normalizedValue: '07700900123',
       }),
     ]);
+  });
+
+  it('archives identity facets and hides them from object detail', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const person = await scope.createObject({
+      type: 'person',
+      canonicalName: 'Contact Archive',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const facet = await scope.createIdentityFacet({
+      entityId: person.id,
+      kind: 'email',
+      value: 'archive@example.com',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(
+      scope.archiveIdentityFacet(facet.id, { kind: 'user', userId: USER_OWNER }),
+    ).resolves.toBe(true);
+    await expect(scope.listIdentityFacets(person.id)).resolves.toEqual([]);
+    await expect(scope.getObject(person.id)).resolves.toMatchObject({
+      identityFacets: [],
+    });
+  });
+
+  it('creates identity facets for companies', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Facet Company',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+    const facet = await scope.createIdentityFacet({
+      entityId: company.id,
+      kind: 'phone',
+      value: '+1 415 555 0100',
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await expect(scope.getObject(company.id)).resolves.toMatchObject({
+      identityFacets: [
+        expect.objectContaining({
+          id: facet.id,
+          kind: 'phone',
+          normalizedValue: '+14155550100',
+        }),
+      ],
+    });
+  });
+
+  it('sets a single primary company for a person', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, company] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Primary Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Primary Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    const result = await scope.setPersonCompany(person.id, company.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(result.changed).toBe(true);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: company.id,
+        companyName: 'Primary Company',
+      }),
+    ]);
+  });
+
+  it('rejects generic related links for person↔company employment', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, company] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Guarded Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Guarded Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await expect(
+      scope.addRelationship({
+        fromEntityId: person.id,
+        toEntityId: company.id,
+        kind: 'related',
+        actorUserId: USER_OWNER,
+      }),
+    ).rejects.toThrow(/Company field/i);
+  });
+
+  it('keeps the oldest related company as primary when legacy multi-links exist', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, firstCompany, secondCompany] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Multi Company Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'First Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Second Company',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    // Simulate a legacy second related edge that bypassed the Company-field guard.
+    const [fromEntityId, toEntityId] = [person.id, secondCompany.id].sort();
+    if (!fromEntityId || !toEntityId) throw new Error('expected relationship endpoints');
+    await db.insert(entityRelationships).values({
+      teamId: TEAM_A,
+      fromEntityId,
+      toEntityId,
+      kind: 'related',
+      createdBy: USER_OWNER,
+    });
+
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: firstCompany.id,
+        companyName: 'First Company',
+      }),
+    ]);
+
+    const unchanged = await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(unchanged.changed).toBe(false);
+  });
+
+  it('removeRelationship clears primary company via Company field and keeps secondary surgical', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const [person, firstCompany, secondCompany] = await Promise.all([
+      scope.createObject({
+        type: 'person',
+        canonicalName: 'Unlink Person',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Primary Unlink Co',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+      scope.createObject({
+        type: 'company',
+        canonicalName: 'Secondary Unlink Co',
+        actor: { kind: 'user', userId: USER_OWNER },
+      }),
+    ]);
+
+    await scope.setPersonCompany(person.id, firstCompany.id, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    const [fromEntityId, toEntityId] = [person.id, secondCompany.id].sort();
+    if (!fromEntityId || !toEntityId) throw new Error('expected relationship endpoints');
+    const [secondary] = await db
+      .insert(entityRelationships)
+      .values({
+        teamId: TEAM_A,
+        fromEntityId,
+        toEntityId,
+        kind: 'related',
+        createdBy: USER_OWNER,
+      })
+      .returning({ id: entityRelationships.id });
+
+    const secondaryRemoval = await scope.removeRelationship(secondary?.id ?? '', {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(secondaryRemoval.removed).toBe(true);
+    expect(secondaryRemoval.touchedIds).toContain(person.id);
+    expect(secondaryRemoval.touchedIds).toContain(secondCompany.id);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([
+      expect.objectContaining({
+        personId: person.id,
+        companyId: firstCompany.id,
+        companyName: 'Primary Unlink Co',
+      }),
+    ]);
+
+    const [primaryEdge] = await db
+      .select({ id: entityRelationships.id })
+      .from(entityRelationships)
+      .where(
+        and(
+          eq(entityRelationships.teamId, TEAM_A),
+          eq(entityRelationships.kind, 'related'),
+          or(
+            and(
+              eq(entityRelationships.fromEntityId, person.id),
+              eq(entityRelationships.toEntityId, firstCompany.id),
+            ),
+            and(
+              eq(entityRelationships.fromEntityId, firstCompany.id),
+              eq(entityRelationships.toEntityId, person.id),
+            ),
+          ),
+        ),
+      )
+      .limit(1);
+    const primaryRemoval = await scope.removeRelationship(primaryEdge?.id ?? '', {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(primaryRemoval.removed).toBe(true);
+    expect(primaryRemoval.touchedIds).toContain(person.id);
+    expect(primaryRemoval.touchedIds).toContain(firstCompany.id);
+    await expect(scope.listPrimaryCompaniesForPeople([person.id])).resolves.toEqual([]);
+  });
+
+  it('merges metadata patches instead of replacing the whole object metadata blob', async () => {
+    const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    const company = await scope.createObject({
+      type: 'company',
+      canonicalName: 'Metadata Merge Co',
+      metadata: { domain: 'old.example', relationship: 'partner' },
+      actor: { kind: 'user', userId: USER_OWNER },
+    });
+
+    await scope.updateObject(
+      company.id,
+      { metadata: { domain: 'new.example' } },
+      { kind: 'user', userId: USER_OWNER },
+    );
+    await expect(scope.getObject(company.id)).resolves.toMatchObject({
+      metadata: {
+        domain: 'new.example',
+        relationship: 'partner',
+      },
+    });
   });
 
   it('accepts a suggested field change once and rejects unsupported suggestion fields', async () => {
@@ -3258,14 +3526,15 @@ describe('object scope — archive visibility', () => {
 describe('object scope — relationships', () => {
   it('stores related relationships in canonical endpoint order, dedupes reverse inserts, and emits direct-write outputs', async () => {
     const scope = withTeam(db, TEAM_A, USER_OWNER).objects;
+    // Use non-employment types: person↔company related is owned by setPersonCompany.
     const first = await scope.createObject({
-      type: 'person',
-      canonicalName: 'John Doe',
+      type: 'project',
+      canonicalName: 'Atlas rollout',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     const second = await scope.createObject({
-      type: 'company',
-      canonicalName: 'Acme Corporation',
+      type: 'deal',
+      canonicalName: 'Acme renewal',
       actor: { kind: 'user', userId: USER_OWNER },
     });
     const [expectedFrom, expectedTo] = [first.id, second.id].sort();
@@ -3324,8 +3593,7 @@ describe('object scope — relationships', () => {
       }),
     ]);
     const linkSourceRefs = linkOutputs[0]?.sourceRefs as
-      | { sourcePayloadRef?: string | null }[]
-      | undefined;
+      { sourcePayloadRef?: string | null }[] | undefined;
     const linkSourceRef = linkSourceRefs?.[0];
     expect(linkSourceRef?.sourcePayloadRef).toMatch(
       /^inline:\/\/timeline\/system\/relationship_create\//,
@@ -3351,9 +3619,12 @@ describe('object scope — relationships', () => {
       target_field: '__relationship_create__',
     });
 
-    await expect(
-      scope.removeRelationship(relationshipId, { kind: 'user', userId: USER_OWNER }),
-    ).resolves.toBe(true);
+    const removedRelationship = await scope.removeRelationship(relationshipId, {
+      kind: 'user',
+      userId: USER_OWNER,
+    });
+    expect(removedRelationship.removed).toBe(true);
+    expect(removedRelationship.touchedIds.length).toBeGreaterThan(0);
     const relationshipChangeRows = await db
       .select()
       .from(objectChanges)
@@ -3395,8 +3666,7 @@ describe('object scope — relationships', () => {
       }),
     ]);
     const unlinkSourceRefs = unlinkOutput?.sourceRefs as
-      | { sourcePayloadRef?: string | null }[]
-      | undefined;
+      { sourcePayloadRef?: string | null }[] | undefined;
     const unlinkSourceRef = unlinkSourceRefs?.[0];
     expect(unlinkSourceRef?.sourcePayloadRef).toMatch(
       /^inline:\/\/timeline\/system\/relationship_delete\//,
@@ -3433,20 +3703,21 @@ describe('object scope — relationships', () => {
       canonicalName: 'ACME Ltd',
       actor: { kind: 'user', userId: USER_OWNER },
     });
-    const person = await scope.createObject({
-      type: 'person',
-      canonicalName: 'John Doe',
+    // Project (not person): person↔company related edges are exclusive via setPersonCompany.
+    const project = await scope.createObject({
+      type: 'project',
+      canonicalName: 'Atlas rollout',
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
     await scope.addRelationship({
       fromEntityId: survivor.id,
-      toEntityId: person.id,
+      toEntityId: project.id,
       kind: 'related',
       actorUserId: USER_OWNER,
     });
     await scope.addRelationship({
-      fromEntityId: person.id,
+      fromEntityId: project.id,
       toEntityId: duplicate.id,
       kind: 'related',
       actorUserId: USER_OWNER,
@@ -3458,7 +3729,7 @@ describe('object scope — relationships', () => {
       actor: { kind: 'user', userId: USER_OWNER },
     });
 
-    const [expectedFrom, expectedTo] = [survivor.id, person.id].sort();
+    const [expectedFrom, expectedTo] = [survivor.id, project.id].sort();
     const relationships = await db
       .select()
       .from(entityRelationships)
@@ -3959,8 +4230,7 @@ describe('object scope — merge cleanup', () => {
       }),
     ]);
     const mergeSourceRefs = mergeOutput?.sourceRefs as
-      | { sourcePayloadRef?: string | null }[]
-      | undefined;
+      { sourcePayloadRef?: string | null }[] | undefined;
     const mergeSourceRef = mergeSourceRefs?.[0];
     expect(mergeSourceRef?.sourcePayloadRef).toMatch(
       /^inline:\/\/timeline\/system\/object_merge\//,
@@ -5065,7 +5335,9 @@ describe('object scope — merge cleanup', () => {
       body: 'Schema Limit Co has enough human-authored context to generate an object summary.',
     });
     const requests: unknown[] = [];
-    const fetchStub: typeof fetch = (_url, init) => {
+    const fetchStub: (
+      ...args: Parameters<typeof globalThis.fetch>
+    ) => ReturnType<typeof globalThis.fetch> = (_url, init) => {
       if (typeof init?.body !== 'string') throw new Error('expected request body');
       requests.push(JSON.parse(init.body));
       return Promise.resolve(

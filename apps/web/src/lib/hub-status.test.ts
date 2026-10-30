@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   attentionCount,
@@ -10,9 +12,10 @@ import {
   getWorkAttentionSummary,
   homeOpenObjectTotal,
   homeWorkNeedingAttentionCount,
+  isPlaceholderInboundEmail,
+  shouldWarnPlaceholderInboundEmail,
   workAttentionCount,
 } from '@/lib/hub-status';
-
 describe('hub status helpers', () => {
   it('aggregates only positive attention counts', () => {
     expect(attentionCount(2, 0, -1, 3)).toBe(5);
@@ -162,6 +165,9 @@ describe('hub status helpers', () => {
   });
 
   it('never exposes an inbound.invalid placeholder as a usable address', () => {
+    expect(isPlaceholderInboundEmail('acme@inbound.invalid')).toBe(true);
+    expect(isPlaceholderInboundEmail('Acme@Inbound.Invalid')).toBe(true);
+    expect(isPlaceholderInboundEmail('acme@inbound.timeline.test')).toBe(false);
     expect(
       displayInboundEmail(
         { slug: 'acme', inboundEmail: 'acme@inbound.invalid' },
@@ -171,6 +177,21 @@ describe('hub status helpers', () => {
     expect(
       displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }, undefined),
     ).toBeNull();
+    expect(
+      shouldWarnPlaceholderInboundEmail(
+        'acme@inbound.invalid',
+        displayInboundEmail(
+          { slug: 'acme', inboundEmail: 'acme@inbound.invalid' },
+          'mailbox@inbound.postmarkapp.com',
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      shouldWarnPlaceholderInboundEmail(
+        'acme@inbound.invalid',
+        displayInboundEmail({ slug: 'acme', inboundEmail: 'acme@inbound.invalid' }, undefined),
+      ),
+    ).toBe(true);
   });
 
   it('prefers a configured team inbound domain', () => {

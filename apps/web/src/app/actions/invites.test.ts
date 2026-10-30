@@ -1,11 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import {
-  acceptInviteAction,
-  acceptRecipientInviteAction,
-  declineInviteAction,
-} from '@/app/actions/invites';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * Server-action tests for invite acceptance. These pin the user-visible
  * contracts around auth redirects, recipient email checks, durable
@@ -25,6 +20,8 @@ const fakes = vi.hoisted(() => ({
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
   fakeEnsureSoloTeam: vi.fn(),
+  fakeGetUserLegalAcceptance: vi.fn(),
+  fakeHasCurrentLegalAcceptance: vi.fn(),
   fakeClearPendingInvite: vi.fn(),
   fakeLoggerError: vi.fn(),
   fakeCaptureException: vi.fn(),
@@ -33,29 +30,87 @@ const fakes = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock('@sentry/nextjs', () => ({
-  captureException: fakes.fakeCaptureException,
-  withServerActionInstrumentation: fakes.fakeWithServerActionInstrumentation,
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.fakeAuth }));
-vi.mock('@/lib/db', () => ({
-  db: {
-    transaction: fakes.fakeTransaction,
-    select: fakes.fakeDbSelect,
-    update: fakes.fakeDbUpdate,
-  },
-}));
-vi.mock('@/lib/active-team', () => ({ ACTIVE_TEAM_COOKIE: 'timeline_active_team' }));
-vi.mock('@/lib/default-team', () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }));
-vi.mock('@/lib/pending-invite', () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: fakes.fakeLoggerError }),
-}));
-vi.mock('next/cache', () => ({ revalidatePath: fakes.fakeRevalidatePath }));
-vi.mock('next/headers', () => ({
-  cookies: vi.fn().mockResolvedValue({ set: fakes.fakeCookieSet }),
-}));
-vi.mock('next/navigation', () => ({ redirect: fakes.fakeRedirect }));
+await vi.mock(
+  import.meta.resolve('@sentry/nextjs'),
+  () => ({
+    captureException: fakes.fakeCaptureException,
+    withServerActionInstrumentation: fakes.fakeWithServerActionInstrumentation,
+  }),
+  () => import('@sentry/nextjs'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.fakeAuth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: {
+      transaction: fakes.fakeTransaction,
+      select: fakes.fakeDbSelect,
+      update: fakes.fakeDbUpdate,
+    },
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({
+    ACTIVE_TEAM_COOKIE: 'timeline_active_team',
+    activeTeamCookieOptions: () => ({ httpOnly: true, path: '/', secure: true }),
+    serializeActiveTeamCookie: (teamId: string) => `v2:${teamId}`,
+  }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/default-team'),
+  () => ({ ensureSoloTeam: fakes.fakeEnsureSoloTeam }),
+  () => import('@/lib/default-team'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/legal'),
+  () => ({
+    getUserLegalAcceptance: fakes.fakeGetUserLegalAcceptance,
+    hasCurrentLegalAcceptance: fakes.fakeHasCurrentLegalAcceptance,
+  }),
+  () => import('@/lib/legal'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/pending-invite'),
+  () => ({ clearPendingInvite: fakes.fakeClearPendingInvite }),
+  () => import('@/lib/pending-invite'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: fakes.fakeLoggerError }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+await vi.mock(
+  import.meta.resolve('next/cache'),
+  () => ({ revalidatePath: fakes.fakeRevalidatePath }),
+  () => import('next/cache'),
+);
+await vi.mock(
+  import.meta.resolve('next/headers'),
+  () => ({
+    cookies: vi.fn().mockResolvedValue({ set: fakes.fakeCookieSet }),
+  }),
+  () => import('next/headers'),
+);
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    redirect: fakes.fakeRedirect,
+  }),
+  () => import('next/navigation'),
+);
+
+const { acceptInviteAction, acceptRecipientInviteAction, declineInviteAction } =
+  await import('@/app/actions/invites');
 
 const TEAM_ID = '11111111-1111-4111-8111-111111111111';
 const USER_ID = '22222222-2222-4222-8222-222222222222';
@@ -137,6 +192,12 @@ beforeEach(() => {
   mockSignedIn();
   fakes.fakeEnsureSoloTeam.mockResolvedValue(undefined);
   fakes.fakeClearPendingInvite.mockResolvedValue(undefined);
+  fakes.fakeGetUserLegalAcceptance.mockResolvedValue({
+    legalTermsVersion: 'current',
+    legalPrivacyVersion: 'current',
+    legalAcceptedAt: new Date(),
+  });
+  fakes.fakeHasCurrentLegalAcceptance.mockReturnValue(true);
 });
 
 describe('acceptInviteAction', () => {
@@ -153,6 +214,17 @@ describe('acceptInviteAction', () => {
     await expect(acceptInviteAction(form({ token: '' }))).rejects.toThrow(
       'NEXT_REDIRECT:/app/timeline',
     );
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('requires current legal acceptance before creating team membership', async () => {
+    fakes.fakeHasCurrentLegalAcceptance.mockReturnValue(false);
+
+    await expect(acceptInviteAction(form({ token: TOKEN }))).rejects.toThrow(
+      'NEXT_REDIRECT:/legal/accept?returnTo=%2Faccept-invite%2Finvite-token',
+    );
+
+    expect(fakes.fakeGetUserLegalAcceptance).toHaveBeenCalledWith(USER_ID);
     expect(fakes.fakeTransaction).not.toHaveBeenCalled();
   });
 
@@ -174,7 +246,7 @@ describe('acceptInviteAction', () => {
     expect(fakes.fakeClearPendingInvite).toHaveBeenCalledOnce();
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
   });
@@ -254,9 +326,20 @@ describe('acceptRecipientInviteAction', () => {
     ]);
     expect(fakes.fakeCookieSet).toHaveBeenCalledWith(
       'timeline_active_team',
-      TEAM_ID,
+      `v2:${TEAM_ID}`,
       expect.objectContaining({ httpOnly: true, path: '/' }),
     );
+  });
+
+  it('requires current legal acceptance before accepting an in-product invite', async () => {
+    fakes.fakeHasCurrentLegalAcceptance.mockReturnValue(false);
+
+    await expect(acceptRecipientInviteAction(form({ inviteId: INVITE_ID }))).rejects.toThrow(
+      'NEXT_REDIRECT:/legal/accept?returnTo=%2Fapp',
+    );
+
+    expect(fakes.fakeGetUserLegalAcceptance).toHaveBeenCalledWith(USER_ID);
+    expect(fakes.fakeTransaction).not.toHaveBeenCalled();
   });
 
   it('revalidates instead of redirecting for invalid, wrong-account, and already-member cases', async () => {

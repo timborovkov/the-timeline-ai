@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { SOLUTION_CANONICAL_ROUTES, SOLUTIONS } from '@/components/marketing/solutions/content';
 import {
@@ -11,7 +12,6 @@ import {
   buildPublicStructuredData,
   PUBLIC_DOCUMENT_REGISTRY,
 } from '@/lib/public-site';
-
 const SITE_URL = 'https://thetimeline.cc';
 
 describe('solution public documents', () => {

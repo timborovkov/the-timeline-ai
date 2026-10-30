@@ -1,18 +1,36 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
+
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
+    enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+    enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
   agentSuggestionEvidence,
   agentSuggestionItems,
   agentSuggestions,
   entities,
   integrations,
   rawEvents,
-} from '@timeline/db';
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { writeIntegrationEvents } from '#src/integrations/event-writer.js';
-import {
+} = await import('@timeline/db');
+const { eq } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { writeIntegrationEvents } = await import('#src/integrations/event-writer.js');
+const {
   capturedWorkItemFromIntegrationEvent,
   compactGithubPersonKey,
   githubLoginFromConnectionDisplayName,
@@ -24,18 +42,10 @@ import {
   proposeGithubTaskUpdatesForTeam,
   proposeGithubTaskUpdatesFromRawEvent,
   resolveGithubLoginToUserId,
-} from '#src/integrations/github-task-proposals.js';
-import { GITHUB_TASK_PROPOSAL_COALESCE_MS } from '#src/integrations/ingest-processing.js';
-import { enqueueSuggestionJob } from '#src/queue/queues.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
-
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueExtractJob: vi.fn().mockResolvedValue(undefined),
-  enqueueEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectEmbedJob: vi.fn().mockResolvedValue(undefined),
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-  enqueueSuggestionJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'proposal-job' }),
-}));
+} = await import('#src/integrations/github-task-proposals.js');
+const { GITHUB_TASK_PROPOSAL_COALESCE_MS } = await import('#src/integrations/ingest-processing.js');
+const { enqueueSuggestionJob } = await import('#src/queue/queues.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

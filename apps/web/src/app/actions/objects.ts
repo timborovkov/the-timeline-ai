@@ -1,4 +1,5 @@
 'use server';
+import { bucketAnalyticsCount, bucketSearchResultCount } from '@timeline/shared/analytics';
 import { getEnv } from '@timeline/shared/env';
 import * as objects from '@timeline/shared/objects';
 import { enqueueSuggestionJob } from '@timeline/shared/queue';
@@ -195,6 +196,15 @@ export async function searchObjectsAction(input: unknown): Promise<{
       });
       if (results.length >= OBJECT_SEARCH_RESULT_LIMIT) break;
     }
+    trackProductEventBestEffort(
+      { kind: 'user', userId: r.userId, teamId: r.teamId },
+      'search_performed',
+      {
+        surface: 'objects',
+        hasFilters: parsed.data.type !== undefined || parsed.data.exclude !== undefined,
+        resultCountBucket: bucketSearchResultCount(results.length),
+      },
+    );
     return { results };
   });
 }
@@ -222,7 +232,17 @@ export async function searchAddableObjectsAction(input: unknown): Promise<{
           archived: false,
           limit: ADDABLE_OBJECT_SEARCH_LIMIT + 1,
         });
-    return { results: rows.slice(0, ADDABLE_OBJECT_SEARCH_LIMIT) };
+    const results = rows.slice(0, ADDABLE_OBJECT_SEARCH_LIMIT);
+    trackProductEventBestEffort(
+      { kind: 'user', userId: r.userId, teamId: r.teamId },
+      'search_performed',
+      {
+        surface: 'board_add',
+        hasFilters: Boolean(parsed.data.type),
+        resultCountBucket: bucketSearchResultCount(results.length),
+      },
+    );
+    return { results };
   });
 }
 
@@ -360,13 +380,14 @@ export async function createObjectAction(input: unknown): Promise<ActionState> {
           'revalidate_object_create',
         );
       }
-      trackProductEventBestEffort(r.userId, 'object_created', {
-        teamId: r.teamId,
-        userId: r.userId,
-        objectId: obj.id,
-        objectType: parsed.data.type,
-        hasParent: Boolean(parsed.data.parentObjectId),
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'object_created',
+        {
+          objectType: parsed.data.type,
+          hasParent: Boolean(parsed.data.parentObjectId),
+        },
+      );
       return { ok: true, id: obj.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to create object') };
@@ -411,6 +432,13 @@ export async function updateObjectAction(input: unknown): Promise<ActionState> {
         }),
       );
       revalidateObjectMutationSurfaces(id);
+      if (result.changedFields.length > 0) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'update' },
+        );
+      }
       return { ok: true, id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update object') };
@@ -431,13 +459,14 @@ export async function setTaskCategoryAction(input: unknown): Promise<ActionState
         kind: 'user',
         userId: r.userId,
       });
-      trackProductEventBestEffort(r.userId, 'task_category_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        category: parsed.data.category,
-        mode: 'manual',
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_category_changed',
+        {
+          category: parsed.data.category,
+          mode: 'manual',
+        },
+      );
       revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true, id: parsed.data.id, undoChangeId: result.changeId };
     } catch (err) {
@@ -461,12 +490,13 @@ export async function undoTaskCategoryChangeAction(input: unknown): Promise<Acti
           userId: r.userId,
         },
       );
-      trackProductEventBestEffort(r.userId, 'task_category_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_category_changed',
+        {
+          mode: result.taskCategoryMode === 'manual' ? 'manual' : 'automatic',
+        },
+      );
       revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -486,12 +516,13 @@ export async function resetTaskCategoryAction(input: unknown): Promise<ActionSta
         kind: 'user',
         userId: r.userId,
       });
-      trackProductEventBestEffort(r.userId, 'task_category_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        mode: 'automatic',
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_category_changed',
+        {
+          mode: 'automatic',
+        },
+      );
       revalidateObjectMutationSurfaces(parsed.data.id);
       return { ok: true, id: parsed.data.id };
     } catch (err) {
@@ -530,12 +561,13 @@ export async function setTaskProjectAction(input: unknown): Promise<ActionState>
         kind: 'user',
         userId: r.userId,
       });
-      trackProductEventBestEffort(r.userId, 'task_project_changed', {
-        teamId: r.teamId,
-        userId: r.userId,
-        taskId: parsed.data.id,
-        hasProject: parsed.data.projectId !== null,
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'task_project_changed',
+        {
+          hasProject: parsed.data.projectId !== null,
+        },
+      );
       revalidateObjectMutationSurfaces(
         [
           parsed.data.id,
@@ -547,6 +579,193 @@ export async function setTaskProjectAction(input: unknown): Promise<ActionState>
       return { ok: true, id: parsed.data.id };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to update project') };
+    }
+  });
+}
+
+const metadataPatchSchema = z.record(z.string(), z.unknown());
+
+export async function updateObjectMetadataAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('update_object_metadata', async () => {
+    const parsed = z.object({ id: uuidSchema, metadata: metadataPatchSchema }).safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const current = await r.scope.objects.getObject(parsed.data.id);
+      if (!current) return { error: 'Object not found' };
+      const validated = objects.parseObjectMetadataPatch(current.type, parsed.data.metadata);
+      if (!validated.ok) return { error: validated.error };
+      const result = await r.scope.objects.updateObject(
+        parsed.data.id,
+        { metadata: validated.patch },
+        { kind: 'user', userId: r.userId },
+      );
+      await reconcileCanonicalChangeBestEffort('reconcile_object_update_after_metadata', () =>
+        reconcileObjectUpdate(r.scope.suggestions, {
+          id: parsed.data.id,
+          type: result.object.type,
+          changedFields: result.changedFields,
+        }),
+      );
+      revalidateObjectMutationSurfaces(parsed.data.id);
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update metadata') };
+    }
+  });
+}
+
+const identityFacetKindSchema = z.enum([
+  'email',
+  'phone',
+  'telegram',
+  'slack',
+  'github',
+  'timeline_user',
+  'other',
+]);
+
+export async function createIdentityFacetAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('create_identity_facet', async () => {
+    const parsed = z
+      .object({
+        entityId: uuidSchema,
+        kind: identityFacetKindSchema,
+        value: z.string().trim().min(1).max(500),
+      })
+      .safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? 'Invalid input' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const facet = await r.scope.objects.createIdentityFacet({
+        entityId: parsed.data.entityId,
+        kind: parsed.data.kind,
+        value: parsed.data.value,
+        actor: { kind: 'user', userId: r.userId },
+      });
+      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      return { ok: true, id: facet.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to add contact') };
+    }
+  });
+}
+
+export async function archiveIdentityFacetAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('archive_identity_facet', async () => {
+    const parsed = z.object({ facetId: uuidSchema, entityId: uuidSchema }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid contact' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const archived = await r.scope.objects.archiveIdentityFacet(parsed.data.facetId, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      if (!archived) return { error: 'Contact not found' };
+      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      return { ok: true, id: parsed.data.facetId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to remove contact') };
+    }
+  });
+}
+
+export async function setPersonCompanyAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('set_person_company', async () => {
+    const parsed = z.object({ id: uuidSchema, companyId: uuidSchema.nullable() }).safeParse(input);
+    if (!parsed.success) return { error: 'Invalid company' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const result = await r.scope.objects.setPersonCompany(parsed.data.id, parsed.data.companyId, {
+        kind: 'user',
+        userId: r.userId,
+      });
+      revalidateObjectMutationSurfaces(
+        [
+          parsed.data.id,
+          parsed.data.companyId,
+          result.company?.companyId,
+          ...result.touchedIds,
+        ].filter((id): id is string => Boolean(id)),
+      );
+      return { ok: true, id: parsed.data.id };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to update company') };
+    }
+  });
+}
+
+export async function structureContactFromBoardNotesAction(input: unknown): Promise<ActionState> {
+  return runSentryServerAction('structure_contact_from_board_notes', async () => {
+    const parsed = z
+      .object({ entityId: uuidSchema, notes: z.string().trim().min(1).max(5000) })
+      .safeParse(input);
+    if (!parsed.success) return { error: 'Invalid board notes' };
+    const r = await resolveScope();
+    if (!r.ok) return { error: r.error };
+    try {
+      const { extractContactsFromText } =
+        await import('@timeline/shared/conversational/contact-artifacts');
+      const detail = await r.scope.objects.getObject(parsed.data.entityId);
+      if (!detail) return { error: 'Object not found' };
+      if (!objects.objectSupportsIdentityFacets(detail.type)) {
+        return { error: 'Contact structuring is only available for people and companies' };
+      }
+      const contacts = extractContactsFromText(parsed.data.notes).filter(
+        (contact) => contact.kind === 'email' || contact.kind === 'phone',
+      );
+      if (contacts.length === 0) {
+        return { error: 'No email or phone numbers found in board notes' };
+      }
+      const metadataPatch: Record<string, unknown> = {};
+      const existingFacets = await r.scope.objects.listIdentityFacets(parsed.data.entityId);
+      const existingKeys = new Set(
+        existingFacets.map((facet) => `${facet.kind}:${facet.normalizedValue}`),
+      );
+      const contactsToCreate = contacts.filter(
+        (contact) => !existingKeys.has(`${contact.kind}:${contact.normalizedValue}`),
+      );
+      if (contactsToCreate.length > 0) {
+        await Promise.all(
+          contactsToCreate.map((contact) =>
+            r.scope.objects.createIdentityFacet({
+              entityId: parsed.data.entityId,
+              kind: contact.kind,
+              value: contact.displayValue,
+              actor: { kind: 'user', userId: r.userId },
+            }),
+          ),
+        );
+      }
+      if (detail.type === 'company') {
+        const existingDomain =
+          typeof detail.metadata.domain === 'string' ? detail.metadata.domain.trim() : '';
+        if (!existingDomain) {
+          const email = contacts.find((contact) => contact.kind === 'email');
+          if (email) {
+            const domain = email.normalizedValue.split('@')[1];
+            if (domain) metadataPatch.domain = domain;
+          }
+        }
+      }
+      if (Object.keys(metadataPatch).length > 0) {
+        const validated = objects.parseObjectMetadataPatch(detail.type, metadataPatch);
+        if (validated.ok) {
+          await r.scope.objects.updateObject(
+            parsed.data.entityId,
+            { metadata: validated.patch },
+            { kind: 'user', userId: r.userId },
+          );
+        }
+      }
+      revalidateObjectMutationSurfaces(parsed.data.entityId);
+      return { ok: true, id: parsed.data.entityId };
+    } catch (err) {
+      return { error: friendlyError(err, 'Failed to structure contact info') };
     }
   });
 }
@@ -660,18 +879,25 @@ export async function unarchiveObjectAction(input: unknown): Promise<ActionState
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      const object = await r.scope.objects.unarchiveObject(parsed.data.id, {
+      const result = await r.scope.objects.unarchiveObject(parsed.data.id, {
         kind: 'user',
         userId: r.userId,
       });
       await reconcileCanonicalChangeBestEffort('reconcile_object_update_after_unarchive', () =>
         reconcileObjectUpdate(r.scope.suggestions, {
           id: parsed.data.id,
-          type: object.type,
-          changedFields: ['archivedAt'],
+          type: result.type,
+          changedFields: result.changedFields,
         }),
       );
       revalidateObjectMutationSurfaces(parsed.data.id);
+      if (result.changedFields.includes('archivedAt')) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'unarchive' },
+        );
+      }
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to unarchive') };
@@ -694,6 +920,13 @@ export async function archiveObjectAction(input: unknown): Promise<ActionState> 
         reconcileArchivedObject(r.scope.suggestions, archived),
       );
       revalidateObjectMutationSurfaces(parsed.data.id);
+      if (archived.changedFields.includes('archivedAt')) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'archive' },
+        );
+      }
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive') };
@@ -767,6 +1000,13 @@ export async function bulkArchiveObjectsAction(input: unknown): Promise<ActionSt
         ),
       );
       revalidateObjectMutationSurfaces(ids);
+      if (archivedObjects.some((object) => object.changedFields.includes('archivedAt'))) {
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'object_action_completed',
+          { action: 'bulk_archive' },
+        );
+      }
       return { ok: true };
     } catch (err) {
       return { error: friendlyError(err, 'Failed to archive selected objects') };
@@ -801,13 +1041,15 @@ export async function mergeObjectsAction(input: unknown): Promise<ActionState> {
       if (!result) return { error: 'Merge suggestion is no longer pending.' };
       const survivorId = 'survivor' in result ? result.survivor.id : result.survivorId;
       if (parsed.data.suggestionItemId) {
-        trackProductEventBestEffort(r.userId, 'approval_decision_submitted', {
-          teamId: r.teamId,
-          userId: r.userId,
-          decision: 'accepted',
-          itemCount: 1,
-          isBulk: false,
-        });
+        trackProductEventBestEffort(
+          { kind: 'user', userId: r.userId, teamId: r.teamId },
+          'approval_decision_submitted',
+          {
+            decision: 'accepted',
+            itemCountBucket: bucketAnalyticsCount(1),
+            isBulk: false,
+          },
+        );
       } else {
         await reconcileCanonicalChangeBestEffort('reconcile_object_merge', async () => {
           await r.scope.suggestions.reconcileObjectMerge({
@@ -928,19 +1170,19 @@ export async function removeRelationshipAction(input: unknown): Promise<ActionSt
     const r = await resolveScope();
     if (!r.ok) return { error: r.error };
     try {
-      await r.scope.objects.removeRelationship(parsed.data.id, {
+      const removed = await r.scope.objects.removeRelationship(parsed.data.id, {
         kind: 'user',
         userId: r.userId,
       });
-      bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_relationship');
-      // Revalidate the peer's detail page too — addRelationshipAction does
-      // the same, otherwise the other side keeps showing the now-deleted
-      // link until the user navigates away.
-      if (parsed.data.otherEntityId) {
-        bestEffortRevalidateObjectDetail(
-          parsed.data.otherEntityId,
-          'revalidate_object_relationship',
-        );
+      // Include every touched id (primary clear via setPersonCompany can wipe
+      // legacy secondary company pages that are not entityId/otherEntityId).
+      const revalidateIds = new Set(
+        [parsed.data.entityId, parsed.data.otherEntityId, ...removed.touchedIds].filter(
+          (id): id is string => Boolean(id),
+        ),
+      );
+      for (const objectId of revalidateIds) {
+        bestEffortRevalidateObjectDetail(objectId, 'revalidate_object_relationship');
       }
       return { ok: true };
     } catch (err) {
@@ -1115,13 +1357,15 @@ export async function acceptObjectChangeAction(input: unknown): Promise<ActionSt
         userId: r.userId,
       });
       if (!ok) return { error: 'Suggestion no longer pending' };
-      trackProductEventBestEffort(r.userId, 'approval_decision_submitted', {
-        teamId: r.teamId,
-        userId: r.userId,
-        decision: 'accepted',
-        itemCount: 1,
-        isBulk: false,
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'approval_decision_submitted',
+        {
+          decision: 'accepted',
+          itemCountBucket: bucketAnalyticsCount(1),
+          isBulk: false,
+        },
+      );
       bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_accept');
       bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_accept');
       // Accepting may change status / stage / priority — same revalidation
@@ -1151,13 +1395,15 @@ export async function rejectObjectChangeAction(input: unknown): Promise<ActionSt
     try {
       const ok = await r.scope.objects.rejectObjectChange(parsed.data.changeId);
       if (!ok) return { error: 'Suggestion no longer pending' };
-      trackProductEventBestEffort(r.userId, 'approval_decision_submitted', {
-        teamId: r.teamId,
-        userId: r.userId,
-        decision: 'rejected',
-        itemCount: 1,
-        isBulk: false,
-      });
+      trackProductEventBestEffort(
+        { kind: 'user', userId: r.userId, teamId: r.teamId },
+        'approval_decision_submitted',
+        {
+          decision: 'rejected',
+          itemCountBucket: bucketAnalyticsCount(1),
+          isBulk: false,
+        },
+      );
       bestEffortRevalidateObjectDetail(parsed.data.entityId, 'revalidate_object_change_reject');
       bestEffortRevalidatePath('/app/inbox', 'revalidate_object_change_reject');
       return { ok: true };

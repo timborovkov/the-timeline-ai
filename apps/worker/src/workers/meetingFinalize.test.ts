@@ -10,13 +10,14 @@ import {
   savedMeetings,
 } from '@timeline/db';
 import { TimelineAiError } from '@timeline/shared/llm';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processMeetingFinalizeJob } from '#src/workers/meetingFinalize.js';
-
 /**
  * Integration tests for the meeting-finalize worker handler. Uses pglite
  * for Postgres + an injected LLM stub so no OpenRouter / Redis is required.
@@ -498,6 +499,37 @@ describe('processMeetingFinalizeJob', () => {
       const events = await db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting'));
       expect(events).toHaveLength(0);
     }
+  });
+
+  it('rechecks terminal status after summarization before writing final output', async () => {
+    await seedMeeting(db as never, { status: 'processing' });
+    await seedChunk(db as never, 0, 'Do not retain this after cancellation.', 'Alice');
+    const chat = vi.fn().mockImplementation(async () => {
+      await db
+        .update(meetingsTable)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(meetingsTable.id, MEETING_ID));
+      return {
+        object: { summary: 'SHOULD NOT BE WRITTEN', action_items: [] },
+        model: 'test-model@1.0',
+      };
+    });
+
+    const result = await processMeetingFinalizeJob(
+      { db: db as never },
+      { meetingId: MEETING_ID, teamId: TEAM_ID },
+      { chatStructured: chat as never },
+    );
+
+    expect(result).toEqual({ skipped: 'terminal', meetingId: MEETING_ID });
+    const meeting = (
+      await db.select().from(meetingsTable).where(eq(meetingsTable.id, MEETING_ID))
+    )[0];
+    expect(meeting?.status).toBe('cancelled');
+    expect(meeting?.metadata).not.toMatchObject({ summary: 'SHOULD NOT BE WRITTEN' });
+    await expect(
+      db.select().from(rawEvents).where(eq(rawEvents.source, 'meeting')),
+    ).resolves.toHaveLength(0);
   });
 
   it('finalizes transcript-only when structured summary generation fails', async () => {

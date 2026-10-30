@@ -1,12 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 describe('@timeline/shared development package exports', () => {
   it.each([
     ['@timeline/shared', '../index.ts'],
     ['@timeline/shared/email', './index.ts'],
+    ['@timeline/shared/integrations/health', '../integrations/health.ts'],
     ['@timeline/shared/integrations/registry', '../integrations/registry.ts'],
     ['@timeline/shared/logger', '../logger.ts'],
     ['@timeline/shared/rate-limit', '../rate-limit/index.ts'],

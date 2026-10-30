@@ -1,10 +1,12 @@
-import { mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
   expect,
   type Browser,
   type BrowserContext,
+  type BrowserContextOptions,
   type Page,
   type Response,
 } from '@playwright/test';
@@ -25,22 +27,23 @@ async function pinPrimaryTeam(page: Page): Promise<void> {
   ]);
 }
 
-export async function signIn(page: Page, email: string): Promise<void> {
+export async function signIn(page: Page, email: string, timeoutMs = 30_000): Promise<void> {
   await page.goto('/sign-in');
-  await signInFromCurrentPage(page, email, /\/app(\/timeline)?/);
+  await signInFromCurrentPage(page, email, /\/app(\/timeline)?/, timeoutMs);
 }
 
 export async function signInFromCurrentPage(
   page: Page,
   email: string,
   expectedUrl: RegExp,
+  timeoutMs = 30_000,
 ): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await page.getByLabel('Email').fill(email);
     await page.getByLabel('Password').fill(E2E_PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
     try {
-      await expect(page).toHaveURL(expectedUrl, { timeout: 30_000 });
+      await expect(page).toHaveURL(expectedUrl, { timeout: timeoutMs });
       await pinPrimaryTeam(page);
       return;
     } catch (error) {
@@ -59,23 +62,43 @@ function authStatePath(user: E2eUserKey): string {
   return path.join('test-results', '.auth', `${E2E_RUN_ID}-${user}.json`);
 }
 
-export async function signInAndSaveState(page: Page, user: E2eUserKey): Promise<string> {
+export async function clearSavedAuthStates(): Promise<void> {
+  await Promise.all(
+    (Object.keys(e2eUsers) as E2eUserKey[]).map((user) => rm(authStatePath(user), { force: true })),
+  );
+}
+
+export async function signInAndSaveState(
+  page: Page,
+  user: E2eUserKey,
+  timeoutMs = 30_000,
+): Promise<string> {
   const file = authStatePath(user);
   await mkdir(path.dirname(file), { recursive: true });
-  await signIn(page, e2eUsers[user].email);
+  await signIn(page, e2eUsers[user].email, timeoutMs);
   await page.context().storageState({ path: file });
   return file;
 }
 
+type SignedInContextOptions = BrowserContextOptions & { signInTimeoutMs?: number };
+
 export async function newSignedInContext(
   browser: Browser,
   user: E2eUserKey,
+  options: SignedInContextOptions = {},
 ): Promise<BrowserContext> {
-  const bootstrap = await browser.newContext();
-  const page = await bootstrap.newPage();
-  const file = await signInAndSaveState(page, user);
-  await bootstrap.close();
-  return browser.newContext({ storageState: file });
+  const { signInTimeoutMs = 30_000, ...contextOptions } = options;
+  const file = authStatePath(user);
+  if (!existsSync(file)) {
+    const bootstrap = await browser.newContext();
+    try {
+      const page = await bootstrap.newPage();
+      await signInAndSaveState(page, user, signInTimeoutMs);
+    } finally {
+      await bootstrap.close();
+    }
+  }
+  return browser.newContext({ ...contextOptions, storageState: file });
 }
 
 export async function newSignedInPage(browser: Browser, user: E2eUserKey): Promise<Page> {

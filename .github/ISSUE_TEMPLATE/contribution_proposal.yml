@@ -1,0 +1,75 @@
+name: Contribution proposal
+description: Propose a non-sensitive change before starting substantial work
+title: '[Proposal]: '
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an improvement to The Timeline.
+
+        This issue is public. Do not include customer content, personal data, credentials, tokens, invite or verification links, signed URLs, private URLs, sensitive identifiers, or an undisclosed vulnerability. Use only your own or synthetic data. For sensitive proposals, email contact@thetimeline.cc. For vulnerabilities, follow SECURITY.md.
+
+        The repository does not currently publish a general software license or contribution terms. Wait for a maintainer to agree to the scope and contribution terms before substantial implementation or a pull request.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Proposed area
+      options:
+        - Public website or help
+        - Authentication or account
+        - Timeline or capture
+        - Work, tasks, boards, or objects
+        - Documents or meetings
+        - Agent or search
+        - Integrations or MCP
+        - Team management
+        - Development, deployment, or documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: Describe the observable need without private data.
+      placeholder: What is difficult, missing, or worth improving?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed outcome
+      description: Explain the user-visible or operational result, not a large implementation plan.
+      placeholder: What should be true when this is complete?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Suggested scope
+      description: Note likely boundaries, affected surfaces, and anything intentionally out of scope.
+      placeholder: A concise proposed boundary for maintainer review.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and security check
+      options:
+        - label: I used only data and accounts I own or synthetic test data.
+          required: true
+        - label: I removed customer content, personal data, credentials, tokens, invite links, signed URLs, private URLs, and sensitive identifiers.
+          required: true
+        - label: This proposal does not disclose an unpatched vulnerability or working exploit.
+          required: true
+
+  - type: checkboxes
+    id: agreement
+    attributes:
+      label: Contribution agreement
+      options:
+        - label: I will wait for maintainer agreement on scope and contribution terms before substantial implementation or a pull request.
+          required: true

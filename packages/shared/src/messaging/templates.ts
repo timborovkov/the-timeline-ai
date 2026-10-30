@@ -31,12 +31,7 @@ import {
 } from '#src/messaging/digest-format.js';
 
 type TemplateName =
-  | 'base'
-  | 'daily-digest'
-  | 'email-verification'
-  | 'support-request'
-  | 'team-invite'
-  | 'welcome';
+  'base' | 'daily-digest' | 'email-verification' | 'support-request' | 'team-invite' | 'welcome';
 
 const templateDir = join(dirname(fileURLToPath(import.meta.url)), 'email-templates');
 const templateCache = new Map<TemplateName, string>();
@@ -240,10 +235,12 @@ function renderSupportRequest(input: SupportRequestMessageInput): RenderedMessag
     `Type: ${input.requestType}`,
     `Name: ${input.name}`,
     `Email: ${input.email}`,
-    `Current page: ${input.currentPage ?? 'n/a'}`,
+    `Surface: ${input.surface ?? 'n/a'}`,
+    `Error reference: ${input.errorReference ?? 'n/a'}`,
+    `Release: ${input.release ?? 'n/a'}`,
     `User ID: ${input.userId ?? 'anonymous'}`,
     `Team ID: ${input.teamId ?? 'n/a'}`,
-    `Team: ${input.teamName ?? 'n/a'}`,
+    `Team role: ${input.teamRole ?? 'n/a'}`,
     '',
     input.message,
   ].join('\n');
@@ -253,8 +250,13 @@ function renderSupportRequest(input: SupportRequestMessageInput): RenderedMessag
     body: renderBody('support-request', {
       name: input.name,
       email: input.email,
-      teamName: input.teamName ?? 'n/a',
-      currentPage: input.currentPage ?? 'n/a',
+      requestId: input.requestId,
+      userId: input.userId ?? 'anonymous',
+      teamId: input.teamId ?? 'n/a',
+      teamRole: input.teamRole ?? 'n/a',
+      surface: input.surface ?? 'n/a',
+      errorReference: input.errorReference ?? 'n/a',
+      release: input.release ?? 'n/a',
       message: input.message,
     }),
   });

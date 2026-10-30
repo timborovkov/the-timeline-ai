@@ -1,10 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   canonicalProposalPayloadIssues,
   normalizeProposalPayload,
 } from '#src/suggestions/proposal-payload.js';
-
 describe('normalizeProposalPayload', () => {
   it('moves non-UUID assignment ids onto name fields', () => {
     expect(

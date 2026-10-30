@@ -1,10 +1,10 @@
-// @vitest-environment happy-dom
-
 import { cleanup, render, waitFor } from '@testing-library/react';
+import { expect } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 import { useEffect } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
 
 import { AppDocumentScrollLock } from '@/components/app-document-scroll-lock';
+// Test environment: happy-dom
 
 const html = document.documentElement;
 const body = document.body;

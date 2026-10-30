@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import { appMetadataForTeam } from '@/lib/app-metadata';
-
 describe('appMetadataForTeam', () => {
   it('includes the active team in app page title templates', () => {
     expect(appMetadataForTeam('Tecci')).toMatchObject({

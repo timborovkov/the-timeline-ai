@@ -1,19 +1,9 @@
-import { PGlite } from '@electric-sql/pglite';
-import {
-  artifactClusters,
-  artifactEvidenceAssociations,
-  calendarEventEntities,
-  calendarEvents,
-  entities,
-  rawEvents,
-  reconciliationEvidence,
-} from '@timeline/db';
-import { eq, inArray } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { withTeam } from '#src/team-scope.js';
-import { applyDbMigrations } from '#src/test/pglite.js';
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 interface DeletePointsForSourceInput {
   sourceId: string;
@@ -25,16 +15,40 @@ const fakes = vi.hoisted(() => ({
   deletePointsForSource: vi.fn(),
 }));
 
-vi.mock('#src/queue/queues.js', () => ({
-  enqueueCalendarEventEmbedJob: fakes.enqueueCalendarEventEmbedJob,
-  enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
-}));
-vi.mock('#src/qdrant/client.js', () => ({
-  getQdrantClient: vi.fn(() => ({
-    deletePoints: fakes.deletePoints,
-    deletePointsForSource: fakes.deletePointsForSource,
-  })),
-}));
+await vi.mock(
+  import.meta.resolve('#src/queue/queues.js'),
+  async () => ({
+    ...(await import('#src/queue/queues.js')),
+    enqueueCalendarEventEmbedJob: fakes.enqueueCalendarEventEmbedJob,
+    enqueueObjectSummaryJob: vi.fn().mockResolvedValue({ enqueued: true, jobId: 'summary-job' }),
+  }),
+  () => import('#src/queue/queues.js'),
+);
+await vi.mock(
+  import.meta.resolve('#src/qdrant/client.js'),
+  () => ({
+    getQdrantClient: vi.fn(() => ({
+      deletePoints: fakes.deletePoints,
+      deletePointsForSource: fakes.deletePointsForSource,
+    })),
+  }),
+  () => import('#src/qdrant/client.js'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const {
+  artifactClusters,
+  artifactEvidenceAssociations,
+  calendarEventEntities,
+  calendarEvents,
+  entities,
+  rawEvents,
+  reconciliationEvidence,
+} = await import('@timeline/db');
+const { eq, inArray } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
+const { withTeam } = await import('#src/team-scope.js');
+const { applyDbMigrations } = await import('#src/test/pglite.js');
 
 const TEAM_ID = '11111111-1111-1111-1111-111111111111';
 const USER_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -61,6 +75,8 @@ describe('calendar scope', () => {
   let db: ReturnType<typeof drizzle>;
 
   beforeEach(async () => {
+    // Keep July 2026 series inside the ±3 month materialization window.
+    vi.setSystemTime(new Date('2026-07-15T12:00:00.000Z'));
     pg = new PGlite();
     await applyDbMigrations(pg);
     await seed(pg);
@@ -75,6 +91,7 @@ describe('calendar scope', () => {
 
   afterEach(async () => {
     await pg.close();
+    vi.setSystemTime();
   });
 
   it('defaults missing team calendar settings to Helsinki workspace time', async () => {
@@ -118,8 +135,7 @@ describe('calendar scope', () => {
       'Launch review | Final launch readiness pass | at Room 3 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:00:00.000Z | (Europe/Tallinn)',
     );
     const initialOccurrenceMetadata = occurrence?.sourceMetadata as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(initialOccurrenceMetadata).toMatchObject({
       source_payload_ref: `inline://timeline/calendar/${event.id}/event`,
       source_snapshot_kind: 'calendar_event_mirror',
@@ -151,8 +167,7 @@ describe('calendar scope', () => {
       'Launch review | Updated readiness pass | at Room 4 | 2026-05-27T09:00:00.000Z to 2026-05-27T10:30:00.000Z | (Europe/Tallinn)',
     );
     const updatedOccurrenceMetadata = occurrence?.sourceMetadata as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     expect(updatedOccurrenceMetadata).toMatchObject({
       source_payload_ref: `inline://timeline/calendar/${event.id}/event`,
       source_snapshot: {

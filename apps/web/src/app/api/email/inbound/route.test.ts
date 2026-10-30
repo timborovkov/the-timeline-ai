@@ -1,13 +1,18 @@
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
 import type * as EmailModule from '@timeline/shared/email';
-import type * as RateLimitModule from '@timeline/shared/rate-limit';
-
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
   handleInbound: vi.fn(),
+  log: {
+    error: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    debug: vi.fn(),
+  },
   queue: {
     enqueueExtractJob: vi.fn(),
     enqueueDocumentExtractJob: vi.fn(),
@@ -17,31 +22,53 @@ const fakes = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@/lib/db', () => ({ db: {} }));
-vi.mock('@/lib/queue', () => ({
-  requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({ db: {} }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/queue'),
+  () => ({
+    requireRedisQueue: vi.fn(() => Promise.resolve(fakes.queue)),
+  }),
+  () => import('@/lib/queue'),
+);
 
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => fakes.log,
+  }),
+  () => import('@timeline/shared/logger'),
+);
 
-vi.mock('@timeline/shared/email', async () => {
-  const actual = await vi.importActual<typeof EmailModule>('@timeline/shared/email');
-  return {
-    ...actual,
-    clientIpFromHeaders: () => null,
-    handleInbound: fakes.handleInbound,
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/email'),
+  async () => {
+    const actual = await import('@timeline/shared/email');
+    return {
+      ...actual,
+      clientIpFromHeaders: () => null,
+      handleInbound: fakes.handleInbound,
+    };
+  },
+  () => import('@timeline/shared/email'),
+);
 
-vi.mock('@timeline/shared/rate-limit', async () => {
-  const actual = await vi.importActual<typeof RateLimitModule>('@timeline/shared/rate-limit');
-  return {
-    ...actual,
-    checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
-  };
-});
+await vi.mock(
+  import.meta.resolve('@timeline/shared/rate-limit'),
+  async () => {
+    const actual = await import('@timeline/shared/rate-limit');
+    return {
+      ...actual,
+      checkRateLimit: vi.fn().mockResolvedValue({ ok: true }),
+    };
+  },
+  () => import('@timeline/shared/rate-limit'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { POST } = await import('./route.js');
 
@@ -84,10 +111,35 @@ describe('POST /api/email/inbound', () => {
     delete process.env.POSTMARK_WEBHOOK_SECRET;
     resetEnvForTests();
     expect((await POST(inboundRequest())).status).toBe(503);
+    expect(fakes.log.warn).toHaveBeenCalledWith(
+      { missing: ['POSTMARK_WEBHOOK_SECRET'] },
+      'inbound webhook disabled',
+    );
+    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('postmark-secret');
 
     process.env.POSTMARK_WEBHOOK_SECRET = 'postmark-secret';
     resetEnvForTests();
     expect((await POST(inboundRequest('wrong'))).status).toBe(401);
+    expect(fakes.log.warn).toHaveBeenCalledWith(
+      { clientIp: 'unknown' },
+      'inbound webhook unauthorized',
+    );
+    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('wrong');
+    expect(JSON.stringify(fakes.log.warn.mock.calls)).not.toContain('Basic ');
+    expect(fakes.handleInbound).not.toHaveBeenCalled();
+  });
+
+  it('logs invalid JSON without retrying ingest', async () => {
+    const response = await POST(
+      new Request('https://timeline.test/api/email/inbound', {
+        method: 'POST',
+        headers: { authorization: auth(), 'content-type': 'application/json' },
+        body: '{',
+      }),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: false, reason: 'invalid_json' });
+    expect(fakes.log.warn).toHaveBeenCalledWith('inbound email dropped: invalid_json');
     expect(fakes.handleInbound).not.toHaveBeenCalled();
   });
 

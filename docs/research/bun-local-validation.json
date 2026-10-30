@@ -1,0 +1,161 @@
+{
+  "date": "2026-10-28",
+  "branch": "migration/full-bun",
+  "bunVersion": "1.4.4",
+  "nodeComparisonVersion": "24.22.1",
+  "nodeBaselineCommit": "276a6f00",
+  "hostedCi": "Not used for this validation",
+  "checks": [
+    {
+      "command": "bun run validate",
+      "result": "passed"
+    },
+    {
+      "command": "bun run doctor",
+      "result": "passed",
+      "score": 100,
+      "diagnostics": 0
+    },
+    {
+      "command": "bun run test",
+      "result": "passed",
+      "files": 620,
+      "reportedPassingCases": 5140,
+      "failedProcesses": 0,
+      "inlineLiveSkips": 2,
+      "dedicatedLiveFilesExcluded": 6,
+      "elapsedSeconds": 4267.638285285997
+    },
+    {
+      "command": "bun run e2e",
+      "result": "passed",
+      "passed": 113,
+      "skipped": 1,
+      "failed": 0,
+      "reportedMinutes": 51.0
+    },
+    {
+      "command": "NEXT_PUBLIC_POSTHOG_KEY=ph-e2e bun run e2e e2e/public-browser-analytics.spec.ts",
+      "result": "passed",
+      "passed": 1
+    },
+    {
+      "command": "bun run e2e:prod-smoke",
+      "result": "passed",
+      "passed": 1,
+      "build": "passed"
+    },
+    {
+      "command": "bun run check:web-bundle",
+      "result": "passed"
+    },
+    {
+      "command": "bun run test:runtime",
+      "result": "passed",
+      "sentryDefaultIntegrations": true
+    },
+    {
+      "command": "bun run test:dist-imports",
+      "result": "passed"
+    },
+    {
+      "command": "bun run test:reconciliation-eval",
+      "result": "passed"
+    },
+    {
+      "coverage": "Offline agent evaluations, demo fixtures, E2E environment contracts, selector/lifecycle/snapshot contracts",
+      "result": "passed",
+      "includedInCanonicalSuite": true
+    },
+    {
+      "coverage": "E2E TypeScript program",
+      "result": "passed",
+      "diagnostics": 0
+    },
+    {
+      "coverage": "Repeated infinite-scroll browser check",
+      "result": "passed",
+      "repetitions": 3
+    },
+    {
+      "coverage": "Frozen installs and forced full builds",
+      "result": "passed",
+      "details": "bun-local-performance-review.json"
+    }
+  ],
+  "images": {
+    "worker": "sha256:d92a32c51e449e82fd448a439929aa7dc8852d349f0428b49f8bdcd467e58370",
+    "web": "sha256:09841a78f4a3cb61f80a6eec1c980dc00a2ecd7c62dc1aa069826f75fb758a10"
+  },
+  "containerChecks": [
+    {
+      "step": "worker-image-review",
+      "exitCode": 0,
+      "elapsedSeconds": 388.83010265399935
+    },
+    {
+      "step": "worker-image-id-review",
+      "exitCode": 0,
+      "elapsedSeconds": 0.06943874999706168
+    },
+    {
+      "step": "worker-native-review",
+      "exitCode": 0,
+      "elapsedSeconds": 37.57366720199934
+    },
+    {
+      "step": "container-fixture-reset-review",
+      "exitCode": 0,
+      "elapsedSeconds": 0.19679050400009146
+    },
+    {
+      "step": "container-fixture-create-review",
+      "exitCode": 0,
+      "elapsedSeconds": 0.2911611330055166
+    },
+    {
+      "step": "worker-container-review",
+      "exitCode": 0,
+      "elapsedSeconds": 132.43954387999838
+    },
+    {
+      "step": "extract-container-review",
+      "exitCode": 0,
+      "elapsedSeconds": 48.56982950100064
+    },
+    {
+      "step": "web-image-review",
+      "exitCode": 0,
+      "elapsedSeconds": 641.0984632420004
+    },
+    {
+      "step": "web-image-id-review",
+      "exitCode": 0,
+      "elapsedSeconds": 0.04887000700546196
+    },
+    {
+      "step": "web-native-review",
+      "exitCode": 0,
+      "elapsedSeconds": 38.04897796599835
+    },
+    {
+      "step": "web-container-review",
+      "exitCode": 0,
+      "elapsedSeconds": 101.98895490699942
+    }
+  ],
+  "releaseGatesOpen": [
+    "Three matched Node/Bun staging workloads, including cold and warmed web traffic and actual worker job duration",
+    "Investigation of repeatable staging latency, throughput or memory degradation over 10%",
+    "24-hour staging soak covering scheduled work, reconnects, restarts and memory growth",
+    "Explicit coordinated production release authorization"
+  ],
+  "documentationWorkflow": "document-release skill unavailable; equivalent manual audit performed",
+  "visualReferences": {
+    "source": "Original Node 24.22.1 checkout",
+    "missingCollectionImagesAdded": 12,
+    "existingReferencesRefreshed": 4,
+    "pixelToleranceChanged": false,
+    "reviewRunUpdatedImages": false
+  }
+}

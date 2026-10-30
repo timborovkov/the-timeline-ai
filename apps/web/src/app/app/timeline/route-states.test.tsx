@@ -1,15 +1,16 @@
-// @vitest-environment happy-dom
-
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, describe, it } from 'bun:test';
 
 import TimelineError from '@/app/app/timeline/error';
 import TimelineLoading from '@/app/app/timeline/loading';
+// Test environment: happy-dom
 
 const timelineDir = dirname(fileURLToPath(import.meta.url));
 
@@ -34,7 +35,7 @@ describe('Timeline route states', () => {
       ),
     ).toBeTruthy();
 
-    const retry = screen.getByRole('button', { name: 'Try again' });
+    const retry = screen.getByRole('button', { name: 'Retry' });
     retry.focus();
     await user.keyboard('{Enter}');
 

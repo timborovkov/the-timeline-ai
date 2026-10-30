@@ -1,22 +1,36 @@
-// @vitest-environment happy-dom
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 
-import { cleanup, render, screen } from '@testing-library/react';
-import { createElement, type ReactNode } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
+// Test environment: happy-dom
 
 const fakes = vi.hoisted(() => ({
   pathname: '/app/team/slack',
 }));
 
-vi.mock('next/navigation', () => ({
-  usePathname: () => fakes.pathname,
-}));
+await vi.mock(
+  import.meta.resolve('next/navigation'),
+  async () => ({
+    ...(await import('next/navigation')),
+    usePathname: () => fakes.pathname,
+  }),
+  () => import('next/navigation'),
+);
 
-vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
-  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
-}));
+await vi.mock(
+  import.meta.resolve('@/components/ui/tooltip'),
+  () => ({
+    Tooltip: ({ children }: { children: ReactNode }) => children,
+    TooltipContent: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+    TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+  }),
+  () => import('@/components/ui/tooltip'),
+);
+
+const { cleanup, render, screen } = await import('@testing-library/react');
+
+const { createElement } = await import('react');
 
 const { RailNav } = await import('./rail-nav.js');
 

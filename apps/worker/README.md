@@ -35,21 +35,36 @@ not add provider-specific answer prompts or citation sanitizers.
 From the repo root:
 
 ```bash
-pnpm --filter @timeline/worker dev          # all workers, watch mode
-pnpm --filter @timeline/worker dev:extract  # document-extract only (WORKER_MODE=document-extract)
-pnpm --filter @timeline/worker build
-pnpm --filter @timeline/worker start:extract
-pnpm --filter @timeline/worker create-document-extract-snapshot  # Daytona snapshot ensure (content-hash; --force to rebuild)
-pnpm --filter @timeline/worker reextract -- --team=<teamId>
-pnpm --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
-pnpm --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
-pnpm --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
-pnpm --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=2026-06-01] [--to=2026-07-01] [--apply] [--no-ai]
-pnpm --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
-pnpm --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
-TIMELINE_ENV_FILE=/path/to/.env pnpm --filter @timeline/worker task-category-backfill -- --team-id=<teamId> --limit=500 [--enqueue --max-cost-usd=0.10]
+bun run --filter @timeline/worker dev          # all workers, watch mode
+bun run --filter @timeline/worker dev:extract  # document-extract only (WORKER_MODE=document-extract)
+bun run --filter @timeline/worker build
+bun run --filter @timeline/worker start:extract
+bun run --filter @timeline/worker create-document-extract-snapshot  # Daytona snapshot ensure (content-hash; --force to rebuild)
+bun run --filter @timeline/worker reextract -- --team=<teamId>
+bun run --filter @timeline/worker reembed   -- --team=<teamId> --target-collection=events_v2
+bun run --filter @timeline/worker qdrant-migrate-collection -- --source-collection=events --target-collection=events_ondisk --create-target --copy --verify --writers-paused --all-teams
+bun run --filter @timeline/worker resuggest -- --team=<teamId> [--since=2026-06-01] [--until=2026-06-04] [--source=all|telegram|slack] [--limit=N] [--all] [--dry-run]
+bun run --filter @timeline/worker dedupe-approvals -- --team=<teamId> [--limit=N] [--apply]
+bun run --filter @timeline/worker dedupe-calendar-events -- --team=<teamId> [--limit=N] [--from=2026-06-01] [--to=2026-07-01] [--apply] [--no-ai]
+bun run --filter @timeline/worker redocument-extract -- --team=<teamId> [--status=failed,pending] [--force]
+bun run --filter @timeline/worker redocument-embed   -- --team=<teamId> [--target-collection=docs_v2]
+TIMELINE_ENV_FILE=/path/to/.env bun run --filter @timeline/worker task-category-backfill -- --team-id=<teamId> --limit=500 [--enqueue --max-cost-usd=0.10]
 ```
 
+`qdrant-migrate-collection` copies an existing collection onto a new on-disk + quantized
+collection without re-embedding. Pause embed writers first; live `--copy` requires
+`--writers-paused`, re-syncs a second pass, and copies per `team_id` (`--all-teams` or `--team`).
+`--all-teams` verify unions source and target tenants; identity compares the canonical full
+payload. Live `--measure` indexes both collections before RAM snapshots; `--dry-run --measure`
+does not PATCH thresholds. Isolated remote clusters require `ALLOW_QDRANT_MIGRATE_REMOTE`.
+Production instead requires `--production --copy --verify --writers-paused --all-teams` and
+`ALLOW_QDRANT_MIGRATE_PRODUCTION=I_UNDERSTAND_THIS_MIGRATES_PRODUCTION_QDRANT` in the operator
+process. It backs up the active source collection before writing the target, checks full vector
+and payload identity plus total point coverage, and forbids the optimizer-changing `--measure`.
+Stop all web/worker vector writers during this maintenance window; retain the source and snapshot.
+After counts and point
+identity match, switch `QDRANT_COLLECTION` and restart web + workers. See
+[docs/setup/openrouter.html](../../docs/setup/openrouter.html#qdrant-storage).
 `resuggest` scans the requested window before applying `--limit`; conversational sources recover
 the latest anchor per conversation, and limited runs keep the latest candidate anchors.
 The suggestion worker normalizes lifecycle status aliases into the target artifact vocabulary
@@ -83,14 +98,14 @@ backfill while skipping archived, manual, pending, and already categorized tasks
 Production starts the combined worker entry point (see [docs/railway.html](../../docs/railway.html)):
 
 ```bash
-NODE_ENV=production node apps/worker/dist/index.js
+NODE_ENV=production bun apps/worker/dist/index.js
 ```
 
 Document extract (ADR 0013) runs in Daytona sandboxes coordinated by the separate Railway
 `document-extract-orchestrator` service:
 
 ```bash
-NODE_ENV=production WORKER_MODE=document-extract node apps/worker/dist/extract-main.js
+NODE_ENV=production WORKER_MODE=document-extract bun apps/worker/dist/extract-main.js
 ```
 
 Set `DOCUMENT_EXTRACT_ENABLED=false` on the main worker when
@@ -115,6 +130,6 @@ and [document-extract-sandbox/README.md](document-extract-sandbox/README.md).
 ## Where it fits
 
 - Pipeline overview: [docs/product-brief.html](../../docs/product-brief.html).
-- Re-extract / re-embed procedures: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
+- Re-extract / re-embed / on-disk collection copy: [docs/setup/openrouter.html](../../docs/setup/openrouter.html).
 - Local walkthrough (Phase 3+): [docs/setup/local.html](../../docs/setup/local.html).
 - Meeting bots (Phase 10): [docs/setup/meeting-bots.html](../../docs/setup/meeting-bots.html).

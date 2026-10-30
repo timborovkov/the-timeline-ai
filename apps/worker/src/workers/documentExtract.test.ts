@@ -6,9 +6,11 @@ import {
   createResettablePGliteTestDb,
   type ResettablePGliteTestDb,
 } from '@timeline/shared/test/pglite';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterAll, beforeAll, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PGlite } from '@electric-sql/pglite';
 
@@ -21,7 +23,6 @@ import {
   processDocumentExtractJob,
   shouldAcceptSandboxPdfText,
 } from '#src/workers/documentExtract.js';
-
 /**
  * Real-DB integration tests for the documentExtract worker handler.
  * Uses pglite for Postgres + injected fakes for S3 and the embed queue
@@ -1433,10 +1434,3 @@ describe('processDocumentExtractJob — fetchBlob failure', () => {
     expect(row.rows[0]?.processing_error).toContain('S3 timeout');
   });
 });
-
-// Keep the unused imports load-bearing so future tests can use the schema
-// objects directly. Without this, dead-import lint complains.
-void documentChunks;
-void documents;
-void documentVersions;
-void eq;

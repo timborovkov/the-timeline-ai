@@ -22,6 +22,8 @@ export interface ExpandedDemoCorpusSnapshot {
   people: number;
   loginEmails: string[];
   passwordUsableEmails: string[];
+  currentLegalSnapshotEmails: string[];
+  matchingLegalAcceptanceEmails: string[];
   events: number;
   objects: number;
   documents: number;
@@ -97,6 +99,22 @@ export function assertExpandedDemoCorpus(snapshot: ExpandedDemoCorpusSnapshot): 
   );
   if (unusablePasswords.length > 0) {
     errors.push(`password unusable for demo logins: ${unusablePasswords.join(', ')}`);
+  }
+  const staleLegalSnapshots = CORPUS_LOGIN_EMAILS.filter(
+    (email) => !snapshot.currentLegalSnapshotEmails.includes(email),
+  );
+  if (staleLegalSnapshots.length > 0) {
+    errors.push(
+      `current legal snapshot missing for demo logins: ${staleLegalSnapshots.join(', ')}`,
+    );
+  }
+  const missingLegalEvidence = CORPUS_LOGIN_EMAILS.filter(
+    (email) => !snapshot.matchingLegalAcceptanceEmails.includes(email),
+  );
+  if (missingLegalEvidence.length > 0) {
+    errors.push(
+      `matching legal acceptance evidence missing for demo logins: ${missingLegalEvidence.join(', ')}`,
+    );
   }
   exact(
     'embedded corpus document versions',

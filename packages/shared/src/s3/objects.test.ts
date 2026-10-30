@@ -1,7 +1,6 @@
-import { Readable } from 'node:stream';
-
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { beforeEach, describe, it } from 'bun:test';
 /**
  * S3 object wrapper tests. These cover the command shapes and memory safety
  * boundaries around uploads, downloads, metadata reads, and signed URLs.
@@ -23,19 +22,29 @@ class HeadObjectCommand extends FakeCommand {}
 class PutObjectCommand extends FakeCommand {}
 class DeleteObjectCommand extends FakeCommand {}
 
-vi.mock('@aws-sdk/client-s3', () => ({
-  DeleteObjectCommand,
-  GetObjectCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-}));
-
-vi.mock('@aws-sdk/s3-request-presigner', () => ({
-  getSignedUrl: vi.fn((_client: unknown, command: unknown, options: unknown) => {
-    fakes.signedUrlCalls.push({ command, options });
-    return Promise.resolve('https://signed.example.test/url');
+await vi.mock(
+  import.meta.resolve('@aws-sdk/client-s3'),
+  () => ({
+    DeleteObjectCommand,
+    GetObjectCommand,
+    HeadObjectCommand,
+    PutObjectCommand,
   }),
-}));
+  () => import('@aws-sdk/client-s3'),
+);
+
+await vi.mock(
+  import.meta.resolve('@aws-sdk/s3-request-presigner'),
+  () => ({
+    getSignedUrl: vi.fn((_client: unknown, command: unknown, options: unknown) => {
+      fakes.signedUrlCalls.push({ command, options });
+      return Promise.resolve('https://signed.example.test/url');
+    }),
+  }),
+  () => import('@aws-sdk/s3-request-presigner'),
+);
+
+const { Readable } = await import('node:stream');
 
 interface SentCommand {
   input: Record<string, unknown>;

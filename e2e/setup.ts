@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { closeDb } from '@timeline/db';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@timeline/shared/legal-versions';
 import { hashPassword } from '@timeline/shared/passwords';
 
 import { cleanupE2eDataWithinTransaction, withE2eDataTransaction } from './cleanup.js';
@@ -12,9 +13,6 @@ import {
   e2eTeam,
   e2eUsers,
 } from './test-data.js';
-
-const TERMS_VERSION = '2026-06-02';
-const PRIVACY_VERSION = '2026-06-02';
 
 export async function setupE2eData(): Promise<void> {
   const passwordHash = await hashPassword(E2E_PASSWORD);
@@ -45,6 +43,23 @@ export async function setupE2eData(): Promise<void> {
         (${e2eUsers.nonMember.id}, ${e2eUsers.nonMember.name}, ${e2eUsers.nonMember.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW()),
         (${e2eUsers.invitee.id}, ${e2eUsers.invitee.name}, ${e2eUsers.invitee.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW()),
         (${e2eUsers.pendingInvitee.id}, ${e2eUsers.pendingInvitee.name}, ${e2eUsers.pendingInvitee.email}, ${passwordHash}, NOW(), ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW())
+    `;
+    await sql`
+      INSERT INTO legal_acceptances (
+        user_id,
+        terms_version,
+        privacy_version,
+        accepted_at,
+        source
+      )
+      VALUES
+        (${e2eUsers.owner.id}, ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW(), 'credentials_signup'),
+        (${e2eUsers.admin.id}, ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW(), 'credentials_signup'),
+        (${e2eUsers.member.id}, ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW(), 'credentials_signup'),
+        (${e2eUsers.nonMember.id}, ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW(), 'credentials_signup'),
+        (${e2eUsers.invitee.id}, ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW(), 'credentials_signup'),
+        (${e2eUsers.pendingInvitee.id}, ${TERMS_VERSION}, ${PRIVACY_VERSION}, NOW(), 'credentials_signup')
+      ON CONFLICT (user_id, terms_version, privacy_version) DO NOTHING
     `;
     await sql`
       INSERT INTO team_members (team_id, user_id, role)

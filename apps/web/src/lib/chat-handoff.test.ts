@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 
 import {
   CHAT_HANDOFF_MAX_AGE_MS,
@@ -9,7 +10,6 @@ import {
   storeChatContextHandoff,
   validateChatHandoffPrompt,
 } from '@/lib/chat-handoff';
-
 function memoryStorage() {
   const values = new Map<string, string>();
   return {

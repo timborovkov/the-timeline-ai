@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 interface RailwayConfig {
+  build?: { builder?: string; dockerfilePath?: string };
   deploy?: {
     preDeployCommand?: string[];
     startCommand?: string;
@@ -10,15 +11,19 @@ interface RailwayConfig {
 }
 
 describe('Railway web config', () => {
-  it('runs deploy and start commands with node in production mode', () => {
+  it('runs deploy and start commands with Bun in production mode', () => {
     const config = JSON.parse(
       readFileSync(new URL('../railway.json', import.meta.url), 'utf8'),
     ) as RailwayConfig;
 
+    expect(config.build?.builder).toBe('DOCKERFILE');
+    expect(config.build?.dockerfilePath).toBe('docker/web.Dockerfile');
     expect(config.deploy?.preDeployCommand).toEqual([
-      'NODE_ENV=production node packages/db/dist/migrate.js',
+      'env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js',
     ]);
-    expect(config.deploy?.startCommand).toBe('NODE_ENV=production node apps/web/start.mjs');
+    expect(config.deploy?.startCommand).toBe(
+      'env NODE_ENV=production bun --no-env-file apps/web/start.mjs',
+    );
     expect(config.deploy?.preDeployCommand?.join(' ')).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('NODE_ENV=staging');
@@ -33,7 +38,7 @@ describe('Railway web config', () => {
       'utf8',
     );
 
-    expect(packageJson.scripts?.build).toContain('node scripts/prepare-standalone.mjs');
+    expect(packageJson.scripts?.build).toContain('bun scripts/prepare-standalone.mjs');
     expect(prepareStandalone).toContain(
       "const standaloneRoot = resolve(appRoot, '.next/standalone')",
     );

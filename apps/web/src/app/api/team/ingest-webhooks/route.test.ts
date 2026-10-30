@@ -1,32 +1,76 @@
-import { PGlite } from '@electric-sql/pglite';
-import { auditLog, ingestWebhookCredentials, ingestWebhooks, type Db } from '@timeline/db';
-import { applyDbMigrations } from '@timeline/shared/test/pglite';
-import { eq, isNull } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
+
+import type { PGlite as PGliteType } from '@electric-sql/pglite';
+type PGlite = PGliteType;
 
 const fakes = vi.hoisted(() => ({
   auth: vi.fn(),
   resolveActiveTeam: vi.fn(),
   requireMembership: vi.fn(),
+  trackProductEventBestEffort: vi.fn(),
   db: null as ReturnType<typeof drizzle> | null,
 }));
 
-vi.mock('@/lib/db', () => ({
-  get db() {
-    if (!fakes.db) throw new Error('test db not ready');
-    return fakes.db as unknown as Db;
-  },
-}));
-vi.mock('@/lib/auth', () => ({ auth: fakes.auth }));
-vi.mock('@/lib/active-team', () => ({ resolveActiveTeam: fakes.resolveActiveTeam }));
-vi.mock('@timeline/shared/team-scope', () => ({
-  withTeam: () => ({ requireMembership: fakes.requireMembership }),
-}));
-vi.mock('@/lib/sentry-report', () => ({ reportCaughtError: vi.fn() }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/db'),
+  () => ({
+    db: new Proxy(
+      {},
+      {
+        get(_target, key) {
+          if (!fakes.db) throw new Error('test database is not initialized');
+          const value: unknown = Reflect.get(fakes.db, key);
+          return typeof value === 'function' ? (value.bind(fakes.db) as unknown) : value;
+        },
+      },
+    ),
+  }),
+  () => import('@/lib/db'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/auth'),
+  () => ({ auth: fakes.auth }),
+  () => import('@/lib/auth'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/analytics'),
+  () => ({
+    trackProductEventBestEffort: fakes.trackProductEventBestEffort,
+  }),
+  () => import('@/lib/analytics'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/active-team'),
+  () => ({ resolveActiveTeam: fakes.resolveActiveTeam }),
+  () => import('@/lib/active-team'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/team-scope'),
+  () => ({
+    withTeam: () => ({ requireMembership: fakes.requireMembership }),
+  }),
+  () => import('@timeline/shared/team-scope'),
+);
+await vi.mock(
+  import.meta.resolve('@/lib/sentry-report'),
+  () => ({ reportCaughtError: vi.fn() }),
+  () => import('@/lib/sentry-report'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: vi.fn(), info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+
+const { PGlite } = await import('@electric-sql/pglite');
+const { auditLog, ingestWebhookCredentials, ingestWebhooks } = await import('@timeline/db');
+const { applyDbMigrations } = await import('@timeline/shared/test/pglite');
+const { eq, isNull } = await import('drizzle-orm');
+const { drizzle } = await import('drizzle-orm/pglite');
 
 const indexRoute = await import('./route.js');
 const itemRoute = await import('./[id]/route.js');
@@ -111,6 +155,11 @@ describe('/api/team/ingest-webhooks', () => {
       targetType: 'ingest_webhook',
       targetId: body.id,
     });
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'webhook_create', kind: 'custom_ingest_webhook' },
+    );
   });
 
   it('lists only non-secret credential metadata', async () => {
@@ -158,6 +207,11 @@ describe('/api/team/ingest-webhooks', () => {
       .from(ingestWebhookCredentials)
       .where(isNull(ingestWebhookCredentials.revokedAt));
     expect(activeCredentials).toHaveLength(1);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'webhook_rotate', kind: 'custom_ingest_webhook' },
+    );
 
     const softDisable = await itemRoute.PATCH(request({ disabled: true }), {
       params: Promise.resolve({ id: created.id }),
@@ -168,6 +222,11 @@ describe('/api/team/ingest-webhooks', () => {
       .from(ingestWebhookCredentials)
       .where(isNull(ingestWebhookCredentials.revokedAt));
     expect(activeAfterSoftDisable).toHaveLength(0);
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'webhook_revoke', kind: 'custom_ingest_webhook' },
+    );
 
     const reenable = await itemRoute.PATCH(request({ disabled: false }), {
       params: Promise.resolve({ id: created.id }),
@@ -188,6 +247,11 @@ describe('/api/team/ingest-webhooks', () => {
       .from(ingestWebhooks)
       .where(eq(ingestWebhooks.id, created.id));
     expect(reenabledWebhook?.disabledAt).toBeNull();
+    expect(fakes.trackProductEventBestEffort).toHaveBeenCalledWith(
+      { kind: 'user', teamId: TEAM_ID, userId: USER_ID },
+      'integration_management_action_completed',
+      { action: 'activate', kind: 'custom_ingest_webhook' },
+    );
 
     const disable = await itemRoute.DELETE(new Request('https://timeline.test'), {
       params: Promise.resolve({ id: created.id }),

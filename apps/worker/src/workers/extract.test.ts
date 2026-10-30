@@ -14,14 +14,16 @@ import {
   currentExtractionModelVersions,
   makeExtractionModelVersion,
 } from '@timeline/shared/extraction-model-version';
+import { TIMELINE_MODELS } from '@timeline/shared/llm';
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyDbMigrations } from '#src/test/pglite.js';
 import { processEmbedJobForTests } from '#src/workers/embed.js';
 import { extractWorkerInternals, processExtractJobForTests } from '#src/workers/extract.js';
-
 /**
  * Extract worker contract tests. These run the processor against a migrated
  * PGlite database with deterministic LLM and queue boundaries, proving raw
@@ -583,7 +585,7 @@ describe('processExtractJobForTests', () => {
   it('skips reruns already stamped by the current structured fallback model', async () => {
     const rawEventId = '46464646-4646-4646-8646-464646464646';
     const fallbackModelVersion = currentExtractionModelVersions().find((version) =>
-      version.includes('deepseek/deepseek-v4-pro'),
+      version.includes(TIMELINE_MODELS.structuredFallback.id),
     );
     if (!fallbackModelVersion) throw new Error('expected fallback extraction model version');
     await seedEvent(db, {

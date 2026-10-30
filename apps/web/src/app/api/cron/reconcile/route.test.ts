@@ -1,6 +1,6 @@
-import { resetEnvForTests } from '@timeline/shared/env';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { vi } from '@timeline/test-support';
+import { afterEach, beforeEach, describe, it } from 'bun:test';
 const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
@@ -8,10 +8,20 @@ const fakes = vi.hoisted(() => ({
   loggerError: vi.fn(),
 }));
 
-vi.mock('@/lib/reconcile-jobs', () => ({ reconcileOrphanedJobs: fakes.reconcile }));
-vi.mock('@timeline/shared/logger', () => ({
-  childLogger: () => ({ error: fakes.loggerError, info: vi.fn(), warn: vi.fn() }),
-}));
+await vi.mock(
+  import.meta.resolve('@/lib/reconcile-jobs'),
+  () => ({ reconcileOrphanedJobs: fakes.reconcile }),
+  () => import('@/lib/reconcile-jobs'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/logger'),
+  () => ({
+    childLogger: () => ({ error: fakes.loggerError, info: vi.fn(), warn: vi.fn() }),
+  }),
+  () => import('@timeline/shared/logger'),
+);
+
+const { resetEnvForTests } = await import('@timeline/shared/env');
 
 const { GET, POST } = await import('./route.js');
 

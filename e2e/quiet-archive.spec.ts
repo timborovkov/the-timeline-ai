@@ -245,10 +245,8 @@ test('Ask gives the conversation the full mobile viewport', async ({ browser }) 
   await page.context().close();
 });
 
-test('authenticated routes expose one page heading', async ({ browser }) => {
-  test.slow();
-  const page = await newSignedInPage(browser, 'owner');
-  const routes = [
+const headingRouteGroups = {
+  workspace: [
     '/app',
     '/app/timeline',
     '/app/chat',
@@ -256,12 +254,16 @@ test('authenticated routes expose one page heading', async ({ browser }) => {
     '/app/objects',
     '/app/tasks',
     '/app/boards',
+  ],
+  content: [
     '/app/calendar',
     '/app/approvals',
     '/app/documents',
     '/app/documents/captured',
     '/app/meetings',
     '/app/sources',
+  ],
+  team: [
     '/app/team',
     '/app/team/jobs',
     '/app/team/reconciliation',
@@ -270,12 +272,17 @@ test('authenticated routes expose one page heading', async ({ browser }) => {
     '/app/team/integrations/audit',
     '/app/team/mcp-servers',
     '/app/team/mcp-share',
-  ];
+  ],
+};
 
-  for (const path of routes) {
-    await page.goto(path);
-    await expect(page.locator('h1'), `${path} should render exactly one h1`).toHaveCount(1);
-  }
-
-  await page.context().close();
-});
+for (const [group, routes] of Object.entries(headingRouteGroups)) {
+  test(`authenticated ${group} routes expose one page heading`, async ({ browser }) => {
+    test.slow();
+    const page = await newSignedInPage(browser, 'owner');
+    for (const path of routes) {
+      await page.goto(path);
+      await expect(page.locator('h1'), `${path} should render exactly one h1`).toHaveCount(1);
+    }
+    await page.context().close();
+  });
+}

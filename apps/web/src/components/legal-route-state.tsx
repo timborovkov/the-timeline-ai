@@ -8,6 +8,7 @@ interface LegalRouteStateProps {
   eyebrow: string;
   title: string;
   description: string;
+  footerLabel?: string;
 }
 
 interface LegalRouteErrorProps extends LegalRouteStateProps {
@@ -19,10 +20,11 @@ function LegalRouteFrame({
   eyebrow,
   title,
   description,
+  footerLabel = 'The Timeline legal',
   children,
 }: LegalRouteStateProps & { children: ReactNode }) {
   return (
-    <PublicShell width="reading" footerLabel="The Timeline legal">
+    <PublicShell width="reading" footerLabel={footerLabel}>
       <main id="main" className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <p className="text-xs font-medium text-fg-muted">{eyebrow}</p>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-fg">{title}</h1>
@@ -33,9 +35,19 @@ function LegalRouteFrame({
   );
 }
 
-export function LegalRouteLoading({ eyebrow, title, description }: LegalRouteStateProps) {
+export function LegalRouteLoading({
+  eyebrow,
+  title,
+  description,
+  footerLabel,
+}: LegalRouteStateProps) {
   return (
-    <LegalRouteFrame eyebrow={eyebrow} title={title} description={description}>
+    <LegalRouteFrame
+      eyebrow={eyebrow}
+      title={title}
+      description={description}
+      footerLabel={footerLabel}
+    >
       <output className="sr-only" aria-live="polite">
         Loading {title}
       </output>
@@ -60,11 +72,17 @@ export function LegalRouteError({
   eyebrow,
   title,
   description,
+  footerLabel,
   error,
   reset,
 }: LegalRouteErrorProps) {
   return (
-    <LegalRouteFrame eyebrow={eyebrow} title={title} description={description}>
+    <LegalRouteFrame
+      eyebrow={eyebrow}
+      title={title}
+      description={description}
+      footerLabel={footerLabel}
+    >
       <div className="mt-10 max-w-[70ch]">
         <ErrorState
           title={`Unable to load ${title}`}

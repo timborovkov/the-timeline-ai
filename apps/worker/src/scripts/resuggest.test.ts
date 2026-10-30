@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
-
+import { expect } from '@timeline/test-support';
+import { describe, it } from 'bun:test';
 describe('resuggest script', () => {
   it('uses a stable recovery suffix for conversation review jobs', () => {
     const source = readFileSync(new URL('./resuggest.ts', import.meta.url), 'utf8');
