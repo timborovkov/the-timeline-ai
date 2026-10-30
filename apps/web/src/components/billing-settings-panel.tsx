@@ -282,11 +282,11 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           {selfServe ? (
             <details id="change-plan">
               <summary
-                className={
+                className={`ml-auto w-fit ${
                   showPortal || paymentFailed
                     ? 'cursor-pointer text-sm text-fg-muted'
                     : PRIMARY_CLASS
-                }
+                }`}
               >
                 Change plan
               </summary>
