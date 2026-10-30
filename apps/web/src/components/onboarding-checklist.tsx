@@ -184,7 +184,7 @@ export function OnboardingChecklist({
       </>
     );
   }
-  const nextItem = data.items.find((item) => !item.completed);
+  const nextItem = data.items.find((item) => !item.completed && item.key !== 'billing_setup');
 
   return (
     <>
@@ -263,7 +263,7 @@ export function OnboardingChecklist({
                       </Link>
                     </p>
                   )}
-                  {isNext ? (
+                  {isNext || (item.key === 'billing_setup' && !item.completed) ? (
                     <>
                       <p className="mt-0.5 text-xs text-fg-muted">{meta.description}</p>
                       <div className="mt-2 flex flex-wrap items-center gap-2">

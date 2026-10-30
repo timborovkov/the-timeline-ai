@@ -478,7 +478,9 @@ work surface.
 
 Billing setup is an optional-on-Free checklist item linking owners/admins to plan
 selection; other members are directed to team owners. It completes from an active
-subscription or active comp arrangement, without a manual checkoff. Restricted
+subscription or active comp arrangement, without a manual checkoff. Its guidance
+and CTA remain visible independently of the next incomplete product step; it never
+blocks product onboarding progression. Restricted
 Free teams see the specific verification or grant issue with its resolution action.
 
 Attention has no visible heading; the region is named for
