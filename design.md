@@ -474,7 +474,14 @@ the remaining count. Off Home, a matching quiet header chip returns to the
 panel until the member hides it or every step is done. The account menu also
 reopens it. The checklist teaches the product loop (capture, people, sources,
 ask, meetings, trust memory, stay in the loop) rather than enumerating every
-work surface. Attention has no visible heading; the region is named for
+work surface.
+
+Billing setup is an optional-on-Free checklist item linking owners/admins to plan
+selection; other members are directed to team owners. It completes from an active
+subscription or active comp arrangement, without a manual checkoff. Restricted
+Free teams see the specific verification or grant issue with its resolution action.
+
+Attention has no visible heading; the region is named for
 assistive tech only.
 It shows only non-zero groups: pending approvals, overdue work, open tasks,
 open objects, recoverable jobs, and connection issues. Overdue work stays the

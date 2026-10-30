@@ -494,16 +494,20 @@ PLATFORM_ADMIN_EMAILS=
       </p>
       <p>
         The Change plan trigger stays aligned to the right edge when its options expand. New-team
-        creation currently attempts the owner's Free grant and then opens the timeline; it has no
-        dedicated billing onboarding step. An unverified owner or a Free grant assigned elsewhere
-        leaves the new team restricted. Explaining that reason and guiding the owner through
-        verification or plan selection remains an onboarding gap.
+        creation attempts the owner's Free grant and then opens the timeline. The team setup
+        checklist offers billing setup through Pay as you go or another plan, optional for eligible
+        Free teams. Completion is inferred from an active Polar subscription or active comp
+        arrangement, never from opening checkout or manually checking off the step. Non-admin
+        members are directed to team owners. The checklist cache may take up to 30 seconds to
+        reflect activation.
       </p>
       <p>
-        Usage and Billing distinguish account restrictions from exhausted allowances. A restricted
-        account shows “Metered work is paused for this workspace” with guidance to contact support,
-        even when usage is zero. The Free allowance banner requires exhausted usage counters;
-        payment failures and actual spend-cap limits retain their specific messages.
+        Restricted Free owners see their actual setup issue: an unverified email offers a
+        verification email action; a Free grant assigned elsewhere explains the limit and opens plan
+        selection. Other members are asked to contact an owner. Unknown restrictions retain the
+        support message. Verification rechecks eligibility; it does not promise a second Free grant.
+        The Free allowance banner requires exhausted usage counters; payment failures and actual
+        spend-cap limits retain their specific messages.
       </p>
       <p>
         New usage reservations also save the admitted metered discount percentage (including zero).

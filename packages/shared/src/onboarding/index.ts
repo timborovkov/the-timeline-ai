@@ -14,6 +14,7 @@ import {
   slackUserTeams,
   slackWorkspaceTeams,
   teamInvites,
+  teamBillingAccounts,
   teamMembers,
   teamOnboardingCompletions,
   telegramChatBindings,
@@ -25,7 +26,10 @@ import { and, count, eq, gt, inArray, isNull } from 'drizzle-orm';
 
 import type { TeamRole } from '#src/team-scope.js';
 
+import { isActiveComp } from '#src/billing/operator.js';
+
 export const ONBOARDING_STEPS = [
+  'billing_setup',
   'first_note',
   'invite_teammate',
   'telegram',
@@ -62,6 +66,7 @@ export interface OnboardingStepState {
 }
 
 export interface OnboardingChecklistState {
+  canManageBilling?: boolean;
   dismissed: boolean;
   steps: OnboardingStepState[];
   connectionCounts: {
@@ -98,6 +103,7 @@ function firstCount(rows: { total: number }[]): number {
 export function createOnboardingScope({ db, teamId, userId, ensureMember }: OnboardingScopeDeps) {
   async function markStepComplete(step: OnboardingStep): Promise<boolean> {
     await ensureMember();
+    if (step === 'billing_setup') return false;
     const inserted = await db
       .insert(teamOnboardingCompletions)
       .values({ teamId, step, completedByUserId: userId })
@@ -108,7 +114,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
 
   return {
     async getChecklistState(): Promise<OnboardingChecklistState> {
-      await ensureMember();
+      const role = await ensureMember();
       const [
         completions,
         dismissals,
@@ -131,6 +137,7 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         digestRows,
         webhookRows,
         outboundKeys,
+        billingAccounts,
       ] = await Promise.all([
         db
           .select()
@@ -231,6 +238,11 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
           .select({ total: count() })
           .from(mcpOutboundKeys)
           .where(and(eq(mcpOutboundKeys.teamId, teamId), isNull(mcpOutboundKeys.revokedAt))),
+        db
+          .select()
+          .from(teamBillingAccounts)
+          .where(eq(teamBillingAccounts.teamId, teamId))
+          .limit(1),
       ]);
 
       const explicit = new Map(completions.map((row) => [row.step, row] as const));
@@ -253,6 +265,17 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
         outboundMcpKeys: firstCount(outboundKeys),
       };
       const inferred = new Set<OnboardingStep>();
+      const billing = billingAccounts[0];
+      if (
+        billing &&
+        (isActiveComp(billing) ||
+          (billing.polarSubscriptionId &&
+            ['payg_active', 'team_active', 'business_active', 'enterprise_active'].includes(
+              billing.billingState,
+            )))
+      ) {
+        inferred.add('billing_setup');
+      }
       if (firstCount(capturedEvents) > 0) inferred.add('first_note');
       if (connectionCounts.activeMembers > 1 || connectionCounts.pendingInvites > 0) {
         inferred.add('invite_teammate');
@@ -290,10 +313,11 @@ export function createOnboardingScope({ db, teamId, userId, ensureMember }: Onbo
       }
 
       return {
+        canManageBilling: role === 'owner' || role === 'admin',
         dismissed: dismissals.length > 0,
         connectionCounts,
         steps: ONBOARDING_STEPS.map((step) => {
-          const row = explicit.get(step);
+          const row = step === 'billing_setup' ? undefined : explicit.get(step);
           return {
             step,
             completed: Boolean(row) || inferred.has(step),

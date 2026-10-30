@@ -3520,3 +3520,32 @@ describe('billing scope', () => {
     expect(search.ok).toBe(true);
   });
 });
+
+it('explains restricted Free setup without exposing another owner account', async () => {
+  const billing = createBillingScope({
+    db,
+    teamId: TEAM_ID,
+    userId: USER_ID,
+    ensureMember: () => Promise.resolve('owner'),
+  });
+  await billing.getAccount();
+  await db
+    .update(teamBillingAccounts)
+    .set({ billingState: 'restricted' })
+    .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+  expect((await billing.getDashboard()).restrictionReason).toBe('email_unverified');
+  await pg.exec(`
+    UPDATE users SET "emailVerified" = NOW() WHERE id = '${USER_ID}';
+    INSERT INTO teams (id, slug, name) VALUES ('bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee', 'other-grant', 'Other');
+    INSERT INTO billing_free_grants (user_id, assigned_team_id)
+    VALUES ('${USER_ID}', 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+  `);
+  expect((await billing.getDashboard()).restrictionReason).toBe('free_grant_elsewhere');
+  await pg.exec(`UPDATE team_members SET role = 'admin' WHERE team_id = '${TEAM_ID}'`);
+  expect((await billing.getDashboard()).restrictionReason).toBe('contact_owner');
+  await db
+    .update(teamBillingAccounts)
+    .set({ billingState: 'free' })
+    .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+  expect((await billing.getDashboard()).restrictionReason).toBeNull();
+});

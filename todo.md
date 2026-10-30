@@ -834,3 +834,5 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       changes, documents, document chunks, meeting transcript chunks, meeting
       summaries, integration events, calendar events, and optionally chat
       messages. Verify with periodic row-count vs. Qdrant payload audits.
+
+- [x] Team setup includes optional-on-Free billing setup, inferred from active billing arrangements; restricted Free banners explain email verification or a grant elsewhere with resolution actions.

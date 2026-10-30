@@ -10,6 +10,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
+import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
 import { PageHeader } from '@/components/page-header';
@@ -52,7 +53,11 @@ export default async function UsagePage() {
     return (
       <div className="space-y-5">
         <PageHeader variant="collection" title="Usage" />
-        {memberNotice ? <BillingStateBanner title={memberNotice} /> : null}
+        {dashboard.restrictionReason ? (
+          <BillingRestrictionNotice reason={dashboard.restrictionReason} />
+        ) : memberNotice ? (
+          <BillingStateBanner title={memberNotice} />
+        ) : null}
       </div>
     );
   }
@@ -70,7 +75,9 @@ export default async function UsagePage() {
         title="Usage"
         metadata={[{ label: 'Period', value: dashboard.periodYm, mono: true }]}
       />
-      {notice ? (
+      {dashboard.restrictionReason ? (
+        <BillingRestrictionNotice reason={dashboard.restrictionReason} />
+      ) : notice ? (
         <BillingStateBanner title={notice}>
           {state === 'spend_cap' ? (
             <Link

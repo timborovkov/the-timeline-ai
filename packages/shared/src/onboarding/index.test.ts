@@ -238,3 +238,42 @@ describe('onboarding checklist scope', () => {
     expect((await scope().getChecklistState()).connectionCounts.outboundMcpKeys).toBe(1);
   });
 });
+
+it('infers billing setup only from this team active subscription, never a manual checkoff', async () => {
+  expect(await scope().markStepComplete('billing_setup')).toBe(false);
+  expect(completedKeys(await scope().getChecklistState())).not.toContain('billing_setup');
+  await pg.exec(`
+    INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, polar_subscription_id)
+    VALUES ('${OTHER_TEAM_ID}', 'payg', 'payg_active', 'other-sub');
+  `);
+  expect(completedKeys(await scope().getChecklistState())).not.toContain('billing_setup');
+  await pg.exec(`
+    INSERT INTO team_billing_accounts (team_id, plan_id, billing_state)
+    VALUES ('${TEAM_ID}', 'payg', 'payg_active');
+  `);
+  expect(completedKeys(await scope().getChecklistState())).not.toContain('billing_setup');
+  await pg.exec(
+    `UPDATE team_billing_accounts SET polar_subscription_id = 'this-sub' WHERE team_id = '${TEAM_ID}'`,
+  );
+  expect(completedKeys(await scope().getChecklistState())).toContain('billing_setup');
+  for (const state of ['team_active', 'business_active', 'enterprise_active']) {
+    await pg.exec(
+      `UPDATE team_billing_accounts SET billing_state = '${state}' WHERE team_id = '${TEAM_ID}'`,
+    );
+    expect(completedKeys(await scope().getChecklistState())).toContain('billing_setup');
+  }
+  await pg.exec(
+    `UPDATE team_billing_accounts SET billing_state = 'canceled' WHERE team_id = '${TEAM_ID}'`,
+  );
+  expect(completedKeys(await scope().getChecklistState())).not.toContain('billing_setup');
+});
+
+it('treats an active comp as billing setup but not an expired comp', async () => {
+  await pg.exec(`INSERT INTO team_billing_accounts (team_id, plan_id, billing_state, arrangement, comp_expires_at)
+    VALUES ('${TEAM_ID}', 'team', 'team_active', 'comped', NOW() + INTERVAL '1 day')`);
+  expect(completedKeys(await scope().getChecklistState())).toContain('billing_setup');
+  await pg.exec(
+    `UPDATE team_billing_accounts SET comp_expires_at = NOW() - INTERVAL '1 day' WHERE team_id = '${TEAM_ID}'`,
+  );
+  expect(completedKeys(await scope().getChecklistState())).not.toContain('billing_setup');
+});

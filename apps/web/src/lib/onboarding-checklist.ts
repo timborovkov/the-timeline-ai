@@ -5,6 +5,7 @@ import type { OnboardingChecklistState, OnboardingStep } from '@timeline/shared/
 export const ONBOARDING_CHECKLIST_CACHE_TTL_SECONDS = 30;
 
 const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
+  billing_setup: 'Set up billing (optional on Free)',
   first_note: 'Capture one timeline event',
   invite_teammate: 'Invite a teammate',
   telegram: 'Link Telegram',
@@ -19,6 +20,7 @@ const ONBOARDING_STEP_LABELS: Record<OnboardingStep, string> = {
 };
 
 export interface OnboardingChecklistView {
+  canManageBilling?: boolean;
   dismissed: boolean;
   items: { key: string; label: string; completed: boolean }[];
 }
@@ -31,6 +33,7 @@ export function toOnboardingChecklistView(
   state: OnboardingChecklistState,
 ): OnboardingChecklistView {
   return {
+    ...(state.canManageBilling !== undefined ? { canManageBilling: state.canManageBilling } : {}),
     dismissed: state.dismissed,
     items: state.steps.map((step) => ({
       key: step.step,

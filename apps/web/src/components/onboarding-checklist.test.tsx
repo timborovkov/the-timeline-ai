@@ -40,6 +40,7 @@ afterEach(() => {
 
 function renderChecklist(
   data: {
+    canManageBilling?: boolean;
     dismissed: boolean;
     items: { key: string; label: string; completed: boolean }[];
   } | null,
@@ -626,4 +627,20 @@ describe('OnboardingChecklist', () => {
       screen.getByRole('button', { name: 'Team setup checklist' }),
     );
   });
+});
+
+it('offers billing setup without manual completion and directs members to owners', () => {
+  const items = [
+    { key: 'billing_setup', label: 'Set up billing (optional on Free)', completed: false },
+  ];
+  renderChecklist({ dismissed: false, canManageBilling: true, items });
+  expect(screen.getByRole('link', { name: 'Set up billing' }).getAttribute('href')).toBe(
+    '/app/team?section=billing#change-plan',
+  );
+  expect(screen.queryByText('Mark complete')).toBeNull();
+  cleanup();
+  renderChecklist({ dismissed: false, canManageBilling: false, items });
+  expect(screen.getByRole('link', { name: 'View team owners' }).getAttribute('href')).toBe(
+    '/app/team?section=members',
+  );
 });

@@ -9,6 +9,12 @@ import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import { customerBillingState } from '@/components/billing-customer-state';
 
 await vi.mock(
+  import.meta.resolve('@/app/actions/auth'),
+  () => ({ resendEmailVerificationAction: vi.fn() }),
+  () => import('@/app/actions/auth'),
+);
+
+await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({
     ...(await import('next/navigation')),
@@ -332,4 +338,35 @@ describe('billing restriction banners', () => {
       }),
     ).toBe('spend_cap');
   });
+});
+
+describe('specific billing setup guidance', () => {
+  it('offers email verification for an unverified owner', () => {
+    const html = renderToStaticMarkup(
+      panelElement({ restrictionReason: 'email_unverified', billingState: 'restricted' }),
+    );
+    expect(html).toContain('Send verification email');
+    expect(html).not.toContain('Contact support');
+  });
+  it('explains a Free grant elsewhere and opens plan selection', () => {
+    const html = renderToStaticMarkup(
+      panelElement({ restrictionReason: 'free_grant_elsewhere', billingState: 'restricted' }),
+    );
+    expect(html).toContain('Your Free allowance is assigned to another team');
+    expect(html).toContain('Choose a plan');
+    expect(html).toContain('id="change-plan" open=""');
+  });
+});
+
+it('sends a verification request and shows confirmation', async () => {
+  const { resendEmailVerificationAction } = await import('@/app/actions/auth');
+  vi.mocked(resendEmailVerificationAction).mockResolvedValueOnce({ ok: true });
+  const view = render(
+    panelElement({ restrictionReason: 'email_unverified', billingState: 'restricted' }),
+  );
+  fireEvent.click(view.getByRole('button', { name: 'Send verification email' }));
+  await waitFor(() => {
+    expect(view.getByRole('status').textContent).toContain('Verification email sent');
+  });
+  expect(resendEmailVerificationAction).toHaveBeenCalledTimes(1);
 });

@@ -338,6 +338,7 @@ export default async function TeamSettingsPage({
               meteredSpendCents={billingDashboard.meteredSpendCents}
               utilization={billingDashboard.utilization}
               freeRemaining={billingDashboard.freeRemaining}
+              restrictionReason={billingDashboard.restrictionReason}
               costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
               hasActiveTeamDiscount={Boolean(activePolarDiscountId(billingDashboard.account))}

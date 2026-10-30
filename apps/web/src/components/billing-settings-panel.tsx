@@ -22,6 +22,10 @@ import {
 import { BillingCompNotice } from '@/components/billing-comp-notice';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
 import { BillingPlanPreview } from '@/components/billing-plan-preview';
+import {
+  BillingRestrictionNotice,
+  type BillingRestrictionReason,
+} from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 
 const PRIMARY_CLASS =
@@ -33,6 +37,7 @@ export interface BillingSettingsPanelProps {
   planId: BillingPlanId;
   planName: string;
   billingState: string;
+  restrictionReason?: BillingRestrictionReason | null;
   spendCapCents: number;
   meteredSpendCents: number;
   utilization: SpendCapUtilization;
@@ -256,7 +261,10 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           ) : null}
         </BillingStateBanner>
       ) : null}
-      {state === 'allowance' || state === 'paused' ? (
+      {props.restrictionReason ? (
+        <BillingRestrictionNotice reason={props.restrictionReason} />
+      ) : null}
+      {state === 'allowance' || (state === 'paused' && !props.restrictionReason) ? (
         <BillingStateBanner title={BILLING_NOTICE_TITLE[state]} />
       ) : null}
 
@@ -280,7 +288,10 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
             </button>
           ) : null}
           {selfServe ? (
-            <details id="change-plan">
+            <details
+              id="change-plan"
+              open={props.restrictionReason === 'free_grant_elsewhere' || undefined}
+            >
               <summary
                 className={`ml-auto w-fit ${
                   showPortal || paymentFailed

@@ -8,6 +8,7 @@ import {
   billingUsageReservations,
   teamBillingAccounts,
   teamMembers,
+  users,
 } from '@timeline/db';
 import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 
@@ -497,6 +498,35 @@ export function createBillingScope(deps: BillingScopeDeps) {
       const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
       const freeRemaining = freeAllowanceRemaining(byMeter);
       const canManageBilling = options?.canManageBilling ?? false;
+      let restrictionReason: 'email_unverified' | 'free_grant_elsewhere' | 'contact_owner' | null =
+        null;
+      if (account.planId === 'free' && account.billingState === 'restricted') {
+        const [owner] = await db
+          .select({ emailVerified: users.emailVerified })
+          .from(teamMembers)
+          .innerJoin(users, eq(users.id, teamMembers.userId))
+          .where(
+            and(
+              eq(teamMembers.teamId, teamId),
+              eq(teamMembers.userId, userId),
+              eq(teamMembers.role, 'owner'),
+              isNull(teamMembers.removedAt),
+            ),
+          )
+          .limit(1);
+        if (!owner) restrictionReason = 'contact_owner';
+        else if (!owner.emailVerified) restrictionReason = 'email_unverified';
+        else {
+          const [grant] = await db
+            .select({ assignedTeamId: billingFreeGrants.assignedTeamId })
+            .from(billingFreeGrants)
+            .where(and(eq(billingFreeGrants.userId, userId), isNull(billingFreeGrants.revokedAt)))
+            .limit(1);
+          if (grant?.assignedTeamId && grant.assignedTeamId !== teamId)
+            restrictionReason = 'free_grant_elsewhere';
+        }
+      }
+
       const nudge = deriveBillingNudge({
         planId: commercial.planId,
         canManageBilling,
@@ -563,6 +593,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         utilization,
         nudge,
         sidebar,
+        restrictionReason,
         periodYm: ym,
         meters: byMeter,
         meteredSpendCents,
