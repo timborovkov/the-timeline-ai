@@ -1,5 +1,15 @@
 # Agent instructions
 
+## Scope checks to the work — operational changes are exempt
+
+For environment-variable edits, secret configuration, backup cleanup, deployment-only
+operations, and prose-only documentation or agent-instruction changes, do not run
+repo-wide lint, typecheck, React Doctor, or test suites. Verify the changed values
+without exposing secrets, review the relevant diff, and verify deployment status
+when deploying. Do not start unrelated checks merely because configuration changed.
+This exception takes precedence over the completion gates below. Explicit user
+instructions about checks take precedence as well.
+
 Conventions for any AI coding agent working in this repo (Claude Code, Codex,
 Cursor, etc.).
 
@@ -9,7 +19,8 @@ These gates are repo-wide, not scoped to the files you touched. Do not hand back
 commit, push, open a PR, mark work complete, or call a task "done" while any gate
 is red.
 
-After **any** code, configuration, or documentation change:
+After code changes or changes to executable configuration, scripts, examples, or
+generated artifacts (excluding the operational changes listed above):
 
 1. Run `bun run validate`.
    - This is the canonical static gate and must pass.

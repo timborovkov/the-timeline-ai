@@ -54,13 +54,13 @@
             <td><code>web</code></td>
             <td>App</td>
             <td><code>apps/web/railway.json</code> (Dockerfile)</td>
-            <td><code>NODE_ENV=production bun --no-env-file apps/web/start.mjs</code></td>
+            <td><code>env NODE_ENV=production bun --no-env-file apps/web/start.mjs</code></td>
           </tr>
           <tr>
             <td><code>worker</code></td>
             <td>App</td>
             <td><code>apps/worker/railway.json</code> (Dockerfile)</td>
-            <td><code>NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code></td>
+            <td><code>env NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code></td>
           </tr>
           <tr>
             <td><code>document-extract-orchestrator</code></td>
@@ -68,7 +68,7 @@
             <td><code>apps/worker/railway.extract.json</code> (Dockerfile)</td>
             <td>
               <code
-                >NODE_ENV=production WORKER_MODE=document-extract bun --no-env-file
+                >env NODE_ENV=production WORKER_MODE=document-extract bun --no-env-file
                 apps/worker/dist/extract-main.js</code
               >
             </td>
@@ -582,7 +582,7 @@ rclone sync s3:timeline-exports backblaze-b2:timeline-backup-exports
           restart. The pre-deploy command is already wired in
           <code>apps/web/railway.json</code> and <code>apps/worker/railway.json</code>:
           <pre><code>"preDeployCommand": [
-  "NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js"
+  "env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js"
 ]
 </code></pre>
           The script (<code>packages/db/src/migrate.ts</code>) is built before deploy, and the
