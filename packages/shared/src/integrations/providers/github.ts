@@ -3,7 +3,12 @@ import { createHash, createSign } from 'node:crypto';
 
 import { getEnv } from '#src/env.js';
 import { formatErrorCause } from '#src/http/error-cause.js';
-import { ExternalHttpError, externalFetch as fetch } from '#src/http/external-fetch.js';
+import { ExternalHttpError } from '#src/http/external-fetch.js';
+import {
+  providerFetch,
+  providerResponseLimit,
+  withProviderAccount,
+} from '#src/integrations/request.js';
 import { resolveSignalClassForEvent } from '#src/integrations/signal-class.js';
 import {
   attachSyncContinuation,
@@ -20,6 +25,8 @@ import {
   type SyncPartialFailure,
 } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
+
+const fetch = providerFetch('github');
 
 // Phase 11 — GitHub provider.
 //
@@ -258,6 +265,8 @@ async function postJson(
     parsed = text;
   }
   if (!res.ok) {
+    const quota = providerResponseLimit('github', res, text);
+    if (quota) throw quota;
     throw new Error(
       `GitHub ${String(res.status)}: ${typeof parsed === 'string' ? parsed : JSON.stringify(parsed)}`,
     );
@@ -354,6 +363,8 @@ async function createGithubInstallationAccessToken(
     parsed = text;
   }
   if (!res.ok) {
+    const quota = providerResponseLimit('github', res, text);
+    if (quota) throw quota;
     throw new Error(
       `GitHub POST /app/installations/${installationId}/access_tokens failed with status ${String(res.status)}: ${
         typeof parsed === 'string' ? parsed : JSON.stringify(parsed)
@@ -507,7 +518,10 @@ async function ghFetch(
   };
   if (validator?.etag) headers['if-none-match'] = validator.etag;
   if (validator?.lastModified) headers['if-modified-since'] = validator.lastModified;
-  const res = await fetch(`${API_BASE}${path}`, { headers });
+  const res = await withProviderAccount(
+    tokens.github_installation_id ? `installation:${tokens.github_installation_id}` : undefined,
+    () => fetch(`${API_BASE}${path}`, { headers }),
+  );
   const text = res.status === 304 ? '' : await res.text();
   return { res, text };
 }
@@ -631,9 +645,9 @@ function parseNonNegativeInt(value: string | null): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-function isGithubRateLimitError(err: unknown): err is GithubRateLimitError {
+function isGithubRateLimitError(err: unknown): err is ProviderRateLimitError {
   return (
-    err instanceof GithubRateLimitError ||
+    err instanceof ProviderRateLimitError ||
     (typeof err === 'object' &&
       err !== null &&
       'code' in err &&
@@ -3055,6 +3069,7 @@ export const githubProvider: IntegrationProvider = {
       login = me.login;
       sub = String(me.id);
     } catch (err) {
+      if (isGithubRateLimitError(err)) throw err;
       warnGithubFetch('failed to fetch GitHub /user', { err });
       throw new Error(
         'github_user_lookup_failed: could not resolve the authenticated user id from /user — reconnect and try again',
@@ -3064,6 +3079,7 @@ export const githubProvider: IntegrationProvider = {
       const installations = await loadGithubAppInstallations(tokens);
       if (installations.length > 0) tokens.github_app_installations = installations;
     } catch (err) {
+      if (isGithubRateLimitError(err)) throw err;
       warnGithubFetch('failed to fetch GitHub App installations for OAuth user', { err });
     }
     return {

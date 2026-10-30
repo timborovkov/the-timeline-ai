@@ -14,8 +14,8 @@ import { describe, it } from 'bun:test';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = join(__dirname, '../drizzle');
-/** origin/main `0076_integration_health_pause`, applied by #438. */
-const MAIN_LAST_WHEN = 1_795_654_920_000;
+/** origin/main `0077_mcp_health_schedule`, applied by #444. */
+const MAIN_LAST_WHEN = 1_795_654_980_000;
 
 interface JournalEntry {
   idx: number;
@@ -99,11 +99,16 @@ describe('drizzle journal order', () => {
     });
     expect(entries[76]).toMatchObject({
       idx: 76,
-      when: MAIN_LAST_WHEN,
+      when: 1_795_654_920_000,
       tag: '0076_integration_health_pause',
     });
     expect(entries[77]).toMatchObject({
       idx: 77,
+      when: MAIN_LAST_WHEN,
+      tag: '0077_mcp_health_schedule',
+    });
+    expect(entries[78]).toMatchObject({
+      idx: 78,
       tag: '0073_billing_foundation',
     });
     expect(
@@ -113,7 +118,7 @@ describe('drizzle journal order', () => {
     const freeGrantIndex = entries.findIndex(
       (entry) => entry.tag === '0075_billing_free_grant_backfill',
     );
-    expect(foundationIndex).toBeGreaterThan(76);
+    expect(foundationIndex).toBeGreaterThan(77);
     expect(freeGrantIndex).toBeGreaterThan(foundationIndex);
 
     const byTag = new Map(entries.map((entry) => [entry.tag, entry.when]));
@@ -148,8 +153,8 @@ describe('drizzle journal order', () => {
     try {
       const entries = readJournal();
       const shared = entries.filter((entry) => entry.when <= MAIN_LAST_WHEN);
-      expect(shared.at(-2)?.tag).toBe('0075_mcp_oauth_server');
-      expect(shared.at(-1)?.tag).toBe('0076_integration_health_pause');
+      expect(shared.at(-2)?.tag).toBe('0076_integration_health_pause');
+      expect(shared.at(-1)?.tag).toBe('0077_mcp_health_schedule');
       await drizzleMigrate(
         pg,
         shared.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
@@ -157,6 +162,8 @@ describe('drizzle journal order', () => {
       expect(await columnNames(pg, 'team_billing_accounts')).toEqual([]);
       expect(await columnNames(pg, 'billing_free_grants')).toEqual([]);
       expect(await columnNames(pg, 'legal_acceptances')).toContain('source');
+      expect(await columnNames(pg, 'mcp_servers')).toContain('next_health_check_at');
+      expect(await columnNames(pg, 'mcp_servers')).toContain('health_failures');
 
       await drizzleMigrate(
         pg,
@@ -176,6 +183,32 @@ describe('drizzle journal order', () => {
         `SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'billing_plan_history'`,
       );
       expect(tables.rows).toEqual([{ tablename: 'billing_plan_history' }]);
+    } finally {
+      await pg.close();
+    }
+  });
+
+  it('adds MCP health columns to an already migrated billing-branch database', async () => {
+    const pg = new PGlite();
+    try {
+      const entries = readJournal();
+      const beforeMerge = entries.filter(
+        (entry) => entry.tag !== '0077_mcp_health_schedule' && entry.when <= 1_795_655_800_000,
+      );
+      await drizzleMigrate(
+        pg,
+        beforeMerge.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
+      );
+      expect(await columnNames(pg, 'mcp_servers')).not.toContain('next_health_check_at');
+      expect(await columnNames(pg, 'team_billing_accounts')).toContain('price_override');
+
+      await drizzleMigrate(
+        pg,
+        entries.map((entry) => ({ when: entry.when, sql: readSql(entry.tag) })),
+      );
+      expect(await columnNames(pg, 'mcp_servers')).toContain('next_health_check_at');
+      expect(await columnNames(pg, 'mcp_servers')).toContain('health_failures');
+      expect(await columnNames(pg, 'team_billing_accounts')).toContain('price_override');
     } finally {
       await pg.close();
     }

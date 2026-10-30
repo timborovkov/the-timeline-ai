@@ -10,7 +10,7 @@ import {
 } from '@timeline/shared';
 import { bucketAnalyticsCount } from '@timeline/shared/analytics';
 import { isBillingAdmissionError } from '@timeline/shared/billing';
-import { Worker, type Job } from 'bullmq';
+import { DelayedError, UnrecoverableError, Worker, type Job } from 'bullmq';
 
 import { trackProductEventBestEffort } from '#src/analytics.js';
 import { captureWorkerJobFailure } from '#src/monitoring.js';
@@ -377,7 +377,19 @@ export function startConversationAgentWorker(
 ): Worker<queue.ConversationAgentJobData> {
   const worker = new Worker<queue.ConversationAgentJobData>(
     queue.QUEUE_NAMES.conversationAgent,
-    async (job: Job<queue.ConversationAgentJobData>) => processConversationAgentJob(deps, job.data),
+    async (job: Job<queue.ConversationAgentJobData>, token?: string) => {
+      try {
+        return await processConversationAgentJob(deps, job.data);
+      } catch (error) {
+        if (error instanceof Error && 'retryAt' in error && error.retryAt instanceof Date) {
+          await job.moveToDelayed(Math.max(Date.now() + 1000, error.retryAt.getTime()), token);
+          throw new DelayedError();
+        }
+        if (error instanceof Error && 'code' in error && error.code === 'delivery_outcome_unknown')
+          throw new UnrecoverableError(error.message);
+        throw error;
+      }
+    },
     { connection: queue.getRedisConnection(), concurrency: 2 },
   );
   worker.on('failed', (job, err) => {

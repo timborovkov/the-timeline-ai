@@ -60,7 +60,9 @@
             <td><code>worker</code></td>
             <td>App</td>
             <td><code>apps/worker/railway.json</code> (Dockerfile)</td>
-            <td><code>env NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code></td>
+            <td>
+              <code>env NODE_ENV=production bun --no-env-file apps/worker/dist/index.js</code>
+            </td>
           </tr>
           <tr>
             <td><code>document-extract-orchestrator</code></td>
@@ -88,7 +90,7 @@
           <tr>
             <td><code>qdrant</code></td>
             <td>Docker image</td>
-            <td><code>qdrant/qdrant:v1.12.4</code></td>
+            <td><code>qdrant/qdrant:v1.20.0</code></td>
             <td>(configured in Railway)</td>
           </tr>
           <tr>
@@ -115,7 +117,7 @@
         </li>
         <li>Add the Redis template. Inject its connection string as <code>REDIS_URL</code>.</li>
         <li>
-          Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.19.2</code>.
+          Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.20.0</code>.
           Persistent volume at <code>/qdrant/storage</code>. Size the memory limit from startup,
           search, and ingestion measurements (see <a href="#qdrant-memory">Qdrant memory</a>). Set
           <code>QDRANT__SERVICE__API_KEY</code> to a strong random value. Set
@@ -292,7 +294,9 @@ LOG_LEVEL=info
         <code>conversation-agent</code> queue worker claims the turn. The worker then refreshes
         typing and delivers durable Telegram answers after the request has returned. Slack worker
         delivery needs no plaintext bot-token variable because it decrypts the installed workspace
-        token from Postgres with <code>SECRETS_ENCRYPTION_KEY</code>.
+        token from Postgres with <code>SECRETS_ENCRYPTION_KEY</code>. The <code>chat-delivery</code>
+        worker resumes encrypted, quota-delayed command responses and never replays ambiguous
+        writes.
       </p>
       <p>
         <code>document-extract-orchestrator</code> service variables (keep this set minimal — ADR
@@ -407,17 +411,14 @@ BILLING_CHARGES_ENABLED=false
 
       <h2 id="staging-vs-production">Staging vs production</h2>
       <p>
-        Two Railway environments on the same project: <code>staging</code> and
-        <code>production</code>. Each gets its own Postgres, Redis, Qdrant, RustFS instances.
-        Domains:
+        The current project has only <code>production</code>, deployed from <code>main</code> at
+        <code>thetimeline.cc</code>. With no users, it also serves as the development and
+        deployment-verification environment.
       </p>
-      <ul>
-        <li><code>staging.thetimeline.cc</code> → staging web</li>
-        <li><code>thetimeline.cc</code> → production web</li>
-      </ul>
       <p>
-        Branch deploys: <code>main</code> → production, <code>staging</code> → staging. Configure
-        via Railway service settings.
+        If a separate staging environment is introduced later, give it isolated Postgres, Redis,
+        Qdrant, RustFS, and provider credentials. Configure its branch and domain then; a staging
+        deployment does not currently exist.
       </p>
 
       <h2 id="volumes-and-persistence">Volumes and persistence</h2>

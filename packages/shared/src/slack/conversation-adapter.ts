@@ -25,6 +25,7 @@ async function slackApiForDelivery(
   const { workspaceId, channelId } = slackConversationParts(input.externalConversationKey);
   const rows = await db
     .select({
+      slackTeamId: slackWorkspaces.slackTeamId,
       tokenCiphertext: slackWorkspaces.tokenCiphertext,
       tokenIv: slackWorkspaces.tokenIv,
       tokenTag: slackWorkspaces.tokenTag,
@@ -46,7 +47,7 @@ async function slackApiForDelivery(
     iv: row.tokenIv,
     tag: row.tokenTag,
   } satisfies EncryptedSecret) as SlackTokenJson;
-  return { api: new SlackApi(token.accessToken), channelId };
+  return { api: new SlackApi(token.accessToken, row.slackTeamId, false), channelId };
 }
 
 export async function createSlackConversationDeliveryAdapter(input: {

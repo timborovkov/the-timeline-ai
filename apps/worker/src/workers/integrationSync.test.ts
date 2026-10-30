@@ -181,10 +181,14 @@ beforeEach(() => {
   fakes.adminLoadIntegration.mockResolvedValue(integration);
   fakes.adminListEnabledIntegrations.mockResolvedValue([]);
   fakes.adminVerifyTeamMember.mockResolvedValue(true);
-  fakes.adminDecryptIntegrationTokens.mockResolvedValue({ access_token: 'token' });
+  fakes.adminDecryptIntegrationTokens.mockResolvedValue({ access_token: 'token', app_id: 'A1' });
   fakes.adminListSelections.mockResolvedValue([]);
   fakes.adminRecordAudit.mockResolvedValue(undefined);
-  fakes.adminLoadCursor.mockResolvedValue({});
+  fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+    Promise.resolve(
+      resource === 'slack.webhook' ? { verified_at: '2026-06-28T00:00:00.000Z', app_id: 'A1' } : {},
+    ),
+  );
   fakes.adminSaveCursor.mockResolvedValue(undefined);
   fakes.adminPersistTokens.mockResolvedValue(undefined);
   fakes.writeIntegrationEvents.mockResolvedValue(['raw-slack-1']);
@@ -371,7 +375,7 @@ describe('handleTick provider reconciliation cadence', () => {
         ...integration,
         id: '55555555-5555-4555-8555-555555555555',
         provider: 'google_drive',
-        lastSyncedAt: new Date(Date.now() - 16 * 60 * 1000),
+        lastSyncedAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
       },
     ]);
     fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
@@ -455,7 +459,7 @@ describe('handleTick provider reconciliation cadence', () => {
 
   it('enqueues GitHub again after the reconciliation interval elapses', async () => {
     fakes.adminListEnabledIntegrations.mockResolvedValueOnce([
-      { ...integration, lastSyncedAt: new Date(Date.now() - 7 * 60 * 60 * 1000) },
+      { ...integration, lastSyncedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) },
     ]);
     fakes.adminLoadIntegrationSyncPause.mockResolvedValue(null);
 
@@ -733,6 +737,63 @@ describe('runOneIntegration attention classification', () => {
       },
       { delayMs: 180_000 },
     );
+  });
+
+  it('leaves completed selections idle while another resource recovers', async () => {
+    fakes.adminListSelections.mockResolvedValue([
+      { kind: 'github.repo', externalId: 'acme/complete', label: 'Complete' },
+      { kind: 'github.repo', externalId: 'acme/pending', label: 'Pending' },
+    ]);
+    fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+      Promise.resolve(
+        resource === 'sync.recovery'
+          ? { completed: { 'github.repo:acme/complete': new Date().toISOString() } }
+          : {},
+      ),
+    );
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+    expect(fakes.incrementalSync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selections: [{ kind: 'github.repo', externalId: 'acme/pending', label: 'Pending' }],
+      }),
+    );
+  });
+
+  it.each(['google_drive', 'linear'] as const)(
+    'preserves all %s selections when advancing a shared cursor',
+    async (provider) => {
+      fakes.adminLoadIntegration.mockResolvedValue({ ...integration, provider });
+      const kind = provider === 'linear' ? 'linear.team' : 'drive.folder';
+      const selections = [
+        { kind, externalId: 'complete' },
+        { kind, externalId: 'pending' },
+      ];
+      fakes.adminListSelections.mockResolvedValue(selections);
+      fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+        Promise.resolve(
+          resource === 'sync.recovery'
+            ? { completed: { [`${kind}:complete`]: new Date().toISOString() } }
+            : {},
+        ),
+      );
+      await runOneIntegration({} as never, INTEGRATION_ID, 'incremental');
+      expect(fakes.incrementalSync).toHaveBeenCalledWith(expect.objectContaining({ selections }));
+    },
+  );
+
+  it('does not suppress push wake-ups after a successful scheduled recovery', async () => {
+    fakes.adminListSelections.mockResolvedValue([
+      { kind: 'github.repo', externalId: 'acme/app', label: 'App' },
+    ]);
+    fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+      Promise.resolve(
+        resource === 'sync.recovery'
+          ? { completed: { 'github.repo:acme/app': new Date().toISOString() } }
+          : {},
+      ),
+    );
+    await runOneIntegration({} as never, INTEGRATION_ID, 'incremental', undefined, 'webhook');
+    expect(fakes.incrementalSync).toHaveBeenCalled();
   });
 
   it('preserves integration failure state when a targeted surface continuation succeeds', async () => {
@@ -1749,12 +1810,19 @@ describe('runOneIntegration attention classification', () => {
     });
     fakes.adminDecryptIntegrationTokens.mockResolvedValueOnce({
       access_token: 'xoxb-token',
+      app_id: 'A1',
       team: { id: 'T123', name: 'Acme' },
     });
     fakes.adminListSelections.mockResolvedValueOnce([
       { kind: 'slack.channel', externalId: 'C123', label: '#leadership' },
     ]);
-    fakes.adminLoadCursor.mockResolvedValueOnce({ latest_ts: '1781999999.000000' });
+    fakes.adminLoadCursor.mockImplementation((_db, _id, resource) =>
+      Promise.resolve(
+        resource === 'slack.webhook'
+          ? { verified_at: '2026-06-28T00:00:00Z', app_id: 'A1' }
+          : { latest_ts: '1781999999.000000' },
+      ),
+    );
     fakes.getProvider.mockReturnValueOnce(integrations.slackProvider);
     vi.stubGlobal(
       'fetch',
@@ -1772,7 +1840,7 @@ describe('runOneIntegration attention classification', () => {
           if (typeof body !== 'string') throw new Error('expected Slack form body');
           const params = new URLSearchParams(body);
           expect(params.get('channel')).toBe('C123');
-          expect(params.get('oldest')).toBe('1780790399.000000');
+          expect(Number(params.get('oldest'))).toBeCloseTo((Date.now() - 48 * 3600_000) / 1000, 0);
           return Promise.resolve(
             new Response(
               JSON.stringify({
@@ -1823,7 +1891,13 @@ describe('runOneIntegration attention classification', () => {
       expect.anything(),
       INTEGRATION_ID,
       'slack.channel:C123',
-      { latest_ts: '1782000000.000100' },
+      {
+        latest_ts: '1782000000.000100',
+        initialized: true,
+        history_page: undefined,
+        pending_threads: [],
+        thread_versions: {},
+      },
       undefined,
     );
     expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
@@ -1831,7 +1905,17 @@ describe('runOneIntegration attention classification', () => {
       cursors: [
         {
           resourceType: 'slack.channel:C123',
-          cursor: { latest_ts: '1782000000.000100' },
+          cursor: {
+            latest_ts: '1782000000.000100',
+            initialized: true,
+            history_page: undefined,
+            pending_threads: [],
+            thread_versions: {},
+          },
+        },
+        {
+          resourceType: 'sync.recovery',
+          cursor: { completed: { 'slack.channel:C123': expect.any(String) as string } },
         },
       ],
       continuations: [],
@@ -2024,7 +2108,7 @@ describe('runOneIntegration attention classification', () => {
 
     expect(fakes.adminCommitIntegrationSyncCheckpoint).toHaveBeenCalledWith(expect.anything(), {
       integrationId: INTEGRATION_ID,
-      cursors: [],
+      cursors: [{ resourceType: 'sync.rotation', cursor: { offset: 1 } }],
       continuations: [
         {
           resourceType: 'monday.board',

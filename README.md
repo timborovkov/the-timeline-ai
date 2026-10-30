@@ -58,11 +58,16 @@ and Pipedrive app listings are separate future work.
 
 Requirements: Bun 1.4.4 and Docker. The runtime is pinned in `.bun-version`.
 
+Install the pinned runtime with `curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4"`,
+then open a new shell. Existing checkouts migrated from pnpm should remove their generated
+root and workspace `node_modules` directories before the frozen Bun install; keep `.env`
+and Docker volumes.
+
 ```bash
 git clone https://github.com/timborovkov/the-timeline-ai.git
 cd the-timeline-ai
 bun --version # must match .bun-version
-bun run deps
+bun run deps --frozen-lockfile
 
 cp .env.example .env
 ln -sf ../../.env apps/web/.env

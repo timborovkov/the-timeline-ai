@@ -42,9 +42,16 @@ export function createTelegramConversationDeliveryAdapter(input: {
     async startProgress() {
       let stopped = false;
       await input.api.sendChatAction({ chat_id: chatId, action: 'typing' }).catch(() => undefined);
+      let pending = false;
       const sendTyping = (): void => {
-        if (stopped) return;
-        void input.api.sendChatAction({ chat_id: chatId, action: 'typing' }).catch(() => undefined);
+        if (stopped || pending) return;
+        pending = true;
+        void input.api
+          .sendChatAction({ chat_id: chatId, action: 'typing' })
+          .catch(() => undefined)
+          .finally(() => {
+            pending = false;
+          });
       };
       const timer = setInterval(sendTyping, 4_000);
       timer.unref();
@@ -64,7 +71,7 @@ export function createTelegramWorkerDeliveryAdapter(input: {
   externalMessageId: string;
 }): ConversationDeliveryAdapter {
   return createTelegramConversationDeliveryAdapter({
-    api: new HttpTelegramApi(input.token),
+    api: new HttpTelegramApi(input.token, 10_000, false),
     externalConversationKey: input.externalConversationKey,
     externalMessageId: input.externalMessageId,
   });

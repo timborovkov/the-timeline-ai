@@ -7,6 +7,7 @@ import { linearProvider } from '#src/integrations/providers/linear.js';
 import { mondayProvider } from '#src/integrations/providers/monday.js';
 import { sentryProvider } from '#src/integrations/providers/sentry.js';
 import { slackProvider } from '#src/integrations/providers/slack.js';
+import { withProviderRequestContext } from '#src/integrations/request.js';
 
 // Phase 11 — Provider registry + integration catalog.
 //
@@ -47,7 +48,78 @@ const _registry: Record<NativeProviderId, IntegrationProvider> = {
 
 export function getProvider(id: string): IntegrationProvider {
   if (!isRegistryProviderId(id)) throw new Error(`Unknown integration provider: ${id}`);
-  return _registry[id];
+  const provider = _registry[id];
+  const provisionWebhooks = provider.provisionWebhooks?.bind(provider);
+  const deprovisionWebhook = provider.deprovisionWebhook?.bind(provider);
+  const handleWebhook = provider.handleWebhook?.bind(provider);
+  const env = getEnv();
+  const appKey =
+    {
+      google_drive: env.GOOGLE_CLIENT_ID,
+      linear: env.LINEAR_CLIENT_ID,
+      github: env.GITHUB_APP_ID ?? env.GITHUB_APP_CLIENT_ID,
+      monday: env.MONDAY_CLIENT_ID,
+      slack: env.SLACK_CLIENT_ID,
+      sentry: env.SENTRY_INTEGRATION_CLIENT_ID,
+    }[id] ?? id;
+  const run = <T>(
+    purpose: 'setup' | 'backfill' | 'resync' | 'webhook' | 'recovery',
+    account: string | null | undefined,
+    fn: () => T,
+  ) =>
+    withProviderRequestContext(
+      { provider: id, appKey, purpose, ...(account ? { externalAccountId: account } : {}) },
+      fn,
+    );
+  return {
+    ...provider,
+    ...(provisionWebhooks
+      ? {
+          provisionWebhooks: (
+            input: Parameters<NonNullable<IntegrationProvider['provisionWebhooks']>>[0],
+          ) =>
+            run('setup', input.integration.externalAccountId, () =>
+              provisionWebhooks.call(provider, input),
+            ),
+        }
+      : {}),
+    ...(deprovisionWebhook
+      ? {
+          deprovisionWebhook: (
+            input: Parameters<NonNullable<IntegrationProvider['deprovisionWebhook']>>[0],
+          ) =>
+            run('setup', input.integration.externalAccountId, () =>
+              deprovisionWebhook.call(provider, input),
+            ),
+        }
+      : {}),
+    handleOAuthCallback: (input) =>
+      run('setup', undefined, () => provider.handleOAuthCallback(input)),
+    listSyncableResources: (integration, tokens, ctx) =>
+      run('setup', integration.externalAccountId, () =>
+        provider.listSyncableResources(integration, tokens, ctx),
+      ),
+    backfill: (input) =>
+      run(input.purpose ?? 'backfill', input.integration.externalAccountId, () =>
+        provider.backfill(input),
+      ),
+    incrementalSync: (input) =>
+      run(
+        input.purpose ?? (input.target?.triggeredBy === 'webhook' ? 'webhook' : 'recovery'),
+        input.integration.externalAccountId,
+        () => provider.incrementalSync(input),
+      ),
+    ...(handleWebhook
+      ? {
+          handleWebhook: (
+            input: Parameters<NonNullable<IntegrationProvider['handleWebhook']>>[0],
+          ) =>
+            run('webhook', input.integration.externalAccountId, () =>
+              handleWebhook.call(provider, input),
+            ),
+        }
+      : {}),
+  };
 }
 
 function isRegistryProviderId(id: string): id is NativeProviderId {

@@ -10,7 +10,7 @@
     <a class="skip" href="#main">Skip to content</a>
     <main id="main">
       <h1>Local development</h1>
-      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-23</span></div>
+      <div class="meta"><span class="kind">Setup</span><span>Last updated 2026-10-28</span></div>
       <p class="tldr">
         Bring up the full Timeline stack on your machine with Docker Compose for infra and
         <code>bun run dev</code> for app + worker hot reload.
@@ -28,6 +28,13 @@
       </ul>
 
       <h2 id="first-time-setup">First-time setup</h2>
+      <pre><code>curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4"</code></pre>
+      <p>
+        Open a new shell after installing Bun. For a checkout previously installed with pnpm, remove
+        generated root and workspace <code>node_modules</code> directories before running
+        <code>bun run deps --frozen-lockfile</code>. Preserve <code>.env</code> and Docker volumes.
+        Stop old Node development processes before starting the Bun app and workers.
+      </p>
       <pre><code>bun --version # must match .bun-version
 cp .env.example .env
 # Next.js dev server reads env from the app dir, so symlink:
@@ -71,7 +78,7 @@ ln -sf ../../.env apps/web/.env
         <code>docker compose ps qdrant</code> before starting the updated Compose stack. Back up the
         stopped container's <code>/qdrant/storage</code> directory and upgrade through the latest
         patch of each intermediate minor version; a persisted 1.12 collection must not jump directly
-        to 1.19.2. See the
+        to 1.20.0. See the
         <a href="https://qdrant.tech/documentation/operations/upgrades/">Qdrant upgrade guide</a>.
         Recreating the container keeps its data volume and existing collection layout. After the
         server upgrade, use the collection-copy command below to adopt on-disk vectors without
@@ -115,6 +122,11 @@ bun run dev:seed:heavy         # optional extra volume for infinite-scroll / vir
         Exporting the root environment is required for the database and worker commands. The root
         <code>bun run dev</code> script runs Turbo in loose env mode so those exported values reach
         the worker; Next.js reads the same values through <code>apps/web/.env</code>.
+      </p>
+      <p>
+        After updating the billing branch with main, run <code>bun run db:migrate</code> before
+        restarting workers. A catch-up migration adds MCP health scheduling columns to databases
+        that already ran the billing migrations; existing columns and billing data are preserved.
       </p>
       <p>
         <code>bun run demo:seed</code> runs the idempotent dev seed, indexes every fixture-version

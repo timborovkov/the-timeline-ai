@@ -19,10 +19,10 @@ describe('Railway web config', () => {
     expect(config.build?.builder).toBe('DOCKERFILE');
     expect(config.build?.dockerfilePath).toBe('docker/web.Dockerfile');
     expect(config.deploy?.preDeployCommand).toEqual([
-      'NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js',
+      'env NODE_ENV=production bun --no-env-file packages/db/dist/migrate.js',
     ]);
     expect(config.deploy?.startCommand).toBe(
-      'NODE_ENV=production bun --no-env-file apps/web/start.mjs',
+      'env NODE_ENV=production bun --no-env-file apps/web/start.mjs',
     );
     expect(config.deploy?.preDeployCommand?.join(' ')).not.toContain('pnpm');
     expect(config.deploy?.startCommand).not.toContain('pnpm');

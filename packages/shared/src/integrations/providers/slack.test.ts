@@ -47,6 +47,35 @@ describe('slackProvider', () => {
     resetEnvForTests();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('hydrates only the affected file for a channel-scoped file event', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ ok: true, file: { id: 'F1', name: 'notes.pdf' } }));
+    vi.stubGlobal('fetch', fetch);
+    const events = await slackProvider.handleWebhook?.({
+      integration: { externalAccountId: 'T1' } as never,
+      tokens: { access_token: 'token' },
+      payload: {
+        event_id: 'E1',
+        event: {
+          type: 'file_shared',
+          file_id: 'F1',
+          channel_id: 'C1',
+          event_ts: '1782000000.000100',
+        },
+      },
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith(
+      'https://slack.com/api/files.info',
+      expect.objectContaining({ body: 'file=F1' }),
+    );
+    expect(events).toEqual([
+      expect.objectContaining({ externalObjectId: 'F1', eventType: 'file.shared' }),
+    ]);
   });
 
   it('builds a Slack OAuth authorize URL for native ingestion scopes', async () => {
@@ -127,7 +156,15 @@ describe('slackProvider', () => {
       return Promise.resolve(
         jsonResponse({
           ok: true,
-          messages: [{ type: 'message', user: 'U456', text: 'Agreed', ts: '1782000001.000200' }],
+          messages: [
+            {
+              type: 'message',
+              user: 'U456',
+              text: 'Agreed',
+              ts: '1782000001.000200',
+              reactions: [{ name: 'thumbsup', count: 1, users: ['U123'] }],
+            },
+          ],
         }),
       );
     });
@@ -147,22 +184,27 @@ describe('slackProvider', () => {
       ctx,
     });
 
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.eventType)).toEqual([
       'message.created',
       'reaction.added',
       'file.shared',
       'message.created',
+      'reaction.added',
     ]);
+    expect(events[4]?.dedupKey).toBe('slack:reaction:T123:C123:1782000001.000200:thumbsup');
     expect(events[1]?.dedupKey).toBe('slack:reaction:T123:C123:1782000000.000100:white_check_mark');
     expect(events[0]?.objectMap).toMatchObject({
       type: 'topic',
       externalId: 'C123:1782000000.000100',
     });
     expect(events[2]?.objectMap).toMatchObject({ type: 'document', externalId: 'F123' });
-    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
-      latest_ts: '1782000001.000200',
-    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'slack.channel:C123',
+      expect.objectContaining({
+        latest_ts: '1782000000.000100',
+      }),
+    );
   });
 
   it('uses the persisted integration account id as the Slack workspace id', async () => {
@@ -206,7 +248,7 @@ describe('slackProvider', () => {
       ctx,
     });
 
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events[0]?.dedupKey).toBe('slack:message:T_FROM_CONNECTION:C123:1782000000.000100:');
     expect(events[0]?.extra).toMatchObject({ slack_team_id: 'T_FROM_CONNECTION' });
   });
@@ -248,17 +290,24 @@ describe('slackProvider', () => {
       recordAudit: vi.fn(),
     };
 
-    await slackProvider.backfill({
-      integration: { id: 'integration-1' } as never,
-      tokens: { access_token: 'xoxb-token', team: { id: 'T123', name: 'Acme' } },
-      selections: [{ kind: 'slack.channel', externalId: 'C123' }],
-      ctx,
+    let saved: unknown = {};
+    ctx.loadCursor.mockImplementation(() => Promise.resolve(saved));
+    ctx.saveCursor.mockImplementation((_key: string, value: unknown) => {
+      saved = structuredClone(value);
+      return Promise.resolve();
     });
+    for (let page = 0; page < 7; page++)
+      await slackProvider.backfill({
+        integration: { id: 'integration-1' } as never,
+        tokens: { access_token: 'xoxb-token', team: { id: 'T123', name: 'Acme' } },
+        selections: [{ kind: 'slack.channel', externalId: 'C123' }],
+        ctx,
+      });
 
     const historyCalls = fetch.mock.calls.filter(([input]) =>
       requestUrl(input).endsWith('/conversations.history'),
     );
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(historyCalls).toHaveLength(7);
     expect(events.map((event) => event.contentText)).toEqual([
       'Message 0',
@@ -269,9 +318,12 @@ describe('slackProvider', () => {
       'Message 5',
       'Message 6',
     ]);
-    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
-      latest_ts: '1782000006.000100',
-    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'slack.channel:C123',
+      expect.objectContaining({
+        latest_ts: '1782000006.000100',
+      }),
+    );
   });
 
   it('caps Slack history pages and stores a bounded backfill continuation marker', async () => {
@@ -315,13 +367,16 @@ describe('slackProvider', () => {
     const historyCalls = fetch.mock.calls.filter(([input]) =>
       requestUrl(input).endsWith('/conversations.history'),
     );
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
-    expect(historyCalls).toHaveLength(25);
-    expect(events).toHaveLength(25);
-    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
-      latest_ts: '1782001000.000100',
-      backfill_before_ts: '1782000976.000100',
-    });
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
+    expect(historyCalls).toHaveLength(1);
+    expect(events).toHaveLength(1);
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'slack.channel:C123',
+      expect.objectContaining({
+        latest_ts: '1782001000.000100',
+        history_page: 'page-1',
+      }),
+    );
   });
 
   it('continues older Slack backfill from the stored continuation marker', async () => {
@@ -371,14 +426,18 @@ describe('slackProvider', () => {
       .filter(([input]) => requestUrl(input).endsWith('/conversations.history'))
       .map(([, init]) => new URLSearchParams(init?.body as string));
     expect(historyParams.some((params) => params.get('latest') === '1782000976.000100')).toBe(true);
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.contentText)).toEqual(['Older message']);
-    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
-      latest_ts: '1782001000.000100',
-    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'slack.channel:C123',
+      expect.objectContaining({
+        latest_ts: '1782001000.000100',
+      }),
+    );
   });
 
-  it('uses an incremental lookback so older edits and reactions are not skipped', async () => {
+  it('uses a bounded 48-hour recovery window for recent edits and reactions', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1782000200 * 1000);
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((input, init) => {
@@ -388,7 +447,7 @@ describe('slackProvider', () => {
       const params = new URLSearchParams(requestBody);
       if (input.endsWith('/conversations.history')) {
         expect(Number(params.get('oldest'))).toBeLessThan(1782000100);
-        expect(params.get('inclusive')).toBe('true');
+        expect(Number(params.get('oldest'))).toBe(1782000200 - 48 * 3600);
         return Promise.resolve(
           jsonResponse({
             ok: true,
@@ -424,11 +483,14 @@ describe('slackProvider', () => {
       ctx,
     });
 
-    const events = (ctx.writeEvents.mock.calls[0]?.[0] ?? []) as IntegrationEvent[];
+    const events = ctx.writeEvents.mock.calls.flatMap((call) => call[0] as IntegrationEvent[]);
     expect(events.map((event) => event.eventType)).toEqual(['message.edited', 'reaction.added']);
-    expect(ctx.saveCursor).toHaveBeenCalledWith('slack.channel:C123', {
-      latest_ts: '1782000100.000000',
-    });
+    expect(ctx.saveCursor).toHaveBeenCalledWith(
+      'slack.channel:C123',
+      expect.objectContaining({
+        latest_ts: '1782000100.000000',
+      }),
+    );
   });
 
   it('turns Slack Web API 429 responses into provider budget pauses', async () => {
@@ -465,5 +527,136 @@ describe('slackProvider', () => {
       retryAfterSeconds: 120,
       retryAt: new Date('2026-06-28T01:02:00.000Z'),
     });
+  });
+  it.each([false, true])(
+    'keeps resumed initial history unbounded, then bounds recovery (empty=%s)',
+    async (empty) => {
+      const fetch = vi
+        .fn<(...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>>()
+        .mockResolvedValueOnce(
+          jsonResponse({
+            ok: true,
+            messages: empty ? [] : [{ ts: '100.000001', text: 'Old' }],
+            response_metadata: { next_cursor: 'page-2' },
+          }),
+        )
+        .mockImplementation(() =>
+          Promise.resolve(jsonResponse({ ok: true, messages: [], response_metadata: {} })),
+        );
+      vi.stubGlobal('fetch', fetch);
+      let saved: unknown = {};
+      const ctx = {
+        loadCursor: vi.fn(() => Promise.resolve(saved)),
+        saveCursor: vi.fn((_key: string, value: unknown) => {
+          saved = structuredClone(value);
+          return Promise.resolve();
+        }),
+        writeEvents: vi.fn().mockResolvedValue([]),
+        persistTokens: vi.fn(),
+        recordAudit: vi.fn(),
+      };
+      const input = {
+        integration: { externalAccountId: 'T1' } as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'slack.channel', externalId: 'C1' }],
+        ctx,
+      };
+      for (let run = 0; run < 3; run++) await slackProvider.incrementalSync(input);
+      const params = fetch.mock.calls.map(([, init]) => new URLSearchParams(init?.body as string));
+      expect(params[0]?.has('oldest')).toBe(false);
+      expect(params[1]?.get('cursor')).toBe('page-2');
+      expect(params[1]?.has('oldest')).toBe(false);
+      expect(Number(params[2]?.get('oldest'))).toBeGreaterThan(Date.now() / 1000 - 49 * 3600);
+    },
+  );
+
+  it('does not rehydrate unchanged threads during daily recovery', async () => {
+    const now = Date.now();
+    const ts = ((now - 3600_000) / 1000).toFixed(6);
+    const root = {
+      ts,
+      thread_ts: ts,
+      reply_count: 1,
+      latest_reply: String(Number(ts) + 1),
+      text: 'Root',
+    };
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((url) =>
+      Promise.resolve(
+        jsonResponse({
+          ok: true,
+          messages: requestUrl(url).endsWith('/conversations.history')
+            ? [root]
+            : [{ ts: root.latest_reply, thread_ts: ts, text: 'Reply' }],
+          response_metadata: {},
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetch);
+    let cursor: unknown = { latest_ts: ts };
+    const ctx = {
+      loadCursor: vi.fn(() => Promise.resolve(cursor)),
+      saveCursor: vi.fn((_key: string, value: unknown) => {
+        cursor = structuredClone(value);
+        return Promise.resolve();
+      }),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    const input = {
+      integration: { externalAccountId: 'T1' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'slack.channel', externalId: 'C1' }],
+      ctx,
+    };
+    await slackProvider.incrementalSync(input);
+    await slackProvider.incrementalSync(input);
+    expect(
+      fetch.mock.calls.filter(([url]) => requestUrl(url).endsWith('/conversations.replies')),
+    ).toHaveLength(1);
+    expect(
+      fetch.mock.calls.filter(([url]) => requestUrl(url).endsWith('/conversations.history')),
+    ).toHaveLength(2);
+  });
+
+  it('normalizes replies and deletions without any API hydration and deduplicates deliveries', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const handle = slackProvider.handleWebhook?.bind(slackProvider);
+    if (!handle) throw new Error('missing Slack webhook handler');
+    const input = {
+      integration: { externalAccountId: 'T1' } as never,
+      payload: {
+        event_id: 'E1',
+        event: {
+          type: 'message',
+          channel: 'C1',
+          ts: '1782000001.000001',
+          thread_ts: '1782000000.000001',
+          text: 'Reply',
+        },
+      },
+    };
+    const first = await handle(input);
+    expect(await handle(input)).toEqual(first);
+    expect(first).toMatchObject([{ eventType: 'thread.reply' }]);
+    expect(
+      await handle({
+        ...input,
+        payload: {
+          event_id: 'E2',
+          event: {
+            type: 'message',
+            subtype: 'message_deleted',
+            channel: 'C1',
+            deleted_ts: '1782000001.000001',
+            event_ts: '1782000002.000001',
+          },
+        },
+      }),
+    ).toMatchObject([{ eventType: 'message.deleted' }]);
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

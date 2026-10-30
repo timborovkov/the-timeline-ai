@@ -10,8 +10,15 @@ import type {
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
-import { externalFetch as fetch } from '#src/http/external-fetch.js';
+import { providerFetch } from '#src/integrations/request.js';
+import {
+  attachSyncContinuation,
+  ProviderSyncDeferredError,
+  isProviderRateLimitError,
+} from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
+
+const fetch = providerFetch('linear');
 
 // Phase 11 — Linear provider.
 //
@@ -218,7 +225,7 @@ const PROJECT_FIELDS = `
   lead { id name }
 `;
 
-async function paginate<T>(
+async function paginate<T extends { updatedAt: string }>(
   tokens: LinearTokens,
   build: (after: string | null) => { query: string; variables: Record<string, unknown> },
   read: (data: unknown) => {
@@ -226,18 +233,63 @@ async function paginate<T>(
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
   },
   onPage: (nodes: T[]) => Promise<void>,
-  cap = 50,
-): Promise<void> {
-  let after: string | null = null;
-  for (let i = 0; i < cap; i++) {
-    const built = build(after);
-    const data = await gql<unknown>(tokens, built.query, built.variables);
-    const page = read(data);
-    if (page.nodes.length > 0) await onPage(page.nodes);
-    if (!page.pageInfo.hasNextPage || !page.pageInfo.endCursor) return;
-    after = page.pageInfo.endCursor;
+  progress: {
+    ctx: SyncContext;
+    key: string;
+    teamIds: string[];
+    state?: () => Record<string, unknown>;
+  },
+  cap = 10,
+): Promise<string> {
+  let saved = (await progress.ctx.loadCursor(`${progress.key}.page`)) as {
+    after?: string;
+    complete?: boolean;
+    since?: string | null;
+    latest?: string;
+    selectionKey?: string;
+  };
+  const selectionKey = [...progress.teamIds].sort().join(',');
+  if ((saved.after || saved.complete) && saved.selectionKey !== selectionKey) saved = {};
+  if (saved.complete) return saved.latest ?? '';
+  let after: string | null = saved.after ?? null;
+  let latest = saved.latest ?? '';
+  const firstTeam = progress.teamIds[0];
+  if (!firstTeam) throw new Error('linear_missing_selected_team');
+  const continuation = {
+    resourceType: 'linear.team',
+    externalId: firstTeam,
+    surface: progress.key,
+  };
+  let since: string | null | undefined = saved.since;
+  try {
+    for (let i = 0; i < cap; i++) {
+      const built = build(after);
+      if (since === undefined)
+        since = typeof built.variables.since === 'string' ? built.variables.since : null;
+      if (since !== null) built.variables.since = since;
+      const data = await gql<unknown>(tokens, built.query, built.variables);
+      const page = read(data);
+      if (page.nodes.length > 0) await onPage(page.nodes);
+      for (const node of page.nodes) if (node.updatedAt > latest) latest = node.updatedAt;
+      if (!page.pageInfo.hasNextPage || !page.pageInfo.endCursor) {
+        await progress.ctx.saveCursor(`${progress.key}.page`, {
+          complete: true,
+          since,
+          latest,
+          selectionKey,
+          ...progress.state?.(),
+        });
+        return latest;
+      }
+      after = page.pageInfo.endCursor;
+      const checkpoint = { after, since, latest, selectionKey, ...progress.state?.() };
+      await progress.ctx.saveCursor(`${progress.key}.page`, checkpoint);
+    }
+    throw new ProviderSyncDeferredError([continuation]);
+  } catch (error) {
+    if (error instanceof Error) throw attachSyncContinuation(error, continuation);
+    throw error;
   }
-  log.warn('paginate cap hit');
 }
 
 function linearPriorityLabel(
@@ -489,7 +541,10 @@ async function paginateIssues(
   issueStatuses: Record<string, string>,
 ): Promise<{ latest: string; issueStatuses: Record<string, string> }> {
   let latest = since ?? '';
-  let statuses = { ...issueStatuses };
+  const pageState = (await ctx.loadCursor('linear.issues.page')) as {
+    issue_statuses?: Record<string, string>;
+  };
+  let statuses = { ...issueStatuses, ...pageState.issue_statuses };
   const filterClauses: string[] = [];
   if (since) filterClauses.push('updatedAt: { gt: $since }');
   if (teamIds.length > 0) filterClauses.push('team: { id: { in: $teamIds } }');
@@ -503,11 +558,11 @@ async function paginateIssues(
       pageInfo { hasNextPage endCursor }
     }
   }`;
-  await paginate<LinearIssueNode>(
+  const pagedLatest = await paginate<LinearIssueNode>(
     tokens,
     (after) => {
       const v: Record<string, unknown> = { after };
-      if (since) v.since = since;
+      if (since) v.since = new Date(Date.parse(since) - 1000).toISOString();
       if (teamIds.length > 0) v.teamIds = teamIds;
       return { query, variables: v };
     },
@@ -534,8 +589,9 @@ async function paginateIssues(
       for (const n of nodes) if (n.updatedAt > latest) latest = n.updatedAt;
       statuses = pruneIssueStatuses(statuses, touched);
     },
+    { ctx, key: 'linear.issues', teamIds, state: () => ({ issue_statuses: statuses }) },
   );
-  return { latest, issueStatuses: statuses };
+  return { latest: pagedLatest > latest ? pagedLatest : latest, issueStatuses: statuses };
 }
 
 async function paginateComments(
@@ -558,11 +614,11 @@ async function paginateComments(
       pageInfo { hasNextPage endCursor }
     }
   }`;
-  await paginate<LinearCommentNode>(
+  const pagedLatest = await paginate<LinearCommentNode>(
     tokens,
     (after) => {
       const v: Record<string, unknown> = { after };
-      if (since) v.since = since;
+      if (since) v.since = new Date(Date.parse(since) - 1000).toISOString();
       if (teamIds.length > 0) v.teamIds = teamIds;
       return { query, variables: v };
     },
@@ -579,8 +635,9 @@ async function paginateComments(
       await ctx.writeEvents(nodes.map(commentToEvent));
       for (const n of nodes) if (n.updatedAt > latest) latest = n.updatedAt;
     },
+    { ctx, key: 'linear.comments', teamIds },
   );
-  return latest;
+  return pagedLatest > latest ? pagedLatest : latest;
 }
 
 async function paginateProjects(
@@ -603,11 +660,11 @@ async function paginateProjects(
       pageInfo { hasNextPage endCursor }
     }
   }`;
-  await paginate<LinearProjectNode>(
+  const pagedLatest = await paginate<LinearProjectNode>(
     tokens,
     (after) => {
       const v: Record<string, unknown> = { after };
-      if (since) v.since = since;
+      if (since) v.since = new Date(Date.parse(since) - 1000).toISOString();
       if (teamIds.length > 0) v.teamIds = teamIds;
       return { query, variables: v };
     },
@@ -624,8 +681,9 @@ async function paginateProjects(
       await ctx.writeEvents(nodes.map(projectToEvent));
       for (const n of nodes) if (n.updatedAt > latest) latest = n.updatedAt;
     },
+    { ctx, key: 'linear.projects', teamIds },
   );
-  return latest;
+  return pagedLatest > latest ? pagedLatest : latest;
 }
 
 export function verifyLinearSignature(body: string, signature: string | null): boolean {
@@ -684,6 +742,7 @@ export const linearProvider: IntegrationProvider = {
       orgName = `Linear — ${data.viewer.organization.name}`;
       orgId = data.viewer.organization.id;
     } catch (err) {
+      if (isProviderRateLimitError(err)) throw err;
       log.warn({ err }, 'failed to fetch linear viewer');
       throw new Error(
         'linear_viewer_lookup_failed: could not resolve the authenticated org id from viewer — reconnect and try again',
@@ -757,6 +816,8 @@ export const linearProvider: IntegrationProvider = {
     }
     if (latestComments) await ctx.saveCursor('linear.comments', { updated_after: latestComments });
     if (latestProjects) await ctx.saveCursor('linear.projects', { updated_after: latestProjects });
+    for (const key of ['linear.issues', 'linear.comments', 'linear.projects'])
+      await ctx.saveCursor(`${key}.page`, {});
   },
 
   async incrementalSync({ tokens, selections, ctx }) {
@@ -789,6 +850,8 @@ export const linearProvider: IntegrationProvider = {
     });
     await ctx.saveCursor('linear.comments', { updated_after: latestComments || commentsSince });
     await ctx.saveCursor('linear.projects', { updated_after: latestProjects || projectsSince });
+    for (const key of ['linear.issues', 'linear.comments', 'linear.projects'])
+      await ctx.saveCursor(`${key}.page`, {});
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await

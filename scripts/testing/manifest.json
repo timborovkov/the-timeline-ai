@@ -1298,6 +1298,9 @@
   "apps/worker/src/workers/calendarRecurrence.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/workers/chatDelivery.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/workers/conversationAgent.test.ts": {
     "group": "integration"
   },
@@ -1520,6 +1523,9 @@
   "packages/shared/src/conversation-review/index.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/conversation-surfaces/deferred-delivery.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/conversation-surfaces/object-discussion.test.ts": {
     "group": "unit"
   },
@@ -1661,11 +1667,20 @@
   "packages/shared/src/integrations/registry.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/integrations/request-budget.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/request.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/integrations/scope.test.ts": {
     "group": "integration"
   },
   "packages/shared/src/integrations/signal-class.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/integrations/slack-ingress.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/integrations/webhooks.test.ts": {
     "group": "integration"

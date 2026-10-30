@@ -25,6 +25,8 @@ interface ConnectedRow {
   displayName: string;
   enabled: boolean;
   lastSyncedAt: string | null;
+  pendingSync?: boolean;
+  setupRequired?: boolean;
   lastError: string | null;
   syncPause: { retryAt: string; reason: string; scope: string | null } | null;
   healthPause: {
@@ -63,7 +65,11 @@ function syncPauseText(
   if (!syncPause) return null;
   const scope = syncPause.scope ? ` (${syncPause.scope})` : '';
   return {
-    reason: `Provider quota cooldown${scope}. Sync resumes`,
+    reason: ['shared_request_budget', 'timeline_daily_budget', 'timeline_minute_reserve'].includes(
+      syncPause.reason,
+    )
+      ? 'Paused for API budget. Sync resumes'
+      : `Provider quota cooldown${scope}. Sync resumes`,
     retryAt: syncPause.retryAt,
   };
 }
@@ -240,6 +246,12 @@ export function ConnectedIntegrations({
               <CollectionRow.Context>{c.displayName}</CollectionRow.Context>
               <CollectionRow.Metadata>
                 <>
+                  {c.pendingSync ? (
+                    <span className="text-[11px] text-fg-dim">Setup or recovery pending</span>
+                  ) : null}
+                  {c.setupRequired ? (
+                    <span className="text-[11px] text-fg-dim">Slack event setup required</span>
+                  ) : null}
                   {!c.enabled ? <span className="text-[11px] text-fg-dim">Disabled</span> : null}
                   <RelativeTimestamp
                     prefix="Last synced"
@@ -317,7 +329,9 @@ export function ConnectedIntegrations({
                 <InlineError
                   message={connectionErrorMessage(c.lastError)}
                   details={c.lastError}
-                  onRetry={needsReplacement ? undefined : () => void call('sync', c.id)}
+                  onRetry={
+                    needsReplacement || c.setupRequired ? undefined : () => void call('sync', c.id)
+                  }
                   retrying={busy === `sync:${c.id}`}
                   retryLabel="Retry sync"
                 />

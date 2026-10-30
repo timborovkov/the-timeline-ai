@@ -23,6 +23,8 @@ function row(overrides: Partial<McpServerRow> = {}): McpServerRow {
     cachedTools: null,
     toolsCachedAt: null,
     lastConnectedAt: null,
+    nextHealthCheckAt: null,
+    healthFailures: 0,
     lastError: null,
     createdAt: new Date(),
     updatedAt: new Date(),

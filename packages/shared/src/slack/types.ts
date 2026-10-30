@@ -24,6 +24,7 @@ export const slackMessageEventSchema = z
     text: z.string().optional(),
     ts: z.string(),
     event_ts: z.string().optional(),
+    edited: z.object({ ts: z.string() }).optional(),
     thread_ts: z.string().optional(),
     message: z
       .object({
@@ -32,6 +33,7 @@ export const slackMessageEventSchema = z
         text: z.string().optional(),
         ts: z.string().optional(),
         thread_ts: z.string().optional(),
+        edited: z.object({ ts: z.string() }).optional(),
         files: z.array(slackFileSchema).optional(),
       })
       .loose()

@@ -544,99 +544,113 @@
     {
       "idx": 77,
       "version": "7",
+      "when": 1795654980000,
+      "tag": "0077_mcp_health_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
       "when": 1795654990000,
       "tag": "0073_billing_foundation",
       "breakpoints": true
     },
     {
-      "idx": 78,
+      "idx": 79,
       "version": "7",
       "when": 1795655000000,
       "tag": "0074_billing_usage_alert_intent",
       "breakpoints": true
     },
     {
-      "idx": 79,
+      "idx": 80,
       "version": "7",
       "when": 1795655020000,
       "tag": "0075_billing_free_grant_backfill",
       "breakpoints": true
     },
     {
-      "idx": 80,
+      "idx": 81,
       "version": "7",
       "when": 1795655080000,
       "tag": "0076_billing_polar_clock_and_unverified_grants",
       "breakpoints": true
     },
     {
-      "idx": 81,
+      "idx": 82,
       "version": "7",
       "when": 1795655140000,
       "tag": "0077_billing_member_day_plan_and_membership_intervals",
       "breakpoints": true
     },
     {
-      "idx": 82,
+      "idx": 83,
       "version": "7",
       "when": 1795655320000,
       "tag": "0080_billing_replay_corrections",
       "breakpoints": true
     },
     {
-      "idx": 83,
+      "idx": 84,
       "version": "7",
       "when": 1795655330000,
       "tag": "0078_billing_operator_controls",
       "breakpoints": true
     },
     {
-      "idx": 84,
+      "idx": 85,
       "version": "7",
       "when": 1795655340000,
       "tag": "0079_billing_unbilled_alerts",
       "breakpoints": true
     },
     {
-      "idx": 85,
+      "idx": 86,
       "version": "7",
       "when": 1795655380000,
       "tag": "0081_billing_enterprise_pending",
       "breakpoints": true
     },
     {
-      "idx": 86,
+      "idx": 87,
       "version": "7",
       "when": 1795655440000,
       "tag": "0082_billing_enterprise_platform_fee",
       "breakpoints": true
     },
     {
-      "idx": 87,
+      "idx": 88,
       "version": "7",
       "when": 1795655620000,
       "tag": "0085_billing_cancel_effective_at",
       "breakpoints": true
     },
     {
-      "idx": 88,
+      "idx": 89,
       "version": "7",
       "when": 1795655680000,
       "tag": "0086_billing_plan_history_baseline",
       "breakpoints": true
     },
     {
-      "idx": 89,
+      "idx": 90,
       "version": "7",
       "when": 1795655740000,
       "tag": "0087_billing_cap_eligible_spend",
       "breakpoints": true
     },
     {
-      "idx": 90,
+      "idx": 91,
       "version": "7",
       "when": 1795655800000,
       "tag": "0088_billing_reservation_admitted_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1795655860000,
+      "tag": "0089_mcp_health_schedule_catchup",
       "breakpoints": true
     }
   ]

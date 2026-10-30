@@ -44,3 +44,6 @@ export {
 export { mondayProvider } from '#src/integrations/providers/monday.js';
 export { sentryProvider } from '#src/integrations/providers/sentry.js';
 export { setSlackProviderFetchForTests, slackProvider } from '#src/integrations/providers/slack.js';
+
+export { withProviderRequestContext, providerRecoveryEnabled } from '#src/integrations/request.js';
+export { acceptSignedSlackNativeEvent } from '#src/integrations/slack-ingress.js';

@@ -1,23 +1,31 @@
+import type { externalFetch } from '#src/http/external-fetch.js';
 import type {
   IntegrationEvent,
   IntegrationProvider,
   OAuthCallbackInput,
   ProviderRateLimitError,
   ProviderResource,
+  SyncContext,
+  SyncContinuation,
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
-import { externalFetch } from '#src/http/external-fetch.js';
-import { ProviderRateLimitError as ProviderRateLimit } from '#src/integrations/types.js';
+import { providerFetch, providerRetryAt } from '#src/integrations/request.js';
+import {
+  attachSyncContinuation,
+  ProviderRateLimitError as ProviderRateLimit,
+} from '#src/integrations/types.js';
 import { SlackApi } from '#src/slack/api.js';
 
-let fetch: typeof externalFetch = externalFetch;
+const defaultFetch = providerFetch('slack');
+
+let fetch: typeof externalFetch = defaultFetch;
 
 export function setSlackProviderFetchForTests(transport?: typeof externalFetch): void {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('Slack provider test transport is unavailable in production');
   }
-  fetch = transport ?? externalFetch;
+  fetch = transport ?? defaultFetch;
 }
 
 const AUTH_URL = 'https://slack.com/oauth/v2/authorize';
@@ -31,9 +39,7 @@ const SCOPES = [
   'users:read',
   'users:read.email',
 ];
-const INCREMENTAL_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
-const HISTORY_PAGE_LIMIT = 25;
-const REPLIES_PAGE_LIMIT = 10;
+const INCREMENTAL_LOOKBACK_MS = 48 * 60 * 60 * 1000;
 
 interface SlackTokens {
   access_token: string;
@@ -54,6 +60,8 @@ interface SlackMessage {
   text?: string;
   ts: string;
   thread_ts?: string;
+  reply_count?: number;
+  latest_reply?: string;
   edited?: { user?: string; ts?: string };
   reactions?: { name: string; count: number; users?: string[] }[];
   files?: {
@@ -76,13 +84,13 @@ interface SlackHistoryResponse {
 interface SlackCursor {
   latest_ts?: string | undefined;
   backfill_before_ts?: string | undefined;
-}
-
-function historyOldest(cursor: SlackCursor): string | undefined {
-  if (!cursor.latest_ts) return undefined;
-  const shifted = Number(cursor.latest_ts) - INCREMENTAL_LOOKBACK_MS / 1000;
-  if (!Number.isFinite(shifted) || shifted <= 0) return undefined;
-  return shifted.toFixed(6);
+  history_page?: string | undefined;
+  history_oldest?: string | undefined;
+  pending_threads?: { ts: string; next?: string; signature: string }[];
+  thread_versions?: Record<string, string>;
+  history_complete?: boolean;
+  full_walk?: boolean;
+  initialized?: boolean;
 }
 
 function buildAuthorizeUrl(input: {
@@ -94,19 +102,14 @@ function buildAuthorizeUrl(input: {
   url.searchParams.set('client_id', input.clientId);
   url.searchParams.set('redirect_uri', input.redirectUri);
   url.searchParams.set('scope', SCOPES.join(','));
+  url.searchParams.set('user_scope', 'channels:history,groups:history');
   url.searchParams.set('state', input.state);
   return url.toString();
 }
 
-function retryAfterSeconds(value: string | null): number {
-  if (!value) return 60;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.ceil(parsed) : 60;
-}
-
 function slackRateLimitError(method: string, res: Response): ProviderRateLimitError {
-  const retryAfter = retryAfterSeconds(res.headers.get('retry-after'));
-  const retryAt = new Date(Date.now() + retryAfter * 1000);
+  const retryAt = providerRetryAt(res.headers);
+  const retryAfter = Math.max(1, Math.ceil((retryAt.getTime() - Date.now()) / 1000));
   return new ProviderRateLimit({
     provider: 'slack',
     retryAt,
@@ -136,96 +139,9 @@ async function slackCall<T extends { ok: boolean; error?: string }>(
   });
   if (res.status === 429) throw slackRateLimitError(method, res);
   const json = (await res.json()) as T;
+  if (json.error === 'ratelimited') throw slackRateLimitError(method, res);
   if (!res.ok || !json.ok) throw new Error(`Slack ${method} failed: ${json.error ?? res.status}`);
   return json;
-}
-
-async function fetchHistory(
-  token: string,
-  channel: string,
-  cursor: SlackCursor,
-): Promise<{ messages: SlackMessage[]; next: SlackCursor }> {
-  const messages: SlackMessage[] = [];
-  let maxTs = cursor.latest_ts;
-  let backfillBeforeTs = cursor.backfill_before_ts;
-
-  async function collectPages(
-    params: Record<string, string | number | boolean | undefined>,
-    pageLimit: number,
-  ): Promise<{ exhausted: boolean; minTs?: string }> {
-    let pageCursor: string | undefined;
-    let minTs: string | undefined;
-    for (let page = 0; page < pageLimit; page++) {
-      const res = await slackCall<SlackHistoryResponse>(token, 'conversations.history', {
-        channel,
-        limit: 200,
-        cursor: pageCursor,
-        include_all_metadata: true,
-        ...params,
-      });
-      for (const message of res.messages ?? []) {
-        messages.push(message);
-        if (!maxTs || Number(message.ts) > Number(maxTs)) maxTs = message.ts;
-        if (!minTs || Number(message.ts) < Number(minTs)) minTs = message.ts;
-      }
-      pageCursor = res.response_metadata?.next_cursor ?? undefined;
-      if (!pageCursor) return { exhausted: true, ...(minTs ? { minTs } : {}) };
-    }
-    return { exhausted: false, ...(minTs ? { minTs } : {}) };
-  }
-
-  const oldest = historyOldest(cursor);
-  const recent = await collectPages(
-    {
-      oldest,
-      inclusive: Boolean(oldest),
-    },
-    HISTORY_PAGE_LIMIT,
-  );
-  if (!cursor.latest_ts && !recent.exhausted) {
-    backfillBeforeTs = recent.minTs;
-  }
-
-  if (cursor.backfill_before_ts) {
-    const backfill = await collectPages(
-      {
-        latest: cursor.backfill_before_ts,
-        inclusive: false,
-      },
-      HISTORY_PAGE_LIMIT,
-    );
-    backfillBeforeTs = backfill.exhausted ? undefined : backfill.minTs;
-  }
-
-  const next: SlackCursor = {};
-  if (maxTs ?? cursor.latest_ts) next.latest_ts = maxTs ?? cursor.latest_ts;
-  if (backfillBeforeTs) next.backfill_before_ts = backfillBeforeTs;
-  return {
-    messages,
-    next,
-  };
-}
-
-async function fetchReplies(
-  token: string,
-  channel: string,
-  root: SlackMessage,
-): Promise<SlackMessage[]> {
-  if (!root.thread_ts || root.thread_ts !== root.ts) return [];
-  const replies: SlackMessage[] = [];
-  let pageCursor: string | undefined;
-  for (let page = 0; page < REPLIES_PAGE_LIMIT; page++) {
-    const res = await slackCall<SlackHistoryResponse>(token, 'conversations.replies', {
-      channel,
-      ts: root.thread_ts,
-      limit: 200,
-      cursor: pageCursor,
-    });
-    replies.push(...(res.messages ?? []).filter((message) => message.ts !== root.ts));
-    pageCursor = res.response_metadata?.next_cursor ?? undefined;
-    if (!pageCursor) break;
-  }
-  return replies;
 }
 
 function occurredAtFromTs(ts: string): Date {
@@ -341,22 +257,137 @@ async function syncChannel(
   teamId: string,
   channel: string,
   cursor: SlackCursor,
-): Promise<{ events: IntegrationEvent[]; cursor: SlackCursor }> {
-  const history = await fetchHistory(token, channel, cursor);
-  const withReplies: SlackMessage[] = [];
-  for (const message of history.messages) {
-    withReplies.push(message, ...(await fetchReplies(token, channel, message)));
+  ctx: SyncContext,
+  replyToken = token,
+): Promise<SyncContinuation[]> {
+  const key = `slack.channel:${channel}`;
+  const continuation = { resourceType: 'slack.channel', externalId: channel };
+  const next: SlackCursor = {
+    ...cursor,
+    thread_versions: { ...cursor.thread_versions },
+    pending_threads: [...(cursor.pending_threads ?? [])],
+  };
+  const pendingThreads = next.pending_threads ?? [];
+  const versions = next.thread_versions ?? {};
+  const save = async (pending: boolean) => {
+    if (pending && ctx.saveCursorWithContinuations)
+      await ctx.saveCursorWithContinuations(key, next, [continuation]);
+    else await ctx.saveCursor(key, next);
+  };
+  try {
+    if (!next.pending_threads?.length && !next.history_complete) {
+      const oldest =
+        next.history_oldest ??
+        ((next.initialized || next.latest_ts) && !next.backfill_before_ts && !next.full_walk
+          ? ((Date.now() - INCREMENTAL_LOOKBACK_MS) / 1000).toFixed(6)
+          : undefined);
+      const page = await slackCall<SlackHistoryResponse>(token, 'conversations.history', {
+        channel,
+        limit: 15,
+        cursor: next.history_page,
+        oldest,
+        ...(next.backfill_before_ts ? { latest: next.backfill_before_ts, inclusive: false } : {}),
+      });
+      const messages = page.messages ?? [];
+      await ctx.writeEvents(
+        messages.flatMap((message) => [
+          messageEvent(teamId, channel, message),
+          ...reactionEvents(teamId, channel, message),
+          ...fileEvents(teamId, channel, message),
+        ]),
+      );
+      for (const message of messages) {
+        if (!next.latest_ts || Number(message.ts) > Number(next.latest_ts))
+          next.latest_ts = message.ts;
+        if (message.thread_ts !== message.ts) continue;
+        // Root metadata does not prove replies are unchanged. Quota protection
+        // deliberately leaves missed reply edits to manual resync.
+        const signature = `${message.reply_count ?? ''}:${message.latest_reply ?? ''}:${message.edited?.ts ?? ''}`;
+        if (next.thread_versions?.[message.ts] !== signature)
+          pendingThreads.push({ ts: message.ts, signature });
+      }
+      next.history_page = page.response_metadata?.next_cursor ?? undefined;
+      next.history_oldest = oldest;
+      next.history_complete = !next.history_page;
+      await save(false);
+    }
+    const thread = next.pending_threads?.[0];
+    if (thread) {
+      const page = await slackCall<SlackHistoryResponse>(replyToken, 'conversations.replies', {
+        channel,
+        ts: thread.ts,
+        cursor: thread.next,
+        limit: 15,
+      });
+      await ctx.writeEvents(
+        (page.messages ?? [])
+          .filter((message) => message.ts !== thread.ts)
+          .flatMap((message) => [
+            messageEvent(teamId, channel, message),
+            ...reactionEvents(teamId, channel, message),
+            ...fileEvents(teamId, channel, message),
+          ]),
+      );
+      const pageCursor = page.response_metadata?.next_cursor;
+      if (pageCursor) thread.next = pageCursor;
+      else {
+        versions[thread.ts] = thread.signature;
+        pendingThreads.shift();
+      }
+    }
+    const pending = (next.pending_threads?.length ?? 0) > 0 || Boolean(next.history_page);
+    if (!pending) {
+      next.initialized = true;
+      delete next.full_walk;
+      delete next.history_complete;
+      delete next.history_oldest;
+      delete next.backfill_before_ts;
+      // Only retain recent thread metadata; content remains in immutable events.
+      next.thread_versions = Object.fromEntries(
+        Object.entries(next.thread_versions ?? {}).filter(
+          ([ts]) => Number(ts) * 1000 >= Date.now() - INCREMENTAL_LOOKBACK_MS,
+        ),
+      );
+    }
+    await save(pending);
+    return pending ? [continuation] : [];
+  } catch (error) {
+    await save(true);
+    if (error instanceof Error) throw attachSyncContinuation(error, continuation);
+    throw error;
   }
-  const latestTs = withReplies.reduce(
-    (latest, message) => (!latest || Number(message.ts) > Number(latest) ? message.ts : latest),
-    history.next.latest_ts,
-  );
-  const events = withReplies.flatMap((message) => [
-    messageEvent(teamId, channel, message),
-    ...reactionEvents(teamId, channel, message),
-    ...fileEvents(teamId, channel, message),
-  ]);
-  return { events, cursor: latestTs ? { ...history.next, latest_ts: latestTs } : history.next };
+}
+
+async function syncSlackResources(
+  { integration, tokens, selections, ctx }: Parameters<IntegrationProvider['backfill']>[0],
+  full: boolean,
+) {
+  const slackTokens = tokens as SlackTokens;
+  const teamId = integration.externalAccountId ?? slackTokens.team?.id;
+  if (!teamId) throw new Error('slack_missing_team_id');
+  const continuations: SyncContinuation[] = [];
+  for (const selection of selections.filter((item) => item.kind === 'slack.channel')) {
+    const cursor = (await ctx.loadCursor(`slack.channel:${selection.externalId}`)) as SlackCursor;
+    // A migration-paused initial import can resume via the scheduled worker.
+    // Keep its unbounded initial window stable across all continuation pages.
+    if (!cursor.initialized && !cursor.latest_ts) cursor.full_walk = true;
+    if (full && !cursor.full_walk && !cursor.history_page && !cursor.pending_threads?.length) {
+      cursor.full_walk = true;
+      delete cursor.history_oldest;
+      cursor.thread_versions = {};
+    }
+    continuations.push(
+      ...(await syncChannel(
+        slackTokens.access_token,
+        teamId,
+        selection.externalId,
+        cursor,
+        ctx,
+        slackTokens.authed_user?.access_token,
+      )),
+    );
+  }
+  return continuations.length ? { continuations } : undefined;
 }
 
 export const slackProvider: IntegrationProvider = {
@@ -402,7 +433,7 @@ export const slackProvider: IntegrationProvider = {
     return {
       externalAccountId: oauth.team.id,
       displayName: `Slack — ${oauth.team.name ?? oauth.team.id}`,
-      scopes: SCOPES,
+      scopes: oauth.scope?.split(',') ?? [],
       tokens: tokens as unknown as Record<string, unknown>,
     };
   },
@@ -419,24 +450,74 @@ export const slackProvider: IntegrationProvider = {
     }));
   },
 
-  async backfill({ integration, tokens, selections, ctx }) {
-    const slackTokens = tokens as SlackTokens;
-    const teamId = integration.externalAccountId ?? slackTokens.team?.id;
-    if (!teamId) throw new Error('slack_missing_team_id');
-    for (const selection of selections.filter((item) => item.kind === 'slack.channel')) {
-      const cursor = (await ctx.loadCursor(`slack.channel:${selection.externalId}`)) as SlackCursor;
-      const result = await syncChannel(
-        slackTokens.access_token,
-        teamId,
-        selection.externalId,
-        cursor,
-      );
-      await ctx.writeEvents(result.events);
-      await ctx.saveCursor(`slack.channel:${selection.externalId}`, result.cursor);
+  backfill(input) {
+    return syncSlackResources(input, true);
+  },
+
+  async handleWebhook({ integration, tokens, payload }) {
+    const root = payload as { event?: Record<string, unknown>; event_id?: string };
+    const event = root.event;
+    if (!event) return [];
+    const item = event.item as { channel?: string; ts?: string } | undefined;
+    const channel =
+      typeof event.channel === 'string'
+        ? event.channel
+        : typeof event.channel_id === 'string'
+          ? event.channel_id
+          : item?.channel;
+    if (!channel) return [];
+    const team = integration.externalAccountId ?? '';
+    if (
+      (event.type === 'file_shared' || event.type === 'file_change') &&
+      typeof event.file_id === 'string'
+    ) {
+      const response = await slackCall<{
+        ok: boolean;
+        file?: NonNullable<SlackMessage['files']>[number];
+      }>((tokens as unknown as SlackTokens).access_token, 'files.info', { file: event.file_id });
+      if (!response.file) return [];
+      return fileEvents(team, channel, {
+        ts: typeof event.event_ts === 'string' ? event.event_ts : '0',
+        files: [response.file],
+      });
     }
+    if (event.type === 'message' && event.subtype !== 'message_deleted') {
+      const rawMessage = event.subtype === 'message_changed' ? event.message : event;
+      if (
+        !rawMessage ||
+        typeof rawMessage !== 'object' ||
+        !('ts' in rawMessage) ||
+        typeof rawMessage.ts !== 'string'
+      )
+        return [];
+      const message = rawMessage as SlackMessage;
+      return [messageEvent(team, channel, message), ...fileEvents(team, channel, message)];
+    }
+    const deleted = event.subtype === 'message_deleted';
+    const reaction = event.type === 'reaction_added' || event.type === 'reaction_removed';
+    const ts = deleted ? event.deleted_ts : item?.ts;
+    if ((!deleted && !reaction) || typeof ts !== 'string') return [];
+    return [
+      {
+        provider: 'slack',
+        dedupKey: `slack:event:${root.event_id}`,
+        externalObjectId: `${channel}:${ts}`,
+        externalEventId: root.event_id ?? ts,
+        eventType: deleted
+          ? 'message.deleted'
+          : event.type === 'reaction_added'
+            ? 'reaction.added'
+            : 'reaction.removed',
+        occurredAt: occurredAtFromTs(typeof event.event_ts === 'string' ? event.event_ts : ts),
+        contentText: deleted
+          ? 'Slack message deleted'
+          : `Slack reaction ${typeof event.reaction === 'string' ? event.reaction : ''}`,
+        extra: { slack_team_id: team, slack_channel_id: channel, slack_message_ts: ts },
+      },
+    ];
   },
 
   async incrementalSync({ integration, tokens, selections, ctx }) {
-    await this.backfill({ integration, tokens, selections, ctx });
+    return syncSlackResources({ integration, tokens, selections, ctx }, false);
   },
 };

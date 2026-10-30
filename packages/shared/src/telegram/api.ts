@@ -1,3 +1,8 @@
+import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
+import { getEnv } from '#src/env.js';
+import { requestBudgetIdentity } from '#src/integrations/request-budget.js';
+import { providerRetryAt, withExternalRequest } from '#src/integrations/request.js';
+import { getRedisConnection } from '#src/queue/connection.js';
 /**
  * Minimal Telegram Bot API client. We only implement the handful of methods
  * the webhook flow needs, plus `setMyCommands` for startup `/` menu
@@ -58,17 +63,43 @@ export class HttpTelegramApi implements TelegramApi {
   constructor(
     private readonly token: string,
     private readonly requestTimeoutMs = 10_000,
+    private readonly deferRateLimits = true,
   ) {
     if (!token) throw new Error('TELEGRAM_BOT_TOKEN is required');
   }
 
   private async call<T>(method: string, body: unknown): Promise<T> {
+    return withExternalRequest(
+      { provider: 'telegram', identity: this.token, operation: method },
+      () => this.request<T>(method, body),
+    );
+  }
+
+  private async request<T>(method: string, body: unknown): Promise<T> {
     const res = await fetch(`https://api.telegram.org/bot${this.token}/${method}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(this.requestTimeoutMs),
+    }).catch((error: unknown) => {
+      if (method === 'sendMessage')
+        throw Object.assign(new Error('Telegram delivery outcome unknown'), {
+          code: 'delivery_outcome_unknown',
+          cause: error,
+        });
+      throw error;
     });
+    if (res.status === 429) {
+      const body = (await res.json().catch(() => ({}))) as {
+        parameters?: { retry_after?: number };
+      };
+      const headers = new Headers(res.headers);
+      if (typeof body.parameters?.retry_after === 'number')
+        headers.set('retry-after', String(body.parameters.retry_after));
+      throw Object.assign(new Error('Telegram rate limited'), {
+        retryAt: providerRetryAt(headers),
+      });
+    }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`Telegram ${method} failed: ${res.status} ${text}`);
@@ -81,7 +112,19 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   async sendMessage(input: Parameters<TelegramApi['sendMessage']>[0]): Promise<void> {
-    await this.call('sendMessage', input);
+    try {
+      await this.call('sendMessage', input);
+    } catch (error) {
+      if (
+        this.deferRateLimits &&
+        (await deferChatDelivery(
+          { provider: 'telegram', token: this.token, method: 'send', body: input },
+          error,
+        ))
+      )
+        return;
+      throw error;
+    }
   }
 
   async getChatAdministrators(
@@ -97,7 +140,19 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   async editMessageText(input: Parameters<TelegramApi['editMessageText']>[0]): Promise<void> {
-    await this.call('editMessageText', input);
+    try {
+      await this.call('editMessageText', input);
+    } catch (error) {
+      if (
+        this.deferRateLimits &&
+        (await deferChatDelivery(
+          { provider: 'telegram', token: this.token, method: 'edit', body: input },
+          error,
+        ))
+      )
+        return;
+      throw error;
+    }
   }
 
   async getFile(input: Parameters<TelegramApi['getFile']>[0]): Promise<TelegramFileInfo> {
@@ -113,6 +168,10 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   async sendChatAction(input: Parameters<TelegramApi['sendChatAction']>[0]): Promise<void> {
+    if (getEnv().REDIS_URL) {
+      const key = `${requestBudgetIdentity('telegram', this.token)}:typing:${input.chat_id}`;
+      if (!(await getRedisConnection().set(key, '1', 'PX', 4000, 'NX'))) return;
+    }
     await this.call('sendChatAction', input);
   }
 
@@ -129,10 +188,21 @@ export class HttpTelegramApi implements TelegramApi {
   }
 
   async downloadFile(filePath: string, maxBytes?: number): Promise<Buffer> {
+    return withExternalRequest(
+      { provider: 'telegram', identity: this.token, operation: 'downloadFile' },
+      () => this.readFile(filePath, maxBytes),
+    );
+  }
+
+  private async readFile(filePath: string, maxBytes?: number): Promise<Buffer> {
     const res = await fetch(`https://api.telegram.org/file/bot${this.token}/${filePath}`, {
       signal: AbortSignal.timeout(this.requestTimeoutMs),
     });
     if (!res.ok) {
+      if (res.status === 429)
+        throw Object.assign(new Error('Telegram rate limited'), {
+          retryAt: providerRetryAt(res.headers),
+        });
       throw new Error(`Telegram file download failed: ${res.status}`);
     }
     if (maxBytes !== undefined) {

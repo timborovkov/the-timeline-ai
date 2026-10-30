@@ -111,6 +111,7 @@ interface SlackTokenJson {
 export interface SlackWorkspaceRecord {
   id: string;
   slackTeamId: string;
+  appId?: string | null;
   botUserId: string | null;
   tokenCiphertext: Buffer;
   tokenIv: Buffer;
@@ -135,7 +136,8 @@ export async function handleSlackEnvelope(
   try {
     const workspace = await findWorkspaceBySlackTeamId(deps.db, envelope.team_id);
     if (!workspace) return { ok: true };
-    const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken);
+    if (workspace.appId && envelope.api_app_id !== workspace.appId) return { ok: false };
+    const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken, workspace.slackTeamId);
     const event = envelope.event;
     if (event.type === 'app_mention') {
       await handleAppMention(deps, api, workspace, envelope.event_id, event);
@@ -180,7 +182,7 @@ export async function handleSlackSlashCommand(
   if (input.command !== '/ask' && input.command !== '/timeline') return;
   const workspace = await findWorkspaceBySlackTeamId(deps.db, input.team_id);
   if (!workspace) return;
-  const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken);
+  const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken, workspace.slackTeamId);
   if (input.command === '/ask') {
     const conversation = await api.conversationsInfo(input.channel_id).catch(() => null);
     const active = await findActiveSlackLink(deps.db, workspace.id, input.user_id);
@@ -720,7 +722,7 @@ export async function handleSlackInteraction(
   if (!team?.id || !user?.id || !action?.value) return { ok: false };
   const workspace = await findWorkspaceBySlackTeamId(deps.db, team.id);
   if (!workspace) return { ok: true };
-  const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken);
+  const api = new SlackApi(decryptWorkspaceToken(workspace).accessToken, workspace.slackTeamId);
   const linked = await findActiveSlackLink(deps.db, workspace.id, user.id);
   if (!linked) {
     await api.postMessage({
@@ -866,7 +868,7 @@ export async function listSlackConversationsForTeam(input: {
 }): Promise<SlackConversation[]> {
   const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
   if (!install) return [];
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken);
+  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
   return api.conversationsList();
 }
 
@@ -882,7 +884,7 @@ export async function sendTeamSlackMessage(input: {
 }): Promise<void> {
   const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
   if (!install) throw new Error('Slack workspace is no longer enabled for this team');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken);
+  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
   await api.postMessage({ channel: input.channelId, text: input.text });
 }
 
@@ -894,7 +896,7 @@ export async function sendTeamSlackDirectMessage(input: {
 }): Promise<void> {
   const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
   if (!install) throw new Error('Slack workspace is no longer enabled for this team');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken);
+  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
   try {
     await api.postMessage({ channel: input.slackUserId, text: input.text });
   } catch {
@@ -911,7 +913,7 @@ export async function bindSlackConversation(input: {
 }): Promise<void> {
   const install = await findWorkspaceInstallForTeam(input.db, input.teamId);
   if (!install) throw new Error('slack_workspace_not_installed');
-  const api = new SlackApi(decryptWorkspaceToken(install).accessToken);
+  const api = new SlackApi(decryptWorkspaceToken(install).accessToken, install.slackTeamId);
   const info = await api.conversationsInfo(input.conversationId);
   const values = {
     conversationType: conversationType(info),
@@ -1117,6 +1119,7 @@ async function handleMessageEvent(
   const senderDisplayName = sender?.realName ?? sender?.name ?? senderId;
   const authorUserId = route.linkedUserId;
   const metadata: Record<string, unknown> = {
+    dedup_key: `slack:message:${workspace.slackTeamId}:${event.channel}:${ts}:${isEdit ? (message?.edited?.ts ?? eventTs) : ''}`,
     slack_event_id: slackEventId,
     slack_workspace_id: workspace.id,
     slack_team_id: workspace.slackTeamId,
@@ -1848,6 +1851,7 @@ async function findWorkspaceBySlackTeamId(
     .select({
       id: slackWorkspaces.id,
       slackTeamId: slackWorkspaces.slackTeamId,
+      appId: slackWorkspaces.appId,
       botUserId: slackWorkspaces.botUserId,
       tokenCiphertext: slackWorkspaces.tokenCiphertext,
       tokenIv: slackWorkspaces.tokenIv,
@@ -1867,6 +1871,7 @@ async function findWorkspaceInstallForTeam(
     .select({
       id: slackWorkspaces.id,
       slackTeamId: slackWorkspaces.slackTeamId,
+      appId: slackWorkspaces.appId,
       botUserId: slackWorkspaces.botUserId,
       tokenCiphertext: slackWorkspaces.tokenCiphertext,
       tokenIv: slackWorkspaces.tokenIv,
