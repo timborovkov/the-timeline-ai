@@ -74,6 +74,14 @@ ln -sf ../../.env apps/web/.env
       </p>
 
       <p>
+        Local Compose uses PostgreSQL 18. For an existing PostgreSQL 16 volume, follow the
+        <a href="postgres18.md">data-preserving PostgreSQL upgrade procedure</a> before startup.
+        Keep <code>POSTGRES_DATA_VOLUME=postgres_data</code> until the documented migration; the
+        image refuses old data rather than silently replacing it. Never use a volume reset to
+        resolve this upgrade error.
+      </p>
+
+      <p>
         When upgrading an existing Qdrant container, check its running image with
         <code>docker compose ps qdrant</code> before starting the updated Compose stack. Back up the
         stopped container's <code>/qdrant/storage</code> directory and upgrade through the latest
