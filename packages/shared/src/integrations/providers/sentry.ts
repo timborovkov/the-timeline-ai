@@ -5,10 +5,15 @@ import type {
   OAuthCallbackInput,
   ProviderResource,
   TargetedSyncTask,
+  SyncContext,
+  SyncContinuation,
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
-import { externalFetch as fetch } from '#src/http/external-fetch.js';
+import { providerFetch } from '#src/integrations/request.js';
+import { attachSyncContinuation } from '#src/integrations/types.js';
+
+const fetch = providerFetch('sentry');
 
 const AUTH_URL = 'https://sentry.io/oauth/authorize/';
 const TOKEN_URL = 'https://sentry.io/oauth/token/';
@@ -62,6 +67,8 @@ interface SentryRelease {
 }
 
 interface SentryCursor {
+  page?: { surface: 'issues' | 'releases'; next: string; latest: string; boundary?: string };
+
   issues_since?: string | undefined;
   releases_since?: string | undefined;
   /**
@@ -124,6 +131,9 @@ async function postForm(
 
 async function sentryRequest(tokens: SentryTokens, pathOrUrl: string): Promise<Response> {
   const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${API_BASE}${pathOrUrl}`;
+  const parsed = new URL(url);
+  if (parsed.origin !== new URL(API_BASE).origin || !parsed.pathname.startsWith('/api/0/'))
+    throw new Error('Invalid Sentry pagination URL');
   return fetch(
     url,
     {
@@ -726,71 +736,128 @@ async function syncProject(
   orgSlug: string,
   projectSlug: string,
   cursor: SentryCursor,
-): Promise<{ events: IntegrationEvent[]; cursor: SentryCursor }> {
-  const query = cursor.issues_since
-    ? `?query=${encodeURIComponent(`lastSeen:>${cursor.issues_since}`)}`
-    : '?query=';
-  const issues = await sentryGetAll<SentryIssue>(
-    tokens,
-    `/projects/${encodeURIComponent(orgSlug)}/${encodeURIComponent(projectSlug)}/issues/${query}`,
-  );
-  const releases = await sentryGetAll<SentryRelease>(
-    tokens,
-    `/projects/${encodeURIComponent(orgSlug)}/${encodeURIComponent(projectSlug)}/releases/`,
-  ).catch(() => []);
-  const releaseEvents = releases
-    .map((release) => releaseEvent(orgSlug, projectSlug, release))
-    .filter(
-      (event) =>
-        !cursor.releases_since || event.occurredAt > dateValue(cursor.releases_since, new Date(0)),
-    );
-  let issueLifecycles = { ...(cursor.issue_lifecycles ?? {}) };
-  const touchedIssueIds = new Set<string>();
-  const issueEvents = issues.map((issue) => {
-    const previous = issueLifecycles[issue.id];
-    const event = issueEvent(orgSlug, projectSlug, issue, previous);
-    const bucket = event.dedupKey.slice(`sentry:issue:${issue.id}:`.length);
-    issueLifecycles[issue.id] = bucket;
-    touchedIssueIds.add(issue.id);
-    return event;
-  });
-  issueLifecycles = pruneSentryIssueLifecycles(issueLifecycles, touchedIssueIds);
-  const events = [...issueEvents, ...releaseEvents];
-  const latestIssue = events
-    .filter((event) => event.eventType.startsWith('issue.'))
-    .map((event) => event.occurredAt.toISOString())
-    .sort()
-    .at(-1);
-  const latestRelease = events
-    .filter((event) => event.eventType === 'release.created')
-    .map((event) => event.occurredAt.toISOString())
-    .sort()
-    .at(-1);
-  return {
-    events,
-    cursor: {
-      issues_since: latestIssue ?? cursor.issues_since,
-      releases_since: latestRelease ?? cursor.releases_since,
-      issue_lifecycles: issueLifecycles,
-    },
-  };
+  ctx: SyncContext,
+): Promise<SyncContinuation[]> {
+  const project = `${orgSlug}/${projectSlug}`;
+  const resource = `sentry.project:${project}`;
+  const continuation = { resourceType: 'sentry.project', externalId: project };
+  const base = `/projects/${encodeURIComponent(orgSlug)}/${encodeURIComponent(projectSlug)}`;
+  const state: SentryCursor = { ...cursor };
+  const save = () => ctx.saveCursor(resource, state);
+  try {
+    for (const surface of ['issues', 'releases'] as const) {
+      if (state.page?.surface === 'releases' && surface === 'issues') continue;
+      const boundary =
+        state.page?.boundary ?? (surface === 'issues' ? state.issues_since : state.releases_since);
+      let next: string | null =
+        state.page?.next ??
+        `${base}/${surface}/${surface === 'issues' ? `?query=${encodeURIComponent(boundary ? `lastSeen:>${new Date(Date.parse(boundary) - 1000).toISOString()}` : '')}` : ''}`;
+      let latest = state.page?.latest ?? boundary ?? '';
+      for (let pageNumber = 0; next && pageNumber < 10; pageNumber++) {
+        state.page = { surface, next, latest, ...(boundary ? { boundary } : {}) };
+        const page = await sentryGetPage(tokens, next);
+        const lifecycles = { ...state.issue_lifecycles };
+        const touched = new Set<string>();
+        const events =
+          surface === 'issues'
+            ? (page.items as SentryIssue[]).map((issue) => {
+                const event = issueEvent(orgSlug, projectSlug, issue, lifecycles[issue.id]);
+                lifecycles[issue.id] = event.dedupKey.slice(`sentry:issue:${issue.id}:`.length);
+                touched.add(issue.id);
+                return event;
+              })
+            : (page.items as SentryRelease[]).map((release) =>
+                releaseEvent(orgSlug, projectSlug, release),
+              );
+        const freshEvents =
+          surface === 'releases' && boundary
+            ? events.filter((event) => event.occurredAt.getTime() >= Date.parse(boundary) - 1000)
+            : events;
+        if (freshEvents.length) await ctx.writeEvents(freshEvents);
+        for (const event of events)
+          if (event.occurredAt.toISOString() > latest) latest = event.occurredAt.toISOString();
+        if (surface === 'issues')
+          state.issue_lifecycles = pruneSentryIssueLifecycles(lifecycles, touched);
+        // Sentry orders project releases by COALESCE(date_released, date_added) descending.
+        const crossedBoundary =
+          surface === 'releases' &&
+          boundary &&
+          (page.items as SentryRelease[]).some((release) => {
+            const value = release.dateReleased ?? release.dateCreated ?? release.dateAdded;
+            return value && Date.parse(value) < Date.parse(boundary) - 1000;
+          });
+        next = crossedBoundary ? null : page.next;
+        if (next) state.page = { surface, next, latest, ...(boundary ? { boundary } : {}) };
+        else {
+          delete state.page;
+          if (surface === 'issues') state.issues_since = latest || state.issues_since;
+          else state.releases_since = latest || state.releases_since;
+        }
+        await save();
+      }
+      if (next) {
+        if (ctx.saveCursorWithContinuations)
+          await ctx.saveCursorWithContinuations(resource, state, [continuation]);
+        return [continuation];
+      }
+    }
+    return [];
+  } catch (error) {
+    await save();
+    if (error instanceof Error) throw attachSyncContinuation(error, continuation);
+    throw error;
+  }
 }
 
 async function selectedProjects(
   tokens: SentryTokens,
   selections: { kind: string; externalId: string }[],
+  ctx: SyncContext,
 ): Promise<string[]> {
   const projects = selections
     .filter((selection) => selection.kind === 'sentry.project')
     .map((selection) => selection.externalId);
   for (const selection of selections.filter((item) => item.kind === 'sentry.org')) {
-    const orgProjects = await sentryGetAll<SentryProject>(
-      tokens,
-      `/organizations/${encodeURIComponent(selection.externalId)}/projects/`,
-    );
+    const cacheKey = `sentry.org:${selection.externalId}:projects`;
+    const cache = (await ctx.loadCursor(cacheKey)) as {
+      expires?: number;
+      projects?: SentryProject[];
+    };
+    const orgProjects =
+      cache.expires && cache.expires > Date.now() && cache.projects
+        ? cache.projects
+        : await sentryGetAll<SentryProject>(
+            tokens,
+            `/organizations/${encodeURIComponent(selection.externalId)}/projects/`,
+          );
+    await ctx.saveCursor(cacheKey, {
+      expires:
+        cache.expires && cache.expires > Date.now() ? cache.expires : Date.now() + 24 * 3600_000,
+      projects: orgProjects,
+    });
     projects.push(...orgProjects.map((project) => `${selection.externalId}/${project.slug}`));
   }
   return [...new Set(projects)];
+}
+
+async function syncSentryResources(
+  { tokens, selections, ctx }: Parameters<IntegrationProvider['backfill']>[0],
+  full: boolean,
+) {
+  const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
+  const projects = await selectedProjects(sentryTokens, selections, ctx);
+  const continuations: SyncContinuation[] = [];
+  for (const project of projects) {
+    const [orgSlug, projectSlug] = project.split('/');
+    if (!orgSlug || !projectSlug) continue;
+    const cursor = (await ctx.loadCursor(`sentry.project:${project}`)) as SentryCursor;
+    if (full && !cursor.page) {
+      delete cursor.issues_since;
+      delete cursor.releases_since;
+    }
+    continuations.push(...(await syncProject(sentryTokens, orgSlug, projectSlug, cursor, ctx)));
+  }
+  return continuations.length ? { continuations } : undefined;
 }
 
 export const sentryProvider: IntegrationProvider = {
@@ -867,21 +934,12 @@ export const sentryProvider: IntegrationProvider = {
     return resources;
   },
 
-  async backfill({ tokens, selections, ctx }) {
-    const sentryTokens = await ensureAccessToken(tokens as SentryTokens, ctx);
-    const projects = await selectedProjects(sentryTokens, selections);
-    for (const project of projects) {
-      const [orgSlug, projectSlug] = project.split('/');
-      if (!orgSlug || !projectSlug) continue;
-      const cursor = (await ctx.loadCursor(`sentry.project:${project}`)) as SentryCursor;
-      const result = await syncProject(sentryTokens, orgSlug, projectSlug, cursor);
-      await ctx.writeEvents(result.events);
-      await ctx.saveCursor(`sentry.project:${project}`, result.cursor);
-    }
+  backfill(input) {
+    return syncSentryResources(input, true);
   },
 
   async incrementalSync({ tokens, selections, ctx }) {
-    await this.backfill({ integration: {} as never, tokens, selections, ctx });
+    return syncSentryResources({ integration: {} as never, tokens, selections, ctx }, false);
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await

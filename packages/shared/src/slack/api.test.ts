@@ -10,11 +10,30 @@ await vi.mock(
   () => import('#src/http/external-fetch.js'),
 );
 
+const { currentProviderRequestContext, withProviderRequestContext } =
+  await import('#src/integrations/request.js');
 const { SlackApi } = await import('#src/slack/api.js');
 
 describe('SlackApi message posting', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it('retains the native setup account and purpose when using the shared Slack client', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => {
+        expect(currentProviderRequestContext()).toMatchObject({
+          externalAccountId: 'T1',
+          purpose: 'setup',
+        });
+        return Promise.resolve(Response.json({ ok: true, team_id: 'T1' }));
+      }),
+    );
+    await withProviderRequestContext(
+      { provider: 'slack', externalAccountId: 'T1', purpose: 'setup' },
+      () => new SlackApi('token').authTest(),
+    );
   });
 
   it('calls auth.test with the configured bearer token', async () => {

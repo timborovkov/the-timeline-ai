@@ -1,6 +1,14 @@
 import type { SlackFile } from '#src/slack/types.js';
 
-import { externalFetch } from '#src/http/external-fetch.js';
+import { deferChatDelivery } from '#src/conversation-surfaces/deferred-delivery.js';
+import { getEnv } from '#src/env.js';
+import {
+  providerRetryAt,
+  currentProviderRequestContext,
+  providerFetch,
+  withProviderRequestContext,
+} from '#src/integrations/request.js';
+const externalFetch = providerFetch('slack');
 
 function slackFetch(
   input: string | URL,
@@ -96,7 +104,11 @@ async function responseBufferWithLimit(res: Response, maxBytes?: number): Promis
 }
 
 export class SlackApi {
-  constructor(private readonly token: string) {}
+  constructor(
+    private readonly token: string,
+    private readonly accountId?: string,
+    private readonly deferRateLimits = true,
+  ) {}
 
   private async call<T extends SlackResponse>(
     method: string,
@@ -105,19 +117,52 @@ export class SlackApi {
     const deterministic = deterministicSlackApiResponse(method);
     if (deterministic) return deterministic as T;
 
-    const res = await slackFetch(`https://slack.com/api/${method}`, {
-      method: 'POST',
-      headers: {
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-        'content-type': 'application/x-www-form-urlencoded',
+    const inherited = currentProviderRequestContext();
+    const accountId =
+      this.accountId ?? (inherited?.provider === 'slack' ? inherited.externalAccountId : undefined);
+    const res = await withProviderRequestContext(
+      {
+        provider: 'slack',
+        purpose:
+          inherited?.provider === 'slack'
+            ? inherited.purpose
+            : method === 'oauth.v2.access'
+              ? 'setup'
+              : 'chat',
+        appKey: getEnv().SLACK_CLIENT_ID ?? 'slack',
+        ...(accountId ? { externalAccountId: accountId } : {}),
       },
-      body: new URLSearchParams(
-        Object.entries(body).flatMap(([k, v]) =>
-          v === undefined ? [] : ([[k, String(v)]] as [string, string][]),
-        ),
-      ),
+      () =>
+        slackFetch(`https://slack.com/api/${method}`, {
+          method: 'POST',
+          headers: {
+            ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+            'content-type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams(
+            Object.entries(body).flatMap(([k, v]) =>
+              v === undefined ? [] : ([[k, String(v)]] as [string, string][]),
+            ),
+          ),
+        }),
+    ).catch((error: unknown) => {
+      if (error instanceof Error && 'retryAt' in error) throw error;
+      if (method === 'chat.postMessage')
+        throw Object.assign(new Error('Slack delivery outcome unknown'), {
+          code: 'delivery_outcome_unknown',
+          cause: error,
+        });
+      throw error;
     });
+    if (res.status === 429)
+      throw Object.assign(new Error('Slack rate limited'), {
+        retryAt: providerRetryAt(res.headers),
+      });
     const json = (await res.json()) as T;
+    if (json.error === 'ratelimited')
+      throw Object.assign(new Error('Slack rate limited'), {
+        retryAt: providerRetryAt(res.headers),
+      });
     if (!res.ok || !json.ok) {
       throw new Error(`Slack ${method} failed: ${json.error ?? res.statusText}`);
     }
@@ -196,18 +241,61 @@ export class SlackApi {
     response_type?: 'ephemeral' | 'in_channel';
     blocks?: unknown[];
   }): Promise<void> {
+    try {
+      await this.deliverMessage(input);
+    } catch (error) {
+      if (
+        this.deferRateLimits &&
+        (await deferChatDelivery(
+          {
+            provider: 'slack',
+            token: this.token,
+            ...(this.accountId ? { accountId: this.accountId } : {}),
+            method: 'send',
+            body: input,
+          },
+          error,
+        ))
+      )
+        return;
+      throw error;
+    }
+  }
+
+  private async deliverMessage(input: Parameters<SlackApi['postMessage']>[0]): Promise<void> {
     if (input.response_url) {
-      await slackFetch(input.response_url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          text: input.text,
-          mrkdwn: false,
-          response_type: input.response_type ?? 'ephemeral',
-          ...(input.blocks ? { blocks: input.blocks } : {}),
-          ...(input.thread_ts ? { thread_ts: input.thread_ts } : {}),
-        }),
+      const responseUrl = input.response_url;
+      const response = await withProviderRequestContext(
+        {
+          provider: 'slack',
+          purpose: 'chat',
+          appKey: getEnv().SLACK_CLIENT_ID ?? 'slack',
+          ...(this.accountId ? { externalAccountId: this.accountId } : {}),
+        },
+        () =>
+          slackFetch(responseUrl, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              text: input.text,
+              mrkdwn: false,
+              response_type: input.response_type ?? 'ephemeral',
+              ...(input.blocks ? { blocks: input.blocks } : {}),
+              ...(input.thread_ts ? { thread_ts: input.thread_ts } : {}),
+            }),
+          }),
+      ).catch((error: unknown) => {
+        if (error instanceof Error && 'retryAt' in error) throw error;
+        throw Object.assign(new Error('Slack delivery outcome unknown'), {
+          code: 'delivery_outcome_unknown',
+          cause: error,
+        });
       });
+      if (response.status === 429)
+        throw Object.assign(new Error('Slack rate limited'), {
+          retryAt: providerRetryAt(response.headers),
+        });
+      if (!response.ok) throw new Error(`Slack response delivery failed: ${response.status}`);
       return;
     }
     await this.call('chat.postMessage', {

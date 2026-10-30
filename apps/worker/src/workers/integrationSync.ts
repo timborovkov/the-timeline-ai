@@ -130,17 +130,22 @@ function retainPausedMondayTarget(
   );
 }
 
-async function retainPausedMondayBackfill(
+async function retainPausedBackfill(
   db: Db,
   integration: Pick<integrationsLib.IntegrationRow, 'id' | 'teamId' | 'provider'>,
   kind: 'backfill' | 'incremental' | 'targeted',
   continuationJobs: ContinuationJob[],
   retryAt?: Date,
 ): Promise<void> {
-  if (integration.provider !== 'monday' || kind !== 'backfill') return;
+  if (kind !== 'backfill') return;
   const selections = await integrationsLib.adminListSelections(db, integration.id);
   for (const selection of selections) {
-    if (selection.kind !== 'monday.board' && selection.kind !== 'monday.doc') continue;
+    if (
+      integration.provider === 'monday' &&
+      selection.kind !== 'monday.board' &&
+      selection.kind !== 'monday.doc'
+    )
+      continue;
     continuationJobs.push(
       continuationJob(
         integration,
@@ -567,6 +572,7 @@ export async function runOneIntegration(
   integrationId: string,
   kind: 'backfill' | 'incremental' | 'targeted',
   target?: TargetedIntegrationSyncJob,
+  triggeredBy = 'reconcile',
 ): Promise<void> {
   // Per-integration session-scoped advisory lock. With worker
   // concurrency=2 + no jobId dedup, the 5-min tick can race with a
@@ -752,7 +758,7 @@ export async function runOneIntegration(
           latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
         );
       }
-      await retainPausedMondayBackfill(
+      await retainPausedBackfill(
         db,
         integration,
         kind,
@@ -772,7 +778,7 @@ export async function runOneIntegration(
         continuationJobs,
         latestRetryAt(pause?.retryAt, providerBudgetPause?.retryAt),
       );
-      await retainPausedMondayBackfill(
+      await retainPausedBackfill(
         db,
         integration,
         kind,
@@ -796,7 +802,9 @@ export async function runOneIntegration(
       );
       if (integration.provider === 'monday') {
         retainPausedMondayTarget(integration, target, continuationJobs, pause.retryAt);
-        await retainPausedMondayBackfill(db, integration, kind, continuationJobs, pause.retryAt);
+        await retainPausedBackfill(db, integration, kind, continuationJobs, pause.retryAt);
+      } else if (kind === 'backfill') {
+        await retainPausedBackfill(db, integration, kind, continuationJobs, pause.retryAt);
       } else if (isProviderPaginationContinuation(target)) {
         continuationJobs.push({
           data: target,
@@ -829,7 +837,15 @@ export async function runOneIntegration(
           continuationJobs,
           providerBudgetPause.retryAt,
         );
-        await retainPausedMondayBackfill(
+        await retainPausedBackfill(
+          db,
+          integration,
+          kind,
+          continuationJobs,
+          providerBudgetPause.retryAt,
+        );
+      } else if (kind === 'backfill') {
+        await retainPausedBackfill(
           db,
           integration,
           kind,
@@ -844,9 +860,26 @@ export async function runOneIntegration(
       }
       return;
     }
+    if (integration.provider === 'slack') {
+      const readiness = (await integrationsLib.adminLoadCursor(
+        db,
+        integration.id,
+        'slack.webhook',
+      )) as { verified_at?: string; app_id?: string };
+      if (!readiness.verified_at || !readiness.app_id || readiness.app_id !== tokens.app_id) {
+        await integrationsLib.adminRecordError(
+          db,
+          integration.id,
+          'Slack setup required: enable message and reaction events, reconnect with required permissions, and send a test message in a selected channel.',
+        );
+        return;
+      }
+    }
     const provider = integrationsLib.getProvider(integration.provider);
+    if (target?.resourceType === 'drive.changes' && target.externalId !== integrationId)
+      throw new Error('drive_continuation_integration_mismatch');
     const allSelections = await integrationsLib.adminListSelections(db, integrationId);
-    const selections =
+    let selections =
       kind === 'targeted' && target
         ? targetedSelections(integration.provider, allSelections, target)
         : allSelections;
@@ -947,6 +980,37 @@ export async function runOneIntegration(
           }
         : {}),
     };
+    // Completed selections remain quiet while larger selections finish their pages.
+    const recovery = (await ctx.loadCursor('sync.recovery')) as {
+      completed?: Record<string, string>;
+    };
+    const completed = { ...recovery.completed };
+    const resourceKey = (selection: (typeof selections)[number]) =>
+      `${selection.kind}:${selection.externalId}`;
+    const selectedCount = selections.length;
+    if (
+      kind === 'incremental' &&
+      triggeredBy === 'reconcile' &&
+      integration.provider !== 'monday'
+    ) {
+      const dueSelections = selections.filter((selection) => {
+        const at = completed[resourceKey(selection)];
+        return (
+          !at || !Number.isFinite(Date.parse(at)) || Date.now() - Date.parse(at) >= 24 * 3600_000
+        );
+      });
+      // These providers advance a shared feed/collection cursor. Filtering only
+      // some selections would consume changes for selections omitted from this run.
+      const sharedCursor =
+        integration.provider === 'google_drive' || integration.provider === 'linear';
+      if (!sharedCursor || dueSelections.length === 0) selections = dueSelections;
+    }
+    if (kind !== 'targeted' && selections.length > 1) {
+      const rotation = (await ctx.loadCursor('sync.rotation')) as { offset?: number };
+      const offset = Math.max(0, rotation.offset ?? 0) % selections.length;
+      selections.push(...selections.splice(0, offset));
+      await ctx.saveCursor('sync.rotation', { offset: (offset + 1) % selections.length });
+    }
     await integrationsLib.adminRecordAudit(
       db,
       integration.teamId,
@@ -958,8 +1022,8 @@ export async function runOneIntegration(
       let syncResult: integrationsLib.SyncResult | undefined;
       if (
         kind === 'targeted' &&
-        integration.provider === 'monday' &&
-        target?.resourceType === 'monday.webhook'
+        (integration.provider === 'monday' || integration.provider === 'google_drive') &&
+        target?.resourceType === `${integration.provider}.webhook`
       ) {
         if (target.externalId !== integration.id) {
           throw new Error('monday_webhook_continuation_integration_mismatch');
@@ -970,10 +1034,21 @@ export async function runOneIntegration(
           integrationId,
           categories: ['webhook_degraded'],
         });
-      } else if (kind === 'backfill') {
-        syncResult = await provider.backfill({ integration, tokens, selections, ctx });
-      } else {
+      } else if (
+        kind === 'backfill' ||
+        (integration.provider !== 'monday' && target?.surface === 'backfill_restart')
+      ) {
+        syncResult = await provider.backfill({
+          integration,
+          tokens,
+          selections,
+          ctx,
+          purpose: triggeredBy === 'manual' ? 'resync' : 'backfill',
+        });
+      } else if (selectedCount === 0 || selections.length > 0) {
         syncResult = await provider.incrementalSync({
+          purpose:
+            triggeredBy === 'webhook' || target?.triggeredBy === 'webhook' ? 'webhook' : 'recovery',
           integration,
           tokens,
           selections,
@@ -994,7 +1069,40 @@ export async function runOneIntegration(
       const partialFailures = syncPartialFailures(syncResult);
       const partialSummary =
         partialFailures.length > 0 ? summarizeSyncPartialFailures(partialFailures) : null;
-      const continuations = [...checkpointContinuations, ...(syncResult?.continuations ?? [])];
+      const continuations = [...checkpointContinuations, ...(syncResult?.continuations ?? [])].map(
+        (continuation) =>
+          integration.provider !== 'monday' &&
+          (kind === 'backfill' || target?.surface === 'backfill_restart')
+            ? { ...continuation, surface: 'backfill_restart' }
+            : continuation,
+      );
+      const isRecovery =
+        (kind === 'incremental' && triggeredBy === 'reconcile') ||
+        (kind === 'targeted' &&
+          target?.triggeredBy !== 'webhook' &&
+          target?.surface !== 'backfill_restart');
+      if (
+        isRecovery &&
+        integration.provider !== 'monday' &&
+        !(integration.provider === 'github' && kind === 'targeted' && target?.surface) &&
+        partialFailures.length === 0
+      ) {
+        let completedAny = false;
+        for (const selection of selections) {
+          const pending = continuations.some(
+            (continuation) =>
+              integration.provider === 'google_drive' ||
+              integration.provider === 'linear' ||
+              (continuation.resourceType === selection.kind &&
+                continuation.externalId === selection.externalId),
+          );
+          if (!pending) {
+            completed[resourceKey(selection)] = new Date().toISOString();
+            completedAny = true;
+          }
+        }
+        if (completedAny) await ctx.saveCursor('sync.recovery', { completed });
+      }
       // A targeted job proves only one provider surface is healthy. Preserve
       // integration-wide transient state until an uninterrupted full sync has
       // completed without leaving any durable page checkpoint behind.
@@ -1079,7 +1187,8 @@ export async function runOneIntegration(
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       log.warn({ err, integrationId }, 'integration sync failed');
-      await integrationsLib.adminRecordError(db, integrationId, msg);
+      if (!(err instanceof integrationsLib.ProviderSyncDeferredError))
+        await integrationsLib.adminRecordError(db, integrationId, msg);
       const rateLimit = providerRateLimitPause(err);
       if (rateLimit) {
         await integrationsLib.adminRecordIntegrationSyncPause(db, integrationId, {
@@ -1151,6 +1260,26 @@ export async function runOneIntegration(
             }
           }
         }
+        if (
+          integration.provider !== 'monday' &&
+          (kind === 'backfill' || target?.surface === 'backfill_restart')
+        ) {
+          for (const continuation of continuations) continuation.surface = 'backfill_restart';
+          for (const selection of selections) {
+            if (
+              !continuations.some(
+                (value) =>
+                  value.resourceType === selection.kind &&
+                  value.externalId === selection.externalId,
+              )
+            )
+              continuations.push({
+                resourceType: selection.kind,
+                externalId: selection.externalId,
+                surface: 'backfill_restart',
+              });
+          }
+        }
         includeCurrentContinuationWhenMissing(continuations, target);
         const rateLimitedContinuations = continuations.map((continuation) => {
           const retryAt = latestRetryAt(continuation.retryAt, rateLimit.retryAt);
@@ -1174,12 +1303,23 @@ export async function runOneIntegration(
         ...checkpointContinuations,
         ...integrationsLib.syncContinuationsFromError(err),
       ];
+      if (
+        integration.provider !== 'monday' &&
+        (kind === 'backfill' || target?.surface === 'backfill_restart')
+      ) {
+        for (const continuation of errorContinuations) continuation.surface = 'backfill_restart';
+      }
       includeCurrentContinuationWhenMissing(errorContinuations, target);
       await integrationsLib.adminCommitIntegrationSyncCheckpoint(db, {
         integrationId,
         cursors: [...cursorCheckpoints.values()],
         continuations: errorContinuations,
       });
+      if (err instanceof integrationsLib.ProviderSyncDeferredError) {
+        for (const continuation of errorContinuations)
+          continuationJobs.push({ ...continuationJob(integration, continuation), staged: true });
+        return;
+      }
       const countedKind = countedHealthKind(msg);
       if (countedKind) {
         const health = await recordCountedHealthFailure({
@@ -1293,9 +1433,20 @@ function targetedSelections(
   selections: { kind: string; externalId: string }[],
   target: TargetedIntegrationSyncJob,
 ): { kind: string; externalId: string }[] {
-  if (provider === 'monday' && target.resourceType === 'monday.webhook') {
-    return [{ kind: 'monday.webhook', externalId: target.externalId }];
+  if (
+    (provider === 'monday' || provider === 'google_drive') &&
+    target.resourceType === `${provider}.webhook`
+  ) {
+    return [{ kind: target.resourceType, externalId: target.externalId }];
   }
+  if (
+    provider === 'google_drive' &&
+    target.resourceType === 'drive.changes' &&
+    target.reason === 'provider_pagination_continuation'
+  )
+    return selections;
+  if (provider === 'linear' && target.reason === 'provider_pagination_continuation')
+    return selections;
   const exact = selections.filter(
     (selection) =>
       selection.kind === target.resourceType && selection.externalId === target.externalId,
@@ -1347,6 +1498,7 @@ function reconciliationDue(
   integration: {
     provider: NativeSyncProvider;
     lastSyncedAt?: Date | string | null;
+    accountKey?: string;
   },
   now = Date.now(),
 ): boolean {
@@ -1357,7 +1509,10 @@ function reconciliationDue(
       ? integration.lastSyncedAt
       : new Date(integration.lastSyncedAt);
   if (Number.isNaN(lastSyncedAt.getTime())) return true;
-  return now - lastSyncedAt.getTime() >= policy.reconciliationIntervalMs;
+  const stagger = integration.accountKey
+    ? createHash('sha256').update(integration.accountKey).digest().readUInt32BE(0) % (30 * 60_000)
+    : 0;
+  return now - lastSyncedAt.getTime() >= policy.reconciliationIntervalMs + stagger;
 }
 
 export async function handleTick(db: Db): Promise<void> {
@@ -1380,6 +1535,7 @@ export async function handleTick(db: Db): Promise<void> {
   for (const i of all) {
     if (!isNativeSyncProvider(i.provider)) continue;
     const provider = i.provider;
+    if (!integrationsLib.providerRecoveryEnabled(provider)) continue;
     if (i.healthPausedAt) {
       log.info(
         {
@@ -1415,19 +1571,26 @@ export async function handleTick(db: Db): Promise<void> {
     }
     const hasPendingContinuation =
       await integrationsLib.adminHasPendingIntegrationSyncContinuations(db, i.id);
-    if (!hasPendingContinuation && !reconciliationDue({ provider, lastSyncedAt: i.lastSyncedAt })) {
+    if (
+      !hasPendingContinuation &&
+      !reconciliationDue({
+        provider,
+        lastSyncedAt: i.lastSyncedAt,
+        accountKey: i.externalAccountId ?? i.id,
+      })
+    ) {
       log.debug(
         { integrationId: i.id, provider, lastSyncedAt: i.lastSyncedAt },
         'integration reconciliation not due yet',
       );
       continue;
     }
-    if (provider === 'monday') {
+    if (provider === 'monday' || provider === 'google_drive') {
       try {
         await integrationsLib.adminReconcileIntegrationWebhookSubscriptions(db, i.id);
       } catch (err) {
-        log.warn({ err, integrationId: i.id }, 'monday webhook provisioning deferred');
-        continue;
+        log.warn({ err, integrationId: i.id }, 'provider webhook provisioning deferred');
+        if (provider === 'monday') continue;
       }
     }
     try {
@@ -1465,6 +1628,7 @@ export function startIntegrationSyncWorker(
         data.integrationId,
         data.kind,
         data.kind === 'targeted' ? data : undefined,
+        data.triggeredBy,
       );
       return {
         integrationId: data.integrationId,

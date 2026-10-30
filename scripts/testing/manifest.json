@@ -1274,6 +1274,9 @@
   "apps/worker/src/workers/calendarRecurrence.test.ts": {
     "group": "unit"
   },
+  "apps/worker/src/workers/chatDelivery.test.ts": {
+    "group": "unit"
+  },
   "apps/worker/src/workers/conversationAgent.test.ts": {
     "group": "integration"
   },
@@ -1344,6 +1347,15 @@
     "group": "unit"
   },
   "apps/worker/src/workers/webhookDelivery.test.ts": {
+    "group": "unit"
+  },
+  "packages/db/src/chat-message-sequence-migration.test.ts": {
+    "group": "unit"
+  },
+  "packages/db/src/client.test.ts": {
+    "group": "unit"
+  },
+  "packages/db/src/schema-contracts.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/agent/ask.test.ts": {
@@ -1425,6 +1437,9 @@
     "group": "unit"
   },
   "packages/shared/src/conversation-review/index.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/conversation-surfaces/deferred-delivery.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/conversation-surfaces/object-discussion.test.ts": {
@@ -1568,11 +1583,20 @@
   "packages/shared/src/integrations/registry.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/integrations/request-budget.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/integrations/request.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/integrations/scope.test.ts": {
     "group": "integration"
   },
   "packages/shared/src/integrations/signal-class.test.ts": {
     "group": "unit"
+  },
+  "packages/shared/src/integrations/slack-ingress.test.ts": {
+    "group": "integration"
   },
   "packages/shared/src/integrations/webhooks.test.ts": {
     "group": "integration"
@@ -1854,15 +1878,6 @@
     "group": "unit"
   },
   "packages/shared/src/visibility.test.ts": {
-    "group": "unit"
-  },
-  "packages/db/src/chat-message-sequence-migration.test.ts": {
-    "group": "unit"
-  },
-  "packages/db/src/client.test.ts": {
-    "group": "unit"
-  },
-  "packages/db/src/schema-contracts.test.ts": {
     "group": "unit"
   },
   "packages/test-support/runtime.test.ts": {

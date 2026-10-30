@@ -151,6 +151,11 @@ export function createMcpScope(deps: {
     if (patch.enabled !== undefined) updates.enabled = patch.enabled;
     if (patch.disabledTools !== undefined) updates.disabledTools = patch.disabledTools;
     if (patch.authConfig !== undefined) {
+      updates.cachedTools = null;
+      updates.toolsCachedAt = null;
+      updates.nextHealthCheckAt = null;
+      updates.healthFailures = 0;
+      updates.lastError = null;
       if (patch.authConfig === null) {
         updates.authConfigCiphertext = null;
         updates.authConfigIv = null;
@@ -269,6 +274,16 @@ export function createMcpScope(deps: {
             updatedAt: new Date(),
           },
         });
+      await tx
+        .update(mcpServers)
+        .set({
+          cachedTools: null,
+          toolsCachedAt: null,
+          nextHealthCheckAt: null,
+          healthFailures: 0,
+          lastError: null,
+        })
+        .where(and(eq(mcpServers.id, mcpServerId), eq(mcpServers.teamId, teamId)));
       await tx.insert(auditLog).values({
         teamId,
         actorUserId: userId,

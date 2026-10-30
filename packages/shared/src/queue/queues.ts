@@ -73,6 +73,7 @@ export const QUEUE_NAMES = {
   // Durable direct-message agent work shared by Telegram, Slack, and future
   // conversational providers. The UUID job id matches the persisted turn.
   conversationAgent: 'conversation-agent',
+  chatDelivery: 'chat-delivery',
 } as const;
 
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
@@ -1492,5 +1493,27 @@ export async function enqueueConversationAgentJob(
 export async function closeConversationAgentQueue(): Promise<void> {
   await closeQueue(_conversationAgentQueue, () => {
     _conversationAgentQueue = undefined;
+  });
+}
+
+export interface ChatDeliveryJobData {
+  ciphertext: string;
+  iv: string;
+  tag: string;
+}
+let _chatDeliveryQueue: TimelineQueue<ChatDeliveryJobData> | undefined;
+export function getChatDeliveryQueue(): TimelineQueue<ChatDeliveryJobData> {
+  return (_chatDeliveryQueue ??= createTimelineQueue<ChatDeliveryJobData>(
+    QUEUE_NAMES.chatDelivery,
+    {
+      attempts: 1,
+      removeOnComplete: true,
+      removeOnFail: { age: 24 * 3600 },
+    },
+  ));
+}
+export async function closeChatDeliveryQueue(): Promise<void> {
+  await closeQueue(_chatDeliveryQueue, () => {
+    _chatDeliveryQueue = undefined;
   });
 }

@@ -122,7 +122,7 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
   const ingestWebhookList = ingestWebhookListFromRows(ingestWebhookRows);
   const connectedUrls = new Set(mcpServers.map((s) => s.url));
   const mcpCatalogAvailable = mcpCatalog.filter((c) => !c.mcpUrl || !connectedUrls.has(c.mcpUrl));
-  const [selectionLists, syncPauseEntries] = await Promise.all([
+  const [selectionLists, syncPauseEntries, recoveryStates] = await Promise.all([
     Promise.all(
       connected.map(async (integration) => scope.integrations.listSelections(integration.id)),
     ),
@@ -159,6 +159,9 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
           ] as const;
         },
       ),
+    ),
+    Promise.all(
+      connected.map(async (integration) => scope.integrations.listSyncState(integration.id)),
     ),
   ]);
   const syncPauseByIntegrationId = new Map(syncPauseEntries);
@@ -219,8 +222,26 @@ async function loadIntegrationsPageModel(input: { teamId: string; userId: string
       lastConnectedAt: row.connection.lastConnectedAt.toISOString(),
     },
   }));
-  const connectedRows: ConnectedIntegrationUiRow[] = connected.map((c) => ({
+  const connectedRows: ConnectedIntegrationUiRow[] = connected.map((c, index) => ({
     id: c.id,
+    setupRequired:
+      c.provider === 'slack' &&
+      !(recoveryStates[index] ?? []).some(
+        (state) =>
+          state.resourceType === 'slack.webhook' &&
+          Boolean((state.cursor as Record<string, unknown>).verified_at),
+      ),
+    pendingSync:
+      !c.lastSyncedAt ||
+      (recoveryStates[index] ?? []).some((state) => {
+        const cursor = state.cursor as Record<string, unknown>;
+        return [
+          cursor.after,
+          cursor.page,
+          cursor.history_page,
+          Array.isArray(cursor.pending_threads) && cursor.pending_threads.length,
+        ].some(Boolean);
+      }),
     provider: c.provider,
     displayName: c.displayName,
     enabled: c.enabled,

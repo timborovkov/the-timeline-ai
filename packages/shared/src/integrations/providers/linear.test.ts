@@ -392,13 +392,63 @@ describe('linearProvider.listSyncableResources', () => {
 });
 
 describe('linearProvider.incrementalSync', () => {
+  it('retains completed collections when a later collection hits quota', async () => {
+    const states = new Map<string, unknown>();
+    let failComment = true;
+    const fetch = vi.fn<
+      (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
+    >((_url, init) => {
+      const query = requestPayload(init).query;
+      const collection = query.includes('issues(first')
+        ? 'issues'
+        : query.includes('comments(first')
+          ? 'comments'
+          : 'projects';
+      if (collection === 'comments' && failComment) {
+        failComment = false;
+        return Promise.resolve(jsonResponse({ error: 'rate limited' }, { status: 429 }));
+      }
+      return Promise.resolve(
+        jsonResponse({
+          data: { [collection]: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } },
+        }),
+      );
+    });
+    vi.stubGlobal('fetch', fetch);
+    const ctx: SyncContext = {
+      loadCursor: (key) => Promise.resolve(states.get(key) ?? {}),
+      saveCursor: (key, value) => {
+        states.set(key, value);
+        return Promise.resolve();
+      },
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    const input = {
+      integration: { id: 'i' } as never,
+      tokens: { access_token: 'token' },
+      selections: [{ kind: 'linear.team', externalId: 'team-1' }],
+      ctx,
+    };
+    await expect(linearProvider.incrementalSync(input)).rejects.toMatchObject({
+      provider: 'linear',
+    });
+    await linearProvider.incrementalSync(input);
+    const queries = fetch.mock.calls.map(([, init]) => requestPayload(init).query);
+    expect(queries.filter((query) => query.includes('issues(first'))).toHaveLength(1);
+    expect(queries.filter((query) => query.includes('comments(first'))).toHaveLength(2);
+    expect(queries.filter((query) => query.includes('projects(first'))).toHaveLength(1);
+    expect(states.get('linear.issues.page')).toEqual({});
+  });
+
   it('paginates Linear issues, comments, and projects before advancing cursors', async () => {
     const fetch = vi.fn<
       (...args: Parameters<typeof globalThis.fetch>) => ReturnType<typeof globalThis.fetch>
     >((_input, init) => {
       const body = requestPayload(init);
       expect(body.variables.teamIds).toEqual(['team-1']);
-      expect(body.variables.since).toBe('2026-06-20T00:00:00.000Z');
+      expect(body.variables.since).toBe('2026-06-19T23:59:59.000Z');
 
       if (body.query.includes('issues(first: 50')) {
         if (body.variables.after === null) {
@@ -550,7 +600,11 @@ describe('linearProvider.incrementalSync', () => {
       updated_after: '2026-06-20T15:00:00.000Z',
     });
     expect(Math.max(...ctx.writeEvents.mock.invocationCallOrder)).toBeLessThan(
-      Math.min(...ctx.saveCursor.mock.invocationCallOrder),
+      Math.min(
+        ...ctx.saveCursor.mock.invocationCallOrder.filter(
+          (_order, index) => !String(ctx.saveCursor.mock.calls[index]?.[0]).endsWith('.page'),
+        ),
+      ),
     );
   });
 });

@@ -1,12 +1,12 @@
 import { Buffer } from 'node:buffer';
 
 import { getEnv } from '#src/env.js';
-import { externalFetch as fetch } from '#src/http/external-fetch.js';
 import {
   adoptMondayAccountBudget,
   observeMondayRemaining,
   reserveMondayCall,
 } from '#src/integrations/monday-budget.js';
+import { providerFetch } from '#src/integrations/request.js';
 import {
   attachSyncContinuations,
   type IntegrationEvent,
@@ -22,6 +22,8 @@ import {
   type TargetedSyncTask,
   type WebhookSubscription,
 } from '#src/integrations/types.js';
+
+const fetch = providerFetch('monday');
 
 // Phase 11 — Monday.com provider.
 //

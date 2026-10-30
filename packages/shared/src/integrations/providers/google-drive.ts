@@ -1,3 +1,5 @@
+import { createHmac, randomUUID } from 'node:crypto';
+
 import type {
   IntegrationEvent,
   IntegrationProvider,
@@ -6,11 +8,15 @@ import type {
   OAuthStartInput,
   ProviderResource,
   SyncContext,
+  SyncResult,
 } from '#src/integrations/types.js';
 
 import { getEnv } from '#src/env.js';
-import { externalFetch as fetch } from '#src/http/external-fetch.js';
+import { providerFetch } from '#src/integrations/request.js';
+import { attachSyncContinuation, isProviderRateLimitError } from '#src/integrations/types.js';
 import { childLogger } from '#src/logger.js';
+
+const fetch = providerFetch('google_drive');
 
 // Phase 11 — Google Drive provider.
 //
@@ -218,7 +224,8 @@ async function fileInSelectedSubtree(
       if (info.parents) {
         for (const pp of info.parents) stack.push(pp);
       }
-    } catch {
+    } catch (error) {
+      if (isProviderRateLimitError(error)) throw error;
       cache.set(p, false);
     }
   }
@@ -329,133 +336,160 @@ async function fetchChanges(
   selectedFolderIds: Set<string>,
   ctx: SyncContext,
   resourceType: string,
-): Promise<void> {
-  let cursor = (await ctx.loadCursor(resourceType)) as DriveCursor;
-  if (!cursor.page_token) {
-    cursor = { page_token: await startPageToken(tokens) };
-  }
-  let pageToken = cursor.page_token;
-  let safety = 0;
-  while (pageToken && safety++ < 50) {
-    const page = await driveGet<DriveChangesPage>(tokens, '/changes', {
-      pageToken,
-      includeRemoved: 'true',
-      fields:
-        'changes(changeType,removed,time,fileId,file(id,name,mimeType,modifiedTime,webViewLink,parents,driveId,owners(displayName,emailAddress))),nextPageToken,newStartPageToken',
-      pageSize: '100',
-      // Required by the Drive API to receive changes from shared drives
-      // (Team Drives) at all, plus the `driveId` field. Without these
-      // params the feed only carries My Drive changes regardless of
-      // what scopes the OAuth grants.
-      includeItemsFromAllDrives: 'true',
-      supportsAllDrives: 'true',
-    });
-    const events: IntegrationEvent[] = [];
-    const ancestorCache = new Map<string, boolean>();
-    for (const c of page.changes ?? []) {
-      // Subtree gate applies to BOTH event writes and body harvest. The
-      // Drive changes feed is account-wide, but the team has opted in to
-      // specific folders / shared drives — matches the opt-in posture
-      // GitHub (repo selections) and Linear (team selections) use.
-      // Removed-file changes pass through so deletions for previously
-      // selected files still produce a tombstone event; we don't have
-      // parents on a tombstone to check otherwise.
-      let inScope = c.removed === true;
-      if (!inScope && c.file) {
-        // Shared-drive files don't expose the shared-drive id via
-        // `parents` — only via the top-level `driveId`. Check that
-        // first so `drive.shared_drive` selections actually match,
-        // then fall back to the parent walk for My Drive / nested
-        // folder selections.
-        if (c.file.driveId && selectedFolderIds.has(c.file.driveId)) {
-          inScope = true;
-        } else {
-          inScope = await fileInSelectedSubtree(
-            tokens,
-            c.file.id,
-            c.file.parents ?? [],
-            selectedFolderIds,
-            ancestorCache,
-          );
-        }
-      }
-      if (!inScope) continue;
-      const evt = changeToEvent(integration, c);
-      if (evt) events.push(evt);
-      // Body harvest: only for non-removed files when the worker
-      // supplied a harvestDocument hook. Subtree membership was already
-      // checked above.
-      if (!c.removed && c.file && ctx.harvestDocument) {
-        try {
-          const download = await downloadFileBody(tokens, c.file.id, c.file.mimeType);
-          if (download) {
-            await ctx.harvestDocument({
-              filename: `${c.file.name}${download.filenameSuffix}`,
-              contentType: download.contentType,
-              body: download.body,
-              externalId: c.file.id,
-              metadata: {
-                drive: {
-                  web_view_link: c.file.webViewLink ?? null,
-                  mime_type: c.file.mimeType,
-                  modified_time: c.file.modifiedTime ?? null,
-                },
-              },
-            });
+): Promise<SyncResult | undefined> {
+  const continuation = { resourceType: 'drive.changes', externalId: integration.id };
+  try {
+    let cursor = (await ctx.loadCursor(resourceType)) as DriveCursor;
+    if (!cursor.page_token) {
+      cursor = { page_token: await startPageToken(tokens) };
+    }
+    const harvestState = (await ctx.loadCursor(`${resourceType}.harvest`)) as {
+      versions?: Record<string, string>;
+    };
+    let harvestedVersions = { ...harvestState.versions };
+    let pageToken = cursor.page_token;
+    let safety = 0;
+    while (pageToken && safety++ < 50) {
+      const page = await driveGet<DriveChangesPage>(tokens, '/changes', {
+        pageToken,
+        includeRemoved: 'true',
+        fields:
+          'changes(changeType,removed,time,fileId,file(id,name,mimeType,modifiedTime,webViewLink,parents,driveId,owners(displayName,emailAddress))),nextPageToken,newStartPageToken',
+        pageSize: '100',
+        // Required by the Drive API to receive changes from shared drives
+        // (Team Drives) at all, plus the `driveId` field. Without these
+        // params the feed only carries My Drive changes regardless of
+        // what scopes the OAuth grants.
+        includeItemsFromAllDrives: 'true',
+        supportsAllDrives: 'true',
+      });
+      const events: IntegrationEvent[] = [];
+      const ancestorCache = new Map<string, boolean>();
+      for (const c of page.changes ?? []) {
+        // Subtree gate applies to BOTH event writes and body harvest. The
+        // Drive changes feed is account-wide, but the team has opted in to
+        // specific folders / shared drives — matches the opt-in posture
+        // GitHub (repo selections) and Linear (team selections) use.
+        // Removed-file changes pass through so deletions for previously
+        // selected files still produce a tombstone event; we don't have
+        // parents on a tombstone to check otherwise.
+        let inScope = c.removed === true;
+        if (!inScope && c.file) {
+          // Shared-drive files don't expose the shared-drive id via
+          // `parents` — only via the top-level `driveId`. Check that
+          // first so `drive.shared_drive` selections actually match,
+          // then fall back to the parent walk for My Drive / nested
+          // folder selections.
+          if (c.file.driveId && selectedFolderIds.has(c.file.driveId)) {
+            inScope = true;
           } else {
-            // downloadFileBody returns null for files we can't ingest:
-            // > 20MB body, or an unsupported Google-native MIME (forms,
-            // drawings, etc.). Surface to the audit log so the admin can
-            // tell the difference between "harvest succeeded" and
-            // "harvest silently skipped". The integration row's
-            // `last_error` is left alone — the sync as a whole still
-            // succeeded.
-            await ctx.recordAudit('harvest_skipped', {
+            inScope = await fileInSelectedSubtree(
+              tokens,
+              c.file.id,
+              c.file.parents ?? [],
+              selectedFolderIds,
+              ancestorCache,
+            );
+          }
+        }
+        if (!inScope) continue;
+        const evt = changeToEvent(integration, c);
+        if (evt) events.push(evt);
+        // Body harvest: only for non-removed files when the worker
+        // supplied a harvestDocument hook. Subtree membership was already
+        // checked above.
+        if (!c.removed && c.file && ctx.harvestDocument) {
+          const version = c.file.modifiedTime ?? c.time;
+          if (version && harvestedVersions[c.file.id] === version) continue;
+          try {
+            const download = await downloadFileBody(tokens, c.file.id, c.file.mimeType);
+            if (download) {
+              await ctx.harvestDocument({
+                filename: `${c.file.name}${download.filenameSuffix}`,
+                contentType: download.contentType,
+                body: download.body,
+                externalId: c.file.id,
+                metadata: {
+                  drive: {
+                    web_view_link: c.file.webViewLink ?? null,
+                    mime_type: c.file.mimeType,
+                    modified_time: c.file.modifiedTime ?? null,
+                  },
+                },
+              });
+              if (version) {
+                harvestedVersions[c.file.id] = version;
+                harvestedVersions = Object.fromEntries(
+                  Object.entries(harvestedVersions).slice(-5000),
+                );
+                await ctx.saveCursor(`${resourceType}.harvest`, { versions: harvestedVersions });
+              }
+            } else {
+              // downloadFileBody returns null for files we can't ingest:
+              // > 20MB body, or an unsupported Google-native MIME (forms,
+              // drawings, etc.). Surface to the audit log so the admin can
+              // tell the difference between "harvest succeeded" and
+              // "harvest silently skipped". The integration row's
+              // `last_error` is left alone — the sync as a whole still
+              // succeeded.
+              await ctx.recordAudit('harvest_skipped', {
+                file_id: c.file.id,
+                file_name: c.file.name,
+                mime_type: c.file.mimeType,
+                reason:
+                  c.file.mimeType.startsWith('application/vnd.google-apps.') &&
+                  c.file.mimeType !== 'application/vnd.google-apps.document' &&
+                  c.file.mimeType !== 'application/vnd.google-apps.spreadsheet' &&
+                  c.file.mimeType !== 'application/vnd.google-apps.presentation'
+                    ? 'unsupported_google_app_mime'
+                    : 'too_large_or_unsupported',
+              });
+            }
+          } catch (err) {
+            if (isProviderRateLimitError(err)) throw err;
+            log.warn({ err, fileId: c.file.id }, 'drive body harvest failed');
+            await ctx.recordAudit('harvest_failed', {
               file_id: c.file.id,
               file_name: c.file.name,
               mime_type: c.file.mimeType,
-              reason:
-                c.file.mimeType.startsWith('application/vnd.google-apps.') &&
-                c.file.mimeType !== 'application/vnd.google-apps.document' &&
-                c.file.mimeType !== 'application/vnd.google-apps.spreadsheet' &&
-                c.file.mimeType !== 'application/vnd.google-apps.presentation'
-                  ? 'unsupported_google_app_mime'
-                  : 'too_large_or_unsupported',
+              error: err instanceof Error ? err.message : String(err),
             });
           }
-        } catch (err) {
-          log.warn({ err, fileId: c.file.id }, 'drive body harvest failed');
-          await ctx.recordAudit('harvest_failed', {
-            file_id: c.file.id,
-            file_name: c.file.name,
-            mime_type: c.file.mimeType,
-            error: err instanceof Error ? err.message : String(err),
-          });
         }
       }
+      if (events.length > 0) await ctx.writeEvents(events);
+      if (page.nextPageToken) {
+        pageToken = page.nextPageToken;
+        await ctx.saveCursor(resourceType, { page_token: pageToken });
+      } else if (page.newStartPageToken) {
+        await ctx.saveCursor(resourceType, { page_token: page.newStartPageToken });
+        return;
+      } else {
+        return;
+      }
     }
-    if (events.length > 0) await ctx.writeEvents(events);
-    if (page.nextPageToken) {
-      pageToken = page.nextPageToken;
-    } else if (page.newStartPageToken) {
-      await ctx.saveCursor(resourceType, { page_token: page.newStartPageToken });
-      return;
-    } else {
-      return;
+    // Hit the 50-page safety cap with more pages still available. Persist
+    // the next `pageToken` so the following tick resumes where we stopped
+    // instead of restarting from the stored token and reprocessing the
+    // same window forever. Surfaces in audit so operators can spot the
+    // accounts that consistently exceed the cap.
+    if (pageToken) {
+      if (ctx.saveCursorWithContinuations)
+        await ctx.saveCursorWithContinuations(resourceType, { page_token: pageToken }, [
+          continuation,
+        ]);
+      else await ctx.saveCursor(resourceType, { page_token: pageToken });
+      await ctx.recordAudit('drive_page_cap_hit', {
+        integration_id: integration.id,
+        next_page_token: pageToken,
+      });
+      log.warn({ integrationId: integration.id }, 'drive changes hit page cap');
+      return { continuations: [continuation] };
     }
-  }
-  // Hit the 50-page safety cap with more pages still available. Persist
-  // the next `pageToken` so the following tick resumes where we stopped
-  // instead of restarting from the stored token and reprocessing the
-  // same window forever. Surfaces in audit so operators can spot the
-  // accounts that consistently exceed the cap.
-  if (pageToken) {
-    await ctx.saveCursor(resourceType, { page_token: pageToken });
-    await ctx.recordAudit('drive_page_cap_hit', {
-      integration_id: integration.id,
-      next_page_token: pageToken,
-    });
-    log.warn({ integrationId: integration.id }, 'drive changes hit page cap');
+    return undefined;
+  } catch (error) {
+    if (error instanceof Error) throw attachSyncContinuation(error, continuation);
+    throw error;
   }
 }
 
@@ -512,6 +546,7 @@ export const googleDriveProvider: IntegrationProvider = {
         }
       }
     } catch (err) {
+      if (isProviderRateLimitError(err)) throw err;
       log.warn({ err }, 'failed to fetch userinfo');
     }
     if (!userInfoOk || !sub) {
@@ -546,6 +581,7 @@ export const googleDriveProvider: IntegrationProvider = {
         items.push({ externalId: d.id, label: d.name, kind: 'drive.shared_drive' });
       }
     } catch (err) {
+      if (isProviderRateLimitError(err)) throw err;
       log.warn({ err, integrationId: integration.id }, 'listing drives failed');
     }
     return items;
@@ -569,7 +605,7 @@ export const googleDriveProvider: IntegrationProvider = {
     if (refreshed.access_token !== (tokens as DriveTokens).access_token) {
       await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
     }
-    await fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
+    return fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
   },
 
   async incrementalSync({ integration, tokens, selections, ctx }) {
@@ -586,7 +622,84 @@ export const googleDriveProvider: IntegrationProvider = {
       // ensureAccessToken returned the same input (token still valid).
       await ctx.persistTokens(refreshed as unknown as Record<string, unknown>);
     }
-    await fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
+    return fetchChanges(integration, refreshed, selected, ctx, 'drive.changes');
+  },
+
+  async provisionWebhooks({ integration, tokens, selections, existingSubscriptions, ctx }) {
+    if (
+      !selections.some(
+        (selection) => selection.kind === 'drive.folder' || selection.kind === 'drive.shared_drive',
+      )
+    )
+      return [];
+    const existing = existingSubscriptions?.find(
+      (subscription) =>
+        subscription.expiresAt && subscription.expiresAt.getTime() > Date.now() + 24 * 3600_000,
+    );
+    if (existing) return [existing];
+    const env = getEnv();
+    if (!env.GOOGLE_DRIVE_WEBHOOK_SECRET)
+      throw new Error('Google Drive notification setup requires GOOGLE_DRIVE_WEBHOOK_SECRET');
+    const refreshed = await ensureAccessToken(tokens as DriveTokens);
+    if (refreshed !== tokens)
+      await ctx?.persistTokens(refreshed as unknown as Record<string, unknown>);
+    const pageToken = await startPageToken(refreshed);
+    const token = `${integration.id}.${createHmac('sha256', env.GOOGLE_DRIVE_WEBHOOK_SECRET).update(integration.id).digest('hex')}`;
+    const response = await fetch(
+      `${DRIVE_BASE}/changes/watch?pageToken=${encodeURIComponent(pageToken)}&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${refreshed.access_token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: randomUUID(),
+          type: 'web_hook',
+          address: new URL('/api/webhooks/google-drive', env.AUTH_URL).toString(),
+          token,
+          expiration: String(Date.now() + 7 * 24 * 3600_000),
+        }),
+      },
+    );
+    if (!response.ok) throw new Error(`Drive watch failed: ${response.status}`);
+    const channel = (await response.json()) as {
+      id: string;
+      resourceId: string;
+      expiration: string;
+    };
+    if (!channel.id || !channel.resourceId || !Number.isFinite(Number(channel.expiration)))
+      throw new Error('Invalid Drive watch response');
+    const subscription = {
+      resourceKind: 'drive.changes',
+      externalResourceId: integration.id,
+      eventType: 'change',
+      externalSubscriptionId: JSON.stringify({ id: channel.id, resourceId: channel.resourceId }),
+      expiresAt: new Date(Number(channel.expiration)),
+    };
+    await ctx?.persistWebhookSubscription(subscription);
+    return [subscription];
+  },
+
+  async deprovisionWebhook({ tokens, subscription, ctx }) {
+    if (!subscription.externalSubscriptionId) return;
+    const refreshed = await ensureAccessToken(tokens as DriveTokens);
+    if (refreshed !== tokens)
+      await ctx?.persistTokens(refreshed as unknown as Record<string, unknown>);
+    const channel = JSON.parse(subscription.externalSubscriptionId) as {
+      id: string;
+      resourceId: string;
+    };
+    const response = await fetch(`${DRIVE_BASE}/channels/stop`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${refreshed.access_token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(channel),
+    });
+    if (!response.ok && response.status !== 404)
+      throw new Error(`Drive stop watch failed: ${response.status}`);
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await

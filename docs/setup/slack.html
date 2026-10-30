@@ -276,5 +276,24 @@ SLACK_CAPTURE_CANARY_ALLOWED_ORIGIN=https://thetimeline.cc
         </li>
       </ul>
     </main>
+    <section>
+      <h2>Native timeline migration</h2>
+      <p>
+        Native selected-channel capture also uses the signed Events endpoint. Existing native
+        connections pause until permissions and an app/workspace-matched delivery from a selected
+        channel have been verified. Enable public/private channel message events and reaction
+        added/removed events, reinstall when scopes change, and send a test message in a selected
+        channel. Daily recovery checks the preceding 48 hours and fetches replies only for new or
+        changed thread roots. Missed reply edits or reactions can require manual resync even within
+        that window when root metadata is unchanged. Older missed edits or replies also require
+        manual resync. Interactive chat remains independent.
+      </p>
+    </section>
+    <p>
+      Native recovery of public/private channel replies also requires the installing user to grant
+      <code>channels:history</code> and <code>groups:history</code> as user scopes. Native reconnect
+      requests these scopes; activation waits for a signed selected-channel event and verifies the
+      user grant as well as the bot scopes.
+    </p>
   </body>
 </html>

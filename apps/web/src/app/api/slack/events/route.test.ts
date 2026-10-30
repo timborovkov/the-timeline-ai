@@ -7,6 +7,8 @@ const ENV_BACKUP = { ...process.env };
 
 const fakes = vi.hoisted(() => ({
   handleSlackEnvelope: vi.fn(),
+  acceptSignedSlackNativeEvent: vi.fn().mockResolvedValue(null),
+  enqueueWebhookDeliveryJob: vi.fn().mockResolvedValue(undefined),
   slackIngestDeps: vi.fn(),
   reportCaughtError: vi.fn(),
   reportHandledEvent: vi.fn(),
@@ -15,6 +17,19 @@ const fakes = vi.hoisted(() => ({
   suggestions: { enqueueSuggestion: vi.fn() },
 }));
 
+await vi.mock(
+  import.meta.resolve('@timeline/shared/integrations'),
+  () => ({ acceptSignedSlackNativeEvent: fakes.acceptSignedSlackNativeEvent }),
+  () => import('@timeline/shared/integrations'),
+);
+await vi.mock(
+  import.meta.resolve('@timeline/shared/queue'),
+  async () => ({
+    ...(await import('@timeline/shared/queue')),
+    enqueueWebhookDeliveryJob: fakes.enqueueWebhookDeliveryJob,
+  }),
+  () => import('@timeline/shared/queue'),
+);
 await vi.mock(
   import.meta.resolve('@/lib/db'),
   () => ({ db: {} }),

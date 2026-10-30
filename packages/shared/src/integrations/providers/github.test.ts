@@ -20,6 +20,7 @@ const { generateKeyPairSync } = await import('node:crypto');
 const { resetEnvForTests } = await import('#src/env.js');
 const { GithubRateLimitError, githubProvider } =
   await import('#src/integrations/providers/github.js');
+const { ProviderRateLimitError } = await import('#src/integrations/types.js');
 
 const ENV_BACKUP = { ...process.env };
 
@@ -165,6 +166,8 @@ describe('githubProvider.handleOAuthCallback', () => {
     );
     /* Fetch's optional Bun connection hint is irrelevant to this request mock. */ globalThis.fetch =
       Object.assign(fetchMock, { preconnect: vi.fn() });
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.RECALL_API_KEY;
     process.env.NODE_ENV = 'production';
     process.env.E2E_DETERMINISTIC_GITHUB_OAUTH = '1';
     process.env.AUTH_SECRET = 'test-auth-secret-at-least-sixteen-characters';
@@ -179,6 +182,31 @@ describe('githubProvider.handleOAuthCallback', () => {
       }),
     ).rejects.toThrow('GitHub 400');
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it.each([403, 429])('preserves quota pauses during OAuth exchange (%s)', async (status) => {
+    vi.useFakeTimers();
+    const now = new Date('2026-10-27T10:00:00Z');
+    vi.setSystemTime(now);
+    const fetchMock = vi
+      .fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
+          status,
+          headers: { 'retry-after': '120' },
+        }),
+      );
+    globalThis.fetch = Object.assign(fetchMock, { preconnect: vi.fn() });
+    await expect(
+      githubProvider.handleOAuthCallback({
+        code: 'code',
+        redirectUri: 'https://timeline.test/api/integrations/github/callback',
+      }),
+    ).rejects.toMatchObject({
+      code: 'provider_rate_limited',
+      retryAt: new Date(now.getTime() + 120_000),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('stores GitHub App installation metadata for later installation-token sync', async () => {
@@ -1733,6 +1761,49 @@ describe('githubProvider.incrementalSync', () => {
     vi.restoreAllMocks();
   });
 
+  it('propagates shared quota pauses instead of converting them to partial sync failures', async () => {
+    const error = new ProviderRateLimitError({
+      provider: 'github',
+      retryAt: new Date(Date.now() + 60_000),
+      retryAfterSeconds: 60,
+      reason: 'shared_request_budget',
+      scope: 'requests',
+    });
+    const pausedFetch = vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>(
+      (input) => {
+        const url = new URL(
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+        );
+        if (url.pathname === '/repos/acme/app')
+          return Promise.resolve(
+            Response.json({
+              id: 1,
+              full_name: 'acme/app',
+              default_branch: 'main',
+              owner: { login: 'acme' },
+            }),
+          );
+        return Promise.reject(error);
+      },
+    );
+    globalThis.fetch = Object.assign(pausedFetch, { preconnect: vi.fn() });
+    const ctx: SyncContext = {
+      loadCursor: vi.fn().mockResolvedValue({}),
+      saveCursor: vi.fn(),
+      writeEvents: vi.fn().mockResolvedValue([]),
+      persistTokens: vi.fn(),
+      recordAudit: vi.fn(),
+    };
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: { access_token: 'token' },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx,
+      }),
+    ).rejects.toBe(error);
+  });
+
   function jsonResponse(
     body: unknown,
     status = 200,
@@ -3180,6 +3251,41 @@ describe('githubProvider.incrementalSync', () => {
         max_updated_at: secondSecond,
       },
     });
+  });
+
+  it('preserves quota pauses while refreshing installation tokens', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    process.env.GITHUB_APP_ID = '999';
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey
+      .export({ format: 'pem', type: 'pkcs1' })
+      .toString();
+    resetEnvForTests();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        jsonResponse({ message: 'secondary rate limit' }, 403, { 'retry-after': '120' }),
+      );
+    globalThis.fetch = Object.assign(fetchMock, { preconnect: vi.fn() });
+    const ctx = {
+      writeEvents: vi.fn().mockResolvedValue([]),
+      recordAudit: vi.fn(),
+      saveCursor: vi.fn().mockResolvedValue(undefined),
+      loadCursor: vi.fn().mockResolvedValue({}),
+      persistTokens: vi.fn(),
+    };
+    await expect(
+      githubProvider.incrementalSync({
+        integration: {} as never,
+        tokens: {
+          access_token: 'ghu_user',
+          github_app_installations: [{ id: '123', account_login: 'acme' }],
+        },
+        selections: [{ kind: 'github.repo', externalId: 'acme/app' }],
+        ctx,
+      }),
+    ).rejects.toMatchObject({ code: 'provider_rate_limited', retryAt: expect.any(Date) as Date });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(ctx.writeEvents).not.toHaveBeenCalled();
   });
 
   it('uses GitHub App installation tokens for repository syncs without persisting the transient bearer', async () => {

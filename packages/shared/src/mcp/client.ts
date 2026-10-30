@@ -6,6 +6,7 @@ import type { discoverOAuth } from '#src/mcp/oauth-provider.js';
 
 import { decryptJson, encryptJson } from '#src/crypto/secrets.js';
 import { externalFetch } from '#src/http/external-fetch.js';
+import { providerRetryAt, withExternalRequest } from '#src/integrations/request.js';
 import { childLogger } from '#src/logger.js';
 import { buildAuth } from '#src/mcp/auth.js';
 import { refreshToken as oauthRefreshToken } from '#src/mcp/oauth-provider.js';
@@ -72,7 +73,14 @@ interface JsonRpcResponse {
   error?: { code: number; message: string; data?: unknown };
 }
 
-async function rpc(
+function rpc(...args: Parameters<typeof rpcRequest>): Promise<unknown> {
+  return withExternalRequest(
+    { provider: 'mcp', identity: `${args[0]}:${JSON.stringify(args[1])}`, operation: args[2] },
+    () => rpcRequest(...args),
+  );
+}
+
+async function rpcRequest(
   url: string,
   headers: Record<string, string>,
   method: string,
@@ -109,6 +117,9 @@ async function rpc(
       timeoutMs: requestOptions.timeoutMs ?? 30_000,
     },
   );
+  if (res.status === 429) {
+    throw Object.assign(new Error('MCP rate limited'), { retryAt: providerRetryAt(res.headers) });
+  }
   if (res.status >= 300 && res.status < 400) {
     throw new Error(`MCP ${method}: server attempted redirect (${String(res.status)})`);
   }
@@ -394,24 +405,37 @@ export class McpClientManager {
           allTools.push(discovered);
           toolMap.set(namespaced, { serverId: server.id, toolName: t.name });
         }
-        // Update the cached_tools column for the UI.
-        await db
-          .update(mcpServers)
-          .set({
-            cachedTools: tools.map((t) => ({ name: t.name, description: t.description ?? '' })),
-            toolsCachedAt: new Date(),
-            lastConnectedAt: new Date(),
-            lastError: null,
-            updatedAt: new Date(),
-          })
-          .where(eq(mcpServers.id, server.id));
       } catch (err) {
         requestOptions.signal?.throwIfAborted();
         const msg = err instanceof Error ? err.message : String(err);
         log.warn({ err, serverId: server.id }, 'MCP discovery failed');
+        const alreadyPaused = Boolean(
+          server.lastError &&
+          server.nextHealthCheckAt &&
+          server.nextHealthCheckAt.getTime() > Date.now(),
+        );
+        const retryAt =
+          err instanceof Error && 'retryAt' in err && err.retryAt instanceof Date
+            ? err.retryAt.getTime()
+            : 0;
         await db
           .update(mcpServers)
-          .set({ lastError: msg, updatedAt: new Date() })
+          .set({
+            lastError: alreadyPaused ? server.lastError : msg,
+            updatedAt: new Date(),
+            ...(!alreadyPaused
+              ? {
+                  healthFailures: server.healthFailures + 1,
+                  nextHealthCheckAt: new Date(
+                    Math.max(
+                      Date.now() +
+                        ([1, 2, 4, 8, 24][Math.min(server.healthFailures, 4)] ?? 24) * 3600_000,
+                      retryAt,
+                    ),
+                  ),
+                }
+              : {}),
+          })
           .where(eq(mcpServers.id, server.id));
       }
     }
@@ -426,14 +450,31 @@ export class McpClientManager {
     server: McpServerRow,
     requestOptions: McpClientRequestOptions = {},
   ): Promise<McpTool[]> {
+    if (
+      server.lastError &&
+      server.nextHealthCheckAt &&
+      server.nextHealthCheckAt.getTime() > Date.now()
+    ) {
+      throw Object.assign(new Error('MCP health cooldown'), { retryAt: server.nextHealthCheckAt });
+    }
+    const disabled = new Set(
+      Array.isArray(server.disabledTools) ? (server.disabledTools as string[]) : [],
+    );
+    if (
+      server.nextHealthCheckAt &&
+      server.nextHealthCheckAt.getTime() > Date.now() &&
+      Array.isArray(server.cachedTools)
+    ) {
+      return (server.cachedTools as McpTool[]).filter(
+        (tool) => typeof tool.name === 'string' && !disabled.has(tool.name),
+      );
+    }
     const oauth =
       server.authType === 'oauth'
         ? await loadOauthAccessToken(db, server.teamId, server.id, server.url)
         : null;
     const { headers, url } = buildAuth(server, oauth);
-    const disabled = new Set(
-      Array.isArray(server.disabledTools) ? (server.disabledTools as string[]) : [],
-    );
+
     // Initialize handshake — required by spec but many servers tolerate
     // a missing initialize and answer tools/list directly. Try-and-fall-back.
     try {
@@ -449,6 +490,7 @@ export class McpClientManager {
         rpcRequestOptions(requestOptions),
       );
     } catch (err) {
+      if (err instanceof Error && 'retryAt' in err) throw err;
       log.debug({ err }, 'initialize failed (non-fatal)');
     }
     const result = (await rpc(
@@ -460,6 +502,17 @@ export class McpClientManager {
     )) as {
       tools?: McpTool[];
     };
+    await db
+      .update(mcpServers)
+      .set({
+        cachedTools: result.tools ?? [],
+        toolsCachedAt: new Date(),
+        lastConnectedAt: new Date(),
+        nextHealthCheckAt: new Date(Date.now() + 24 * 3600_000),
+        healthFailures: 0,
+        lastError: null,
+      })
+      .where(and(eq(mcpServers.id, server.id), eq(mcpServers.teamId, server.teamId)));
     return (result.tools ?? []).filter((t) => !disabled.has(t.name));
   }
 
