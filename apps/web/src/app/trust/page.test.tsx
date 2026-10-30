@@ -26,21 +26,29 @@ describe('Trust page', () => {
     expect(html).toContain('Your work should not become someone else');
     expect(html).toContain('ZDR by role');
     expect(html).toContain('Prohibited by policy');
-    expect(html).toContain('Production provider evidence remains pending');
+    expect(html).not.toContain('evidence remains pending');
     expect(html).toContain('ZDR-required roles reject endpoints with weaker retention terms');
     expect(html).toContain('data_collection: deny');
     expect(html).toContain('zdr: true');
     expect(html).toContain('cache-disable control');
     expect(html).toContain('openai/gpt-4o-transcribe');
-    expect(html).toContain('Retained, no-training quality exception');
+    expect(html).toContain('Retained transcription; no training');
     expect(html).toContain('up to 30 days');
     expect(html).toContain('Not claimed today');
-    expect(html).toContain('SOC 2, ISO 27001, or HIPAA compliance');
+    expect(html).toContain('SOC 2 report, ISO 27001 certification');
     expect(html).toContain('Browser analytics is confined to');
     expect(html).toContain('protected workspace');
     expect(html).toContain('Personless surface streams');
-    expect(html).toContain('production networking and bucket exposure still require');
-    expect(html).toContain('access inventory, enforcement, and audit evidence are still');
+    expect(html).toContain('team authorization and short-lived signed URLs');
+    expect(html).toContain('staff access policy prohibits routine browsing');
+    expect(html).toContain('1 hour requested');
+    expect(html).toContain('not independently verify provider-account settings');
+    expect(html).toContain('Legal documents');
+    expect(html).toContain('aria-labelledby="trust-legal-heading"');
+    expect(html).toMatch(/<a(?=[^>]*href="\/trust")(?=[^>]*aria-current="page")[^>]*>/);
+    expect(html).not.toMatch(
+      /evidence pending|deployment checklist|release gate|quality gate|badges we have not earned/,
+    );
     expect(html).toContain('href="/privacy"');
     expect(html).toContain('href="/cookies"');
     expect(html).toContain('href="/terms"');

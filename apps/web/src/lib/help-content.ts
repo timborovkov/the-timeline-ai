@@ -199,13 +199,12 @@ export const HELP_PAGES: HelpPage[] = [
       },
       {
         title: 'Use Timeline from an agent',
-        body: 'External agents connect through the outbound MCP endpoint. Codex and Claude Code can install the repository package directly. OpenAI’s universal Plugins Directory instead uses a separate With MCP submission that combines the production remote MCP connection with the same Timeline skill.',
+        body: 'External agents connect through Timeline’s hosted MCP endpoint. Codex and Claude Code can install the Timeline plugin using the instructions below. Other MCP-compatible clients can connect directly.',
         items: [
           'The default path uses browser-based OAuth: sign in, choose a team, review the requested scopes, and approve or deny access.',
           'Codex and Claude Code users can install the full plugin from this repository. Other compatible clients can connect to the same production URL directly.',
           'The default OAuth read scope follows the member’s existing visibility, including private and specifically shared evidence that member can access. Timeline agent access is a separate, optional owner/admin-approved scope for paid, proposal-only turns.',
           'Static team keys remain available as a compatibility fallback for manual clients.',
-          'Repository packaging is not evidence of provider submission, approval, or publication.',
         ],
         appLink: { href: '/app/team/mcp-share', label: 'Manage Timeline MCP' },
         resourceLinks: [

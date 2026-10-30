@@ -993,10 +993,10 @@ inherits that warm paper palette in light mode and the landing's warm near-black
 palette in dark mode, while each page group keeps its own content structure.
 Auth-neutral loading and error boundaries keep the same masthead but omit
 account actions rather than guessing the visitor's session state.
-The masthead exposes the same four primary destinations in the same order:
-Product (`/`), Integrations (`/integrations`), How it works (`/how-it-works`), and
-Help (`/help`). Desktop headers show them directly, compact widths use a native
-menu disclosure, and footers repeat them for recovery at the end of a page. The
+The masthead exposes the same five primary destinations in the same order:
+Product (`/`), Integrations (`/integrations`), How it works (`/how-it-works`),
+Trust (`/trust`), and Help (`/help`). Desktop headers show them directly, compact
+widths use a native menu disclosure, and footers repeat them for recovery at the end of a page. The
 current destination uses `aria-current="page"`. At phone widths, sign-in and
 theme controls move into the disclosure instead of disappearing, and the
 disclosure closes after link activation or a persisted-layout route change.
@@ -1030,14 +1030,17 @@ taxonomy.
 The legacy `/record` URL permanently redirects to `/how-it-works`; it is not a
 second indexable destination.
 
-`/trust` is the concise public assurance surface. It follows the expanded
-editorial grid, leads with the training-data boundary, then shows the data path,
+`/trust` is the public technical security and privacy reference. It follows the
+expanded editorial grid, leads with the training-data boundary, then shows the data path,
 AI routing, storage and access, processor roles, permissions, current assurance
 status, and private vulnerability-reporting route. It must distinguish controls
 enforced in code from production-account, contract, and certification evidence;
 unverified badges and absolute “nothing leaves our servers” claims are
 prohibited. Privacy and Terms remain the detailed legal surfaces and cross-link
-Trust. Once legal publication is ready, `/legal/accept` is an authenticated
+Trust. A labelled Legal documents group on Trust links to Privacy, Terms, and
+Cookies. Public copy describes customer-relevant controls, policies, and limitations;
+operator checklists and evidence-collection tasks stay in the internal operating
+standard. Once legal publication is ready, `/legal/accept` is an authenticated
 blocking interstitial: one explicit acceptance covers the current Terms and
 Privacy versions for that person, and protected product access does not continue
 until it succeeds. While production publication is withheld, existing signed-in

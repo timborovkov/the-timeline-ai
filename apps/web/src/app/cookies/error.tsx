@@ -1,6 +1,7 @@
 'use client';
 
 import { LegalRouteError } from '@/components/legal-route-state';
+import { COOKIES_REVIEW_DATE } from '@/lib/legal-versions';
 
 export default function CookiesError({
   error,
@@ -11,7 +12,7 @@ export default function CookiesError({
 }) {
   return (
     <LegalRouteError
-      eyebrow="Notice · Last reviewed 21 August 2026"
+      eyebrow={`Notice · Last reviewed ${COOKIES_REVIEW_DATE}`}
       title="Cookies and similar technologies"
       description="The cookies, browser storage, analytics, and related technologies used by The Timeline."
       error={error}

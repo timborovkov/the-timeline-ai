@@ -558,7 +558,12 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       versioned legal acceptance with immutable acceptance history; and
       non-analytics browser-storage hardening. The Cookies notice inventories
       the implemented optional public-browser analytics choice and withdrawal
-      controls while keeping provider-account and production evidence explicit.
+      controls; provider-account and production evidence remain tracked in the
+      internal operating standard.
+- [x] Rewrite public Trust, legal, help, and machine-readable copy for customers;
+      retain technical details and material limitations, keep internal evidence
+      tasks in the operating standard, add Trust to shared navigation, and
+      group legal links on Trust.
 - [x] Land the analytics-owned runtime against
       [`docs/privacy-analytics-interface.md`](./docs/privacy-analytics-interface.md):
       fixed-stream personless public/app surface requests,

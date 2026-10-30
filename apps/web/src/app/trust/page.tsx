@@ -27,12 +27,11 @@ const TRUST_SIGNALS = [
   {
     label: 'Model training',
     value: 'Prohibited by policy',
-    detail:
-      'Timeline policy prohibits training on Customer Content. Production provider evidence remains pending.',
+    detail: 'Timeline policy prohibits using Customer Content to train or fine-tune models.',
   },
   {
     label: 'Meeting media',
-    value: '1 hour by default',
+    value: '1 hour requested',
     detail: 'Recall.ai processes it; Timeline stores the transcript, not the call recording.',
   },
   {
@@ -53,7 +52,7 @@ const DATA_PATH = [
     body: 'PostgreSQL records, Qdrant vectors, and RustFS objects keep team identity attached. Visibility narrows access again inside the team.',
   },
   {
-    title: 'Inference is transient',
+    title: 'AI processing has defined limits',
     body: PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustDataPath,
   },
   {
@@ -65,18 +64,18 @@ const DATA_PATH = [
 const PROVIDERS = [
   [
     'Railway',
-    'Documented app, worker, PostgreSQL, Redis, private-traffic, and signed-file design; deployed exposure evidence pending',
+    'Application and worker hosting, PostgreSQL, Redis, Qdrant vector search, and RustFS object storage',
   ],
   ['OpenRouter', 'Privacy-filtered routing to eligible AI inference endpoints'],
   [
     'Recall.ai',
-    'Meeting attendance and transcript generation; one-hour media retention requested, with deployed account evidence pending',
+    'Meeting attendance and transcript generation; Timeline requests one-hour media retention',
   ],
   ['Daytona', 'Ephemeral isolated compute for document extraction'],
   ['Postmark', 'Transactional and inbound email'],
   [
     'PostHog',
-    'Personless surface totals, pseudonymous product events, and consent-gated public-browser analytics; provider evidence remains pending',
+    'Personless surface totals, pseudonymous product events, and optional public-browser analytics after consent',
   ],
   ['Sentry', 'Minimized error diagnostics with targeted credential and URL redaction'],
   ['Cloudflare Turnstile', 'Abuse prevention on public forms and password signup'],
@@ -108,21 +107,31 @@ function TrustProvidersSection() {
                 </div>
               ))}
             </div>
-            <p className="mt-7 text-sm leading-7 text-fg-muted">
-              Full categories, lawful bases, disclosures, transfer safeguards, and rights are in the{' '}
-              <Link className="text-fg underline underline-offset-4" href="/privacy">
-                Privacy Policy
-              </Link>
-              . Current browser storage and public analytics choices are in the{' '}
-              <Link className="text-fg underline underline-offset-4" href="/cookies">
-                Cookies and similar technologies notice
-              </Link>
-              . Contractual service commitments and use rules are in the{' '}
-              <Link className="text-fg underline underline-offset-4" href="/terms">
-                Terms of Use
-              </Link>
-              .
-            </p>
+            <nav aria-labelledby="trust-legal-heading" className="mt-10">
+              <h3 id="trust-legal-heading" className="text-xl font-semibold">
+                Legal documents
+              </h3>
+              <ul className="mt-4 grid gap-4 text-sm leading-7 text-fg-muted">
+                <li>
+                  <Link className="text-fg underline underline-offset-4" href="/privacy">
+                    Privacy Policy
+                  </Link>{' '}
+                  — data use, retention, providers, transfers, and your rights.
+                </li>
+                <li>
+                  <Link className="text-fg underline underline-offset-4" href="/terms">
+                    Terms of Use
+                  </Link>{' '}
+                  — service commitments and responsibilities.
+                </li>
+                <li>
+                  <Link className="text-fg underline underline-offset-4" href="/cookies">
+                    Cookies and similar technologies
+                  </Link>{' '}
+                  — browser storage and analytics choices.
+                </li>
+              </ul>
+            </nav>
           </div>
         </MarketingSectionGrid>
       </MarketingContainer>
@@ -138,7 +147,7 @@ function TrustAssuranceSection({ securityEmail }: { securityEmail: string }) {
           <MarketingSectionIndex index="05" label="Assurance status" />
           <div>
             <h2 className="max-w-[19ch] text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-              We will show evidence when the evidence exists.
+              Security controls and assurance status.
             </h2>
             <div className="mt-10 grid gap-px overflow-hidden border border-border bg-border md:grid-cols-2">
               <article className="bg-bg p-7 sm:p-8">
@@ -146,15 +155,15 @@ function TrustAssuranceSection({ securityEmail }: { securityEmail: string }) {
                   <Check aria-hidden="true" className="size-4" /> Current
                 </p>
                 <h3 className="mt-5 text-2xl font-semibold tracking-[-0.035em]">
-                  Inspectable controls and candid status
+                  Controls in the application
                 </h3>
                 <p className="mt-4 text-sm leading-7 text-fg-muted">
                   Public source, team and visibility boundaries, encrypted secrets, meeting consent
                   controls, and a maintained provider register. Browser analytics is confined to
                   reviewed public pages and waits for affirmative consent; protected workspace
                   routes do not load it. Personless surface streams and pseudonymous product events
-                  use separate server paths. Provider/account evidence and AI account evidence
-                  remain deployment checklist items until captured.
+                  use separate server paths. These application controls are not an independent
+                  security audit of the hosted service.
                 </p>
               </article>
               <article className="bg-bg p-7 sm:p-8">
@@ -162,12 +171,12 @@ function TrustAssuranceSection({ securityEmail }: { securityEmail: string }) {
                   <Minus aria-hidden="true" className="size-4" /> Not claimed today
                 </p>
                 <h3 className="mt-5 text-2xl font-semibold tracking-[-0.035em]">
-                  SOC 2, ISO 27001, or HIPAA compliance
+                  Independent assurance and regulated data
                 </h3>
                 <p className="mt-4 text-sm leading-7 text-fg-muted">
-                  We do not display badges we have not earned. GDPR is a legal framework, not a
-                  certificate. Verified reports and certifications will appear here if and when they
-                  are obtained.
+                  Timeline does not currently claim a SOC 2 report, ISO 27001 certification, or
+                  HIPAA compliance. Do not submit highly regulated or special-category data without
+                  Timeline&apos;s express prior written approval for your use case.
                 </p>
               </article>
             </div>
@@ -232,6 +241,7 @@ export default async function TrustPage() {
     <PublicShell
       isSignedIn={Boolean(session?.user)}
       width="expanded"
+      currentSection="trust"
       footerLabel="The Timeline trust center"
     >
       <main id="main" tabIndex={-1}>
@@ -246,15 +256,14 @@ export default async function TrustPage() {
               </h1>
               <div className="max-w-[46ch] space-y-5 text-base leading-8 text-fg-muted sm:text-lg">
                 <p>
-                  Timeline holds the messages, meetings, files, and decisions teams rarely put in
-                  one place. Trust has to come from inspectable boundaries, candid provider choices,
-                  and claims the product can actually enforce.
+                  Timeline brings together your team&apos;s messages, meetings, files, and
+                  decisions. This page explains how the application handles that data, which
+                  providers process it, and the policies that govern its use.
                 </p>
                 <p>
-                  The honest answer is not “nothing leaves our servers.” Relevant content reaches
-                  specialist processors. The policy is narrower: Timeline prohibits using Customer
-                  Content to train or fine-tune models. Production account and contract evidence is
-                  still being completed. {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustIntro}
+                  Relevant content is sent to service providers to deliver requested features.
+                  Timeline policy prohibits using Customer Content to train or fine-tune models.{' '}
+                  {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustIntro}
                 </p>
               </div>
             </div>
@@ -310,16 +319,16 @@ export default async function TrustPage() {
                 <div className="grid gap-8 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)] lg:gap-14">
                   <div>
                     <h2 className="max-w-[15ch] text-balance text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-                      Private routing, not a private-cloud fairy tale.
+                      AI models, routing, and retention.
                     </h2>
                     <p className="mt-5 text-base leading-8 text-fg-muted">
-                      OpenRouter and an upstream endpoint transiently process the necessary input.
-                      Text, multimodal, and embedding roles require eligible ZDR endpoints and fail
-                      closed instead of using weaker retention. Supported calls send{' '}
+                      OpenRouter and an upstream endpoint process the input needed for each AI
+                      feature. Text, multimodal, and embedding roles require eligible ZDR endpoints
+                      and fail closed instead of using weaker retention. Supported calls send{' '}
                       <code>data_collection: deny</code>, <code>zdr: true</code>, and an explicit
-                      cache-disable control. OpenRouter may select among eligible ZDR upstreams. The
-                      production key must match the code-owned model catalog, with prompt logging,
-                      input/output sharing, Broadcast, and persistent response caching disabled.
+                      cache-disable control. OpenRouter may select among eligible ZDR upstreams.
+                      These request controls do not independently verify provider-account settings
+                      or provider deletion.
                     </p>
                     <p className="mt-5 text-sm leading-7 text-fg-muted">
                       {PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustDetail}
@@ -348,7 +357,7 @@ export default async function TrustPage() {
                 <div className="mt-10 grid gap-px border border-border bg-border sm:grid-cols-3">
                   {[
                     'Timeline policy prohibits training or fine-tuning on Customer Content',
-                    'ZDR-required roles reject endpoints with weaker retention terms; production provider evidence remains a release gate',
+                    'ZDR-required roles reject endpoints with weaker retention terms',
                     PUBLIC_TRANSCRIPTION_PRIVACY_CLAIMS.trustChecklist,
                   ].map((item) => (
                     <p key={item} className="flex gap-3 bg-bg p-5 text-sm leading-6 text-fg-muted">
@@ -369,28 +378,25 @@ export default async function TrustPage() {
               <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
                 <div>
                   <h2 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-                    Infrastructure with fewer hidden hops.
+                    Storage and application controls.
                   </h2>
                   <p className="mt-5 text-base leading-8 text-fg-muted">
-                    The documented hosted topology places the web app, workers, PostgreSQL, Redis,
-                    Qdrant vector search, and RustFS object storage on Railway. The deployment
-                    design requires private networking for server traffic and non-public RustFS
-                    buckets, with HTTPS exposed only for team-authorized, short-lived signed browser
-                    transfers. Current production networking and bucket exposure still require
-                    verification. OAuth, API, and MCP secrets use AES-256-GCM authenticated
-                    encryption at rest.
+                    The hosted architecture uses Railway for the web app, workers, PostgreSQL,
+                    Redis, Qdrant vector search, and RustFS object storage. Application file
+                    transfers use team authorization and short-lived signed URLs. OAuth, API, and
+                    MCP secrets use AES-256-GCM authenticated encryption at rest.
                   </p>
                 </div>
                 <div>
                   <h2 className="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">
-                    People need a reason, not curiosity.
+                    Staff access policy.
                   </h2>
                   <p className="mt-5 text-base leading-8 text-fg-muted">
-                    Timeline&apos;s operating standard prohibits routine browsing of customer
-                    workspaces. It permits access only for user-requested support, reliability,
-                    security response, legal compliance, or another documented operational need, and
-                    requires minimum-necessary, time-bounded access where practical. Production
-                    access inventory, enforcement, and audit evidence are still being completed.
+                    Timeline&apos;s staff access policy prohibits routine browsing of customer
+                    workspaces. It permits access only for user-requested support, service
+                    reliability, security response, legal compliance, or another documented
+                    operational need. The policy requires access to be limited to what the task
+                    needs.
                   </p>
                   <p className="mt-5 text-sm leading-7 text-fg-muted">
                     Inside a team, records are team-visible, private, or restricted to named users.
