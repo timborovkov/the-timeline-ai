@@ -416,3 +416,19 @@ already-recorded facts use their first-recorded instant when earlier. Current-da
 new facts use the locked account, including webhook-activated Enterprise terms.
 Unaudited historical changes with no retained snapshot cannot be reconstructed.
 The migration is included in synthetic PGlite verification; no live migration was run.
+
+## Review follow-up: admitted metered discounts (2026-10-30)
+
+New reservations stamp the server-resolved metered discount percentage under the
+account lock, after caller metadata. Zero is explicit. Settlement uses this stamp
+even if the override expires, is replaced, or a new promotion starts while completed
+provider work awaits recovery. Re-admitting unfinished work stamps the new terms;
+replaying completed work preserves the original terms. Member-day snapshots retain
+their existing precedence. Older reservations without this stamp retain the previous
+fallback; their original percentage cannot be guaranteed by this change.
+
+Synthetic recovery tests cover expiry, replacement, a newly added discount, caller
+metadata precedence, invoice and spend-cap amounts, and idempotent recovery. No
+migration, environment change, deployment, or live provider call is required.
+The documentation handoff was audited manually because the repository-referenced
+/document-release skill is unavailable; setup guidance and this ADR were updated.

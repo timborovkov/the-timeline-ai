@@ -1636,6 +1636,79 @@ describe('billing runtime', () => {
     expect(account?.included).toBe(6_000);
   });
 
+  for (const scenario of [
+    { name: 'expired', admitted: 50, current: 50, expired: true, invoice: 118 },
+    { name: 'replaced', admitted: 50, current: 10, expired: false, invoice: 118 },
+    { name: 'newly added', admitted: null, current: 50, expired: false, invoice: 236 },
+  ]) {
+    it(`preserves the admitted AI discount when the override is ${scenario.name}`, async () => {
+      process.env.BILLING_CHARGES_ENABLED = 'true';
+      resetEnvForTests();
+      const billing = billingScopeMod.createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.getAccount();
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'payg',
+          billingState: 'payg_active',
+          shadowBilling: false,
+          includedDiscountRemainingCents: 0,
+          spendCapCents: 100000,
+          priceOverride:
+            scenario.admitted === null ? null : { meteredDiscountPercent: scenario.admitted },
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      const operationId = 'embedding:historical-discount';
+      const reserved = await billing.reserve({
+        operationId,
+        meterId: 'ai',
+        reservedNativeUnits: 800,
+        reservedChargeCents: 800,
+        metadata: {
+          source: 'worker',
+          operation_class: 'embedding',
+          admitted_metered_discount_percent: 99,
+        },
+      });
+      expect(reserved.ok).toBe(true);
+      if (reserved.ok)
+        expect(reserved.reservation.metadata.admitted_metered_discount_percent).toBe(
+          scenario.admitted ?? 0,
+        );
+      await billing.patchReservationMetadata(operationId, {
+        provider_completed: true,
+        worker_settlement_pending: true,
+        openrouter_usd: 2,
+      });
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          priceOverride: { meteredDiscountPercent: scenario.current },
+          priceOverrideExpiresAt: scenario.expired ? new Date(Date.now() - 1000) : null,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      expect(await settlePendingBillingReservations(db)).toBe(1);
+      expect(await settlePendingBillingReservations(db)).toBe(0);
+      const [ledger] = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.operationId, operationId));
+      expect(ledger?.metadata.invoice_cents).toBe(scenario.invoice);
+      const [counter] = await db
+        .select()
+        .from(billingUsageCounters)
+        .where(
+          and(eq(billingUsageCounters.teamId, TEAM_ID), eq(billingUsageCounters.meterId, 'ai')),
+        );
+      expect(counter?.capEligibleChargeCents).toBe(scenario.invoice);
+    });
+  }
+
   it('settles a recovered PAYG worker call on the plan that admitted it', async () => {
     process.env.BILLING_CHARGES_ENABLED = 'true';
     resetEnvForTests();

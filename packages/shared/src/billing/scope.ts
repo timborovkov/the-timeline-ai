@@ -931,6 +931,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
         const walletLockCents = 0;
         const reservationMetadata = {
           ...(input.metadata ?? {}),
+          admitted_metered_discount_percent: commercial.meteredDiscountPercent ?? 0,
           list_charge_cents: input.reservedChargeCents,
           metered_charge_cents: billableChargeCents,
           billable_charge_cents: invoiceBillableChargeCents,
@@ -1206,12 +1207,17 @@ export function createBillingScope(deps: BillingScopeDeps) {
               : {}),
           });
           const commercial = resolveTeamCommercialTerms(account);
+          // Admission stamps this after caller metadata under the account lock.
+          // Explicit zero prevents a later promotion from repricing completed work.
+          const admittedDiscount = reservation[0]?.metadata.admitted_metered_discount_percent;
           const meteredDiscountPercent =
             input.meterId === 'member_days' && input.pricingMemberDiscountPercent !== undefined
               ? input.pricingMemberDiscountPercent
-              : entitlementsPlanId !== livePlanId
-                ? 0
-                : commercial.meteredDiscountPercent;
+              : typeof admittedDiscount === 'number'
+                ? admittedDiscount
+                : entitlementsPlanId !== livePlanId
+                  ? 0
+                  : commercial.meteredDiscountPercent;
           const comped = compSuppressesPolarCharges(account);
           const enterpriseContract = contractualEnterpriseAccount(account);
           // member_days ignore the caller's customerChargeCents and recompute from

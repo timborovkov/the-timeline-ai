@@ -492,6 +492,13 @@ PLATFORM_ADMIN_EMAILS=
         <code>document-extract-orchestrator</code> as well as web/worker; it is a non-secret
         allowlisted toggle, not an extra credential.
       </p>
+      <p>
+        New usage reservations also save the admitted metered discount percentage (including zero).
+        Delayed AI settlement keeps that percentage after an override expires or changes, so
+        recovery does not reprice completed provider work or its spend-cap consumption. Older
+        reservations without a saved percentage retain the previous settlement fallback. No new
+        migration is needed for this reservation metadata.
+      </p>
 
       <h2>Public and app surfaces</h2>
       <ul>
