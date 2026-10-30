@@ -962,6 +962,9 @@
   "apps/web/src/components/ui/undo-toast-button.test.tsx": {
     "group": "dom"
   },
+  "apps/web/src/components/user-menu.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/work-filter-bar.test.tsx": {
     "group": "dom"
   },

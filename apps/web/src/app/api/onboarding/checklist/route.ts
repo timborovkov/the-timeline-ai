@@ -51,7 +51,7 @@ export async function PATCH(req: Request): Promise<Response> {
     await scope.onboarding.dismissChecklist();
   } else if (parsed.data.action === 'reopen') {
     await scope.onboarding.reopenChecklist();
-  } else if (parsed.data.key) {
+  } else if (parsed.data.key && parsed.data.key !== 'billing_setup') {
     const completedStep = await scope.onboarding.markStepComplete(parsed.data.key);
     if (completedStep) {
       trackProductEventBestEffort(
