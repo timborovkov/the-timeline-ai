@@ -300,6 +300,8 @@ async function syncChannel(
         if (!next.latest_ts || Number(message.ts) > Number(next.latest_ts))
           next.latest_ts = message.ts;
         if (message.thread_ts !== message.ts) continue;
+        // Root metadata does not prove replies are unchanged. Quota protection
+        // deliberately leaves missed reply edits to manual resync.
         const signature = `${message.reply_count ?? ''}:${message.latest_reply ?? ''}:${message.edited?.ts ?? ''}`;
         if (next.thread_versions?.[message.ts] !== signature)
           pendingThreads.push({ ts: message.ts, signature });
@@ -322,6 +324,7 @@ async function syncChannel(
           .filter((message) => message.ts !== thread.ts)
           .flatMap((message) => [
             messageEvent(teamId, channel, message),
+            ...reactionEvents(teamId, channel, message),
             ...fileEvents(teamId, channel, message),
           ]),
       );

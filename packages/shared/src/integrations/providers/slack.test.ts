@@ -156,7 +156,15 @@ describe('slackProvider', () => {
       return Promise.resolve(
         jsonResponse({
           ok: true,
-          messages: [{ type: 'message', user: 'U456', text: 'Agreed', ts: '1782000001.000200' }],
+          messages: [
+            {
+              type: 'message',
+              user: 'U456',
+              text: 'Agreed',
+              ts: '1782000001.000200',
+              reactions: [{ name: 'thumbsup', count: 1, users: ['U123'] }],
+            },
+          ],
         }),
       );
     });
@@ -182,7 +190,9 @@ describe('slackProvider', () => {
       'reaction.added',
       'file.shared',
       'message.created',
+      'reaction.added',
     ]);
+    expect(events[4]?.dedupKey).toBe('slack:reaction:T123:C123:1782000001.000200:thumbsup');
     expect(events[1]?.dedupKey).toBe('slack:reaction:T123:C123:1782000000.000100:white_check_mark');
     expect(events[0]?.objectMap).toMatchObject({
       type: 'topic',

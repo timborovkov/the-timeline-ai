@@ -424,8 +424,10 @@ MONDAY_WEBHOOK_SECRET=...</code></pre>
           and <code>reaction_removed</code>, reinstall if permissions changed, then send a test
           message in a selected channel to activate native capture. OAuth alone does not activate
           it. History and reply reads use 15-record pages and conservative one-request-per-minute
-          pacing per workspace/app/method. Old missed edits or replies require manual resync, which
-          uses the same quota controls.
+          pacing per workspace/app/method. Replies are fetched only for new or changed thread roots.
+          A missed reply edit or reaction can require manual resync even within 48 hours if root
+          metadata is unchanged. Older missed edits or replies also require manual resync, using the
+          same quota controls.
         </li>
       </ol>
 
