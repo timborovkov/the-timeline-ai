@@ -339,7 +339,9 @@ credit hides margin and confuses prospects.
    plain JSON values, because `withAiMetering` replays `provider_value` through `JSON.stringify`.
    A worker job id is only the parent. Each metered model call appends its stage and a digest of
    the model, prompt, schema, and input, so extraction and classification in one suggestion job
-   cannot replay each other. A retry of that same call reuses the settlement. Transcription chunks
+   cannot replay each other. A retry of that same call reuses the settlement. Billing-state
+   pauses do not block replay of settled or `provider_completed` results; membership and locked
+   security checks still apply, and incomplete reservations still pass new-work admission. Transcription chunks
    that already pass a per-chunk id keep it. Ask tool rounds settle on one Ask reservation and do
    not use this provider-result cache. Cancelling a meeting that already
    has transcript chunks leaves it `processing` for finalize; only an empty capture is marked
@@ -398,3 +400,19 @@ credit hides margin and confuses prospects.
   the id.
 - An Ask that records provider cost and then returns an empty answer settles
   that cost. An empty answer with no recorded cost releases the reservation.
+
+## Review follow-up: immutable member pricing (2026-10-30)
+
+Member-day facts now carry `pricing_terms`: included seats, the extra-member monthly
+rate, and the metered discount percent, even when no seat is chargeable. The first
+stamp and new facts are written under the account lock; later arrivals and retries
+reuse the same day's stamp. Settlement receives those explicit historical terms
+instead of resolving today's override, including when the plan itself is unchanged.
+
+Migration `0090_billing_member_day_pricing_terms` adds the nullable column. Legacy
+facts recover terms once from team-scoped operator before/after snapshots, with
+expiry evaluated at the historical instant. Missed days use end-of-day terms;
+already-recorded facts use their first-recorded instant when earlier. Current-day
+new facts use the locked account, including webhook-activated Enterprise terms.
+Unaudited historical changes with no retained snapshot cannot be reconstructed.
+The migration is included in synthetic PGlite verification; no live migration was run.

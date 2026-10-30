@@ -152,6 +152,24 @@
         confirmation and payment-card eligibility remain covered by mocks, not a live purchase.
       </p>
 
+      <h3>Codex review follow-up — 2026-10-30</h3>
+      <p>
+        PR #384's latest findings are addressed by daily member pricing stamps and completed-result
+        replay before new-work billing admission. Migration
+        <code>0090_billing_member_day_pricing_terms</code> adds a nullable JSON column; apply it
+        through the normal migration process before deploying this worker version. No database
+        migration or deployment was run against a live environment in this task. Existing facts are
+        stamped lazily using operator audit history; historical overrides changed outside the
+        audited operator path cannot be reconstructed when no snapshot remains.
+      </p>
+      <p>
+        Focused PGlite tests exercise expiry, clearing/replacement, late arrivals, historical rates
+        and percentage discounts, settled/pending-result replay during billing pauses, security
+        blocks, membership denial, and team isolation. Documentation handoff was audited manually
+        because <code>/document-release</code> is unavailable; this guide, ADR 0018 and the roadmap
+        were updated. The public design and other setup guides need no behavior changes.
+      </p>
+
       <h2>Environment variables</h2>
       <pre><code>POLAR_ACCESS_TOKEN=
 POLAR_SERVER=sandbox
@@ -448,22 +466,31 @@ PLATFORM_ADMIN_EMAILS=
         <code>provider_completed</code>. A successful worker call stamps
         <code>worker_settlement_pending</code> before settle. The janitor drains that marker,
         including an already-expired row, before the reservation TTL, and a retry keeps the
-        completed result. Member-day ledger rows stamp <code>plan_id</code>; later ticks reuse that
-        day's included-member count. A missed day with no stamp uses the plan effective that day.
-        Storage-cap finalization deletes the uploaded object when admission fails. Captured
-        Slack/Telegram/email attachments assert document and storage capacity. Free in-allowance
-        usage is not invoiced when live charging is enabled. Janitor Recall leave retries run before
-        reservation expiry, and expiry skips rows with <code>pending_recall_leave_bot_id</code>.
-        Interactive search embeddings run under billing ALS. The Free grant unassigns when its owner
-        leaves or is demoted. A retained Polar subscription id does not keep that Free workspace
-        unrestricted. Deferred enrichment and transcription clear their markers only after Redis
-        enqueue succeeds. Member-day janitor ticks backfill missed days. Deleted documents are
-        excluded from indexed-chunk capacity; restore counts those chunks. Web chat settles known
-        compression cost when the answer stream fails. Completed Ask tool rounds accumulate per step
-        and settle when a later model step errors, on web and on Slack/Telegram Ask.
-        <code>BILLING_CHARGES_ENABLED=false</code> is a process-wide shadow kill switch. Set
-        <code>BILLING_CHARGES_ENABLED</code> on <code>document-extract-orchestrator</code> as well
-        as web/worker; it is a non-secret allowlisted toggle, not an extra credential.
+        completed result. A billing pause (<code>read_only</code> or <code>past_due</code>, for
+        example) does not block replay of settled work or a persisted completed provider result.
+        Membership and suspended/terminated security checks still run; incomplete reservations and
+        new inference still require billing admission. Member-day ledger rows stamp
+        <code>plan_id</code> and <code>pricing_terms</code> (included members, extra-member price,
+        and metered discount percent), including zero-charge facts. The first daily stamp is
+        serialized with operator changes under the billing-account lock; late arrivals and retries
+        reuse it. A cleared or expired override cannot retroactively create extra seats or change
+        their price. Legacy null stamps and missed days resolve operator before/after snapshots and
+        expiry at the historical pricing instant, then save the recovered terms. A missed day still
+        uses the plan effective that day. Storage-cap finalization deletes the uploaded object when
+        admission fails. Captured Slack/Telegram/email attachments assert document and storage
+        capacity. Free in-allowance usage is not invoiced when live charging is enabled. Janitor
+        Recall leave retries run before reservation expiry, and expiry skips rows with
+        <code>pending_recall_leave_bot_id</code>. Interactive search embeddings run under billing
+        ALS. The Free grant unassigns when its owner leaves or is demoted. A retained Polar
+        subscription id does not keep that Free workspace unrestricted. Deferred enrichment and
+        transcription clear their markers only after Redis enqueue succeeds. Member-day janitor
+        ticks backfill missed days. Deleted documents are excluded from indexed-chunk capacity;
+        restore counts those chunks. Web chat settles known compression cost when the answer stream
+        fails. Completed Ask tool rounds accumulate per step and settle when a later model step
+        errors, on web and on Slack/Telegram Ask. <code>BILLING_CHARGES_ENABLED=false</code> is a
+        process-wide shadow kill switch. Set <code>BILLING_CHARGES_ENABLED</code> on
+        <code>document-extract-orchestrator</code> as well as web/worker; it is a non-secret
+        allowlisted toggle, not an extra credential.
       </p>
 
       <h2>Public and app surfaces</h2>

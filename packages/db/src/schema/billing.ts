@@ -370,6 +370,12 @@ export const billingMemberDayLedger = pgTable(
     role: text('role').notNull(),
     billable: boolean('billable').notNull().default(true),
     chargeCents: integer('charge_cents').notNull().default(0),
+    /** Immutable commercial terms selected on the first accrual of this UTC day. */
+    pricingTerms: jsonb('pricing_terms').$type<{
+      includedActiveMembers: number | null;
+      additionalMemberCents: number | null;
+      meteredDiscountPercent: number | null;
+    }>(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

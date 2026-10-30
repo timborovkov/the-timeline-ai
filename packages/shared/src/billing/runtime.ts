@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   billingMemberDayLedger,
+  billingOperatorAudit,
   billingUsageCounters,
   billingUsageLedger,
   billingUsageReservations,
@@ -14,7 +15,7 @@ import {
   type Db,
   type TeamMemberPriorInterval,
 } from '@timeline/db';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 
 import {
   settleAskAiFromOpenRouterUsd,
@@ -46,7 +47,12 @@ import {
   openRouterUsdCostFromFinishEvent,
   type OpenRouterFinishEvent,
 } from '#src/billing/openrouter-usage.js';
-import { effectiveBillingPlanId, resolveTeamCommercialTerms } from '#src/billing/operator.js';
+import {
+  assertPriceOverride,
+  effectiveBillingPlanId,
+  resolveTeamCommercialTerms,
+  type BillingOperatorAccount,
+} from '#src/billing/operator.js';
 import { billingPlanIdOnDay, rollIncludedDiscountIfElapsed } from '#src/billing/plan-history.js';
 import { applyElapsedScheduledCancellations } from '#src/billing/polar-webhook.js';
 import { createPolarBillingProvider } from '#src/billing/polar.js';
@@ -156,6 +162,7 @@ export async function settleTeamMeter(input: {
   pricingPlanId?: BillingPlanId;
   /** Extra-member price of that historical plan. Null means the plan has no seat price. */
   pricingAdditionalMemberCents?: number | null;
+  pricingMemberDiscountPercent?: number | null;
   pricingPeriodYm?: string;
   usageAt?: Date;
 }): Promise<{ ok: true; duplicate: boolean } | { ok: false; code: BillingReserveFailureCode }> {
@@ -173,6 +180,9 @@ export async function settleTeamMeter(input: {
     ...(input.pricingPlanId ? { pricingPlanId: input.pricingPlanId } : {}),
     ...(input.pricingAdditionalMemberCents !== undefined
       ? { pricingAdditionalMemberCents: input.pricingAdditionalMemberCents }
+      : {}),
+    ...(input.pricingMemberDiscountPercent !== undefined
+      ? { pricingMemberDiscountPercent: input.pricingMemberDiscountPercent }
       : {}),
     ...(input.pricingPeriodYm ? { pricingPeriodYm: input.pricingPeriodYm } : {}),
     ...(input.usageAt ? { usageAt: input.usageAt } : {}),
@@ -997,14 +1007,19 @@ async function planEntitlementForMemberDay(input: {
   db: Db;
   teamId: string;
   day: string;
-  account: {
-    planId: BillingPlanId;
-    arrangement?: 'standard' | 'comped' | null | undefined;
-    compExpiresAt?: Date | null | undefined;
-  };
-}): Promise<{ planId: BillingPlanId; included: number | null }> {
+  account: BillingOperatorAccount;
+}): Promise<{
+  planId: BillingPlanId;
+  included: number | null;
+  additionalMemberCents: number | null;
+  meteredDiscountPercent: number | null;
+}> {
   const [existing] = await input.db
-    .select({ planId: billingMemberDayLedger.planId })
+    .select({
+      planId: billingMemberDayLedger.planId,
+      createdAt: billingMemberDayLedger.createdAt,
+      pricingTerms: billingMemberDayLedger.pricingTerms,
+    })
     .from(billingMemberDayLedger)
     .where(
       and(
@@ -1012,9 +1027,18 @@ async function planEntitlementForMemberDay(input: {
         eq(billingMemberDayLedger.day, input.day),
       ),
     )
+    .orderBy(asc(billingMemberDayLedger.createdAt))
     .limit(1);
   const stampedPlanId =
     existing?.planId && isBillingPlanId(existing.planId) ? existing.planId : null;
+  if (stampedPlanId && existing?.pricingTerms) {
+    return {
+      planId: stampedPlanId,
+      included: existing.pricingTerms.includedActiveMembers,
+      additionalMemberCents: existing.pricingTerms.additionalMemberCents,
+      meteredDiscountPercent: existing.pricingTerms.meteredDiscountPercent,
+    };
+  }
   // A missed day has no stamp yet. One helper applies plan history, comp
   // expiry, and a contractual Enterprise plan before the first write.
   const planId =
@@ -1025,7 +1049,71 @@ async function planEntitlementForMemberDay(input: {
       day: input.day,
       account: input.account,
     }));
-  return { planId, included: PLAN_CATALOG[planId].includedActiveMembers };
+  // The first daily fact fixes the pricing instant. For missed days, use
+  // end-of-day terms. Audit before/after snapshots also recover cleared or
+  // replaced overrides; expiry is evaluated at usage time, never at replay time.
+  const at = new Date(
+    Math.min(
+      Date.now(),
+      existing?.createdAt.getTime() ?? Infinity,
+      new Date(`${input.day}T23:59:59.999Z`).getTime(),
+    ),
+  );
+  const [previous] = await input.db
+    .select()
+    .from(billingOperatorAudit)
+    .where(
+      and(eq(billingOperatorAudit.teamId, input.teamId), lte(billingOperatorAudit.createdAt, at)),
+    )
+    .orderBy(desc(billingOperatorAudit.createdAt))
+    .limit(1);
+  const [next] = previous
+    ? []
+    : await input.db
+        .select()
+        .from(billingOperatorAudit)
+        .where(
+          and(
+            eq(billingOperatorAudit.teamId, input.teamId),
+            gt(billingOperatorAudit.createdAt, at),
+          ),
+        )
+        .orderBy(asc(billingOperatorAudit.createdAt))
+        .limit(1);
+  const snapshot = previous?.after ?? next?.before;
+  // Fresh current-day facts use the locked live account (including Enterprise
+  // terms activated by a webhook). Legacy/backfilled facts use audit history.
+  const source =
+    !existing && input.day === utcDay()
+      ? input.account
+      : snapshot?.planId === planId
+        ? snapshot
+        : input.account;
+  const override =
+    source.planId === planId && source.priceOverride
+      ? assertPriceOverride(source.priceOverride)
+      : null;
+  const rawExpiry = source.priceOverrideExpiresAt;
+  const expiresAt =
+    typeof rawExpiry === 'string' || rawExpiry instanceof Date ? new Date(rawExpiry) : null;
+  if (expiresAt && Number.isNaN(expiresAt.getTime()))
+    throw new Error('Invalid historical price override expiry');
+  const terms = resolveTeamCommercialTerms(
+    {
+      planId,
+      billingState: 'free',
+      spendCapCents: 0,
+      priceOverride: override,
+      priceOverrideExpiresAt: expiresAt,
+    },
+    at,
+  );
+  return {
+    planId,
+    included: terms.includedActiveMembers,
+    additionalMemberCents: terms.additionalMemberCents,
+    meteredDiscountPercent: terms.meteredDiscountPercent,
+  };
 }
 
 async function accrueTeamMemberDaysForDay(input: {
@@ -1033,27 +1121,11 @@ async function accrueTeamMemberDaysForDay(input: {
   teamId: string;
   day: string;
   planId: BillingPlanId;
-  livePlanId: BillingPlanId;
+  meteredDiscountPercent: number | null;
   included: number | null;
   additionalMemberCents: number | null;
-  members: { userId: string; role: string }[];
 }): Promise<{ extraMembers: number; chargeCents: number }> {
   const { day, planId, included } = input;
-  for (const member of input.members) {
-    await input.db
-      .insert(billingMemberDayLedger)
-      .values({
-        teamId: input.teamId,
-        userId: member.userId,
-        day,
-        planId,
-        role: member.role,
-        billable: planId !== 'free',
-        chargeCents: 0,
-      })
-      .onConflictDoNothing();
-  }
-
   const additionalMemberCents = input.additionalMemberCents;
   if (
     planId === 'free' ||
@@ -1089,7 +1161,6 @@ async function accrueTeamMemberDaysForDay(input: {
       centsPerMemberMonth: additionalMemberCents,
       daysInMonth,
     });
-    const replayDifferentPlan = planId !== input.livePlanId;
     const result = await settleTeamMeter({
       db: input.db,
       teamId: input.teamId,
@@ -1103,12 +1174,9 @@ async function accrueTeamMemberDaysForDay(input: {
       persistWhenDenied: true,
       usageAt: new Date(`${day}T12:00:00.000Z`),
       pricingPeriodYm: period,
-      ...(replayDifferentPlan
-        ? {
-            pricingPlanId: planId,
-            pricingAdditionalMemberCents: additionalMemberCents,
-          }
-        : {}),
+      pricingPlanId: planId,
+      pricingAdditionalMemberCents: additionalMemberCents,
+      pricingMemberDiscountPercent: input.meteredDiscountPercent,
     });
     if (result.ok && !result.duplicate) {
       previousNative += 1;
@@ -1123,18 +1191,6 @@ export async function accrueTeamMemberDays(input: {
   teamId: string;
   day?: string;
 }): Promise<{ extraMembers: number; chargeCents: number }> {
-  const [account] = await input.db
-    .select()
-    .from(teamBillingAccounts)
-    .where(eq(teamBillingAccounts.teamId, input.teamId))
-    .limit(1);
-  const commercial = account
-    ? resolveTeamCommercialTerms(account)
-    : resolveTeamCommercialTerms({
-        planId: 'free',
-        billingState: 'free',
-        spendCapCents: 0,
-      });
   const days = input.day ? [input.day] : memberDayBackfillRange();
   if (days.length === 0) {
     return { extraMembers: 0, chargeCents: 0 };
@@ -1157,28 +1213,63 @@ export async function accrueTeamMemberDays(input: {
     const members = input.day
       ? roster.filter((member) => member.removedAt === null)
       : membersActiveOnDay(roster, day);
-    const entitlement = await planEntitlementForMemberDay({
-      db: input.db,
-      teamId: input.teamId,
-      day,
-      account: account ?? { planId: 'free' },
+    // Serialize the first daily facts with operator changes. Every member on
+    // the day, including later arrivals and zero-charge seats, shares this stamp.
+    const entitlement = await input.db.transaction(async (tx) => {
+      const db = tx as unknown as Db;
+      const [account] = await db
+        .select()
+        .from(teamBillingAccounts)
+        .where(eq(teamBillingAccounts.teamId, input.teamId))
+        .limit(1)
+        .for('update');
+      const terms = await planEntitlementForMemberDay({
+        db,
+        teamId: input.teamId,
+        day,
+        account: account ?? { planId: 'free', billingState: 'free', spendCapCents: 0 },
+      });
+      const pricingTerms = {
+        includedActiveMembers: terms.included,
+        additionalMemberCents: terms.additionalMemberCents,
+        meteredDiscountPercent: terms.meteredDiscountPercent,
+      };
+      for (const member of members) {
+        await db
+          .insert(billingMemberDayLedger)
+          .values({
+            teamId: input.teamId,
+            userId: member.userId,
+            day,
+            planId: terms.planId,
+            role: member.role,
+            billable: terms.planId !== 'free',
+            chargeCents: 0,
+            pricingTerms,
+          })
+          .onConflictDoNothing();
+      }
+      // Nullable migration rows are recovered once from the operator history.
+      await db
+        .update(billingMemberDayLedger)
+        .set({ pricingTerms })
+        .where(
+          and(
+            eq(billingMemberDayLedger.teamId, input.teamId),
+            eq(billingMemberDayLedger.day, day),
+            isNull(billingMemberDayLedger.pricingTerms),
+          ),
+        );
+      return terms;
     });
-    const samePlan = entitlement.planId === commercial.planId;
     const result = await accrueTeamMemberDaysForDay({
       db: input.db,
       teamId: input.teamId,
       day,
       planId: entitlement.planId,
-      livePlanId: commercial.planId,
-      included:
-        samePlan && commercial.includedActiveMembers !== null
-          ? commercial.includedActiveMembers
-          : entitlement.included,
-      additionalMemberCents:
-        samePlan && commercial.additionalMemberCents !== null
-          ? commercial.additionalMemberCents
-          : (PLAN_CATALOG[entitlement.planId].additionalMemberCents ?? null),
-      members,
+      included: entitlement.included,
+      additionalMemberCents: entitlement.additionalMemberCents,
+      meteredDiscountPercent: entitlement.meteredDiscountPercent,
     });
     extraMembers = result.extraMembers;
     chargeCents += result.chargeCents;

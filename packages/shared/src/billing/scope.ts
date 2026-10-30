@@ -733,9 +733,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
       if (account.securityState === 'suspended' || account.securityState === 'terminated') {
         return { ok: false as const, code: 'security_blocked' as const };
       }
-      if (!billingStateAllowsReservation(account.billingState)) {
-        return { ok: false as const, code: 'usage_limit_reached' as const };
-      }
       const isAskTurn =
         input.operationId.startsWith('ask:') || input.metadata?.operation_class === 'agent_ask';
       const expiresAt = new Date(Date.now() + (input.ttlMs ?? 15 * 60_000));
@@ -785,6 +782,16 @@ export function createBillingScope(deps: BillingScopeDeps) {
         if (existingReservation?.state === 'settled') {
           return { kind: 'already_settled' as const, row: existingReservation };
         }
+        // Completed inference may still need its downstream write retried. A
+        // billing pause blocks new provider work, not replay of a stored result.
+        // Membership and the locked security-state check above still apply.
+        if (existingReservation?.metadata.provider_completed === true) {
+          const completed = await reuseCompletedProviderWork(existingReservation);
+          if (completed) return { kind: 'reused' as const, row: completed };
+        }
+        if (!billingStateAllowsReservation(locked.billingState)) {
+          return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
+        }
         if (existingReservation) {
           const completed = await reuseCompletedProviderWork(existingReservation);
           if (completed) return { kind: 'reused' as const, row: completed };
@@ -794,9 +801,6 @@ export function createBillingScope(deps: BillingScopeDeps) {
           existingReservation.expiresAt.getTime() > Date.now()
         ) {
           return { kind: 'reused' as const, row: existingReservation };
-        }
-        if (!billingStateAllowsReservation(locked.billingState)) {
-          return { kind: 'reject' as const, code: 'usage_limit_reached' as const };
         }
         const entitlementsPlanId = effectiveBillingPlanId(locked);
         const commercial = resolveTeamCommercialTerms(locked);
@@ -1116,6 +1120,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
        * Live settlement omits this and uses the current commercial rate.
        */
       pricingAdditionalMemberCents?: number | null;
+      /** Historical member-day discount, resolved by the server from operator history. */
+      pricingMemberDiscountPercent?: number | null;
       pricingPeriodYm?: string;
       /** When the usage happened. Backfills use this instead of reservation time. */
       usageAt?: Date;
@@ -1201,7 +1207,11 @@ export function createBillingScope(deps: BillingScopeDeps) {
           });
           const commercial = resolveTeamCommercialTerms(account);
           const meteredDiscountPercent =
-            entitlementsPlanId !== livePlanId ? 0 : commercial.meteredDiscountPercent;
+            input.meterId === 'member_days' && input.pricingMemberDiscountPercent !== undefined
+              ? input.pricingMemberDiscountPercent
+              : entitlementsPlanId !== livePlanId
+                ? 0
+                : commercial.meteredDiscountPercent;
           const comped = compSuppressesPolarCharges(account);
           const enterpriseContract = contractualEnterpriseAccount(account);
           // member_days ignore the caller's customerChargeCents and recompute from

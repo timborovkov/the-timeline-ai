@@ -1,6 +1,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import {
   billingMemberDayLedger,
+  billingOperatorAudit,
   billingUsageCounters,
   billingUsageLedger,
   billingUsageReservations,
@@ -297,6 +298,8 @@ describe('billing runtime', () => {
       VALUES ('51111111-2222-4333-8444-555555555555', 'm5@example.test');
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '51111111-2222-4333-8444-555555555555', 'member');
+      UPDATE team_billing_accounts SET price_override = '{"includedActiveMembers":100,"additionalMemberCents":600}'
+      WHERE team_id = '${TEAM_ID}';
     `);
     const second = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
     expect(second.extraMembers).toBe(2);
@@ -304,6 +307,161 @@ describe('billing runtime', () => {
     const third = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: '2026-08-26' });
     expect(third.extraMembers).toBe(2);
     expect(third.chargeCents).toBe(0);
+  });
+
+  it('keeps historical included seats after an override expires or is cleared', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = utcDayOffset(-2);
+    const expiry = `${utcDayOffset(-1)}T00:00:00Z`;
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'team', billing_state = 'team_active',
+        price_override = '{"includedActiveMembers":50}', price_override_expires_at = '${expiry}'
+      WHERE team_id = '${TEAM_ID}';
+      UPDATE billing_plan_history SET plan_id = 'team' WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email)
+        SELECT ('22222222-2222-4222-8222-' || lpad(i::text, 12, '0'))::uuid, 'seat-' || i || '@example.test'
+        FROM generate_series(1, 39) AS i;
+      INSERT INTO team_members (team_id, user_id, role)
+        SELECT '${TEAM_ID}', id, 'member' FROM users WHERE email LIKE 'seat-%';
+    `);
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    await db.insert(billingOperatorAudit).values({
+      teamId: TEAM_ID,
+      actorEmail: 'operator@example.test',
+      action: 'price_override_cleared',
+      before: {
+        planId: 'team',
+        priceOverride: { includedActiveMembers: 50 },
+        priceOverrideExpiresAt: expiry,
+      },
+      after: { planId: 'team', priceOverride: null, priceOverrideExpiresAt: null },
+      createdAt: new Date(`${utcDayOffset(-1)}T12:00:00Z`),
+    });
+    await db
+      .update(teamBillingAccounts)
+      .set({ priceOverride: null, priceOverrideExpiresAt: null })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    // A missed day also resolves the historical override from the audit's before snapshot.
+    expect(await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: utcDayOffset(-3) })).toEqual({
+      extraMembers: 0,
+      chargeCents: 0,
+    });
+    const facts = await db
+      .select()
+      .from(billingMemberDayLedger)
+      .where(and(eq(billingMemberDayLedger.teamId, TEAM_ID), eq(billingMemberDayLedger.day, day)));
+    expect(facts).toHaveLength(40);
+    expect(facts.every((fact) => fact.pricingTerms?.includedActiveMembers === 50)).toBe(true);
+    const today = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day: utcDay() });
+    expect(today.extraMembers).toBe(15);
+    expect(today.chargeCents).toBeGreaterThan(0);
+  });
+
+  it('recovers unpaid member facts at their historical rate and percentage after replacement', async () => {
+    const billing = billingScopeMod.createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await billing.getAccount();
+    const day = utcDayOffset(-2);
+    const oldOverride = {
+      includedActiveMembers: 1,
+      additionalMemberCents: 620,
+      meteredDiscountPercent: 50,
+    };
+    const newOverride = {
+      includedActiveMembers: 0,
+      additionalMemberCents: 400,
+      meteredDiscountPercent: 0,
+    };
+    await pg.exec(`
+      UPDATE team_billing_accounts SET plan_id = 'payg', billing_state = 'past_due',
+        price_override = '${JSON.stringify(oldOverride)}'::jsonb WHERE team_id = '${TEAM_ID}';
+      INSERT INTO users (id, email) VALUES ('21111111-2222-4333-8444-555555555555', 'historical-seat@example.test');
+      INSERT INTO team_members (team_id, user_id, role) VALUES ('${TEAM_ID}', '21111111-2222-4333-8444-555555555555', 'member');
+    `);
+    const denied = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(denied.extraMembers).toBe(1);
+    expect(denied.chargeCents).toBe(0);
+    await db.insert(billingOperatorAudit).values({
+      teamId: TEAM_ID,
+      actorEmail: 'operator@example.test',
+      action: 'price_override_set',
+      before: { planId: 'payg', priceOverride: oldOverride, priceOverrideExpiresAt: null },
+      after: { planId: 'payg', priceOverride: newOverride, priceOverrideExpiresAt: null },
+      createdAt: new Date(`${utcDayOffset(-1)}T12:00:00Z`),
+    });
+    await db
+      .update(teamBillingAccounts)
+      .set({ billingState: 'payg_active', priceOverride: newOverride })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    // Simulate a pre-migration fact: terms are recovered from its audit history once.
+    await db
+      .update(billingMemberDayLedger)
+      .set({ pricingTerms: null })
+      .where(eq(billingMemberDayLedger.teamId, TEAM_ID));
+    const recovered = await accrueTeamMemberDays({ db, teamId: TEAM_ID, day });
+    expect(recovered.extraMembers).toBe(1);
+    const [ledger] = await db
+      .select()
+      .from(billingUsageLedger)
+      .where(eq(billingUsageLedger.teamId, TEAM_ID));
+    const list = memberDayChargeDelta({
+      previousNativeUnits: 0,
+      nextNativeUnits: 1,
+      centsPerMemberMonth: 620,
+      daysInMonth: daysInPeriodYm(day.slice(0, 7)),
+    });
+    expect(ledger?.customerChargeCents).toBe(Math.round(list * 0.5));
+    expect((await accrueTeamMemberDays({ db, teamId: TEAM_ID, day })).chargeCents).toBe(0);
+  });
+
+  it('replays a paid embedding after a downstream failure even when billing is paused', async () => {
+    const operationId = 'embedding:downstream-retry';
+    let calls = 0;
+    const run = () =>
+      runWorkerBilling(
+        db,
+        TEAM_ID,
+        'embedding',
+        () =>
+          withAiMetering({ operationClass: 'embedding', operationId }, () => {
+            calls += 1;
+            return Promise.resolve({ value: [0.1, 0.2], finish: { usage: { cost: 0.01 } } });
+          }),
+        { operationId },
+      );
+    expect(await run()).toEqual([0.1, 0.2]);
+    for (const state of ['read_only', 'past_due'] as const) {
+      await db
+        .update(teamBillingAccounts)
+        .set({ billingState: state })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      expect(await run()).toEqual([0.1, 0.2]);
+    }
+    expect(calls).toBe(1);
+    expect(
+      await db.select().from(billingUsageLedger).where(eq(billingUsageLedger.teamId, TEAM_ID)),
+    ).toHaveLength(1);
   });
 
   it('charges members past a custom included count at the custom extra-member price', async () => {
@@ -1396,6 +1554,10 @@ describe('billing runtime', () => {
       DELETE FROM billing_usage_ledger
       WHERE team_id = '${TEAM_ID}' AND operation_id = '${operationId}';
     `);
+    await db
+      .update(teamBillingAccounts)
+      .set({ billingState: 'past_due' })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
     const retried = await run();
     expect(retried).toEqual({ text: 'kept' });
     expect(calls).toBe(1);

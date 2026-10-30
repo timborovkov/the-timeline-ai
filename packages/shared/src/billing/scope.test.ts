@@ -83,6 +83,120 @@ function enableCoveredPolar(plan: keyof typeof POLAR_PRODUCT_IDS): string {
 }
 
 describe('billing scope', () => {
+  it('only bypasses billing admission for completed work and retains security and membership checks', async () => {
+    let member = true;
+    const scope = createBillingScope({
+      db,
+      teamId: TEAM_ID,
+      userId: USER_ID,
+      ensureMember: () =>
+        member ? Promise.resolve('owner') : Promise.reject(new Error('not a member')),
+    });
+    await scope.getAccount();
+    await db
+      .update(teamBillingAccounts)
+      .set({ billingState: 'past_due' })
+      .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+    for (const state of ['settled', 'reserved', 'expired', 'released'] as const) {
+      const operationId = `embedding:completed-${state}`;
+      await db.insert(billingUsageReservations).values({
+        teamId: TEAM_ID,
+        operationId,
+        meterId: 'ai',
+        reservedNativeUnits: '1',
+        reservedChargeCents: 1,
+        state,
+        expiresAt: new Date(Date.now() + 60_000),
+        metadata: { provider_completed: true, provider_value: [1, 2] },
+      });
+      expect(
+        (
+          await scope.reserve({
+            operationId,
+            meterId: 'ai',
+            reservedNativeUnits: 1,
+            reservedChargeCents: 1,
+          })
+        ).ok,
+      ).toBe(true);
+    }
+    for (const state of ['reserved', 'released'] as const) {
+      const operationId = `embedding:incomplete-${state}`;
+      await db.insert(billingUsageReservations).values({
+        teamId: TEAM_ID,
+        operationId,
+        meterId: 'ai',
+        reservedNativeUnits: '1',
+        reservedChargeCents: 1,
+        state,
+        expiresAt: new Date(Date.now() + 60_000),
+        metadata: { worker_settlement_pending: true },
+      });
+      expect(
+        await scope.reserve({
+          operationId,
+          meterId: 'ai',
+          reservedNativeUnits: 1,
+          reservedChargeCents: 1,
+        }),
+      ).toMatchObject({ ok: false, code: 'usage_limit_reached' });
+    }
+    expect(
+      await scope.reserve({
+        operationId: 'new-work',
+        meterId: 'ai',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      }),
+    ).toMatchObject({ ok: false, code: 'usage_limit_reached' });
+    for (const securityState of ['suspended', 'terminated'] as const) {
+      await db
+        .update(teamBillingAccounts)
+        .set({ securityState })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      expect(
+        await scope.reserve({
+          operationId: 'embedding:completed-settled',
+          meterId: 'ai',
+          reservedNativeUnits: 1,
+          reservedChargeCents: 1,
+        }),
+      ).toMatchObject({ ok: false, code: 'security_blocked' });
+    }
+    member = false;
+    await expect(
+      scope.reserve({
+        operationId: 'embedding:completed-settled',
+        meterId: 'ai',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      }),
+    ).rejects.toThrow('not a member');
+    const otherTeamId = 'bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    await pg.exec(
+      `INSERT INTO teams (id, slug, name) VALUES ('${otherTeamId}', 'other-billing', 'Other');`,
+    );
+    const other = createBillingScope({
+      db,
+      teamId: otherTeamId,
+      userId: USER_ID,
+      ensureMember: () => Promise.resolve('owner'),
+    });
+    await other.getAccount();
+    await db
+      .update(teamBillingAccounts)
+      .set({ billingState: 'past_due' })
+      .where(eq(teamBillingAccounts.teamId, otherTeamId));
+    expect(
+      await other.reserve({
+        operationId: 'embedding:completed-settled',
+        meterId: 'ai',
+        reservedNativeUnits: 1,
+        reservedChargeCents: 1,
+      }),
+    ).toMatchObject({ ok: false, code: 'usage_limit_reached' });
+  });
+
   it('ensures an account, settles usage idempotently, and rolls up counters', async () => {
     const provider = createFakeBillingProvider();
     const scope = createBillingScope({
