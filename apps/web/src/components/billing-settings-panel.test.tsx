@@ -6,6 +6,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { BillingSettingsPanelProps } from '@/components/billing-settings-panel';
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 
+import { customerBillingState } from '@/components/billing-customer-state';
+
 await vi.mock(
   import.meta.resolve('next/navigation'),
   async () => ({
@@ -247,5 +249,87 @@ describe('BillingSettingsPanel', () => {
     expect(html).toContain('Raise cap');
     expect(html).toContain('€25 of');
     expect(html).toContain('€25');
+  });
+});
+
+describe('billing restriction banners', () => {
+  const remaining = {
+    aiChargeCents: 100,
+    recallMinutes: 10,
+    emailUnits: 10,
+    storageGb: 1,
+    acceptedSources: 10,
+  };
+  const input = {
+    planId: 'free',
+    billingState: 'free',
+    costBearingPaused: false,
+    spendCapCents: 0,
+    meteredSpendCents: 0,
+    warnPercent: null,
+    freeRemaining: remaining,
+  };
+  it('does not warn for an unused Free allowance', () => {
+    expect(customerBillingState(input)).toBeNull();
+  });
+  it('distinguishes restrictions from exhausted usage at zero spend', () => {
+    for (const billingState of ['read_only', 'balance_exhausted', 'canceled']) {
+      expect(customerBillingState({ ...input, billingState, costBearingPaused: true })).toBe(
+        'paused',
+      );
+    }
+    const html = renderToStaticMarkup(
+      panelElement({
+        planId: 'free',
+        billingState: 'read_only',
+        costBearingPaused: true,
+        meteredSpendCents: 0,
+        freeRemaining: remaining,
+      }),
+    );
+    expect(html).toContain('Metered work is paused for this workspace.');
+    expect(html).toContain('Contact support');
+    expect(html).not.toContain('Free allowance used up.');
+    expect(html).not.toContain('Raise cap');
+  });
+  it('requires exhausted counters for the Free allowance banner', () => {
+    expect(
+      customerBillingState({
+        ...input,
+        costBearingPaused: true,
+        freeRemaining: {
+          aiChargeCents: 0,
+          recallMinutes: 0,
+          emailUnits: 0,
+          storageGb: 0,
+          acceptedSources: 0,
+        },
+      }),
+    ).toBe('allowance');
+    expect(customerBillingState({ ...input, costBearingPaused: true })).toBe('paused');
+  });
+  it('keeps payment failure specific and does not label a paid restriction as a cap', () => {
+    expect(customerBillingState({ ...input, billingState: 'past_due' })).toBe('payment_failed');
+    expect(customerBillingState({ ...input, billingState: 'payment_retry' })).toBe(
+      'payment_failed',
+    );
+    expect(
+      customerBillingState({
+        ...input,
+        planId: 'team',
+        billingState: 'read_only',
+        costBearingPaused: true,
+      }),
+    ).toBe('paused');
+    expect(
+      customerBillingState({
+        ...input,
+        planId: 'team',
+        billingState: 'team_active',
+        spendCapCents: 100,
+        meteredSpendCents: 100,
+        warnPercent: 100,
+      }),
+    ).toBe('spend_cap');
   });
 });

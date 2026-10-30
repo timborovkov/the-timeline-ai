@@ -20,7 +20,7 @@ import {
   updateBillingSpendCap,
 } from '@/app/actions/billing';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
-import { customerBillingState } from '@/components/billing-customer-state';
+import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
 import { BillingPlanPreview } from '@/components/billing-plan-preview';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 
@@ -161,6 +161,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
     planId: props.planId,
     billingState: props.billingState,
     costBearingPaused: props.costBearingPaused,
+    freeRemaining: props.freeRemaining,
     spendCapCents: props.spendCapCents,
     meteredSpendCents: props.meteredSpendCents,
     warnPercent: props.utilization.percent,
@@ -255,7 +256,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           ) : null}
         </BillingStateBanner>
       ) : null}
-      {state === 'allowance' ? <BillingStateBanner title="Free allowance used up." /> : null}
+      {state === 'allowance' || state === 'paused' ? (
+        <BillingStateBanner title={BILLING_NOTICE_TITLE[state]} />
+      ) : null}
 
       <div className="flex items-start justify-between gap-4">
         <div>

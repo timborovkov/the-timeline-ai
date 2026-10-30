@@ -9,7 +9,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
-import { customerBillingState } from '@/components/billing-customer-state';
+import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
 import { BillingStateBanner } from '@/components/billing-state-banner';
 import { BillingUsageSummary } from '@/components/billing-usage-summary';
 import { PageHeader } from '@/components/page-header';
@@ -21,12 +21,6 @@ export const metadata: Metadata = {
   title: 'Usage',
   description: 'Metered usage for this workspace.',
 };
-
-const NOTICE_TITLE = {
-  payment_failed: 'Payment failed.',
-  spend_cap: 'Spend cap reached.',
-  allowance: 'Free allowance used up.',
-} as const;
 
 export default async function UsagePage() {
   const session = await auth();
@@ -44,16 +38,17 @@ export default async function UsagePage() {
     planId,
     billingState: dashboard.account.billingState,
     costBearingPaused: dashboard.costBearingPaused,
+    freeRemaining: dashboard.freeRemaining,
     spendCapCents: dashboard.account.spendCapCents,
     meteredSpendCents: dashboard.meteredSpendCents,
     warnPercent: dashboard.utilization.percent,
   });
-  const notice = state ? NOTICE_TITLE[state] : null;
+  const notice = state ? BILLING_NOTICE_TITLE[state] : null;
 
   if (!canManage) {
     const meterNotice =
       planId === 'free' ? exhaustedFreeAllowanceNotice(dashboard.freeRemaining) : null;
-    const memberNotice = meterNotice ?? notice;
+    const memberNotice = notice ?? meterNotice;
     return (
       <div className="space-y-5">
         <PageHeader variant="collection" title="Usage" />
