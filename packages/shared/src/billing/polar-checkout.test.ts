@@ -3,6 +3,8 @@ import { afterEach, describe, it } from 'bun:test';
 
 import {
   createPolarBillingProvider,
+  createPlanChangeSession,
+  PolarDiscountError,
   polarCustomerByExternalIdPath,
   polarCustomerIdForExternalId,
 } from '#src/billing/polar.js';
@@ -14,11 +16,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  });
+function jsonResponse(body: unknown, status = 200): Promise<Response> {
+  return Promise.resolve(
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
 }
 
 describe('expireCheckout', () => {
@@ -220,5 +224,290 @@ describe('polar customer external id', () => {
       polarProvider().ensureCustomer({ externalId: WORKSPACE_ID, email: 'owner@example.com' }),
     ).rejects.toThrow('Polar customer external_id does not match this workspace');
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+const discountFixture = {
+  id: 'discount-synthetic',
+  organization_id: 'org-synthetic',
+  code: 'SYNTHETIC',
+  starts_at: null,
+  ends_at: null,
+  max_redemptions: null,
+  redemptions_count: 0,
+  products: [{ id: 'product-synthetic' }],
+};
+const checkoutInput = {
+  externalCustomerId: WORKSPACE_ID,
+  customerEmail: 'synthetic@example.test',
+  productId: 'product-synthetic',
+  successUrl: 'https://timeline.test/success',
+};
+function discountProvider(server: 'sandbox' | 'production' = 'sandbox') {
+  const provider = createPolarBillingProvider({
+    accessToken: 'synthetic-token',
+    server,
+    organizationId: 'org-synthetic',
+  });
+  if (!provider) throw new Error('provider');
+  return provider;
+}
+function catalog(items: unknown[]) {
+  return jsonResponse({ items, pagination: { max_page: 1 } });
+}
+
+describe('Polar managed checkout discounts', () => {
+  it('resolves case-insensitive codes across pages in the configured organization and environment', async () => {
+    for (const server of ['sandbox', 'production'] as const) {
+      const calls: string[] = [];
+      globalThis.fetch = vi.fn(async (input: URL | string, init?: RequestInit) => {
+        const url = new URL(String(input));
+        calls.push(url.toString());
+        expect(url.origin).toBe(
+          server === 'sandbox' ? 'https://sandbox-api.polar.sh' : 'https://api.polar.sh',
+        );
+        expect(url.searchParams.get('organization_id')).toBe('org-synthetic');
+        expect(url.searchParams.has('query')).toBe(false);
+        expect(new Headers(init?.headers).get('Polar-Version')).toBe('2026-10');
+        return jsonResponse({
+          items: url.searchParams.get('page') === '2' ? [discountFixture] : [],
+          pagination: { max_page: 2 },
+        });
+      }) as unknown as typeof fetch;
+      expect(
+        await discountProvider(server).resolveDiscount({
+          code: ' synthetic ',
+          productId: checkoutInput.productId,
+        }),
+      ).toBe(discountFixture.id);
+      expect(calls).toHaveLength(2);
+    }
+  });
+
+  it('rejects unknown codes, foreign organizations, product restrictions, dates and exhausted limits', async () => {
+    for (const items of [
+      [],
+      [{ ...discountFixture, code: 'OTHER' }],
+      [{ ...discountFixture, organization_id: 'foreign-org' }],
+      [{ ...discountFixture, products: [{ id: 'other-product' }] }],
+      [{ ...discountFixture, starts_at: '2999-01-01T00:00:00Z' }],
+      [{ ...discountFixture, ends_at: '2000-01-01T00:00:00Z' }],
+      [{ ...discountFixture, max_redemptions: 1, redemptions_count: 1 }],
+    ]) {
+      globalThis.fetch = vi.fn(async () => catalog(items)) as unknown as typeof fetch;
+      await expect(
+        discountProvider().resolveDiscount({
+          code: 'SYNTHETIC',
+          productId: checkoutInput.productId,
+        }),
+      ).rejects.toMatchObject({ code: 'ineligible' });
+    }
+  });
+
+  it('permits unrestricted products and validates trusted assignments against the same organization', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse({ ...discountFixture, products: [] }),
+    ) as unknown as typeof fetch;
+    expect(
+      await discountProvider().resolveDiscount({
+        discountId: discountFixture.id,
+        productId: 'another-product',
+      }),
+    ).toBe(discountFixture.id);
+    globalThis.fetch = vi.fn(async () =>
+      jsonResponse({ ...discountFixture, organization_id: 'other-org' }),
+    ) as unknown as typeof fetch;
+    await expect(
+      discountProvider().resolveDiscount({
+        discountId: discountFixture.id,
+        productId: checkoutInput.productId,
+      }),
+    ).rejects.toMatchObject({ code: 'ineligible' });
+  });
+
+  it('distinguishes outages, permissions, rate limits and malformed responses from ineligible codes', async () => {
+    for (const status of [401, 403, 429, 500, 503]) {
+      globalThis.fetch = vi.fn(() =>
+        Promise.resolve(new Response('', { status })),
+      ) as unknown as typeof fetch;
+      await expect(
+        discountProvider().resolveDiscount({
+          code: 'SYNTHETIC',
+          productId: checkoutInput.productId,
+        }),
+      ).rejects.toMatchObject({ code: 'unavailable' });
+    }
+    for (const body of [
+      {},
+      { items: [{ ...discountFixture, ends_at: 'bad-date' }], pagination: { max_page: 1 } },
+    ]) {
+      globalThis.fetch = vi.fn(async () => jsonResponse(body)) as unknown as typeof fetch;
+      await expect(
+        discountProvider().resolveDiscount({
+          code: 'SYNTHETIC',
+          productId: checkoutInput.productId,
+        }),
+      ).rejects.toMatchObject({ code: 'unavailable' });
+    }
+    globalThis.fetch = vi.fn(() =>
+      Promise.reject(new Error('network failure')),
+    ) as unknown as typeof fetch;
+    await expect(
+      discountProvider().resolveDiscount({ code: 'SYNTHETIC', productId: checkoutInput.productId }),
+    ).rejects.toMatchObject({ code: 'unavailable' });
+  });
+
+  it('requires organization configuration without making a request', async () => {
+    const fetchMock = vi.fn(async () => catalog([discountFixture]));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const provider = createPolarBillingProvider({
+      accessToken: 'synthetic',
+      server: 'sandbox',
+      organizationId: '',
+    });
+    if (!provider) throw new Error('provider');
+    await expect(
+      provider.resolveDiscount({ code: 'SYNTHETIC', productId: checkoutInput.productId }),
+    ).rejects.toMatchObject({ code: 'unavailable' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('creates checkout with verified discount and correct customer identity, disabling code replacement', async () => {
+    const fetchMock = vi.fn(async (_url: URL | string, init?: RequestInit) => {
+      expect(
+        JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown>,
+      ).toEqual({
+        products: [checkoutInput.productId],
+        success_url: checkoutInput.successUrl,
+        customer_email: checkoutInput.customerEmail,
+        external_customer_id: WORKSPACE_ID,
+        allow_discount_codes: false,
+        discount_id: discountFixture.id,
+      });
+      return jsonResponse({
+        id: 'checkout-synthetic',
+        url: 'https://checkout.test',
+        discount_id: discountFixture.id,
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    expect(
+      await discountProvider().createCheckoutSession({
+        ...checkoutInput,
+        discountId: discountFixture.id,
+      }),
+    ).toEqual({ id: 'checkout-synthetic', url: 'https://checkout.test' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not need discount configuration or catalog access for no-code checkout', async () => {
+    const fetchMock = vi.fn(async (_url: URL | string, init?: RequestInit) => {
+      expect(
+        (JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown>)
+          .discount_id,
+      ).toBeUndefined();
+      return jsonResponse({ id: 'checkout-synthetic', url: 'https://checkout.test' });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await expect(polarProvider().createCheckoutSession(checkoutInput)).resolves.toMatchObject({
+      id: 'checkout-synthetic',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses missing discounts in successful responses and propagates final Polar eligibility rejection', async () => {
+    for (const [body, status, code] of [
+      [{ id: 'checkout', url: 'https://checkout.test', discount_id: null }, 200, 'unavailable'],
+      [
+        { detail: [{ loc: ['body', 'discount_id'], msg: 'Customer redemption limit reached' }] },
+        422,
+        'ineligible',
+      ],
+      [{ detail: [{ loc: ['body', 'products'], msg: 'invalid product' }] }, 422, 'unavailable'],
+      [{}, 503, 'unavailable'],
+    ] as const) {
+      const fetchMock = vi.fn(async () => jsonResponse(body, status));
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      await expect(
+        discountProvider().createCheckoutSession({
+          ...checkoutInput,
+          discountId: discountFixture.id,
+        }),
+      ).rejects.toMatchObject({ code });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('verifies the discount on a successful paid-plan update', async () => {
+    const fetchMock = vi.fn((_url: URL | string, init?: RequestInit) => {
+      expect(init?.method).toBe('PATCH');
+      expect(JSON.parse(typeof init?.body === 'string' ? init.body : '{}')).toEqual({
+        product_id: checkoutInput.productId,
+        proration_behavior: 'prorate',
+        discount_id: discountFixture.id,
+      });
+      return jsonResponse({ discount_id: discountFixture.id });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await expect(
+      createPlanChangeSession({
+        ...checkoutInput,
+        provider: discountProvider(),
+        discountId: discountFixture.id,
+        account: {
+          planId: 'team',
+          billingState: 'team_active',
+          polarSubscriptionId: 'subscription-synthetic',
+        },
+        portalReturnUrl: 'https://timeline.test/return',
+      }),
+    ).resolves.toEqual({ url: checkoutInput.successUrl });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks a discounted plan change on outage, omitted discount, or transport failure', async () => {
+    for (const response of [
+      () => jsonResponse({}, 503),
+      () => jsonResponse({ discount_id: null }),
+      () => Promise.reject(new Error('connection lost')),
+    ]) {
+      const fetchMock = vi.fn(response);
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      await expect(
+        createPlanChangeSession({
+          ...checkoutInput,
+          provider: discountProvider(),
+          discountId: discountFixture.id,
+          account: {
+            planId: 'team',
+            billingState: 'team_active',
+            polarSubscriptionId: 'subscription-synthetic',
+          },
+          portalReturnUrl: 'https://timeline.test/return',
+        }),
+      ).rejects.toMatchObject({ code: 'unavailable' });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('never falls back to a full-price portal or second checkout when a discounted subscription update fails', async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ detail: [{ loc: ['body', 'discount_id'] }] }, 422),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    await expect(
+      createPlanChangeSession({
+        ...checkoutInput,
+        provider: discountProvider(),
+        discountId: discountFixture.id,
+        account: {
+          planId: 'team',
+          billingState: 'team_active',
+          polarSubscriptionId: 'subscription-synthetic',
+        },
+        portalReturnUrl: 'https://timeline.test/return',
+      }),
+    ).rejects.toBeInstanceOf(PolarDiscountError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -33,6 +33,12 @@ export type UpdateSubscriptionResult = { ok: true } | { ok: false; code: 'portal
 export type ExpireCheckoutResult = 'expired' | 'already_paid' | 'still_open';
 
 export interface BillingProvider {
+  /** Resolve a code or trusted operator assignment in the configured Polar organization. */
+  resolveDiscount(input: {
+    code?: string;
+    discountId?: string;
+    productId: string;
+  }): Promise<string>;
   ensureCustomer(input: {
     externalId: string;
     email: string;
@@ -96,6 +102,12 @@ export function createFakeBillingProvider(): BillingProvider & {
     checkouts,
     expiredCheckoutIds,
     pricedEventNamesByProduct,
+    resolveDiscount(input) {
+      if (input.discountId) return Promise.resolve(input.discountId);
+      return Promise.reject(
+        new Error('Fake provider has no discount catalog; mock resolveDiscount.'),
+      );
+    },
     ensureCustomer(input) {
       const existing = customers.get(input.externalId);
       if (existing) return Promise.resolve(existing);

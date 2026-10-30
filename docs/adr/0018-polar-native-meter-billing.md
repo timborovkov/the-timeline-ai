@@ -229,8 +229,11 @@ credit hides margin and confuses prospects.
    Document writes
    require a reservable billing state, not only non-`restricted`. Free-grant claims
    skip removed owner memberships. Storage admission casts aggregated
-   `SUM(byte_size)` to a number before adding the new upload. Checkout attaches `POLAR_DISCOUNT_ID` only when the submitted
-   code matches `POLAR_DISCOUNT_CODE`. Reservations record the invoice remainder
+   `SUM(byte_size)` to a number before adding the new upload. Checkout resolves submitted
+   promo codes through Polar's organization-scoped catalog; active operator-assigned
+   team discounts take precedence. Polar enforces final eligibility, and failed discount
+   application never falls back to full price. See [discount setup and API evidence](../setup/polar.html#promo-codes).
+   Reservations record the invoice remainder
    after the PAYG Free floor and included discount, include pending
    reservation charges in the spend cap **and** Free native allowances, count
    in-flight included-discount claims against `includedDiscountRemainingCents`,

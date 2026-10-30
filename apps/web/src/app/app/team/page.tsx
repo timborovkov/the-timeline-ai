@@ -8,6 +8,7 @@ import {
 } from '@timeline/db';
 import {
   describeTeamComp,
+  activePolarDiscountId,
   effectiveBillingPlanId,
   resolveTeamCommercialTerms,
   isPlatformAdminEmail,
@@ -339,6 +340,7 @@ export default async function TeamSettingsPage({
               freeRemaining={billingDashboard.freeRemaining}
               costBearingPaused={billingDashboard.costBearingPaused}
               polarConfigured={isPolarBillingConfigured()}
+              hasActiveTeamDiscount={Boolean(activePolarDiscountId(billingDashboard.account))}
               hasPolarSubscription={Boolean(billingDashboard.account.polarSubscriptionId)}
               canManage={isAdmin}
               planPreview={billingDashboard.planPreview}

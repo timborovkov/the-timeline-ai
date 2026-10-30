@@ -21,7 +21,6 @@ import {
   type PolarProductPatch,
   type PolarProductWrite,
   type PolarSetupClient,
-  type PolarSetupDiscount,
   type PolarSetupMeter,
   type PolarSetupPrice,
   type PolarSetupProduct,
@@ -35,7 +34,6 @@ import {
 const request: PolarSetupRequest = {
   webhookUrl: DEFAULT_TIMELINE_POLAR_WEBHOOK_URL,
   webhookId: null,
-  discountCode: null,
   preferredProductIds: {},
 };
 
@@ -120,12 +118,11 @@ function readySnapshot(): PolarSetupSnapshot {
     meters: TIMELINE_METER_SPECS.map(meter),
     products: TIMELINE_PRODUCT_KEYS.map(product),
     webhooks: [webhook()],
-    discounts: [],
   };
 }
 
 function emptySnapshot(): PolarSetupSnapshot {
-  return { meters: [], products: [], webhooks: [], discounts: [] };
+  return { meters: [], products: [], webhooks: [] };
 }
 
 function actionsOf(
@@ -142,7 +139,6 @@ describe('planPolarSetup', () => {
     expect(actionsOf(plan, 'create_product')).toHaveLength(4);
     expect(actionsOf(plan, 'create_webhook')).toHaveLength(1);
     expect(plan.actions.some((action) => action.kind === 'archive_product')).toBe(false);
-    expect(plan.actions.some((action) => action.kind === 'patch_discount')).toBe(false);
 
     const member = plan.actions.find(
       (action) =>
@@ -233,7 +229,6 @@ describe('planPolarSetup', () => {
   it('makes no changes when the Timeline catalog is already correct', () => {
     const plan = planPolarSetup(readySnapshot(), request);
     expect(plan.actions).toEqual([]);
-    expect(plan.notes.join('\n')).toContain('Included-usage discounts stay on the local invoice');
   });
 
   it('replaces a wrong immutable price and keeps an unrelated seat price', () => {
@@ -554,58 +549,6 @@ describe('planPolarSetup', () => {
     const plan = planPolarSetup(snapshot, { ...request, webhookId: 'placeholder' });
     expect(plan.actions.map((action) => action.kind)).toEqual(['patch_webhook']);
   });
-
-  it('reuses a Timeline discount and does not invent one', () => {
-    const snapshot = readySnapshot();
-    const foreign: PolarSetupDiscount = {
-      id: 'foreign-discount',
-      name: 'Irmin launch',
-      code: 'LAUNCH',
-      metadata: {},
-    };
-    const timeline: PolarSetupDiscount = {
-      id: 'timeline-discount',
-      name: 'Timeline Launch',
-      code: 'launch',
-      metadata: {},
-    };
-    snapshot.discounts = [foreign, timeline];
-    const plan = planPolarSetup(snapshot, { ...request, discountCode: 'LAUNCH' });
-    expect(plan.discount).toEqual({ id: 'timeline-discount', code: 'launch' });
-    expect(plan.actions).toEqual([
-      expect.objectContaining({ kind: 'patch_discount', id: 'timeline-discount' }),
-    ]);
-    expect(plan.notes.join('\n')).toContain('foreign-discount');
-    const stamped = planPolarSetup(
-      {
-        ...snapshot,
-        discounts: [{ ...timeline, metadata: { timeline_key: 'checkout' } }],
-      },
-      { ...request, discountCode: 'LAUNCH' },
-    );
-    expect(stamped.actions).toEqual([]);
-    expect(stamped.discount?.id).toBe('timeline-discount');
-
-    const missing = planPolarSetup(readySnapshot(), { ...request, discountCode: 'LAUNCH' });
-    expect(missing.discount).toBeNull();
-    expect(missing.actions.some((action) => action.kind === 'patch_discount')).toBe(false);
-    expect(missing.notes.join('\n')).toContain('does not invent a Polar discount');
-  });
-
-  it('reuses a checkout discount found by metadata when no code was configured', () => {
-    const snapshot = readySnapshot();
-    snapshot.discounts = [
-      {
-        id: 'checkout',
-        name: 'Timeline seasonal',
-        code: 'SEASON',
-        metadata: { timeline_key: 'checkout' },
-      },
-    ];
-    const plan = planPolarSetup(snapshot, request);
-    expect(plan.discount).toEqual({ id: 'checkout', code: 'SEASON' });
-    expect(plan.actions).toEqual([]);
-  });
 });
 
 describe('runPolarSetup', () => {
@@ -720,7 +663,6 @@ describe('polar setup report', () => {
         plan: planPolarSetup(readySnapshot(), request),
         meterIds: { timeline_ai_eur_cents: 'meter-ai' },
         productIds: { team: 'product-team' },
-        discount: { id: 'discount-1', code: 'LAUNCH' },
         webhookId: 'wh-timeline',
         webhookSecret: 'whsec_test_secret',
       },
@@ -730,14 +672,13 @@ describe('polar setup report', () => {
     expect(report).toContain('POLAR_PRODUCT_ID_TEAM=product-team');
     expect(report).toContain('POLAR_PRODUCT_ID_PAYG=');
     expect(report).toContain('POLAR_METER_ID_AI=meter-ai');
-    expect(report).toContain('POLAR_DISCOUNT_ID=discount-1');
-    expect(report).toContain('POLAR_DISCOUNT_CODE=LAUNCH');
     expect(report).toContain('POLAR_WEBHOOK_ID=wh-timeline');
     expect(report).toContain('POLAR_WEBHOOK_SECRET=whsec_test_secret');
     expect(report).toContain('document-extract-orchestrator');
     expect(report).toContain('BILLING_CHARGES_ENABLED');
     expect(report).not.toContain('POLAR_ACCESS_TOKEN=');
     expect(report).not.toMatch(/polar_oat_/u);
+    expect(report).not.toContain('DISCOUNT');
   });
 
   it('accepts any https webhook host and refuses a non-https URL', () => {
@@ -763,12 +704,11 @@ interface MemoryState {
   meters: PolarSetupMeter[];
   products: PolarSetupProduct[];
   webhooks: PolarSetupWebhook[];
-  discounts: PolarSetupDiscount[];
   sequence: number;
 }
 
 function memoryState(): MemoryState {
-  return { meters: [], products: [], webhooks: [], discounts: [], sequence: 1 };
+  return { meters: [], products: [], webhooks: [], sequence: 1 };
 }
 
 function rememberPrice(price: PolarPriceWrite, state: MemoryState): PolarSetupPrice {
@@ -833,9 +773,7 @@ function memoryClient(state: MemoryState): PolarSetupClient & { mutations: strin
     listWebhooks() {
       return Promise.resolve(state.webhooks);
     },
-    listDiscounts() {
-      return Promise.resolve(state.discounts);
-    },
+
     createMeter(body) {
       mutations.push(`create_meter:${body.metadata.timeline_key ?? ''}`);
       const id = `meter-${body.metadata.timeline_key ?? 'meter'}`;
@@ -920,12 +858,6 @@ function memoryClient(state: MemoryState): PolarSetupClient & { mutations: strin
     deleteWebhook(id) {
       mutations.push(`delete_webhook:${id}`);
       state.webhooks = state.webhooks.filter((item) => item.id !== id);
-      return Promise.resolve();
-    },
-    patchDiscount(id, body) {
-      mutations.push(`patch_discount:${id}`);
-      const discount = state.discounts.find((item) => item.id === id);
-      if (discount) discount.metadata = body.metadata;
       return Promise.resolve();
     },
   };

@@ -1,5 +1,6 @@
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { expect, vi } from '@timeline/test-support';
-import { describe, it } from 'bun:test';
+import { afterEach, describe, it } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { BillingSettingsPanelProps } from '@/components/billing-settings-panel';
@@ -25,6 +26,8 @@ await vi.mock(
 );
 
 const { BillingSettingsPanel } = await import('@/components/billing-settings-panel');
+const { startBillingCheckout } = await import('@/app/actions/billing');
+afterEach(cleanup);
 
 const planPreview: CheapestPlanPreview = {
   recommended: 'payg',
@@ -53,8 +56,8 @@ const planPreview: CheapestPlanPreview = {
   },
 };
 
-function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
-  return renderToStaticMarkup(
+function panelElement(overrides: Partial<BillingSettingsPanelProps> = {}) {
+  return (
     <BillingSettingsPanel
       planId="free"
       planName="Free"
@@ -82,8 +85,12 @@ function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
       comp={null}
       showOperatorLink={false}
       {...overrides}
-    />,
+    />
   );
+}
+
+function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
+  return renderToStaticMarkup(panelElement(overrides));
 }
 
 function invoiceBlock(html: string): string {
@@ -98,6 +105,33 @@ function planButton(html: string, label: string): string {
 }
 
 describe('BillingSettingsPanel', () => {
+  it('submits the promo field with the selected plan and displays server errors', async () => {
+    vi.mocked(startBillingCheckout).mockResolvedValueOnce({
+      ok: false,
+      error: 'That discount is not eligible.',
+    });
+    const view = render(panelElement());
+    fireEvent.change(view.getByLabelText('Promo code'), { target: { value: 'SYNTHETIC' } });
+    fireEvent.click(view.getByText('Team · €49/mo'));
+    await waitFor(() => {
+      expect(startBillingCheckout).toHaveBeenCalledWith({
+        plan: 'team',
+        discountCode: 'SYNTHETIC',
+      });
+      expect(view.getByRole('alert').textContent).toBe('That discount is not eligible.');
+    });
+  });
+
+  it('shows a promo field and explains that assigned team discounts take priority', () => {
+    expect(panel()).toContain('id="billing-promo-code"');
+    expect(panel()).toContain('discounts do not stack');
+    expect(panel({ hasPolarSubscription: true })).toContain('from the next billing cycle');
+    const assigned = panel({ hasActiveTeamDiscount: true });
+    expect(assigned).toContain('Your assigned team discount takes priority');
+    expect(/<input[^>]*id="billing-promo-code"[^>]*>/u.exec(assigned)?.[0]).toContain('disabled');
+    expect(panel({ canManage: false })).not.toContain('id="billing-promo-code"');
+  });
+
   it('offers a plan change without collection essays', () => {
     const html = panel();
     expect(html).toContain('Change plan');

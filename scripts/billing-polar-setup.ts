@@ -14,7 +14,6 @@ import {
   type PolarProductPatch,
   type PolarProductWrite,
   type PolarSetupClient,
-  type PolarSetupDiscount,
   type PolarSetupMeter,
   type PolarSetupPrice,
   type PolarSetupProduct,
@@ -220,17 +219,6 @@ function webhookOf(value: unknown): PolarSetupWebhook | null {
   };
 }
 
-function discountOf(value: unknown): PolarSetupDiscount | null {
-  const row = asRecord(value);
-  if (!row || typeof row.id !== 'string') return null;
-  return {
-    id: row.id,
-    name: typeof row.name === 'string' ? row.name : '',
-    code: typeof row.code === 'string' ? row.code : null,
-    metadata: metadataOf(row.metadata),
-  };
-}
-
 function createClient(base: string, token: string, organizationId: string): PolarSetupClient {
   const encodedOrg = encodeURIComponent(organizationId);
   async function send(path: string, method: string, body?: unknown): Promise<unknown> {
@@ -259,10 +247,6 @@ function createClient(base: string, token: string, organizationId: string): Pola
     async listWebhooks() {
       const rows = await listAll(base, token, `/webhooks/endpoints?organization_id=${encodedOrg}`);
       return rows.flatMap((row) => webhookOf(row) ?? []);
-    },
-    async listDiscounts() {
-      const rows = await listAll(base, token, `/discounts/?organization_id=${encodedOrg}`);
-      return rows.flatMap((row) => discountOf(row) ?? []);
     },
     async createMeter(body: PolarMeterWrite) {
       const created = asRecord(await send('/meters/', 'POST', body));
@@ -299,9 +283,6 @@ function createClient(base: string, token: string, organizationId: string): Pola
     async deleteWebhook(id) {
       await send(`/webhooks/endpoints/${encodeURIComponent(id)}`, 'DELETE');
     },
-    async patchDiscount(id, body) {
-      await send(`/discounts/${encodeURIComponent(id)}`, 'PATCH', body);
-    },
   };
 }
 
@@ -333,7 +314,6 @@ async function main(): Promise<void> {
     request: {
       webhookUrl,
       webhookId: optionalEnv('POLAR_WEBHOOK_ID'),
-      discountCode: optionalEnv('POLAR_DISCOUNT_CODE'),
       preferredProductIds: preferredProductIds(),
     },
   });

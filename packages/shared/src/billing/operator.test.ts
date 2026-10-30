@@ -2,7 +2,6 @@ import { expect } from '@timeline/test-support';
 import { describe, it } from 'bun:test';
 
 import {
-  activePolarDiscountId,
   applyMeteredDiscountCents,
   checkoutDiscountId,
   describeTeamComp,
@@ -14,6 +13,7 @@ import {
   resolveTeamCommercialTerms,
 } from '#src/billing/operator.js';
 import { cheapestPlanPreview } from '#src/billing/preview.js';
+import { createFakeBillingProvider } from '#src/billing/provider.js';
 
 const base = {
   planId: 'team' as const,
@@ -188,29 +188,50 @@ describe('custom pricing', () => {
     expect(applyMeteredDiscountCents(1_000, 10)).toBe(900);
   });
 
-  it('uses a team Polar discount on checkout ahead of the global code', () => {
-    const account = {
-      ...base,
-      arrangement: 'standard' as const,
-      polarDiscountId: 'disc_team',
+  it('resolves active team assignments ahead of submitted codes, with expiry and no-code handling', async () => {
+    const provider = createFakeBillingProvider();
+    const calls: unknown[] = [];
+    provider.resolveDiscount = async (input) => {
+      calls.push(input);
+      return Promise.resolve(input.discountId ?? 'disc_code');
     };
-    expect(activePolarDiscountId(account)).toBe('disc_team');
+    const account = { ...base, arrangement: 'standard' as const, polarDiscountId: 'disc_team' };
+    const now = new Date('2026-10-30T12:00:00Z');
     expect(
-      checkoutDiscountId({
+      await checkoutDiscountId({
         account,
         submittedCode: 'WRONG',
-        envDiscountId: 'disc_env',
-        envDiscountCode: 'LAUNCH',
+        productId: 'prod',
+        provider,
+        now,
       }),
-    ).toEqual({ discountId: 'disc_team' });
+    ).toBe('disc_team');
+    expect(calls).toEqual([{ discountId: 'disc_team', productId: 'prod' }]);
+    const expired = { ...account, polarDiscountExpiresAt: now };
     expect(
-      checkoutDiscountId({
-        account: { ...base, arrangement: 'standard' },
-        submittedCode: 'nope',
-        envDiscountId: 'disc_env',
-        envDiscountCode: 'LAUNCH',
-      }).error,
-    ).toBe('That discount code is not valid.');
+      await checkoutDiscountId({
+        account: expired,
+        submittedCode: ' CODE ',
+        productId: 'prod',
+        provider,
+        now,
+      }),
+    ).toBe('disc_code');
+    expect(calls[1]).toEqual({ code: 'CODE', productId: 'prod' });
+    expect(
+      await checkoutDiscountId({
+        account: expired,
+        submittedCode: '  ',
+        productId: 'prod',
+        provider,
+        now,
+      }),
+    ).toBeUndefined();
+    expect(calls).toHaveLength(2);
+    provider.resolveDiscount = () => Promise.reject(new Error('provider unavailable'));
+    await expect(
+      checkoutDiscountId({ account, submittedCode: 'CODE', productId: 'prod', provider, now }),
+    ).rejects.toThrow('provider unavailable');
   });
 
   it('changes only the overridden plan in the cheapest-plan preview', () => {

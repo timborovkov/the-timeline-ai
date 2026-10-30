@@ -17,6 +17,9 @@
   "apps/web/src/app/actions/auth.test.ts": {
     "group": "unit"
   },
+  "apps/web/src/app/actions/billing.test.ts": {
+    "group": "unit"
+  },
   "apps/web/src/app/actions/boards.test.ts": {
     "group": "unit"
   },

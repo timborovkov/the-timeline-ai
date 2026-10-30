@@ -29,15 +29,15 @@
       </ul>
       <p>
         Sandbox accounts, tokens, products, and meters are fully isolated from production. The
-        access token needs to read and write products, meters, discounts, and webhooks in the
-        Timeline organization.
+        access token needs to read and write products, meters, and webhooks, and read discounts in
+        the Timeline organization.
         <code>bun run billing:polar-setup</code> creates or reuses the Timeline catalog in Polar. It
         defaults to the sandbox API. <code>--allow-production</code> is required before it reads or
         changes production. <code>bun run billing:polar-setup -- --dry-run</code> prints the plan
         and does not write. <code>--env-file=</code> loads variables into the process, and
         <code>--webhook-url=</code> overrides the endpoint URL. Pass those flags after
         <code>--</code>. The command does not write <code>.env</code>. It prints a copyable block of
-        product ids, meter ids, the checkout discount, and the webhook id and secret.
+        product ids, meter ids, and the webhook id and secret.
       </p>
       <p>
         The catalog is six meters (<code>timeline_ai_eur_cents</code>,
@@ -48,9 +48,8 @@
         product carries all six usage prices at the current catalog amounts. Polar prices are
         immutable, so a wrong amount is replaced by adding the correct price and archiving the old
         one. A second run leaves a correct catalog unchanged. Included-usage discounts stay on the
-        local invoice. The command reuses a Timeline-owned Polar discount when
-        <code>POLAR_DISCOUNT_CODE</code> matches its code, or when a discount is already stamped
-        <code>timeline_key=checkout</code>. It does not invent a percent or duration.
+        local invoice. Manage campaigns and their terms directly in Polar. Setup does not discover,
+        create, modify, or delete discounts.
       </p>
       <p>
         The command only creates or updates objects it can identify as Timeline's: a name prefixed
@@ -65,9 +64,92 @@
         Railway deploys <code>main</code> to production and the <code>staging</code> branch to
         staging, so a feature branch has no preview URL. The webhook defaults to
         <code>https://thetimeline.cc/api/webhooks/polar</code>. That route has to be deployed before
-        Polar deliveries succeed. Copy the printed product, webhook, and discount variables onto the
-        web and worker services. <code>document-extract-orchestrator</code> stays credential-thin
-        and only needs <code>BILLING_CHARGES_ENABLED</code>.
+        Polar deliveries succeed. Copy the printed product and webhook variables onto the web and
+        worker services. <code>document-extract-orchestrator</code> stays credential-thin and only
+        needs <code>BILLING_CHARGES_ENABLED</code>.
+      </p>
+
+      <h2 id="promo-codes">Promo codes and team assignments</h2>
+      <p>
+        Team Billing's Change plan disclosure includes an optional promo-code field. Polar owns
+        codes, amounts, durations, product restrictions, start/end dates, and redemption limits. The
+        shared server provider uses the documented, paginated
+        <code>GET /v1/discounts/?organization_id=...</code> API and compares codes exactly, ignoring
+        case. The list API's <code>query</code> searches names, so it is not a code filter. Requests
+        use <code>POLAR_SERVER</code>, <code>POLAR_ORGANIZATION_ID</code>, the server-only access
+        token with <code>discounts:read</code>, and <code>Polar-Version: 2026-10</code>.
+      </p>
+      <p>
+        An unexpired operator-assigned team discount takes priority over an entered code, even when
+        that code is invalid. Timeline checks assignment expiry on each request and then reads the
+        assigned discount from Polar. An expired assignment allows the entered code to be
+        considered. Admin authorization through <code>PLATFORM_ADMIN_EMAILS</code>, team isolation,
+        and audited assignment/clear operations are unchanged. Discounts never stack.
+      </p>
+      <p>
+        Timeline checks organization, product restrictions, start/end dates and total redemption
+        counts before requesting checkout. Polar validates price/currency applicability and final
+        eligibility, including concurrent and per-customer redemption limits. Customer identity is
+        sent as <code>external_customer_id</code>; Polar can also use email and payment-card
+        identity. These final checks cannot all be reproduced before payment details are entered.
+        Checkout uses only the server-resolved <code>discount_id</code> and disables code changes
+        with <code>allow_discount_codes: false</code>. Timeline verifies the returned discount
+        before returning the checkout URL. Review the final Polar total before confirming payment.
+      </p>
+      <p>
+        Invalid or ineligible discounts produce a different error from provider/network failures.
+        Neither opens a full-price checkout. Discounted paid-plan changes fail closed if Polar
+        cannot apply the discount; they do not fall back to an undiscounted portal flow. Polar
+        applies subscription discount changes on the next billing cycle, as disclosed beside the
+        promo field. A network failure after a provider write can leave its outcome uncertain;
+        inspect the current subscription before retrying an uncertain plan change. Comped plans,
+        Enterprise operator arrangements, local metered discounts, and pricing overrides keep their
+        existing paths. Local invoice previews do not estimate Polar campaign savings.
+      </p>
+      <p>
+        No global campaign configuration is required. Removing obsolete values from local
+        environment files or Railway is a separate operator task; this change does not perform
+        configuration cleanup or deploy. Existing Polar campaigns are left intact.
+      </p>
+      <p>
+        API evidence reviewed 2026-10-30:
+        <a href="https://polar.sh/docs/features/discounts">Discount rules</a>,
+        <a href="https://polar.sh/docs/api-reference/2026-10/discounts/list-discounts"
+          >List discounts</a
+        >,
+        <a href="https://polar.sh/docs/api-reference/2026-10/discounts/get-discount">Get discount</a
+        >,
+        <a href="https://polar.sh/docs/api-reference/2026-10/checkouts/create-checkout-session"
+          >Create checkout</a
+        >,
+        <a href="https://polar.sh/docs/api-reference/2026-10/subscriptions/update-subscription"
+          >Update subscription</a
+        >, and <a href="https://polar.sh/docs/api-reference/2026-10/versioning">API versioning</a>.
+        Synthetic tests cover these paths without purchases or subscriptions.
+      </p>
+
+      <h3>Implementation handoff — 2026-10-30</h3>
+      <p>
+        Work is on <code>cursor/polar-usage-billing-4947</code>. Verification is scoped to this
+        change: synthetic checkout/action/UI tests, setup planning/report tests, environment
+        parsing, pricing and operator-store regression tests. The test runner uses an environment
+        allowlist and disables environment-file loading, so these paths run without legacy discount
+        variables. No real checkout, purchase, subscription, or campaign mutation was performed.
+      </p>
+      <p>
+        Documentation audit: updated this guide, Railway guidance, the billing ADR, design history,
+        and roadmap. Reviewed README, product brief, relational-memory documentation and other setup
+        guides for affected claims; no additional changes were needed. The repository references
+        <code>/document-release</code>, but that skill is unavailable in this workspace; its
+        documented audit was performed manually. No deployment or local/Railway configuration
+        cleanup was done.
+      </p>
+      <p>
+        Validation: focused tests, formatting, changed-source TypeScript diagnostics and app/shared
+        lint pass. The setup script retains four pre-existing lint findings in unchanged lines (two
+        nullish-coalescing preferences and two loose null comparisons). Repository-wide checks were
+        intentionally not run under this task's scoped-verification instruction. Provider
+        confirmation and payment-card eligibility remain covered by mocks, not a live purchase.
       </p>
 
       <h2>Environment variables</h2>
@@ -80,8 +162,6 @@ POLAR_PRODUCT_ID_PAYG=
 POLAR_PRODUCT_ID_TEAM=
 POLAR_PRODUCT_ID_BUSINESS=
 POLAR_PRODUCT_ID_ENTERPRISE=
-POLAR_DISCOUNT_ID=
-POLAR_DISCOUNT_CODE=
 BILLING_CHARGES_ENABLED=false
 PLATFORM_ADMIN_EMAILS=
 </code></pre>
@@ -403,8 +483,9 @@ PLATFORM_ADMIN_EMAILS=
           including when the workspace is past due, in payment retry, or read-only.
           <code>past_due</code> and <code>payment_retry</code> show a pause banner and an Update
           payment method button that opens the Polar customer portal. Enterprise workspaces do not
-          show PAYG/Team/Business checkout buttons. Submitted Polar discount codes must match
-          <code>POLAR_DISCOUNT_CODE</code> before <code>POLAR_DISCOUNT_ID</code> is attached.
+          show PAYG/Team/Business checkout buttons. Promo codes are resolved server-side against
+          Polar's discount catalog in the configured organization and environment. See
+          <a href="#promo-codes">Promo codes and team assignments</a>.
         </li>
         <li>
           Owner emails: spend-cap 50/75/90/100%, Free near-limit / exhaustion, and subscription

@@ -663,7 +663,10 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       per-team price overrides (<code>PLATFORM_ADMIN_EMAILS</code>, audited, spend cap still
       applies; raising a positive cap clears a spend-cap freeze and leaves
       <code>past_due</code> paused), <code>bun run billing:polar-setup</code> archives a sandbox Timeline Top-up
-      product and ensures the Timeline webhook, Team/Business included-discount
+      product and ensures the Timeline webhook. Promo codes resolve through Polar's organization-scoped
+      catalog; active team assignments override codes, expired assignments do not, and failed
+      discount application cannot continue at full price. Setup leaves campaigns untouched.
+      Team/Business included-discount
       period reset (webhook + janitor advancing the stored Polar window; not
       every Polar retry). Paid-plan changes update the existing Polar subscription.
       Included-discount collection is not ingested. Polar receives the payable

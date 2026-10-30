@@ -51,16 +51,19 @@ export interface BillingSettingsPanelProps {
   } | null;
   showOperatorLink: boolean;
   platformFeeCents?: number | null;
+  hasActiveTeamDiscount?: boolean;
 }
 
 interface BillingFormState {
   spendCapDraft: string | null;
+  discountCode: string;
   error: string | null;
   message: string | null;
 }
 
 const INITIAL_BILLING_FORM: BillingFormState = {
   spendCapDraft: null,
+  discountCode: '',
   error: null,
   message: null,
 };
@@ -173,7 +176,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
   function runCheckout(plan: 'payg' | 'team' | 'business') {
     updateForm({ error: null, message: null });
     startTransition(async () => {
-      const result = await startBillingCheckout({ plan });
+      const result = await startBillingCheckout({ plan, discountCode: form.discountCode });
       if (!result.ok) {
         updateForm({ error: result.error });
         return;
@@ -284,6 +287,35 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
               >
                 Change plan
               </summary>
+              <div className="mt-3 space-y-2">
+                <label htmlFor="billing-promo-code" className="block text-sm text-fg-muted">
+                  Promo code
+                </label>
+                <input
+                  id="billing-promo-code"
+                  name="discountCode"
+                  type="text"
+                  autoComplete="off"
+                  value={form.discountCode}
+                  disabled={pending || props.hasActiveTeamDiscount}
+                  aria-describedby="billing-promo-help"
+                  onChange={(event) => {
+                    updateForm({ discountCode: event.target.value });
+                  }}
+                  className="block w-full rounded-sm border border-border bg-bg px-3 py-2 text-sm text-fg disabled:opacity-60"
+                />
+                <p id="billing-promo-help" className="max-w-sm text-sm text-fg-muted">
+                  {props.hasActiveTeamDiscount
+                    ? 'Your assigned team discount takes priority. Promo codes cannot be combined with it.'
+                    : 'Optional. Polar checks eligibility for the selected plan. An active team discount takes priority; discounts do not stack.'}
+                </p>
+                {props.hasPolarSubscription ? (
+                  <p className="max-w-sm text-sm text-fg-muted">
+                    Polar applies discount changes to existing subscriptions from the next billing
+                    cycle.
+                  </p>
+                ) : null}
+              </div>
               <div className="mt-2 flex flex-wrap justify-end gap-2">
                 {(
                   [
@@ -376,7 +408,11 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
           </Link>
         </p>
       ) : null}
-      {form.error ? <p className="text-sm text-danger">{form.error}</p> : null}
+      {form.error ? (
+        <p role="alert" className="text-sm text-danger">
+          {form.error}
+        </p>
+      ) : null}
       {form.message ? <p className="text-sm text-fg-muted">{form.message}</p> : null}
     </div>
   );

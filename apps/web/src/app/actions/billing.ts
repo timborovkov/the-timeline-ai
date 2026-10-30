@@ -2,6 +2,7 @@
 
 import {
   checkoutDiscountId,
+  PolarDiscountError,
   compSuppressesPolarCharges,
   createPlanChangeSession,
   createPolarBillingProvider,
@@ -73,29 +74,41 @@ export async function startBillingCheckout(input: {
           'Enterprise checkout is opened by a platform operator. Plan changes are not self-serve.',
       };
     }
-    const discount = checkoutDiscountId({
-      account,
-      submittedCode: input.discountCode,
-      envDiscountId: env.POLAR_DISCOUNT_ID,
-      envDiscountCode: env.POLAR_DISCOUNT_CODE,
-    });
-    if (discount.error) return { ok: false, error: discount.error };
-    await provider.ensureCustomer({
-      externalId: gate.active.teamId,
-      email: gate.email,
-      name: gate.active.teamName,
-    });
-    const checkout = await createPlanChangeSession({
-      provider,
-      account,
-      productId,
-      externalCustomerId: gate.active.teamId,
-      customerEmail: gate.email,
-      successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
-      portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-      ...(discount.discountId ? { discountId: discount.discountId } : {}),
-    });
-    return { ok: true, url: checkout.url };
+    if (input.discountCode !== undefined && typeof input.discountCode !== 'string') {
+      return { ok: false, error: 'Enter a valid promo code.' };
+    }
+    try {
+      const discountId = await checkoutDiscountId({
+        account,
+        submittedCode: input.discountCode,
+        provider,
+        productId,
+      });
+      await provider.ensureCustomer({
+        externalId: gate.active.teamId,
+        email: gate.email,
+        name: gate.active.teamName,
+      });
+      const checkout = await createPlanChangeSession({
+        provider,
+        account,
+        productId,
+        externalCustomerId: gate.active.teamId,
+        customerEmail: gate.email,
+        successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
+        portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
+        ...(discountId ? { discountId } : {}),
+      });
+      return { ok: true, url: checkout.url };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof PolarDiscountError
+            ? error.message
+            : 'Polar billing is temporarily unavailable. Please retry; no full-price checkout will be opened.',
+      };
+    }
   });
 }
 

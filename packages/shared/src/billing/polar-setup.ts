@@ -116,7 +116,6 @@ const TIMELINE_METER_ENV_NAMES: Record<TimelineMeteredEventName, string> = {
   timeline_extra_member_days: 'POLAR_METER_ID_EXTRA_MEMBER_DAYS',
 };
 
-const CHECKOUT_DISCOUNT_KEY = 'checkout';
 const TOPUP_METADATA_KEY = 'topup';
 const WEBHOOK_METADATA_KEY = 'webhook';
 const METER_ID_PREFIX = '$meter:';
@@ -199,24 +198,15 @@ export interface PolarSetupWebhook {
   metadata: Record<string, string>;
 }
 
-export interface PolarSetupDiscount {
-  id: string;
-  name: string;
-  code: string | null;
-  metadata: Record<string, string>;
-}
-
 export interface PolarSetupSnapshot {
   meters: readonly PolarSetupMeter[];
   products: readonly PolarSetupProduct[];
   webhooks: readonly PolarSetupWebhook[];
-  discounts: readonly PolarSetupDiscount[];
 }
 
 export interface PolarSetupRequest {
   webhookUrl: string;
   webhookId: string | null;
-  discountCode: string | null;
   preferredProductIds: Partial<Record<TimelineProductKey, string>>;
 }
 
@@ -308,20 +298,13 @@ export type PolarSetupAction =
   | { kind: 'archive_product'; id: string; name: string; summary: string }
   | { kind: 'delete_webhook'; id: string; url: string; summary: string }
   | { kind: 'create_webhook'; body: PolarWebhookWrite; summary: string }
-  | { kind: 'patch_webhook'; id: string; body: PolarWebhookWrite; summary: string }
-  | {
-      kind: 'patch_discount';
-      id: string;
-      body: { metadata: Record<string, string> };
-      summary: string;
-    };
+  | { kind: 'patch_webhook'; id: string; body: PolarWebhookWrite; summary: string };
 
 export interface PolarSetupPlan {
   actions: PolarSetupAction[];
   notes: string[];
   meterIds: Partial<Record<TimelineMeteredEventName, string>>;
   productIds: Partial<Record<TimelineProductKey, string>>;
-  discount: { id: string; code: string } | null;
   webhookId: string | null;
 }
 
@@ -329,7 +312,6 @@ export interface PolarSetupClient {
   listMeters(): Promise<readonly PolarSetupMeter[]>;
   listProducts(): Promise<readonly PolarSetupProduct[]>;
   listWebhooks(): Promise<readonly PolarSetupWebhook[]>;
-  listDiscounts(): Promise<readonly PolarSetupDiscount[]>;
   createMeter(body: PolarMeterWrite): Promise<{ id: string }>;
   patchMeter(id: string, body: { metadata: Record<string, string> }): Promise<void>;
   createProduct(body: PolarProductWrite): Promise<{ id: string }>;
@@ -338,14 +320,12 @@ export interface PolarSetupClient {
   createWebhook(body: PolarWebhookWrite): Promise<{ id: string; secret: string | null }>;
   patchWebhook(id: string, body: PolarWebhookWrite): Promise<void>;
   deleteWebhook(id: string): Promise<void>;
-  patchDiscount(id: string, body: { metadata: Record<string, string> }): Promise<void>;
 }
 
 export interface PolarSetupRunResult {
   plan: PolarSetupPlan;
   meterIds: Partial<Record<TimelineMeteredEventName, string>>;
   productIds: Partial<Record<TimelineProductKey, string>>;
-  discount: { id: string; code: string } | null;
   webhookId: string | null;
   webhookSecret: string | null;
 }
@@ -398,10 +378,6 @@ function productSpec(key: TimelineProductKey): ProductSpec {
   const spec = timelineProductSpecs().find((item) => item.key === key);
   if (!spec) throw new Error(`Unknown Timeline product ${key}`);
   return spec;
-}
-
-function hasTimelineName(name: string): boolean {
-  return name === 'Timeline' || name.startsWith('Timeline ');
 }
 
 function metadataStamp(current: Record<string, string>, stamp: Record<string, string>) {
@@ -732,73 +708,6 @@ function planProducts(
   return ids;
 }
 
-function planDiscount(
-  discounts: readonly PolarSetupDiscount[],
-  discountCode: string | null,
-  actions: PolarSetupAction[],
-  notes: string[],
-): { id: string; code: string } | null {
-  const timelineOwned = (discount: PolarSetupDiscount) =>
-    Boolean(discount.metadata[TIMELINE_METADATA_KEY]) || hasTimelineName(discount.name);
-  if (discountCode) {
-    const code = discountCode.trim();
-    const foreign = discounts.find(
-      (discount) =>
-        !timelineOwned(discount) && discount.code?.trim().toLowerCase() === code.toLowerCase(),
-    );
-    if (foreign) {
-      notes.push(
-        `A discount with code ${code} is not Timeline-owned (${foreign.id}). It was left untouched.`,
-      );
-    }
-    const match = discounts.find(
-      (discount) =>
-        timelineOwned(discount) && discount.code?.trim().toLowerCase() === code.toLowerCase(),
-    );
-    if (!match) {
-      notes.push(
-        `No Timeline-owned discount uses code ${code}. Included-usage discounts stay on the local invoice, and this setup does not invent a Polar discount.`,
-      );
-      return null;
-    }
-    return stampDiscount(match, actions, notes);
-  }
-  const checkout = discounts.find(
-    (discount) => discount.metadata[TIMELINE_METADATA_KEY] === CHECKOUT_DISCOUNT_KEY,
-  );
-  if (!checkout) {
-    notes.push(
-      'No Timeline checkout discount is configured. Included-usage discounts stay on the local invoice. POLAR_DISCOUNT_ID and POLAR_DISCOUNT_CODE stay unset.',
-    );
-    return null;
-  }
-  return stampDiscount(checkout, actions, notes);
-}
-
-function stampDiscount(
-  discount: PolarSetupDiscount,
-  actions: PolarSetupAction[],
-  notes: string[],
-): { id: string; code: string } {
-  const stamp = metadataStamp(discount.metadata, {
-    [TIMELINE_METADATA_KEY]: CHECKOUT_DISCOUNT_KEY,
-  });
-  if (stamp.changed) {
-    actions.push({
-      kind: 'patch_discount',
-      id: discount.id,
-      body: { metadata: stamp.metadata },
-      summary: `stamp discount ${discount.id} ${TIMELINE_METADATA_KEY}=${CHECKOUT_DISCOUNT_KEY}`,
-    });
-  }
-  if (!discount.code) {
-    notes.push(
-      `Timeline discount ${discount.id} has no checkout code. POLAR_DISCOUNT_CODE stays blank.`,
-    );
-  }
-  return { id: discount.id, code: discount.code ?? '' };
-}
-
 function isTimelinePlaceholder(webhook: PolarSetupWebhook): boolean {
   if (webhook.enabled) return false;
   if (!webhook.metadata[TIMELINE_METADATA_KEY]) return false;
@@ -941,7 +850,6 @@ export function planPolarSetup(
     actions,
     notes,
   );
-  const discount = planDiscount(snapshot.discounts, request.discountCode, actions, notes);
   const webhookId = planWebhooks(snapshot.webhooks, request, actions, notes);
   const resolvedMeters: Partial<Record<TimelineMeteredEventName, string>> = {};
   for (const eventName of TIMELINE_METERED_EVENT_NAMES) {
@@ -958,7 +866,6 @@ export function planPolarSetup(
     notes,
     meterIds: resolvedMeters,
     productIds,
-    discount,
     webhookId,
   };
 }
@@ -996,15 +903,13 @@ export function renderPolarSetupReport(input: {
   for (const key of TIMELINE_PRODUCT_KEYS) {
     lines.push(`${TIMELINE_PRODUCT_ENV_NAMES[key]}=${result.productIds[key] ?? ''}`);
   }
-  lines.push(`POLAR_DISCOUNT_ID=${result.discount?.id ?? ''}`);
-  lines.push(`POLAR_DISCOUNT_CODE=${result.discount?.code ?? ''}`);
   lines.push('# Meter ids are for operators. The app resolves meters by event name.');
   for (const eventName of TIMELINE_METERED_EVENT_NAMES) {
     lines.push(`${TIMELINE_METER_ENV_NAMES[eventName]}=${result.meterIds[eventName] ?? ''}`);
   }
   lines.push('');
   lines.push(
-    'Railway: set POLAR_SERVER, POLAR_ORGANIZATION_ID, POLAR_WEBHOOK_ID, POLAR_WEBHOOK_SECRET, POLAR_PRODUCT_ID_PAYG, POLAR_PRODUCT_ID_TEAM, POLAR_PRODUCT_ID_BUSINESS, POLAR_PRODUCT_ID_ENTERPRISE, and, when a Timeline checkout discount was reused, POLAR_DISCOUNT_ID and POLAR_DISCOUNT_CODE on the web and worker services. Leave the access token in the existing web and worker variables. document-extract-orchestrator stays credential-thin: copy BILLING_CHARGES_ENABLED there and do not copy Polar credentials onto it.',
+    'Railway: set POLAR_SERVER, POLAR_ORGANIZATION_ID, POLAR_WEBHOOK_ID, POLAR_WEBHOOK_SECRET, POLAR_PRODUCT_ID_PAYG, POLAR_PRODUCT_ID_TEAM, POLAR_PRODUCT_ID_BUSINESS, POLAR_PRODUCT_ID_ENTERPRISE on the web and worker services. Leave the access token in the existing web and worker variables. document-extract-orchestrator stays credential-thin: copy BILLING_CHARGES_ENABLED there and do not copy Polar credentials onto it.',
   );
   return lines
     .filter((line) => !line.startsWith('POLAR_ACCESS_TOKEN='))
@@ -1111,7 +1016,6 @@ export async function runPolarSetup(input: {
     meters: await input.client.listMeters(),
     products: await input.client.listProducts(),
     webhooks: await input.client.listWebhooks(),
-    discounts: await input.client.listDiscounts(),
   };
   const plan = planPolarSetup(snapshot, input.request);
   const meterIds = new Map<string, string>(Object.entries(plan.meterIds));
@@ -1123,7 +1027,6 @@ export async function runPolarSetup(input: {
       plan,
       meterIds: plan.meterIds,
       productIds,
-      discount: plan.discount,
       webhookId,
       webhookSecret,
     };
@@ -1139,7 +1042,6 @@ export async function runPolarSetup(input: {
   for (const action of plan.actions) {
     if (action.kind === 'patch_meter') await input.client.patchMeter(action.id, action.body);
     if (action.kind === 'archive_product') await input.client.archiveProduct(action.id);
-    if (action.kind === 'patch_discount') await input.client.patchDiscount(action.id, action.body);
   }
   for (const action of plan.actions) {
     if (action.kind !== 'create_product' && action.kind !== 'patch_product') continue;
@@ -1163,7 +1065,6 @@ export async function runPolarSetup(input: {
     plan,
     meterIds: resolvedMeters,
     productIds,
-    discount: plan.discount,
     webhookId,
     webhookSecret,
   };

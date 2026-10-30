@@ -1,3 +1,5 @@
+import type { BillingProvider } from '#src/billing/provider.js';
+
 import { type BillingPlanId, PLAN_CATALOG } from '#src/billing/catalog.js';
 import { billingStateAllowsReservation, billingStateForPaidPlan } from '#src/billing/status.js';
 
@@ -342,22 +344,21 @@ export function describePriceOverride(
   return `Custom pricing: ${parts.join(', ')}${expiry}.`;
 }
 
-export function checkoutDiscountId(input: {
+/** Operator assignments take precedence; all terms and code lookup live in Polar. */
+export async function checkoutDiscountId(input: {
   account: BillingOperatorAccount;
   submittedCode?: string;
-  envDiscountId?: string;
-  envDiscountCode?: string;
+  productId: string;
+  provider: BillingProvider;
   now?: Date;
-}): { discountId?: string; error?: string } {
+}): Promise<string | undefined> {
   const teamDiscount = activePolarDiscountId(input.account, input.now ?? new Date());
-  if (teamDiscount) return { discountId: teamDiscount };
-  const submitted = input.submittedCode?.trim();
-  if (!submitted) return {};
-  const expected = input.envDiscountCode?.trim();
-  if (!expected || !input.envDiscountId || submitted.toLowerCase() !== expected.toLowerCase()) {
-    return { error: 'That discount code is not valid.' };
+  if (teamDiscount) {
+    return input.provider.resolveDiscount({ discountId: teamDiscount, productId: input.productId });
   }
-  return { discountId: input.envDiscountId };
+  const code = input.submittedCode?.trim();
+  if (!code) return undefined;
+  return input.provider.resolveDiscount({ code, productId: input.productId });
 }
 
 export function billingOperatorSnapshot(account: BillingOperatorAccount): BillingOperatorSnapshot {
