@@ -1,3 +1,4 @@
+import type { PublicNavigationSection } from '@/components/public-navigation';
 import type { ReactNode } from 'react';
 
 import { ErrorState } from '@/components/error-state';
@@ -9,6 +10,7 @@ interface LegalRouteStateProps {
   title: string;
   description: string;
   footerLabel?: string;
+  currentSection?: PublicNavigationSection;
 }
 
 interface LegalRouteErrorProps extends LegalRouteStateProps {
@@ -21,10 +23,11 @@ function LegalRouteFrame({
   title,
   description,
   footerLabel = 'The Timeline legal',
+  currentSection,
   children,
 }: LegalRouteStateProps & { children: ReactNode }) {
   return (
-    <PublicShell width="reading" footerLabel={footerLabel}>
+    <PublicShell width="reading" footerLabel={footerLabel} currentSection={currentSection}>
       <main id="main" className="mx-auto max-w-4xl px-4 py-12 sm:px-6 sm:py-16">
         <p className="text-xs font-medium text-fg-muted">{eyebrow}</p>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-fg">{title}</h1>
@@ -40,6 +43,7 @@ export function LegalRouteLoading({
   title,
   description,
   footerLabel,
+  currentSection,
 }: LegalRouteStateProps) {
   return (
     <LegalRouteFrame
@@ -47,6 +51,7 @@ export function LegalRouteLoading({
       title={title}
       description={description}
       footerLabel={footerLabel}
+      currentSection={currentSection}
     >
       <output className="sr-only" aria-live="polite">
         Loading {title}
@@ -73,6 +78,7 @@ export function LegalRouteError({
   title,
   description,
   footerLabel,
+  currentSection,
   error,
   reset,
 }: LegalRouteErrorProps) {
@@ -82,6 +88,7 @@ export function LegalRouteError({
       title={title}
       description={description}
       footerLabel={footerLabel}
+      currentSection={currentSection}
     >
       <div className="mt-10 max-w-[70ch]">
         <ErrorState

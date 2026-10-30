@@ -42,23 +42,26 @@ describe('Privacy Policy analytics disclosures', () => {
     expect(html).toContain('without query strings, fragments, page titles, or referrer paths');
   });
 
-  it('discloses the fixed tracker source while keeping deployment evidence qualified', () => {
+  it('explains the legacy tracker without implying historical deletion', () => {
     const html = renderToStaticMarkup(<PrivacyPage />);
 
     expect(html).toContain('previous source version loaded a Convex-hosted page tracker');
     expect(html).toContain('current source removes that script');
-    expect(html).toContain('historical data, and live production release still require');
-    expect(html).toContain('Provider account settings');
+    expect(html).toContain('does not establish deletion of data previously received');
+    expect(html).toContain('does not promise a shorter provider retention period');
     expect(html).toContain('do not use behavioral advertising trackers');
   });
 
-  it('states access and infrastructure controls as policy pending deployment evidence', () => {
+  it('distinguishes staff and hosting policies from application controls', () => {
     const html = renderToStaticMarkup(<PrivacyPage />);
 
-    expect(html).toContain('operating standard prohibits routine browsing');
-    expect(html).toContain('Production access inventory');
-    expect(html).toContain('hosted deployment design');
-    expect(html).toContain('public exposure still require deployment');
+    expect(html).toContain('staff access policy prohibits routine browsing');
+    expect(html).toContain('The policy requires access limited to what the task needs');
+    expect(html).toContain('Our hosting policy requires encrypted external transport');
+    expect(html).toContain('not confirmation of completed provider deletion');
+    expect(html).not.toMatch(
+      /evidence remains pending|evidence pending|before this version is published|deployment evidence must|audit evidence are still/,
+    );
   });
 
   it('discloses member-authorized MCP and AI-app data sharing', () => {

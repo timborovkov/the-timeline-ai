@@ -404,9 +404,8 @@ export default function TermsPage() {
         description="Binding Terms are not currently being published or presented for acceptance."
       >
         <p>
-          The Timeline is completing a contracting-entity publication-readiness review. Until that
-          review is resolved and evidenced, this page does not form an agreement, no new Terms
-          version is in force through this page, and the product will not ask users to accept it.
+          The Terms are unavailable while we review our contracting entity. This page does not form
+          an agreement or introduce a new Terms version, and you will not be asked to accept it.
         </p>
         <p>
           Existing users may continue under any previously applicable agreement. New account

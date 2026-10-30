@@ -15,3 +15,6 @@ export function getLegalContactEmail(): string {
   const email = process.env.SUPPORT_EMAIL?.trim();
   return email === '' ? 'contact@thetimeline.cc' : (email ?? 'contact@thetimeline.cc');
 }
+
+export const COOKIES_REVIEW_DATE = '24 October 2026';
+export const TRUST_REVIEW_DATE = '21 August 2026';

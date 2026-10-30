@@ -68,7 +68,11 @@ describe('Cookies and similar technologies page', () => {
     expect(html).toContain('Bots and retries can contribute');
     expect(html).toContain('not visitor or session metrics');
     expect(html).toContain('Autocapture, heatmaps, session replay');
-    expect(html).toContain('do not enable optional browser analytics yet');
+    expect(html).toContain('does not promise a shorter provider retention period');
+    expect(html).toContain('does not automatically delete events already held by PostHog');
+    expect(html).not.toMatch(
+      /do not enable|Not yet recorded|deployment status|operator review|evidence remain open/,
+    );
     expect(html).toContain('Use Cookie settings to accept, reject, or withdraw');
   });
 
