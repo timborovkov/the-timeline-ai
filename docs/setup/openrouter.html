@@ -705,7 +705,7 @@ curl -s -X PUT "$QDRANT_URL/collections/events/index" \
         <li>
           Optional <strong>RAM / recall probe</strong> against the demo corpus (Acme Labs owner).
           Live <code>--measure</code> waits until HNSW/quantization is indexed on both collections
-          (Qdrant 1.19.2: <code>indexing_threshold=1</code> KB, because <code>0</code> disables
+          (Qdrant 1.20.0: <code>indexing_threshold=1</code> KB, because <code>0</code> disables
           indexing, and <code>full_scan_threshold=10</code>, the minimum Qdrant accepts),
           <em>then</em> snapshots RAM from <code>GET /collections/{name}/memory</code>, then
           compares recall. <code>--dry-run --measure</code> does not PATCH optimizer thresholds and

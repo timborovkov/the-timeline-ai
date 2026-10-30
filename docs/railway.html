@@ -90,7 +90,7 @@
           <tr>
             <td><code>qdrant</code></td>
             <td>Docker image</td>
-            <td><code>qdrant/qdrant:v1.12.4</code></td>
+            <td><code>qdrant/qdrant:v1.20.0</code></td>
             <td>(configured in Railway)</td>
           </tr>
           <tr>
@@ -117,7 +117,7 @@
         </li>
         <li>Add the Redis template. Inject its connection string as <code>REDIS_URL</code>.</li>
         <li>
-          Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.19.2</code>.
+          Add Qdrant service: New Service → Docker Image → <code>qdrant/qdrant:v1.20.0</code>.
           Persistent volume at <code>/qdrant/storage</code>. Size the memory limit from startup,
           search, and ingestion measurements (see <a href="#qdrant-memory">Qdrant memory</a>). Set
           <code>QDRANT__SERVICE__API_KEY</code> to a strong random value. Set
