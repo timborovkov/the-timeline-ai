@@ -496,6 +496,7 @@ function reservationMetadataRecord(
 }
 
 interface StoredFailedAttempt {
+  admittedMeteredDiscountPercent?: number;
   operationId: string;
   openRouterUsd: number;
   usageAt: string;
@@ -526,6 +527,9 @@ function storedFailedAttempts(metadata: Record<string, unknown>): StoredFailedAt
       operationClass: typeof row.operation_class === 'string' ? row.operation_class : 'worker_ai',
       billable: row.billable !== false,
     };
+    const discount = metadataNumber(row, 'admitted_metered_discount_percent');
+    if (discount !== undefined && discount >= 0 && discount <= 100)
+      attempt.admittedMeteredDiscountPercent = discount;
     if (typeof row.model === 'string') attempt.model = row.model;
     if (typeof row.source === 'string') attempt.source = row.source;
     if (typeof row.delivery_surface === 'string') attempt.deliverySurface = row.delivery_surface;
@@ -536,6 +540,9 @@ function storedFailedAttempts(metadata: Record<string, unknown>): StoredFailedAt
 
 function failedAttemptMetadata(attempt: StoredFailedAttempt): Record<string, unknown> {
   return {
+    ...(attempt.admittedMeteredDiscountPercent !== undefined
+      ? { admitted_metered_discount_percent: attempt.admittedMeteredDiscountPercent }
+      : {}),
     operation_id: attempt.operationId,
     openrouter_usd: attempt.openRouterUsd,
     usage_at: attempt.usageAt,
@@ -588,6 +595,9 @@ async function commitStoredFailedAttempts(input: {
     );
     await input.billing.settle({
       operationId: attempt.operationId,
+      ...(attempt.admittedMeteredDiscountPercent !== undefined
+        ? { pricingAiDiscountPercent: attempt.admittedMeteredDiscountPercent }
+        : {}),
       meterId: 'ai',
       nativeUnits: customerChargeExactCents,
       customerChargeCents: Math.round(customerChargeExactCents),
@@ -753,6 +763,8 @@ export async function withAiMetering<T>(
         operationClass,
         billable: ctx.billable !== false,
       };
+      const admittedDiscount = metadataNumber(existingMeta, 'admitted_metered_discount_percent');
+      if (admittedDiscount !== undefined) attempt.admittedMeteredDiscountPercent = admittedDiscount;
       if (input.model) attempt.model = input.model;
       if (ctx.source) attempt.source = ctx.source;
       if (ctx.deliverySurface) attempt.deliverySurface = ctx.deliverySurface;

@@ -1154,6 +1154,8 @@ export function createBillingScope(deps: BillingScopeDeps) {
       pricingAdditionalMemberCents?: number | null;
       /** Historical member-day discount, resolved by the server from operator history. */
       pricingMemberDiscountPercent?: number | null;
+      /** Server-saved admission percentage for failed AI attempts without their own reservation. */
+      pricingAiDiscountPercent?: number;
       pricingPeriodYm?: string;
       /** When the usage happened. Backfills use this instead of reservation time. */
       usageAt?: Date;
@@ -1240,7 +1242,10 @@ export function createBillingScope(deps: BillingScopeDeps) {
           const commercial = resolveTeamCommercialTerms(account);
           // Admission stamps this after caller metadata under the account lock.
           // Explicit zero prevents a later promotion from repricing completed work.
-          const admittedDiscount = reservation[0]?.metadata.admitted_metered_discount_percent;
+          const admittedDiscount =
+            input.meterId === 'ai' && input.pricingAiDiscountPercent !== undefined
+              ? input.pricingAiDiscountPercent
+              : reservation[0]?.metadata.admitted_metered_discount_percent;
           const meteredDiscountPercent =
             input.meterId === 'member_days' && input.pricingMemberDiscountPercent !== undefined
               ? input.pricingMemberDiscountPercent

@@ -1277,6 +1277,94 @@ describe('billing runtime', () => {
     expect(reservation?.state).toBe('released');
   });
 
+  for (const scenario of [
+    { name: 'expires', initial: 50, next: 50, expired: true, invoice: 118 },
+    { name: 'changes', initial: 50, next: 10, expired: false, invoice: 118 },
+    { name: 'starts later', initial: 0, next: 50, expired: false, invoice: 236 },
+  ]) {
+    it(`keeps a failed attempt discount when the override ${scenario.name}`, async () => {
+      process.env.BILLING_CHARGES_ENABLED = 'true';
+      resetEnvForTests();
+      const billing = billingScopeMod.createBillingScope({
+        db,
+        teamId: TEAM_ID,
+        userId: USER_ID,
+        ensureMember: () => Promise.resolve('owner'),
+      });
+      await billing.getAccount();
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          planId: 'payg',
+          billingState: 'payg_active',
+          shadowBilling: false,
+          includedDiscountRemainingCents: 0,
+          spendCapCents: 100000,
+          priceOverride: { meteredDiscountPercent: scenario.initial },
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      await pg.exec(`
+        CREATE FUNCTION fail_attempt_settlement() RETURNS trigger AS $$
+        BEGIN RAISE EXCEPTION 'settlement unavailable'; END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER fail_attempt_settlement BEFORE INSERT ON billing_usage_ledger
+        FOR EACH ROW EXECUTE FUNCTION fail_attempt_settlement();
+      `);
+      const operationId = 'embedding:discounted-failure';
+      let calls = 0;
+      await expect(
+        runWorkerBilling(
+          db,
+          TEAM_ID,
+          'embedding',
+          () =>
+            withAiMetering({ operationClass: 'embedding', operationId }, () => {
+              calls++;
+              return Promise.reject(
+                Object.assign(new Error('provider failed'), { openRouterUsd: 2 }),
+              );
+            }),
+          { operationId },
+        ),
+      ).rejects.toThrow('provider failed');
+      const [reservation] = await db
+        .select()
+        .from(billingUsageReservations)
+        .where(eq(billingUsageReservations.operationId, operationId));
+      expect(reservation?.metadata.pending_failed_attempts).toMatchObject([
+        { admitted_metered_discount_percent: scenario.initial },
+      ]);
+      await db
+        .update(teamBillingAccounts)
+        .set({
+          priceOverride: { meteredDiscountPercent: scenario.next },
+          priceOverrideExpiresAt: scenario.expired ? new Date(Date.now() - 1000) : null,
+        })
+        .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+      // The attempt must retain its own terms even if parent metadata changes.
+      await billing.patchReservationMetadata(operationId, {
+        admitted_metered_discount_percent: scenario.next,
+      });
+      await pg.exec('DROP TRIGGER fail_attempt_settlement ON billing_usage_ledger');
+      expect(await settlePendingBillingReservations(db)).toBe(1);
+      expect(await settlePendingBillingReservations(db)).toBe(0);
+      const rows = await db
+        .select()
+        .from(billingUsageLedger)
+        .where(eq(billingUsageLedger.operationId, operationId + ':failed:1'));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.metadata.invoice_cents).toBe(scenario.invoice);
+      const [counter] = await db
+        .select()
+        .from(billingUsageCounters)
+        .where(
+          and(eq(billingUsageCounters.teamId, TEAM_ID), eq(billingUsageCounters.meterId, 'ai')),
+        );
+      expect(counter?.capEligibleChargeCents).toBe(scenario.invoice);
+      expect(calls).toBe(1);
+    });
+  }
+
   it('recovers a failed provider attempt when settlement cannot commit', async () => {
     await pg.exec(`
       CREATE OR REPLACE FUNCTION fail_billing_settlement() RETURNS trigger AS $$

@@ -432,3 +432,15 @@ metadata precedence, invoice and spend-cap amounts, and idempotent recovery. No
 migration, environment change, deployment, or live provider call is required.
 The documentation handoff was audited manually because the repository-referenced
 /document-release skill is unavailable; setup guidance and this ADR were updated.
+
+## Review follow-up: failed-attempt discounts (2026-10-30)
+
+Billable failed AI attempts save a copy of the parent's admitted metered percentage
+in each pending attempt record, including zero. Their separate settlement operation
+IDs have no reservation, so recovery supplies that saved percentage explicitly to
+AI settlement. The attempt snapshot survives later parent metadata or override
+changes. Existing unstamped failed-attempt records retain the previous fallback.
+Synthetic tests cover expiry, replacement, newly added discounts, invoice/spend-cap
+amounts, and recovery without duplicate charges or provider calls. No migration
+or live provider operation is required. Setup guidance and this ADR complete the
+manual documentation handoff (/document-release remains unavailable).

@@ -516,6 +516,12 @@ PLATFORM_ADMIN_EMAILS=
         reservations without a saved percentage retain the previous settlement fallback. No new
         migration is needed for this reservation metadata.
       </p>
+      <p>
+        Billable failed AI attempts also retain their admitted percentage in each pending attempt
+        record. Recovery uses that copy because failed-attempt operation IDs have no reservation of
+        their own. Override or parent metadata changes cannot reprice stamped attempts. Older failed
+        attempts without a saved percentage retain the previous fallback.
+      </p>
 
       <h2>Public and app surfaces</h2>
       <ul>
