@@ -1015,6 +1015,8 @@ provider truth. The landing hero and public navigation also link directly to
 the project's source on GitHub; the
 public help shell and developer docs repeat that path. Legal pages use the
 shared public shell at reading width (65–70ch).
+Public pricing copy explains plans, usage costs, and billing terms in customer language. Keep sandbox rollout status, implementation terminology, and internal launch assumptions in setup documentation rather than the pricing page.
+
 Help uses the same public shell at wide width with a sidebar nav. Its overview
 is one searchable, single-column guide directory rather than repeating the
 same destinations in category lists and card grids. Guide and support pages
