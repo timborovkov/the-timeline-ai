@@ -101,11 +101,6 @@ function panel(overrides: Partial<BillingSettingsPanelProps> = {}): string {
   return renderToStaticMarkup(panelElement(overrides));
 }
 
-function invoiceBlock(html: string): string {
-  const match = /data-billing-invoice[\s\S]*?<\/div>/u.exec(html);
-  return match?.[0] ?? '';
-}
-
 function planButton(html: string, label: string): string {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   const match = new RegExp(`<button[^>]*>${escaped}</button>`, 'u').exec(html);
@@ -144,7 +139,8 @@ describe('BillingSettingsPanel', () => {
     const html = panel();
     expect(html).toContain('Change plan');
     expect(html).toContain('Pay as you go');
-    expect(html).toContain('Next invoice');
+    expect(html).toContain('Charges recorded so far');
+    expect(html).not.toContain('Next invoice');
     expect(html).toContain('href="/pricing"');
     expect(html).not.toContain('€0 Polar subscription');
     expect(html).not.toContain('Shadow billing');
@@ -180,8 +176,7 @@ describe('BillingSettingsPanel', () => {
     });
     expect(html).toContain('Comped');
     expect(html).toContain('No charge');
-    expect(invoiceBlock(html)).toContain('€0');
-    expect(invoiceBlock(html)).not.toContain('€49');
+    expect(html).not.toContain('Next invoice');
     expect(html).not.toContain('would save');
     expect(html).not.toContain('>Pay as you go<');
     expect(html).not.toContain('Change plan');
@@ -201,8 +196,7 @@ describe('BillingSettingsPanel', () => {
       },
     });
     expect(enterprise).toContain('No charge');
-    expect(invoiceBlock(enterprise)).toContain('€0');
-    expect(invoiceBlock(enterprise)).not.toContain('€2,512');
+    expect(enterprise).not.toContain('Next invoice');
   });
 
   it('shows a pending Enterprise subscription and the negotiated price', () => {
@@ -217,7 +211,8 @@ describe('BillingSettingsPanel', () => {
     expect(html).toContain('data-enterprise-subscription="pending"');
     expect(html).toContain('Subscription pending');
     expect(html).toContain('€2,500');
-    expect(html).toContain('Next invoice');
+    expect(html).toContain('Charges recorded so far');
+    expect(html).not.toContain('Next invoice');
     expect(html).not.toContain('>Pay as you go<');
     expect(html).not.toContain('Negotiated platform fee');
     expect(html).not.toContain('enterprise_active');

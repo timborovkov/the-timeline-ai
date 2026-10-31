@@ -213,3 +213,40 @@ billing-scope suites passed, including the Free-to-PAYG dashboard regression.
 Full repository build, scoped lint/formatting, compiled-import and diff checks
 passed. Setup and testing documentation updated; no environment variables,
 provider configuration, or customer billing records changed.
+
+### Shared benefits and recorded charges (2026-10-31)
+
+Usage, Billing and sidebar now consume the same typed presentation model. The
+read-only dashboard transaction provides a consistent snapshot of counters,
+credit balance and settlement records. Free/PAYG native allowance resets and cap
+progress use the UTC calendar month; pooled credit and recorded paid charges use
+subscription boundaries. Missing/stale credit windows are Updating billing
+period, without a read-side refill. Charges with ambiguous historical attribution
+or missing evidence for consumed credit are Unavailable.
+
+The former Next invoice display was a hypothetical plan comparison. It is replaced
+with recorded usage charges, credit applied, extra members, and a separately
+labeled recurring fee. Plan comparisons are explicitly labeled. Renewal-spanning
+settlements retain invoice cents beside each discount window. Additive metadata
+marks chargeability/comp status; no charging or enforcement calculations change.
+Comps do not accrue new Polar charges, while previously paid charges remain
+visible. Codex finding discussion_r4431309636 is addressed by retaining paid
+cap-eligible meter charges after downgrade to Free and preserving settlement
+history across plan/arrangement changes.
+
+The presentation requires a verified owner/admin role even when the caller asks
+for financial details. Member sidebar summaries carry no presentation model.
+Synthetic coverage includes Free/PAYG allowances, Team/Business credit, separate
+periods, overrides, members, caps, late records, renewal splits, unavailable data,
+comps and downgrades. Desktop and 320px Chromium checks across all five plans found
+no horizontal overflow; Team/PAYG screenshots were inspected locally.
+
+Documentation handoff: updated design, setup, billing ADR, TODO and this evidence
+log. README/product brief require no changed contract or setup instructions. The
+referenced document-release skill remains unavailable; this is its manual handoff.
+
+Final verification: 182 distinct focused cases passed, including 80 database-backed
+billing scope tests and 12 presentation-model cases. The full repository build,
+scoped ESLint/formatting, compiled import checks, diff checks and five-plan
+Chromium desktop/320px overflow checks passed. No environment variables, billing
+records or provider configuration changed.

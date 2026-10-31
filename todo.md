@@ -660,7 +660,7 @@ disclosures. Use sentence-case Switzer headings outside explicit audit indexes.
       shadow mode (`BILLING_CHARGES_ENABLED=false`). See ADR 0018.
 - [x] Pricing UX: self-serve plan grid (no Enterprise column); gray Enterprise
       contact nudge; `/app/usage` is a meter, amount, and cost table (infrastructure limits stay
-      folded); team Billing shows the plan price, one spend-versus-cap bar, the next invoice, and
+      folded); team Billing shows remaining benefits, recorded charges, the separate plan fee and spend cap, and
       one action; members only see a cap or allowance notice; Home keeps a one-line admin nudge.
       Free hard-stop + spend-cap admission in billing scope (`release` included).
 - [x] Wire native v1 meters at production call sites: Ask + Recall (existing),

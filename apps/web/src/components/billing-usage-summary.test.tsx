@@ -81,7 +81,8 @@ it('keeps all PAYG meters visible and separates included usage from chargeable s
   expect(html).toContain('Remaining: €4.99');
   expect(html).toContain('Included: 60 min');
   // Earlier Free AI usage retains its measured value but must not appear as a charge.
-  expect(html.match(/€0\.01/g)).toHaveLength(1);
+  expect(html.match(/€0\.01/g)).toHaveLength(2);
+  expect(html).toContain('>€0</span>');
 });
 
 it('shows exhausted PAYG allowance and actual chargeable overage', () => {
@@ -116,4 +117,15 @@ it('keeps comped usage visible without presenting tracked spend as a charge', ()
   );
   expect(html).toContain('without Polar charges');
   expect(html.match(/€6/g)).toHaveLength(1);
+});
+
+it('preserves accrued paid charges after a downgrade to Free', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      planId="free"
+      meters={{ ai: { nativeUnits: 1000, customerChargeCents: 1000, capEligibleChargeCents: 500 } }}
+      capacityUsage={[]}
+    />,
+  );
+  expect(html).toContain('>€5</span>');
 });

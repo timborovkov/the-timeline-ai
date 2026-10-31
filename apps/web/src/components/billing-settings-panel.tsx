@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useReducer, useTransition } from 'react';
 
+import type { BillingPresentation } from '@timeline/shared/billing';
 import type { CheapestPlanPreview } from '@timeline/shared/billing/preview';
 import type { FreeAllowanceRemaining, SpendCapUtilization } from '@timeline/shared/billing/status';
 
@@ -19,6 +20,7 @@ import {
   startBillingPortal,
   updateBillingSpendCap,
 } from '@/app/actions/billing';
+import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
 import { BillingCheckoutStatus } from '@/components/billing-checkout-status';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
@@ -28,6 +30,7 @@ import {
   type BillingRestrictionReason,
 } from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
+import { BillingUsageSummary } from '@/components/billing-usage-summary';
 
 const PRIMARY_CLASS =
   'inline-flex min-h-11 cursor-pointer list-none items-center rounded-sm bg-signal px-3 text-sm font-medium text-bg [&::-webkit-details-marker]:hidden';
@@ -35,6 +38,7 @@ const PLAN_BUTTON_CLASS =
   'inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50';
 
 export interface BillingSettingsPanelProps {
+  presentation?: BillingPresentation | null;
   checkoutReturned?: boolean;
   checkoutPlan?: string;
   planId: BillingPlanId;
@@ -89,15 +93,6 @@ function planPriceLabel(planId: BillingPlanId, platformFeeCents?: number | null)
   }
   const cents = platformFeeCents ?? PLAN_CATALOG[planId].platformFeeCents ?? 0;
   return `${formatEuroFromCents(cents)} / month`;
-}
-
-function nextInvoiceCents(props: BillingSettingsPanelProps): number {
-  if (props.comp) return 0;
-  if (props.planId === 'free') return 0;
-  if (props.planId === 'payg' || props.planId === 'team' || props.planId === 'business') {
-    return props.planPreview.bills[props.planId].totalCents;
-  }
-  return (props.platformFeeCents ?? 0) + props.meteredSpendCents;
 }
 
 function freeAllowancePercent(remaining: FreeAllowanceRemaining): number {
@@ -373,8 +368,8 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         </div>
       </div>
 
-      <ThisMonth {...props} />
-      {props.planId === 'payg' && !props.comp ? (
+      {props.presentation ? null : <ThisMonth {...props} />}
+      {props.planId === 'payg' && !props.comp && !props.presentation ? (
         <p className="text-sm text-fg-muted">
           Your spend cap limits monthly chargeable usage; it is not included credit or an upfront
           charge. PAYG keeps the monthly Free allowances. Only usage above those allowances and
@@ -385,12 +380,27 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         </p>
       ) : null}
 
-      <div data-billing-invoice>
-        <p className="text-sm text-fg-muted">Next invoice</p>
-        <p className="mt-1 font-mono text-sm text-fg">
-          {formatEuroFromCents(nextInvoiceCents(props))}
-        </p>
-      </div>
+      {props.presentation ? (
+        <>
+          <BillingBenefitsSummary summary={props.presentation} />
+          {props.presentation.allowances.length > 0 ? (
+            <BillingUsageSummary
+              planId={props.planId}
+              meters={Object.fromEntries(
+                props.presentation.allowances.map((row) => [
+                  row.meter,
+                  { nativeUnits: row.used, customerChargeCents: 0 },
+                ]),
+              )}
+              capacityUsage={[]}
+              allowanceBalances={props.presentation.allowances}
+              allowancesOnly
+            />
+          ) : null}
+        </>
+      ) : (
+        <p className="text-sm text-fg-muted">Charges recorded so far: Unavailable</p>
+      )}
 
       {props.comp ? null : (
         <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />

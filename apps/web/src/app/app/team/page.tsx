@@ -337,6 +337,7 @@ export default async function TeamSettingsPage({
           ) : null}
           {section === 'billing' && isAdmin && billingDashboard ? (
             <BillingSettingsPanel
+              presentation={billingDashboard.presentation}
               checkoutReturned={
                 query.checkout === 'success' &&
                 (!query.checkoutTeam || query.checkoutTeam === active.teamId)

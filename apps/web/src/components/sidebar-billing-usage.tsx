@@ -65,7 +65,15 @@ export function SidebarBillingUsage({
     );
   }
 
-  const tooltip = [summary.planName, summary.detailLabel].filter(Boolean).join(' · ');
+  const tooltip = [
+    summary.planName,
+    summary.detailLabel,
+    summary.secondaryLabel,
+    summary.resetLabel,
+    summary.warningLabel,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   if (!expanded) {
     return (
@@ -73,7 +81,7 @@ export function SidebarBillingUsage({
         <TooltipTrigger asChild>
           <Link
             href={summary.href}
-            aria-label={`Plan ${summary.planName}. ${summary.detailLabel}. Open billing.`}
+            aria-label={`${tooltip}. Open billing.`}
             data-sidebar-billing
             data-plan={summary.planId}
             className={cn(
@@ -106,7 +114,7 @@ export function SidebarBillingUsage({
       href={summary.href}
       data-sidebar-billing
       data-plan={summary.planId}
-      aria-label={`Plan ${summary.planName}. ${summary.detailLabel}. Open billing.`}
+      aria-label={`${tooltip}. Open billing.`}
       className={cn(
         'block w-full rounded-sm border border-border bg-bg px-3 py-2.5 transition-colors hover:bg-surface-2',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-strong focus-visible:ring-offset-1 focus-visible:ring-offset-bg',
@@ -116,6 +124,15 @@ export function SidebarBillingUsage({
       <p className="truncate text-xs font-medium text-fg">{summary.planName}</p>
       <UsageBar percent={summary.progressPercent} atLimit={summary.atLimit} className="mt-2" />
       <p className="mt-1.5 truncate text-[0.7rem] leading-4 text-fg-muted">{summary.detailLabel}</p>
+      {summary.resetLabel ? (
+        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{summary.resetLabel}</p>
+      ) : null}
+      {summary.warningLabel ? (
+        <p className="mt-1 text-xs text-danger">{summary.warningLabel}</p>
+      ) : null}
+      {summary.secondaryLabel ? (
+        <p className="mt-1 text-[0.7rem] leading-4 text-fg-muted">{summary.secondaryLabel}</p>
+      ) : null}
     </Link>
   );
 }

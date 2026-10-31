@@ -29,7 +29,7 @@ export function BillingPlanPreview({
 
   return (
     <p className="text-sm text-fg-muted" data-billing-plan-hint>
-      {recommended} would save {formatEuroFromCents(savingCents)} this month.
+      Plan comparison: {recommended} would save {formatEuroFromCents(savingCents)} this month.
     </p>
   );
 }

@@ -1,3 +1,4 @@
+import type { BillingPresentation } from '#src/billing/presentation.js';
 /**
  * Derived billing status for dashboards, upgrade nudges, and admission UX.
  */
@@ -373,6 +374,10 @@ export function freeAllowanceFloorCents(): number {
 }
 
 export interface SidebarBillingSummary {
+  presentation?: BillingPresentation;
+  secondaryLabel?: string | null;
+  resetLabel?: string;
+  warningLabel?: string;
   planId: BillingPlanId;
   planName: string;
   /** 0–100 for the progress bar (capped visually). */
@@ -472,4 +477,44 @@ export function deriveSidebarBillingSummary(input: {
     href,
     canManageBilling: input.canManageBilling,
   };
+}
+
+/** Shared periods and balances drive the compact view too; no invoice estimates. */
+export function applyBillingPresentationToSidebar(
+  summary: SidebarBillingSummary,
+  presentation: BillingPresentation,
+): void {
+  summary.presentation = presentation;
+  const reset =
+    presentation.credit.status === 'available'
+      ? presentation.credit.period?.end
+      : presentation.calendarPeriod.end;
+  if (reset)
+    summary.resetLabel = `${presentation.credit.status === 'available' ? 'Credit renews' : 'Month resets'} ${new Date(reset).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })} (UTC)`;
+  if (presentation.planId !== 'free' && presentation.cap.reached)
+    summary.warningLabel = 'Spend cap reached';
+
+  if (presentation.planId === 'free') {
+    summary.detailLabel = `${summary.progressPercent}% of most-used allowance`;
+    summary.secondaryLabel = 'View remaining allowances';
+    summary.href = '/app/usage';
+  } else if (presentation.comped) {
+    summary.detailLabel = 'Comped · no usage charges';
+    summary.secondaryLabel = `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`;
+  } else if (presentation.credit.status !== 'not_applicable') {
+    summary.detailLabel =
+      presentation.credit.status === 'available' && presentation.credit.remainingCents !== null
+        ? `${formatEuroFromCents(presentation.credit.remainingCents)} credit remaining`
+        : 'Updating billing period';
+    summary.progressPercent =
+      presentation.credit.status === 'available' &&
+      presentation.credit.usedCents !== null &&
+      presentation.credit.totalCents > 0
+        ? Math.round((presentation.credit.usedCents / presentation.credit.totalCents) * 100)
+        : 0;
+    summary.secondaryLabel = `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`;
+  } else {
+    summary.detailLabel = `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`;
+    summary.secondaryLabel = presentation.planId === 'payg' ? 'View remaining allowances' : null;
+  }
 }

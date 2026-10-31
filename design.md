@@ -1297,4 +1297,25 @@ primary action, and imports through `@/components/ui/<name>`.
 | 2026-08-28 | Object detail list folds | Evidence, Facts, Documents, and other Connected work lists preview three rows then fold behind `Show N more`, with hairline dividers and tighter evidence clamps. |
 | 2026-08-28 | Object detail typography | Shares `object-detail-type` roles: 13px semibold section titles, medium 14px row titles, Commit Mono counts/timestamps, and medium rail labels. |
 | 2026-10-30 | Polar promo codes | Change plan includes an optional promo field with inline eligibility/provider errors. An active assigned team discount disables the field and explains precedence; discounts never stack. Invoice previews remain local estimates before Polar campaign savings. |
-| 2026-10-23 | Quiet customer billing | Team Billing is plan, price, one spend bar, next invoice, and one action. Usage is a meter table. Cap, payment, and comp states are one banner each. Members only see a limit notice. Platform admin billing stays dense. |
+| 2026-10-23 | Quiet customer billing | Team Billing separates remaining benefits, recorded usage charges, recurring fee, and monthly spend cap. Usage is a meter table. Cap, payment, and comp states are one banner each. Members only see a limit notice. Platform admin billing stays dense. |
+
+
+### Billing benefits and recorded charges (2026-10-31)
+
+Usage and Billing share the same typed billing summary. Free/PAYG show each
+calendar-month allowance with used, included and remaining units, plus the UTC
+reset date. Team/Business instead show pooled included credit, used and remaining
+amounts, and the subscription-period dates. Extra members are separate from that
+credit. Every meter remains visible even at zero usage.
+
+“Charges recorded so far” uses settlement records; it is not a forecast or final
+invoice. The recurring plan fee is separate. Unknown attribution is Unavailable;
+stale credit periods say Updating billing period. No view silently resets credit.
+Monthly caps show their own dates and include metered usage before plan credit
+plus extra members, excluding fees and tax. PAYG's native allowances are deducted
+before its cap is counted. A cap is never presented as free credit.
+
+Sidebar: Free labels the most-used allowance; PAYG labels its monthly cap;
+Team/Business lead with credit remaining and a separate cap line. Keep the credit
+renewal date distinct from the calendar cap reset. Financial details remain for
+owners/admins; members retain the existing limited warning view.

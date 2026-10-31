@@ -3063,12 +3063,14 @@ describe('billing scope', () => {
           started_at: previousStart.toISOString(),
           ends_at: windowStart.toISOString(),
           discount_cents: 3,
+          invoice_cents: 0,
           native_units: 1,
         },
         {
           started_at: windowStart.toISOString(),
           ends_at: windowEnd.toISOString(),
           discount_cents: 3,
+          invoice_cents: 0,
           native_units: 1,
         },
       ],
@@ -3150,12 +3152,14 @@ describe('billing scope', () => {
           started_at: previousStart.toISOString(),
           ends_at: renewal.toISOString(),
           discount_cents: 3,
+          invoice_cents: 0,
           native_units: 1,
         },
         {
           started_at: renewal.toISOString(),
           ends_at: windowEnd.toISOString(),
           discount_cents: 3,
+          invoice_cents: 0,
           native_units: 1,
         },
       ],
@@ -3555,4 +3559,59 @@ it('explains restricted Free setup without exposing another owner account', asyn
     .set({ billingState: 'free' })
     .where(eq(teamBillingAccounts.teamId, TEAM_ID));
   expect((await billing.getDashboard()).restrictionReason).toBeNull();
+});
+
+it('shares recorded billing values only with authorized admins and never resets credit on reads', async () => {
+  let role: 'owner' | 'admin' | 'member' = 'owner';
+  const scope = createBillingScope({
+    db,
+    teamId: TEAM_ID,
+    userId: USER_ID,
+    ensureMember: () => Promise.resolve(role),
+  });
+  await scope.getAccount();
+  const start = new Date(Date.now() - 86400000);
+  const end = new Date(Date.now() + 28 * 86400000);
+  await db
+    .update(teamBillingAccounts)
+    .set({
+      planId: 'team',
+      billingState: 'team_active',
+      includedDiscountRemainingCents: 4500,
+      periodStartedAt: start,
+      periodEndsAt: end,
+      spendCapCents: 10000,
+    })
+    .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+  await db.insert(billingUsageLedger).values({
+    teamId: TEAM_ID,
+    operationId: 'presentation-current',
+    kind: 'settlement',
+    meterId: 'ai',
+    nativeUnits: '2000',
+    customerChargeCents: 2000,
+    metadata: { usage_at: new Date().toISOString(), discount_cents: 1500, invoice_cents: 500 },
+  });
+  const owner = await scope.getDashboard({ canManageBilling: true });
+  expect(owner.presentation?.charges.amounts?.totalCents).toBe(500);
+  expect(owner.presentation?.credit.remainingCents).toBe(4500);
+  expect(owner.sidebar.detailLabel).toBe('€45 credit remaining');
+  role = 'admin';
+  expect(
+    (await scope.getDashboard({ canManageBilling: true })).presentation?.credit.remainingCents,
+  ).toBe(4500);
+  role = 'member';
+  const member = await scope.getDashboard({ canManageBilling: true });
+  expect(member.presentation).toBeNull();
+  expect(member.sidebar.presentation).toBeUndefined();
+  expect(member.sidebar.canManageBilling).toBe(false);
+  role = 'owner';
+  await db
+    .update(teamBillingAccounts)
+    .set({ periodEndsAt: new Date(Date.now() - 1000) })
+    .where(eq(teamBillingAccounts.teamId, TEAM_ID));
+  expect((await scope.getDashboard({ canManageBilling: true })).presentation?.credit.status).toBe(
+    'updating',
+  );
+  expect((await scope.getAccount()).includedDiscountRemainingCents).toBe(4500);
 });

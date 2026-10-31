@@ -176,7 +176,8 @@ bun run billing:polar-convert --team-id=&lt;team-uuid&gt; --actor-email=&lt;veri
         promo field. A network failure after a provider write can leave its outcome uncertain;
         inspect the current subscription before retrying an uncertain plan change. Comped plans,
         Enterprise operator arrangements, local metered discounts, and pricing overrides keep their
-        existing paths. Local invoice previews do not estimate Polar campaign savings.
+        existing paths. Recorded usage charges and plan comparisons do not estimate Polar campaign
+        savings.
       </p>
       <p>
         No global campaign configuration is required. Removing obsolete values from local
@@ -261,16 +262,17 @@ PLATFORM_ADMIN_EMAILS=
         role. The address must match a Timeline user whose email is already verified. Comped
         workspaces keep metering and the spend cap, skip Polar checkout and meter ingest, and show a
         one-line comp banner on the team billing page. Customer billing shows the plan, this month's
-        spend against the cap, and the next invoice; usage is a meter table. Pricing detail lives on
-        <code>/pricing</code>. Members only see a cap or allowance notice. Assigning a comp revokes
-        the team's current Polar subscription immediately so the platform fee stops. If that
-        subscription exists and Polar is not configured, the comp is refused and nothing is saved.
-        An open Enterprise checkout is expired before the comp is saved. A checkout that is still
-        payable, or one that already started payment, blocks the comp. A subscription webhook that
-        still arrives for a comped workspace revokes that subscription, stores its id until the
-        revoke succeeds, and leaves the comp in place. Price overrides (platform fee, included
-        members, per-member price, metered discount percent) and a per-team Polar discount id are
-        optional and can expire. Every change is appended to <code>billing_operator_audit</code>.
+        remaining benefits, recorded usage charges, a separate recurring fee, and spend against the
+        cap; usage keeps every meter visible. Pricing detail lives on <code>/pricing</code>. Members
+        only see a cap or allowance notice. Assigning a comp revokes the team's current Polar
+        subscription immediately so the platform fee stops. If that subscription exists and Polar is
+        not configured, the comp is refused and nothing is saved. An open Enterprise checkout is
+        expired before the comp is saved. A checkout that is still payable, or one that already
+        started payment, blocks the comp. A subscription webhook that still arrives for a comped
+        workspace revokes that subscription, stores its id until the revoke succeeds, and leaves the
+        comp in place. Price overrides (platform fee, included members, per-member price, metered
+        discount percent) and a per-team Polar discount id are optional and can expire. Every change
+        is appended to <code>billing_operator_audit</code>.
       </p>
 
       <h2>Products and meters (v1)</h2>

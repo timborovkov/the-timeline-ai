@@ -291,7 +291,7 @@ function calendarMonthWindow(window: { startedAt: Date; endsAt: Date }): boolean
  * month so a backfill is not placed on the day it was written. Untagged rows
  * use the ledger time.
  */
-function settlementUsageInstant(row: {
+export function settlementUsageInstant(row: {
   operationId: string;
   occurredAt: Date;
   metadata: Record<string, unknown>;

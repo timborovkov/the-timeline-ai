@@ -10,7 +10,7 @@ import {
   teamMembers,
   users,
 } from '@timeline/db';
-import { and, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import type { BillingProvider, PolarUsageEvent } from '#src/billing/provider.js';
 import type { TeamRole } from '#src/team-scope.js';
@@ -68,6 +68,7 @@ import {
   recordBillingPlan,
   rollIncludedDiscountIfElapsed,
 } from '#src/billing/plan-history.js';
+import { buildBillingPresentation } from '#src/billing/presentation.js';
 import { cheapestPlanPreview, type PlanCommercialOverride } from '#src/billing/preview.js';
 import {
   expireStaleBillingReservations,
@@ -76,6 +77,7 @@ import {
 } from '#src/billing/reservations.js';
 import { accountUsesShadowBilling } from '#src/billing/shadow.js';
 import {
+  applyBillingPresentationToSidebar,
   allFreeAllowancesExhausted,
   billingStateAllowsReservation,
   costBearingPausedFromAccount,
@@ -478,155 +480,214 @@ export function createBillingScope(deps: BillingScopeDeps) {
     },
 
     async getDashboard(options?: { canManageBilling?: boolean }) {
-      await ensureMember();
-      const account = await ensureAccount();
-      const commercial = resolveTeamCommercialTerms(account);
-      const plan = PLAN_CATALOG[commercial.planId];
-      const capacity = CAPACITY_BY_PLAN[commercial.planId];
-      const ym = periodYm();
-      const counters = await db
-        .select()
-        .from(billingUsageCounters)
-        .where(and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)));
-      const byMeter = Object.fromEntries(
-        counters.map((row) => [
-          row.meterId,
-          {
-            nativeUnits: Number(row.nativeUnits),
-            customerChargeCents: row.customerChargeCents,
-            capEligibleChargeCents: row.capEligibleChargeCents,
-          },
-        ]),
-      ) as Partial<
-        Record<
-          BillingMeterId,
-          { nativeUnits: number; customerChargeCents: number; capEligibleChargeCents: number }
-        >
-      >;
-      const meteredSpendCents = counters.reduce((sum, row) => sum + row.capEligibleChargeCents, 0);
-      const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
-      const freeRemaining = freeAllowanceRemaining(byMeter);
-      const canManageBilling = options?.canManageBilling ?? false;
-      let restrictionReason: 'email_unverified' | 'free_grant_elsewhere' | 'contact_owner' | null =
-        null;
-      if (account.planId === 'free' && account.billingState === 'restricted') {
-        const [owner] = await db
-          .select({ emailVerified: users.emailVerified })
-          .from(teamMembers)
-          .innerJoin(users, eq(users.id, teamMembers.userId))
-          .where(
-            and(
-              eq(teamMembers.teamId, teamId),
-              eq(teamMembers.userId, userId),
-              eq(teamMembers.role, 'owner'),
-              isNull(teamMembers.removedAt),
-            ),
-          )
-          .limit(1);
-        if (!owner) restrictionReason = 'contact_owner';
-        else if (!owner.emailVerified) restrictionReason = 'email_unverified';
-        else {
-          const [grant] = await db
-            .select({ assignedTeamId: billingFreeGrants.assignedTeamId })
-            .from(billingFreeGrants)
-            .where(and(eq(billingFreeGrants.userId, userId), isNull(billingFreeGrants.revokedAt)))
+      const dashboardRole = await ensureMember();
+      await ensureAccount();
+      return db.transaction(
+        async (tx) => {
+          const [account] = await tx
+            .select()
+            .from(teamBillingAccounts)
+            .where(eq(teamBillingAccounts.teamId, teamId))
             .limit(1);
-          if (grant?.assignedTeamId && grant.assignedTeamId !== teamId)
-            restrictionReason = 'free_grant_elsewhere';
-        }
-      }
+          if (!account) throw new Error('Billing account unavailable');
+          const now = new Date();
+          const commercial = resolveTeamCommercialTerms(account, now);
+          const plan = PLAN_CATALOG[commercial.planId];
+          const capacity = CAPACITY_BY_PLAN[commercial.planId];
+          const ym = periodYm(now);
+          const counters = await tx
+            .select()
+            .from(billingUsageCounters)
+            .where(
+              and(eq(billingUsageCounters.teamId, teamId), eq(billingUsageCounters.periodYm, ym)),
+            );
+          const byMeter = Object.fromEntries(
+            counters.map((row) => [
+              row.meterId,
+              {
+                nativeUnits: Number(row.nativeUnits),
+                customerChargeCents: row.customerChargeCents,
+                capEligibleChargeCents: row.capEligibleChargeCents,
+              },
+            ]),
+          ) as Partial<
+            Record<
+              BillingMeterId,
+              { nativeUnits: number; customerChargeCents: number; capEligibleChargeCents: number }
+            >
+          >;
+          const meteredSpendCents = counters.reduce(
+            (sum, row) => sum + row.capEligibleChargeCents,
+            0,
+          );
+          const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
+          const freeRemaining = freeAllowanceRemaining(byMeter);
+          const canManageBilling = Boolean(
+            options?.canManageBilling && (dashboardRole === 'owner' || dashboardRole === 'admin'),
+          );
+          let restrictionReason:
+            'email_unverified' | 'free_grant_elsewhere' | 'contact_owner' | null = null;
+          if (account.planId === 'free' && account.billingState === 'restricted') {
+            const [owner] = await tx
+              .select({ emailVerified: users.emailVerified })
+              .from(teamMembers)
+              .innerJoin(users, eq(users.id, teamMembers.userId))
+              .where(
+                and(
+                  eq(teamMembers.teamId, teamId),
+                  eq(teamMembers.userId, userId),
+                  eq(teamMembers.role, 'owner'),
+                  isNull(teamMembers.removedAt),
+                ),
+              )
+              .limit(1);
+            if (!owner) restrictionReason = 'contact_owner';
+            else if (!owner.emailVerified) restrictionReason = 'email_unverified';
+            else {
+              const [grant] = await tx
+                .select({ assignedTeamId: billingFreeGrants.assignedTeamId })
+                .from(billingFreeGrants)
+                .where(
+                  and(eq(billingFreeGrants.userId, userId), isNull(billingFreeGrants.revokedAt)),
+                )
+                .limit(1);
+              if (grant?.assignedTeamId && grant.assignedTeamId !== teamId)
+                restrictionReason = 'free_grant_elsewhere';
+            }
+          }
 
-      const nudge = deriveBillingNudge({
-        planId: commercial.planId,
-        canManageBilling,
-        utilization,
-        freeRemaining,
-        meteredSpendCents,
-      });
-      const sidebar = deriveSidebarBillingSummary({
-        planId: commercial.planId,
-        canManageBilling,
-        meteredSpendCents,
-        spendCapCents: account.spendCapCents,
-        includedDiscountRemainingCents: account.includedDiscountRemainingCents,
-        freeRemaining,
-      });
-      const [memberCountRow] = await db
-        .select({
-          activeMemberCount: sql<number>`count(*)::int`,
-        })
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
-      const activeMemberCount = memberCountRow?.activeMemberCount ?? 0;
-      const [memberDayRow] = await db
-        .select({
-          billableMemberDays: sql<number>`count(*)::int`,
-        })
-        .from(billingMemberDayLedger)
-        .where(
-          and(
-            eq(billingMemberDayLedger.teamId, teamId),
-            sql`${billingMemberDayLedger.day} LIKE ${`${ym}-%`}`,
-          ),
-        );
-      const previewTerms: PlanCommercialOverride = {
-        ...(commercial.platformFeeCents !== null
-          ? { platformFeeCents: commercial.platformFeeCents }
-          : {}),
-        includedActiveMembers: commercial.includedActiveMembers,
-        ...(commercial.additionalMemberCents !== null
-          ? { additionalMemberCents: commercial.additionalMemberCents }
-          : {}),
-        ...(commercial.meteredDiscountPercent !== null
-          ? { meteredDiscountPercent: commercial.meteredDiscountPercent }
-          : {}),
-      };
-      const planPreview = cheapestPlanPreview({
-        activeMembers: activeMemberCount,
-        meters: byMeter,
-        includedActiveMembers: commercial.includedActiveMembers,
-        billableMemberDays: memberDayRow?.billableMemberDays ?? 0,
-        ...(commercial.planId === 'payg' ||
-        commercial.planId === 'team' ||
-        commercial.planId === 'business'
-          ? { planTerms: { [commercial.planId]: previewTerms } }
-          : {}),
-      });
-      const shadowBilling = accountUsesShadowBilling(account);
-      return {
-        account: { ...account, shadowBilling },
-        plan,
-        capacity,
-        freeAllowances: FREE_ALLOWANCES,
-        freeRemaining,
-        utilization,
-        nudge,
-        sidebar,
-        restrictionReason,
-        periodYm: ym,
-        meters: byMeter,
-        meteredSpendCents,
-        activeMemberCount,
-        planPreview,
-        /** True when live charges would block the next costly action. */
-        costBearingPaused: compSuppressesPolarCharges(account)
-          ? compCostBearingPaused({
-              billingState: account.billingState,
-              shadowBilling,
-              entitlementsPlanId: commercial.planId,
-              spendCapCents: account.spendCapCents,
-              meteredSpendCents,
-              freeAllowanceExhausted: allFreeAllowancesExhausted(freeRemaining),
+          const nudge = deriveBillingNudge({
+            planId: commercial.planId,
+            canManageBilling,
+            utilization,
+            freeRemaining,
+            meteredSpendCents,
+          });
+          const sidebar = deriveSidebarBillingSummary({
+            planId: commercial.planId,
+            canManageBilling,
+            meteredSpendCents,
+            spendCapCents: account.spendCapCents,
+            includedDiscountRemainingCents: account.includedDiscountRemainingCents,
+            freeRemaining,
+          });
+          const [memberCountRow] = await tx
+            .select({
+              activeMemberCount: sql<number>`count(*)::int`,
             })
-          : costBearingPausedFromAccount({
-              planId: commercial.planId,
-              billingState: account.billingState,
-              shadowBilling,
-              spendCapCents: account.spendCapCents,
-              meteredSpendCents,
-              freeRemaining,
-            }),
-      };
+            .from(teamMembers)
+            .where(and(eq(teamMembers.teamId, teamId), isNull(teamMembers.removedAt)));
+          const activeMemberCount = memberCountRow?.activeMemberCount ?? 0;
+          const [memberDayRow] = await tx
+            .select({
+              billableMemberDays: sql<number>`count(*)::int`,
+            })
+            .from(billingMemberDayLedger)
+            .where(
+              and(
+                eq(billingMemberDayLedger.teamId, teamId),
+                sql`${billingMemberDayLedger.day} LIKE ${`${ym}-%`}`,
+              ),
+            );
+          const previewTerms: PlanCommercialOverride = {
+            ...(commercial.platformFeeCents !== null
+              ? { platformFeeCents: commercial.platformFeeCents }
+              : {}),
+            includedActiveMembers: commercial.includedActiveMembers,
+            ...(commercial.additionalMemberCents !== null
+              ? { additionalMemberCents: commercial.additionalMemberCents }
+              : {}),
+            ...(commercial.meteredDiscountPercent !== null
+              ? { meteredDiscountPercent: commercial.meteredDiscountPercent }
+              : {}),
+          };
+          const planPreview = cheapestPlanPreview({
+            activeMembers: activeMemberCount,
+            meters: byMeter,
+            includedActiveMembers: commercial.includedActiveMembers,
+            billableMemberDays: memberDayRow?.billableMemberDays ?? 0,
+            ...(commercial.planId === 'payg' ||
+            commercial.planId === 'team' ||
+            commercial.planId === 'business'
+              ? { planTerms: { [commercial.planId]: previewTerms } }
+              : {}),
+          });
+          const chargeWindowStart =
+            (commercial.planId === 'free' ? null : account.periodStartedAt) ??
+            new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+          // Late settlements are selected by recording time, then attributed by usage time.
+          const settlements = canManageBilling
+            ? await tx
+                .select({
+                  operationId: billingUsageLedger.operationId,
+                  meterId: billingUsageLedger.meterId,
+                  nativeUnits: billingUsageLedger.nativeUnits,
+                  occurredAt: billingUsageLedger.occurredAt,
+                  billable: billingUsageLedger.billable,
+                  metadata: billingUsageLedger.metadata,
+                })
+                .from(billingUsageLedger)
+                .where(
+                  and(
+                    eq(billingUsageLedger.teamId, teamId),
+                    eq(billingUsageLedger.kind, 'settlement'),
+                    or(
+                      gte(billingUsageLedger.createdAt, chargeWindowStart),
+                      gte(billingUsageLedger.occurredAt, chargeWindowStart),
+                    ),
+                  ),
+                )
+            : [];
+          const presentation = canManageBilling
+            ? buildBillingPresentation({
+                account,
+                meters: byMeter,
+                meteredSpendCents,
+                activeMembers: activeMemberCount,
+                settlements,
+                now,
+              })
+            : null;
+          if (presentation) applyBillingPresentationToSidebar(sidebar, presentation);
+          const shadowBilling = accountUsesShadowBilling(account);
+          return {
+            presentation,
+            account: { ...account, shadowBilling },
+            plan,
+            capacity,
+            freeAllowances: FREE_ALLOWANCES,
+            freeRemaining,
+            utilization,
+            nudge,
+            sidebar,
+            restrictionReason,
+            periodYm: ym,
+            meters: byMeter,
+            meteredSpendCents,
+            activeMemberCount,
+            planPreview,
+            /** True when live charges would block the next costly action. */
+            costBearingPaused: compSuppressesPolarCharges(account)
+              ? compCostBearingPaused({
+                  billingState: account.billingState,
+                  shadowBilling,
+                  entitlementsPlanId: commercial.planId,
+                  spendCapCents: account.spendCapCents,
+                  meteredSpendCents,
+                  freeAllowanceExhausted: allFreeAllowancesExhausted(freeRemaining),
+                })
+              : costBearingPausedFromAccount({
+                  planId: commercial.planId,
+                  billingState: account.billingState,
+                  shadowBilling,
+                  spendCapCents: account.spendCapCents,
+                  meteredSpendCents,
+                  freeRemaining,
+                }),
+          };
+        },
+        { isolationLevel: 'repeatable read', accessMode: 'read only' },
+      );
     },
 
     async setSpendCap(spendCapCents: number) {
@@ -1353,6 +1414,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 started_at: string;
                 ends_at: string;
                 discount_cents: number;
+                invoice_cents: number;
                 native_units: number;
               }[]
             | undefined;
@@ -1384,6 +1446,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 started_at: share.windowStartedAt.toISOString(),
                 ends_at: share.windowEndsAt.toISOString(),
                 discount_cents: split.discountCents,
+                invoice_cents: split.invoiceCents,
                 native_units: share.nativeUnits,
               });
             }
@@ -1506,6 +1569,9 @@ export function createBillingScope(deps: BillingScopeDeps) {
                   ? { pricing_plan_id: entitlementsPlanId }
                   : {}),
                 ...(input.pricingPeriodYm ? { pricing_period_ym: input.pricingPeriodYm } : {}),
+                presentation_comped: comped,
+                presentation_chargeable:
+                  !comped && !accountUsesShadowBilling(account) && input.billable !== false,
                 usage_at: startedAt.toISOString(),
                 list_charge_cents: listChargeCents,
                 discount_cents: discountCents,

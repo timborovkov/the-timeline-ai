@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 
 import type { Metadata } from 'next';
 
+import { BillingBenefitsSummary } from '@/components/billing-benefits-summary';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
 import { BillingRestrictionNotice } from '@/components/billing-restriction-notice';
 import { BillingStateBanner } from '@/components/billing-state-banner';
@@ -96,11 +97,11 @@ export default async function UsagePage() {
           ) : null}
         </BillingStateBanner>
       ) : null}
+      {dashboard.presentation ? <BillingBenefitsSummary summary={dashboard.presentation} /> : null}
       <BillingUsageSummary
         planId={planId}
+        allowanceBalances={dashboard.presentation?.allowances}
         comped={dashboard.account.arrangement === 'comped'}
-        spendCapCents={dashboard.account.spendCapCents}
-        meteredSpendCents={dashboard.meteredSpendCents}
         meters={dashboard.meters}
         capacityUsage={capacityUsage}
         includedActiveMembers={commercial.includedActiveMembers}

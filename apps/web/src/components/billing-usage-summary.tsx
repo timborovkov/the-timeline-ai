@@ -4,6 +4,7 @@ import {
   type BillingMeterId,
 } from '@timeline/shared/billing/catalog';
 
+import type { BillingPresentation } from '@timeline/shared/billing';
 import type { PlanCapacityKind, PlanCapacityUsageRow } from '@timeline/shared/billing/status';
 
 import { cn } from '@/lib/utils';
@@ -102,6 +103,8 @@ function meterHint(input: {
 
 export function BillingUsageSummary({
   planId,
+  allowancesOnly = false,
+  allowanceBalances,
   comped = false,
   spendCapCents,
   meteredSpendCents,
@@ -112,6 +115,8 @@ export function BillingUsageSummary({
   className,
 }: {
   planId: string;
+  allowancesOnly?: boolean;
+  allowanceBalances?: BillingPresentation['allowances'];
   comped?: boolean;
   spendCapCents?: number;
   meteredSpendCents?: number;
@@ -129,20 +134,22 @@ export function BillingUsageSummary({
   const rows = (Object.keys(METER_LABELS) as BillingMeterId[])
     .map((meter) => {
       const row = meters[meter];
-      const nativeUnits = row?.nativeUnits ?? 0;
+      const balance = allowanceBalances?.find((item) => item.meter === meter);
+      const nativeUnits = balance?.used ?? row?.nativeUnits ?? 0;
       const customerChargeCents =
-        planId === 'free' || comped
-          ? 0
-          : (row?.capEligibleChargeCents ?? row?.customerChargeCents ?? 0);
+        row?.capEligibleChargeCents ?? (planId === 'free' ? 0 : (row?.customerChargeCents ?? 0));
       const active = nativeUnits > 0 || customerChargeCents > 0;
       const showMeter =
-        (ALLOWANCE_METERS as readonly string[]).includes(meter) || planId !== 'free';
+        (ALLOWANCE_METERS as readonly string[]).includes(meter) ||
+        (!allowancesOnly && planId !== 'free');
       if (!active && !showMeter) return null;
       return {
         meter,
         nativeUnits,
         customerChargeCents,
-        allowance: planId === 'free' || planId === 'payg' ? allowanceLimit(meter) : null,
+        allowance:
+          balance?.included ??
+          (planId === 'free' || planId === 'payg' ? allowanceLimit(meter) : null),
       };
     })
     .filter((row) => row !== null);
@@ -164,7 +171,7 @@ export function BillingUsageSummary({
           </p>
         </div>
       ) : null}
-      {planId === 'payg' && !comped ? (
+      {!allowancesOnly && planId === 'payg' && !comped ? (
         <p className="text-sm text-fg-muted">
           Your monthly Free allowances are included. You pay for usage above each allowance and
           extra members. Charges below exclude Free-plan usage; final invoices may include discounts
@@ -184,7 +191,7 @@ export function BillingUsageSummary({
         <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-4 px-3 py-2 text-fg-muted">
           <span>Meter</span>
           <span>Usage</span>
-          <span className="text-right">Charges</span>
+          <span className="text-right">{allowancesOnly ? 'Remaining' : 'Usage charges'}</span>
         </div>
         <ul>
           {rows.map((row) => {
@@ -208,8 +215,10 @@ export function BillingUsageSummary({
                   {row.allowance === null ? null : (
                     <>
                       <p className="mt-1 text-xs text-fg-muted">
-                        Included: {amountLabel(row.meter, row.allowance)} · Remaining:{' '}
+                        Used: {amountLabel(row.meter, row.nativeUnits)} · Included:{' '}
+                        {amountLabel(row.meter, row.allowance)} · Remaining:{' '}
                         {amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))}
+                        {row.nativeUnits >= row.allowance ? ' · Allowance used up' : ''}
                       </p>
                       <AllowanceBar used={row.nativeUnits} allowance={row.allowance} />
                     </>
@@ -219,7 +228,11 @@ export function BillingUsageSummary({
                   {amountLabel(row.meter, row.nativeUnits)}
                 </span>
                 <span className="text-right font-mono text-fg">
-                  {formatEuroFromCents(row.customerChargeCents)}
+                  {allowancesOnly && row.allowance !== null
+                    ? amountLabel(row.meter, Math.max(0, row.allowance - row.nativeUnits))
+                    : comped
+                      ? '—'
+                      : formatEuroFromCents(row.customerChargeCents)}
                 </span>
               </li>
             );

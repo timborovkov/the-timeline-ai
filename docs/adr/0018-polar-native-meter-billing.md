@@ -490,3 +490,21 @@ exact-external-ID check and remote revocation advance it to the target role for
 local completion. Unknown provider state never counts as confirmed revocation.
 Session callbacks receive the current locked billing account, and checkout/portal
 commercial decisions are repeated against that row instead of an earlier snapshot.
+
+
+### Billing presentation and recorded charge attribution (2026-10-31)
+
+The shared dashboard supplies a typed presentation model for Usage, Billing and
+the sidebar. Calendar-month native allowances and spend-cap counters are separate
+from subscription-window included credit. Reading the dashboard neither rolls a
+stale period nor replenishes credit. Missing/stale balances show Updating billing
+period. Plan comparison remains hypothetical and no longer supplies a Next invoice
+figure. Current charges come from recorded settlement splits without repricing
+old usage under the current plan; fees, provider adjustments and tax are separate.
+
+Renewal-spanning settlement metadata now includes invoice cents beside each
+window's already calculated discount cents. Chargeability/comp markers distinguish
+tracked internal usage from payable work without changing settlement math. Legacy
+records lacking unambiguous attribution produce Unavailable rather than an assumed
+zero. Extra-member charges are reported separately and never consume included
+credit. All financial presentation is authorized server-side for owners/admins.
