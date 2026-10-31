@@ -73,7 +73,13 @@ const SETTINGS_ITEMS = [
 export default async function TeamSettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ section?: string; exportError?: string }>;
+  searchParams: Promise<{
+    section?: string;
+    exportError?: string;
+    checkout?: string;
+    checkoutTeam?: string;
+    checkoutPlan?: string;
+  }>;
 }) {
   const session = await auth();
   if (!session?.user) redirect('/sign-in');
@@ -331,6 +337,11 @@ export default async function TeamSettingsPage({
           ) : null}
           {section === 'billing' && isAdmin && billingDashboard ? (
             <BillingSettingsPanel
+              checkoutReturned={
+                query.checkout === 'success' &&
+                (!query.checkoutTeam || query.checkoutTeam === active.teamId)
+              }
+              checkoutPlan={query.checkoutPlan}
               planId={entitlementsPlanId}
               planName={PLAN_CATALOG[entitlementsPlanId].name}
               billingState={billingDashboard.account.billingState}

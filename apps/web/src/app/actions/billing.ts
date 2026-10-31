@@ -109,7 +109,7 @@ export async function startBillingCheckout(input: {
             productId,
             externalCustomerId: gate.active.teamId,
             customerEmail: gate.email,
-            successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
+            successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success&checkoutTeam=${gate.active.teamId}&checkoutPlan=${plan}`,
             portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
             ...(discountId ? { discountId } : {}),
           });

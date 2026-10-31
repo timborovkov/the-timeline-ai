@@ -536,6 +536,9 @@
   "apps/web/src/components/auth-shell.test.tsx": {
     "group": "unit"
   },
+  "apps/web/src/components/billing-checkout-status.test.tsx": {
+    "group": "dom"
+  },
   "apps/web/src/components/billing-comp-notice.test.tsx": {
     "group": "dom"
   },

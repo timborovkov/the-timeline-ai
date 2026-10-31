@@ -168,3 +168,26 @@ removal cannot complete from an unconfirmed revocation phase.
 Revocation and ownership transfer now apply the same pinned member/external-ID
 validation as session synchronization. Swapped or ambiguous mappings fail before
 provider deletion/promotion, with regressions for both targets and successors.
+
+
+### Checkout return feedback (2026-10-31)
+
+The billing route previously ignored `checkout=success`, leaving a stale Free plan without
+feedback while subscription activation depended on webhooks. The return UI now refreshes
+for at most thirty seconds, confirms only persisted active subscription state matching the
+selected plan, and provides a delayed-confirmation retry message. Checkout buttons are
+disabled while confirmation is pending. New return links carry team/plan UI hints, never
+entitlement authority. The unused customer session token is removed from browser history.
+
+Synthetic coverage checks bounded polling, manual retry, activation after refreshed props,
+credential removal, pending checkout suppression, and requested-plan matching. Live activation
+for the reported checkout remains unverified: the sandbox customer lookup returned HTTP 403
+from this execution environment. Provider webhook delivery evidence is required to diagnose
+that incident; this UI change does not repair a missing or rejected webhook.
+
+Documentation handoff: reviewed setup, billing ADR, README, design and TODO implications.
+No billing identity or entitlement contract changed. Updated the setup troubleshooting and
+this evidence log. The repository's referenced document-release skill is unavailable here.
+
+Verification: 26 focused tests passed across checkout actions and the two billing UI
+suites. Full repository build, scoped ESLint, formatting and diff checks passed.

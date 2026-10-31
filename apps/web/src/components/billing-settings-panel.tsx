@@ -19,6 +19,7 @@ import {
   startBillingPortal,
   updateBillingSpendCap,
 } from '@/app/actions/billing';
+import { BillingCheckoutStatus } from '@/components/billing-checkout-status';
 import { BillingCompNotice } from '@/components/billing-comp-notice';
 import { BILLING_NOTICE_TITLE, customerBillingState } from '@/components/billing-customer-state';
 import { BillingPlanPreview } from '@/components/billing-plan-preview';
@@ -34,6 +35,8 @@ const PLAN_BUTTON_CLASS =
   'inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-3 text-sm font-medium text-fg hover:bg-bg disabled:opacity-50';
 
 export interface BillingSettingsPanelProps {
+  checkoutReturned?: boolean;
+  checkoutPlan?: string;
   planId: BillingPlanId;
   planName: string;
   billingState: string;
@@ -171,6 +174,12 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
     meteredSpendCents: props.meteredSpendCents,
     warnPercent: props.utilization.percent,
   });
+  const checkoutActive =
+    props.hasPolarSubscription &&
+    props.planId !== 'free' &&
+    props.billingState === `${props.planId}_active` &&
+    (!props.checkoutPlan || props.checkoutPlan === props.planId);
+  const checkoutPending = Boolean(props.checkoutReturned && !checkoutActive);
   const selfServe = props.canManage && props.comp === null && props.planId !== 'enterprise';
   const showPortal =
     props.canManage &&
@@ -227,6 +236,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
 
   return (
     <div className="space-y-6">
+      {props.checkoutReturned ? (
+        <BillingCheckoutStatus active={checkoutActive} planName={props.planName} />
+      ) : null}
       {props.comp ? (
         <BillingCompNotice
           planName={props.comp.planName}
@@ -343,6 +355,7 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
                     type="button"
                     disabled={
                       pending ||
+                      checkoutPending ||
                       !props.polarConfigured ||
                       (props.planId === plan && props.hasPolarSubscription)
                     }

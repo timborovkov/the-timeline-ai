@@ -627,5 +627,22 @@ PLATFORM_ADMIN_EMAILS=
         </li>
       </ul>
     </main>
+    <section>
+      <h2>Checkout return and delayed activation</h2>
+      <p>
+        Returning from Polar does not itself activate a plan. Billing settings shows a pending
+        confirmation and refreshes every three seconds for up to thirty seconds. Only the team's
+        persisted active subscription confirms the selected plan. A delayed result offers Check
+        again and asks the customer not to repeat checkout. New self-service return links identify
+        the originating team and selected plan; neither is trusted to grant entitlements.
+      </p>
+      <p>
+        If the plan remains Free, inspect Polar's subscription webhook deliveries to
+        <code>/api/webhooks/polar</code>, including HTTP failures, environment/product
+        configuration, and verified customer mapping diagnostics. Do not manually mark a plan paid
+        from the return URL. Timeline removes Polar's unused customer session token from the address
+        bar.
+      </p>
+    </section>
   </body>
 </html>

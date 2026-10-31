@@ -370,3 +370,30 @@ it('sends a verification request and shows confirmation', async () => {
   });
   expect(resendEmailVerificationAction).toHaveBeenCalledTimes(1);
 });
+
+it('does not treat a checkout return hint as activation or offer another checkout', () => {
+  const view = render(panelElement({ checkoutReturned: true, checkoutPlan: 'payg' }));
+  expect(view.getByRole('status').textContent).toContain('Waiting for your plan');
+  expect(view.getByRole('button', { name: 'Pay as you go' }).hasAttribute('disabled')).toBe(true);
+});
+
+it('confirms the requested plan only after its active subscription is persisted', () => {
+  const html = panel({
+    checkoutReturned: true,
+    checkoutPlan: 'payg',
+    planId: 'payg',
+    planName: 'Pay as you go',
+    hasPolarSubscription: true,
+    billingState: 'payg_active',
+  });
+  expect(html).toContain('Pay as you go is active for this team.');
+  expect(
+    panel({
+      checkoutReturned: true,
+      checkoutPlan: 'business',
+      planId: 'payg',
+      hasPolarSubscription: true,
+      billingState: 'payg_active',
+    }),
+  ).toContain('Waiting for your plan');
+});
