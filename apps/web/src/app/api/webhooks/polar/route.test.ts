@@ -5,7 +5,10 @@ import { beforeEach, describe, it } from 'bun:test';
 
 const verifyPolarWebhookSignature = vi.fn();
 const handlePolarWebhookEvent = vi.fn();
-const createPolarBillingProvider = vi.fn(() => null);
+const configuredProvider = { id: 'synthetic-provider' };
+const createPolarBillingProvider = vi.fn<() => typeof configuredProvider | null>(
+  () => configuredProvider,
+);
 
 await vi.mock(
   import.meta.resolve('@timeline/shared/env'),
@@ -43,6 +46,7 @@ await vi.mock(
 describe('POST /api/webhooks/polar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    createPolarBillingProvider.mockReturnValue(configuredProvider);
     verifyPolarWebhookSignature.mockReturnValue(true);
     handlePolarWebhookEvent.mockResolvedValue({ ok: true });
   });
@@ -85,10 +89,23 @@ describe('POST /api/webhooks/polar', () => {
           team: 'prod_team',
           business: 'prod_business',
         },
-        provider: null,
+        provider: configuredProvider,
       }),
     );
     expect(createPolarBillingProvider).toHaveBeenCalled();
+  });
+
+  it('fails closed without a configured identity provider', async () => {
+    createPolarBillingProvider.mockReturnValue(null);
+    const { POST } = await import('./route');
+    const res = await POST(
+      new Request('http://localhost/api/webhooks/polar', {
+        method: 'POST',
+        body: '{}',
+      }),
+    );
+    expect(res.status).toBe(503);
+    expect(handlePolarWebhookEvent).not.toHaveBeenCalled();
   });
 
   it('rejects invalid JSON after a valid signature', async () => {

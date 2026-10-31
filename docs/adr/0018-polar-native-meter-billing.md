@@ -471,5 +471,14 @@ Conversion is explicit, platform-admin-only, dry-run by default, and preserves
 customer IDs and subscription/invoice history. New checkout has no individual
 fallback. Sandbox currently ignores nullable customer-email updates; conversion
 reports this incomplete cleanup after committing verified team/member mappings.
+A customer-level email is an independent Polar billing recipient and can receive
+customer-scoped access links. Member deletion alone does not revoke that path.
+Revocation therefore requires verified customer-email cleanup first; if Polar
+ignores it, the durable operation remains pending and local removal is blocked.
+The required owner member email remains present. Final membership completion
+also rejects an unrevoked member created by concurrent first-time billing setup;
+retrying the role change prepares revocation against the new mapping. Conversion
+preflight and execution share unique owner recovery for interrupted conversions,
+without overriding an existing member binding.
 Do not erase/reassign customers to bypass that limitation. See
 [setup](../setup/polar.html) and [evidence](../testing/polar-team-identity.md).

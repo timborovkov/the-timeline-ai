@@ -67,9 +67,16 @@ bun run billing:polar-convert --team-id=&lt;team-uuid&gt; --actor-email=&lt;veri
         <code>PATCH { email: null }</code> but retains the customer email after conversion. The
         command checks the response and fails with
         <code>customer_email_clear_unsupported</code> after preserving the converted mappings.
-        Retrying is safe. Do not report email cleanup complete until Polar supports it; do not
-        replace the customer or reassign an unrelated record to work around it. New team customers
-        have no customer-level email. See the
+        Retrying is safe, including after remote conversion succeeds before local mappings commit:
+        preflight permits recovery of exactly one verified active owner inside that already-verified
+        customer, without overriding a stored member binding. The separate owner member always
+        retains an email; the same person can own multiple customers. Customer-level email can
+        receive independent Polar access links, so member removal and owner transfer remain blocked
+        until customer-level email cleanup succeeds. Pending revocation also blocks new
+        Timeline-issued billing sessions. Contact Polar support for cleanup of a legacy customer;
+        deleting its member alone does not revoke those links. Do not report email cleanup complete
+        until Polar supports it; do not replace the customer or reassign an unrelated record to work
+        around it. New team customers have no customer-level email. See the
         <a href="../testing/polar-team-identity.md">sandbox evidence and handoff</a>.
       </p>
 

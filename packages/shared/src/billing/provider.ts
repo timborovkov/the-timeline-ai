@@ -143,7 +143,9 @@ export function createFakeBillingProvider(options?: { teamIdentity?: boolean }):
       row.type = 'team';
       return Promise.resolve(row);
     },
-    clearEmail() {
+    clearEmail(teamId) {
+      const row = identityCustomers.get(teamId);
+      if (row) row.email = null;
       return Promise.resolve();
     },
     members(customerId) {
@@ -159,7 +161,7 @@ export function createFakeBillingProvider(options?: { teamIdentity?: boolean }):
       const row: PolarMemberIdentity = {
         id: id ?? `mem_${customerId}_${person.userId}`,
         customer_id: customerId,
-        external_id: person.userId,
+        external_id: id ? (identityMembers.get(id)?.external_id ?? null) : person.userId,
         email: person.email,
         role,
       };

@@ -190,7 +190,10 @@ agent behavior, or reconciliation have additional gates documented in
 `bun run billing:polar-convert --team-id=<uuid> --actor-email=<verified-platform-admin>`
 preflights an existing team's Polar customer; add `--apply` for in-place team/member
 conversion. Apply migration `0091_polar_team_identity.sql` first. Conversion currently
-reports Polar's unsupported customer-email clearing step explicitly; see
+reports Polar's unsupported customer-email clearing step explicitly. Legacy
+customer-level access must be cleared before member revocation can complete; the
+required owner member email remains present. Interrupted conversions can recover
+an unambiguous verified owner mapping on retry. See
 [identity evidence and limitations](docs/testing/polar-team-identity.md).
 
 `bun run billing:polar-setup` creates or reuses the sandbox Polar meters and monthly

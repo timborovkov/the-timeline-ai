@@ -13,6 +13,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 
 import {
   assertStoredPolarIdentity,
+  resolvePolarOwnerUserId,
   withTeamBillingIdentity,
   preparePolarMembershipChange,
   completePolarMembershipChange,
@@ -129,6 +130,35 @@ describe('Polar team identity and revocation', () => {
     await expect(resolve(admin)).rejects.toMatchObject({ code: 'forbidden' });
     expect(await resolve()).toBeDefined();
   });
+  it('rejects a demotion when first billing setup happened after preparation', async () => {
+    await revoke(); // No customer existed during preparation.
+    const identity = await resolve(admin);
+    await expect(finish()).rejects.toMatchObject({ operation: 'revocation_incomplete' });
+    expect(
+      (await db.select().from(teamMembers).where(eq(teamMembers.userId, admin)))[0]?.role,
+    ).toBe('admin');
+    await revoke();
+    await finish();
+    expect(
+      (await api().members(identity.customerId)).some((row) => row.id === identity.memberId),
+    ).toBe(false);
+    await expect(resolve(admin)).rejects.toMatchObject({ code: 'forbidden' });
+  });
+  it('blocks revocation while a legacy customer email still grants independent access', async () => {
+    const identity = await resolve(admin);
+    const customer = await api().customer(teamId, identity.customerId);
+    if (!customer) throw new Error('customer missing');
+    customer.email = 'owner@example.test';
+    api().clearEmail = () =>
+      Promise.reject(new PolarIdentityError('configuration', 'customer_email_clear_unsupported'));
+    await expect(revoke()).rejects.toMatchObject({ operation: 'customer_email_clear_unsupported' });
+    await expect(finish()).rejects.toMatchObject({ operation: 'revocation_incomplete' });
+    await expect(resolve(admin)).rejects.toThrow();
+    customer.email = null; // Provider-supported cleanup enables a safe retry.
+    await revoke();
+    await finish();
+    await expect(resolve(admin)).rejects.toMatchObject({ code: 'forbidden' });
+  });
   it('keeps intent through an interrupted local transaction and never recreates the revoked member', async () => {
     const a = await resolve(admin);
     await revoke();
@@ -193,6 +223,37 @@ describe('Polar team identity and revocation', () => {
       },
     );
     expect(customer.type).toBe('team');
+  });
+  it('recovers a converted owner without local mappings and rejects ambiguous or conflicting recovery', async () => {
+    const identity = await resolve();
+    const remoteOwner = (await api().members(identity.customerId)).find(
+      (row) => row.role === 'owner',
+    );
+    if (!remoteOwner) throw new Error('owner missing');
+    remoteOwner.external_id = teamId;
+    await db.delete(billingPolarMembers).where(eq(billingPolarMembers.teamId, teamId));
+    const owners = [{ userId: owner, email: remoteOwner.email, verified: true }];
+    expect(resolvePolarOwnerUserId(owners, [], remoteOwner, true)).toBe(owner);
+    expect(() => resolvePolarOwnerUserId(owners, [], remoteOwner)).toThrow();
+    expect(() =>
+      resolvePolarOwnerUserId([...owners, { ...owners[0]!, userId: admin }], [], remoteOwner, true),
+    ).toThrow();
+    expect(() =>
+      resolvePolarOwnerUserId(
+        owners,
+        [{ userId: admin, memberId: remoteOwner.id }],
+        remoteOwner,
+        true,
+      ),
+    ).toThrow();
+    await withTeamBillingIdentity(
+      { db, teamId, userId: owner, provider, convert: true },
+      (recovered) => {
+        expect(recovered).toEqual(identity);
+        return Promise.resolve();
+      },
+    );
+    expect(await resolve()).toEqual(identity);
   });
   it('rejects a member mapping swapped to a different user in the same customer', async () => {
     const a = await resolve();

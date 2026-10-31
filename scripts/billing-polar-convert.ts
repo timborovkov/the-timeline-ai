@@ -6,7 +6,11 @@ import {
   teamMembers,
   users,
 } from '@timeline/db';
-import { createPolarBillingProvider, withTeamBillingIdentity } from '@timeline/shared/billing';
+import {
+  createPolarBillingProvider,
+  withTeamBillingIdentity,
+  resolvePolarOwnerUserId,
+} from '@timeline/shared/billing';
 import { lookupOperatorActor, requirePlatformAdmin } from '@timeline/shared/billing/operator-store';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 
@@ -71,19 +75,9 @@ try {
       (row) => row.role === 'owner',
     );
     const remoteOwner = remoteOwners[0];
-    if (
-      remoteOwners.length !== 1 ||
-      !remoteOwner ||
-      !owners.some(
-        (row) =>
-          row.verified &&
-          (row.userId === remoteOwner.external_id ||
-            mappings.some(
-              (mapping) => mapping.userId === row.userId && mapping.memberId === remoteOwner.id,
-            )),
-      )
-    )
+    if (remoteOwners.length !== 1 || !remoteOwner)
       throw new Error('Existing team owner mapping is ambiguous');
+    resolvePolarOwnerUserId(owners, mappings, remoteOwner, true);
   }
   console.log(
     JSON.stringify({

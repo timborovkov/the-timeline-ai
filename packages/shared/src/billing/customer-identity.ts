@@ -46,6 +46,26 @@ export async function assertStoredPolarIdentity(
   return customer.id;
 }
 
+/** Resolve only within an already verified team customer; email recovery is
+ * explicit, unique, and cannot override a stored member binding. */
+export function resolvePolarOwnerUserId(
+  owners: { userId: string; email: string; verified: unknown }[],
+  mappings: { userId: string; memberId: string | null }[],
+  remoteOwner: PolarMemberIdentity,
+  allowRecovery = false,
+): string {
+  const bindings = mappings.filter((row) => row.memberId === remoteOwner.id);
+  if (bindings.length > 1) throw new PolarIdentityError('identity_conflict', 'owner_mapping');
+  const boundId = bindings[0]?.userId ?? remoteOwner.external_id;
+  const bound = owners.find((person) => person.verified && person.userId === boundId);
+  if (bound) return bound.userId;
+  const recovered = owners.filter(
+    (person) => person.verified && person.email.toLowerCase() === remoteOwner.email.toLowerCase(),
+  );
+  if (allowRecovery && bindings.length === 0 && recovered.length === 1) return recovered[0]!.userId;
+  throw new PolarIdentityError('identity_conflict', 'owner_mapping');
+}
+
 /** Caller authorization and session creation share the account lock with revocation. */
 export async function withTeamBillingIdentity<T>(
   input: {
@@ -128,17 +148,8 @@ export async function withTeamBillingIdentity<T>(
       if (members.filter((member) => member.role === 'owner').length !== 1)
         throw new PolarIdentityError('identity_conflict', 'owner_mapping');
       const remoteOwner = members.find((member) => member.role === 'owner');
-      const knownOwner = stored.find((row) => row.memberId === remoteOwner?.id);
-      const chosenOwner =
-        owners.find(
-          (person) => person.userId === (knownOwner?.userId ?? remoteOwner?.external_id),
-        ) ??
-        (input.convert
-          ? owners.find((person) => person.email.toLowerCase() === remoteOwner?.email.toLowerCase())
-          : undefined);
-      if (remoteOwner && !chosenOwner)
-        throw new PolarIdentityError('identity_conflict', 'owner_mapping');
-      const ownerId = chosenOwner?.userId ?? owner.userId;
+      if (!remoteOwner) throw new PolarIdentityError('identity_conflict', 'owner_mapping');
+      const ownerId = resolvePolarOwnerUserId(owners, stored, remoteOwner, input.convert);
       let actorMember: PolarMemberIdentity | undefined;
       for (const person of people.filter(
         (person) => ['owner', 'admin'].includes(person.role) && person.verified && person.email,
@@ -343,6 +354,10 @@ export async function preparePolarMembershipChange(input: {
     if (!input.provider) throw new PolarIdentityError('configuration', 'provider');
     const api = identityApi(input.provider);
     const customerId = await assertStoredPolarIdentity(db, input.teamId, input.provider);
+    // Customer-level email can receive customer-scoped access links independently
+    // of member sessions. Revoking only the member cannot revoke that access.
+    const customer = await api.customer(input.teamId, customerId);
+    if (customer?.email) await api.clearEmail(input.teamId, customerId);
     const members = await api.members(customerId);
     const target = members.find(
       (member) => member.id === saved.memberId || member.external_id === input.userId,
@@ -432,6 +447,15 @@ export async function completePolarMembershipChange(
     .select()
     .from(billingPolarMembers)
     .where(and(eq(billingPolarMembers.teamId, teamId), eq(billingPolarMembers.userId, userId)));
+  // Preparation may have observed an unlinked account before concurrent setup
+  // created a remote member. Fail the local mutation; retry runs preparation
+  // against the now-linked customer and revokes access before completing.
+  if (
+    saved?.memberId &&
+    targetRole !== 'owner' &&
+    (targetRole !== 'admin' || saved.role === 'owner')
+  )
+    throw new PolarIdentityError('identity_conflict', 'revocation_incomplete');
   if (saved?.pendingRole) {
     if (saved.pendingRole !== targetRole || saved.memberId)
       throw new PolarIdentityError('identity_conflict', 'revocation_incomplete');

@@ -875,3 +875,11 @@ Sandbox invoice delivery is restricted by Polar to organization-member addresses
 API success does not prove inbox delivery. Converted customers may retain their
 legacy customer-level email because Polar currently ignores `email: null`; no
 public erasure/completion claim should contradict that observed behavior.
+
+The 2026-10-31 revocation follow-up also blocks local role removal when a legacy
+Polar customer email remains an independent recipient of customer-scoped access
+links. Verified cleanup must precede member removal; provider refusal preserves
+the pending operation and denies new Timeline billing sessions. This does not
+revoke previously issued customer-scoped links by itself; provider-supported
+cleanup remains required for legacy records. New team customers omit that
+separate email while always retaining the owner member's email.

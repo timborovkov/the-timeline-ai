@@ -27,9 +27,13 @@ implementation detail.
 - Polar sandbox currently ignores `CustomerUpdate.email = null`; track provider
   support before declaring converted customer email cleanup complete. Do not
   reset customers or reassign unrelated identities as a workaround.
-- Apply `0091_polar_team_identity.sql` and review/apply the per-team conversion
-  dry-run before deploying the team-customer integration. No live migration or
-  deployment was performed during implementation.
+- Before using another environment, apply `0091_polar_team_identity.sql` and
+  review the per-team conversion dry-run. The user's 2026-10-31 read-only SQL
+  results confirmed the identity table/columns in the inspected deployed database.
+  The three inspected teams had no stored mappings, and exact sandbox external-ID
+  lookups found no customers: normal team checkout can create them without a reset.
+- The Polar branch auto-deploys on push. Review follow-up evidence and thread
+  dispositions: [PR review audit](docs/testing/polar-review-audit.md).
 - Sandbox evidence and remaining verification limits:
   [Polar team identity](docs/testing/polar-team-identity.md).
 

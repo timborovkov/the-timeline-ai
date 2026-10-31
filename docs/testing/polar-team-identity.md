@@ -137,3 +137,25 @@ to the combined six-item menu. The merged navigation, legal-state, trust-claim,
 LLMs text and malformed-webhook tests pass. The push is authorized with awareness
 of branch auto-deployment; fixture cleanup follows confirmation that the guard
 is deployed. The manual documentation handoff audit was refreshed for this merge.
+
+## Review follow-up (2026-10-31)
+
+- First-time customer setup between revocation preparation and local completion
+  now causes completion to fail closed when a remote billing member remains.
+  Retrying the membership action revokes the member before local access changes.
+- Conversion preflight and execution use the same owner-resolution helper.
+  An interrupted conversion can recover exactly one verified active owner by
+  email within the verified customer; ambiguous matches or conflicting stored
+  mappings stop. Member external IDs remain immutable.
+- A retained legacy customer email is not harmless historical metadata. Polar's
+  [customer service](https://github.com/polarsource/polar/blob/main/server/polar/customer/service.py)
+  includes it in billing recipients and creates customer-scoped access links
+  independently of member sessions. Revocation now attempts verified cleanup
+  before member changes and remains pending if Polar ignores the update. No
+  owner member email is removed. This explicitly addresses the suggestion to
+  silently accept retained email without weakening revocation.
+- Synthetic tests exercise the setup/removal interleaving, interrupted conversion
+  recovery, ambiguous/conflicting owner recovery, and legacy-email revocation
+  refusal/retry. No real customer reset, subscription, or payment is involved.
+
+The [PR review audit](polar-review-audit.md) records the disposition and implementation/test evidence for the historical billing review backlog.
