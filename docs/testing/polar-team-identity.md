@@ -164,3 +164,7 @@ The second review cycle additionally covers remote provisioning surviving a loca
 rollback, missing-provider recovery, and checkout decisions using the final locked
 account. Organization/environment intent is durable before external writes; local
 removal cannot complete from an unconfirmed revocation phase.
+
+Revocation and ownership transfer now apply the same pinned member/external-ID
+validation as session synchronization. Swapped or ambiguous mappings fail before
+provider deletion/promotion, with regressions for both targets and successors.

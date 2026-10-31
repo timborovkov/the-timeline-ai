@@ -220,3 +220,15 @@ suites. Lint also identified and removed non-null assertions and redundant optio
 chains in owner recovery; static checks are rerun on the final code.
 
 Second-cycle validation: 88 distinct affected tests passed; the full build, scoped lint/formatting, conversion-script typecheck, compiled-import checks, and diff checks passed on the follow-up.
+
+## Additional member-binding acceptance check
+
+The wrong-member-ID acceptance sweep found that revocation and successor promotion
+used a looser member lookup than session synchronization. All three paths now
+share the same pinned member/external-ID check and reject ambiguous matches before
+provider mutation. Regression tests swap an admin mapping onto the owner's member
+and swap a successor mapping before transfer; neither may delete or promote the
+wrong person. Legacy external IDs remain valid only through their verified stored
+binding. The 19 identity/revocation regressions pass.
+
+Codex's [review of `3bb31e60`](https://github.com/timborovkov/the-timeline-ai/pull/384#issuecomment-6537406419) reported no major issues. The subsequent member-binding safeguard passed its 19 regressions, scoped lint/formatting, full build and compiled-import checks and is submitted for a final review of its own commit.

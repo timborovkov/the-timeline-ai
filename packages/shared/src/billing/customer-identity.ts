@@ -46,6 +46,27 @@ export async function assertStoredPolarIdentity(
   return customer.id;
 }
 
+function findMappedPolarMember(
+  members: PolarMemberIdentity[],
+  userId: string,
+  saved?: { memberId: string | null; externalId: string | null },
+): PolarMemberIdentity | undefined {
+  const candidates = members.filter(
+    (member) => member.id === saved?.memberId || member.external_id === userId,
+  );
+  if (candidates.length > 1) throw new PolarIdentityError('identity_conflict', 'member_mapping');
+  const member = candidates[0];
+  if (member && saved?.memberId && member.id !== saved.memberId)
+    throw new PolarIdentityError('identity_conflict', 'member_mapping');
+  if (
+    member &&
+    member.external_id !== userId &&
+    !(saved?.memberId === member.id && saved.externalId === member.external_id)
+  )
+    throw new PolarIdentityError('identity_conflict', 'member_external_id');
+  return member;
+}
+
 /** Resolve only within an already verified team customer; email recovery is
  * explicit, unique, and cannot override a stored member binding. */
 export function resolvePolarOwnerUserId(
@@ -200,9 +221,7 @@ export async function withTeamBillingIdentity<T>(
         (person) => ['owner', 'admin'].includes(person.role) && person.verified && person.email,
       )) {
         const saved = stored.find((row) => row.userId === person.userId);
-        let existing = members.find(
-          (member) => member.id === saved?.memberId || member.external_id === person.userId,
-        );
+        let existing = findMappedPolarMember(members, person.userId, saved);
         if (!existing && input.convert)
           existing = members.find(
             (member) => member.id === remoteOwner.id && person.userId === ownerId,
@@ -455,9 +474,7 @@ export async function preparePolarMembershipChange(input: {
     const customer = await api.customer(input.teamId, customerId);
     if (customer?.email) await api.clearEmail(input.teamId, customerId);
     const members = await api.members(customerId);
-    const target = members.find(
-      (member) => member.id === saved.memberId || member.external_id === input.userId,
-    );
+    const target = findMappedPolarMember(members, input.userId, saved);
     if (target?.role === 'owner') {
       const owners = await db
         .select({
@@ -489,15 +506,15 @@ export async function preparePolarMembershipChange(input: {
             eq(billingPolarMembers.userId, next.userId),
           ),
         );
-      const remote = members.find(
-        (member) => member.id === nextMapping?.memberId || member.external_id === next.userId,
-      );
+      const remote = findMappedPolarMember(members, next.userId, nextMapping);
       const promoted = await api.saveMember(
         customerId,
         { ...next, email: next.email },
         'owner',
         remote?.id,
       );
+      if (remote && promoted.external_id !== remote.external_id)
+        throw new PolarIdentityError('identity_conflict', 'member_external_id');
       await db
         .insert(billingPolarMembers)
         .values({

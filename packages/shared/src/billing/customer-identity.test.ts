@@ -310,6 +310,40 @@ describe('Polar team identity and revocation', () => {
       .where(and(eq(billingPolarMembers.teamId, teamId), eq(billingPolarMembers.userId, admin)));
     await expect(resolve(admin)).rejects.toMatchObject({ code: 'identity_conflict' });
   });
+  it('rejects a swapped member mapping during revocation before deleting another user', async () => {
+    const ownerIdentity = await resolve();
+    const adminIdentity = await resolve(admin);
+    await db
+      .update(billingPolarMembers)
+      .set({ memberId: ownerIdentity.memberId })
+      .where(and(eq(billingPolarMembers.teamId, teamId), eq(billingPolarMembers.userId, admin)));
+    await expect(revoke()).rejects.toMatchObject({ operation: 'member_mapping' });
+    await expect(finish()).rejects.toMatchObject({ operation: 'revocation_incomplete' });
+    expect(
+      (await api().members(ownerIdentity.customerId)).find(
+        (row) => row.id === ownerIdentity.memberId,
+      )?.role,
+    ).toBe('owner');
+    expect(
+      (await api().members(ownerIdentity.customerId)).some(
+        (row) => row.id === adminIdentity.memberId,
+      ),
+    ).toBe(true);
+  });
+  it('rejects a swapped successor mapping before transferring ownership', async () => {
+    const ownerIdentity = await resolve();
+    await db.update(teamMembers).set({ role: 'owner' }).where(eq(teamMembers.userId, admin));
+    await db
+      .update(billingPolarMembers)
+      .set({ memberId: ownerIdentity.memberId })
+      .where(and(eq(billingPolarMembers.teamId, teamId), eq(billingPolarMembers.userId, admin)));
+    await expect(revoke(owner)).rejects.toMatchObject({ operation: 'member_mapping' });
+    expect(
+      (await api().members(ownerIdentity.customerId)).find(
+        (row) => row.id === ownerIdentity.memberId,
+      )?.role,
+    ).toBe('owner');
+  });
   it('rejects webhook customer and subscription conflicts before changing entitlements', async () => {
     const a = await resolve();
     const webhook = (customerId: string) =>
