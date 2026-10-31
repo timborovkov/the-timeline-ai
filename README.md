@@ -59,7 +59,7 @@ and Pipedrive app listings are separate future work.
 Requirements: Bun 1.4.4 and Docker. The runtime is pinned in `.bun-version`.
 
 Install the pinned runtime with `curl -fsSL https://bun.com/install | bash -s "bun-v1.4.4"`,
-then open a new shell. Existing checkouts migrated from pnpm should remove their generated
+then open a new shell. Existing checkouts migrated from another package manager should remove their generated
 root and workspace `node_modules` directories before the frozen Bun install; keep `.env`
 and Docker volumes.
 
@@ -217,7 +217,6 @@ as Timeline's. Details: [docs/setup/polar.html](./docs/setup/polar.html).
 - [Product brief](./docs/product-brief.html)
 - [Operating memory engine](./docs/relational-memory.md)
 - [Local development](./docs/setup/local.html)
-- [Bun migration validation and release runbook](./docs/bun-migration.md)
 - [Integrations and custom MCP servers](./docs/setup/integrations.html)
 - [Codex and Claude Code plugins and agent skill](./plugins/timeline/skills/README.md)
 - [Railway deployment](./docs/railway.html)
