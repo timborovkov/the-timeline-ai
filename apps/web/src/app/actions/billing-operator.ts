@@ -1,5 +1,5 @@
 'use server';
-
+import { assertStoredPolarIdentity } from '@timeline/shared/billing';
 import { createPolarBillingProvider } from '@timeline/shared/billing';
 import { parseEuroAmountToCents } from '@timeline/shared/billing/catalog';
 import { isBillingPlanId, parseOperatorExpiry } from '@timeline/shared/billing/operator';
@@ -111,8 +111,11 @@ export async function assignCompedPlanAction(formData: FormData): Promise<void> 
         expiresAt: parseOperatorExpiry(formString(formData.get('expires'))),
         ...(provider
           ? {
-              cancelPolarSubscription: (subscriptionId: string) =>
-                provider.revokeSubscription(subscriptionId),
+              cancelPolarSubscription: async (subscriptionId: string) =>
+                provider.revokeSubscription(
+                  subscriptionId,
+                  await assertStoredPolarIdentity(db, teamId, provider),
+                ),
               expireCheckout: (checkoutId: string) => provider.expireCheckout(checkoutId),
             }
           : {}),

@@ -2,6 +2,8 @@
 
 import {
   checkoutDiscountId,
+  withTeamBillingIdentity,
+  PolarIdentityError,
   PolarDiscountError,
   compSuppressesPolarCharges,
   createPlanChangeSession,
@@ -32,7 +34,7 @@ async function requireBillingAdmin() {
   if (role !== 'owner' && role !== 'admin') {
     return { ok: false as const, error: 'Only owners and admins can manage billing.' };
   }
-  return { ok: true as const, email, active, scope };
+  return { ok: true as const, userId, email, active, scope };
 }
 
 export async function startBillingCheckout(input: {
@@ -84,27 +86,27 @@ export async function startBillingCheckout(input: {
         provider,
         productId,
       });
-      await provider.ensureCustomer({
-        externalId: gate.active.teamId,
-        email: gate.email,
-        name: gate.active.teamName,
-      });
-      const checkout = await createPlanChangeSession({
-        provider,
-        account,
-        productId,
-        externalCustomerId: gate.active.teamId,
-        customerEmail: gate.email,
-        successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
-        portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-        ...(discountId ? { discountId } : {}),
-      });
+      const checkout = await withTeamBillingIdentity(
+        { db, provider, teamId: gate.active.teamId, userId: gate.userId },
+        (identity) =>
+          createPlanChangeSession({
+            ...identity,
+            provider,
+            account,
+            productId,
+            externalCustomerId: gate.active.teamId,
+            customerEmail: gate.email,
+            successUrl: `${env.AUTH_URL}/app/team?section=billing&checkout=success`,
+            portalReturnUrl: `${env.AUTH_URL}/app/team?section=billing`,
+            ...(discountId ? { discountId } : {}),
+          }),
+      );
       return { ok: true, url: checkout.url };
     } catch (error) {
       return {
         ok: false,
         error:
-          error instanceof PolarDiscountError
+          error instanceof PolarDiscountError || error instanceof PolarIdentityError
             ? error.message
             : 'Polar billing is temporarily unavailable. Please retry; no full-price checkout will be opened.',
       };
@@ -149,15 +151,24 @@ export async function startBillingPortal(): Promise<
       };
     }
     const env = getEnv();
-    await provider.ensureCustomer({
-      externalId: gate.active.teamId,
-      email: gate.email,
-      name: gate.active.teamName,
-    });
-    const portal = await provider.createCustomerPortalSession({
-      externalCustomerId: gate.active.teamId,
-      returnUrl: `${env.AUTH_URL}/app/team?section=billing`,
-    });
-    return { ok: true, url: portal.url };
+    try {
+      const portal = await withTeamBillingIdentity(
+        { db, provider, teamId: gate.active.teamId, userId: gate.userId },
+        (identity) =>
+          provider.createCustomerPortalSession({
+            ...identity,
+            returnUrl: `${env.AUTH_URL}/app/team?section=billing`,
+          }),
+      );
+      return { ok: true, url: portal.url };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof PolarIdentityError
+            ? error.message
+            : 'Polar billing is temporarily unavailable. Please retry.',
+      };
+    }
   });
 }

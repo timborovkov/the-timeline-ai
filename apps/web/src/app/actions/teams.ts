@@ -21,6 +21,14 @@ import {
   users,
 } from '@timeline/db';
 import {
+  completePolarMembershipChange,
+  lockTeamBillingIdentity,
+  PolarIdentityError,
+  synchronizePolarBillingUser,
+  preparePolarMembershipChange,
+  createPolarBillingProvider,
+} from '@timeline/shared/billing';
+import {
   applyOwnedTeamFreeGrant,
   assertTeamMemberSeatCapacity,
   expiredInviteNeedsSeat,
@@ -48,6 +56,8 @@ import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
+
+import type { Db } from '@timeline/db';
 
 import {
   ACTIVE_TEAM_COOKIE,
@@ -1053,8 +1063,17 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
     }
 
     try {
+      await preparePolarMembershipChange({
+        db,
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        userId: memberUserId,
+        targetRole: role,
+        provider: createPolarBillingProvider(),
+      });
       const outcome = await db.transaction(
         async (tx): Promise<TeamMutationResult & { changed?: boolean }> => {
+          await lockTeamBillingIdentity(tx as unknown as Db, active.teamId);
           const targetRows = await tx
             .select({ role: teamMembers.role })
             .from(teamMembers)
@@ -1073,6 +1092,12 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
           if (target.role === 'owner' && role !== 'owner') {
             await assertNotLastOwner(tx, active.teamId, memberUserId);
           }
+          await completePolarMembershipChange(
+            tx as unknown as Db,
+            active.teamId,
+            memberUserId,
+            role,
+          );
           await tx
             .update(teamMembers)
             .set({ role })
@@ -1105,7 +1130,21 @@ export async function changeMemberRoleAction(formData: FormData): Promise<TeamMu
       );
       if (outcome.error) return outcome;
       if (!outcome.changed) return { ok: true };
+      if (role === 'owner' || role === 'admin') {
+        try {
+          await synchronizePolarBillingUser({
+            db,
+            userId: memberUserId,
+            provider: createPolarBillingProvider(),
+          });
+        } catch {
+          return {
+            error: 'Role saved. Billing access is pending a provider sync; retry from Billing.',
+          };
+        }
+      }
     } catch (e) {
+      if (e instanceof PolarIdentityError) return { error: e.message };
       if (e instanceof Error && e.message === 'last_owner') {
         reportCaughtError(e, { surface: 'server_action', operation: 'change_member_role' });
         return { error: 'The team needs at least one owner' };
@@ -1140,7 +1179,16 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
     }[] = [];
 
     try {
+      await preparePolarMembershipChange({
+        db,
+        teamId: active.teamId,
+        actorUserId: session.user.id,
+        userId: memberUserId,
+        targetRole: 'removed',
+        provider: createPolarBillingProvider(),
+      });
       const outcome = await db.transaction(async (tx): Promise<TeamMutationResult> => {
+        await lockTeamBillingIdentity(tx as unknown as Db, active.teamId);
         const targetRows = await tx
           .select({ role: teamMembers.role })
           .from(teamMembers)
@@ -1166,6 +1214,12 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
         if (targetRole === 'owner') {
           await assertNotLastOwner(tx, active.teamId, memberUserId);
         }
+        await completePolarMembershipChange(
+          tx as unknown as Db,
+          active.teamId,
+          memberUserId,
+          'removed',
+        );
         await resetSurfaceSessionsForTeamUserInTransaction(tx, {
           teamId: active.teamId,
           userId: memberUserId,
@@ -1501,6 +1555,7 @@ export async function removeMemberAction(formData: FormData): Promise<TeamMutati
       });
       if (outcome.error) return outcome;
     } catch (e) {
+      if (e instanceof PolarIdentityError) return { error: e.message };
       if (e instanceof Error && e.message === 'last_owner') {
         reportCaughtError(e, { surface: 'server_action', operation: 'remove_member' });
         return { error: 'The team needs at least one owner' };

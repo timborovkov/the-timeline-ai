@@ -27,7 +27,11 @@ function jsonResponse(body: unknown, status = 200): Promise<Response> {
 
 describe('expireCheckout', () => {
   it('treats a missing or finished checkout as expired and a paid one as already paid', async () => {
-    const provider = createPolarBillingProvider({ accessToken: 'polar-test', server: 'sandbox' });
+    const provider = createPolarBillingProvider({
+      accessToken: 'polar-test',
+      server: 'sandbox',
+      organizationId: 'org-synthetic',
+    });
     if (!provider) throw new Error('provider');
     const fetchMock = vi.fn((input: URL | string) => {
       const url = String(input);
@@ -51,7 +55,11 @@ describe('expireCheckout', () => {
   });
 
   it('expires an open checkout only when Polar reports it expired', async () => {
-    const provider = createPolarBillingProvider({ accessToken: 'polar-test', server: 'sandbox' });
+    const provider = createPolarBillingProvider({
+      accessToken: 'polar-test',
+      server: 'sandbox',
+      organizationId: 'org-synthetic',
+    });
     if (!provider) throw new Error('provider');
     const fetchMock = vi.fn((input: URL | string, init?: RequestInit) => {
       const url = String(input);
@@ -88,7 +96,11 @@ describe('expireCheckout', () => {
 const WORKSPACE_ID = '11111111-1111-4111-8111-111111111111';
 
 function polarProvider() {
-  const provider = createPolarBillingProvider({ accessToken: 'polar-test', server: 'sandbox' });
+  const provider = createPolarBillingProvider({
+    accessToken: 'polar-test',
+    server: 'sandbox',
+    organizationId: 'org-synthetic',
+  });
   if (!provider) throw new Error('provider');
   return provider;
 }
@@ -116,7 +128,14 @@ describe('polar customer external id', () => {
     const fetchMock = vi.fn((input: URL | string, init?: RequestInit) => {
       const url = requestUrl(input);
       calls.push(`${init?.method ?? 'GET'} ${url}`);
-      return Promise.resolve(jsonResponse({ id: 'cus_workspace', external_id: WORKSPACE_ID }));
+      return Promise.resolve(
+        jsonResponse({
+          id: 'cus_workspace',
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        }),
+      );
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
@@ -125,6 +144,7 @@ describe('polar customer external id', () => {
         externalId: WORKSPACE_ID,
         email: 'owner@example.com',
         name: 'Workspace',
+        owner: { email: 'owner@example.com', userId: 'owner-id' },
       }),
     ).resolves.toEqual({ id: 'cus_workspace' });
     expect(calls).toEqual([
@@ -138,7 +158,17 @@ describe('polar customer external id', () => {
       const url = requestUrl(input);
       calls.push(`${init?.method ?? 'GET'} ${url}`);
       if (init?.method === 'POST') {
-        return Promise.resolve(jsonResponse({ id: 'cus_new', external_id: WORKSPACE_ID }, 201));
+        return Promise.resolve(
+          jsonResponse(
+            {
+              id: 'cus_new',
+              external_id: WORKSPACE_ID,
+              organization_id: 'org-synthetic',
+              type: 'team',
+            },
+            201,
+          ),
+        );
       }
       return Promise.resolve(new Response('', { status: 404 }));
     });
@@ -149,6 +179,7 @@ describe('polar customer external id', () => {
         externalId: WORKSPACE_ID,
         email: 'owner@example.com',
         name: 'Workspace',
+        owner: { email: 'owner@example.com', userId: 'owner-id' },
       }),
     ).resolves.toEqual({ id: 'cus_new' });
     expect(calls).toEqual([
@@ -158,9 +189,11 @@ describe('polar customer external id', () => {
     const post = fetchMock.mock.calls.find((call) => call[1]?.method === 'POST');
     expect(post?.[1]?.body).toBe(
       JSON.stringify({
+        type: 'team',
         external_id: WORKSPACE_ID,
-        email: 'owner@example.com',
+        organization_id: 'org-synthetic',
         name: 'Workspace',
+        owner: { email: 'owner@example.com', external_id: 'owner-id' },
       }),
     );
     expect(calls.some((call) => call.includes('/customers/?'))).toBe(false);
@@ -168,13 +201,25 @@ describe('polar customer external id', () => {
 
   it('refuses a customer whose external id belongs to another workspace', async () => {
     const fetchMock = vi.fn(() =>
-      Promise.resolve(jsonResponse({ id: 'cus_other', external_id: 'someone-else' })),
+      Promise.resolve(
+        jsonResponse({
+          id: 'cus_other',
+          external_id: 'someone-else',
+          organization_id: 'org-synthetic',
+          type: 'team',
+        }),
+      ),
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(
-      polarProvider().ensureCustomer({ externalId: WORKSPACE_ID, email: 'owner@example.com' }),
-    ).rejects.toThrow('Polar customer external_id does not match this workspace');
+      polarProvider().ensureCustomer({
+        externalId: WORKSPACE_ID,
+        email: 'owner@example.com',
+        name: 'Workspace',
+        owner: { userId: 'owner-id', email: 'owner@example.com' },
+      }),
+    ).rejects.toThrow('billing identity needs operator review');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -183,8 +228,13 @@ describe('polar customer external id', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(
-      polarProvider().ensureCustomer({ externalId: WORKSPACE_ID, email: 'owner@example.com' }),
-    ).rejects.toThrow('Polar customer lookup failed: 500');
+      polarProvider().ensureCustomer({
+        externalId: WORKSPACE_ID,
+        email: 'owner@example.com',
+        name: 'Workspace',
+        owner: { userId: 'owner-id', email: 'owner@example.com' },
+      }),
+    ).rejects.toThrow('temporarily unavailable');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -194,12 +244,24 @@ describe('polar customer external id', () => {
       if (init?.method === 'POST') return Promise.resolve(new Response('', { status: 422 }));
       lookups += 1;
       if (lookups === 1) return Promise.resolve(new Response('', { status: 404 }));
-      return Promise.resolve(jsonResponse({ id: 'cus_raced', external_id: WORKSPACE_ID }));
+      return Promise.resolve(
+        jsonResponse({
+          id: 'cus_raced',
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        }),
+      );
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(
-      polarProvider().ensureCustomer({ externalId: WORKSPACE_ID, email: 'owner@example.com' }),
+      polarProvider().ensureCustomer({
+        externalId: WORKSPACE_ID,
+        email: 'owner@example.com',
+        name: 'Workspace',
+        owner: { userId: 'owner-id', email: 'owner@example.com' },
+      }),
     ).resolves.toEqual({ id: 'cus_raced' });
     expect(fetchMock.mock.calls.map((call) => call[1]?.method ?? 'GET')).toEqual([
       'GET',
@@ -214,15 +276,27 @@ describe('polar customer external id', () => {
   it('refuses a create response for a different workspace', async () => {
     const fetchMock = vi.fn((_input: URL | string, init?: RequestInit) => {
       if (init?.method === 'POST') {
-        return Promise.resolve(jsonResponse({ id: 'cus_other', external_id: 'someone-else' }));
+        return Promise.resolve(
+          jsonResponse({
+            id: 'cus_other',
+            external_id: 'someone-else',
+            organization_id: 'org-synthetic',
+            type: 'team',
+          }),
+        );
       }
       return Promise.resolve(new Response('', { status: 404 }));
     });
     globalThis.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(
-      polarProvider().ensureCustomer({ externalId: WORKSPACE_ID, email: 'owner@example.com' }),
-    ).rejects.toThrow('Polar customer external_id does not match this workspace');
+      polarProvider().ensureCustomer({
+        externalId: WORKSPACE_ID,
+        email: 'owner@example.com',
+        name: 'Workspace',
+        owner: { userId: 'owner-id', email: 'owner@example.com' },
+      }),
+    ).rejects.toThrow('billing identity needs operator review');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -238,6 +312,7 @@ const discountFixture = {
   products: [{ id: 'product-synthetic' }],
 };
 const checkoutInput = {
+  customerId: 'cus-synthetic',
   externalCustomerId: WORKSPACE_ID,
   customerEmail: 'synthetic@example.test',
   productId: 'product-synthetic',
@@ -379,8 +454,7 @@ describe('Polar managed checkout discounts', () => {
       ).toEqual({
         products: [checkoutInput.productId],
         success_url: checkoutInput.successUrl,
-        customer_email: checkoutInput.customerEmail,
-        external_customer_id: WORKSPACE_ID,
+        customer_id: checkoutInput.customerId,
         allow_discount_codes: false,
         discount_id: discountFixture.id,
       });
@@ -390,7 +464,18 @@ describe('Polar managed checkout discounts', () => {
         discount_id: discountFixture.id,
       });
     });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+      if (String(url).includes('/customers/'))
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      if (String(url).includes('/subscriptions/') && init?.method === 'GET')
+        return jsonResponse({ customer_id: checkoutInput.customerId });
+      return (fetchMock as unknown as typeof fetch)(url, init);
+    }) as unknown as typeof fetch;
     expect(
       await discountProvider().createCheckoutSession({
         ...checkoutInput,
@@ -408,7 +493,18 @@ describe('Polar managed checkout discounts', () => {
       ).toBeUndefined();
       return jsonResponse({ id: 'checkout-synthetic', url: 'https://checkout.test' });
     });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+      if (String(url).includes('/customers/'))
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      if (String(url).includes('/subscriptions/') && init?.method === 'GET')
+        return jsonResponse({ customer_id: checkoutInput.customerId });
+      return (fetchMock as unknown as typeof fetch)(url, init);
+    }) as unknown as typeof fetch;
     await expect(polarProvider().createCheckoutSession(checkoutInput)).resolves.toMatchObject({
       id: 'checkout-synthetic',
     });
@@ -427,7 +523,18 @@ describe('Polar managed checkout discounts', () => {
       [{}, 503, 'unavailable'],
     ] as const) {
       const fetchMock = vi.fn(async () => jsonResponse(body, status));
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+        if (String(url).includes('/customers/'))
+          return jsonResponse({
+            id: checkoutInput.customerId,
+            external_id: WORKSPACE_ID,
+            organization_id: 'org-synthetic',
+            type: 'team',
+          });
+        if (String(url).includes('/subscriptions/') && init?.method === 'GET')
+          return jsonResponse({ customer_id: checkoutInput.customerId });
+        return (fetchMock as unknown as typeof fetch)(url, init);
+      }) as unknown as typeof fetch;
       await expect(
         discountProvider().createCheckoutSession({
           ...checkoutInput,
@@ -448,7 +555,18 @@ describe('Polar managed checkout discounts', () => {
       });
       return jsonResponse({ discount_id: discountFixture.id });
     });
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+      if (String(url).includes('/customers/'))
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      if (String(url).includes('/subscriptions/') && init?.method === 'GET')
+        return jsonResponse({ customer_id: checkoutInput.customerId });
+      return (fetchMock as unknown as typeof fetch)(url, init);
+    }) as unknown as typeof fetch;
     await expect(
       createPlanChangeSession({
         ...checkoutInput,
@@ -472,7 +590,18 @@ describe('Polar managed checkout discounts', () => {
       () => Promise.reject(new Error('connection lost')),
     ]) {
       const fetchMock = vi.fn(response);
-      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+        if (String(url).includes('/customers/'))
+          return jsonResponse({
+            id: checkoutInput.customerId,
+            external_id: WORKSPACE_ID,
+            organization_id: 'org-synthetic',
+            type: 'team',
+          });
+        if (String(url).includes('/subscriptions/') && init?.method === 'GET')
+          return jsonResponse({ customer_id: checkoutInput.customerId });
+        return (fetchMock as unknown as typeof fetch)(url, init);
+      }) as unknown as typeof fetch;
       await expect(
         createPlanChangeSession({
           ...checkoutInput,
@@ -494,7 +623,18 @@ describe('Polar managed checkout discounts', () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({ detail: [{ loc: ['body', 'discount_id'] }] }, 422),
     );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    globalThis.fetch = ((url: URL | string, init?: RequestInit) => {
+      if (String(url).includes('/customers/'))
+        return jsonResponse({
+          id: checkoutInput.customerId,
+          external_id: WORKSPACE_ID,
+          organization_id: 'org-synthetic',
+          type: 'team',
+        });
+      if (String(url).includes('/subscriptions/') && init?.method === 'GET')
+        return jsonResponse({ customer_id: checkoutInput.customerId });
+      return (fetchMock as unknown as typeof fetch)(url, init);
+    }) as unknown as typeof fetch;
     await expect(
       createPlanChangeSession({
         ...checkoutInput,

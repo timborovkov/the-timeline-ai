@@ -306,8 +306,9 @@ credit hides margin and confuses prospects.
    so a later retry is attributed to the new attempt. Worker AI reservations
    (`metadata.source=worker`) count against `costlyWorkerConcurrency`; a busy
    workspace delays the BullMQ job instead of failing it. Polar customers are
-   resolved with get-by-external-id. Creation runs only after a real 404, and a
-   returned `external_id` must match the workspace.    Generate-and-store helpers,
+   resolved by the stored organization/environment-bound mapping or exact team
+   external ID, never by email. Creation runs only after a real 404. Customer ID,
+   external ID, organization and team type must match. Generate-and-store helpers,
    meeting summary fallbacks, embedding batch splits, and other AI catches
    rethrow `BillingAdmissionError` before returning a degraded result, so that
    delay still runs. A busy meeting summary stays unfinalized instead of
@@ -444,3 +445,31 @@ Synthetic tests cover expiry, replacement, newly added discounts, invoice/spend-
 amounts, and recovery without duplicate charges or provider calls. No migration
 or live provider operation is required. Setup guidance and this ADR complete the
 manual documentation handoff (/document-release remains unavailable).
+
+
+## Team customer identity amendment (2026-10-30)
+
+A Timeline team maps to one Polar team customer; users map to customer-scoped
+members. New customers omit customer email and specify an owner identity. The
+same person can own multiple teams without email collisions. A valid existing
+owner stays owner; other active verified Timeline owners/admins are billing
+managers. Ordinary members cannot obtain billing sessions. Checkout uses explicit
+customer ID; portal sessions additionally use the authenticated user's member ID.
+Subscriptions, usage delivery and webhook mutations validate the same mapping.
+
+`billing_polar_members` records each mapped member and its immutable provider
+external ID, including legacy external IDs retained through conversion. Durable
+pending role changes serialize with portal issuance under the billing-account
+lock. External revocation precedes local demotion/removal; ownership transfers
+before owner removal. Failed/interrupted operations block sessions until the same
+action completes. Sandbox evidence confirms deleting a member invalidates an
+already-issued portal token (401) without invalidating the owner's session.
+Promotions and verified email changes synchronize linked memberships, and access
+paths synchronously retry synchronization before issuing any new session.
+
+Conversion is explicit, platform-admin-only, dry-run by default, and preserves
+customer IDs and subscription/invoice history. New checkout has no individual
+fallback. Sandbox currently ignores nullable customer-email updates; conversion
+reports this incomplete cleanup after committing verified team/member mappings.
+Do not erase/reassign customers to bypass that limitation. See
+[setup](../setup/polar.html) and [evidence](../testing/polar-team-identity.md).

@@ -843,3 +843,19 @@ table. Completion means every modified claim has current support or has been
 removed.
 
 Deferred Slack/Telegram command delivery stores an AES-256-GCM encrypted payload in the existing Redis queue infrastructure, including the credential needed to complete that authorized send. Successful jobs are removed immediately; failed jobs expire after 24 hours. Pending quota-delayed sends remain until eligible. Delivery logs contain job IDs, never message contents or credentials. Agent answers retain their existing conversation-turn delivery path.
+
+
+### Polar billing member identity evidence (2026-10-30)
+
+Timeline sends team ID/name and authorized billing members' email/name/user ID to
+Polar. Customer identity is team-scoped, with organization/environment-bound local
+mappings; customer email is not a discovery key. Ordinary team members are not
+provisioned with billing access. Portal sessions use the authenticated billing
+member. Revocation is external-first with durable pending intent; sandbox evidence
+shows an existing removed member session returns 401 while owner access remains.
+Diagnostics exclude tokens, portal links and raw billing payloads. See
+[verification and known provider limitations](testing/polar-team-identity.md).
+Sandbox invoice delivery is restricted by Polar to organization-member addresses;
+API success does not prove inbox delivery. Converted customers may retain their
+legacy customer-level email because Polar currently ignores `email: null`; no
+public erasure/completion claim should contradict that observed behavior.

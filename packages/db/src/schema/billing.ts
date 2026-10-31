@@ -89,6 +89,8 @@ export const teamBillingAccounts = pgTable('team_billing_accounts', {
   securityState: teamSecurityState('security_state').notNull().default('normal'),
   entitlementsVersion: text('entitlements_version').notNull().default('v1'),
   polarCustomerId: text('polar_customer_id'),
+  polarOrganizationId: text('polar_organization_id'),
+  polarServer: text('polar_server'),
   polarSubscriptionId: text('polar_subscription_id'),
   polarProductId: text('polar_product_id'),
   /** Hard monthly overage spend ceiling in euro cents (customer-controlled). */
@@ -386,4 +388,24 @@ export const billingMemberDayLedger = pgTable(
     ),
     index('billing_member_day_ledger_team_day_idx').on(table.teamId, table.day),
   ],
+);
+
+/** Durable member identity and fail-closed revocation intents. */
+export const billingPolarMembers = pgTable(
+  'billing_polar_members',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    memberId: text('member_id'),
+    externalId: text('polar_external_id'),
+    role: text('role'),
+    pendingRole: text('pending_role'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex('billing_polar_members_team_user_unq').on(table.teamId, table.userId)],
 );

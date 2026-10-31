@@ -8,7 +8,7 @@ import {
   users,
   type Db,
 } from '@timeline/db';
-import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNull, isNotNull, or, sql } from 'drizzle-orm';
 
 import type { BillingProvider, ExpireCheckoutResult } from '#src/billing/provider.js';
 
@@ -17,6 +17,7 @@ import {
   PLAN_CATALOG,
   type BillingPlanId,
 } from '#src/billing/catalog.js';
+import { withTeamBillingIdentity } from '#src/billing/customer-identity.js';
 import {
   activePolarDiscountId,
   activePriceOverride,
@@ -78,7 +79,7 @@ export interface BillingOperatorActor {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
-async function requirePlatformAdmin(db: Db, actor: BillingOperatorActor): Promise<void> {
+export async function requirePlatformAdmin(db: Db, actor: BillingOperatorActor): Promise<void> {
   const [user] = await db
     .select({ email: users.email, emailVerified: users.emailVerified })
     .from(users)
@@ -672,7 +673,7 @@ export async function startEnterpriseCheckout(input: {
     const existing = await lockAccount(db, input.teamId);
     assertEnterpriseCheckoutAllowed(existing);
     const [owner] = await db
-      .select({ email: users.email })
+      .select({ email: users.email, userId: users.id })
       .from(teamMembers)
       .innerJoin(users, eq(users.id, teamMembers.userId))
       .where(
@@ -680,8 +681,10 @@ export async function startEnterpriseCheckout(input: {
           eq(teamMembers.teamId, input.teamId),
           eq(teamMembers.role, 'owner'),
           isNull(teamMembers.removedAt),
+          isNotNull(users.emailVerified),
         ),
       )
+      .orderBy(asc(teamMembers.createdAt), asc(teamMembers.userId))
       .limit(1);
     if (!owner?.email) {
       throw new BillingOperatorError(
@@ -699,6 +702,7 @@ export async function startEnterpriseCheckout(input: {
     };
     return {
       email: owner.email,
+      ownerUserId: owner.userId,
       discountId: activePolarDiscountId(existing, now),
       terms,
       outstandingCheckoutIds: Object.keys(
@@ -718,18 +722,23 @@ export async function startEnterpriseCheckout(input: {
 
   let checkout: { url: string; id: string };
   try {
-    await input.provider.ensureCustomer({
-      externalId: input.teamId,
-      email: prepared.email,
-    });
-    checkout = await input.provider.createCheckoutSession({
-      externalCustomerId: input.teamId,
-      customerEmail: prepared.email,
-      productId: input.productId,
-      successUrl: input.successUrl,
-      amount: input.platformFeeCents,
-      ...(prepared.discountId ? { discountId: prepared.discountId } : {}),
-    });
+    checkout = await withTeamBillingIdentity(
+      {
+        db: input.db,
+        teamId: input.teamId,
+        userId: prepared.ownerUserId,
+        provider: input.provider,
+      },
+      (identity) =>
+        input.provider.createCheckoutSession({
+          ...identity,
+          customerEmail: prepared.email,
+          productId: input.productId,
+          successUrl: input.successUrl,
+          amount: input.platformFeeCents,
+          ...(prepared.discountId ? { discountId: prepared.discountId } : {}),
+        }),
+    );
     const url = polarCheckoutUrl(checkout.url);
     if (!url || checkout.id.trim().length === 0) {
       throw new BillingOperatorError('Polar returned a checkout URL that is not on polar.sh.');

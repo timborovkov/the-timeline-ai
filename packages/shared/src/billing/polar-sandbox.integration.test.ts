@@ -6,12 +6,13 @@ import { describe, it } from 'bun:test';
  * product ids, including Enterprise, are set. Never confirms payment and never ingests usage.
  */
 const ARCHIVED_TOPUP_PRODUCT_ID = '203852a1-263f-4c8a-9925-e86fa23236da';
-const FAKE_EXTERNAL_CUSTOMER_ID = '00000000-0000-4000-8000-0000000000e2';
 
 const sandboxReady =
   process.env.POLAR_SANDBOX_INTEGRATION === '1' &&
   process.env.POLAR_SERVER === 'sandbox' &&
   Boolean(process.env.POLAR_ACCESS_TOKEN) &&
+  Boolean(process.env.POLAR_ORGANIZATION_ID) &&
+  Boolean(process.env.POLAR_SANDBOX_TEST_EMAIL) &&
   Boolean(process.env.POLAR_PRODUCT_ID_PAYG) &&
   Boolean(process.env.POLAR_PRODUCT_ID_TEAM) &&
   Boolean(process.env.POLAR_PRODUCT_ID_BUSINESS) &&
@@ -26,7 +27,8 @@ async function polar(path: string, init?: RequestInit): Promise<Response> {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      'User-Agent': 'curl/8.5.0',
+      'User-Agent': 'Timeline-Billing/1.0',
+      'Polar-Version': '2026-10',
     },
   });
 }
@@ -71,18 +73,29 @@ describe.skipIf(!sandboxReady)('Polar sandbox subscription billing', () => {
   });
 
   it('opens a PAYG checkout and leaves it unpaid', async () => {
-    const res = await polar('/checkouts/', {
-      method: 'POST',
-      body: JSON.stringify({
-        products: [process.env.POLAR_PRODUCT_ID_PAYG],
-        success_url: 'https://thetimeline.cc/app/team?section=billing',
-        customer_email: 'owner@timeline.dev',
-        customer_external_id: FAKE_EXTERNAL_CUSTOMER_ID,
-      }),
+    const { createPolarBillingProvider } = await import('#src/billing/polar.js');
+    const provider = createPolarBillingProvider();
+    if (!provider?.identity) throw new Error('Polar provider required');
+    const email = process.env.POLAR_SANDBOX_TEST_EMAIL;
+    const productId = process.env.POLAR_PRODUCT_ID_PAYG;
+    if (!email || !productId) throw new Error('Sandbox inbox and product required');
+    const externalId = `timeline-sandbox-${crypto.randomUUID()}`;
+    const created = await provider.identity.create(externalId, 'Disposable Timeline fixture', {
+      userId: `fixture-owner-${crypto.randomUUID()}`,
+      email: email,
     });
-    expect([200, 201]).toContain(res.status);
-    const body = (await res.json()) as { url?: string; status?: string };
-    expect(body.url ?? '').toContain('sandbox.polar.sh');
-    expect(body.status ?? 'open').not.toBe('succeeded');
+    try {
+      const checkout = await provider.createCheckoutSession({
+        customerId: created.id,
+        externalCustomerId: externalId,
+        customerEmail: email,
+        productId: productId,
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+      });
+      expect(checkout.url).toContain('sandbox.polar.sh');
+    } finally {
+      // Only the customer created by this test; never a discovered/email match.
+      expect((await polar(`/customers/${created.id}`, { method: 'DELETE' })).status).toBe(204);
+    }
   });
 });

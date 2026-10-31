@@ -17,3 +17,6 @@ export * from '#src/billing/runtime.js';
 export * from '#src/billing/preview.js';
 export * from '#src/billing/operator.js';
 export * from '#src/billing/shadow.js';
+
+export * from '#src/billing/customer-identity.js';
+export * from '#src/billing/polar-identity-api.js';

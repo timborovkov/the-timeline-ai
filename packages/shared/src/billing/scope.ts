@@ -52,6 +52,7 @@ import {
   walletLockCentsFromMetadata,
 } from '#src/billing/charge.js';
 import { BILLING_SYSTEM_USER_ID } from '#src/billing/context.js';
+import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
 import {
   applyMeteredDiscountCents,
   compCostBearingPaused,
@@ -418,6 +419,8 @@ async function ingestPolarUsageIfPending(input: {
   if (!claimed) return;
   const claimedEvent = polarIngestEventFromMetadata(claimed) ?? event;
   try {
+    if (input.provider.identity)
+      await assertStoredPolarIdentity(input.db, input.teamId, input.provider);
     await input.provider.ingestUsage(claimedEvent);
     await markPolarIngestStatus(input.db, input.teamId, input.operationId, 'completed');
     await resolveUnbilledAlerts(

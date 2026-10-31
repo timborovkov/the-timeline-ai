@@ -11,6 +11,7 @@ import type { BillingProvider } from '#src/billing/provider.js';
 
 import { notifySubscriptionPastDue } from '#src/billing/alerts.js';
 import { PLAN_CATALOG, type BillingPlanId } from '#src/billing/catalog.js';
+import { assertStoredPolarIdentity } from '#src/billing/customer-identity.js';
 import {
   assertPriceOverride,
   pendingEnterpriseTermsAfterActivation,
@@ -18,6 +19,7 @@ import {
   type PendingEnterpriseTerms,
 } from '#src/billing/operator.js';
 import { recordBillingPlan } from '#src/billing/plan-history.js';
+import { PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { TIMELINE_TOPUP_PRODUCT_NAME } from '#src/billing/polar-setup.js';
 import { childLogger } from '#src/logger.js';
 
@@ -671,7 +673,12 @@ async function reconcileCompedIncomingSubscription(input: {
   let revoked = false;
   if (input.provider) {
     try {
-      await input.provider.revokeSubscription(input.subscriptionId);
+      await input.provider.revokeSubscription(
+        input.subscriptionId,
+        input.provider.identity
+          ? await assertStoredPolarIdentity(input.db, input.teamId, input.provider)
+          : undefined,
+      );
       revoked = true;
     } catch (err) {
       log.warn(
@@ -730,7 +737,12 @@ async function reconcileDuplicateSubscription(input: {
   let revoked = false;
   if (input.provider) {
     try {
-      await input.provider.revokeSubscription(input.extraSubscriptionId);
+      await input.provider.revokeSubscription(
+        input.extraSubscriptionId,
+        input.provider.identity
+          ? await assertStoredPolarIdentity(input.db, input.teamId, input.provider)
+          : undefined,
+      );
       revoked = true;
     } catch (err) {
       log.warn(
@@ -1008,10 +1020,44 @@ export async function handlePolarWebhookEvent(input: {
   /** Revokes an extra live subscription. Missing provider still alerts. */
   provider?: BillingProvider | null;
 }): Promise<{ ok: true; ignored?: string }> {
-  const teamId = teamIdFromPayload(input.payload);
-  if (!teamId) return { ok: true, ignored: 'missing_external_customer' };
-
   const type = input.payload.type ?? '';
+  if (
+    ![
+      'subscription.created',
+      'subscription.active',
+      'subscription.updated',
+      'subscription.canceled',
+      'subscription.revoked',
+      'order.paid',
+    ].includes(type)
+  )
+    return { ok: true, ignored: 'unsupported_event' };
+  const teamId = teamIdFromPayload(input.payload);
+  // Polar organizations can contain customers unrelated to Timeline (including
+  // sandbox fixtures). Never pass provider-controlled identifiers into a UUID query.
+  if (
+    teamId !== null &&
+    (typeof teamId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(teamId))
+  )
+    return { ok: true, ignored: 'invalid_external_customer' };
+  if (!teamId) {
+    if (input.provider?.identity)
+      throw new PolarIdentityError('identity_conflict', 'webhook_team_missing');
+    return { ok: true, ignored: 'missing_external_customer' };
+  }
+  if (input.provider?.identity) {
+    const customerId = await assertStoredPolarIdentity(input.db, teamId, input.provider);
+    const claimedCustomerId = input.payload.data?.customer?.id ?? input.payload.data?.customer_id;
+    if (claimedCustomerId !== customerId)
+      throw new PolarIdentityError('identity_conflict', 'webhook_customer');
+    if (input.payload.type?.startsWith('subscription.')) {
+      if (!input.payload.data?.id)
+        throw new PolarIdentityError('identity_conflict', 'webhook_subscription');
+      await input.provider.identity.assertSubscription(customerId, input.payload.data.id);
+    }
+  }
+
   const data = input.payload.data;
   const plan = planFromPolarProductId(data?.product_id, input.products);
   const now = new Date();

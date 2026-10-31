@@ -60,6 +60,11 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
   async () => ({
     ...(await import('@timeline/shared/billing')),
+    preparePolarMembershipChange: vi.fn().mockResolvedValue(undefined),
+    completePolarMembershipChange: vi.fn().mockResolvedValue(undefined),
+    lockTeamBillingIdentity: vi.fn().mockResolvedValue(undefined),
+    synchronizePolarBillingUser: vi.fn().mockResolvedValue(undefined),
+    createPolarBillingProvider: vi.fn().mockReturnValue(null),
     applyOwnedTeamFreeGrant: vi.fn().mockResolvedValue({ ok: true }),
     insertRestrictedFreeBillingAccount: vi.fn().mockResolvedValue(undefined),
     assertTeamMemberSeatCapacity: vi.fn().mockResolvedValue(undefined),

@@ -1,3 +1,10 @@
+import type {
+  PolarIdentityApi,
+  PolarPerson,
+  PolarCustomerIdentity,
+  PolarMemberIdentity,
+} from '#src/billing/polar-identity-api.js';
+
 export interface PolarUsageEvent {
   externalCustomerId: string;
   name: string;
@@ -8,6 +15,8 @@ export interface PolarUsageEvent {
 }
 
 export interface CreateCheckoutInput {
+  customerId?: string;
+  memberId?: string;
   externalCustomerId: string;
   customerEmail: string;
   productId: string;
@@ -18,6 +27,7 @@ export interface CreateCheckoutInput {
 }
 
 export interface UpdateSubscriptionInput {
+  customerId?: string;
   subscriptionId: string;
   productId: string;
   discountId?: string;
@@ -33,6 +43,7 @@ export type UpdateSubscriptionResult = { ok: true } | { ok: false; code: 'portal
 export type ExpireCheckoutResult = 'expired' | 'already_paid' | 'still_open';
 
 export interface BillingProvider {
+  identity?: PolarIdentityApi;
   /** Resolve a code or trusted operator assignment in the configured Polar organization. */
   resolveDiscount(input: {
     code?: string;
@@ -40,6 +51,7 @@ export interface BillingProvider {
     productId: string;
   }): Promise<string>;
   ensureCustomer(input: {
+    owner?: PolarPerson;
     externalId: string;
     email: string;
     name?: string;
@@ -51,12 +63,14 @@ export interface BillingProvider {
    */
   expireCheckout(checkoutId: string): Promise<ExpireCheckoutResult>;
   createCustomerPortalSession(input: {
+    customerId?: string;
+    memberId?: string;
     externalCustomerId: string;
     returnUrl: string;
   }): Promise<{ url: string }>;
   updateSubscription(input: UpdateSubscriptionInput): Promise<UpdateSubscriptionResult>;
   /** Cancel immediately so a comp stops the platform fee. 404 and already-canceled are success. */
-  revokeSubscription(subscriptionId: string): Promise<void>;
+  revokeSubscription(subscriptionId: string, customerId?: string): Promise<void>;
   ingestUsage(event: PolarUsageEvent): Promise<void>;
   /**
    * Event names with an active metered price on this product.
@@ -77,7 +91,7 @@ const POLAR_PRICED_EVENT_NAMES = [
 ] as const;
 
 /** In-memory provider for unit/e2e tests — no network. */
-export function createFakeBillingProvider(): BillingProvider & {
+export function createFakeBillingProvider(options?: { teamIdentity?: boolean }): BillingProvider & {
   events: PolarUsageEvent[];
   customers: Map<string, { id: string; email: string }>;
   subscriptionUpdates: UpdateSubscriptionInput[];
@@ -94,7 +108,75 @@ export function createFakeBillingProvider(): BillingProvider & {
   const checkouts: CreateCheckoutInput[] = [];
   const expiredCheckoutIds: string[] = [];
   const pricedEventNamesByProduct = new Map<string, readonly string[] | null>();
+  const identityCustomers = new Map<string, PolarCustomerIdentity>();
+  const identityMembers = new Map<string, PolarMemberIdentity>();
+  const identity: PolarIdentityApi = {
+    server: 'sandbox',
+    organizationId: 'org-synthetic',
+    customer(teamId, id) {
+      const row = identityCustomers.get(teamId);
+      if (id && row?.id !== id) return Promise.reject(new Error('identity conflict'));
+      return Promise.resolve(row ?? null);
+    },
+    create(teamId, _name, owner) {
+      const row: PolarCustomerIdentity = {
+        id: `cus_fake_${teamId.slice(0, 8)}`,
+        external_id: teamId,
+        organization_id: 'org-synthetic',
+        type: 'team',
+      };
+      identityCustomers.set(teamId, row);
+      customers.set(teamId, { id: row.id, email: owner.email });
+      const member: PolarMemberIdentity = {
+        id: `mem_${teamId}_${owner.userId}`,
+        customer_id: row.id,
+        external_id: owner.userId,
+        email: owner.email,
+        role: 'owner',
+      };
+      identityMembers.set(member.id, member);
+      return Promise.resolve(row);
+    },
+    convert(teamId) {
+      const row = identityCustomers.get(teamId);
+      if (!row) return Promise.reject(new Error('customer missing'));
+      row.type = 'team';
+      return Promise.resolve(row);
+    },
+    clearEmail() {
+      return Promise.resolve();
+    },
+    members(customerId) {
+      return Promise.resolve(
+        [...identityMembers.values()].filter((member) => member.customer_id === customerId),
+      );
+    },
+    saveMember(customerId, person, role, id) {
+      if (role === 'owner')
+        for (const member of identityMembers.values())
+          if (member.customer_id === customerId && member.role === 'owner')
+            member.role = 'billing_manager';
+      const row: PolarMemberIdentity = {
+        id: id ?? `mem_${customerId}_${person.userId}`,
+        customer_id: customerId,
+        external_id: person.userId,
+        email: person.email,
+        role,
+      };
+      identityMembers.set(row.id, row);
+      return Promise.resolve(row);
+    },
+    removeMember(_customerId, id) {
+      identityMembers.delete(id);
+      return Promise.resolve();
+    },
+    assertSubscription() {
+      return Promise.resolve();
+    },
+  };
+
   return {
+    ...(options?.teamIdentity ? { identity } : {}),
     events,
     customers,
     subscriptionUpdates,

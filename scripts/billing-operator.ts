@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 
 import { closeDb, getDb } from '@timeline/db';
+import { assertStoredPolarIdentity } from '@timeline/shared/billing';
 import { createPolarBillingProvider } from '@timeline/shared/billing';
 import { parseEuroAmountToCents } from '@timeline/shared/billing/catalog';
 import { isBillingPlanId, parseOperatorExpiry } from '@timeline/shared/billing/operator';
@@ -96,8 +97,11 @@ async function main(): Promise<void> {
       expiresAt: parseOperatorExpiry(argValue('expires')),
       ...(provider
         ? {
-            cancelPolarSubscription: (subscriptionId: string) =>
-              provider.revokeSubscription(subscriptionId),
+            cancelPolarSubscription: async (subscriptionId: string) =>
+              provider.revokeSubscription(
+                subscriptionId,
+                await assertStoredPolarIdentity(db, teamId, provider),
+              ),
             expireCheckout: (checkoutId: string) => provider.expireCheckout(checkoutId),
           }
         : {}),
@@ -145,7 +149,8 @@ async function main(): Promise<void> {
     if (!provider) throw new Error('POLAR_ACCESS_TOKEN is required');
     const productId = process.env.POLAR_PRODUCT_ID_ENTERPRISE?.trim();
     if (!productId) throw new Error('POLAR_PRODUCT_ID_ENTERPRISE is required');
-    const authUrl = process.env.AUTH_URL?.trim() || 'http://localhost:3000';
+    const configuredAuthUrl = process.env.AUTH_URL?.trim() ?? '';
+    const authUrl = configuredAuthUrl.length > 0 ? configuredAuthUrl : 'http://localhost:3000';
     const platformFeeCents = eurosToCents('platform-fee-euros');
     const includedActiveMembers = optionalInt('included-members');
     const additionalMemberCents = optionalEuros('member-euros');

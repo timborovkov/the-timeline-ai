@@ -1460,6 +1460,9 @@
   "packages/shared/src/billing/charge.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/billing/customer-identity.test.ts": {
+    "group": "pglite"
+  },
   "packages/shared/src/billing/openrouter-usage.test.ts": {
     "group": "unit"
   },
@@ -1475,10 +1478,16 @@
   "packages/shared/src/billing/polar-checkout.test.ts": {
     "group": "unit"
   },
+  "packages/shared/src/billing/polar-identity-api.test.ts": {
+    "group": "unit"
+  },
   "packages/shared/src/billing/polar-sandbox.integration.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/billing/polar-setup.test.ts": {
+    "group": "unit"
+  },
+  "packages/shared/src/billing/polar-webhook-identity.test.ts": {
     "group": "unit"
   },
   "packages/shared/src/billing/polar-webhook.test.ts": {

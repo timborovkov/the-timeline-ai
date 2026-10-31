@@ -6,6 +6,8 @@ import { beforeEach, describe, it } from 'bun:test';
 await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
   () => ({
+    synchronizePolarBillingUser: vi.fn().mockResolvedValue(undefined),
+    createPolarBillingProvider: vi.fn().mockReturnValue(null),
     claimOwnedTeamFreeGrantsForVerifiedUser: vi.fn().mockResolvedValue(undefined),
   }),
   () => import('@timeline/shared/billing'),

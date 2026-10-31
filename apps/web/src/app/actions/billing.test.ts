@@ -39,6 +39,19 @@ await vi.mock(
   import.meta.resolve('@timeline/shared/billing'),
   async () => ({
     ...(await import('@timeline/shared/billing')),
+    withTeamBillingIdentity: async (
+      input: { teamId: string },
+      action: (identity: {
+        customerId: string;
+        memberId: string;
+        externalCustomerId: string;
+      }) => Promise<unknown>,
+    ) =>
+      action({
+        customerId: 'cus-synthetic',
+        memberId: 'member-synthetic',
+        externalCustomerId: input.teamId,
+      }),
     createPolarBillingProvider: () => provider,
     isPolarBillingConfigured: () => true,
     polarProductIdForPlan: () => 'product-synthetic',

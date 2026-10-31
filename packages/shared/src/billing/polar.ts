@@ -9,6 +9,7 @@ import type {
   UpdateSubscriptionInput,
 } from '#src/billing/provider.js';
 
+import { createPolarIdentityApi, PolarIdentityError } from '#src/billing/polar-identity-api.js';
 import { TIMELINE_METERED_EVENT_NAMES } from '#src/billing/polar-setup.js';
 import { getEnv } from '#src/env.js';
 
@@ -88,19 +89,6 @@ export function polarCustomerIdForExternalId(
   return customer.id;
 }
 
-async function readPolarCustomerByExternalId(
-  polarFetch: (path: string, init?: RequestInit) => Promise<Response>,
-  externalId: string,
-): Promise<{ id: string } | null> {
-  const lookedUp = await polarFetch(polarCustomerByExternalIdPath(externalId));
-  if (lookedUp.status === 404) return null;
-  if (!lookedUp.ok) {
-    throw new Error(`Polar customer lookup failed: ${lookedUp.status}`);
-  }
-  const body = (await lookedUp.json()) as { id?: unknown; external_id?: unknown };
-  return { id: polarCustomerIdForExternalId(body, externalId) };
-}
-
 export function createPolarBillingProvider(options?: {
   accessToken?: string;
   server?: PolarServer;
@@ -117,6 +105,7 @@ export function createPolarBillingProvider(options?: {
     const headers = new Headers(init?.headers);
     headers.set('Authorization', `Bearer ${accessToken}`);
     headers.set('Accept', 'application/json');
+    headers.set('User-Agent', 'Timeline-Billing/1.0');
     headers.set('Polar-Version', '2026-10');
     if (!headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
     return fetch(`${base}${path}`, {
@@ -126,7 +115,9 @@ export function createPolarBillingProvider(options?: {
     });
   }
 
+  const identity = createPolarIdentityApi(polarFetch, server, organizationId);
   return {
+    identity,
     async resolveDiscount(input) {
       if (!organizationId) throw new PolarDiscountError('unavailable');
       try {
@@ -183,35 +174,27 @@ export function createPolarBillingProvider(options?: {
       }
     },
     async ensureCustomer(input) {
-      const lookedUp = await readPolarCustomerByExternalId(polarFetch, input.externalId);
-      if (lookedUp) return lookedUp;
-      const created = await polarFetch('/customers/', {
-        method: 'POST',
-        body: JSON.stringify({
-          external_id: input.externalId,
-          email: input.email,
-          name: input.name,
-        }),
-      });
-      if (created.status === 409 || created.status === 422) {
-        const raced = await readPolarCustomerByExternalId(polarFetch, input.externalId);
-        if (raced) return raced;
-      }
-      if (!created.ok) {
-        throw new Error(`Polar create customer failed: ${created.status}`);
-      }
-      const row = (await created.json()) as { id?: unknown; external_id?: unknown };
-      return { id: polarCustomerIdForExternalId(row, input.externalId) };
+      if (!input.owner || !input.name)
+        throw new PolarIdentityError('configuration', 'owner_required');
+      const customer =
+        (await identity.customer(input.externalId)) ??
+        (await identity.create(input.externalId, input.name, input.owner));
+      if (customer.type !== 'team')
+        throw new PolarIdentityError('configuration', 'conversion_required');
+      return { id: customer.id };
     },
 
     async createCheckoutSession(input: CreateCheckoutInput) {
+      if (!input.customerId) throw new PolarIdentityError('identity_conflict', 'checkout_customer');
+      const customer = await identity.customer(input.externalCustomerId, input.customerId);
+      if (customer?.type !== 'team')
+        throw new PolarIdentityError('identity_conflict', 'checkout_customer');
       const created = await polarFetch('/checkouts/', {
         method: 'POST',
         body: JSON.stringify({
           products: [input.productId],
           success_url: input.successUrl,
-          customer_email: input.customerEmail,
-          external_customer_id: input.externalCustomerId,
+          customer_id: input.customerId,
           allow_discount_codes: !input.discountId,
           ...(input.discountId ? { discount_id: input.discountId } : {}),
           ...(typeof input.amount === 'number' ? { amount: input.amount } : {}),
@@ -263,10 +246,23 @@ export function createPolarBillingProvider(options?: {
     },
 
     async createCustomerPortalSession(input) {
+      if (!input.customerId || !input.memberId)
+        throw new PolarIdentityError('identity_conflict', 'portal_identity');
+      const customer = await identity.customer(input.externalCustomerId, input.customerId);
+      const members = await identity.members(input.customerId);
+      if (
+        customer?.type !== 'team' ||
+        !members.some(
+          (member) =>
+            member.id === input.memberId && ['owner', 'billing_manager'].includes(member.role),
+        )
+      )
+        throw new PolarIdentityError('forbidden', 'portal_member');
       const created = await polarFetch('/customer-sessions/', {
         method: 'POST',
         body: JSON.stringify({
-          external_customer_id: input.externalCustomerId,
+          customer_id: input.customerId,
+          member_id: input.memberId,
           return_url: input.returnUrl,
         }),
       });
@@ -279,7 +275,9 @@ export function createPolarBillingProvider(options?: {
       return { url };
     },
 
-    async revokeSubscription(subscriptionId: string) {
+    async revokeSubscription(subscriptionId: string, customerId?: string) {
+      if (!customerId) throw new PolarIdentityError('identity_conflict', 'subscription_customer');
+      await identity.assertSubscription(customerId, subscriptionId);
       const res = await polarFetch(`/subscriptions/${encodeURIComponent(subscriptionId)}`, {
         method: 'DELETE',
       });
@@ -292,6 +290,9 @@ export function createPolarBillingProvider(options?: {
     },
 
     async updateSubscription(input: UpdateSubscriptionInput) {
+      if (!input.customerId)
+        throw new PolarIdentityError('identity_conflict', 'subscription_customer');
+      await identity.assertSubscription(input.customerId, input.subscriptionId);
       const updated = await polarFetch(`/subscriptions/${input.subscriptionId}`, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -318,6 +319,9 @@ export function createPolarBillingProvider(options?: {
     },
 
     async ingestUsage(event: PolarUsageEvent) {
+      const customer = await identity.customer(event.externalCustomerId);
+      if (customer?.type !== 'team')
+        throw new PolarIdentityError('identity_conflict', 'usage_customer');
       const res = await polarFetch('/events/ingest', {
         method: 'POST',
         body: JSON.stringify({
@@ -474,6 +478,8 @@ export async function createPlanChangeSession(input: {
   productId: string;
   externalCustomerId: string;
   customerEmail: string;
+  customerId?: string;
+  memberId?: string;
   successUrl: string;
   portalReturnUrl: string;
   discountId?: string;
@@ -488,11 +494,13 @@ export async function createPlanChangeSession(input: {
     try {
       const updated = await input.provider.updateSubscription({
         subscriptionId,
+        ...(input.customerId ? { customerId: input.customerId } : {}),
         productId: input.productId,
         ...(input.discountId ? { discountId: input.discountId } : {}),
       });
       if (updated.ok) return { url: input.successUrl };
     } catch (error) {
+      if (error instanceof PolarIdentityError) throw error;
       if (input.discountId) {
         if (error instanceof PolarDiscountError) throw error;
         throw new PolarDiscountError('unavailable');
@@ -502,12 +510,15 @@ export async function createPlanChangeSession(input: {
     if (input.discountId) throw new PolarDiscountError('unavailable');
     const portal = await input.provider.createCustomerPortalSession({
       externalCustomerId: input.externalCustomerId,
+      ...(input.customerId ? { customerId: input.customerId } : {}),
+      ...(input.memberId ? { memberId: input.memberId } : {}),
       returnUrl: input.portalReturnUrl,
     });
     return { url: portal.url };
   }
   return input.provider.createCheckoutSession({
     externalCustomerId: input.externalCustomerId,
+    ...(input.customerId ? { customerId: input.customerId } : {}),
     customerEmail: input.customerEmail,
     productId: input.productId,
     successUrl: input.successUrl,

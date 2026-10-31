@@ -360,7 +360,8 @@ describe('billing operator store', () => {
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
     `);
-    const failing = createFakeBillingProvider();
+    const failing = createFakeBillingProvider({ teamIdentity: true });
+    const workingCheckout = failing.createCheckoutSession.bind(failing);
     failing.createCheckoutSession = () => Promise.reject(new Error('polar down'));
     await expect(
       startEnterpriseCheckout({
@@ -385,7 +386,8 @@ describe('billing operator store', () => {
     expect(prepared?.priceOverride).toBeNull();
     expect(prepared?.pendingEnterpriseTerms).toBeNull();
 
-    const provider = createFakeBillingProvider();
+    const provider = failing;
+    provider.createCheckoutSession = workingCheckout;
     const result = await startEnterpriseCheckout({
       db,
       actor: { userId: ADMIN_ID, email: 'ops@example.test' },
@@ -421,7 +423,7 @@ describe('billing operator store', () => {
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
     `);
-    const provider = createFakeBillingProvider();
+    const provider = createFakeBillingProvider({ teamIdentity: true });
     await startEnterpriseCheckout({
       db,
       actor: { userId: ADMIN_ID, email: 'ops@example.test' },
@@ -432,7 +434,7 @@ describe('billing operator store', () => {
       successUrl: 'https://thetimeline.cc/app/team?section=billing',
       provider,
     });
-    const failing = createFakeBillingProvider();
+    const failing = createFakeBillingProvider({ teamIdentity: true });
     failing.createCheckoutSession = () => Promise.reject(new Error('polar down'));
     await expect(
       startEnterpriseCheckout({
@@ -491,7 +493,7 @@ describe('billing operator store', () => {
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
     `);
-    const provider = createFakeBillingProvider();
+    const provider = createFakeBillingProvider({ teamIdentity: true });
     await startEnterpriseCheckout({
       db,
       actor: { userId: ADMIN_ID, email: 'ops@example.test' },
@@ -503,7 +505,7 @@ describe('billing operator store', () => {
       provider,
     });
 
-    const stillOpen = createFakeBillingProvider();
+    const stillOpen = createFakeBillingProvider({ teamIdentity: true });
     stillOpen.expireCheckout = (checkoutId) => {
       stillOpen.expiredCheckoutIds.push(checkoutId);
       return Promise.resolve('still_open');
@@ -521,7 +523,7 @@ describe('billing operator store', () => {
     ).rejects.toThrow(/still open/i);
     expect(stillOpen.checkouts).toHaveLength(0);
 
-    const paid = createFakeBillingProvider();
+    const paid = createFakeBillingProvider({ teamIdentity: true });
     paid.expireCheckout = (checkoutId) => {
       paid.expiredCheckoutIds.push(checkoutId);
       return Promise.resolve('already_paid');
@@ -539,7 +541,7 @@ describe('billing operator store', () => {
     ).rejects.toThrow(/started payment/i);
     expect(paid.checkouts).toHaveLength(0);
 
-    const broken = createFakeBillingProvider();
+    const broken = createFakeBillingProvider({ teamIdentity: true });
     broken.expireCheckout = () => Promise.reject(new Error('polar down'));
     await expect(
       startEnterpriseCheckout({
@@ -579,7 +581,7 @@ describe('billing operator store', () => {
       reason: 'internal',
       expiresAt: null,
     });
-    const provider = createFakeBillingProvider();
+    const provider = createFakeBillingProvider({ teamIdentity: true });
     await expect(
       startEnterpriseCheckout({
         db,
@@ -768,58 +770,35 @@ describe('billing operator store', () => {
       INSERT INTO team_members (team_id, user_id, role)
       VALUES ('${TEAM_ID}', '${OWNER_ID}', 'owner');
     `);
-    const outer = createFakeBillingProvider();
-    let interleaved = false;
-    outer.createCheckoutSession = (input) => {
-      outer.checkouts.push(input);
-      if (!interleaved) {
-        interleaved = true;
-        const inner = createFakeBillingProvider();
-        inner.createCheckoutSession = (innerInput) => {
-          inner.checkouts.push(innerInput);
-          return Promise.resolve({
-            id: 'chk_inner',
-            url: 'https://sandbox.polar.sh/checkout/inner',
-          });
-        };
-        return startEnterpriseCheckout({
-          db,
-          actor: { userId: ADMIN_ID, email: 'ops@example.test' },
-          teamId: TEAM_ID,
-          platformFeeCents: 100_000,
-          productId: 'prod_enterprise',
-          successUrl: 'https://thetimeline.cc/app/team?section=billing',
-          provider: inner,
-        }).then(() => ({
-          id: 'chk_outer',
-          url: 'https://sandbox.polar.sh/checkout/outer',
-        }));
-      }
-      return Promise.resolve({
-        id: 'chk_outer_again',
-        url: 'https://sandbox.polar.sh/checkout/outer-again',
+    const provider = createFakeBillingProvider({ teamIdentity: true });
+    provider.expireCheckout = () => Promise.resolve('still_open');
+    const open = (platformFeeCents: number) =>
+      startEnterpriseCheckout({
+        db,
+        actor: { userId: ADMIN_ID, email: 'ops@example.test' },
+        teamId: TEAM_ID,
+        platformFeeCents,
+        productId: 'prod_enterprise',
+        successUrl: 'https://thetimeline.cc/app/team?section=billing',
+        provider,
       });
-    };
-    const opened = await startEnterpriseCheckout({
-      db,
-      actor: { userId: ADMIN_ID, email: 'ops@example.test' },
-      teamId: TEAM_ID,
-      platformFeeCents: 250_000,
-      productId: 'prod_enterprise',
-      successUrl: 'https://thetimeline.cc/app/team?section=billing',
-      provider: outer,
-    });
-    expect(opened.url).toContain('https://sandbox.polar.sh/checkout/outer');
+    const results = await Promise.allSettled([open(100_000), open(250_000)]);
+    expect(results.some((result) => result.status === 'fulfilled')).toBe(true);
+    expect(provider.customers.size).toBe(1);
     const [account] = await db
       .select()
       .from(teamBillingAccounts)
       .where(eq(teamBillingAccounts.teamId, TEAM_ID));
-    expect(account?.pendingEnterpriseTerms).toEqual({
-      byCheckoutId: {
-        chk_inner: { platformFeeCents: 100_000 },
-        chk_outer: { platformFeeCents: 250_000 },
-      },
-    });
+    // Every issued link remains tracked even when preparation overlaps; no
+    // reentrant provider callback is needed now that session issuance is locked.
+    const pending = account?.pendingEnterpriseTerms;
+    const terms = pending && 'byCheckoutId' in pending ? pending.byCheckoutId : {};
+    expect(Object.keys(terms)).toHaveLength(provider.checkouts.length);
+    for (let index = 0; index < provider.checkouts.length; index++) {
+      expect(terms[`chk_fake_${index + 1}`]?.platformFeeCents).toBe(
+        provider.checkouts[index]?.amount,
+      );
+    }
   });
 
   it('does not copy an expired override into Enterprise checkout', async () => {
@@ -834,7 +813,7 @@ describe('billing operator store', () => {
         '2020-01-01T00:00:00Z'
       );
     `);
-    const provider = createFakeBillingProvider();
+    const provider = createFakeBillingProvider({ teamIdentity: true });
     await startEnterpriseCheckout({
       db,
       actor: { userId: ADMIN_ID, email: 'ops@example.test' },

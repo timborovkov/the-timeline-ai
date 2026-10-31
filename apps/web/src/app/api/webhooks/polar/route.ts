@@ -40,6 +40,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: 'invalid_json' }, { status: 400 });
   }
 
+  const provider = createPolarBillingProvider();
+  if (!provider) return Response.json({ error: 'provider_not_configured' }, { status: 503 });
   const result = await handlePolarWebhookEvent({
     db,
     payload: payload as Parameters<typeof handlePolarWebhookEvent>[0]['payload'],
@@ -50,7 +52,7 @@ export async function POST(req: Request): Promise<Response> {
       ...(env.POLAR_PRODUCT_ID_BUSINESS ? { business: env.POLAR_PRODUCT_ID_BUSINESS } : {}),
       ...(env.POLAR_PRODUCT_ID_ENTERPRISE ? { enterprise: env.POLAR_PRODUCT_ID_ENTERPRISE } : {}),
     },
-    provider: createPolarBillingProvider(),
+    provider,
   });
   return Response.json(result);
 }

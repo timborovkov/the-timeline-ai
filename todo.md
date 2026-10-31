@@ -22,6 +22,17 @@ This file now tracks only remaining work and recurring operating obligations.
 Use the repository history, release notes, and phase PRs for shipped
 implementation detail.
 
+## Billing identity follow-up
+
+- Polar sandbox currently ignores `CustomerUpdate.email = null`; track provider
+  support before declaring converted customer email cleanup complete. Do not
+  reset customers or reassign unrelated identities as a workaround.
+- Apply `0091_polar_team_identity.sql` and review/apply the per-team conversion
+  dry-run before deploying the team-customer integration. No live migration or
+  deployment was performed during implementation.
+- Sandbox evidence and remaining verification limits:
+  [Polar team identity](docs/testing/polar-team-identity.md).
+
 ## Product North Star
 
 Reframe remaining work around the path from passive capture to self-maintaining
