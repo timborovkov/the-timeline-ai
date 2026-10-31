@@ -65,7 +65,7 @@
     "@typescript-eslint/eslint-plugin": "^8.71.2",
     "bullmq": "6.4.2",
     "drizzle-orm": "^0.45.4",
-    "eslint": "^9.39.4",
+    "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-unused-imports": "^4.4.1",
