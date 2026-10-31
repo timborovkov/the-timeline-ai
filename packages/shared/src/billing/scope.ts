@@ -494,9 +494,15 @@ export function createBillingScope(deps: BillingScopeDeps) {
           {
             nativeUnits: Number(row.nativeUnits),
             customerChargeCents: row.customerChargeCents,
+            capEligibleChargeCents: row.capEligibleChargeCents,
           },
         ]),
-      ) as Partial<Record<BillingMeterId, { nativeUnits: number; customerChargeCents: number }>>;
+      ) as Partial<
+        Record<
+          BillingMeterId,
+          { nativeUnits: number; customerChargeCents: number; capEligibleChargeCents: number }
+        >
+      >;
       const meteredSpendCents = counters.reduce((sum, row) => sum + row.capEligibleChargeCents, 0);
       const utilization = spendCapUtilization(meteredSpendCents, account.spendCapCents);
       const freeRemaining = freeAllowanceRemaining(byMeter);

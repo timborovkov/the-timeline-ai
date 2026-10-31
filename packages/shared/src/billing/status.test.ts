@@ -125,7 +125,7 @@ describe('billing status', () => {
     });
     expect(summary.planName).toBe('Pay as you go');
     expect(summary.progressPercent).toBe(80);
-    expect(summary.detailLabel).toMatch(/€/);
+    expect(summary.detailLabel).toBe('€20 of €25 cap');
     expect(summary.overageCents).toBeGreaterThan(0);
     expect(summary.overageLabel).toMatch(/overage/);
     expect(summary.href).toBe('/app/team?section=billing');

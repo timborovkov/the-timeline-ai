@@ -98,6 +98,9 @@ export default async function UsagePage() {
       ) : null}
       <BillingUsageSummary
         planId={planId}
+        comped={dashboard.account.arrangement === 'comped'}
+        spendCapCents={dashboard.account.spendCapCents}
+        meteredSpendCents={dashboard.meteredSpendCents}
         meters={dashboard.meters}
         capacityUsage={capacityUsage}
         includedActiveMembers={commercial.includedActiveMembers}

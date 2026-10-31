@@ -139,7 +139,7 @@ function ThisMonth(props: BillingSettingsPanelProps) {
   if (props.spendCapCents <= 0) {
     return (
       <div className="flex items-baseline justify-between gap-3 text-sm" data-billing-spend>
-        <span className="text-fg-muted">This month</span>
+        <span className="text-fg-muted">Metered spend this month</span>
         <span className="font-mono text-fg">{formatEuroFromCents(props.meteredSpendCents)}</span>
       </div>
     );
@@ -148,10 +148,10 @@ function ThisMonth(props: BillingSettingsPanelProps) {
   return (
     <div data-billing-spend>
       <div className="flex items-baseline justify-between gap-3 text-sm">
-        <span className="text-fg-muted">This month</span>
+        <span className="text-fg-muted">Metered spend this month</span>
         <span className="font-mono text-fg">
           {formatEuroFromCents(props.meteredSpendCents)} of{' '}
-          {formatEuroFromCents(props.spendCapCents)}
+          {formatEuroFromCents(props.spendCapCents)} spend cap
         </span>
       </div>
       <SpendBar percent={percent} danger={percent >= 90} />
@@ -374,6 +374,16 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
       </div>
 
       <ThisMonth {...props} />
+      {props.planId === 'payg' && !props.comp ? (
+        <p className="text-sm text-fg-muted">
+          Your spend cap limits monthly chargeable usage; it is not included credit or an upfront
+          charge. PAYG keeps the monthly Free allowances. Only usage above those allowances and
+          extra members counts toward your cap.{' '}
+          <Link href="/app/usage" className="underline underline-offset-4">
+            View allowances and usage
+          </Link>
+        </p>
+      ) : null}
 
       <div data-billing-invoice>
         <p className="text-sm text-fg-muted">Next invoice</p>

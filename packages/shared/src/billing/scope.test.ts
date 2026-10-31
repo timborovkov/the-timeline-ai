@@ -1244,6 +1244,13 @@ describe('billing scope', () => {
     expect(Number(freeCounter?.nativeUnits)).toBe(500);
     expect(freeCounter?.customerChargeCents).toBe(500);
     expect(freeCounter?.capEligibleChargeCents).toBe(0);
+    const dashboard = await scope.getDashboard();
+    expect(dashboard.meters.ai).toMatchObject({
+      nativeUnits: 500,
+      customerChargeCents: 500,
+      capEligibleChargeCents: 0,
+    });
+    expect(dashboard.meteredSpendCents).toBe(0);
     if (!settled.duplicate)
       expect(settled.ledger.metadata).toMatchObject({ cap_eligible_cents: 0 });
 

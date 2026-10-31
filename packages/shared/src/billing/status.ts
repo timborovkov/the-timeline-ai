@@ -442,7 +442,7 @@ export function deriveSidebarBillingSummary(input: {
   if (input.spendCapCents > 0) {
     progressPercent = Math.min(100, utilization.percent ?? 0);
     atLimit = (utilization.percent ?? 0) >= 100;
-    detailLabel = `${formatEuroFromCents(input.meteredSpendCents)} of ${formatEuroFromCents(input.spendCapCents)}`;
+    detailLabel = `${formatEuroFromCents(input.meteredSpendCents)} of ${formatEuroFromCents(input.spendCapCents)} cap`;
   } else if (includedDiscount > 0) {
     progressPercent = Math.min(100, Math.round((input.meteredSpendCents / includedDiscount) * 100));
     atLimit = input.meteredSpendCents >= includedDiscount;

@@ -54,3 +54,66 @@ describe('BillingUsageSummary', () => {
     expect(html).not.toContain('Comped workspaces');
   });
 });
+
+it('keeps all PAYG meters visible and separates included usage from chargeable spend', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      planId="payg"
+      spendCapCents={2500}
+      meteredSpendCents={0}
+      meters={{ ai: { nativeUnits: 1, customerChargeCents: 1, capEligibleChargeCents: 0 } }}
+      capacityUsage={[]}
+    />,
+  );
+  for (const meter of [
+    'ai',
+    'recall_minutes',
+    'email_units',
+    'storage_gb_month',
+    'accepted_sources',
+    'member_days',
+  ]) {
+    expect(html).toContain(`data-billing-meter="${meter}"`);
+  }
+  expect(html).toContain('Monthly spend cap:');
+  expect(html).toContain('€25');
+  expect(html).toContain('Included: €5');
+  expect(html).toContain('Remaining: €4.99');
+  expect(html).toContain('Included: 60 min');
+  // Earlier Free AI usage retains its measured value but must not appear as a charge.
+  expect(html.match(/€0\.01/g)).toHaveLength(1);
+});
+
+it('shows exhausted PAYG allowance and actual chargeable overage', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      planId="payg"
+      meters={{ ai: { nativeUnits: 600, customerChargeCents: 101, capEligibleChargeCents: 100 } }}
+      capacityUsage={[]}
+    />,
+  );
+  expect(html).toContain('Remaining: €0');
+  expect(html).toContain('>€1<');
+  expect(html).not.toContain('€1.01');
+});
+
+it('does not imply that Team has the PAYG native allowances', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary planId="team" meters={{}} capacityUsage={[]} />,
+  );
+  expect(html).toContain('Meeting minutes');
+  expect(html).not.toContain('Included: 60 min');
+});
+
+it('keeps comped usage visible without presenting tracked spend as a charge', () => {
+  const html = renderToStaticMarkup(
+    <BillingUsageSummary
+      planId="team"
+      comped
+      meters={{ ai: { nativeUnits: 600, customerChargeCents: 600, capEligibleChargeCents: 600 } }}
+      capacityUsage={[]}
+    />,
+  );
+  expect(html).toContain('without Polar charges');
+  expect(html.match(/€6/g)).toHaveLength(1);
+});

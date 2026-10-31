@@ -397,3 +397,10 @@ it('confirms the requested plan only after its active subscription is persisted'
     }),
   ).toContain('Waiting for your plan');
 });
+
+it('explains the PAYG spend cap separately from its Free allowances', () => {
+  const html = panel({ planId: 'payg', planName: 'Pay as you go', spendCapCents: 2500 });
+  expect(html).toContain('€25 spend cap');
+  expect(html).toContain('not included credit or an upfront charge');
+  expect(html).toContain('View allowances and usage');
+});

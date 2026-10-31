@@ -180,10 +180,10 @@ disabled while confirmation is pending. New return links carry team/plan UI hint
 entitlement authority. The unused customer session token is removed from browser history.
 
 Synthetic coverage checks bounded polling, manual retry, activation after refreshed props,
-credential removal, pending checkout suppression, and requested-plan matching. Live activation
-for the reported checkout remains unverified: the sandbox customer lookup returned HTTP 403
-from this execution environment. Provider webhook delivery evidence is required to diagnose
-that incident; this UI change does not repair a missing or rejected webhook.
+credential removal, pending checkout suppression, and requested-plan matching. The user subsequently confirmed all subscription webhooks returned HTTP 200 with
+`{"ok":true}`, and a full reload showed Pay as you go. That confirms activation
+completed; the reported issue was stale return UI, not a missing subscription.
+The sandbox customer lookup from this execution environment still returned HTTP 403.
 
 Documentation handoff: reviewed setup, billing ADR, README, design and TODO implications.
 No billing identity or entitlement contract changed. Updated the setup troubleshooting and
@@ -191,3 +191,25 @@ this evidence log. The repository's referenced document-release skill is unavail
 
 Verification: 26 focused tests passed across checkout actions and the two billing UI
 suites. Full repository build, scoped ESLint, formatting and diff checks passed.
+
+
+### PAYG usage and spend-cap clarity (2026-10-31)
+
+Paid plans now retain zero-usage meters. Free and PAYG display each native monthly
+allowance and its remaining amount; Team/Business do not display those native
+allowances because their included invoice credit is a different benefit. PAYG's
+€25 default is labeled as a spend cap, not credit or an upfront charge, in usage,
+billing and sidebar context. Extra member pricing remains visible.
+
+Dashboard meters now expose existing cap-eligible counters alongside gross usage
+values. The charge column uses these counters, preventing earlier Free activity
+from appearing as a charge after upgrading. No pricing, allowance, cap-setting or
+settlement rules changed. Comps continue to show usage without Polar charges.
+Regression coverage includes zero meters, remaining/exhausted allowances, Free
+activity with zero chargeable spend, comped usage, and explicit cap labels.
+
+Verification: focused usage/billing UI, billing status, charge and database-backed
+billing-scope suites passed, including the Free-to-PAYG dashboard regression.
+Full repository build, scoped lint/formatting, compiled-import and diff checks
+passed. Setup and testing documentation updated; no environment variables,
+provider configuration, or customer billing records changed.
