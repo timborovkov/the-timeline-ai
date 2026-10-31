@@ -508,3 +508,7 @@ tracked internal usage from payable work without changing settlement math. Legac
 records lacking unambiguous attribution produce Unavailable rather than an assumed
 zero. Extra-member charges are reported separately and never consume included
 credit. All financial presentation is authorized server-side for owners/admins.
+
+Cap presentation uses the same applicability helper as enforcement. Standard
+contractual Enterprise and shadow billing do not display local pause/reached
+states. Comped Enterprise retains its enforced local cap.

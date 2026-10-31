@@ -1319,3 +1319,7 @@ Sidebar: Free labels the most-used allowance; PAYG labels its monthly cap;
 Team/Business lead with credit remaining and a separate cap line. Keep the credit
 renewal date distinct from the calendar cap reset. Financial details remain for
 owners/admins; members retain the existing limited warning view.
+
+Contractual Enterprise displays agreement-based limits instead of a local cap
+warning/editor. Cap warnings follow enforcement applicability; comped Enterprise
+keeps its enforced cap. Disabled enforcement is labeled as informational tracking.

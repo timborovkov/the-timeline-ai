@@ -1,5 +1,10 @@
 import { FREE_ALLOWANCES, type BillingMeterId, type BillingPlanId } from '#src/billing/catalog.js';
-import { resolveTeamCommercialTerms, type BillingOperatorAccount } from '#src/billing/operator.js';
+import {
+  contractualEnterpriseAccount,
+  localChargeSpendCapApplies,
+  resolveTeamCommercialTerms,
+  type BillingOperatorAccount,
+} from '#src/billing/operator.js';
 import { settlementUsageInstant } from '#src/billing/plan-history.js';
 
 export interface BillingPeriod {
@@ -32,7 +37,14 @@ export interface BillingPresentation {
   };
   recurringFeeCents: number | null;
   members: { current: number; included: number | null; additionalMemberCents: number | null };
-  cap: { usedCents: number; limitCents: number; percent: number; reached: boolean };
+  cap: {
+    applicable: boolean;
+    exemption: 'enterprise_contract' | 'shadow_billing' | 'free_plan' | null;
+    usedCents: number;
+    limitCents: number;
+    percent: number;
+    reached: boolean;
+  };
 }
 export interface PresentationSettlement {
   operationId: string;
@@ -133,12 +145,20 @@ export function buildBillingPresentation(input: {
   meters: Partial<Record<BillingMeterId, { nativeUnits: number }>>;
   meteredSpendCents: number;
   activeMembers: number;
+  shadowBilling: boolean;
   settlements: PresentationSettlement[];
   now?: Date;
 }): BillingPresentation {
   const now = input.now ?? new Date();
   const terms = resolveTeamCommercialTerms(input.account, now);
   const comped = input.account.arrangement === 'comped';
+  const enterpriseContract = contractualEnterpriseAccount(input.account);
+  const capApplies = localChargeSpendCapApplies({
+    shadowBilling: input.shadowBilling,
+    comped,
+    enterpriseContract,
+    entitlementsPlanId: terms.planId,
+  });
   const calendarPeriod = {
     start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString(),
     end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString(),
@@ -201,6 +221,14 @@ export function buildBillingPresentation(input: {
       additionalMemberCents: comped ? 0 : terms.additionalMemberCents,
     },
     cap: {
+      applicable: capApplies,
+      exemption: capApplies
+        ? null
+        : enterpriseContract
+          ? 'enterprise_contract'
+          : input.shadowBilling
+            ? 'shadow_billing'
+            : 'free_plan',
       usedCents: input.meteredSpendCents,
       limitCents: input.account.spendCapCents,
       percent:
@@ -208,7 +236,9 @@ export function buildBillingPresentation(input: {
           ? Math.min(100, Math.round((input.meteredSpendCents / input.account.spendCapCents) * 100))
           : 0,
       reached:
-        input.account.spendCapCents <= 0 || input.meteredSpendCents >= input.account.spendCapCents,
+        capApplies &&
+        (input.account.spendCapCents <= 0 ||
+          input.meteredSpendCents >= input.account.spendCapCents),
     },
   };
 }

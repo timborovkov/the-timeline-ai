@@ -485,6 +485,13 @@ export function applyBillingPresentationToSidebar(
   presentation: BillingPresentation,
 ): void {
   summary.presentation = presentation;
+  const capLabel = presentation.cap.applicable
+    ? `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`
+    : presentation.cap.exemption === 'enterprise_contract'
+      ? 'Contract spending limits'
+      : 'No enforced spend cap';
+  if (presentation.planId !== 'free') summary.atLimit = presentation.cap.reached;
+  delete summary.warningLabel;
   const reset =
     presentation.credit.status === 'available'
       ? presentation.credit.period?.end
@@ -500,7 +507,7 @@ export function applyBillingPresentationToSidebar(
     summary.href = '/app/usage';
   } else if (presentation.comped) {
     summary.detailLabel = 'Comped · no usage charges';
-    summary.secondaryLabel = `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`;
+    summary.secondaryLabel = capLabel;
   } else if (presentation.credit.status !== 'not_applicable') {
     summary.detailLabel =
       presentation.credit.status === 'available' && presentation.credit.remainingCents !== null
@@ -512,9 +519,10 @@ export function applyBillingPresentationToSidebar(
       presentation.credit.totalCents > 0
         ? Math.round((presentation.credit.usedCents / presentation.credit.totalCents) * 100)
         : 0;
-    summary.secondaryLabel = `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`;
+    summary.secondaryLabel = capLabel;
   } else {
-    summary.detailLabel = `${formatEuroFromCents(presentation.cap.usedCents)} of ${formatEuroFromCents(presentation.cap.limitCents)} monthly cap`;
+    summary.detailLabel = capLabel;
+    if (!presentation.cap.applicable) summary.progressPercent = 0;
     summary.secondaryLabel = presentation.planId === 'payg' ? 'View remaining allowances' : null;
   }
 }

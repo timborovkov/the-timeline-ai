@@ -406,7 +406,9 @@ export function BillingSettingsPanel(props: BillingSettingsPanelProps) {
         <BillingPlanPreview preview={props.planPreview} currentPlanId={props.planId} />
       )}
 
-      {props.canManage && props.planId !== 'free' ? (
+      {props.canManage &&
+      props.planId !== 'free' &&
+      props.presentation?.cap.exemption !== 'enterprise_contract' ? (
         <details id="billing-spend-cap">
           <summary className="cursor-pointer text-sm text-fg-muted hover:text-fg">
             Spend cap

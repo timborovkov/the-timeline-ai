@@ -250,3 +250,15 @@ billing scope tests and 12 presentation-model cases. The full repository build,
 scoped ESLint/formatting, compiled import checks, diff checks and five-plan
 Chromium desktop/320px overflow checks passed. No environment variables, billing
 records or provider configuration changed.
+
+
+Codex follow-up (discussion_r4431387308): the shared presentation now carries cap
+applicability from the existing enforcement helper, including contractual
+Enterprise and shadow-billing exemptions. Contractual teams see their agreement
+limits rather than a false local pause/reached state or an inapplicable cap
+editor. Comped Enterprise retains local cap enforcement. Focused model, sidebar
+and UI regressions cover both arrangements and disabled enforcement.
+
+Follow-up validation: all 46 affected presentation, billing UI, sidebar and status
+tests passed, along with the full build, scoped lint/formatting, compiled imports,
+and five-plan desktop/320px visual overflow checks.

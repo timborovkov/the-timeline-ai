@@ -21,6 +21,7 @@ function fixture(
     now: new Date('2026-10-20'),
     meters: {},
     activeMembers: 12,
+    shadowBilling: false,
     meteredSpendCents: 2000,
     settlements: [
       {
@@ -77,4 +78,18 @@ describe('BillingBenefitsSummary', () => {
       renderToStaticMarkup(<BillingBenefitsSummary summary={fixture('enterprise')} />),
     ).toContain('Custom');
   });
+});
+
+it('shows contractual Enterprise limits without a false local pause, while retaining comp enforcement', () => {
+  const contract = fixture('enterprise');
+  expect(contract.cap.applicable).toBe(false);
+  const html = renderToStaticMarkup(<BillingBenefitsSummary summary={contract} />);
+  expect(html).toContain('no local spend cap applies');
+  expect(html).not.toContain('usage is paused');
+  const comp = fixture('enterprise', true);
+  comp.cap.limitCents = 0;
+  expect(comp.cap.applicable).toBe(true);
+  expect(renderToStaticMarkup(<BillingBenefitsSummary summary={comp} />)).toContain(
+    'usage is paused at a €0 cap',
+  );
 });

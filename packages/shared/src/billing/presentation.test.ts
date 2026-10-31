@@ -39,6 +39,7 @@ function summary(overrides: Partial<Parameters<typeof buildBillingPresentation>[
     meters: {},
     meteredSpendCents: 2100,
     activeMembers: 12,
+    shadowBilling: false,
     settlements: [
       row(),
       row({
@@ -238,4 +239,40 @@ it('labels Free remaining allowances and keeps cap warnings separate from credit
   expect(base.detailLabel).toBe('€45 credit remaining');
   expect(base.warningLabel).toBe('Spend cap reached');
   expect(base.resetLabel).toContain('Credit renews 15 Nov');
+});
+
+it('uses existing cap exemptions for contracts and shadow billing, but enforces comped Enterprise caps', () => {
+  for (const config of [
+    {
+      account: { ...account, planId: 'enterprise' as const, spendCapCents: 0 },
+      shadowBilling: false,
+      applicable: false,
+    },
+    {
+      account: {
+        ...account,
+        planId: 'enterprise' as const,
+        arrangement: 'comped' as const,
+        spendCapCents: 0,
+      },
+      shadowBilling: false,
+      applicable: true,
+    },
+    { account: { ...account, spendCapCents: 0 }, shadowBilling: true, applicable: false },
+  ]) {
+    const value = summary({ account: config.account, shadowBilling: config.shadowBilling });
+    expect(value.cap.applicable).toBe(config.applicable);
+    expect(value.cap.reached).toBe(config.applicable);
+    const sidebar = deriveSidebarBillingSummary({
+      planId: value.planId,
+      canManageBilling: true,
+      meteredSpendCents: 2100,
+      spendCapCents: 0,
+      includedDiscountRemainingCents: 0,
+      freeRemaining: freeAllowanceRemaining({}),
+    });
+    applyBillingPresentationToSidebar(sidebar, value);
+    expect(sidebar.warningLabel).toBe(config.applicable ? 'Spend cap reached' : undefined);
+    expect(sidebar.atLimit).toBe(config.applicable);
+  }
 });

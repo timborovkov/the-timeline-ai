@@ -644,6 +644,7 @@ export function createBillingScope(deps: BillingScopeDeps) {
                 meters: byMeter,
                 meteredSpendCents,
                 activeMembers: activeMemberCount,
+                shadowBilling: accountUsesShadowBilling(account),
                 settlements,
                 now,
               })

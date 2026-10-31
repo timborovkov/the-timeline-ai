@@ -159,7 +159,14 @@ export function BillingBenefitsSummary({ summary }: { summary: BillingPresentati
           </p>
         )}
       </section>
-      {summary.planId !== 'free' ? (
+      {summary.planId !== 'free' && !cap.applicable ? (
+        <p className="text-sm text-fg-muted">
+          {cap.exemption === 'enterprise_contract'
+            ? 'Spend limits follow your Enterprise agreement; no local spend cap applies.'
+            : 'Spending limit tracking is informational; the local cap is not currently enforced.'}
+        </p>
+      ) : null}
+      {summary.planId !== 'free' && cap.applicable ? (
         <section className="space-y-1 text-sm" aria-label="Monthly spend cap">
           <p>
             Monthly spend cap: <Money value={cap.usedCents} /> used of{' '}
