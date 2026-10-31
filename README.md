@@ -63,6 +63,10 @@ then open a new shell. Existing checkouts migrated from pnpm should remove their
 root and workspace `node_modules` directories before the frozen Bun install; keep `.env`
 and Docker volumes.
 
+Local Compose uses PostgreSQL 18. Existing PostgreSQL 16 volumes require the
+[data-preserving upgrade procedure](docs/setup/postgres18.md) before starting the updated stack.
+The default volume deliberately refuses an incompatible cluster; do not delete it.
+
 ```bash
 git clone https://github.com/timborovkov/the-timeline-ai.git
 cd the-timeline-ai
